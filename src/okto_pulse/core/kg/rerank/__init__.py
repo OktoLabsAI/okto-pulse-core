@@ -14,9 +14,9 @@ Strategies:
 - ``token_overlap`` — TokenOverlapReranker, zero-dep lexical Jaccard-style
   overlap between query tokens and candidate title+content. Deterministic,
   <1ms. Useful as a safety net and as the test default.
-- ``cross_encoder`` — CrossEncoderReranker, sentence-transformers
-  ms-marco-MiniLM cross-encoder. Best precision for short passages; needs
-  the `[kg-embeddings]` extra installed.
+- ``cross_encoder`` — edition-registered cross-encoder adapter. Best precision
+  for short passages when an edition such as Community registers a provider;
+  otherwise falls back to ``token_overlap``.
 - ``llm`` — LLMReranker, delegates to a configured LLM with a RankGPT-style
   prompt. Highest quality for abstract queries, highest latency.
 

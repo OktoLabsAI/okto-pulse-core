@@ -17,8 +17,6 @@ Cenários cobertos (Cognitive Closure S1, spec 2012f38d):
 
 from __future__ import annotations
 
-import json
-
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
@@ -29,6 +27,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     project_item_for_api,
     project_item_for_update_api,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 
 UUID_A = "11111111-1111-1111-1111-111111111111"
 
@@ -93,18 +92,22 @@ def test_item_aliases_share_artifact_id_with_distinct_originals():
 
 
 def _write_record(store, board_id, gen, items):
-    path = store._record_path(board_id, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     record = {
+        "board_id": board_id,
+        "kg_generation_id": gen,
         "pending_count": len(items),
         "pending_refs": sorted({it["source_ref"] for it in items}),
         "status": "pending",
         "recorded_at": "2026-06-17T00:00:00+00:00",
         "items": items,
     }
-    with path.open("w", encoding="utf-8") as fh:
-        json.dump(record, fh)
-    return path
+    key = RebuildAuditKey(
+        namespace="cognitive_pending",
+        board_id=board_id,
+        kg_generation_id=gen,
+    )
+    store.artifact_store.write_json_atomic(key, record)
+    return key
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +144,8 @@ def test_store_reads_legacy_and_new_items_without_disk_mutation(tmp_path):
         "artifact_id": f"card:{UUID_A}",
         "evidence_refs": ["e1", "e2"],
     }
-    path = _write_record(store, board, gen, [legacy, new])
-    before = path.read_text(encoding="utf-8")
+    key = _write_record(store, board, gen, [legacy, new])
+    before = store.artifact_store.read_json(key)
 
     items = {i.item_id: i for i in store.list_items(board, gen)}
 
@@ -174,8 +177,8 @@ def test_store_reads_legacy_and_new_items_without_disk_mutation(tmp_path):
     assert {leg.status, nw.status} <= {s.value for s in CognitiveItemStatus}
     assert nw.outcome_type in {o.value for o in CognitivePendingOutcomeType}
 
-    # tr_3db366b6 — a leitura NÃO reescreve o registro em disco.
-    assert path.read_text(encoding="utf-8") == before
+    # tr_3db366b6 — a leitura NÃO reescreve o registro persistido.
+    assert store.artifact_store.read_json(key) == before
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """Cursor-based pagination tests for okto_pulse_get_activity_log.
 
 Spec `353f656f` (follow-up Story 3): keyset pagination via opaque base64 cursor,
-envelope=true opt-in, OKTO_PULSE_LEGACY_OFFSET escape hatch.
+envelope=true opt-in, edition-supplied legacy-offset escape hatch.
 
 Test cards in Okto Pulse (board 1dad8706):
   - TC1 6e7362ec — helpers unit (ts_a0849bc9, ts_e118d46c)
@@ -12,7 +12,8 @@ Test cards in Okto Pulse (board 1dad8706):
 
 from __future__ import annotations
 
-import asyncio
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -25,7 +26,7 @@ from okto_pulse.core.mcp.server import (
     _decode_activity_cursor,
     _encode_activity_cursor,
 )
-from okto_pulse.core.models.db import ActivityLog, Board
+from sqlalchemy_test_models import ActivityLog, Board
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +55,9 @@ async def _seed_board(db_factory, board_id: str) -> None:
     """Create the Board row once (boards.id is UNIQUE)."""
     async with db_factory() as db:
         db.add(
-            Board(id=board_id, name=f"Cursor test {board_id[:8]}", owner_id="test-agent")
+            Board(
+                id=board_id, name=f"Cursor test {board_id[:8]}", owner_id="test-agent"
+            )
         )
         await db.commit()
 
@@ -88,7 +91,8 @@ async def _seed_logs(
                     actor_id="test-agent",
                     actor_name="cursor-test",
                     details={"from_status": "a", "to_status": "b"},
-                    created_at=base_time + timedelta(seconds=i * timestamp_step_seconds),
+                    created_at=base_time
+                    + timedelta(seconds=i * timestamp_step_seconds),
                 )
             )
         await db.commit()
@@ -97,10 +101,13 @@ async def _seed_logs(
 async def _call_tool(db_factory, **kwargs) -> str:
     """Invoke okto_pulse_get_activity_log.fn with stubbed auth + registered factory."""
     board_id = kwargs["board_id"]
-    mcp_server.register_session_factory(db_factory)
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(mcp_server, "check_permission", return_value=None):
+    register_mcp_test_runtime(db_factory)
+    with (
+        patch.object(
+            mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+    ):
         return await mcp_server.okto_pulse_get_activity_log.fn(**kwargs)
 
 
@@ -126,9 +133,7 @@ def test_encode_produces_opaque_base64():
     assert "ts" not in cursor  # not plain JSON
     assert "id" not in cursor  # not plain JSON
     # base64 url-safe alphabet only
-    allowed = set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_="
-    )
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=")
     assert all(c in allowed for c in cursor)
 
 
@@ -198,7 +203,11 @@ async def test_second_page_uses_cursor_from_first(db_factory):
     assert first["next_cursor"] is not None
 
     second_raw = await _call_tool(
-        db_factory, board_id=board_id, limit=5, cursor=first["next_cursor"], envelope=True
+        db_factory,
+        board_id=board_id,
+        limit=5,
+        cursor=first["next_cursor"],
+        envelope=True,
     )
     second = json.loads(second_raw)
     assert len(second["items"]) == 5
@@ -221,7 +230,11 @@ async def test_end_of_stream_returns_null_cursor(db_factory):
     assert first["next_cursor"] is not None
 
     second_raw = await _call_tool(
-        db_factory, board_id=board_id, limit=10, cursor=first["next_cursor"], envelope=True
+        db_factory,
+        board_id=board_id,
+        limit=10,
+        cursor=first["next_cursor"],
+        envelope=True,
     )
     second = json.loads(second_raw)
     assert len(second["items"]) == 5
@@ -242,12 +255,16 @@ async def test_keyset_filter_correctness(db_factory):
 
     first_raw = await _call_tool(db_factory, board_id=board_id, limit=5, envelope=True)
     first = json.loads(first_raw)
-    cursor_pair = _decode_activity_cursor(first["next_cursor"])
+    cursor_pair = _decode_activity_cursor(first["next_cursor"], board_id=board_id)
     assert cursor_pair is not None
     cursor_ts, cursor_id = cursor_pair
 
     second_raw = await _call_tool(
-        db_factory, board_id=board_id, limit=20, cursor=first["next_cursor"], envelope=True
+        db_factory,
+        board_id=board_id,
+        limit=20,
+        cursor=first["next_cursor"],
+        envelope=True,
     )
     second = json.loads(second_raw)
 
@@ -266,7 +283,11 @@ async def test_stable_order_with_identical_timestamps(db_factory):
     await _seed_board(db_factory, board_id)
     # Seed 5 rows with the SAME timestamp (step=0)
     await _seed_logs(
-        db_factory, board_id=board_id, count=5, base_time=same_ts, timestamp_step_seconds=0
+        db_factory,
+        board_id=board_id,
+        count=5,
+        base_time=same_ts,
+        timestamp_step_seconds=0,
     )
 
     # Paginate page-by-page; collect all rows; assert no duplicates and no gaps
@@ -333,29 +354,60 @@ async def test_envelope_flag_opt_in(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_legacy_offset_env_var(db_factory, monkeypatch):
-    """ts_f08fd5bd — OKTO_PULSE_LEGACY_OFFSET=1 honors offset; otherwise ignores."""
-    board_id = _id("board-legacy")
+async def test_offset_honored_on_first_page_and_ignored_with_cursor(db_factory):
+    """ts_f08fd5bd (E2E remediation item 2) — the public ``offset`` is honored on
+    the FIRST page (no cursor) and MUST NOT be a decorative parameter; once paging
+    by ``cursor`` the cursor's keyset position is authoritative and offset is
+    ignored (pairing them would double-skip)."""
+    board_id = _id("board-offset")
     await _seed_board(db_factory, board_id)
     await _seed_logs(db_factory, board_id=board_id, count=20)
 
-    # Off (default): offset silently ignored
-    monkeypatch.delenv("OKTO_PULSE_LEGACY_OFFSET", raising=False)
-    raw_off = await _call_tool(db_factory, board_id=board_id, limit=5, offset=10)
-    rows_off = json.loads(raw_off)
-    raw_first = await _call_tool(db_factory, board_id=board_id, limit=5)
-    rows_first = json.loads(raw_first)
-    assert [r["id"] for r in rows_off] == [r["id"] for r in rows_first], (
-        "without env var, offset must be ignored — same as offset=0"
-    )
+    all_ids = [
+        r["id"]
+        for r in json.loads(await _call_tool(db_factory, board_id=board_id, limit=20))
+    ]
+    first_ids = [
+        r["id"]
+        for r in json.loads(await _call_tool(db_factory, board_id=board_id, limit=5))
+    ]
+    assert first_ids == all_ids[:5]
 
-    # On: offset honored
-    monkeypatch.setenv("OKTO_PULSE_LEGACY_OFFSET", "1")
-    raw_on = await _call_tool(db_factory, board_id=board_id, limit=5, offset=10)
-    rows_on = json.loads(raw_on)
-    assert [r["id"] for r in rows_on] != [r["id"] for r in rows_first], (
-        "with env var, offset=10 must skip rows"
+    # offset skips rows on the first page — it is NOT ignored (the pre-fix bug).
+    off3_ids = [
+        r["id"]
+        for r in json.loads(
+            await _call_tool(db_factory, board_id=board_id, limit=5, offset=3)
+        )
+    ]
+    assert off3_ids != first_ids, "offset=3 must not repeat the first page"
+    assert off3_ids == all_ids[3:8], "offset=3 must skip exactly the first 3 rows"
+
+    # With a cursor, offset is ignored (cursor authoritative, no double-skip).
+    env = json.loads(
+        await _call_tool(db_factory, board_id=board_id, limit=5, envelope=True)
     )
+    next_cursor = env["next_cursor"]
+    assert next_cursor
+    via_cursor = [
+        r["id"]
+        for r in json.loads(
+            await _call_tool(db_factory, board_id=board_id, limit=5, cursor=next_cursor)
+        )
+    ]
+    via_cursor_with_offset = [
+        r["id"]
+        for r in json.loads(
+            await _call_tool(
+                db_factory, board_id=board_id, limit=5, cursor=next_cursor, offset=7
+            )
+        )
+    ]
+    assert via_cursor == via_cursor_with_offset, (
+        "offset must be ignored when a cursor is supplied"
+    )
+    # The cursor's second page continues after the first (no overlap / no re-skip).
+    assert not (set(via_cursor) & set(first_ids))
 
 
 @pytest.mark.asyncio
@@ -423,6 +475,38 @@ async def test_invalid_cursor_returns_error_envelope(db_factory):
     assert "error" in parsed
 
 
+@pytest.mark.asyncio
+async def test_cursor_is_bound_to_issuing_board(db_factory):
+    """A valid cursor from board A is rejected when replayed against board B."""
+    board_a = _id("board-cursor-scope-a")
+    board_b = _id("board-cursor-scope-b")
+    await _seed_board(db_factory, board_a)
+    await _seed_board(db_factory, board_b)
+    await _seed_logs(db_factory, board_id=board_a, count=4)
+    await _seed_logs(db_factory, board_id=board_b, count=4)
+
+    first = json.loads(
+        await _call_tool(
+            db_factory,
+            board_id=board_a,
+            limit=2,
+            envelope=True,
+        )
+    )
+    assert first["next_cursor"]
+
+    replay = json.loads(
+        await _call_tool(
+            db_factory,
+            board_id=board_b,
+            limit=2,
+            cursor=first["next_cursor"],
+            envelope=True,
+        )
+    )
+    assert replay["error_code"] == "cursor_scope_mismatch"
+
+
 # ---------------------------------------------------------------------------
 # Regression — cursor pointing to a row MUST NOT redeliver that row
 # (smoke E2E pós-restart detectou: sqlalchemy tuple_(col1, col2) < (val1, val2)
@@ -449,7 +533,7 @@ async def test_cursor_strict_less_than_excludes_anchor_row(db_factory):
     anchor_ts = datetime.fromisoformat(anchor["created_at"])
 
     # Forge cursor pointing exactly at the anchor (same as next_cursor would)
-    forged = _encode_activity_cursor(anchor_ts, anchor["id"])
+    forged = _encode_activity_cursor(anchor_ts, anchor["id"], board_id=board_id)
 
     second_raw = await _call_tool(
         db_factory, board_id=board_id, limit=10, cursor=forged, envelope=True

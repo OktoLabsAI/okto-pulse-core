@@ -1,13 +1,12 @@
-"""Tests for the new embedded providers (KuzuGraphStore, KuzuCypherExecutor,
-SqliteOutboxEventBus) and the full registry wiring.
+"""Tests for the core test KG providers and full registry wiring.
 
 Validates:
 - All 3 providers satisfy their respective Protocols
 - Registry _build_defaults populates graph_store + cypher_executor
-- configure_kg_registry with session_factory wires audit_repo + event_bus
-- KuzuGraphStore delegates to Kuzu correctly (via InMemoryGraphStore parity)
-- KuzuCypherExecutor applies safety rails
-- SqliteOutboxEventBus lifecycle
+- configure_kg_registry fails closed without explicit audit_repo + event_bus
+- InMemoryGraphStore enforces the schema contract for relationship endpoints
+- InMemoryCypherExecutor satisfies the read-only execution port for tests
+- test EventBus fake lifecycle
 - kg_service.py uses graph_store from registry (no direct open_board_connection)
 """
 
@@ -15,20 +14,21 @@ from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.kg.schema import SCHEMA_VERSION
+from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -41,59 +41,43 @@ def _clean_registry():
 class TestProtocolCompliance:
     """Verify new providers satisfy their Protocol interfaces."""
 
-    def test_kuzu_graph_store_satisfies_protocol(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-
-        assert isinstance(KuzuGraphStore(), SemanticGraphStore)
-
-    def test_kuzu_cypher_executor_satisfies_protocol(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-
-        assert isinstance(KuzuCypherExecutor(), CypherExecutor)
-
-    def test_sqlite_outbox_event_bus_satisfies_protocol(self):
-        from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import SqliteOutboxEventBus
-
-        assert isinstance(SqliteOutboxEventBus(lambda: None), EventBus)
-
-
-class _FakeKuzuConnection:
-    def __init__(self):
-        self.statements: list[tuple[str, dict]] = []
-
-    def execute(self, statement: str, params: dict):
-        self.statements.append((statement, params))
-
-
-class _FakeOpenBoardConnection:
-    def __init__(self, conn: _FakeKuzuConnection):
-        self.conn = conn
-
-    def __enter__(self):
-        return None, self.conn
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class TestKuzuGraphStoreRelationshipResolution:
-    def test_create_edge_ambiguous_relationship_requires_endpoint_hints(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-
-        with pytest.raises(ValueError, match="ambiguous.*from_type/to_type"):
-            KuzuGraphStore().create_edge("b1", "implements", "api-login", "tr-audit")
-
-    def test_create_edge_implements_constraint_honors_endpoint_hints(self, monkeypatch):
-        from okto_pulse.core.kg.providers.embedded import kuzu_graph_store as module
-
-        conn = _FakeKuzuConnection()
-        monkeypatch.setattr(
-            module,
-            "open_board_connection",
-            lambda _board_id: _FakeOpenBoardConnection(conn),
+    def test_memory_graph_store_satisfies_protocol(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
         )
 
-        module.KuzuGraphStore().create_edge(
+        assert isinstance(InMemoryGraphStore(), SemanticGraphStore)
+
+    def test_memory_cypher_executor_satisfies_protocol(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryCypherExecutor,
+        )
+
+        assert isinstance(InMemoryCypherExecutor(), CypherExecutor)
+
+    def test_sqlite_outbox_event_bus_satisfies_protocol(self):
+        from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+
+        assert isinstance(InMemoryEventBus(), EventBus)
+
+
+class TestInMemoryGraphStoreRelationshipResolution:
+    def test_create_edge_ambiguous_relationship_requires_endpoint_hints(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        with pytest.raises(ValueError, match="ambiguous.*from_type/to_type"):
+            InMemoryGraphStore().create_edge("b1", "implements", "api-login", "tr-audit")
+
+    def test_create_edge_implements_constraint_honors_endpoint_hints(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        store = InMemoryGraphStore()
+        store.bootstrap("b1")
+        store.create_edge(
             "b1",
             "implements",
             "api-login",
@@ -102,11 +86,8 @@ class TestKuzuGraphStoreRelationshipResolution:
             to_type="Constraint",
         )
 
-        assert len(conn.statements) == 1
-        assert (
-            "MATCH (a:APIContract {id: $from_id}), "
-            "(b:Constraint {id: $to_id})"
-        ) in conn.statements[0][0]
+        assert store._edges["b1"][0]["_from_type"] == "APIContract"
+        assert store._edges["b1"][0]["_to_type"] == "Constraint"
 
 
 # -----------------------------------------------------------------------
@@ -127,37 +108,39 @@ class TestRegistryWiring:
         assert reg.cypher_executor is not None
         assert isinstance(reg.cypher_executor, CypherExecutor)
 
-    def test_defaults_no_event_bus_without_session_factory(self):
-        reg = get_kg_registry()
-        # event_bus requires session_factory, so defaults have None
-        assert reg.event_bus is None
-
-    def test_defaults_no_audit_repo_without_session_factory(self):
-        reg = get_kg_registry()
-        assert reg.audit_repo is None
-
-    def test_configure_with_session_factory_wires_audit_repo(self):
-        def mock_sf():
-            return None
-
-        configure_kg_registry(session_factory=mock_sf)
-        reg = get_kg_registry()
-        assert reg.audit_repo is not None
-
-    def test_configure_with_session_factory_wires_event_bus(self):
-        def mock_sf():
-            return None
-
-        configure_kg_registry(session_factory=mock_sf)
+    def test_test_composition_supplies_event_bus_fake(self):
         reg = get_kg_registry()
         assert reg.event_bus is not None
         assert isinstance(reg.event_bus, EventBus)
+
+    def test_test_composition_supplies_audit_repo_fake(self):
+        reg = get_kg_registry()
+        assert reg.audit_repo is not None
+
+    def test_configure_with_session_factory_does_not_auto_wire_data_ports(self):
+        from okto_pulse.core.kg.interfaces.registry import (
+            KGProviderRegistry,
+            configure_kg_registry,
+        )
+        from okto_pulse.core.kg.providers.testing.settings_config import (
+            SettingsKGConfig,
+        )
+
+        reset_registry_for_tests()
+        try:
+            with pytest.raises(RuntimeError, match="event_bus, audit_repo"):
+                configure_kg_registry(
+                    session_factory=lambda: None,
+                    base_registry=KGProviderRegistry(config=SettingsKGConfig()),
+                )
+        finally:
+            configure_test_kg_registry()
 
     def test_override_takes_precedence(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
 
         custom_store = InMemoryGraphStore()
-        configure_kg_registry(graph_store=custom_store)
+        configure_test_kg_registry(graph_store=custom_store)
         reg = get_kg_registry()
         assert reg.graph_store is custom_store
 
@@ -177,7 +160,7 @@ class TestRegistryWiring:
         def mock_sf():
             return None
 
-        configure_kg_registry(session_factory=mock_sf)
+        configure_test_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
 
         populated = 0
@@ -194,67 +177,73 @@ class TestRegistryWiring:
 
 
 # -----------------------------------------------------------------------
-# KuzuCypherExecutor safety rails
+# InMemoryCypherExecutor test port
 # -----------------------------------------------------------------------
 
 
-class TestKuzuCypherExecutorSafety:
-    """Verify safety rails are applied via the executor."""
+class TestInMemoryCypherExecutor:
+    """Verify the core test executor records read requests without runtime deps."""
 
     def test_is_supported(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryCypherExecutor,
+        )
 
-        executor = KuzuCypherExecutor()
-        assert executor.is_supported() is True
+        executor = InMemoryCypherExecutor()
+        assert executor.is_supported() is False
 
-    def test_rejects_write_cypher(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-        from okto_pulse.core.kg.tier_power import TierPowerError
+    def test_execute_read_only_records_query(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryCypherExecutor,
+        )
 
-        executor = KuzuCypherExecutor()
-        with pytest.raises(TierPowerError) as exc_info:
-            executor.execute_read_only("board-1", "CREATE (n:Test {id: 'x'})")
-        assert exc_info.value.code == "unsafe_cypher"
-
-    def test_rejects_delete_cypher(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-        from okto_pulse.core.kg.tier_power import TierPowerError
-
-        executor = KuzuCypherExecutor()
-        with pytest.raises(TierPowerError):
-            executor.execute_read_only("board-1", "MATCH (n) DELETE n")
+        executor = InMemoryCypherExecutor()
+        result = executor.execute_read_only(
+            "board-1",
+            "MATCH (n) RETURN n.id",
+            {"limit": 1},
+            max_rows=1,
+        )
+        assert executor.queries == [
+            ("board-1", "MATCH (n) RETURN n.id", {"limit": 1})
+        ]
+        assert result["rows"] == []
+        assert result["max_rows"] == 1
 
 
 # -----------------------------------------------------------------------
-# SqliteOutboxEventBus lifecycle
+# InMemoryEventBus lifecycle
 # -----------------------------------------------------------------------
 
 
-class TestSqliteOutboxEventBusLifecycle:
+class TestInMemoryEventBusLifecycle:
 
     @pytest.mark.asyncio
     async def test_start_stop(self):
-        from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import SqliteOutboxEventBus
+        from okto_pulse.core.kg.providers.testing.memory_event_bus import (
+            InMemoryEventBus,
+        )
 
-        bus = SqliteOutboxEventBus(lambda: None)
+        bus = InMemoryEventBus()
         await bus.start()
-        assert bus._running is True
+        assert bus.is_running is True
         await bus.stop()
-        assert bus._running is False
+        assert bus.is_running is False
 
     @pytest.mark.asyncio
     async def test_subscribe_and_handle(self):
-        from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import SqliteOutboxEventBus
+        from okto_pulse.core.kg.providers.testing.memory_event_bus import (
+            InMemoryEventBus,
+        )
 
         received = []
 
         async def handler(event: KGEvent):
             received.append(event)
 
-        bus = SqliteOutboxEventBus(lambda: None)
+        bus = InMemoryEventBus()
         await bus.subscribe("test_event", handler)
 
-        # publish will fail on outbox write (no real DB), but handler should still fire
         event_id = await bus.publish(KGEvent(
             event_type="test_event",
             board_id="b1",
@@ -279,7 +268,7 @@ class TestKGServiceUsesRegistry:
         from okto_pulse.core.kg.kg_service import KGService
 
         store = InMemoryGraphStore()
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
 
         svc = KGService()
         assert svc.get_schema_version("b1") is None
@@ -300,7 +289,7 @@ class TestKGServiceUsesRegistry:
             "relevance_score": 0.8,
         })
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         results = svc.get_decision_history("b1", "GraphQL")
@@ -318,7 +307,7 @@ class TestKGServiceUsesRegistry:
         store.create_node("b1", "Decision", "d2", {"title": "B"})
         store.create_edge("b1", "contradicts", "d1", "d2", {"confidence": 0.9})
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         results = svc.find_contradictions("b1")
@@ -339,7 +328,7 @@ class TestKGServiceUsesRegistry:
             "source_confidence": 0.95,
         })
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         result = svc.explain_constraint("b1", "c1")
@@ -352,7 +341,7 @@ class TestKGServiceUsesRegistry:
 
         store = InMemoryGraphStore()
         store.bootstrap("b1")
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         with pytest.raises(KGToolError) as exc_info:
@@ -375,7 +364,7 @@ class TestKGServiceUsesRegistry:
         })
         store.create_edge("b1", "relates_to", "d1", "a1")
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         results = svc.list_alternatives("b1", "d1")
@@ -393,7 +382,7 @@ class TestKGServiceUsesRegistry:
             "embedding": [1.0, 0.0, 0.0],
         })
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         # find_similar_decisions uses embedder.encode which returns a vector
@@ -401,3 +390,66 @@ class TestKGServiceUsesRegistry:
         # This test validates the flow works without errors.
         results = svc.find_similar_decisions("b1", "authentication")
         assert isinstance(results, list)
+
+    def test_find_similar_is_canonical_while_diagnostic_all_preserves_working(self):
+        from okto_pulse.core.kg.kg_service import KGService
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        class _FixedEmbeddingProvider:
+            dim = 3
+
+            def encode(self, _text: str) -> list[float]:
+                return [1.0, 0.0, 0.0]
+
+            def encode_batch(self, texts: list[str]) -> list[list[float]]:
+                return [self.encode(text) for text in texts]
+
+        store = InMemoryGraphStore()
+        store.bootstrap("b1")
+        store.create_node(
+            "b1",
+            "Decision",
+            "canonical-decision",
+            {
+                "title": "Canonical decision",
+                "embedding": [1.0, 0.0, 0.0],
+                "graph_layer": "canonical",
+            },
+        )
+        store.create_node(
+            "b1",
+            "Decision",
+            "demoted-decision",
+            {
+                "title": "Demoted decision",
+                "embedding": [1.0, 0.0, 0.0],
+                "graph_layer": "working",
+            },
+        )
+        configure_test_kg_registry(
+            graph_provider="inmemory",
+            graph_store=store,
+            embedding_provider=_FixedEmbeddingProvider(),
+        )
+
+        normal_results = KGService().find_similar_decisions(
+            "b1",
+            "same semantic topic",
+            min_similarity=0.9,
+        )
+        diagnostic_results = store.vector_search(
+            "b1",
+            "Decision",
+            [1.0, 0.0, 0.0],
+            top_k=10,
+            min_similarity=0.9,
+            graph_layer="all",
+        )
+
+        assert [item["id"] for item in normal_results] == ["canonical-decision"]
+        assert {item["node_id"] for item in diagnostic_results} == {
+            "canonical-decision",
+            "demoted-decision",
+        }

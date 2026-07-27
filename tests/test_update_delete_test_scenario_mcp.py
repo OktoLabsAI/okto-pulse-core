@@ -10,6 +10,8 @@ new tools (a harness staleness artifact; the server DOES register them).
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -17,13 +19,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Card, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardType, Spec, SpecStatus
 from okto_pulse.core.services.main import SpecService
 
 pytestmark = pytest.mark.asyncio
 
 USER = "udts-agent"
-_EV = {"last_run_at": "2026-05-30T00:00:00", "output_snippet": "1 passed"}
+_EV = {
+    "evidence_class": "automated_test_pointer",
+    "test_file_path": "tests/test_update_delete_test_scenario_mcp.py",
+    "test_function": "test_update_tool_cosmetic_edit_preserves_evidence",
+    "last_run_at": "2026-05-30T00:00:00",
+    "output_snippet": "1 passed",
+}
 
 db_factory_ref: list = [None]
 
@@ -71,7 +79,7 @@ async def _seed(*, status=SpecStatus.IN_PROGRESS, scenarios=None, locked=False,
 
 
 async def _call(tool_name: str, board_id: str, **kw) -> dict:
-    mcp_server.register_session_factory(db_factory_ref[0])
+    register_mcp_test_runtime(db_factory_ref[0])
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(tool_name)

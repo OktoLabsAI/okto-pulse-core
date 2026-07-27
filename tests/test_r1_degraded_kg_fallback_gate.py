@@ -224,14 +224,26 @@ def test_ts_47577f43_no_nonexistent_mcp_tools_named():
 # ── ts_69b4ee2b: test_f16_f17 suite stays green ───────────────────────────────
 
 
-def test_ts_69b4ee2b_f16_f17_suite_is_green():
+def test_ts_69b4ee2b_f16_f17_suite_is_green(tmp_path):
     """TC-I: the test_f16_f17_health_aware_gates.py suite must pass in full
     after the NC-1 degraded-leg flip. Runs the suite as a subprocess so
     isolation is complete."""
     tests_dir = Path(__file__).parent
     suite = str(tests_dir / "test_f16_f17_health_aware_gates.py")
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", suite, "-q", "--tb=short", "--no-header"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            suite,
+            "-q",
+            "--tb=short",
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            "--basetemp",
+            str(tmp_path / "nested-pytest"),
+        ],
         capture_output=True,
         text=True,
         timeout=120,
@@ -261,9 +273,9 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
     import okto_pulse.core.services.kg_health_service as kg_health_service
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.kg.cognitive_closeout_gate import reset_closeout_gate_samples, get_closeout_gate_samples
-    from okto_pulse.core.models.db import Board, Spec, SpecStatus
+    from sqlalchemy_test_models import Board, Spec, SpecStatus
 
-    async def _stub_degraded(board_id, db):
+    async def _stub_degraded(board_id, db, scheduler_control=None):
         return {"graph_state": "recovery_needed"}
 
     monkeypatch.setattr(kg_health_service, "get_kg_health", _stub_degraded)

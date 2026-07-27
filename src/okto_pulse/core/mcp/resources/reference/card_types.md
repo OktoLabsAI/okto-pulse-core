@@ -32,13 +32,13 @@ version: "1.0"
 **Test card naming convention:** Prefix with `[TEST]`:
 Example: `[TEST] E2E — Valid OAuth2 token grants access`
 
-| Status to set | Evidence required |
-|---|---|
-| `draft`, `ready` | none |
-| `automated` | `test_file_path` + `test_function` |
-| `passed`, `failed` | `last_run_at` + (`output_snippet` OR `test_run_id`) |
+Evidence gate for `okto_pulse_update_test_scenario_status` (NC-9, active unless `skip_test_evidence_global=true`):
 
-Pass evidence as a JSON string in the `evidence` parameter of `okto_pulse_update_test_scenario_status`.
+- `draft`, `ready` — evidence optional.
+- `automated` — requires `evidence.test_file_path` + `test_function`.
+- `passed`, `failed` — requires an explicit `evidence_class` with its required fields, OR complete unclassed run-log evidence: `last_run_at` AND (`output_snippet` OR `test_run_id`) AND `expected_output_snapshot` AND `non_replayable_justification`.
+
+Canonical contract (evidence classes, replay rules, skip audit): `okto-pulse://reference/tool-docs/test-scenario`. Pass evidence as a JSON string in the `evidence` parameter.
 
 ## Bug Card Rules
 

@@ -19,7 +19,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
     amendment_status_is_blocking,
     evaluate_amendment_eligibility,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     AmendmentHotfixRevision,
     Board,
@@ -210,8 +210,16 @@ async def test_done_complete_is_canonicalization_candidate(db_factory):
         amendment = await svc.create(
             board_id=board_id, original_spec_id=spec_id, origin_bug_id="bug-1", author=USER
         )
-        await svc.set_lineage_state(amendment.id, AmendmentLineageState.COMPLETE, USER)
-        await svc.set_status(amendment.id, AmendmentRevisionStatus.DONE, USER)
+        amendment = await svc.set_lineage_state(
+            amendment.id,
+            AmendmentLineageState.COMPLETE,
+            USER,
+        )
+        amendment = await svc.set_status(
+            amendment.id,
+            AmendmentRevisionStatus.DONE,
+            USER,
+        )
         verdict = svc.eligibility(amendment)
         assert verdict.lineage_eligible and verdict.canonicalization_candidate
 
@@ -225,3 +233,144 @@ async def test_unknown_status_fails_closed(db_factory):
         )
         with pytest.raises(AmendmentRevisionError, match="unknown_amendment_status"):
             await svc.set_status(amendment.id, "totally_made_up", USER)
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    [
+        AmendmentRevisionStatus.CANCELLED,
+        AmendmentRevisionStatus.SUPERSEDED,
+    ],
+)
+async def test_terminal_revision_rejects_every_subsequent_mutation(
+    db_factory,
+    terminal_status,
+):
+    """Cancelled/superseded revisions are immutable at the lowest write layer."""
+    board_id, spec_id = await _seed_board_spec(db_factory)
+    async with db_factory() as db:
+        svc = AmendmentRevisionService(db)
+        amendment = await svc.create(
+            board_id=board_id,
+            original_spec_id=spec_id,
+            origin_bug_id="bug-1",
+            author=USER,
+        )
+        amendment = await svc.set_status(amendment.id, terminal_status, USER)
+        before_updated_at = amendment.updated_at
+        before_state = {
+            "status": amendment.status,
+            "lineage_state": amendment.lineage_state,
+            "validation_metadata": dict(amendment.validation_metadata or {}),
+            "regression_test_task_ids": list(
+                amendment.regression_test_task_ids or []
+            ),
+            "regression_scenario_ids": list(
+                amendment.regression_scenario_ids or []
+            ),
+            "automated_regression_refs": list(
+                amendment.automated_regression_refs or []
+            ),
+        }
+        audit_count = len(
+            (
+                await db.execute(
+                    select(ActivityLog).where(ActivityLog.board_id == board_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        other_terminal = (
+            AmendmentRevisionStatus.SUPERSEDED
+            if terminal_status is AmendmentRevisionStatus.CANCELLED
+            else AmendmentRevisionStatus.CANCELLED
+        )
+        mutations = [
+            (
+                "status resurrection",
+                lambda: svc.set_status(
+                    amendment.id, AmendmentRevisionStatus.DRAFT, USER
+                ),
+            ),
+            (
+                "terminal status replacement",
+                lambda: svc.set_status(amendment.id, other_terminal, USER),
+            ),
+            (
+                "lineage",
+                lambda: svc.set_lineage_state(
+                    amendment.id, AmendmentLineageState.COMPLETE, USER
+                ),
+            ),
+            (
+                "coverage",
+                lambda: svc.set_coverage_confirmation(
+                    amendment.id,
+                    confirmation={
+                        "regression_test_task_id": "test-1",
+                        "regression_scenario_id": "ts-1",
+                    },
+                    actor=USER,
+                ),
+            ),
+            (
+                "artifact association",
+                lambda: svc.associate_artifacts(
+                    amendment.id,
+                    regression_test_task_ids=["test-1"],
+                    regression_scenario_ids=["ts-1"],
+                    automated_regression_refs=["tests/test_reg.py::test_fix"],
+                    actor=USER,
+                ),
+            ),
+        ]
+        for label, mutate in mutations:
+            with pytest.raises(
+                AmendmentRevisionError,
+                match="terminal_amendment_revision",
+            ) as exc:
+                await mutate()
+            assert exc.value.code == "terminal_amendment_revision", label
+            if label == "status resurrection":
+                assert "target_status='draft'" in str(exc.value)
+            elif label == "terminal status replacement":
+                assert f"target_status='{other_terminal.value}'" in str(exc.value)
+
+        # Retrying the exact terminal status is allowed, but must have no effect.
+        retried = await svc.set_status(amendment.id, terminal_status, USER)
+        assert retried.id == amendment.id
+        # SQLite round-trips UTC timestamps without tzinfo; normalize only that
+        # storage representation difference when proving no timestamp bump.
+        assert retried.updated_at.replace(tzinfo=None) == before_updated_at.replace(
+            tzinfo=None
+        )
+        assert {
+            "status": retried.status,
+            "lineage_state": retried.lineage_state,
+            "validation_metadata": dict(retried.validation_metadata or {}),
+            "regression_test_task_ids": list(
+                retried.regression_test_task_ids or []
+            ),
+            "regression_scenario_ids": list(
+                retried.regression_scenario_ids or []
+            ),
+            "automated_regression_refs": list(
+                retried.automated_regression_refs or []
+            ),
+        } == before_state
+        assert (
+            len(
+                (
+                    await db.execute(
+                        select(ActivityLog).where(
+                            ActivityLog.board_id == board_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            == audit_count
+        )

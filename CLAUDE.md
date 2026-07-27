@@ -4,9 +4,11 @@ This file gives Claude (and humans) what they need to operate this repo.
 Project overview lives in `README.md`; this file is for procedures.
 
 This repo is the internal engine for `okto-pulse`: SQLAlchemy models,
-FastAPI routes, MCP server, embedded knowledge graph (Ladybug). The
-deployable Docker artifact lives in the sibling `okto-pulse` repo, NOT
-here. This package is consumed as a build-time dependency.
+FastAPI routes, MCP server, governance rules and Knowledge Graph contracts.
+Concrete graph runtimes such as the Community Ladybug/Kuzu adapter are supplied
+by the active edition. The deployable Docker artifact lives in the sibling
+`okto-pulse` repo, NOT here. This package is consumed as a build-time
+dependency.
 
 ---
 
@@ -90,18 +92,21 @@ This repo has **no Dockerfile** of its own. It ships as a wheel built into the
 
 The Docker container runs `okto-pulse serve`, which spins up two
 `uvicorn.Server` instances inside one Python process via `asyncio.gather`.
-Why one process: the embedded LadybugDB is single-writer and module-level
-state (the registered SQLAlchemy session factory, the `_global_db` cache,
-the `_active_api_key` `ContextVar`) must be shared between the API listener
-and the MCP listener. Two ports because the SPA fetches go to one
+Why one process in the Community local runtime: the active Ladybug/Kuzu adapter
+is single-writer and module-level state (the registered SQLAlchemy session
+factory, the `_global_db` cache, the `_active_api_key` `ContextVar`) must be
+shared between the API listener and the MCP listener. Two ports because the SPA
+fetches go to one
 (`http://localhost:8100`) and the AI tool's MCP HTTP transport hits the other
 (`http://localhost:8101/mcp`).
 
-`build_mcp_asgi_app()` is the helper the community runner calls to construct
-the MCP ASGI app for its second uvicorn server. `mount_mcp(app)` is an
-alternative path that mounts the MCP sub-app onto an existing FastAPI app.
-Either approach hits the same `register_session_factory` / `ContextVar`
-state.
+`build_mcp_asgi_app(trace_sink=None)` is the helper the community runner calls
+to construct the MCP ASGI app for its second uvicorn server. `mount_mcp(app,
+trace_sink=None)` is an alternative path that mounts the MCP sub-app onto an
+existing FastAPI app. Either approach hits the same `register_session_factory`
+/ `ContextVar` state. MCP replay tracing is enabled only when an edition injects
+an `McpTraceSink`; core does not read `MCP_TRACE_*` / `KG_BASE_DIR`, create
+directories, or write JSONL files directly.
 
 ### MCP host binding
 
@@ -115,7 +120,7 @@ with backports.
 
 ### Persistence
 
-The container writes to `/data`:
+The Community container writes to `/data`:
 - `/data/data/pulse.db` — SQLite (boards, agents, specs, sprints, cards, …)
 - `/data/boards/<board-id>/graph.lbug` — per-board LadybugDB graph
 - `/data/uploads/` — attachments

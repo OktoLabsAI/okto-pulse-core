@@ -13,7 +13,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from okto_pulse.core.kg.embedding import StubEmbeddingProvider, get_embedding_provider
+from kg_registry_testing import configure_real_graph_and_data_test_kg_registry
+from okto_pulse.core.kg.embedding import get_embedding_provider
+from okto_pulse.core.kg.providers.testing.embedding import TestingStubEmbeddingProvider
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     abort_consolidation,
@@ -21,6 +23,7 @@ from okto_pulse.core.kg.primitives import (
     add_node_candidate,
     begin_consolidation,
     commit_consolidation,
+    finalize_deferred_consolidation,
     get_similar_nodes,
     propose_reconciliation,
 )
@@ -29,7 +32,7 @@ from okto_pulse.core.kg.reconciliation import (
     reconcile_candidate,
     reconcile_session,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     NODE_TYPES,
     REL_TYPES,
     SCHEMA_VERSION,
@@ -53,8 +56,9 @@ from okto_pulse.core.kg.schemas import (
     ReconciliationOperation,
 )
 from okto_pulse.core.kg.session_manager import get_session_manager
-from okto_pulse.core.kg.workers import get_cleanup_worker
+from okto_pulse.core.application.processors import SessionCleanupProcessor
 from sqlalchemy import text
+from sqlalchemy_test_models import Board
 
 
 SYSTEM_KG_WRITER = "system:layer1_worker"
@@ -72,6 +76,17 @@ async def _commit_connected_learning_session(
     learning_title: str = "Connected learning",
     learning_content: str = "",
 ):
+    configure_real_graph_and_data_test_kg_registry(db_factory)
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"KG Foundation {board_id}",
+                    owner_id=SYSTEM_KG_WRITER,
+                )
+            )
+            await db.commit()
     root = NodeCandidate(
         candidate_id="tech_root",
         node_type=KGNodeType.ENTITY,
@@ -130,6 +145,12 @@ async def _commit_connected_learning_session(
             ),
             agent_id=SYSTEM_KG_WRITER,
             db=db,
+            defer_session_finalization=True,
+        )
+        await db.commit()
+        await finalize_deferred_consolidation(
+            begin.session_id,
+            agent_id=SYSTEM_KG_WRITER,
         )
     return begin, commit
 
@@ -148,32 +169,49 @@ class TestBootstrapSchema:
 
     def test_vector_index_types(self):
         assert set(VECTOR_INDEX_TYPES) == {
-            "Decision", "Criterion", "Constraint", "Requirement", "Entity",
-            "APIContract", "TestScenario", "Bug", "Learning",
+            "Decision",
+            "Criterion",
+            "Constraint",
+            "Requirement",
+            "Entity",
+            "APIContract",
+            "TestScenario",
+            "Bug",
+            "Learning",
         }
 
     def test_schema_version(self):
         # Monotonic additive bumps preserve the floor (0.3.7 = implements
         # APIContract->Constraint endpoint pair) — assert known-version membership.
-        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
+        assert SCHEMA_VERSION in {
+            "0.3.2",
+            "0.3.3",
+            "0.3.4",
+            "0.3.5",
+            "0.3.6",
+            "0.3.7",
+            "0.3.8",
+            "0.3.9",
+            "0.3.10",
+            "0.3.11",
+            "0.3.12",
+        }
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):
-        from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+        from kg_schema_testing import MULTI_REL_TYPES
 
         rel_pairs = [
-            (rel_name, from_type, to_type)
-            for rel_name, from_type, to_type in REL_TYPES
+            (rel_name, from_type, to_type) for rel_name, from_type, to_type in REL_TYPES
         ]
         for rel_name, pairs in MULTI_REL_TYPES:
             rel_pairs.extend(
-                (rel_name, from_type, to_type)
-                for from_type, to_type in pairs
+                (rel_name, from_type, to_type) for from_type, to_type in pairs
             )
         assert ("implements", "APIContract", "Requirement") in rel_pairs
         assert ("implements", "APIContract", "Constraint") in rel_pairs
 
     def test_belongs_to_accepts_assumption_to_entity(self):
-        from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+        from kg_schema_testing import MULTI_REL_TYPES
 
         belongs_to = dict(MULTI_REL_TYPES)["belongs_to"]
         assert ("Assumption", "Entity") in belongs_to
@@ -190,8 +228,7 @@ class TestBootstrapSchema:
         assert h1.path == h2.path
 
     def test_kuzu_has_all_node_tables(self, board_id):
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             r = conn.execute("CALL SHOW_TABLES() RETURN *")
             tables = {}
             while r.has_next():
@@ -201,12 +238,9 @@ class TestBootstrapSchema:
                 assert nt in tables, f"Missing node table: {nt}"
                 assert tables[nt] == "NODE"
             assert "BoardMeta" in tables
-        finally:
-            del conn, db
 
     def test_kuzu_has_all_rel_tables(self, board_id):
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             r = conn.execute("CALL SHOW_TABLES() RETURN *")
             tables = {}
             while r.has_next():
@@ -215,20 +249,15 @@ class TestBootstrapSchema:
             for rel_name, _, _ in REL_TYPES:
                 assert rel_name in tables, f"Missing rel table: {rel_name}"
                 assert tables[rel_name] == "REL"
-        finally:
-            del conn, db
 
     def test_board_meta_recorded(self, board_id):
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             r = conn.execute(
                 "MATCH (m:BoardMeta {board_id: $b}) RETURN m.schema_version",
                 {"b": board_id},
             )
             assert r.has_next()
             assert r.get_next()[0] == SCHEMA_VERSION
-        finally:
-            del conn, db
 
     @pytest.mark.asyncio
     async def test_sqlite_tables_exist(self, db_factory):
@@ -241,7 +270,9 @@ class TestBootstrapSchema:
                 "global_update_outbox",
             ]:
                 r = await conn.execute(
-                    text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+                    text(
+                        f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'"
+                    )
                 )
                 assert r.scalar() == table, f"Missing table: {table}"
 
@@ -398,7 +429,9 @@ class TestCognitiveEdgeValidation:
 
 class TestHappyPathDedup:
     @pytest.mark.asyncio
-    async def test_full_commit_happy_path(self, board_id, agent_id, db_factory, board_handle):
+    async def test_full_commit_happy_path(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         begin, commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -414,7 +447,9 @@ class TestHappyPathDedup:
         assert commit.connectivity["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_sha256_dedup_nothing_changed(self, board_id, agent_id, db_factory, board_handle):
+    async def test_sha256_dedup_nothing_changed(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         content = "dedup target content"
         b1, _commit = await _commit_connected_learning_session(
             board_id=board_id,
@@ -440,7 +475,9 @@ class TestHappyPathDedup:
         assert b2.previous_session_id == b1.session_id
 
     @pytest.mark.asyncio
-    async def test_propose_returns_add_for_new(self, board_id, agent_id, db_factory, board_handle):
+    async def test_propose_returns_add_for_new(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -511,7 +548,7 @@ class TestReconciliationRules:
             source_confidence=0.9,
         )
         match = ExistingNodeSummary(
-            kuzu_node_id="kg:d1",
+            graph_node_id="kg:d1",
             node_type="Decision",
             stable_id=None,
             title="X",
@@ -529,7 +566,7 @@ class TestReconciliationRules:
             source_confidence=0.9,
         )
         match = ExistingNodeSummary(
-            kuzu_node_id="kg:d2",
+            graph_node_id="kg:d2",
             node_type="Decision",
             stable_id=None,
             title="Y",
@@ -538,24 +575,83 @@ class TestReconciliationRules:
         h = reconcile_candidate(cand, nothing_changed=False, existing_matches=[match])
         assert h.operation == ReconciliationOperation.SUPERSEDE
 
-    def test_update_by_stable_id(self):
+    def test_stable_id_selects_decision_lineage_without_overwriting_history(self):
         cand = NodeCandidate(
             candidate_id="c1",
             node_type=KGNodeType.DECISION,
             title="X",
+            content="new assertion",
             source_artifact_ref="orn:spec:x",
             source_confidence=0.9,
         )
         match = ExistingNodeSummary(
-            kuzu_node_id="kg:d3",
+            graph_node_id="kg:d3",
             node_type="Decision",
             stable_id="orn:spec:x",
             title="Old",
+            content="old assertion",
             similarity=0.1,
         )
         h = reconcile_candidate(cand, nothing_changed=False, existing_matches=[match])
-        assert h.operation == ReconciliationOperation.UPDATE
+        assert h.operation == ReconciliationOperation.SUPERSEDE
         assert h.target_node_id == "kg:d3"
+        assert h.confidence == 0.1
+
+    def test_stable_id_allows_semantically_identical_decision_reattestation(self):
+        cand = NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.DECISION,
+            title="Keep immutable history",
+            content="Same assertion",
+            context="Same context",
+            justification="Same reason",
+            source_artifact_ref="orn:spec:x",
+            source_confidence=0.9,
+        )
+        match = ExistingNodeSummary(
+            graph_node_id="kg:d3",
+            node_type="Decision",
+            stable_id="orn:spec:x",
+            title="Keep immutable history",
+            content="Same assertion",
+            context="Same context",
+            justification="Same reason",
+            similarity=0.0,
+        )
+
+        hint = reconcile_candidate(
+            cand,
+            nothing_changed=False,
+            existing_matches=[match],
+        )
+
+        assert hint.operation == ReconciliationOperation.UPDATE
+        assert hint.confidence == 0.9
+
+    def test_high_similarity_cannot_hide_decision_semantic_change(self):
+        cand = NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.DECISION,
+            title="Use queue",
+            content="Choose RabbitMQ",
+            source_confidence=0.9,
+        )
+        match = ExistingNodeSummary(
+            graph_node_id="kg:d4",
+            node_type="Decision",
+            stable_id=None,
+            title="Use queue",
+            content="Choose Kafka",
+            similarity=0.99,
+        )
+
+        hint = reconcile_candidate(
+            cand,
+            nothing_changed=False,
+            existing_matches=[match],
+        )
+
+        assert hint.operation == ReconciliationOperation.SUPERSEDE
 
     def test_reconcile_session_batch(self):
         cands = {
@@ -577,9 +673,7 @@ class TestReconciliationRules:
             nothing_changed=True,
             existing_matches_by_candidate={},
         )
-        assert all(
-            h.operation == ReconciliationOperation.NOOP for h in hints.values()
-        )
+        assert all(h.operation == ReconciliationOperation.NOOP for h in hints.values())
 
 
 # ============================================================================
@@ -589,7 +683,9 @@ class TestReconciliationRules:
 
 class TestErrorCases:
     @pytest.mark.asyncio
-    async def test_expired_session_returns_not_found(self, board_id, agent_id, db_factory):
+    async def test_expired_session_returns_not_found(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -621,7 +717,9 @@ class TestErrorCases:
         assert exc_info.value.code == "session_not_found"
 
     @pytest.mark.asyncio
-    async def test_duplicate_candidate_id_rejected(self, board_id, agent_id, db_factory):
+    async def test_duplicate_candidate_id_rejected(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -659,7 +757,9 @@ class TestErrorCases:
         assert exc_info.value.code == "duplicate_candidate_id"
 
     @pytest.mark.asyncio
-    async def test_edge_references_unknown_candidate(self, board_id, agent_id, db_factory):
+    async def test_edge_references_unknown_candidate(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -718,7 +818,9 @@ class TestErrorCases:
 
 class TestOwnershipHNSWIdempotency:
     @pytest.mark.asyncio
-    async def test_wrong_agent_cannot_add_candidate(self, board_id, agent_id, db_factory):
+    async def test_wrong_agent_cannot_add_candidate(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -745,7 +847,9 @@ class TestOwnershipHNSWIdempotency:
         assert exc_info.value.code == "session_ownership_mismatch"
 
     @pytest.mark.asyncio
-    async def test_hnsw_returns_similar(self, board_id, agent_id, db_factory, board_handle):
+    async def test_hnsw_returns_similar(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -795,7 +899,7 @@ class TestOwnershipHNSWIdempotency:
 
     def test_embedding_stub_deterministic(self):
         prov = get_embedding_provider()
-        assert isinstance(prov, StubEmbeddingProvider)
+        assert isinstance(prov, TestingStubEmbeddingProvider)
         v1 = prov.encode("hello world")
         v2 = prov.encode("hello world")
         assert v1 == v2
@@ -817,8 +921,10 @@ class TestOwnershipHNSWIdempotency:
 
 class TestAuditRowSchema:
     @pytest.mark.asyncio
-    async def test_audit_row_has_all_fields(self, board_id, agent_id, db_factory, board_handle):
-        b, _commit = await _commit_connected_learning_session(
+    async def test_audit_row_has_all_fields(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
+        b, commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
             artifact_type="spec",
@@ -843,23 +949,28 @@ class TestAuditRowSchema:
             )
             row = r.fetchone()
             assert row is not None
-            assert row[0] == b.session_id       # session_id
-            assert row[1] == board_id            # board_id
-            assert row[2] == "spec-audit"        # artifact_id
-            assert row[3] == "spec"              # artifact_type
-            assert row[4] == SYSTEM_KG_WRITER    # agent_id
-            assert row[5] is not None            # started_at
-            assert row[6] is not None            # committed_at
-            assert row[7] >= 1                   # nodes_added
-            assert row[8] >= 0                   # nodes_updated
-            assert row[9] == 0                   # nodes_superseded
-            assert row[10] == 1                  # edges_added
+            assert row[0] == b.session_id  # session_id
+            assert row[1] == board_id  # board_id
+            assert row[2] == "spec-audit"  # artifact_id
+            assert row[3] == "spec"  # artifact_type
+            assert row[4] == SYSTEM_KG_WRITER  # agent_id
+            assert row[5] is not None  # started_at
+            assert row[6] is not None  # committed_at
+            assert row[7] >= 1  # nodes_added
+            assert row[8] >= 0  # nodes_updated
+            assert row[9] == 0  # nodes_superseded
+            # The commit may also attach a deterministic belongs_to
+            # provenance backbone when a source root already exists.
+            assert row[10] >= 1  # edges_added
+            assert row[10] == commit.edges_added
             assert row[11] == "Audit test summary"  # summary_text
-            assert len(row[12]) == 64            # content_hash (sha256 hex)
-            assert row[13] == "none"             # undo_status
+            assert len(row[12]) == 64  # content_hash (sha256 hex)
+            assert row[13] == "none"  # undo_status
 
     @pytest.mark.asyncio
-    async def test_kuzu_node_refs_linked_to_audit(self, board_id, agent_id, db_factory, board_handle):
+    async def test_kuzu_node_refs_linked_to_audit(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         b, _commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -880,7 +991,9 @@ class TestAuditRowSchema:
             assert r.scalar() >= 3
 
     @pytest.mark.asyncio
-    async def test_outbox_event_created(self, board_id, agent_id, db_factory, board_handle):
+    async def test_outbox_event_created(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         b, _commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -926,9 +1039,13 @@ class TestCleanupWorker:
                 ttl_seconds=60,
             )
         # Expire 2
-        (await mgr.get("sweep_0")).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-        (await mgr.get("sweep_1")).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-        worker = get_cleanup_worker()
+        (await mgr.get("sweep_0")).expires_at = datetime.now(timezone.utc) - timedelta(
+            seconds=1
+        )
+        (await mgr.get("sweep_1")).expires_at = datetime.now(timezone.utc) - timedelta(
+            seconds=1
+        )
+        worker = SessionCleanupProcessor()
         expired = await worker.sweep_once()
         assert expired == 2
         assert await mgr.active_count() == 1

@@ -246,3 +246,26 @@ def test_mcp_tool_is_patched() -> None:
     from okto_pulse.core.mcp import server as mcp_server
 
     assert getattr(mcp_server.mcp.tool, "_xml_safety_patched", False) is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_patch_is_rebound_for_each_runtime_clone() -> None:
+    """A catalog snapshot keeps XML safety without sharing clone mutations."""
+
+    from okto_pulse.core.mcp import server as mcp_server
+
+    source = mcp_server.mcp.resolve()
+    clone = source.clone_for_runtime()
+    nested_clone = clone.clone_for_runtime()
+
+    assert getattr(clone.tool, "_xml_safety_patched", False) is True
+    assert getattr(nested_clone.tool, "_xml_safety_patched", False) is True
+
+    @clone.tool()
+    async def runtime_clone_probe(value: str) -> str:
+        return value
+
+    registered = await clone.get_tool("runtime_clone_probe")
+    assert getattr(registered.fn, "_xml_safety_wrapped", False) is True
+    assert "runtime_clone_probe" not in await source.get_tools()
+    assert "runtime_clone_probe" not in await nested_clone.get_tools()

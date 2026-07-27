@@ -19,6 +19,8 @@ Reproduce:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 
@@ -27,7 +29,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BoardDesignSystem,
     DefaultBoardConfiguration,
@@ -58,7 +60,7 @@ async def _call(name: str, **kwargs) -> dict:
 
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)

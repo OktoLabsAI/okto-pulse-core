@@ -10,12 +10,13 @@ from __future__ import annotations
 import pytest
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
+from okto_pulse.core.domain.realm import RealmScope
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
-from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
+from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.core.kg.providers.testing.memory import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
 
 
@@ -44,6 +45,9 @@ class MockAuthContext:
     async def get_accessible_boards(self) -> list[str]:
         return self._boards
 
+    async def get_realm_scope(self) -> RealmScope:
+        return RealmScope.tenant("test-realm")
+
     def has_admin_role(self) -> bool:
         return False
 
@@ -54,6 +58,9 @@ class UnauthenticatedContext:
 
     async def get_accessible_boards(self) -> list[str]:
         return []
+
+    async def get_realm_scope(self) -> RealmScope:
+        return RealmScope.tenant("test-realm")
 
     def has_admin_role(self) -> bool:
         return False
@@ -96,7 +103,7 @@ class TestAuthContextFactory:
     @pytest.mark.asyncio
     async def test_factory_via_registry(self):
         mock = MockAuthContext(agent_id="factory-agent", boards=["b1"])
-        configure_kg_registry(auth_context_factory=lambda: mock)
+        configure_test_kg_registry(auth_context_factory=lambda: mock)
         reg = get_kg_registry()
         auth = reg.auth_context_factory()
         assert await auth.get_agent_id() == "factory-agent"
@@ -119,7 +126,7 @@ class TestE2EInMemoryProviders:
     async def test_begin_and_session_lifecycle(self):
         audit_repo = InMemoryAuditRepository()
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -146,7 +153,7 @@ class TestE2EInMemoryProviders:
     async def test_add_candidates_in_memory(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -193,7 +200,7 @@ class TestE2EInMemoryProviders:
     async def test_abort_cleans_session(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -231,7 +238,7 @@ class TestE2EInMemoryProviders:
     async def test_nothing_changed_detection(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -248,7 +255,8 @@ class TestE2EInMemoryProviders:
         content = "same content"
         h = compute_content_hash(content, "art-4", "test-board")
         now = datetime.now(timezone.utc)
-        await audit_repo.commit_consolidation_records(
+        await audit_repo.stage_consolidation_records(
+            object(),
             ConsolidationAuditData(
                 session_id="prev-session", board_id="test-board",
                 artifact_id="art-4", artifact_type="spec",
@@ -278,7 +286,7 @@ class TestE2EInMemoryProviders:
     @pytest.mark.asyncio
     async def test_sweep_expired_in_memory(self):
         session_store = InMemorySessionStore(default_ttl_seconds=0)
-        configure_kg_registry(session_store=session_store)
+        configure_test_kg_registry(session_store=session_store)
 
         from okto_pulse.core.kg.schemas import BeginConsolidationRequest
         from okto_pulse.core.kg.primitives import begin_consolidation

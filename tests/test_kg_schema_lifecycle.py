@@ -14,15 +14,16 @@ from __future__ import annotations
 import gc
 import os
 import threading
+from contextvars import copy_context
 
 import pytest
 
-from okto_pulse.core.kg.connection_pool import (
+from okto_pulse.community.adapters.graph_connection_pool import (
     ConnectionPool,
     _read_cap_from_env,
     reset_connection_pool_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     BoardConnection,
     bootstrap_board_graph,
     close_all_connections,
@@ -98,37 +99,39 @@ def test_pool_evicts_lru_when_at_cap(fresh_boards):
     pool = ConnectionPool(cap=2)
     bid_a, bid_b, bid_c, _ = fresh_boards
 
-    bc_a = pool.acquire(bid_a)
-    _bc_b = pool.acquire(bid_b)
-    assert len(pool) == 2
+    try:
+        bc_a = pool.acquire(bid_a)
+        _bc_b = pool.acquire(bid_b)
+        assert len(pool) == 2
 
-    _bc_c = pool.acquire(bid_c)  # evicts A (LRU)
-    assert len(pool) == 2
-    assert bid_a not in pool
-    assert bid_b in pool
-    assert bid_c in pool
+        _bc_c = pool.acquire(bid_c)  # evicts A (LRU)
+        assert len(pool) == 2
+        assert bid_a not in pool
+        assert bid_b in pool
+        assert bid_c in pool
 
-    # Re-acquiring A produces a fresh BoardConnection
-    bc_a2 = pool.acquire(bid_a)
-    assert bc_a2 is not bc_a
-
-    pool.close_all()
+        # Re-acquiring A produces a fresh BoardConnection
+        bc_a2 = pool.acquire(bid_a)
+        assert bc_a2 is not bc_a
+    finally:
+        pool.close_all()
 
 
 def test_pool_lru_order_updates_on_hit(fresh_boards):
     pool = ConnectionPool(cap=2)
     bid_a, bid_b, bid_c, _ = fresh_boards
 
-    pool.acquire(bid_a)
-    pool.acquire(bid_b)
-    pool.acquire(bid_a)  # touch A -> B becomes LRU
-    pool.acquire(bid_c)  # evicts B
+    try:
+        pool.acquire(bid_a)
+        pool.acquire(bid_b)
+        pool.acquire(bid_a)  # touch A -> B becomes LRU
+        pool.acquire(bid_c)  # evicts B
 
-    assert bid_a in pool
-    assert bid_c in pool
-    assert bid_b not in pool
-
-    pool.close_all()
+        assert bid_a in pool
+        assert bid_c in pool
+        assert bid_b not in pool
+    finally:
+        pool.close_all()
 
 
 # ----------------------------------------------------------------------
@@ -138,22 +141,28 @@ def test_pool_lru_order_updates_on_hit(fresh_boards):
 def test_pool_cap_zero_returns_fresh_each_time(fresh_boards):
     pool = ConnectionPool(cap=0)
     bid = fresh_boards[0]
+    bc1 = None
+    bc2 = None
 
-    assert pool.enabled is False
+    try:
+        assert pool.enabled is False
 
-    bc1 = pool.acquire(bid)
-    bc1.close()  # Release the lock before acquiring again (Kùzu single-owner).
+        bc1 = pool.acquire(bid)
+        bc1.close()  # Release the lock before acquiring again (Kùzu single-owner).
 
-    bc2 = pool.acquire(bid)
-    assert bc1 is not bc2
-    assert len(pool) == 0
-
-    bc2.close()
+        bc2 = pool.acquire(bid)
+        assert bc1 is not bc2
+        assert len(pool) == 0
+    finally:
+        if bc1 is not None:
+            bc1.close()
+        if bc2 is not None:
+            bc2.close()
 
 
 def test_env_reader_parses_values(monkeypatch):
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "3")
-    assert _read_cap_from_env() == 3
+    assert _read_cap_from_env() == 2
 
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "0")
     assert _read_cap_from_env() == 0
@@ -162,11 +171,11 @@ def test_env_reader_parses_values(monkeypatch):
     assert _read_cap_from_env() == 0
 
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "abc")
-    # Falls back to default (8) on invalid input
-    assert _read_cap_from_env() == 8
+    # Falls back to the safe configured default on invalid input.
+    assert _read_cap_from_env() == 2
 
     monkeypatch.delenv("KG_CONNECTION_POOL_SIZE", raising=False)
-    assert _read_cap_from_env() == 8
+    assert _read_cap_from_env() == 2
 
 
 # ----------------------------------------------------------------------
@@ -174,7 +183,7 @@ def test_env_reader_parses_values(monkeypatch):
 # ----------------------------------------------------------------------
 
 def test_pool_concurrent_acquire_is_safe(fresh_boards):
-    pool = ConnectionPool(cap=4)
+    pool = ConnectionPool(cap=2)
     errors: list[Exception] = []
     barrier = threading.Barrier(4)
 
@@ -190,17 +199,22 @@ def test_pool_concurrent_acquire_is_safe(fresh_boards):
             errors.append(exc)
 
     threads = [
-        threading.Thread(target=worker, args=(fresh_boards[i],))
+        threading.Thread(
+            target=copy_context().run,
+            args=(worker, fresh_boards[i % 2]),
+        )
         for i in range(4)
     ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=10)
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
 
-    assert not errors, f"concurrent failures: {errors!r}"
-    assert len(pool) == 4
-    pool.close_all()
+        assert not errors, f"concurrent failures: {errors!r}"
+        assert len(pool) == 2
+    finally:
+        pool.close_all()
 
 
 # ----------------------------------------------------------------------
@@ -208,17 +222,44 @@ def test_pool_concurrent_acquire_is_safe(fresh_boards):
 # ----------------------------------------------------------------------
 
 def test_pool_close_all_empties_and_allows_reopen(fresh_boards):
-    pool = ConnectionPool(cap=4)
-    for bid in fresh_boards[:3]:
-        pool.acquire(bid)
-    assert len(pool) == 3
+    pool = ConnectionPool(cap=2)
+    try:
+        for bid in fresh_boards[:2]:
+            pool.acquire(bid)
+        assert len(pool) == 2
 
-    pool.close_all()
-    assert len(pool) == 0
+        pool.close_all()
+        assert len(pool) == 0
 
-    # File locks released — re-opening must succeed on Windows.
-    with open_board_connection(fresh_boards[0]) as (_db, conn):
-        conn.execute("MATCH (m:BoardMeta) RETURN count(m)")
+        # File locks released — re-opening must succeed on Windows.
+        with open_board_connection(fresh_boards[0]) as (_db, conn):
+            conn.execute("MATCH (m:BoardMeta) RETURN count(m)")
+    finally:
+        pool.close_all()
+
+
+def test_pool_cleanup_after_exception_releases_native_admissions(fresh_boards):
+    """A failed assertion path must not pin both native cache admissions."""
+    pool = ConnectionPool(cap=2)
+    try:
+        with pytest.raises(RuntimeError, match="simulated assertion path"):
+            try:
+                pool.acquire(fresh_boards[0])
+                pool.acquire(fresh_boards[1])
+                raise RuntimeError("simulated assertion path")
+            finally:
+                pool.close_all()
+        assert len(pool) == 0
+
+        probe = ConnectionPool(cap=2)
+        try:
+            probe.acquire(fresh_boards[2])
+            probe.acquire(fresh_boards[3])
+            assert len(probe) == 2
+        finally:
+            probe.close_all()
+    finally:
+        pool.close_all()
 
 
 def test_close_all_connections_accepts_specific_board(fresh_boards):

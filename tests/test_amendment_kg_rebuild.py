@@ -8,13 +8,15 @@ Covers FR5/FR6 + TR3/TR4 + G4:
   NEVER re-emits the original spec node (AC1);
 * amendment sources are counted in expected_layers and enqueued for
   materialization (not counted-but-skipped → no false MATERIALIZED_LAYER_MISMATCH);
-* backward compatibility for boards without amendment rows.
+* complete empty amendment partitions and fail-closed legacy schemas.
 
 Reproduce:
   .venv/Scripts/python -m pytest -p no:logging -q tests/test_amendment_kg_rebuild.py
 """
 
 from __future__ import annotations
+
+import pytest
 
 import okto_pulse.core.kg.rebuild_service as rebuild_service
 from okto_pulse.core.kg.board_rebuild_adapter import (
@@ -31,7 +33,8 @@ from okto_pulse.core.kg.source_maturity import (
     WORKING_ARTIFACT_TYPES,
     classify_source_for_kg,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from okto_pulse.core.application.rebuild_ports import SourceUnavailableError
 
 AMD = "amendment_hotfix_revision"
 
@@ -186,8 +189,8 @@ def test_expected_layers_counts_amendment_canonical():
 def _temp_pulse_db(tmp_path):
     """A self-contained sync SQLite pulse.db with the full schema (create_all)."""
     from sqlalchemy import create_engine
-    from okto_pulse.core.infra.database import Base
-    import okto_pulse.core.models.db  # noqa: F401 — register all tables
+    from sqlalchemy_test_models import Base
+    import sqlalchemy_test_models  # noqa: F401 - register all tables
 
     db_file = tmp_path / "pulse.db"
     engine = create_engine(f"sqlite:///{db_file}")
@@ -197,7 +200,7 @@ def _temp_pulse_db(tmp_path):
 
 def test_board_source_store_enumerates_amendment(tmp_path):
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         AmendmentHotfixRevision,
         Board,
         Spec,
@@ -207,7 +210,7 @@ def test_board_source_store_enumerates_amendment(tmp_path):
         AmendmentLineageState,
         AmendmentRevisionStatus,
     )
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-amd"
@@ -241,12 +244,12 @@ def test_board_source_store_enumerates_amendment(tmp_path):
 
 def test_board_source_store_amendment_working_when_not_done(tmp_path):
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import AmendmentHotfixRevision, Board
+    from sqlalchemy_test_models import AmendmentHotfixRevision, Board
     from okto_pulse.core.domain.amendment_eligibility import (
         AmendmentLineageState,
         AmendmentRevisionStatus,
     )
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-amd2"
@@ -266,13 +269,13 @@ def test_board_source_store_amendment_working_when_not_done(tmp_path):
     ).graph_layer == "working"  # approved -> working-only before done
 
 
-def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
-    # TR4: a legacy board whose schema lacks the amendment table must not crash
-    # the source store (existence-guarded, silent skip).
+def test_board_without_amendment_table_is_incomplete_fail_closed(tmp_path):
+    # A missing authoritative partition cannot be treated as a proven empty set:
+    # the durable snapshot is explicitly incomplete and sequence consumption fails.
     from sqlalchemy import text
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import Board
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from sqlalchemy_test_models import Board
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-legacy"
@@ -283,8 +286,13 @@ def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS amendment_hotfix_revisions"))
 
-    rows = BoardSourceStore(db_path).fetch(board_id)  # must not raise
-    assert [r for r in rows if r["artifact_type"] == AMD] == []
+    snapshot = BoardSourceStore(db_path).fetch(board_id)
+
+    assert snapshot.rows == ()
+    assert snapshot.complete is False
+    assert snapshot.cause == "table_missing"
+    with pytest.raises(SourceUnavailableError):
+        list(snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -298,12 +306,12 @@ def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
 def _hash_for_amendment(tmp_path, tag, **fields):
     """Enumerate ONE amendment (isolated db) and return its content_hash."""
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import AmendmentHotfixRevision, Board
+    from sqlalchemy_test_models import AmendmentHotfixRevision, Board
     from okto_pulse.core.domain.amendment_eligibility import (
         AmendmentLineageState,
         AmendmentRevisionStatus,
     )
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     sub = tmp_path / tag
     sub.mkdir()
@@ -360,8 +368,10 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     import sqlite3
 
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import Board
-    from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
+    from sqlalchemy_test_models import Board
+    from okto_pulse.community.adapters.board_rebuild_ingestion import (
+        BoardRebuildIngestionAdapter,
+    )
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-enq"
@@ -399,13 +409,31 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     assert amd_rows[0]["artifact_type"] == AMD
     assert amd_rows[0]["status"] == "pending"
 
-    # idempotent re-enqueue resets the SAME row to pending (no duplicate row).
+    # idempotent re-enqueue leaves the active pending row alone (no duplicate row).
     counts2 = adapter.enqueue_sources(
         board_id=board_id,
         run_id="run-2",
         sources=[{"artifact_type": AMD, "id": "amd1"}],
     )
-    assert counts2["reset_to_pending"] == 1
+    assert counts2["inserted"] == 0
+    assert counts2["reset_to_pending"] == 0
+    assert counts2["left_alone"] == 1
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        amd_rows_after = conn.execute(
+            "SELECT artifact_type, status, source FROM consolidation_queue "
+            "WHERE board_id=? AND artifact_id=?",
+            (board_id, "amd1"),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert len(amd_rows_after) == 1
+    assert amd_rows_after[0]["artifact_type"] == AMD
+    assert amd_rows_after[0]["status"] == "pending"
+    assert amd_rows_after[0]["source"] == "rebuild:run-1"
 
 
 # ---------------------------------------------------------------------------

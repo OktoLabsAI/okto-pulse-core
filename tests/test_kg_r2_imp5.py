@@ -1,11 +1,12 @@
-"""R2-IMP5 — sync deterministic stale demotion with Global Discovery via R1.
+"""R2-IMP5 — exercise digest parity after a deterministic stale demotion.
 
 Spec 9aedfe78 / card fb2d683f (TR3/TR10/AC7).
 
 Anti-test-theater: the canonical starting point is a REAL Spec + DeterministicWorker
 + commit, the DecisionDigest is created by the REAL Global Discovery outbox worker,
 and the convergence is the EXISTING R1-IMP1 parity reconciler (the GD worker's
-_apply_event) — R2 only enqueues. R1 is consumed unchanged.
+_apply_event). The reconciler is graph-only; Card 6 worker tests own the durable
+ledger/outbox/queue transfer, while this module consumes R1 unchanged.
 """
 
 from __future__ import annotations
@@ -22,11 +23,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2i5_"))
 
 from okto_pulse.core.kg.canonical_stale_reconciler import reconcile_stale_canonical
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.kg.canonical_demotion_global_sync import (
+    enqueue_digest_layer_reconciliation,
+)
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
-    reset_global_db_for_tests,
+    execute_global_read,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.primitives import (
     add_edge_candidate,
@@ -34,7 +39,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -42,28 +47,41 @@ from okto_pulse.core.kg.schemas import (
     ProposeReconciliationRequest,
 )
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
-from okto_pulse.core.models.db import (
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from sqlalchemy_test_models import (
     Board,
     GlobalUpdateOutbox,
     KuzuNodeRef,
     Spec,
+)
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
 )
 
 USER_ID = "user-r2-imp5"
 QUERY_TEXT = "FR alpha parity sync requirement"
 
 
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -74,7 +92,10 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 
 async def _new_board(db_factory) -> str:
     board_id = f"r2i5-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2_imp5.bootstrap_board_graph",
+    )
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="r2 imp5", owner_id=USER_ID))
@@ -155,11 +176,44 @@ def _first_canonical_requirement(board_id) -> tuple[str, str] | None:
     return None
 
 
+async def _first_canonical_requirement_async(
+    board_id: str,
+) -> tuple[str, str] | None:
+    return await run_blocking_graph_io(
+        lambda: _first_canonical_requirement(board_id),
+        task_name="tests.r2_imp5.first_canonical_requirement",
+    )
+
+
+async def _ensure_outbox_audit_parent(db, board_id: str, session_id: str) -> None:
+    """Persist the relational parents required by KuzuNodeRef fixtures."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy_test_models import ConsolidationAudit
+
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name=f"R2 IMP5 {board_id}", owner_id=USER_ID))
+        await db.flush()
+    if await db.get(ConsolidationAudit, session_id) is None:
+        now = datetime.now(timezone.utc)
+        db.add(ConsolidationAudit(
+            session_id=session_id,
+            board_id=board_id,
+            artifact_id=f"outbox-{session_id[-16:]}",
+            artifact_type="test_fixture",
+            agent_id=USER_ID,
+            started_at=now,
+            committed_at=now,
+        ))
+        await db.flush()
+
+
 async def _digest_node_via_gd_worker(db_factory, board_id, node_id, node_type):
     """Create the DecisionDigest by the REAL GD outbox pipeline (add-ref + event)."""
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))
+        await _ensure_outbox_audit_parent(db, board_id, session_id)
         db.add(KuzuNodeRef(
             session_id=session_id, board_id=board_id,
             kuzu_node_id=node_id, kuzu_node_type=node_type, operation="add",
@@ -170,24 +224,20 @@ async def _digest_node_via_gd_worker(db_factory, board_id, node_id, node_type):
             payload={"session_id": session_id, "nodes_added": 1},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 async def _drain_gd_worker(db_factory) -> int:
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 def _digest_layer(board_id, node_id) -> str | None:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
-            "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
-            "RETURN coalesce(d.graph_layer, 'legacy_unknown')",
-            {"b": board_id, "n": node_id},
-        )
-        return str(res.get_next()[0]) if res.has_next() else None
-    finally:
-        del gconn, _gdb
+    res = execute_global_read(
+        "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
+        "RETURN coalesce(d.graph_layer, 'legacy_unknown')",
+        {"b": board_id, "n": node_id},
+    )
+    return str(res.rows[0][0]) if res.rows else None
 
 
 def _query_ids(board_id, layer):
@@ -196,21 +246,13 @@ def _query_ids(board_id, layer):
     flakiness; this is the exact filter that decides what query_global can return)."""
     from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 
-    _gdb, gconn = open_global_connection()
-    try:
-        cypher = (
-            "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
-            "WHERE b.board_id = $bid AND " + layer_filter_clause("d") + " "
-            "RETURN d.original_node_id"
-        )
-        res = gconn.execute(cypher, {"bid": board_id, "graph_layer": layer})
-        out = set()
-        while res.has_next():
-            row = res.get_next()
-            out.add(str(row[0]))
-        return out
-    finally:
-        del gconn, _gdb
+    cypher = (
+        "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
+        "WHERE b.board_id = $bid AND " + layer_filter_clause("d") + " "
+        "RETURN d.original_node_id"
+    )
+    res = execute_global_read(cypher, {"bid": board_id, "graph_layer": layer})
+    return {str(row[0]) for row in res.rows}
 
 
 # ===========================================================================
@@ -226,7 +268,7 @@ async def test_demotion_syncs_global_discovery_canonical_disappears(db_factory):
     result = DeterministicWorker().process_spec(_spec_dict(spec_id, board_id, "done"))
     await _commit_worker_result(db_factory, board_id, result)
 
-    req = _first_canonical_requirement(board_id)
+    req = await _first_canonical_requirement_async(board_id)
     assert req is not None, "pipeline must produce a canonical Requirement"
     req_id, _title = req
 
@@ -235,14 +277,21 @@ async def test_demotion_syncs_global_discovery_canonical_disappears(db_factory):
     assert _digest_layer(board_id, req_id) == "canonical"
     assert req_id in _query_ids(board_id, "canonical"), "sanity: canonical query returns it"
 
-    # Regress the source + run the R2 stale reconciler -> demotes board node +
-    # enqueues the R1 Global Discovery sync.
+    # Regress the source + run the graph-only stale reconciler. Delivery is a
+    # separate durable ownership boundary now; this lower-level R1 proof
+    # explicitly supplies its parity trigger.
     await _set_spec_status(db_factory, spec_id, "draft")
     async with db_factory() as db:
         rec = await reconcile_stale_canonical(db, board_id=board_id)
+        await enqueue_digest_layer_reconciliation(
+            db,
+            board_id=board_id,
+            reason="stale_demotion_parity",
+            idempotency_key=f"r2-imp5:{board_id}:{spec_id}",
+        )
         await db.commit()
     assert rec.demoted, rec.to_dict()
-    assert rec.global_sync_enqueued is True
+    assert rec.global_sync_enqueued is False
 
     # The GD worker runs the EXISTING R1 parity reconciler -> digest converges.
     assert await _drain_gd_worker(db_factory) == 1
@@ -252,23 +301,24 @@ async def test_demotion_syncs_global_discovery_canonical_disappears(db_factory):
     assert req_id not in _query_ids(board_id, "canonical")
     assert req_id in _query_ids(board_id, "all")
 
-    # Idempotent: a second sweep finds nothing to demote and re-sync is a no-op.
+    # Idempotent: a second graph sweep finds nothing to demote and never emits
+    # delivery by itself.
     async with db_factory() as db:
         rec2 = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert rec2.demoted == []
     assert rec2.global_sync_enqueued is False
-    assert await _drain_gd_worker(db_factory) in (0, 1)  # no churn either way
+    assert await _drain_gd_worker(db_factory) == 0
     assert _digest_layer(board_id, req_id) == "working"
 
 
 # ===========================================================================
-# Coupling: a demotion always enqueues the GD sync (additive on R2-IMP1)
+# Ownership boundary: the bare graph reconciler never enqueues GD delivery
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_reconcile_demotion_enqueues_global_sync_event(db_factory):
+async def test_bare_reconciler_never_enqueues_global_sync_event(db_factory):
     board_id = await _new_board(db_factory)
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"
     await _insert_spec(db_factory, board_id, spec_id, status="done")
@@ -281,7 +331,7 @@ async def test_reconcile_demotion_enqueues_global_sync_event(db_factory):
         await db.commit()
         rec = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
-    assert rec.demoted and rec.global_sync_enqueued is True
+    assert rec.demoted and rec.global_sync_enqueued is False
 
     # A Global Discovery outbox event was enqueued for the board (the R1 trigger).
     async with db_factory() as db:
@@ -289,5 +339,4 @@ async def test_reconcile_demotion_enqueues_global_sync_event(db_factory):
         rows = (await db.execute(
             select(GlobalUpdateOutbox).where(GlobalUpdateOutbox.board_id == board_id)
         )).scalars().all()
-    assert any((r.payload or {}).get("reason") == "r2_stale_demotion_global_sync"
-               for r in rows)
+    assert rows == []

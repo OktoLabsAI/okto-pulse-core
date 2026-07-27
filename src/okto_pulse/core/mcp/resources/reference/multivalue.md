@@ -48,47 +48,9 @@ This closes the NC-3/G-2 leak where comma-only prose raised an uncaught exceptio
 2. If you must send a string, send a **JSON array** when items contain `|` or `,` or any punctuation that risks being a separator.
 3. Pipe is a convenience — never a contract.
 
-## Ideation Domain Examples
+## Canonical Example
 
-`okto_pulse_create_ideation.labels` and `okto_pulse_update_ideation.labels` accept native list:
-
-```python
-okto_pulse_create_ideation(
-    board_id="...", title="New idea",
-    labels=["product, ux", "discovery"],   # native list — commas inside survive
-)
-```
-
-## Refinement Domain Examples
-
-`okto_pulse_create_refinement.labels` and `okto_pulse_update_refinement.labels` accept native list:
-
-```python
-okto_pulse_create_refinement(
-    board_id="...", ideation_id="...", title="API design refinement",
-    labels=["api, REST", "design"],   # native list — commas inside survive
-)
-```
-
-## Spec Domain Examples
-
-Four tools migrated: `okto_pulse_create_spec.labels`, `okto_pulse_update_spec.labels`, `okto_pulse_copy_mockups_to_card.screen_ids`, `okto_pulse_copy_knowledge_to_card.knowledge_ids`.
-
-```python
-okto_pulse_create_spec(
-    board_id="...",
-    title="Auth refactor",
-    labels=["security, OAuth2", "backend"],   # native list — commas inside survive
-)
-okto_pulse_copy_mockups_to_card(
-    board_id="...", spec_id="...", card_id="...",
-    screen_ids=["scr_a", "scr_b"],            # native list — preferred
-)
-```
-
-## Card Domain Examples
-
-Both `okto_pulse_create_card` and `okto_pulse_update_card` now accept native list for `labels`, `test_scenario_ids` and (update only) `linked_test_task_ids`:
+The same pattern applies to every migrated multi-value parameter on every domain tool — ideation/refinement/spec/card `labels`, `test_scenario_ids`, `linked_test_task_ids` (update only), `copy_mockups_to_card.screen_ids`, `copy_knowledge_to_card.knowledge_ids`, and the cluster listed above:
 
 ```python
 # Native list — PREFERRED
@@ -100,7 +62,7 @@ okto_pulse_create_card(
     test_scenario_ids=["ts_abc", "ts_def"],
 )
 
-# Legacy string (JSON array) — works for older clients
+# Legacy string (JSON array) — for older string-only clients; required when items contain `|`
 okto_pulse_create_card(
     board_id="...",
     title="My card",
@@ -108,16 +70,9 @@ okto_pulse_create_card(
     labels='["bug, regression", "frontend"]',               # commas inside survive
     test_scenario_ids='["ts_abc", "ts_def"]',
 )
-
-# Legacy string (pipe) — works when no item needs `|` or `,` inside
-okto_pulse_create_card(
-    board_id="...",
-    title="My card",
-    spec_id="...",
-    labels="bug|frontend",
-    test_scenario_ids="ts_abc|ts_def",
-)
 ```
+
+Pipe-separated strings (`labels="bug|frontend"`) remain accepted for simple atomic values — see the shapes table above.
 
 ## Structured JSON Fields (object / array) — `dict | str` and `list[dict] | str`
 

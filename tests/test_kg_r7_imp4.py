@@ -39,7 +39,7 @@ from okto_pulse.core.kg.cognitive_readiness import (
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     compute_cognitive_item_id,
@@ -51,7 +51,7 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_CANONICAL_ELIGIBLE,
     MATURITY_WORKING_IMMATURE,
 )
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 USER_ID = "user-r7-imp4"
@@ -60,10 +60,20 @@ AGENT_ACTOR = "claude-coder"
 
 
 @pytest.fixture(autouse=True)
-def _tmp_rebuild_dir(tmp_path, monkeypatch):
+def _tmp_rebuild_dir(tmp_path, monkeypatch, _kg_registry_test_fakes):
     """Point every CognitiveConsolidationItemStore (service, health, read model,
     helpers) at an isolated tmp dir for the test."""
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
+
     monkeypatch.setenv("OKTO_PULSE_REBUILD_BASE_DIR", str(tmp_path))
+    configure_test_kg_registry(
+        rebuild_audit_artifact_store=(
+            CommunityFileSystemRebuildAuditArtifactStore(tmp_path)
+        )
+    )
     return tmp_path
 
 
@@ -76,7 +86,7 @@ def _service(tmp_path) -> CognitiveReadinessService:
 
 
 async def _setup_board(db_factory) -> str:
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     board_id = f"r7imp4-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(board_id)
@@ -133,22 +143,22 @@ def _node_attrs(source_ref, graph_layer, maturity):
 
 
 def _seed_learning_with_bugs(board_id, *, source_ref, canonical=0, working=0) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"r7i4l_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
         )
         for _ in range(canonical):
             bug_id = f"r7i4cb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
             )
@@ -156,7 +166,7 @@ def _seed_learning_with_bugs(board_id, *, source_ref, canonical=0, working=0) ->
                              attrs={"confidence": 1.0}, from_type="Learning", to_type="Bug")
         for _ in range(working):
             bug_id = f"r7i4wb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE),
             )
@@ -254,8 +264,16 @@ def _register_update_tool(agent_id: str):
     def _get_db():
         return _NullDb()
 
+    async def _get_board_agent(_board_id: str):
+        return await _get_agent()
+
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_get_agent, get_db=_get_db)
+    register_kg_tools(
+        mcp,
+        get_agent=_get_agent,
+        get_uow=_get_db,
+        get_board_agent=_get_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_update_cognitive_pending_item"]
 
 

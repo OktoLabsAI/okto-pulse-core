@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import ArchitectureDesign, Board, Ideation
+from sqlalchemy_test_models import ArchitectureDesign, Board, Ideation
 from okto_pulse.core.services.architecture import ArchitectureDiagramStore
 
 

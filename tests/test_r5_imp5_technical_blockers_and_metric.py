@@ -16,6 +16,8 @@ human REST endpoint over a seeded open debt.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -24,12 +26,13 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r5i5_"))
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveSkipRequest,
     record_cognitive_skip_endpoint,
 )
@@ -39,8 +42,9 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     compute_cognitive_item_id,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 from okto_pulse.core.services.human_control_metrics import (
     get_human_control_required_count,
@@ -69,13 +73,13 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 imp5 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -84,8 +88,6 @@ async def _call(name: str, **kwargs) -> dict:
 
 
 def _seed_item(store, board, gen, source_ref, status):
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     item = {
         "item_id": compute_cognitive_item_id(board, gen, source_ref),
         "board_id": board, "kg_generation_id": gen, "source_ref": source_ref,
@@ -95,9 +97,17 @@ def _seed_item(store, board, gen, source_ref, status):
     if status == CognitiveItemStatus.SKIPPED.value:
         item["reason_code"] = "trivial_fix"
         item["outcome_type"] = "no_action_required"
-    record = {"pending_count": 0, "pending_refs": [], "status": "complete",
+    record = {"board_id": board, "kg_generation_id": gen,
+              "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=gen,
+        ),
+        record,
+    )
 
 
 # ===========================================================================
@@ -189,7 +199,7 @@ async def test_counter_not_incremented_on_human_rest_skip(db_factory, tmp_path, 
     async with db_factory() as db:
         resp = await record_cognitive_skip_endpoint(
             board, CognitiveSkipRequest(source_ref=source_ref, reason_code="trivial_fix"),
-            db, actor=USER_ID,
+            SQLAlchemyUnitOfWork(db), actor=USER_ID,
         )
     # Human REST skip succeeds (not a refusal) and never touches the counter.
     assert resp["status"] == CognitiveItemStatus.SKIPPED.value
@@ -227,7 +237,7 @@ async def test_human_rest_skip_blocked_by_open_debt_is_technical_not_human_contr
         with pytest.raises(HTTPException) as exc:
             await record_cognitive_skip_endpoint(
                 board, CognitiveSkipRequest(source_ref=source_ref, reason_code="trivial_fix"),
-                db, actor=USER_ID,
+                SQLAlchemyUnitOfWork(db), actor=USER_ID,
             )
     assert exc.value.status_code == 409
     assert exc.value.detail["error"] == "technical_debt_cannot_be_skipped"

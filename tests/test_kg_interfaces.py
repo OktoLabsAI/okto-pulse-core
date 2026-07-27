@@ -15,15 +15,16 @@ from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -114,16 +115,18 @@ class TestProtocolDuckTyping:
         assert not isinstance(Incomplete(), EmbeddingProvider)
 
     def test_embedded_implementations_satisfy_protocols(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
-        from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import InMemoryTokenBucket
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryTokenBucket
 
         assert isinstance(InMemoryCacheBackend(), CacheBackend)
         assert isinstance(InMemoryTokenBucket(), RateLimiter)
 
     def test_stub_embedding_satisfies_protocol(self):
-        from okto_pulse.core.kg.embedding import StubEmbeddingProvider
+        from okto_pulse.core.kg.providers.testing.embedding import (
+            TestingStubEmbeddingProvider,
+        )
 
-        assert isinstance(StubEmbeddingProvider(), EmbeddingProvider)
+        assert isinstance(TestingStubEmbeddingProvider(), EmbeddingProvider)
 
 
 # -----------------------------------------------------------------------
@@ -142,19 +145,20 @@ class TestRegistryDefaults:
         assert reg.embedding_provider is not None
 
     def test_lazy_init_config_is_settings_based(self):
-        from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+        from okto_pulse.core.kg.interfaces import KGConfig
 
         reg = get_kg_registry()
-        assert isinstance(reg.config, SettingsKGConfig)
+        assert isinstance(reg.config, KGConfig)
+        assert type(reg.config).__module__.startswith("okto_pulse.community.adapters")
 
     def test_lazy_init_cache_is_in_memory(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
 
         reg = get_kg_registry()
         assert isinstance(reg.cache_backend, InMemoryCacheBackend)
 
     def test_lazy_init_rate_limiter_is_token_bucket(self):
-        from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import InMemoryTokenBucket
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryTokenBucket
 
         reg = get_kg_registry()
         assert isinstance(reg.rate_limiter, InMemoryTokenBucket)
@@ -166,7 +170,7 @@ class TestRegistryDefaults:
 
     def test_configure_overrides_single_provider(self):
         mock_cache = PlainCache()
-        configure_kg_registry(cache_backend=mock_cache)
+        configure_test_kg_registry(cache_backend=mock_cache)
         reg = get_kg_registry()
         assert reg.cache_backend is mock_cache
         assert reg.rate_limiter is not None
@@ -175,7 +179,7 @@ class TestRegistryDefaults:
     def test_configure_overrides_multiple_providers(self):
         mock_cache = PlainCache()
         mock_limiter = PlainRateLimiter()
-        configure_kg_registry(cache_backend=mock_cache, rate_limiter=mock_limiter)
+        configure_test_kg_registry(cache_backend=mock_cache, rate_limiter=mock_limiter)
         reg = get_kg_registry()
         assert reg.cache_backend is mock_cache
         assert reg.rate_limiter is mock_limiter
@@ -183,6 +187,7 @@ class TestRegistryDefaults:
     def test_reset_clears_singleton(self):
         reg1 = get_kg_registry()
         reset_registry_for_tests()
+        configure_test_kg_registry()
         reg2 = get_kg_registry()
         assert reg1 is not reg2
 
@@ -207,7 +212,7 @@ class TestEnvVarMechanism:
     def test_configure_works_with_env_vars_set(self, monkeypatch):
         monkeypatch.setenv("KG_CACHE_BACKEND", "redis")
         mock_cache = PlainCache()
-        configure_kg_registry(cache_backend=mock_cache)
+        configure_test_kg_registry(cache_backend=mock_cache)
         reg = get_kg_registry()
         assert reg.cache_backend is mock_cache
 

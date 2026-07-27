@@ -1,4 +1,4 @@
-"""Knowledge Graph layer — Kùzu per-board graph + embedding provider (MVP Fase 0)."""
+"""Knowledge Graph layer — graph backend per-board graph + embedding provider (MVP Fase 0)."""
 
 from okto_pulse.core.kg.backpressure import (
     BackpressureConfig,
@@ -49,7 +49,6 @@ from okto_pulse.core.kg.contingency import (
     get_contingency_samples,
     reset_contingency_counter,
 )
-from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
 from okto_pulse.core.kg.stress_runner import (
     CANONICAL_CHAOS_MODES,
     CI_DESTRUCTIVE_ITERATIONS_FLOOR,
@@ -76,6 +75,7 @@ from okto_pulse.core.kg.config_guard import (
     ConfigChangeDecision,
     ConfigGuardError,
     ConfigGuardErrorCode,
+    GraphSettingPolicy,
     KGConfigChangeGuard,
     RestartPolicy,
     SETTING_GROUP_BUFFER,
@@ -139,6 +139,8 @@ from okto_pulse.core.kg.rebuild_service import (
 )
 from okto_pulse.core.kg.rebuild_generation import (
     CURRENT_FILENAME,
+    GENERATION_CURRENT_NAMESPACE,
+    GENERATION_HISTORY_NAMESPACE,
     GENERATIONS_DIRNAME,
     HISTORY_DIRNAME,
     KGGenerationPromotionGuard,
@@ -147,6 +149,7 @@ from okto_pulse.core.kg.rebuild_generation import (
     PromotionEvaluation,
     PromotionOutcome,
     PromotionResult,
+    RebuildAuditKGGenerationRepository,
     generate_kg_generation_id,
     get_promotion_count,
     get_promotion_counter_labels,
@@ -330,6 +333,18 @@ from okto_pulse.core.kg.health_state import (
     LockState,
     MetricStatus,
 )
+from okto_pulse.core.kg.materialization_health import (
+    BoardHealthCensus,
+    CensusStatus,
+    HealthProbeDeadline,
+    KnownEmptyBoardMetrics,
+    MaterializationEvidence,
+    MaterializationEvidenceRequest,
+    MaterializationHealthBaseline,
+    MaterializationHealthPolicy,
+    MaterializationHealthSnapshot,
+    MaterializationState,
+)
 from okto_pulse.core.kg.memory_pressure import (
     CORRELATION_WINDOW_MINUTES,
     CorrelationResult,
@@ -340,19 +355,13 @@ from okto_pulse.core.kg.memory_pressure import (
     MemoryPressureCorrelator,
     MemoryPressureStatus,
 )
-from okto_pulse.core.kg.schema import (
+from okto_pulse.core.kg.schema_contract import (
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     NODE_TYPES,
     REL_TYPES,
     VECTOR_INDEX_TYPES,
     SCHEMA_VERSION,
-    bootstrap_board_graph,
-    board_kuzu_path,
-    ensure_board_graph_bootstrapped,
-    migrate_edge_metadata,
-    open_board_connection,
-    reset_bootstrap_cache_for_tests,
     vector_index_name,
 )
 
@@ -408,6 +417,7 @@ __all__ = [
     "ConfigChangeDecision",
     "ConfigGuardError",
     "ConfigGuardErrorCode",
+    "GraphSettingPolicy",
     "KGConfigChangeGuard",
     "RestartPolicy",
     "SETTING_GROUP_BUFFER",
@@ -427,7 +437,6 @@ __all__ = [
     "ChaosMode",
     "ChaosOutcome",
     "EVIDENCE_FILENAME",
-    "KGChaosExecutor",
     "KGStressProfileRunner",
     "STRESS_DIRNAME",
     "StressCounters",
@@ -509,6 +518,8 @@ __all__ = [
     "reset_rebuild_run_counter",
     # KG-02.4 — Generation repository + promotion guard + report-first
     "CURRENT_FILENAME",
+    "GENERATION_CURRENT_NAMESPACE",
+    "GENERATION_HISTORY_NAMESPACE",
     "GENERATIONS_DIRNAME",
     "HISTORY_DIRNAME",
     "KGGenerationPromotionGuard",
@@ -517,6 +528,7 @@ __all__ = [
     "PromotionEvaluation",
     "PromotionOutcome",
     "PromotionResult",
+    "RebuildAuditKGGenerationRepository",
     "generate_kg_generation_id",
     "get_promotion_count",
     "get_promotion_counter_labels",
@@ -661,12 +673,6 @@ __all__ = [
     "REL_TYPES",
     "VECTOR_INDEX_TYPES",
     "SCHEMA_VERSION",
-    "bootstrap_board_graph",
-    "board_kuzu_path",
-    "ensure_board_graph_bootstrapped",
-    "migrate_edge_metadata",
-    "open_board_connection",
-    "reset_bootstrap_cache_for_tests",
     "vector_index_name",
     # KG-01 (Prevention & Hardening) — Health state + memory pressure
     "DEFAULT_BUFFER_AT_RISK_PCT",
@@ -676,6 +682,16 @@ __all__ = [
     "KGHealthStateClassifier",
     "LockState",
     "MetricStatus",
+    "BoardHealthCensus",
+    "CensusStatus",
+    "HealthProbeDeadline",
+    "KnownEmptyBoardMetrics",
+    "MaterializationEvidence",
+    "MaterializationEvidenceRequest",
+    "MaterializationHealthBaseline",
+    "MaterializationHealthPolicy",
+    "MaterializationHealthSnapshot",
+    "MaterializationState",
     "CORRELATION_WINDOW_MINUTES",
     "CorrelationResult",
     "FailureEvent",

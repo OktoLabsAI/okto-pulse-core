@@ -21,8 +21,8 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 
-from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
-from okto_pulse.core.models.db import Board
+from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 # ---------------------------------------------------------------------------
@@ -136,9 +136,9 @@ def _make_session_sequence(sessions: list[_SessionDB]):
     return _factory
 
 
-def _make_worker(session_factory) -> ConsolidationWorker:
-    return ConsolidationWorker(
-        session_factory=session_factory,
+def _make_worker(relational_scope_factory) -> ConsolidationProcessor:
+    return ConsolidationProcessor(
+        relational_scope_factory=relational_scope_factory,
         heartbeat_seconds=30,
         batch_size=1,
     )
@@ -197,7 +197,7 @@ async def test_auto_drain_disabled_skips_reprocess():
 
     calls: list[str] = []
     with _ReprocessPatcher(calls):
-        await worker._run_dlq_auto_drain()
+        await worker.run_dlq_auto_drain()
 
     assert calls == [], (
         f"reprocess must NOT be called for a disabled board; got calls={calls}"
@@ -231,7 +231,7 @@ async def test_auto_drain_enabled_calls_reprocess(caplog):
     calls: list[str] = []
     with _ReprocessPatcher(calls):
         with caplog.at_level(logging.INFO, logger="okto_pulse.kg.consolidation_worker"):
-            await worker._run_dlq_auto_drain()
+            await worker.run_dlq_auto_drain()
 
     assert len(calls) == 1, f"Expected 1 reprocess call; got {calls}"
     assert calls[0] == board_id
@@ -273,11 +273,11 @@ async def test_auto_drain_backoff_suppresses_second_run():
     calls: list[str] = []
     with _ReprocessPatcher(calls):
         # First run — should fire
-        await worker._run_dlq_auto_drain()
+        await worker.run_dlq_auto_drain()
         assert len(calls) == 1, "First run should have called reprocess"
 
         # Second run immediately — within backoff
-        await worker._run_dlq_auto_drain()
+        await worker.run_dlq_auto_drain()
 
     assert len(calls) == 1, (
         f"Backoff must suppress second call; total reprocess calls={len(calls)}"
@@ -368,7 +368,7 @@ async def test_poison_pill_excluded_and_warned(caplog):
                 "okto_pulse.core.infra.config.get_settings",
                 return_value=_FakeSettings(),
             ):
-                await worker._run_dlq_auto_drain()
+                await worker.run_dlq_auto_drain()
 
     # The poison-pill row must have been sent to db.delete
     assert poison_row in s3.deleted, (

@@ -113,7 +113,7 @@ def test_confirmed_rebuild_fails_when_safe_write_lifecycle_does_not_apply(tmp_pa
 
 
 def test_confirmed_rebuild_quarantines_existing_graph_not_delete():
-    from okto_pulse.core.kg.schema import (
+    from kg_schema_testing import (
         board_kuzu_path,
         bootstrap_board_graph,
         open_board_connection,

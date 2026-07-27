@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.models.schemas import IdeationMove
 from okto_pulse.core.services.main import AmbiguityGateError, IdeationService
 from okto_pulse.core.services.resource_gate import (

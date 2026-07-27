@@ -9,11 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from okto_pulse.core.services.bug_regression_scenarios import (
     BugRegressionCoverageState,
-    BugRegressionNextAction,
     BugRegressionScenarioEligibilityResult,
 )
 
@@ -178,22 +177,32 @@ class BugWorkflowRemediationMessageBuilder:
             BugWorkflowHotfixLaneStatus.NOT_APPLICABLE
         ),
     ) -> BugWorkflowRemediationMessage:
+        eligible_count = max(0, int(eligible_scenarios_count))
+        if eligible_count == 0:
+            # A missing test task is only remediable through Path A when the
+            # canonical lineage resolver found a scenario that can actually be
+            # reused.  Routing an empty eligible set to "create test card"
+            # creates an orphan artifact that the deep gate rejects on retry.
+            return self._semantic_gap_message(
+                reason_code="missing_regression_test_task",
+                eligible_count=0,
+            )
+
         return BugWorkflowRemediationMessage(
             reason_code="missing_regression_test_task",
             remediation_path=BugWorkflowRemediationPath.PATH_A_REUSE_SCENARIO,
             next_action=BugWorkflowNextAction.CREATE_REGRESSION_TEST_CARD,
             semantic_gap_required=False,
-            eligible_scenarios_count=max(0, int(eligible_scenarios_count)),
+            eligible_scenarios_count=eligible_count,
             hotfix_lane_status=hotfix_lane_status,
             message=(
                 "Bug card requires at least one linked regression test card "
                 "before it can move to in_progress."
             ),
             detail=(
-                "Use Path A first: create a fresh test card that references an "
+                "Use Path A: create a fresh test card that references an "
                 "eligible existing scenario from the bug spec, link it to this "
-                "bug, then retry the move. If no eligible scenario exists, treat "
-                "the bug as a semantic gap and use Path B."
+                "bug, then retry the move."
             ),
             actions=(
                 BugWorkflowRemediationAction(
@@ -302,7 +311,7 @@ class BugWorkflowRemediationMessageBuilder:
             semantic_gap_required=False,
             eligible_scenarios_count=int(facts.get("eligible_scenarios_count") or 0),
             hotfix_lane_status=hotfix_lane_status,
-            message=message or "Bug card cannot advance until its sprint lane is executable.",
+            message=message or "Card cannot advance until its sprint lane is executable.",
             detail=(
                 "This is Path C for post-closure bugs: assign the bug and its "
                 "regression test card to an active hotfix sprint lane. Do not "

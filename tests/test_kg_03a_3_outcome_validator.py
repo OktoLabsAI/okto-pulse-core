@@ -41,7 +41,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingMarker,
     CognitivePendingOutcomeType,
     get_update_event_count,
-    get_update_samples,
+    require_rebuild_audit_artifact_store,
     reset_update_counter,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
@@ -100,13 +100,23 @@ def update_tool(isolated_base_dir: Path) -> Callable[..., Any]:
         async def __aexit__(self, *_exc: Any) -> bool:
             return False
 
-    register_kg_tools(mcp, get_agent=_agent, get_db=lambda: _NullDb())
+    async def _board_agent(_board_id: str) -> _FakeAgent:
+        return await _agent()
+
+    register_kg_tools(
+        mcp,
+        get_agent=_agent,
+        get_uow=lambda: _NullDb(),
+        get_board_agent=_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_update_cognitive_pending_item"]
 
 
 def _seed(base_dir: Path) -> tuple[str, list]:
+    del base_dir
     gen = generate_kg_generation_id()
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    artifact_store = require_rebuild_audit_artifact_store()
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=BOARD,
         kg_generation_id=gen,
@@ -119,7 +129,7 @@ def _seed(base_dir: Path) -> tuple[str, list]:
         ],
         event_ref="evt_kg03a_3",
     )
-    store = CognitiveConsolidationItemStore(base_dir=base_dir)
+    store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
     return gen, store.list_items(BOARD, gen)
 
 
@@ -172,7 +182,9 @@ def test_consolidated_without_outcome_type_is_rejected(
         == CognitiveItemUpdateReasonCode.OUTCOME_REQUIRED.value
     )
     # Persisted item still pending.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].status == "pending"
 
@@ -271,7 +283,9 @@ def test_accepted_outcome_persists_metadata(
     assert response["updated"] is True
     assert response["item"]["status"] == "consolidated"
     # Verify the ledger persisted outcome metadata.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     item = persisted[0]
     assert item.outcome_type == outcome
@@ -296,7 +310,9 @@ def test_no_action_required_with_reason_is_accepted(
         reason="content already covered by existing decision dec_42",
     )
     assert response["updated"] is True
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].outcome_type == "no_action_required"
 
@@ -447,7 +463,9 @@ def test_oversized_string_entry_in_metadata_is_rejected(
     assert response["error"]["code"] == "unsafe_payload"
     assert response["error"]["unsafe_field"] == metadata_field
     # Persisted item still pending.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].status == "pending"
     assert persisted[0].outcome_type is None
@@ -590,7 +608,9 @@ def test_rejected_metadata_does_not_leak_to_ledger_or_counter(
     response = _invoke(update_tool, **kwargs)
     assert response["error"]["code"] == "unsafe_payload"
 
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     # Item untouched.
     assert persisted[0].status == "pending"

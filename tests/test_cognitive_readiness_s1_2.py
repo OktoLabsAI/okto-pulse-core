@@ -14,8 +14,6 @@ Cenários (Cognitive Closure S1, spec 2012f38d):
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from okto_pulse.core.kg.cognitive_readiness import (
@@ -32,7 +30,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     compute_cognitive_item_id,
 )
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 from datetime import datetime, timedelta, timezone
@@ -142,10 +141,10 @@ def test_terminal_reason_codes_need_no_revisit_at(reason):
 
 
 def _seed_pending_item(store, board, gen, source_ref):
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     iid = compute_cognitive_item_id(board, gen, source_ref)
     record = {
+        "board_id": board,
+        "kg_generation_id": gen,
         "pending_count": 1,
         "pending_refs": [source_ref],
         "status": "pending",
@@ -157,8 +156,14 @@ def _seed_pending_item(store, board, gen, source_ref):
             "recorded_at": "2026-06-17T00:00:00+00:00",
         }],
     }
-    with path.open("w", encoding="utf-8") as fh:
-        json.dump(record, fh)
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=gen,
+        ),
+        record,
+    )
     return iid
 
 
@@ -187,7 +192,7 @@ async def test_ts_d8123753_skip_is_ledger_only(tmp_path, db_factory, monkeypatch
     _seed_pending_item(store, board, gen, src)
 
     # Teeth: se o skip tocar o grafo KG, isto explode.
-    import okto_pulse.core.kg.schema as schema_mod
+    import kg_schema_testing as schema_mod
 
     def _boom(*_a, **_k):
         raise AssertionError("skip ledger-only NÃO pode abrir o grafo KG")

@@ -1,25 +1,30 @@
-"""High-level local telemetry service."""
+"""High-level telemetry policy orchestration over edition-neutral ports."""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.telemetry import failure_state
 from okto_pulse.core.telemetry import publish_health as publish_health_mod
-from okto_pulse.core.telemetry.product import PRODUCT_AGGREGATE_FAMILIES
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
     TelemetryMode,
     mark_migration_notice_seen,
     record_consent,
     resolve_telemetry_config,
-    save_state,
 )
-from okto_pulse.core.telemetry.store import LocalTelemetryStore
+from okto_pulse.core.telemetry.event_store_registry import get_telemetry_event_store
+from okto_pulse.core.telemetry.publish_health_source_registry import (
+    get_external_source_descriptors,
+)
+from okto_pulse.core.telemetry.telemetry_state_registry import save_telemetry_state
+from okto_pulse.core.ports.telemetry import (
+    PRODUCT_AGGREGATE_FAMILIES,
+    TelemetryEventStore,
+)
 
 logger = logging.getLogger("okto_pulse.telemetry.service")
 
@@ -43,16 +48,26 @@ class TelemetryService:
     def config(self):
         return resolve_telemetry_config(self.settings)
 
-    def store(self) -> LocalTelemetryStore:
+    def store(self) -> TelemetryEventStore:
+        # R10-B: obtain the EVENT store via the registered factory (Community
+        # supplies the concrete adapter) — the core runtime no longer
+        # instantiates LocalTelemetryStore directly.
         cfg = self.config()
-        return LocalTelemetryStore(cfg.metrics_dir, cfg.retention_days)
+        return get_telemetry_event_store(cfg.state_ref, cfg.retention_days)
 
-    def record_event(self, event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def record_event(
+        self, event_type: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         cfg = self.config()
         state = dict(cfg.state)
         if cfg.mode == "disabled":
             _log_runtime_skip(component="record_event", reason="disabled")
-            return {"written": False, "mode": cfg.mode, "rejected_fields_count": 0, "schema_version": cfg.schema_version}
+            return {
+                "written": False,
+                "mode": cfg.mode,
+                "rejected_fields_count": 0,
+                "schema_version": cfg.schema_version,
+            }
         try:
             event, rejected = normalize_event(
                 event_type,
@@ -61,17 +76,26 @@ class TelemetryService:
                 schema_version=cfg.schema_version,
             )
         except Exception:
-            state["schema_reject_count"] = int(state.get("schema_reject_count") or 0) + 1
-            save_state(cfg.metrics_dir, state)
-            return {"written": False, "mode": cfg.mode, "rejected_fields_count": 1, "schema_version": cfg.schema_version}
-        path = self.store().append_event(event)
+            state["schema_reject_count"] = (
+                int(state.get("schema_reject_count") or 0) + 1
+            )
+            save_telemetry_state(cfg.state_ref, state)
+            return {
+                "written": False,
+                "mode": cfg.mode,
+                "rejected_fields_count": 1,
+                "schema_version": cfg.schema_version,
+            }
+        artifact_ref = self.store().append_event(event)
         if rejected:
-            state["rejected_fields_count"] = int(state.get("rejected_fields_count") or 0) + rejected
-            save_state(cfg.metrics_dir, state)
+            state["rejected_fields_count"] = (
+                int(state.get("rejected_fields_count") or 0) + rejected
+            )
+            save_telemetry_state(cfg.state_ref, state)
         return {
             "written": True,
             "mode": cfg.mode,
-            "file": str(path),
+            "file": str(artifact_ref),
             "event_id": event["event_id"],
             "rejected_fields_count": rejected,
             "schema_version": cfg.schema_version,
@@ -108,7 +132,6 @@ class TelemetryService:
             "normalized_from": cfg.normalized_from,
             "migration_notice": cfg.migration_notice,
             "source": cfg.source,
-            "metrics_dir": str(cfg.metrics_dir),
             "retention_days": cfg.retention_days,
             "schema_version": cfg.schema_version,
             "product_aggregate_families": list(PRODUCT_AGGREGATE_FAMILIES),
@@ -166,8 +189,15 @@ class TelemetryService:
         # are REAL client signals; aws_ingest / report_athena have no adapter in the
         # core client (downstream R5B/R4) so they enter as an explicit gap and can
         # never be inferred healthy from a local send.
-        install_lifecycle = publish_health_mod.derive_install_lifecycle(state, now=resolved_now)
-        aws_ingest, report_athena = publish_health_mod.discover_external_sources(self.settings)
+        install_lifecycle = publish_health_mod.derive_install_lifecycle(
+            state, now=resolved_now
+        )
+        # R10-D: the external (aws_ingest / report_athena) descriptors come from the
+        # registered edition provider (Community PublishHealthSource signals);
+        # register-before-remove falls back to the core GAP default. The pure
+        # resolve_publish_health classifier below is unchanged — a gap/stale/expired/
+        # unavailable/absent source can never be inferred healthy.
+        aws_ingest, report_athena = get_external_source_descriptors(self.settings)
         dto = publish_health_mod.resolve_publish_health(
             projection,
             now=resolved_now,
@@ -187,7 +217,8 @@ class TelemetryService:
         # recursively scrub forbidden keys + secret values (incl. any from the
         # source state) before the payload leaves the process.
         return publish_health_mod.redact_health_payload(
-            dto.to_dict(), secret_values=publish_health_mod.collect_health_secret_values(state)
+            dto.to_dict(),
+            secret_values=publish_health_mod.collect_health_secret_values(state),
         )
 
     def update_settings(
@@ -235,18 +266,19 @@ class TelemetryService:
             extra={
                 "metric_name": "metrics_migration_notice_total",
                 "notice_key": notice_key,
-                "outcome": "seen_idempotent" if result["idempotent"] else "seen_acknowledged",
+                "outcome": "seen_idempotent"
+                if result["idempotent"]
+                else "seen_acknowledged",
             },
         )
         return result
 
-    def export_local(self, output_path: str | None = None) -> dict[str, Any]:
-        path = Path(output_path).expanduser() if output_path else None
-        out = self.store().export_local(path)
+    def export_events(self, destination_ref: str | None = None) -> dict[str, Any]:
+        out = self.store().export_events(destination_ref)
         return {"output_path": str(out), "exported": True}
 
-    def purge_local(self) -> dict[str, Any]:
-        result = self.store().purge_local()
+    def purge_events(self) -> dict[str, Any]:
+        result = self.store().purge_events()
         result["purged_at"] = now_utc()
         return result
 

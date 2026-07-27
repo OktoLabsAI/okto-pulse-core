@@ -169,8 +169,11 @@ def score_semantic_grounding(
         if idx < len(raw) and isinstance(raw[idx], dict):
             score = raw[idx]
             # Validate shape — missing keys fall back to defaults.
+            # SAFETY: `grounded` must be a REAL bool. A non-bool value (e.g. the
+            # string "false", which `bool(...)` coerces to True) is malformed and
+            # MUST NOT mark a claim grounded — `is True` is fail-closed.
             out.append({
-                "grounded": bool(score.get("grounded", False)),
+                "grounded": score.get("grounded") is True,
                 "confidence": float(score.get("confidence", 0.0) or 0.0),
                 "supporting_ids": list(score.get("supporting_ids", []) or []),
             })

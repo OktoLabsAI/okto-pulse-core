@@ -1,8 +1,9 @@
 """Read-through LRU+TTL cache for KG query tools.
 
 Delegates to the KG registry's cache_backend (CacheBackend Protocol).
-These module-level functions are backward-compat wrappers — new code
-should use ``get_kg_registry().cache_backend`` directly.
+These module-level functions are backward-compat wrappers. New runtime code
+should use ``get_kg_registry().require_cache_backend()`` so an absent slot raises
+``runtime_provider_missing`` instead of a late ``AttributeError``.
 
 Metrics emitted per tool call via structured logger:
   event: "kg.tool.call"
@@ -20,7 +21,10 @@ logger = logging.getLogger("okto_pulse.kg.cache")
 def _backend():
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    return get_kg_registry().cache_backend
+    # AC3 (base fail-closed): the cache porta requires the registered backend; an
+    # absent slot raises ``runtime_provider_missing`` instead of a late
+    # ``AttributeError`` on ``None`` or a silent concrete fallback.
+    return get_kg_registry().require_cache_backend()
 
 
 def cache_get(tool_name: str, board_id: str, params: dict) -> tuple[bool, Any]:

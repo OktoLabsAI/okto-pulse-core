@@ -250,17 +250,8 @@ def public_status_projection(state: dict[str, Any]) -> dict[str, Any]:
     return read_failure_state(state).to_public_dict()
 
 
-def load_failure_state(metrics_dir: Any) -> FailureState:
-    """Load and migrate the failure-state from ``state.json`` under ``metrics_dir``."""
-    from okto_pulse.core.telemetry.settings import load_state
-
-    return read_failure_state(load_state(metrics_dir))
-
-
-def persist_failure_state(metrics_dir: Any, failure_state: FailureState) -> FailureState:
-    """Persist ``failure_state`` into ``state.json`` without disturbing other keys."""
-    from okto_pulse.core.telemetry.settings import load_state, save_state
-
-    state = load_state(metrics_dir)
-    save_state(metrics_dir, write_failure_state(state, failure_state))
-    return failure_state
+# R-P2-08: the local ``state.json`` persistence helpers (``load_failure_state`` /
+# ``persist_failure_state``) were extracted to the Community edition
+# (``okto_pulse.community.adapters.telemetry_state``). The core keeps ONLY the
+# PURE projections above (``read_failure_state`` / ``write_failure_state`` /
+# ``public_status_projection``); it no longer persists telemetry state locally.

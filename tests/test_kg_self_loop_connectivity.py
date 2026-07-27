@@ -31,6 +31,8 @@ from okto_pulse.core.kg.connectivity_guard import (
     KGNodeConnectivityGuard,
     KGNodeRef,
 )
+from okto_pulse.core.kg.primitives import _auto_attach_provenance_edges
+from okto_pulse.core.kg.schemas import KGNodeType, NodeCandidate
 
 
 def _node(candidate_id: str, node_type: str, source_ref: str = ""):
@@ -203,3 +205,33 @@ def test_self_loop_reason_is_distinct_from_missing_required_edge():
     assert no_judgement.passed is False
     assert no_judgement.violations[0].reason == "missing_required_edge"
     assert no_judgement.violations[0].reason != SELF_LOOP_NOT_CONNECTIVITY_REASON
+
+
+def test_auto_provenance_never_materializes_existing_node_self_loop(monkeypatch):
+    import okto_pulse.core.kg.primitives as primitives
+
+    candidate = NodeCandidate(
+        candidate_id="entity-candidate",
+        node_type=KGNodeType.ENTITY,
+        title="Existing source root",
+        source_artifact_ref="spec:source-1",
+    )
+    monkeypatch.setattr(
+        primitives,
+        "_resolve_provenance_root",
+        lambda scope, source_ref: ("entity-existing", "Entity"),
+    )
+    monkeypatch.setattr(
+        primitives,
+        "_lookup_existing_node",
+        lambda scope, node_type, source_ref: "entity-existing",
+    )
+    edges = {}
+
+    _auto_attach_provenance_edges(
+        graph_scope=object(),
+        node_candidates={candidate.candidate_id: candidate},
+        edge_candidates=edges,
+    )
+
+    assert edges == {}

@@ -19,23 +19,25 @@ import ast
 import hashlib
 from pathlib import Path
 
-import pytest
-
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 
 
 # ---------------------------------------------------------------------------
-# Baselines (capturados em 2026-04-28 antes da implementação da spec
-# 233eaad3). Se algum dia precisar atualizar — primeiro confirme que a
-# mudança no gate é INTENCIONAL e documentada em outra spec; senão a
-# regressão está passando despercebida.
+# Baselines updated after the 2026-07-14 sprint reviewer-separation and
+# optimistic-versioning contract, then after the 2026-07-25 append-only
+# SpecHistory audit for validation submissions. If a gate changes intentionally,
+# review its semantic tests and update this versioned constant in the same change.
 # ---------------------------------------------------------------------------
 
-# A baseline será computada na primeira execução e armazenada em pytest
-# cache; em runs subsequentes valida contra esse hash. Isso mantém o test
-# self-bootstrapping (CI/dev box first run = baseline; depois = enforce).
+EXPECTED_HASHES = {
+    "submit_spec_validation": (
+        "f9a1bdcb029a535baf584686cc1d1a3584c695646f16936aa15ffd9fe45552a8"
+    ),
+    "submit_evaluation": (
+        "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"
+    ),
+}
 
 
 def _function_source(file_path: Path, function_name: str) -> str:
@@ -80,14 +82,8 @@ class TestValidationGatesUnchanged:
             "sprint_evaluation_submitted" in src
         ), "sprint_evaluation_submitted activity log marker missing"
 
-    def test_baseline_hash_is_consistent_across_runs(self, tmp_path):
-        """Captura hash das 2 funções e armazena num arquivo persistente
-        em tests/.cache; em runs subsequentes compara. Falha = alguém
-        mudou a função sem atualizar o baseline (que é trabalho do
-        ceremony de release, não desta spec)."""
-        baseline_path = REPO_ROOT / "tests" / ".cache" / "validation_gates_baseline.txt"
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
-
+    def test_versioned_baseline_hashes_are_unchanged(self):
+        """Fail deterministically when a protected gate changes."""
         current_hashes = {
             "submit_spec_validation": _hash(
                 _function_source(MAIN_PY, "submit_spec_validation")
@@ -97,46 +93,7 @@ class TestValidationGatesUnchanged:
             ),
         }
 
-        if not baseline_path.exists():
-            # First run — record baseline. Subsequent runs enforce it.
-            baseline_path.write_text(
-                "\n".join(f"{k}={v}" for k, v in current_hashes.items()),
-                encoding="utf-8",
-            )
-            pytest.skip(
-                "baseline created on first run — re-run pytest to enforce. "
-                "Future runs will fail if these gate functions are modified."
-            )
-
-        # Subsequent runs: compare against baseline
-        baseline_content = baseline_path.read_text(encoding="utf-8")
-        baseline = dict(
-            line.split("=", 1) for line in baseline_content.strip().splitlines()
-        )
-
-        diffs = []
-        for fname, current_hash in current_hashes.items():
-            expected = baseline.get(fname)
-            if expected is None:
-                # New function added to baseline — accept silently and
-                # update file (this is the only auto-extension allowed).
-                baseline[fname] = current_hash
-                continue
-            if expected != current_hash:
-                diffs.append(
-                    f"{fname}: baseline={expected[:12]}... current={current_hash[:12]}..."
-                )
-
-        if diffs:
-            pytest.fail(
-                "Validation gate(s) were modified — spec 233eaad3 invariance "
-                "violated:\n  - " + "\n  - ".join(diffs) +
-                "\n\nIf this change is INTENTIONAL, document it in a new spec "
-                f"and update the baseline at {baseline_path}."
-            )
-
-        # If new functions were added to baseline, persist them
-        baseline_path.write_text(
-            "\n".join(f"{k}={v}" for k, v in baseline.items()),
-            encoding="utf-8",
+        assert current_hashes == EXPECTED_HASHES, (
+            "Validation gate(s) changed. Review the semantic gate tests and "
+            "update EXPECTED_HASHES only for an intentional change."
         )

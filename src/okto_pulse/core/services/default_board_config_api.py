@@ -13,9 +13,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.models.db import Board
+from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.domain.configuration_presence import (
+    project_configuration_presence,
+)
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.amendment_revision_api import reject_bypass_fields
 from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationError,
@@ -35,7 +38,7 @@ def _iso(value: Any) -> str | None:
 class DefaultBoardConfigApiService:
     """Validate + orchestrate admin operations on default board configuration."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: object) -> None:
         self._db = db
         self._svc = DefaultBoardConfigurationService(db)
 
@@ -43,7 +46,42 @@ class DefaultBoardConfigApiService:
 
     async def get_active(self, *, scope: str = "global") -> dict[str, Any]:
         template = await self._svc.resolve_active(scope)
-        return {"scope": scope, "active": self._serialize(template) if template else None}
+        if template is None:
+            projection = project_configuration_presence(
+                baseline_available=False,
+                comparable=False,
+            )
+            return {
+                "scope": scope,
+                "presence": projection.state,
+                "baseline_available": projection.baseline_available,
+                "comparable": projection.comparable,
+                "active": None,
+            }
+        raw_components = (
+            template.settings_payload,
+            template.guideline_default_refs,
+            template.design_system_default_ref,
+        )
+        if all(component is None for component in raw_components):
+            raw_configuration: Any = None
+        elif not any(bool(component) for component in raw_components):
+            raw_configuration = {}
+        else:
+            raw_configuration = {
+                "settings_payload": template.settings_payload,
+                "guideline_default_refs": template.guideline_default_refs,
+                "design_system_default_ref": template.design_system_default_ref,
+            }
+        projection = project_configuration_presence(raw_configuration)
+        serialized = self._serialize(template)
+        return {
+            "scope": scope,
+            "presence": projection.state,
+            "baseline_available": projection.baseline_available,
+            "comparable": projection.comparable,
+            "active": serialized,
+        }
 
     async def list_versions(self, *, scope: str = "global") -> dict[str, Any]:
         versions = await self._svc.list_versions(scope)
@@ -55,7 +93,11 @@ class DefaultBoardConfigApiService:
         }
 
     async def get_board_diff(self, *, board_id: str) -> dict[str, Any]:
-        board = await self._db.get(Board, board_id)
+        # R01C IMP3 drain: existence get-by-id via the edition-owned repository port
+        # (R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
+        # import. No owner/permission predicate here (access is enforced at the REST
+        # layer); the ``board is None`` → 404 mapping is preserved exactly.
+        board = await resolve_unit_of_work_factory().wrap(self._db).boards.get(board_id)
         if board is None:
             raise DefaultBoardConfigurationError(
                 "board_not_found",
@@ -75,6 +117,7 @@ class DefaultBoardConfigApiService:
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
         activate: bool = False,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         template = await self._svc.create_version(
             settings_payload=settings_payload,
@@ -83,18 +126,26 @@ class DefaultBoardConfigApiService:
             guideline_default_refs=guideline_default_refs,
             design_system_default_ref=design_system_default_ref,
             activate=activate,
+            query_scope=query_scope,
         )
-        await self._db.refresh(template)  # load server_default created_at/updated_at (no MissingGreenlet)
         return self._serialize(template)
 
-    async def activate_version(self, *, template_id: str, actor: str) -> dict[str, Any]:
-        template = await self._svc.activate_version(template_id, actor)
-        await self._db.refresh(template)  # load onupdate updated_at (no MissingGreenlet)
+    async def activate_version(
+        self,
+        *,
+        template_id: str,
+        actor: str,
+        query_scope: QueryScope | None = None,
+    ) -> dict[str, Any]:
+        template = await self._svc.activate_version(
+            template_id,
+            actor,
+            query_scope=query_scope,
+        )
         return self._serialize(template)
 
     async def deactivate_version(self, *, template_id: str, actor: str) -> dict[str, Any]:
         template = await self._svc.deactivate_version(template_id, actor)
-        await self._db.refresh(template)
         return self._serialize(template)
 
     # -- guideline defaults (spec 8a2fad91) --------------------------------
@@ -105,20 +156,33 @@ class DefaultBoardConfigApiService:
         template_id: str,
         guideline_default_refs: list[Any] | None,
         actor: str,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         """Update a template's guideline_default_refs. Returns the EFFECTIVE template
         (a new version for an active template — Q1=B copy-on-write — or the mutated
         draft). Errors surface as structured DefaultBoardConfigurationError (TR6)."""
         template = await self._svc.update_guideline_default_refs(
-            template_id, guideline_default_refs, actor
+            template_id,
+            guideline_default_refs,
+            actor,
+            query_scope=query_scope,
         )
-        await self._db.refresh(template)
         return self._serialize(template)
 
     async def list_default_candidates(
-        self, *, scope: str = "global", template_id: str | None = None
+        self,
+        *,
+        scope: str = "global",
+        template_id: str | None = None,
+        actor: str | None = None,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
-        return await self._svc.list_default_candidates(scope=scope, template_id=template_id)
+        return await self._svc.list_default_candidates(
+            scope=scope,
+            template_id=template_id,
+            actor=actor,
+            query_scope=query_scope,
+        )
 
     # -- design system default (spec 3a006f65) -----------------------------
 
@@ -143,20 +207,26 @@ class DefaultBoardConfigApiService:
             snapshot=snapshot,
             gate_mode=gate_mode,
         )
-        await self._db.refresh(template)
         return self._serialize(template)
 
     # -- internals ---------------------------------------------------------
 
     @staticmethod
     def _serialize(template) -> dict[str, Any]:
+        raw_settings = template.settings_payload
+        settings_projection = project_configuration_presence(raw_settings)
         return {
             "id": template.id,
             "version": template.version,
             "status": template.status,
             "is_active": template.is_active,
             "scope": template.scope,
-            "settings_payload": dict(template.settings_payload or {}),
+            "settings_payload": (
+                None if raw_settings is None else dict(raw_settings)
+            ),
+            "settings_presence": settings_projection.state,
+            "settings_baseline_available": settings_projection.baseline_available,
+            "settings_comparable": settings_projection.comparable,
             "guideline_default_refs": list(template.guideline_default_refs or []),
             "design_system_default_ref": template.design_system_default_ref,
             "created_by": template.created_by,

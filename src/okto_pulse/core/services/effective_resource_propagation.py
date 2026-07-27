@@ -37,7 +37,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterable
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from okto_pulse.core.application.artifact_propagation import propagate_artifacts
+from okto_pulse.core.ports.effective_resource import (
+    get_effective_resource_persistence_port,
+)
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    resolve_knowledge_content_sha256,
+)
 
 logger = logging.getLogger("okto_pulse.core.services.effective_resource_propagation")
 
@@ -116,7 +122,7 @@ class ResourcePropagationError(Exception):
         return payload
 
 
-async def _resolve_lineage(db: AsyncSession, board_id: str, entity_type: str, entity_id: str):
+async def _resolve_lineage(db: Any, board_id: str, entity_type: str, entity_id: str):
     """Resolve the canonical effective lineage. Raises
     ``ResourceLineageResolutionError`` on any resolution failure (lineage error or
     a missing/invalid entity) so callers fail closed before persisting."""
@@ -150,8 +156,130 @@ async def _resolve_lineage(db: AsyncSession, board_id: str, entity_type: str, en
         ) from exc
 
 
+async def resolve_effective_spec_parent_lineage(
+    db: Any,
+    *,
+    board_id: str,
+    ideation_id: str | None = None,
+    refinement_id: str | None = None,
+) -> Any | None:
+    """Resolve every explicit Spec lineage parent before its dependent FK write."""
+    from okto_pulse.core.services.main import IdeationService, RefinementService
+
+    lineage = None
+    ideation = None
+    if ideation_id:
+        lineage = await _resolve_lineage(db, board_id, "ideation", ideation_id)
+        ideation = await IdeationService(db).get_ideation(ideation_id)
+        if ideation is None:
+            raise ResourceLineageResolutionError(
+                f"ideation '{ideation_id}' not found for resource propagation",
+                details={"entity_type": "ideation", "entity_id": ideation_id},
+            )
+        if ideation.board_id != board_id:
+            raise ResourceLineageResolutionError(
+                f"ideation '{ideation_id}' belongs to another board",
+                details={
+                    "entity_type": "ideation",
+                    "entity_id": ideation_id,
+                    "board_id": board_id,
+                    "parent_board_id": ideation.board_id,
+                    "reason": "parent_board_mismatch",
+                },
+            )
+    if refinement_id:
+        lineage = await _resolve_lineage(db, board_id, "refinement", refinement_id)
+        refinement = await RefinementService(db).get_refinement(refinement_id)
+        if refinement is None:
+            raise ResourceLineageResolutionError(
+                f"refinement '{refinement_id}' not found for resource propagation",
+                details={"entity_type": "refinement", "entity_id": refinement_id},
+            )
+        if refinement.board_id != board_id:
+            raise ResourceLineageResolutionError(
+                f"refinement '{refinement_id}' belongs to another board",
+                details={
+                    "entity_type": "refinement",
+                    "entity_id": refinement_id,
+                    "board_id": board_id,
+                    "parent_board_id": refinement.board_id,
+                    "reason": "parent_board_mismatch",
+                },
+            )
+
+        ancestor_ideation_id = getattr(refinement, "ideation_id", None)
+        if ideation is not None:
+            if ancestor_ideation_id != ideation.id:
+                raise ResourceLineageResolutionError(
+                    (
+                        f"refinement '{refinement_id}' does not belong to "
+                        f"ideation '{ideation_id}'"
+                    ),
+                    details={
+                        "entity_type": "refinement",
+                        "entity_id": refinement_id,
+                        "ideation_id": ideation_id,
+                        "actual_ideation_id": ancestor_ideation_id,
+                        "reason": "parent_lineage_mismatch",
+                    },
+                )
+        else:
+            # A refinement-only Spec still depends on the refinement's
+            # ideation. Resolve that implicit ancestor before the FK write so
+            # resource propagation and lifecycle governance see the same
+            # lineage as the authoritative derive flow.
+            if ancestor_ideation_id:
+                ideation = await IdeationService(db).get_ideation(
+                    ancestor_ideation_id
+                )
+            if ideation is None:
+                raise ResourceLineageResolutionError(
+                    (
+                        f"parent ideation '{ancestor_ideation_id}' for "
+                        f"refinement '{refinement_id}' was not found"
+                    ),
+                    code="spec_ideation_not_found",
+                    details={
+                        "entity_type": "ideation",
+                        "entity_id": ancestor_ideation_id,
+                        "refinement_id": refinement_id,
+                        "reason": "ancestor_ideation_not_found",
+                    },
+                )
+            if ideation.board_id != board_id:
+                raise ResourceLineageResolutionError(
+                    (
+                        f"parent ideation '{ideation.id}' for refinement "
+                        f"'{refinement_id}' belongs to another board"
+                    ),
+                    code="spec_ideation_board_mismatch",
+                    details={
+                        "entity_type": "ideation",
+                        "entity_id": ideation.id,
+                        "refinement_id": refinement_id,
+                        "board_id": board_id,
+                        "parent_board_id": ideation.board_id,
+                        "reason": "ancestor_ideation_board_mismatch",
+                    },
+                )
+    return lineage
+
+
 def _states_by_type(lineage) -> dict[str, Any]:
     return {state.resource_type: state for state in lineage.resource_states}
+
+
+def _state_is_not_applicable(state: Any) -> bool:
+    """Honor the lineage resolver's resource-over-N/A precedence.
+
+    ``ResourceStateEnvelope.na_mark`` intentionally remains present for audit
+    even when a direct/inherited resource makes that mark ineffective.  Using
+    mere mark presence therefore disagrees with the Resource Gate and can turn
+    a provided resource into a false ``not_applicable`` copy plan.  ``state`` is
+    the resolver's authoritative effective classification.
+    """
+
+    return state is not None and str(getattr(state, "state", "")) == STATUS_NOT_APPLICABLE
 
 
 def _obligation_id_for_type(lineage, resource_type: str) -> str | None:
@@ -170,10 +298,13 @@ def _obligation_id_for_type(lineage, resource_type: str) -> str | None:
 def _effective_ref_identity(resource_type: str, ref: dict[str, Any]) -> str:
     for key in (
         "unique_resource_id",
+        "root_source_design_id",
+        "root_source_kb_id",
+        "root_source_mockup_id",
         "source_design_id",
+        "origin_id",
         "source_kb_id",
         "source_mockup_id",
-        "origin_id",
         "source_ref",
         "origin_ref",
         "source",
@@ -204,6 +335,59 @@ def _dedupe_effective_refs(
     return deduped
 
 
+def effective_ref_identity_values(ref: dict[str, Any]) -> set[str]:
+    """Every id token by which a caller may legitimately reference an effective
+    inherited ref — the immediate snapshot id AND every canonical-origin field
+    (source_design_id, unique_resource_id, source_ref tail, origin_evidence.*,
+    raw.*). A ``design_ids`` filter must match whether the caller passes the
+    intermediate snapshot id or the inherited ROOT id (card 5c43a364).
+    """
+    values: set[str] = set()
+
+    def _add(value: Any) -> None:
+        if not value:
+            return
+        text = str(value)
+        values.add(text)
+        for sep in (":", "/", "\\"):
+            if sep in text:
+                values.add(text.rsplit(sep, 1)[-1])
+
+    for key in (
+        "id",
+        "resource_id",
+        "root_source_design_id",
+        "root_source_kb_id",
+        "root_source_mockup_id",
+        "source_design_id",
+        "unique_resource_id",
+        "source_kb_id",
+        "source_mockup_id",
+        "origin_id",
+        "source_ref",
+        "origin_ref",
+        "source",
+    ):
+        _add(ref.get(key))
+    for nested_key in ("origin_evidence", "raw"):
+        nested = ref.get(nested_key)
+        if isinstance(nested, dict):
+            for key in (
+                "id",
+                "root_source_design_id",
+                "root_source_kb_id",
+                "root_source_mockup_id",
+                "source_design_id",
+                "source_kb_id",
+                "source_mockup_id",
+                "origin_id",
+                "unique_resource_id",
+                "source_ref",
+            ):
+                _add(nested.get(key))
+    return values
+
+
 def _kb_dicts(entity, *, source_type: str, source_id: str | None,
               source_title: str | None, source_version: int | None) -> list[dict[str, Any]]:
     """Snapshot an entity's knowledge bases to source dicts that
@@ -211,7 +395,7 @@ def _kb_dicts(entity, *, source_type: str, source_id: str | None,
     ``source_kb_id`` on the target so the gate can match the obligation."""
     out: list[dict[str, Any]] = []
     for kb in (getattr(entity, "knowledge_bases", None) or []):
-        out.append({
+        payload = {
             "id": kb.id,
             "title": kb.title,
             "description": getattr(kb, "description", None),
@@ -220,11 +404,20 @@ def _kb_dicts(entity, *, source_type: str, source_id: str | None,
             # R6-IMP4: carry the parent's canonical root forward so a later hop
             # (e.g. card copy) preserves the initial origin, not the effective kb.
             "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
+            "immediate_parent_kb_id": getattr(
+                kb, "immediate_parent_kb_id", None
+            ),
+            "source_kb_id": getattr(kb, "source_kb_id", None),
             "source_type": source_type,
             "source_id": source_id,
             "source_title": source_title,
             "source_version": source_version,
-        })
+            "content_hash": resolve_knowledge_content_sha256(kb),
+        }
+        governance_metadata = getattr(kb, "governance_metadata", None)
+        if governance_metadata is not None:
+            payload["governance_metadata"] = governance_metadata
+        out.append(payload)
     return out
 
 
@@ -233,7 +426,7 @@ def _mockup_dicts(entity) -> list[dict[str, Any]]:
 
 
 async def propagate_effective_resources_to_spec(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     spec,
@@ -243,6 +436,7 @@ async def propagate_effective_resources_to_spec(
     kb_ids: list[str] | None = None,
     architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
+    resolved_lineage: Any | None = None,
 ) -> dict[str, Any]:
     """R3-IMP1. Propagate the refinement's EFFECTIVE resources into ``spec``.
 
@@ -254,11 +448,15 @@ async def propagate_effective_resources_to_spec(
     from okto_pulse.core.services.main import (
         RefinementService,
         propagate_architecture_designs,
-        propagate_artifacts,
     )
-    from okto_pulse.core.models.db import SpecKnowledgeBase
 
-    lineage = await _resolve_lineage(db, board_id, "refinement", refinement_id)
+    lineage = resolved_lineage
+    if lineage is None:
+        lineage = await resolve_effective_spec_parent_lineage(
+            db,
+            board_id=board_id,
+            refinement_id=refinement_id,
+        )
     states = _states_by_type(lineage)
 
     refinement = await RefinementService(db).get_refinement(refinement_id)
@@ -284,17 +482,25 @@ async def propagate_effective_resources_to_spec(
     # --- knowledge_base ---
     kb_state = states.get("knowledge_base")
     try:
-        if kb_state is not None and kb_state.na_mark:
+        if _state_is_not_applicable(kb_state):
             by_type["knowledge_base"] = {"status": STATUS_NOT_APPLICABLE, "source": None, "copied": 0}
         elif kb_state is not None and kb_state.direct_count > 0:
             kbs = _kb_dicts(self_entity, source_type="refinement", source_id=refinement.id,
                             source_title=refinement.title, source_version=refinement.version)
             await propagate_artifacts(
-                db=db, source_mockups=None, source_qa_items=qa_snapshot,
-                source_knowledge_bases=kbs, target_entity=spec,
-                target_kb_class=SpecKnowledgeBase, user_id=user_id, kb_ids=kb_ids,
-                source_type="refinement", source_id=refinement.id,
-                source_title=refinement.title, source_version=refinement.version,
+                db,
+                source_mockups=None,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=kbs,
+                target_entity=spec,
+                target_kb_entity="spec_knowledge_base",
+                user_id=user_id,
+                mockup_ids=None,
+                kb_ids=kb_ids,
+                source_type="refinement",
+                source_id=refinement.id,
+                source_title=refinement.title,
+                source_version=refinement.version,
             )
             qa_snapshot = []  # only propagate Q&A once
             counts["knowledge_base"] = len(kbs)
@@ -308,10 +514,17 @@ async def propagate_effective_resources_to_spec(
                             source_title=getattr(ancestor_entity, "title", None),
                             source_version=getattr(ancestor_entity, "version", None))
             await propagate_artifacts(
-                db=db, source_mockups=None, source_qa_items=qa_snapshot,
-                source_knowledge_bases=kbs, target_entity=spec,
-                target_kb_class=SpecKnowledgeBase, user_id=user_id, kb_ids=kb_ids,
-                source_type="ideation", source_id=ancestor_entity.id,
+                db,
+                source_mockups=None,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=kbs,
+                target_entity=spec,
+                target_kb_entity="spec_knowledge_base",
+                user_id=user_id,
+                mockup_ids=None,
+                kb_ids=kb_ids,
+                source_type="ideation",
+                source_id=ancestor_entity.id,
                 source_title=getattr(ancestor_entity, "title", None),
                 source_version=getattr(ancestor_entity, "version", None),
             )
@@ -334,14 +547,20 @@ async def propagate_effective_resources_to_spec(
     # --- mockup ---
     mk_state = states.get("mockup")
     try:
-        if mk_state is not None and mk_state.na_mark:
+        if _state_is_not_applicable(mk_state):
             by_type["mockup"] = {"status": STATUS_NOT_APPLICABLE, "source": None, "copied": 0}
         elif mk_state is not None and mk_state.direct_count > 0:
             mockups = _mockup_dicts(self_entity)
             await propagate_artifacts(
-                db=db, source_mockups=mockups, source_qa_items=qa_snapshot,
-                source_knowledge_bases=None, target_entity=spec, target_kb_class=None,
-                user_id=user_id, mockup_ids=mockup_ids,
+                db,
+                source_mockups=mockups,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=None,
+                target_entity=spec,
+                target_kb_entity=None,
+                user_id=user_id,
+                mockup_ids=mockup_ids,
+                kb_ids=None,
             )
             qa_snapshot = []
             counts["mockup"] = len(mockups)
@@ -353,9 +572,15 @@ async def propagate_effective_resources_to_spec(
         elif mk_state is not None and mk_state.inherited_count > 0 and ancestor_entity is not None:
             mockups = _mockup_dicts(ancestor_entity)
             await propagate_artifacts(
-                db=db, source_mockups=mockups, source_qa_items=qa_snapshot,
-                source_knowledge_bases=None, target_entity=spec, target_kb_class=None,
-                user_id=user_id, mockup_ids=mockup_ids,
+                db,
+                source_mockups=mockups,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=None,
+                target_entity=spec,
+                target_kb_entity=None,
+                user_id=user_id,
+                mockup_ids=mockup_ids,
+                kb_ids=None,
             )
             qa_snapshot = []
             counts["mockup"] = len(mockups)
@@ -376,7 +601,7 @@ async def propagate_effective_resources_to_spec(
     # --- architecture (delegates to the existing snapshot-copy primitive) ---
     arch_state = states.get("architecture")
     try:
-        if arch_state is not None and arch_state.na_mark:
+        if _state_is_not_applicable(arch_state):
             by_type["architecture"] = {"status": STATUS_NOT_APPLICABLE, "source": None, "copied": 0}
         elif arch_state is not None and arch_state.direct_count > 0:
             designs = await propagate_architecture_designs(
@@ -432,7 +657,7 @@ def _aggregate_status(by_type: dict[str, Any]) -> str:
 
 
 async def resolve_effective_card_copy_plan(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     spec_id: str,
@@ -457,7 +682,7 @@ async def resolve_effective_card_copy_plan(
         "has_direct": bool(state and state.direct_count > 0),
         "fallback": False,
         "fallback_refs": [],
-        "not_applicable": bool(state and state.na_mark),
+        "not_applicable": _state_is_not_applicable(state),
         "has_obligation": obligation_id is not None,
         "coverage_obligation_id": obligation_id,
         "accepted_identity_fields": accepted,
@@ -475,59 +700,28 @@ async def resolve_effective_card_copy_plan(
 
 
 async def load_effective_kb_items(
-    db: AsyncSession, source_entity_type: str, source_entity_id: str
+    db: Any, source_entity_type: str, source_entity_id: str
 ) -> list[dict[str, Any]]:
     """Load the knowledge-base CONTENT of an effective ancestor (ideation/
     refinement/spec) for a card-copy fallback. ``id`` is the EFFECTIVE kb id the
     copy tool must echo into a gate-readable identity field."""
-    from sqlalchemy import select
-
-    from okto_pulse.core.models.db import (
-        IdeationKnowledgeBase,
-        RefinementKnowledgeBase,
-        SpecKnowledgeBase,
+    return await get_effective_resource_persistence_port().load_knowledge_bases(
+        db,
+        source_entity_type=source_entity_type,
+        source_entity_id=source_entity_id,
     )
-
-    model, fk = {
-        "ideation": (IdeationKnowledgeBase, IdeationKnowledgeBase.ideation_id),
-        "refinement": (RefinementKnowledgeBase, RefinementKnowledgeBase.refinement_id),
-        "spec": (SpecKnowledgeBase, SpecKnowledgeBase.spec_id),
-    }.get(source_entity_type, (None, None))
-    if model is None:
-        return []
-    result = await db.execute(
-        select(model).where(fk == source_entity_id).order_by(model.created_at.asc())
-    )
-    out: list[dict[str, Any]] = []
-    for kb in result.scalars().all():
-        out.append({
-            "id": kb.id,
-            "title": kb.title,
-            "description": getattr(kb, "description", None),
-            "content": kb.content,
-            "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
-            # R6-IMP4: preserve the parent's canonical root across the card-copy hop.
-            "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
-        })
-    return out
 
 
 async def load_effective_mockup_items(
-    db: AsyncSession, source_entity_type: str, source_entity_id: str
+    db: Any, source_entity_type: str, source_entity_id: str
 ) -> list[dict[str, Any]]:
     """Load the screen-mockup payloads of an effective ancestor for a card-copy
     fallback. Each mockup keeps its original ``id`` (the effective/obligation id)."""
-    from okto_pulse.core.models.db import Ideation, Refinement, Spec
-
-    model = {"ideation": Ideation, "refinement": Refinement, "spec": Spec}.get(
-        source_entity_type
+    return await get_effective_resource_persistence_port().load_mockups(
+        db,
+        source_entity_type=source_entity_type,
+        source_entity_id=source_entity_id,
     )
-    if model is None:
-        return []
-    entity = await db.get(model, source_entity_id)
-    if entity is None:
-        return []
-    return [m for m in (getattr(entity, "screen_mockups", None) or []) if isinstance(m, dict)]
 
 
 __all__ = [
@@ -539,6 +733,7 @@ __all__ = [
     "ResourceLineageResolutionError",
     "ResourcePropagationError",
     "propagate_effective_resources_to_spec",
+    "resolve_effective_spec_parent_lineage",
     "resolve_effective_card_copy_plan",
     "load_effective_kb_items",
     "load_effective_mockup_items",

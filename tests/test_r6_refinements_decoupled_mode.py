@@ -19,10 +19,18 @@ from pathlib import Path
 
 import pytest
 
-_CORE = Path(__file__).resolve().parent.parent / "src" / "okto_pulse" / "core"
+_REPO = Path(__file__).resolve().parent.parent
+_CORE = _REPO / "src" / "okto_pulse" / "core"
+_COMMUNITY = (
+    _REPO.parent
+    / "okto_labs_pulse_community"
+    / "src"
+    / "okto_pulse"
+    / "community"
+)
 REFINEMENTS_MD = _CORE / "mcp" / "resources" / "workflows" / "refinements.md"
 SCHEMAS_PY = _CORE / "models" / "schemas.py"
-DB_PY = _CORE / "models" / "db.py"
+DB_PY = _COMMUNITY / "adapters" / "sqlalchemy_models.py"
 
 
 @pytest.fixture(scope="module")
@@ -143,9 +151,12 @@ def test_ac7_rigor_preserved_and_no_board_mode_signal(md: str):
         in md
     )
     assert "Always when a codebase is accessible — the refinement must reflect" in md
-    # (b) Doc-only (owner path A): no board-mode field/flag leaked into schema or db.
+    # (b) Doc-only (owner path A): no board-mode field/flag leaked into the Core
+    # contract schema or the Community-owned relational mappings.
     schemas = SCHEMAS_PY.read_text(encoding="utf-8")
     db = DB_PY.read_text(encoding="utf-8")
     for token in ("decoupled_mode", "has_repository"):
         assert token not in schemas, f"board-mode signal '{token}' leaked into schemas.py"
-        assert token not in db, f"board-mode signal '{token}' leaked into db.py"
+        assert token not in db, (
+            f"board-mode signal '{token}' leaked into Community SQLAlchemy mappings"
+        )

@@ -20,7 +20,7 @@ import pytest_asyncio
 
 import okto_pulse.core.services.kg_health_service as kgh
 from okto_pulse.core.kg import health_state as hs
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.kg_health_service import (
     _build_kg_root_cause,
     _probe_rebuild_source_diagnostics,
@@ -107,6 +107,36 @@ def test_root_cause_source_enumeration_failure_marks_drilldown_unavailable():
     assert rc["present_categories"] == ["source_enumeration_failure"]
 
 
+def test_root_cause_discovery_scope_matches_prefixed_classification_reason():
+    rc = _build_kg_root_cause(
+        total_nodes=12,
+        queue_depth=0,
+        dead_letter_count=0,
+        active_queue={"classification": "idle", "total_active_depth": 0},
+        empty_after_materialized_history=False,
+        combined_reasons=["discovery:wal_or_commit_errors.present"],
+        source_diag=_src(fail=True, err="board source unavailable"),
+        safe_write_diag=_sw(outcome="failed", drain=True),
+        scope="discovery",
+    )
+
+    assert rc["scope"] == "discovery"
+    assert rc["classification_reasons"] == [
+        "discovery:wal_or_commit_errors.present"
+    ]
+    wal = rc["categories"]["wal_or_commit_errors"]
+    assert wal == {
+        "present": True,
+        "scope": "discovery",
+        "present_scopes": ["discovery"],
+    }
+    assert rc["present_categories"] == ["wal_or_commit_errors"]
+    # Board-only recovery probes must not contaminate a discovery root cause.
+    assert rc["categories"]["source_enumeration_failure"]["present"] is False
+    assert rc["categories"]["safe_write_drain_failure"]["present"] is False
+    assert rc["drilldown_unavailable"] is False
+
+
 # ---------------------------------------------------------------------------
 # _probe_safe_write_diagnostics — read-only counter derivation
 # ---------------------------------------------------------------------------
@@ -146,17 +176,14 @@ def test_safe_write_probe_reports_worst_and_drain_failure(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_source_probe_failure_is_bounded_not_raised(monkeypatch):
+def test_source_probe_failure_is_bounded_not_raised():
     class _BadStore:
-        def __init__(self, **_kw):
-            pass
-
         def fetch(self, _board_id):
             raise RuntimeError("db is locked")
 
-    monkeypatch.setattr(
-        "okto_pulse.core.kg.board_source_store.BoardSourceStore", _BadStore
-    )
+    from kg_registry_testing import configure_test_kg_registry
+
+    configure_test_kg_registry(board_source_reader=_BadStore())
     out = _probe_rebuild_source_diagnostics("board-x")
     assert out["enumeration_failure"] is True
     assert "RuntimeError" in out["error"]

@@ -8,13 +8,17 @@ ACs 1-10. Aligns with the Ideação #3 lesson: every scenario marked
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import uuid
+from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 from okto_pulse.core.kg.scoring import (
     CONTRADICT_PENALTY_CAP,
     DECAY_REORDER_POOL_MULTIPLIER,
@@ -23,7 +27,7 @@ from okto_pulse.core.kg.scoring import (
     get_contradict_warn_count,
     reset_contradict_warn_counters,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     CanonicalDebt,
     ConsolidationAudit,
@@ -32,6 +36,7 @@ from okto_pulse.core.models.db import (
     KGTickRun,
     KuzuNodeRef,
 )
+from okto_pulse.core.ports.scheduler import SchedulerJobSnapshot
 import okto_pulse.core.services.kg_health_service as kg_health_service
 from okto_pulse.core.services.kg_health_service import (
     BoardNotFoundError,
@@ -45,6 +50,35 @@ from okto_pulse.core.services.kg_health_service import (
 
 KG_HEALTH_BOARD_ID = "board-kg-health-test"
 KG_HEALTH_USER_ID = "user-kg-health-test"
+
+
+class _HealthSchedulerControl:
+    def __init__(
+        self,
+        *,
+        available: bool = True,
+        exists: bool = True,
+        next_run_time: datetime | None = None,
+        message: str | None = None,
+    ) -> None:
+        self._available = available
+        self._snapshot = SchedulerJobSnapshot(
+            job_id="kg_daily_tick",
+            exists=exists,
+            next_run_time=next_run_time,
+            message=message,
+        )
+
+    def is_available(self) -> bool:
+        return self._available
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        return SchedulerJobSnapshot(
+            job_id=job_id,
+            exists=self._snapshot.exists,
+            next_run_time=self._snapshot.next_run_time,
+            message=self._snapshot.message,
+        )
 
 
 @pytest_asyncio.fixture
@@ -113,6 +147,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "queue_depth",
         "oldest_pending_age_s",
         "dead_letter_count",
+        "global_outbox_dead_letter_count",
         "total_nodes",
         "default_score_count",
         "default_score_ratio",
@@ -141,6 +176,9 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "current_kg_generation_id",
         "metric_status",
         "classification_reason",
+        "materialization_state",
+        "materialization_generation",
+        "probe_reason_codes",
         "correlation_id",
         "recent_events",
         "checked_at",
@@ -165,6 +203,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         # KG-HS.1 clarity payloads.
         "decay_scheduler_diagnostics",
         "storage_footprint_proxy",
+        "probe_diagnostics",
         # KG-ZO-02 integrity debt projection.
         "orphan_integrity",
         # KG partitioning/canonical debt diagnostics.
@@ -177,17 +216,26 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "operational_domains",
         # SPEC4 (card 2e913ac3): structured bounded recovery root-cause (additive).
         "root_cause",
+        "source_count",
     }
     assert set(result.keys()) == expected_fields
-    assert result["schema_version"] == HEALTH_SCHEMA_VERSION
-    assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
     assert result["schema_version"] == "1.0"
+    assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
+    assert result["health_schema_version"] == "1.1"
     assert isinstance(result["queue_depth"], int)
-    assert isinstance(result["oldest_pending_age_s"], float)
+    assert result["oldest_pending_age_s"] is None or isinstance(
+        result["oldest_pending_age_s"], float
+    )
     assert "top_disconnected_nodes" not in result
-    assert result["last_decay_tick_at"] is None or isinstance(result["last_decay_tick_at"], str)
-    assert result["last_tick_status"] is None or isinstance(result["last_tick_status"], str)
-    assert result["last_tick_error"] is None or isinstance(result["last_tick_error"], str)
+    assert result["last_decay_tick_at"] is None or isinstance(
+        result["last_decay_tick_at"], str
+    )
+    assert result["last_tick_status"] is None or isinstance(
+        result["last_tick_status"], str
+    )
+    assert result["last_tick_error"] is None or isinstance(
+        result["last_tick_error"], str
+    )
     assert isinstance(result["nodes_recomputed_in_last_tick"], int)
     assert isinstance(result["tick_in_progress"], bool)
     assert isinstance(result["boards_processed_in_last_tick"], int)
@@ -200,7 +248,11 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     # is None so metric_status=unavailable and overall_state degrades to
     # at_risk per BR br_2a8cdfdc "Health unavailable is not zero".
     canonical_states = {
-        "healthy", "at_risk", "backpressure", "recovery_needed", "quarantined",
+        "healthy",
+        "at_risk",
+        "backpressure",
+        "recovery_needed",
+        "quarantined",
     }
     assert result["graph_state"] in canonical_states
     assert result["discovery_state"] in canonical_states
@@ -208,7 +260,8 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert result["state"] == result["overall_state"]
     assert result["metric_status"] in {"available", "unavailable"}
     assert result["memory_pressure_status"] in {
-        "unconfirmed", "confirmed_primary_cause",
+        "unconfirmed",
+        "confirmed_primary_cause",
     }
     assert isinstance(result["classification_reasons"], list)
     assert isinstance(result["correlation_id"], str)
@@ -235,7 +288,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["canonical_debt"], dict)
     assert isinstance(result["rebuild_diagnostics"], dict)
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
-    assert result["storage_footprint_proxy"]["source"] == "file_size_proxy"
+    assert result["storage_footprint_proxy"]["source"] == "runtime_capability"
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
 
 
@@ -247,7 +300,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
 
     monkeypatch.setattr(
         kg_health_service,
-        "_build_orphan_integrity_for_health",
+        "_get_or_schedule_orphan_integrity_for_health",
         lambda **_: {
             "classification_delta": "at_risk",
             "integrity_warning": True,
@@ -275,7 +328,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
     )
     monkeypatch.setattr(
         kg_health_service,
-        "_aggregate_kuzu_metrics",
+        "_aggregate_graph_metrics",
         lambda _board_id: {
             "total_nodes": 10,
             "default_score_count": 0,
@@ -438,12 +491,26 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
 
     from okto_pulse.core.services import kg_health_service as svc
 
+    # Supply a completed zero-node sensor explicitly. The bounded production
+    # probe must not infer "empty" from a cold-start timeout alone, because
+    # that would turn latency into a false recovery signal.
     monkeypatch.setattr(
-        svc, "_probe_board_graph_telemetry",
+        svc,
+        "_aggregate_graph_metrics",
+        lambda _board_id: {
+            "total_nodes": 0,
+            "default_score_count": 0,
+            "avg_relevance": 0.0,
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
         lambda **_kwargs: svc._telemetry_unavailable("board"),
     )
     monkeypatch.setattr(
-        svc, "_probe_global_discovery_telemetry",
+        svc,
+        "_probe_global_discovery_telemetry",
         lambda: svc._telemetry_unavailable("discovery"),
     )
 
@@ -456,7 +523,9 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
     assert "graph:empty_after_materialized_history" in result["classification_reason"]
     # actionable structured root-cause (SPEC4 card 2e913ac3 block).
     root_cause = result["root_cause"]
-    assert root_cause["categories"]["empty_after_materialized_history"]["present"] is True
+    assert (
+        root_cause["categories"]["empty_after_materialized_history"]["present"] is True
+    )
     assert "empty_after_materialized_history" in root_cause["present_categories"]
     # actionable per-domain drill-down — every operational domain names a tool.
     assert result["operational_domains"]
@@ -480,7 +549,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
     """
     from okto_pulse.core.services import kg_health_service as svc
 
-    original_metrics = svc._aggregate_kuzu_metrics
+    original_metrics = svc._aggregate_graph_metrics
     original_schema_version = svc._get_graph_schema_version
 
     def _metrics(_board_id):
@@ -490,7 +559,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
             "avg_relevance": 0.61,
         }
 
-    svc._aggregate_kuzu_metrics = _metrics
+    svc._aggregate_graph_metrics = _metrics
     svc._get_graph_schema_version = lambda _board_id: "0.3.5"
     monkeypatch.setattr(
         svc,
@@ -506,7 +575,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
         async with db_factory() as session:
             result = await get_kg_health(kg_health_board, session)
     finally:
-        svc._aggregate_kuzu_metrics = original_metrics
+        svc._aggregate_graph_metrics = original_metrics
         svc._get_graph_schema_version = original_schema_version
 
     assert result["total_nodes"] == 7
@@ -539,17 +608,19 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
                 artifact_type="spec",
                 artifact_id="spec-dlq-diagnostic",
                 attempts=3,
-                errors=[{
-                    "attempt": 1,
-                    "occurred_at": "2026-05-27T00:00:00Z",
-                    "error_type": "TestError",
-                    "message": "seeded for diagnostic test",
-                }],
+                errors=[
+                    {
+                        "attempt": 1,
+                        "occurred_at": "2026-05-27T00:00:00Z",
+                        "error_type": "TestError",
+                        "message": "seeded for diagnostic test",
+                    }
+                ],
             )
         )
         await session.commit()
 
-    original_metrics = svc._aggregate_kuzu_metrics
+    original_metrics = svc._aggregate_graph_metrics
     original_schema_version = svc._get_graph_schema_version
 
     def _metrics(_board_id):
@@ -559,7 +630,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
             "avg_relevance": 0.8,
         }
 
-    svc._aggregate_kuzu_metrics = _metrics
+    svc._aggregate_graph_metrics = _metrics
     svc._get_graph_schema_version = lambda _board_id: "0.3.5"
     monkeypatch.setattr(
         svc,
@@ -575,7 +646,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
         async with db_factory() as session:
             result = await get_kg_health(kg_health_board, session)
     finally:
-        svc._aggregate_kuzu_metrics = original_metrics
+        svc._aggregate_graph_metrics = original_metrics
         svc._get_graph_schema_version = original_schema_version
 
     assert result["dead_letter_count"] >= 1
@@ -600,7 +671,7 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
 
     monkeypatch.setattr(
         svc,
-        "_aggregate_kuzu_metrics",
+        "_aggregate_graph_metrics",
         lambda _board_id: {
             "total_nodes": 5,
             "default_score_count": 0,
@@ -626,7 +697,11 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
     assert result["board_graph_recovery_required"] is False
     assert result["discovery_state"] == "recovery_needed"
     assert result["overall_state"] == "recovery_needed"
-    assert result["metric_status"] == "available"
+    # The legacy discovery probe is concrete, but this Core-only fixture has
+    # no edition materialization-evidence provider. Schema 1.1 therefore keeps
+    # the aggregate metric contract fail-closed while preserving the stronger
+    # discovery recovery state.
+    assert result["metric_status"] == "unavailable"
     assert result["discovery_recovery_required"] is True
     assert result["primary_health_cause"] == "discovery_recovery_required"
     assert result["operator_action"] == "run_explicit_global_discovery_recovery"
@@ -660,7 +735,7 @@ async def test_service_layer_response_matches_pydantic_model(
     we prove parity by feeding the service output into the Pydantic model
     that the REST endpoint serializes — any drift would fail validation.
     """
-    from okto_pulse.core.api.kg_health import KGHealthResponse
+    from okto_pulse.community.api.kg_health import KGHealthResponse
 
     async with db_factory() as session:
         data = await get_kg_health(kg_health_board, session)
@@ -671,12 +746,29 @@ async def test_service_layer_response_matches_pydantic_model(
     assert set(response.model_dump().keys()) == set(data.keys())
 
 
+def test_rest_health_issue_preserves_unavailable_probe_names():
+    from okto_pulse.community.api.kg_health import HealthIssue
+
+    issue = HealthIssue(
+        code="health_probe_unavailable",
+        component="kg_health",
+        severity="warning",
+        reason="health_probe_unavailable:graph_metrics",
+        description="A bounded health probe did not finish in time.",
+        operator_action="inspect_probe_diagnostics",
+        probes=["graph_metrics"],
+    )
+
+    assert issue.model_dump()["probes"] == ["graph_metrics"]
+
+
 @pytest.mark.asyncio
 async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
     db_factory, kg_health_board
 ):
     """KG-HS.1 AC1/AC7 — recent success is explicit and legacy fields stay."""
     now = datetime.now(timezone.utc)
+    next_run = now + timedelta(minutes=30)
     async with db_factory() as session:
         session.add(
             KGTickRun(
@@ -691,12 +783,18 @@ async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
         await session.commit()
 
     async with db_factory() as session:
-        result = await get_kg_health(kg_health_board, session)
+        result = await get_kg_health(
+            kg_health_board,
+            session,
+            scheduler_control=_HealthSchedulerControl(next_run_time=next_run),
+        )
 
     diag = result["decay_scheduler_diagnostics"]
     assert diag["status"] == "ok"
     assert diag["severity"] == "info"
     assert diag["last_success_at"] is not None
+    assert diag["next_scheduled_at"] == next_run.isoformat()
+    assert diag["reason"] == "ok"
     assert diag["operational_debt"] is False
     assert diag["graph_recovery_required"] is False
     assert result["last_decay_tick_at"] == diag["last_success_at"]
@@ -706,15 +804,10 @@ async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
 
 @pytest.mark.asyncio
 async def test_next_scheduled_at_unavailable_preserves_tick_evidence(
-    db_factory, kg_health_board, monkeypatch
+    db_factory, kg_health_board
 ):
     """KG-HS.1 AC6 — scheduler metadata loss is not graph recovery."""
     now = datetime.now(timezone.utc)
-    monkeypatch.setattr(
-        kg_health_service,
-        "_read_next_scheduled_at",
-        lambda: (None, "scheduler_next_run_unavailable"),
-    )
     async with db_factory() as session:
         session.add(
             KGTickRun(
@@ -729,7 +822,14 @@ async def test_next_scheduled_at_unavailable_preserves_tick_evidence(
         await session.commit()
 
     async with db_factory() as session:
-        result = await get_kg_health(kg_health_board, session)
+        result = await get_kg_health(
+            kg_health_board,
+            session,
+            scheduler_control=_HealthSchedulerControl(
+                exists=False,
+                message="scheduler_next_run_unavailable",
+            ),
+        )
 
     diag = result["decay_scheduler_diagnostics"]
     assert diag["status"] == "ok"
@@ -816,25 +916,27 @@ async def test_failed_tick_after_success_preserves_success_and_safe_error(
     success_at = now - timedelta(hours=2)
     failure_at = now - timedelta(minutes=5)
     async with db_factory() as session:
-        session.add_all([
-            KGTickRun(
-                tick_id=f"kg-hs-success-{uuid.uuid4().hex}",
-                started_at=success_at - timedelta(minutes=3),
-                completed_at=success_at,
-                nodes_recomputed=11,
-                boards_processed=3,
-                boards_failed=0,
-            ),
-            KGTickRun(
-                tick_id=f"kg-hs-failed-{uuid.uuid4().hex}",
-                started_at=failure_at - timedelta(minutes=2),
-                completed_at=failure_at,
-                nodes_recomputed=0,
-                boards_processed=1,
-                boards_failed=1,
-                error='Traceback File "C:\\secret\\graph.lbug\\worker.py": boom',
-            ),
-        ])
+        session.add_all(
+            [
+                KGTickRun(
+                    tick_id=f"kg-hs-success-{uuid.uuid4().hex}",
+                    started_at=success_at - timedelta(minutes=3),
+                    completed_at=success_at,
+                    nodes_recomputed=11,
+                    boards_processed=3,
+                    boards_failed=0,
+                ),
+                KGTickRun(
+                    tick_id=f"kg-hs-failed-{uuid.uuid4().hex}",
+                    started_at=failure_at - timedelta(minutes=2),
+                    completed_at=failure_at,
+                    nodes_recomputed=0,
+                    boards_processed=1,
+                    boards_failed=1,
+                    error='Traceback File "C:\\secret\\graph.lbug\\worker.py": boom',
+                ),
+            ]
+        )
         await session.commit()
 
     async with db_factory() as session:
@@ -861,24 +963,26 @@ async def test_running_tick_preserves_previous_checkpoint_without_recovery(
     success_at = now - timedelta(hours=1)
     running_started_at = now - timedelta(minutes=3)
     async with db_factory() as session:
-        session.add_all([
-            KGTickRun(
-                tick_id=f"kg-hs-prev-{uuid.uuid4().hex}",
-                started_at=success_at - timedelta(minutes=3),
-                completed_at=success_at,
-                nodes_recomputed=9,
-                boards_processed=2,
-                boards_failed=0,
-            ),
-            KGTickRun(
-                tick_id=f"kg-hs-running-{uuid.uuid4().hex}",
-                started_at=running_started_at,
-                completed_at=None,
-                nodes_recomputed=0,
-                boards_processed=0,
-                boards_failed=0,
-            ),
-        ])
+        session.add_all(
+            [
+                KGTickRun(
+                    tick_id=f"kg-hs-prev-{uuid.uuid4().hex}",
+                    started_at=success_at - timedelta(minutes=3),
+                    completed_at=success_at,
+                    nodes_recomputed=9,
+                    boards_processed=2,
+                    boards_failed=0,
+                ),
+                KGTickRun(
+                    tick_id=f"kg-hs-running-{uuid.uuid4().hex}",
+                    started_at=running_started_at,
+                    completed_at=None,
+                    nodes_recomputed=0,
+                    boards_processed=0,
+                    boards_failed=0,
+                ),
+            ]
+        )
         await session.commit()
 
     async with db_factory() as session:
@@ -939,16 +1043,16 @@ async def test_tick_evidence_query_failure_degrades_to_unknown_without_recovery(
 async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
     db_factory, kg_health_board
 ):
-    """KG-HS.1 AC10 — proxy payload explicitly labels file-size semantics."""
+    """KG-HS.1 AC10 — footprint is adapter-provided, not direct memory telemetry."""
     async with db_factory() as session:
         result = await get_kg_health(kg_health_board, session)
 
     proxy = result["storage_footprint_proxy"]
-    assert proxy["source"] == "file_size_proxy"
+    assert proxy["source"] == "runtime_capability"
     assert proxy["is_direct_memory_telemetry"] is False
     copy = f"{proxy['description']} {proxy['tooltip']}".lower()
-    assert "storage footprint" in copy or "file-size proxy" in copy
-    assert "not live ladybug memory telemetry" in copy
+    assert "storage footprint" in copy
+    assert "not live graph memory telemetry" in copy
     assert "buffer-pool telemetry" not in copy
     assert "direct memory pressure" not in copy
     assert "raw buffer pressure" not in copy
@@ -960,51 +1064,40 @@ async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
 def test_contradict_cap_preserves_floor_and_emits_log(caplog):
     """raw_sum=2.5 (5 contradicts × 0.5) is capped at 0.5 with a WARN log.
 
-    Uses a stub Kùzu connection so we don't need a real graph; exercises
+    Uses a stub graph transaction so we don't need a real graph; exercises
     the same code path as production (cap + counter + log + dict shape).
     """
     caplog.set_level(logging.WARNING, logger="okto_pulse.kg.scoring")
     reset_contradict_warn_counters()
 
-    class _StubResult:
-        def __init__(self, row):
-            self._row = row
-            self._consumed = False
-
-        def has_next(self):
-            return not self._consumed
-
-        def get_next(self):
-            self._consumed = True
-            return self._row
-
-        def close(self):
-            pass
-
     class _StubConn:
         def execute(self, _cypher, _params):
-            return _StubResult([
-                1.0,    # source_confidence
-                3,      # out_deg
-                2,      # in_deg
-                10,     # query_hits
-                None,   # last_queried_at
-                0.5,    # relevance_score
-                2.5,    # SUM(contradict_confidence) — way above cap
-                0.0,    # priority_boost
-            ])
+            return GraphStatementResult.from_rows(
+                [
+                    [
+                        1.0,  # source_confidence
+                        3,  # out_deg
+                        2,  # in_deg
+                        10,  # query_hits
+                        None,  # last_queried_at
+                        0.5,  # relevance_score
+                        2.5,  # SUM(contradict_confidence) — way above cap
+                        0.0,  # priority_boost
+                    ]
+                ]
+            )
 
     inputs = _fetch_node_inputs(
-        _StubConn(), "Decision", "decision_x", board_id=KG_HEALTH_BOARD_ID,
+        _StubConn(),
+        "Decision",
+        "decision_x",
+        board_id=KG_HEALTH_BOARD_ID,
     )
 
     assert inputs is not None
     assert inputs["raw_contradict_penalty"] == 2.5
     assert inputs["contradict_penalty"] == CONTRADICT_PENALTY_CAP == 0.5
-    assert any(
-        "contradict_penalty_capped" in rec.message
-        for rec in caplog.records
-    )
+    assert any("contradict_penalty_capped" in rec.message for rec in caplog.records)
     reset_contradict_warn_counters()
 
 
@@ -1018,25 +1111,19 @@ def test_contradict_warn_count_increments_on_cap_event():
     class _Stub:
         def __init__(self, penalty):
             self._penalty = penalty
-            self._consumed = False
 
         def execute(self, _c, _p):
-            return self
-
-        def has_next(self):
-            return not self._consumed
-
-        def get_next(self):
-            self._consumed = True
-            return [1.0, 2, 1, 5, None, 0.5, self._penalty, 0.0]
-
-        def close(self):
-            pass
+            return GraphStatementResult.from_rows(
+                [[1.0, 2, 1, 5, None, 0.5, self._penalty, 0.0]]
+            )
 
     # Three nodes that trigger the cap.
     for _ in range(3):
         _fetch_node_inputs(
-            _Stub(2.5), "Decision", "x", board_id=KG_HEALTH_BOARD_ID,
+            _Stub(2.5),
+            "Decision",
+            "x",
+            board_id=KG_HEALTH_BOARD_ID,
         )
     # One node BELOW the cap should not increment.
     _fetch_node_inputs(_Stub(0.2), "Decision", "y", board_id=KG_HEALTH_BOARD_ID)
@@ -1095,9 +1182,14 @@ def test_cypher_templates_order_by_relevance_score_unchanged():
     cypher_templates = (
         repo_root / "src" / "okto_pulse" / "core" / "kg" / "cypher_templates.py"
     ).read_text(encoding="utf-8")
+    community_repo = repo_root.parent / "okto_labs_pulse_community"
     kuzu_store = (
-        repo_root / "src" / "okto_pulse" / "core" / "kg" / "providers"
-        / "embedded" / "kuzu_graph_store.py"
+        community_repo
+        / "src"
+        / "okto_pulse"
+        / "community"
+        / "adapters"
+        / "kuzu_graph_store.py"
     ).read_text(encoding="utf-8")
 
     assert "ORDER BY d.relevance_score DESC" in cypher_templates
@@ -1114,15 +1206,15 @@ async def test_default_score_ratio_skew_emits_alarm_log(
 ):
     """When ratio > threshold, a structured WARN is emitted.
 
-    Without a populated Kùzu graph, total_nodes is 0 so the ratio path
+    Without a populated graph, total_nodes is 0 so the ratio path
     cannot trigger via aggregations alone. We assert the threshold + log
-    machinery by stubbing _aggregate_kuzu_metrics in the service module.
+    machinery by stubbing _aggregate_graph_metrics in the service module.
     """
     from okto_pulse.core.services import kg_health_service as svc
 
     caplog.set_level(logging.WARNING, logger="okto_pulse.services.kg_health")
 
-    original = svc._aggregate_kuzu_metrics
+    original = svc._aggregate_graph_metrics
 
     def _stub(_board_id):
         return {
@@ -1131,19 +1223,17 @@ async def test_default_score_ratio_skew_emits_alarm_log(
             "avg_relevance": 0.5,
         }
 
-    svc._aggregate_kuzu_metrics = _stub
+    svc._aggregate_graph_metrics = _stub
     try:
         async with db_factory() as session:
             data = await get_kg_health(kg_health_board, session)
     finally:
-        svc._aggregate_kuzu_metrics = original
+        svc._aggregate_graph_metrics = original
 
     assert data["default_score_count"] == 8
     assert data["default_score_ratio"] == 0.8
     assert 0.8 > DEFAULT_SCORE_RATIO_ALARM_THRESHOLD
-    assert any(
-        "default_score_skew_high" in rec.message for rec in caplog.records
-    )
+    assert any("default_score_skew_high" in rec.message for rec in caplog.records)
 
 
 # --- TS9 / AC9: agent_instructions.md doc subseção complete ---
@@ -1159,9 +1249,9 @@ def test_agent_instructions_documents_kg_health_subsection():
     # the MCP tool, and points to the mandatory lazy resource for the deep
     # payload contract (REST endpoint, contradict_penalty/decay fields,
     # when-to-consult). Assert against the COMBINED agent-facing surface.
-    kg_health_res = (
-        mcp_dir / "resources" / "reference" / "kg-health.md"
-    ).read_text(encoding="utf-8")
+    kg_health_res = (mcp_dir / "resources" / "reference" / "kg-health.md").read_text(
+        encoding="utf-8"
+    )
     doc = instr + "\n" + kg_health_res
 
     # The subsection + MCP tool stay in the always-loaded index.
@@ -1279,7 +1369,8 @@ def test_orphan_scan_single_flight_serves_stale_while_revalidating(monkeypatch):
             board_id=board_id, generation_id=None
         )
 
-    t = _threading.Thread(target=first_caller)
+    context = copy_context()
+    t = _threading.Thread(target=context.run, args=(first_caller,))
     t.start()
     try:
         assert scan_started.wait(10), "primeiro scan nao comecou"
@@ -1298,3 +1389,784 @@ def test_orphan_scan_single_flight_serves_stale_while_revalidating(monkeypatch):
         t.join(timeout=10)
 
     reset_orphan_projection_cache_for_tests(board_id)
+
+
+def test_health_first_read_schedules_orphan_scan_without_waiting(monkeypatch):
+    """A cold read returns immediately and completed data becomes visible."""
+    import threading as _threading
+    import time as _time
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+    from okto_pulse.core.kg.orphan_integrity import OrphanScanReport
+
+    board_id = "board-orphan-background-refresh"
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+
+    scan_started = _threading.Event()
+    release_scan = _threading.Event()
+    scan_calls: list[str] = []
+
+    class SlowScanner:
+        def scan(self, *, board_id: str, generation_id: str | None = None):
+            scan_calls.append(board_id)
+            scan_started.set()
+            assert release_scan.wait(10), "test did not release background scan"
+            return OrphanScanReport(
+                board_id=board_id,
+                generation_id=generation_id,
+                orphan_count=0,
+                orphan_count_by_type={},
+                orphan_count_by_writer_path={},
+                samples=(),
+                unresolved_reasons={},
+                allowlisted_root_count=0,
+                correlation_id="background-refresh-complete",
+            )
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", SlowScanner)
+
+    started_at = _time.perf_counter()
+    first = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=None,
+    )
+    elapsed = _time.perf_counter() - started_at
+
+    try:
+        assert elapsed < 0.25
+        assert first["reason"] == "orphan_scan_unavailable"
+        assert scan_started.wait(2), "background scan was not scheduled"
+
+        second = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+            board_id=board_id,
+            generation_id=None,
+        )
+        assert second["reason"] == "orphan_scan_unavailable"
+        assert scan_calls == [board_id]
+    finally:
+        release_scan.set()
+        deadline = _time.monotonic() + 2
+        while _time.monotonic() < deadline:
+            with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+                if board_id not in kg_health_service._ORPHAN_REFRESH_SCHEDULED:
+                    break
+            _time.sleep(0.01)
+
+    completed = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=None,
+    )
+    assert completed["reason"] == "zero_non_allowlisted_orphans"
+    assert completed["correlation_id"] == "background-refresh-complete"
+    assert scan_calls == [board_id]
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+
+
+def test_health_serves_stale_projection_during_single_background_refresh(
+    monkeypatch,
+):
+    """Expired data is served immediately while exactly one refresh runs."""
+    import threading
+    import time
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+    from okto_pulse.core.kg.orphan_integrity import OrphanScanReport
+
+    board_id = "board-orphan-stale-while-revalidate"
+    generation_id = "generation-stale"
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+    stale = {"reason": "cached-stale", "generation_id": generation_id}
+    with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+        kg_health_service._ORPHAN_PROJECTION_CACHE[board_id] = (
+            time.monotonic() - kg_health_service._ORPHAN_PROJECTION_TTL_S - 1,
+            generation_id,
+            stale,
+        )
+
+    scan_started = threading.Event()
+    release_scan = threading.Event()
+    calls: list[str] = []
+
+    class SlowScanner:
+        def scan(self, *, board_id: str, generation_id: str | None = None):
+            calls.append(board_id)
+            scan_started.set()
+            assert release_scan.wait(10), "test did not release stale refresh"
+            return OrphanScanReport(
+                board_id=board_id,
+                generation_id=generation_id,
+                orphan_count=0,
+                orphan_count_by_type={},
+                orphan_count_by_writer_path={},
+                samples=(),
+                unresolved_reasons={},
+                allowlisted_root_count=0,
+                correlation_id="stale-refresh-complete",
+            )
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", SlowScanner)
+
+    started_at = time.perf_counter()
+    first = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+    assert time.perf_counter() - started_at < 0.25
+    assert first is stale
+    assert scan_started.wait(2)
+
+    second = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+    assert second is stale
+    assert calls == [board_id]
+
+    release_scan.set()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+            if board_id not in kg_health_service._ORPHAN_REFRESH_SCHEDULED:
+                break
+        time.sleep(0.01)
+
+    refreshed = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+    assert refreshed["correlation_id"] == "stale-refresh-complete"
+    assert calls == [board_id]
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+
+
+def test_orphan_refresh_reset_invalidates_late_publish_and_cleanup(monkeypatch):
+    """An old worker cannot publish or clear a newer refresh after reset."""
+    import threading
+    import time
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+    from okto_pulse.core.kg.orphan_integrity import OrphanScanReport
+
+    board_id = "board-orphan-reset-token"
+    generation_id = "generation-reset"
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+
+    scan_started = [threading.Event(), threading.Event()]
+    release_scan = [threading.Event(), threading.Event()]
+    build_done = [threading.Event(), threading.Event()]
+    call_lock = threading.Lock()
+    scan_index = 0
+    build_index = 0
+
+    class ResetScanner:
+        def scan(self, *, board_id: str, generation_id: str | None = None):
+            nonlocal scan_index
+            with call_lock:
+                index = scan_index
+                scan_index += 1
+            scan_started[index].set()
+            assert release_scan[index].wait(10), "test did not release reset scan"
+            return OrphanScanReport(
+                board_id=board_id,
+                generation_id=generation_id,
+                orphan_count=0,
+                orphan_count_by_type={},
+                orphan_count_by_writer_path={},
+                samples=(),
+                unresolved_reasons={},
+                allowlisted_root_count=0,
+                correlation_id=f"reset-refresh-{index + 1}",
+            )
+
+    original_build = kg_health_service._build_orphan_integrity_for_health
+
+    def tracked_build(**kwargs):
+        nonlocal build_index
+        with call_lock:
+            index = build_index
+            build_index += 1
+        try:
+            return original_build(**kwargs)
+        finally:
+            build_done[index].set()
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", ResetScanner)
+    monkeypatch.setattr(
+        kg_health_service,
+        "_build_orphan_integrity_for_health",
+        tracked_build,
+    )
+
+    first = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+    assert first["reason"] == "orphan_scan_unavailable"
+    assert scan_started[0].wait(2)
+    with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+        old_refresh_token = kg_health_service._ORPHAN_REFRESH_SCHEDULED[board_id]
+
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+    second = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+    assert second["reason"] == "orphan_scan_unavailable"
+    assert scan_started[1].wait(2)
+    with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+        new_refresh_token = kg_health_service._ORPHAN_REFRESH_SCHEDULED[board_id]
+    assert new_refresh_token != old_refresh_token
+
+    release_scan[0].set()
+    assert build_done[0].wait(2)
+    with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+        assert kg_health_service._ORPHAN_REFRESH_SCHEDULED[board_id] == (
+            new_refresh_token
+        )
+        assert kg_health_service._ORPHAN_PROJECTION_CACHE.get(board_id) is None
+
+    release_scan[1].set()
+    assert build_done[1].wait(2)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+            if board_id not in kg_health_service._ORPHAN_REFRESH_SCHEDULED:
+                break
+        time.sleep(0.01)
+
+    completed = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+    assert completed["correlation_id"] == "reset-refresh-2"
+    kg_health_service.reset_orphan_projection_cache_for_tests(board_id)
+
+
+def test_orphan_refresh_is_runtime_scoped_and_generation_aware(monkeypatch):
+    """Caches do not leak between runtimes or across KG generations."""
+    import threading
+    import time
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+    from okto_pulse.core.kg.orphan_integrity import OrphanScanReport
+    from okto_pulse.core.runtime_context import (
+        RuntimeValueRegistry,
+        runtime_value_scope,
+    )
+
+    board_id = "board-orphan-runtime-scope"
+    calls: list[tuple[str | None, str]] = []
+    calls_lock = threading.Lock()
+
+    class RuntimeScanner:
+        def scan(self, *, board_id: str, generation_id: str | None = None):
+            with calls_lock:
+                correlation_id = f"runtime-refresh-{len(calls) + 1}"
+                calls.append((generation_id, correlation_id))
+            return OrphanScanReport(
+                board_id=board_id,
+                generation_id=generation_id,
+                orphan_count=0,
+                orphan_count_by_type={},
+                orphan_count_by_writer_path={},
+                samples=(),
+                unresolved_reasons={},
+                allowlisted_root_count=0,
+                correlation_id=correlation_id,
+            )
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", RuntimeScanner)
+    runtime_a = RuntimeValueRegistry()
+    runtime_b = RuntimeValueRegistry()
+
+    def wait_for_refresh(runtime: RuntimeValueRegistry) -> None:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            with runtime_value_scope(runtime):
+                with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+                    if board_id not in kg_health_service._ORPHAN_REFRESH_SCHEDULED:
+                        return
+            time.sleep(0.01)
+        raise AssertionError("background refresh did not complete")
+
+    with runtime_value_scope(runtime_a):
+        cold_a = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+            board_id=board_id,
+            generation_id="generation-1",
+        )
+    assert cold_a["reason"] == "orphan_scan_unavailable"
+    wait_for_refresh(runtime_a)
+    with runtime_value_scope(runtime_a):
+        warm_a = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+            board_id=board_id,
+            generation_id="generation-1",
+        )
+    assert warm_a["correlation_id"] == "runtime-refresh-1"
+
+    with runtime_value_scope(runtime_b):
+        cold_b = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+            board_id=board_id,
+            generation_id="generation-1",
+        )
+    assert cold_b["reason"] == "orphan_scan_unavailable"
+    wait_for_refresh(runtime_b)
+    with runtime_value_scope(runtime_b):
+        warm_b = kg_health_service._get_or_schedule_orphan_integrity_for_health(
+            board_id=board_id,
+            generation_id="generation-1",
+        )
+    assert warm_b["correlation_id"] == "runtime-refresh-2"
+
+    with runtime_value_scope(runtime_a):
+        next_generation = (
+            kg_health_service._get_or_schedule_orphan_integrity_for_health(
+                board_id=board_id,
+                generation_id="generation-2",
+            )
+        )
+    assert next_generation["reason"] == "orphan_scan_unavailable"
+    wait_for_refresh(runtime_a)
+    with runtime_value_scope(runtime_a):
+        warm_next_generation = (
+            kg_health_service._get_or_schedule_orphan_integrity_for_health(
+                board_id=board_id,
+                generation_id="generation-2",
+            )
+        )
+    assert warm_next_generation["correlation_id"] == "runtime-refresh-3"
+    assert [generation for generation, _ in calls] == [
+        "generation-1",
+        "generation-1",
+        "generation-2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_kg_health_cold_read_does_not_wait_for_orphan_scan(
+    monkeypatch,
+    db_factory,
+    kg_health_board,
+):
+    """The public service first read is bounded even if orphan IO is stuck."""
+    import asyncio
+    import threading
+    import time
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+
+    scan_started = threading.Event()
+    release_scan = threading.Event()
+
+    class StuckScanner:
+        def scan(self, *, board_id: str, generation_id: str | None = None):
+            del board_id, generation_id
+            scan_started.set()
+            assert release_scan.wait(10), "test did not release stuck orphan scan"
+            return None
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", StuckScanner)
+    kg_health_service.reset_orphan_projection_cache_for_tests(kg_health_board)
+
+    started_at = time.perf_counter()
+    try:
+        async with db_factory() as session:
+            result = await asyncio.wait_for(
+                get_kg_health(kg_health_board, session),
+                timeout=2,
+            )
+        assert time.perf_counter() - started_at < 1.5
+        assert result["orphan_integrity"]["reason"] == "orphan_scan_unavailable"
+        assert scan_started.wait(2)
+    finally:
+        release_scan.set()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            with kg_health_service._ORPHAN_SCAN_INFLIGHT_LOCK:
+                if kg_health_board not in kg_health_service._ORPHAN_REFRESH_SCHEDULED:
+                    break
+            time.sleep(0.01)
+        kg_health_service.reset_orphan_projection_cache_for_tests(kg_health_board)
+
+
+def test_runtime_health_probe_workers_retire_and_restart_with_owner_context():
+    """Runtime-local workers retire when idle and restart without losing context."""
+
+    pool = kg_health_service._DaemonHealthProbePool(
+        max_workers=2,
+        max_queue_size=4,
+        idle_timeout_s=0.02,
+    )
+    owner = kg_health_service._HealthProbeOwnerContext()
+
+    first_token = owner.set(("board-a", (1, 2)))
+    try:
+        first = pool.submit(context=copy_context(), build=owner.get)
+    finally:
+        owner.reset(first_token)
+    assert first is not None
+    assert first.result(timeout=1) == ("board-a", (1, 2))
+
+    deadline = time.monotonic() + 1
+    while pool.active_worker_count() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert pool.active_worker_count() == 0
+
+    second_token = owner.set(("board-b", (3, 4)))
+    try:
+        second = pool.submit(context=copy_context(), build=owner.get)
+    finally:
+        owner.reset(second_token)
+    assert second is not None
+    assert second.result(timeout=1) == ("board-b", (3, 4))
+    assert pool.active_worker_count() > 0
+
+
+def test_runtime_health_probe_pool_exposes_bounded_lifecycle_drain():
+    """Teardown sees every queued/running daemon job before graph close."""
+
+    started = threading.Event()
+    release = threading.Event()
+    pool = kg_health_service._DaemonHealthProbePool(
+        max_workers=1,
+        max_queue_size=2,
+        idle_timeout_s=0.02,
+    )
+
+    def blocking_probe():
+        started.set()
+        assert release.wait(2), "test did not release health probe"
+        return "done"
+
+    future = pool.submit(context=copy_context(), build=blocking_probe)
+    assert future is not None
+    assert started.wait(1)
+    assert pool.wait_until_idle(timeout_s=0.0) == 1
+
+    release.set()
+    assert future.result(timeout=1) == "done"
+    assert pool.wait_until_idle(timeout_s=1.0) == 0
+
+
+@pytest.mark.parametrize(
+    ("blocked_probe", "expected_group"),
+    [
+        ("graph_metrics", "graph_snapshot"),
+        ("schema_version", "graph_snapshot"),
+        ("board_telemetry", "graph_snapshot"),
+        ("storage_footprint", "graph_snapshot"),
+        ("layer_counts", "graph_snapshot"),
+        ("discovery_telemetry", "discovery_snapshot"),
+        ("current_generation", "artifact_snapshot"),
+        ("cognitive_items", "artifact_snapshot"),
+        ("rebuild_source_diagnostics", "artifact_snapshot"),
+        ("stale_canonical_parity", "parity_snapshot"),
+        ("digest_layer_parity", "parity_snapshot"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_each_blocking_health_probe_respects_endpoint_budget(
+    monkeypatch,
+    db_factory,
+    kg_health_board,
+    blocked_probe,
+    expected_group,
+):
+    """Every synchronous/file-backed probe degrades without blocking health."""
+    import asyncio
+    import threading
+    import time
+
+    from okto_pulse.core.kg import stale_canonical_parity as stale_module
+    from okto_pulse.core.kg.global_discovery import layer_parity as parity_module
+
+    svc = kg_health_service
+    started = threading.Event()
+    release = threading.Event()
+
+    safe_values = {
+        "graph_metrics": {
+            "total_nodes": 0,
+            "default_score_count": 0,
+            "avg_relevance": 0.0,
+        },
+        "schema_version": None,
+        "board_telemetry": svc._telemetry_unavailable("board"),
+        "storage_footprint": svc._unavailable_storage_footprint_proxy("test"),
+        "layer_counts": svc._unavailable_kg_layer_counts("test"),
+        "discovery_telemetry": svc._telemetry_unavailable("discovery"),
+        "current_generation": ("generation-probe-test", "available", "ok"),
+        "cognitive_items": (0, 0, "available"),
+        "rebuild_source_diagnostics": {
+            "source_count": 0,
+            "canonical_source_count": 0,
+            "working_source_count": 0,
+            "enumeration_failure": False,
+            "error": None,
+        },
+        "stale_canonical_parity": [],
+        "digest_layer_parity": {
+            "status": "available",
+            "reason": "no_digests",
+            "digests": [],
+            "board_meta": {},
+            "needs_overlay": False,
+        },
+    }
+    targets = {
+        "graph_metrics": (svc, "_aggregate_graph_metrics"),
+        "schema_version": (svc, "_get_graph_schema_version"),
+        "board_telemetry": (svc, "_probe_board_graph_telemetry"),
+        "storage_footprint": (svc, "_build_storage_footprint_proxy"),
+        "layer_counts": (svc, "_aggregate_kg_layer_counts"),
+        "discovery_telemetry": (svc, "_probe_global_discovery_telemetry"),
+        "current_generation": (svc, "_read_current_kg_generation"),
+        "cognitive_items": (svc, "_read_cognitive_health_counts"),
+        "rebuild_source_diagnostics": (svc, "_probe_rebuild_source_diagnostics"),
+        "stale_canonical_parity": (stale_module, "detect_board_graph_stale"),
+        "digest_layer_parity": (
+            parity_module,
+            "collect_digest_layer_mismatch_inputs",
+        ),
+    }
+
+    monkeypatch.setattr(
+        svc, "_aggregate_graph_metrics", lambda _board: safe_values["graph_metrics"]
+    )
+    monkeypatch.setattr(
+        svc, "_get_graph_schema_version", lambda _board: safe_values["schema_version"]
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
+        lambda **_kw: safe_values["board_telemetry"],
+    )
+    monkeypatch.setattr(
+        svc,
+        "_build_storage_footprint_proxy",
+        lambda _board: safe_values["storage_footprint"],
+    )
+    monkeypatch.setattr(
+        svc, "_aggregate_kg_layer_counts", lambda _board: safe_values["layer_counts"]
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_global_discovery_telemetry",
+        lambda: safe_values["discovery_telemetry"],
+    )
+    monkeypatch.setattr(
+        svc,
+        "_read_current_kg_generation",
+        lambda _board: safe_values["current_generation"],
+    )
+    monkeypatch.setattr(
+        svc,
+        "_read_cognitive_health_counts",
+        lambda _board: safe_values["cognitive_items"],
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_rebuild_source_diagnostics",
+        lambda _board: safe_values["rebuild_source_diagnostics"],
+    )
+    monkeypatch.setattr(
+        stale_module,
+        "detect_board_graph_stale",
+        lambda _board: safe_values["stale_canonical_parity"],
+    )
+    monkeypatch.setattr(
+        parity_module,
+        "collect_digest_layer_mismatch_inputs",
+        lambda _board: safe_values["digest_layer_parity"],
+    )
+    monkeypatch.setattr(
+        svc,
+        "_get_or_schedule_orphan_integrity_for_health",
+        lambda **_kw: svc._orphan_projection_unavailable(scan_error="test"),
+    )
+
+    target, attribute = targets[blocked_probe]
+
+    def blocked(*_args, **_kwargs):
+        started.set()
+        assert release.wait(10), "test did not release blocked health probe"
+        return safe_values[blocked_probe]
+
+    monkeypatch.setattr(target, attribute, blocked)
+    svc.reset_orphan_projection_cache_for_tests(kg_health_board)
+
+    started_at = time.perf_counter()
+    try:
+        async with db_factory() as session:
+            result = await asyncio.wait_for(
+                get_kg_health(kg_health_board, session),
+                timeout=1.5,
+            )
+        assert time.perf_counter() - started_at < 1.25
+        assert started.wait(1)
+        diagnostic = result["probe_diagnostics"][expected_group]
+        assert diagnostic["status"] == "unavailable"
+        assert "probe_budget_exceeded" in diagnostic["reason"]
+        assert result["metric_status"] == "unavailable"
+        if blocked_probe in {"cognitive_items", "rebuild_source_diagnostics"}:
+            assert result["current_kg_generation_id"] == "generation-probe-test"
+            current_generation = result["probe_diagnostics"]["current_generation"]
+            assert current_generation["status"] == "available"
+            assert current_generation["reason"] == "ok"
+            assert current_generation["source_status"] == "available"
+            assert current_generation["snapshot_freshness"]["status"] == "unavailable"
+            assert current_generation["snapshot_freshness"]["is_stale"] is False
+        if blocked_probe == "digest_layer_parity":
+            assert (
+                result["probe_diagnostics"]["stale_canonical_parity"]["status"]
+                == "available"
+            )
+    finally:
+        release.set()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            with svc._HEALTH_PROBE_LOCK:
+                if (expected_group, kg_health_board) not in svc._HEALTH_PROBE_INFLIGHT:
+                    break
+            time.sleep(0.01)
+        svc.reset_orphan_projection_cache_for_tests(kg_health_board)
+
+
+def test_snapshot_derived_diagnostic_marks_cached_cognitive_count_stale():
+    """A source-success flag must not present a stale ledger count as live."""
+    probe = kg_health_service._HealthProbeResult(
+        value={"cognitive_pending_active": 1},
+        status="stale",
+        reason="refresh_scheduled",
+        age_seconds=31.25,
+        refresh_in_progress=True,
+    )
+
+    diagnostic = kg_health_service._snapshot_derived_diagnostic(
+        source_status="available",
+        source_reason="ok",
+        snapshot=probe,
+    )
+
+    assert diagnostic["status"] == "stale"
+    assert diagnostic["source_status"] == "available"
+    assert diagnostic["reason"] == "refresh_scheduled"
+    assert diagnostic["snapshot_freshness"] == {
+        "status": "stale",
+        "reason": "refresh_scheduled",
+        "age_seconds": 31.25,
+        "refresh_in_progress": True,
+        "is_stale": True,
+        "max_age_seconds": 30.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_managed_health_probe_singleflight_and_stale_while_revalidate():
+    import asyncio
+    import threading
+    import time
+
+    svc = kg_health_service
+    board_id = "managed-probe-singleflight"
+    probe_name = "test_managed_probe"
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def build():
+        calls.append(board_id)
+        started.set()
+        assert release.wait(10)
+        return {"value": "fresh"}
+
+    request = svc._HealthProbeRequest(
+        name=probe_name,
+        board_id=board_id,
+        generation_id="generation-1",
+        build=build,
+        fallback={"value": "fallback"},
+        ttl_s=0.2,
+    )
+    svc._reset_health_probe_cache_for_tests(board_id)
+    first, second = await asyncio.gather(
+        svc._resolve_health_probe_batch((request,), budget_s=0.02),
+        svc._resolve_health_probe_batch((request,), budget_s=0.02),
+    )
+    assert started.wait(1)
+    assert first[probe_name].status == "unavailable"
+    assert second[probe_name].status == "unavailable"
+    assert calls == [board_id]
+
+    release.set()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with svc._HEALTH_PROBE_LOCK:
+            if (probe_name, board_id) not in svc._HEALTH_PROBE_INFLIGHT:
+                break
+        await asyncio.sleep(0.01)
+    warm = await svc._resolve_health_probe_batch((request,), budget_s=0)
+    assert warm[probe_name].value == {"value": "fresh"}
+
+    await asyncio.sleep(0.25)
+    stale = await svc._resolve_health_probe_batch((request,), budget_s=0)
+    assert stale[probe_name].status == "stale"
+    assert stale[probe_name].value == {"value": "fresh"}
+    svc._reset_health_probe_cache_for_tests(board_id)
+
+
+@pytest.mark.asyncio
+async def test_managed_health_probe_reset_rejects_late_worker_publication():
+    import asyncio
+    import threading
+
+    svc = kg_health_service
+    board_id = "managed-probe-reset"
+    probe_name = "test_managed_probe_reset"
+    started = [threading.Event(), threading.Event()]
+    release = [threading.Event(), threading.Event()]
+    call_lock = threading.Lock()
+    call_index = 0
+
+    def build():
+        nonlocal call_index
+        with call_lock:
+            index = call_index
+            call_index += 1
+        started[index].set()
+        assert release[index].wait(10)
+        return {"value": f"refresh-{index + 1}"}
+
+    request = svc._HealthProbeRequest(
+        name=probe_name,
+        board_id=board_id,
+        generation_id="generation-reset",
+        build=build,
+        fallback={"value": "fallback"},
+    )
+    svc._reset_health_probe_cache_for_tests(board_id)
+    first, future_one = svc._ensure_health_probe(request)
+    assert first.status == "unavailable"
+    assert future_one is not None
+    assert started[0].wait(1)
+
+    svc._reset_health_probe_cache_for_tests(board_id)
+    second, future_two = svc._ensure_health_probe(request)
+    assert second.status == "unavailable"
+    assert future_two is not None
+    assert started[1].wait(1)
+
+    release[0].set()
+    await asyncio.wrap_future(future_one)
+    with svc._HEALTH_PROBE_LOCK:
+        assert svc._HEALTH_PROBE_CACHE.get((probe_name, board_id)) is None
+        assert svc._HEALTH_PROBE_INFLIGHT[(probe_name, board_id)][2] is future_two
+
+    release[1].set()
+    await asyncio.wrap_future(future_two)
+    completed = svc._read_health_probe_result(
+        request,
+        fallback_reason="unexpected",
+    )
+    assert completed.status == "available"
+    assert completed.value == {"value": "refresh-2"}
+    svc._reset_health_probe_cache_for_tests(board_id)

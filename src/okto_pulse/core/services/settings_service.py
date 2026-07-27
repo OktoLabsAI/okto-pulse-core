@@ -1,479 +1,85 @@
-"""Runtime settings persistence for operator-tunable values (0.1.4).
+"""Runtime-settings application facade.
 
-Exposes three Kuzu-related knobs (``kg_kuzu_buffer_pool_mb``,
-``kg_kuzu_max_db_size_gb``, ``kg_connection_pool_size``) via a key-value
-table in the main app SQLite DB, read by the UI (``Settings`` menu) and
-by the backend at boot to override :class:`CoreSettings` defaults.
-
-Kùzu ``Database()`` is constructor-time — values only take effect on
-process restart. The endpoint layer communicates that via a
-``restart_required`` flag in the GET/PUT response.
-
-Precedence at boot (documented in BR2 ``Precedencia de config``):
-    env var (non-empty) > persisted settings table > CoreSettings default
+The setting vocabulary and application error are Core contracts. Persistence
+and local runtime effects are supplied by an edition-owned adapter.
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
-import os
-import warnings
-from datetime import timezone
 from typing import Any
 
-from sqlalchemy import String, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, mapped_column
-
-from okto_pulse.core.infra.database import Base, get_session_factory
-from okto_pulse.core.infra.config import (
-    CoreSettings,
-    configure_settings,
-    get_settings,
-    validate_graph_db_max_size_gb,
+from okto_pulse.core.domain.runtime_settings import (
+    DECAY_TICK_KEYS,
+    EVENT_QUEUE_KEYS,
+    RUNTIME_KEYS,
+    SETTINGS_RUNTIME_EFFECT_PORTS,
+    ConfigChangeBlocked,
 )
 
-logger = logging.getLogger("okto_pulse.services.settings")
-
-# Graph DB keys — changing any of these requires a full process restart
-# (Kùzu Database() is constructor-time). The frontend amber banner is
-# triggered iff one of these diverges from the boot snapshot.
-GRAPH_DB_KEYS: tuple[str, ...] = (
-    "kg_kuzu_buffer_pool_mb",
-    "kg_kuzu_max_db_size_gb",
-    "kg_connection_pool_size",
+from okto_pulse.core.ports.relational_services import (
+    resolve_runtime_settings_adapter,
 )
 
-# Event Queue keys (spec bdcda842) — hot-reload, no restart required.
-# The worker pool re-reads CoreSettings on every claim (5s cache TTL).
-EVENT_QUEUE_KEYS: tuple[str, ...] = (
-    "kg_queue_max_concurrent_workers",
-    "kg_queue_min_interval_ms",
-    "kg_queue_claim_timeout_s",
-    "kg_queue_max_attempts",
-    "kg_queue_alert_threshold",
-)
-
-# Decay Tick keys (spec 54399628 — Wave 2 NC f9732afc). Hot-reload via
-# scheduler.reschedule_job — see _maybe_reschedule_tick below. Mudanças
-# em qualquer destes NÃO marcam restart_required.
-DECAY_TICK_KEYS: tuple[str, ...] = (
-    "kg_decay_tick_interval_minutes",
-    "kg_decay_tick_staleness_days",
-    "kg_decay_tick_max_age_days",
-)
-
-# Keys persisted in the `app_settings` table. Adding a new key here is enough
-# to expose it via the REST endpoint; update the RuntimeSettingsPayload to
-# include a validator.
-RUNTIME_KEYS: tuple[str, ...] = GRAPH_DB_KEYS + EVENT_QUEUE_KEYS + DECAY_TICK_KEYS
-
-# Legacy env var name → canonical settings key. Read once at boot in
-# apply_persisted_settings_to_core_settings; emits DeprecationWarning if used.
-# Removal scheduled for v0.5.0.
-_LEGACY_ENV_ALIASES: tuple[tuple[str, str], ...] = (
-    ("KG_MAX_QUEUE_DEPTH", "kg_queue_alert_threshold"),
-)
+async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
+    return await resolve_runtime_settings_adapter().apply_persisted_settings_to_core_settings()
 
 
-class AppSetting(Base):
-    """Key-value row for persisted runtime settings (small, string values)."""
-
-    __tablename__ = "app_settings"
-
-    key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(String(64), nullable=False)
+async def get_runtime_settings(settings_port: Any) -> dict[str, Any]:
+    return await resolve_runtime_settings_adapter().get_runtime_settings(settings_port)
 
 
-_write_lock = asyncio.Lock()
-# Snapshot of the values loaded at boot. Used to compute restart_required.
-_boot_snapshot: dict[str, int] = {}
-
-
-def _validate_runtime_setting_value(key: str, value: int) -> int:
-    """Validate persisted/runtime values that bypass the FastAPI schema."""
-    if key == "kg_kuzu_buffer_pool_mb":
-        if not 128 <= value <= 512:
-            raise ValueError(
-                "kg_kuzu_buffer_pool_mb must be between 128 and 512 MB. "
-                "Values below 128 MB can exhaust Ladybug during HNSW commits."
-            )
-    elif key == "kg_kuzu_max_db_size_gb":
-        validate_graph_db_max_size_gb(value)
-    return value
-
-
-def _read_boot_snapshot() -> dict[str, int]:
-    """Return a copy of the settings that were active at boot.
-
-    If the app started before :func:`apply_persisted_settings_to_core_settings`
-    ran (shouldn't happen in prod but tests often bypass boot), falls back to
-    the live CoreSettings which is the best approximation.
-    """
-    if _boot_snapshot:
-        return dict(_boot_snapshot)
-    s = get_settings()
-    return {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
-
-
-async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
-    """Load every row from ``app_settings`` and coerce values to int.
-
-    Returns an empty dict on any error so a broken table never blocks boot.
-    """
-    try:
-        result = await db.execute(
-            select(AppSetting).where(AppSetting.key.in_(RUNTIME_KEYS))
-        )
-        rows = result.scalars().all()
-        out: dict[str, int] = {}
-        for row in rows:
-            try:
-                parsed = int(row.value)
-                out[row.key] = _validate_runtime_setting_value(row.key, parsed)
-            except (TypeError, ValueError) as exc:
-                logger.warning(
-                    "settings.invalid_persisted_value key=%s value=%r err=%s",
-                    row.key, row.value, exc,
-                    extra={
-                        "event": "settings.invalid_persisted_value",
-                        "key": row.key,
-                        "value": row.value,
-                        "error": str(exc),
-                    },
-                )
-        return out
-    except Exception as exc:
-        logger.warning("settings.load_failed err=%s", exc)
-        return {}
+def _apply_live_tick_settings(values: dict[str, int]) -> None:
+    resolve_runtime_settings_adapter()._apply_live_tick_settings(values)
 
 
 def _resolve_legacy_env_aliases() -> dict[str, int]:
-    """Resolve deprecated env vars into canonical settings keys.
-
-    Spec bdcda842 (TR12): KG_MAX_QUEUE_DEPTH was the admission-gate threshold
-    in v0.2.0; it is now an alerting-only threshold renamed to
-    kg_queue_alert_threshold. We honour the legacy env var until v0.5.0 and
-    emit a DeprecationWarning + structured log when it fires.
-
-    Only applies when the legacy env var is set AND the new env var is NOT
-    set (so an explicit new-style override always wins).
-    """
-    resolved: dict[str, int] = {}
-    for legacy_env, canonical_key in _LEGACY_ENV_ALIASES:
-        raw = os.environ.get(legacy_env)
-        if not raw:
-            continue
-        canonical_env = canonical_key.upper()
-        if os.environ.get(canonical_env):
-            continue
-        try:
-            resolved[canonical_key] = int(raw)
-        except ValueError:
-            logger.warning(
-                "settings.legacy_env_invalid name=%s value=%r",
-                legacy_env, raw,
-            )
-            continue
-        msg = (
-            f"Env var {legacy_env} is deprecated and will be removed in "
-            f"v0.5.0; use {canonical_env} instead. Mapped value={raw} into "
-            f"{canonical_key}."
-        )
-        warnings.warn(msg, DeprecationWarning, stacklevel=2)
-        logger.warning(
-            "settings.legacy_env_used legacy=%s canonical=%s value=%d",
-            legacy_env, canonical_key, resolved[canonical_key],
-            extra={
-                "event": "settings.legacy_env_used",
-                "legacy_env": legacy_env,
-                "canonical_key": canonical_key,
-                "value": resolved[canonical_key],
-                "version_removed": "0.5.0",
-            },
-        )
-    return resolved
+    return resolve_runtime_settings_adapter()._resolve_legacy_env_aliases()
 
 
-async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
-    """Read the ``app_settings`` table and override :class:`CoreSettings`.
-
-    Called once at app startup **before** any module imports Kùzu. Logs the
-    resolved values in a single structured line for audit.
-    Returns the snapshot that was applied (for caller bookkeeping).
-    """
-    factory = get_session_factory()
-    async with factory() as db:
-        persisted = await _load_persisted_rows(db)
-
-    # Resolve legacy env aliases (e.g. KG_MAX_QUEUE_DEPTH → kg_queue_alert_threshold).
-    legacy = _resolve_legacy_env_aliases()
-
-    # Build the merged view (persisted overrides defaults; legacy env applies
-    # only when the canonical key wasn't persisted nor set via canonical env;
-    # env is handled by connection_pool at read-time, not here — CoreSettings
-    # shouldn't know about env-var overrides).
-    base = get_settings()
-    merged: dict[str, Any] = base.model_dump()
-    for key in RUNTIME_KEYS:
-        if key in persisted:
-            merged[key] = persisted[key]
-        elif key in legacy:
-            merged[key] = legacy[key]
-
-    new_settings = CoreSettings(**merged)
-    configure_settings(new_settings)
-
-    # Take the boot snapshot *after* CoreSettings was updated so restart_required
-    # is computed against the values the current process actually observes.
-    snapshot = {k: int(getattr(new_settings, k)) for k in RUNTIME_KEYS}
-    _boot_snapshot.clear()
-    _boot_snapshot.update(snapshot)
-
-    logger.info(
-        "kg.kuzu.config_applied buffer_pool_mb=%d max_db_size_gb=%d pool_size=%d "
-        "queue_workers=%d queue_min_interval_ms=%d queue_alert_threshold=%d",
-        snapshot["kg_kuzu_buffer_pool_mb"],
-        snapshot["kg_kuzu_max_db_size_gb"],
-        snapshot["kg_connection_pool_size"],
-        snapshot["kg_queue_max_concurrent_workers"],
-        snapshot["kg_queue_min_interval_ms"],
-        snapshot["kg_queue_alert_threshold"],
-        extra={
-            "event": "kg.kuzu.config_applied",
-            **snapshot,
-        },
+async def apply_tick_runtime_effects(
+    values: dict[str, int],
+    scheduler_control: Any,
+    *,
+    actor_id: str = "unknown",
+    source: str = "runtime_settings.put",
+):
+    return await resolve_runtime_settings_adapter().apply_tick_runtime_effects(
+        values,
+        scheduler_control,
+        actor_id=actor_id,
+        source=source,
     )
-    return snapshot
-
-
-async def get_runtime_settings(db: AsyncSession) -> dict[str, Any]:
-    """Return the current effective values + restart_required flag.
-
-    Effective = what CoreSettings is currently exposing (used by _open_kuzu_db
-    and connection_pool at runtime).
-
-    ``restart_required`` is True when a **Graph DB** key in the persisted
-    table diverges from the boot snapshot — those are constructor-time for
-    Kùzu and need a process restart to take effect. Event Queue keys are
-    hot-reload (worker pool re-reads on every claim with 5s cache TTL) so
-    persisting them never marks restart_required (spec bdcda842, BR8/TR11).
-    """
-    s = get_settings()
-    effective = {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
-
-    persisted = await _load_persisted_rows(db)
-    boot = _read_boot_snapshot()
-    # Only Graph DB keys gate the restart banner — Event Queue keys hot-reload.
-    restart_required = any(
-        k in persisted and persisted[k] != boot.get(k) for k in GRAPH_DB_KEYS
-    )
-
-    return {**effective, "restart_required": restart_required}
-
-
-def _maybe_reschedule_tick(values: dict[str, int]) -> None:
-    """Spec 54399628 (Wave 2 NC f9732afc) — hot-reload tick interval.
-
-    When `kg_decay_tick_interval_minutes` is in the persisted PUT body,
-    update the live CoreSettings AND call APScheduler.reschedule_job so
-    the cron job picks up the new interval without a server restart.
-
-    Other tick keys (staleness, max_age_cap) take effect on the NEXT
-    tick run via CoreSettings live-read in the handler — no scheduler
-    intervention needed for them.
-
-    Soft-fails when scheduler singleton is None (test contexts that
-    skip lifespan) — settings are still persisted; live process just
-    doesn't reschedule.
-    """
-    if "kg_decay_tick_interval_minutes" not in values:
-        return
-
-    new_interval = int(values["kg_decay_tick_interval_minutes"])
-
-    # Update live CoreSettings so subsequent get_settings() returns the
-    # new value (next tick handler invocation will read it).
-    from okto_pulse.core.infra.config import configure_settings, get_settings
-    current = get_settings()
-    updated = current.model_copy(update={
-        k: int(values[k]) for k in DECAY_TICK_KEYS if k in values
-    })
-    configure_settings(updated)
-
-    # Hot-reload the APScheduler trigger.
-    try:
-        from apscheduler.triggers.interval import IntervalTrigger
-        from okto_pulse.core.kg.scheduler_singleton import get_scheduler
-
-        scheduler = get_scheduler()
-        if scheduler is None:
-            logger.info(
-                "kg.tick.reschedule_skipped reason=no_scheduler "
-                "new_interval_minutes=%d",
-                new_interval,
-                extra={
-                    "event": "kg.tick.reschedule_skipped",
-                    "reason": "no_scheduler",
-                    "new_interval_minutes": new_interval,
-                },
-            )
-            return
-        scheduler.reschedule_job(
-            "kg_daily_tick",
-            trigger=IntervalTrigger(
-                minutes=new_interval,
-                timezone=timezone.utc,
-            ),
-        )
-        logger.info(
-            "kg.tick.rescheduled new_interval_minutes=%d",
-            new_interval,
-            extra={
-                "event": "kg.tick.rescheduled",
-                "new_interval_minutes": new_interval,
-            },
-        )
-    except Exception as exc:
-        # Reschedule is best-effort — failure shouldn't block PUT response.
-        # Operator can restart server to apply on next boot.
-        logger.warning(
-            "kg.tick.reschedule_failed err=%s",
-            exc,
-            extra={"event": "kg.tick.reschedule_failed"},
-        )
-
-
-class ConfigChangeBlocked(Exception):
-    """Raised when KG-01.5 KGConfigChangeGuard rejects a runtime change.
-
-    Carries the bounded ``reason`` code (from ``ConfigBlockReason``) and
-    the ``setting_group`` bucket so the API layer can return a safe
-    HTTP response without leaking raw values.
-    """
-
-    def __init__(
-        self,
-        *,
-        reason: str,
-        setting_group: str,
-        audit_event: str,
-    ) -> None:
-        super().__init__(f"{reason} (setting_group={setting_group})")
-        self.reason = reason
-        self.setting_group = setting_group
-        self.audit_event = audit_event
 
 
 async def put_runtime_settings(
-    db: AsyncSession,
+    settings_port: Any,
     values: dict[str, int],
     *,
     actor_id: str = "unknown",
     migration_plan_ref: str | None = None,
     restart_policy: str | None = None,
+    scheduler_control: Any = None,
 ) -> dict[str, Any]:
-    """Upsert runtime settings into the table. Caller validates ranges first.
-
-    KG-01.5 (val_06cd6809 rework): any LadybugDB-relevant key (graph DB
-    settings — kg_kuzu_buffer_pool_mb, kg_kuzu_max_db_size_gb, etc.)
-    MUST pass through ``KGConfigChangeGuard`` BEFORE the persist. The
-    guard enforces FR10/TR14: hot config changes that could invalidate
-    storage are blocked, storage shrink below current footprint is
-    blocked, migration-required groups (storage/wal/index) need a
-    ``migration_plan_ref``. Non-graph-DB keys (event queue, decay tick)
-    skip the guard — those are hot-reloadable by design.
-
-    On block: raises ``ConfigChangeBlocked`` with bounded reason +
-    setting_group + audit_event. Caller MUST translate to HTTP 400
-    without leaking raw values. Counter
-    ``kg_config_change_blocked_total{setting_group, reason}`` is bumped
-    by the guard.
-
-    ``restart_policy`` defaults to ``"required"`` whenever any graph-DB
-    key is in the diff (because GRAPH_DB_KEYS are constructor-time on
-    LadybugDB Database()) and ``"none"`` otherwise. Caller may override
-    explicitly.
-
-    Returns the GET-style view (effective + restart_required). The lock
-    serialises concurrent PUTs so the last-writer-wins semantic is
-    deterministic.
-
-    Spec 54399628 (Wave 2 NC f9732afc) — when `kg_decay_tick_interval_minutes`
-    changes, also hot-reloads the APScheduler trigger so the new interval
-    takes effect immediately (no restart_required for tick keys).
-    """
-    # Local imports to avoid cycles + keep KG-01.5 dependency optional
-    # for callers that only use legacy keys.
-    from okto_pulse.core.kg.config_guard import (
-        ConfigGuardError,
-        KGConfigChangeGuard,
-        RestartPolicy,
+    return await resolve_runtime_settings_adapter().put_runtime_settings(
+        settings_port,
+        values,
+        actor_id=actor_id,
+        migration_plan_ref=migration_plan_ref,
+        restart_policy=restart_policy,
+        scheduler_control=scheduler_control,
     )
 
-    # Identify the graph-DB subset of the request — only those flow
-    # through the guard. Other RUNTIME_KEYS (event queue, decay tick)
-    # are hot-reloadable by contract.
-    graph_db_changes = {
-        k: v for k, v in values.items() if k in GRAPH_DB_KEYS
-    }
 
-    if graph_db_changes:
-        effective_policy = restart_policy or RestartPolicy.REQUIRED.value
-        # Read current settings for the guard's diff. We read directly
-        # from the rows (not the GET-style view) to feed the guard a
-        # clean dict — the guard only cares about pre/post values for
-        # keys it knows about.
-        current: dict[str, Any] = {}
-        for key in graph_db_changes:
-            row = await db.get(AppSetting, key)
-            if row is not None:
-                try:
-                    current[key] = int(row.value)
-                except (TypeError, ValueError):
-                    current[key] = row.value
-
-        guard = KGConfigChangeGuard()
-        try:
-            decision = guard.validate(
-                board_id="_runtime",
-                current_settings=current,
-                requested_settings=graph_db_changes,
-                actor_id=actor_id,
-                migration_plan_ref=migration_plan_ref,
-                restart_policy=effective_policy,
-            )
-        except ConfigGuardError as exc:
-            # Map typed guard errors to ConfigChangeBlocked so the API
-            # layer can return a single safe 400 shape.
-            raise ConfigChangeBlocked(
-                reason=exc.code.value,
-                setting_group="unknown",
-                audit_event=f"kg.config_change.unknown.blocked",
-            ) from exc
-
-        if not decision.allowed:
-            raise ConfigChangeBlocked(
-                reason=decision.reason,
-                setting_group=decision.setting_group or "unknown",
-                audit_event=decision.audit_event,
-            )
-
-    async with _write_lock:
-        for key, value in values.items():
-            if key not in RUNTIME_KEYS:
-                continue
-            parsed = _validate_runtime_setting_value(key, int(value))
-            row = await db.get(AppSetting, key)
-            if row is None:
-                db.add(AppSetting(key=key, value=str(parsed)))
-            else:
-                row.value = str(parsed)
-        await db.commit()
-
-    # Spec 54399628 — hot-reload tick interval after persistence commits.
-    _maybe_reschedule_tick(values)
-
-    # Re-read to compute restart_required consistently.
-    return await get_runtime_settings(db)
+__all__ = [
+    "DECAY_TICK_KEYS",
+    "EVENT_QUEUE_KEYS",
+    "RUNTIME_KEYS",
+    "SETTINGS_RUNTIME_EFFECT_PORTS",
+    "ConfigChangeBlocked",
+    "_apply_live_tick_settings",
+    "_resolve_legacy_env_aliases",
+    "apply_persisted_settings_to_core_settings",
+    "apply_tick_runtime_effects",
+    "get_runtime_settings",
+    "put_runtime_settings",
+]

@@ -4,9 +4,10 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     begin_consolidation,
     commit_consolidation,
@@ -22,6 +23,38 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
+
+
+async def _run_test_graph_io(operation, *, task_name: str):
+    return await run_blocking_graph_io(
+        operation,
+        task_name=f"test.connectivity-guard.{task_name}",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes, monkeypatch):
+    from kg_registry_testing import (
+        RealBoardCypherExecutorForTests,
+        RealBoardGraphTransactionForTests,
+        configure_test_kg_registry,
+    )
+    import okto_pulse.core.services.kg_health_service as health_service
+
+    async def _healthy(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "healthy",
+            "graph_state": "healthy",
+            "discovery_state": "healthy",
+            "total_nodes": 1,
+        }
+
+    monkeypatch.setattr(health_service, "get_kg_health", _healthy)
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+    )
 
 
 def _seed_node(
@@ -56,7 +89,7 @@ def _seed_node(
         attrs["graph_layer"] = graph_layer
     if maturity_status is not None:
         attrs["maturity_status"] = maturity_status
-    _apply_kuzu_node_create_with_timestamp(orch, node_type, node_id, attrs)
+    _apply_graph_node_create(orch, node_type, node_id, attrs)
 
 
 def _seed_learning_with_optional_parent(
@@ -65,15 +98,14 @@ def _seed_learning_with_optional_parent(
     source_ref: str,
     connected: bool,
 ) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"learning_seed_{uuid.uuid4().hex[:12]}"
     entity_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -92,7 +124,7 @@ def _seed_learning_with_optional_parent(
 
 
 def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -111,7 +143,7 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
 
 
 def _count_learning_belongs_to(board_id: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -131,7 +163,7 @@ def _count_learning_belongs_to(board_id: str, source_ref: str) -> int:
 
 
 def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"bug_seed_{uuid.uuid4().hex[:12]}"
@@ -141,8 +173,7 @@ def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> s
     )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -170,15 +201,14 @@ def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> s
 
 
 def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str]:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
     decision_id = f"decision_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -201,7 +231,7 @@ def _count_decision_belongs_to_root(
     decision_source_ref: str,
     root_id: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -227,7 +257,7 @@ def _count_assumption_belongs_to_root(
     assumption_source_ref: str,
     root_id: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -253,7 +283,7 @@ def _count_learning_validates_bug(
     learning_source_ref: str,
     bug_id: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -301,7 +331,11 @@ async def _begin_with_learning(
             candidate=NodeCandidate(
                 candidate_id=candidate_id,
                 node_type=KGNodeType.LEARNING,
-                title="Connectivity learning",
+                # Same normalized title as _seed_node's "Seed Learning": since
+                # spec MKG-D-S1 (FR8) an identity-bearing TITLE change on NC-8
+                # reuse supersedes-with-trail instead of merging — this helper
+                # exercises the same-title dedup/merge path.
+                title="Seed Learning",
                 source_artifact_ref=source_ref,
                 source_confidence=0.95,
             ),
@@ -346,7 +380,13 @@ async def test_commit_rejects_isolated_learning_before_graph_mutation(
     assert details["passed"] is False
     assert details["violations"][0]["source_artifact_ref"] == source_ref
     assert "content" not in details["violations"][0]
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 0
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-isolated-learning",
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio
@@ -357,8 +397,21 @@ async def test_source_artifact_ref_dedup_hit_without_edge_is_not_successful_merg
     board_handle,
 ):
     source_ref = f"learning:orphan-dedup:{uuid.uuid4()}"
-    _seed_learning_with_optional_parent(board_id, source_ref=source_ref, connected=False)
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    await _run_test_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id,
+            source_ref=source_ref,
+            connected=False,
+        ),
+        task_name="seed-orphan-learning",
+    )
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-seeded-orphan-learning",
+        )
+        == 1
+    )
 
     begin = await _begin_with_learning(
         board_id,
@@ -378,7 +431,13 @@ async def test_source_artifact_ref_dedup_hit_without_edge_is_not_successful_merg
 
     assert exc_info.value.code == "kg_node_connectivity_violation"
     assert exc_info.value.details["connectivity"]["checked_nodes"] == 1
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-rejected-orphan-learning",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -389,8 +448,21 @@ async def test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge(
     board_handle,
 ):
     source_ref = f"learning:connected-dedup:{uuid.uuid4()}"
-    _seed_learning_with_optional_parent(board_id, source_ref=source_ref, connected=True)
-    assert _count_learning_belongs_to(board_id, source_ref) == 1
+    await _run_test_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id,
+            source_ref=source_ref,
+            connected=True,
+        ),
+        task_name="seed-connected-learning",
+    )
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_learning_belongs_to(board_id, source_ref),
+            task_name="count-seeded-learning-edge",
+        )
+        == 1
+    )
 
     begin = await _begin_with_learning(
         board_id,
@@ -411,7 +483,13 @@ async def test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge(
     assert commit.nodes_merged == 1
     assert commit.connectivity["passed"] is True
     assert commit.processed_candidates == 1
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-merged-connected-learning",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -431,14 +509,18 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
         candidate_id="learning_degraded",
     )
 
-    async def fake_get_kg_health(_board_id, _db):
-        return {"graph_state": "recovery_needed", "overall_state": "recovery_needed"}
+    async def fake_get_kg_health(_board_id, _db, scheduler_control=None):
+        return {
+            "graph_state": "recovery_needed",
+            "discovery_state": "healthy",
+            "overall_state": "recovery_needed",
+        }
 
     def forbidden_open(_board_id):
         raise AssertionError("degraded commit must not open LadybugDB")
 
     import okto_pulse.core.services.kg_health_service as health_service
-    import okto_pulse.core.kg.schema as kg_schema
+    import kg_schema_testing as kg_schema
 
     original_open = kg_schema.open_board_connection
     monkeypatch.setattr(health_service, "get_kg_health", fake_get_kg_health)
@@ -462,7 +544,13 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
         "deferred_degraded_graph"
     )
     monkeypatch.setattr(kg_schema, "open_board_connection", original_open)
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 0
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-degraded-learning",
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio
@@ -472,7 +560,10 @@ async def test_bug_derived_learning_validates_existing_bug_is_connected(
     db_factory,
     board_handle,
 ):
-    bug_id = _seed_bug_with_parent(board_id)
+    bug_id = await _run_test_graph_io(
+        lambda: _seed_bug_with_parent(board_id),
+        task_name="seed-bug-with-parent",
+    )
     source_ref = f"card:bug:{bug_id}:learning:{uuid.uuid4()}"
     begin = await _begin_with_learning(
         board_id,
@@ -508,11 +599,17 @@ async def test_bug_derived_learning_validates_existing_bug_is_connected(
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added == 1
     assert commit.edges_added == 1
-    assert _count_learning_validates_bug(
-        board_id,
-        learning_source_ref=source_ref,
-        bug_id=bug_id,
-    ) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_learning_validates_bug(
+                board_id,
+                learning_source_ref=source_ref,
+                bug_id=bug_id,
+            ),
+            task_name="count-learning-validates-bug",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -524,7 +621,10 @@ async def test_commit_auto_attaches_cognitive_decision_to_source_root(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    root_id, existing_decision_id = await _run_test_graph_io(
+        lambda: _seed_spec_root_and_decision(board_id, spec_ref),
+        task_name="seed-spec-root-and-decision",
+    )
     decision_source_ref = f"{spec_ref}:decision:e2e"
 
     async with db_factory() as db:
@@ -587,11 +687,17 @@ async def test_commit_auto_attaches_cognitive_decision_to_source_root(
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added == 1
     assert commit.edges_added == 2
-    assert _count_decision_belongs_to_root(
-        board_id,
-        decision_source_ref=decision_source_ref,
-        root_id=root_id,
-    ) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_decision_belongs_to_root(
+                board_id,
+                decision_source_ref=decision_source_ref,
+                root_id=root_id,
+            ),
+            task_name="count-decision-root-edge",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -603,7 +709,10 @@ async def test_commit_auto_attaches_cognitive_assumption_to_source_root(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    root_id, _existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    root_id, _existing_decision_id = await _run_test_graph_io(
+        lambda: _seed_spec_root_and_decision(board_id, spec_ref),
+        task_name="seed-spec-root-for-assumption",
+    )
     assumption_source_ref = f"{spec_ref}:assumption:e2e"
 
     async with db_factory() as db:
@@ -651,8 +760,14 @@ async def test_commit_auto_attaches_cognitive_assumption_to_source_root(
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added == 1
     assert commit.edges_added == 1
-    assert _count_assumption_belongs_to_root(
-        board_id,
-        assumption_source_ref=assumption_source_ref,
-        root_id=root_id,
-    ) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_assumption_belongs_to_root(
+                board_id,
+                assumption_source_ref=assumption_source_ref,
+                root_id=root_id,
+            ),
+            task_name="count-assumption-root-edge",
+        )
+        == 1
+    )

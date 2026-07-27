@@ -21,13 +21,36 @@ import sys
 import uuid
 from pathlib import Path
 
-# Use the same data dir the community CLI uses by default.
-DATA_DIR = Path.home() / ".okto-pulse"
+# Use the same data dir the community CLI uses by default (DATA_DIR env
+# honored, like CommunitySettings).
+DATA_DIR = Path(os.environ.get("DATA_DIR") or (Path.home() / ".okto-pulse")).expanduser()
 DB_PATH = DATA_DIR / "data" / "pulse.db"
 
 if not DB_PATH.exists():
     print(f"ERROR: pulse.db not found at {DB_PATH}", file=sys.stderr)
     sys.exit(1)
+
+# KGD-01 C6 (serve-lock): o tick abre grafos de board (Ladybug) — rodar com o
+# servidor vivo criaria um segundo escritor no mesmo graph.lbug (produtor do
+# "escritor stale" que corrompe o WAL). Mesmo guard fail-fast da CLI
+# community: heartbeat fresco OU PID vivo no lock => recusa; takeover
+# implícito só com heartbeat stale E PID comprovadamente morto. Import
+# guardado: em ambiente core-only (sem a edição community) o check é pulado.
+try:
+    from okto_pulse.community.serve_lock import (  # type: ignore
+        ServeAlreadyRunningError,
+        assert_no_live_server,
+    )
+except ImportError:
+    ServeAlreadyRunningError = None  # type: ignore[assignment]
+    assert_no_live_server = None  # type: ignore[assignment]
+
+if assert_no_live_server is not None:
+    try:
+        assert_no_live_server(DATA_DIR, operation="run_kg_tick_once")
+    except ServeAlreadyRunningError as exc:  # type: ignore[misc]
+        print(f"ERROR [serve-lock]: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 # Force community-style URL so the engine matches what `okto-pulse serve`
 # runs against. WAL mode means we can write while the server is reading.

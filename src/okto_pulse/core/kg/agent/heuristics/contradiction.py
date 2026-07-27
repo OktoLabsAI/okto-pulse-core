@@ -7,7 +7,7 @@ Pipeline:
     3. Polarity LLM — ask "can these two coexist?". Answer NO ⇒ contradicts.
     4. Emit edge with confidence = llm.confidence * 0.95.
 
-The heuristic is a pure function: it does NOT touch Kùzu directly. Callers
+The heuristic is a pure function: it does NOT touch graph backend directly. Callers
 run the queries, assemble a `DecisionNeighbor` list, and pass them in. This
 keeps the heuristic testable with fixtures instead of a live graph.
 """

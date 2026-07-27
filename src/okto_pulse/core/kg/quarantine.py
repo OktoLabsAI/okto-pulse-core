@@ -1,52 +1,22 @@
-"""Quarantine-before-purge service (KG-01 FR7+FR10, contract api_ee77f56f).
+"""Quarantine-before-purge application policy.
 
-Before any purge of `graph.lbug`, `discovery.lbug` or their sidecars, the
-recovery service MUST move the affected files into quarantine and write
-an auditable manifest. This module is the canonical implementation:
-
-* Moves files atomically into `<base_dir>/quarantine/<quarantine_id>/`.
-* Writes a `manifest.json` next to them, capturing every field required
-  by TR8 (board_id, graph_type, kg_generation_id, reason, timestamps,
-  software_version, correlation_ids).
-* Validates `affected_paths` against the scoped recovery boundary —
-  paths outside known KG storage roots raise `affected_path_out_of_scope`
-  per TR9 / BR `Application data must never be deleted`.
-* Computes `retention_until` from a configurable `retention_days`
-  (TR9 default = 30 days) so an operator-driven cleanup job can prune
-  stale quarantines without losing recent evidence.
-* Emits the canonical `kg_quarantine_total{board_id, graph_type,
-  outcome, reason}` counter (OR `or_05fd5cd3`). Outcomes include
-  `created` and the failure modes; reason values are constrained to a
-  safe enum to avoid leaking sensitive content.
-
-The service does NOT delete the original files after moving — they ARE
-moved (renamed) into quarantine, which is the atomic operation. A
-caller that fails between move and manifest write would leave files in
-quarantine but with no manifest; the public API treats that as a hard
-error and refuses the partial state by attempting a best-effort rollback.
-
-Storage layout:
-
-    <base_dir>/
-        quarantine/
-            <quarantine_id>/
-                manifest.json
-                <copied/moved files>
+Core validates graph type, retention and reason semantics. Edition adapters own
+storage layout, scope resolution, compensation and durable manifest writes.
+Only opaque ``StorageRef`` values cross this boundary.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
-import secrets
-import shutil
-import threading
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
+
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 
 logger = logging.getLogger("okto_pulse.kg.quarantine")
 
@@ -55,6 +25,10 @@ QUARANTINE_DIRNAME = "quarantine"
 MANIFEST_FILENAME = "manifest.json"
 DEFAULT_RETENTION_DAYS = 30  # TR9.
 SOFTWARE_VERSION_FALLBACK = "unknown"
+
+# Keep `json` available as a module attribute for artifact-store manifest
+# writers and regression tests that monkeypatch the manifest write path.
+JSON_MODULE = json
 
 
 # Canonical graph_type values per contract api_ee77f56f request body.
@@ -76,7 +50,7 @@ class QuarantineErrorCode(str, Enum):
     """Typed error codes per contract api_ee77f56f response_errors."""
 
     QUARANTINE_STORAGE_UNAVAILABLE = "quarantine_storage_unavailable"
-    AFFECTED_PATH_OUT_OF_SCOPE = "affected_path_out_of_scope"
+    STORAGE_REF_OUT_OF_SCOPE = "storage_ref_out_of_scope"
 
 
 class QuarantineError(Exception):
@@ -131,7 +105,7 @@ class QuarantineResponse:
 
 @dataclass(frozen=True, slots=True)
 class QuarantineManifest:
-    """In-memory view of the on-disk manifest (TR8)."""
+    """Semantic view of a quarantine manifest (TR8)."""
 
     quarantine_id: str
     board_id: str
@@ -139,7 +113,7 @@ class QuarantineManifest:
     reason: str
     reason_bucket: str  # one of QuarantineReason
     correlation_ids: tuple[str, ...]
-    affected_paths_relative: tuple[str, ...]
+    affected_storage_refs: tuple[StorageRef, ...]
     kg_generation_id: str | None
     software_version: str
     quarantined_at: str
@@ -154,7 +128,10 @@ class QuarantineManifest:
             "reason": self.reason,
             "reason_bucket": self.reason_bucket,
             "correlation_ids": list(self.correlation_ids),
-            "affected_paths_relative": list(self.affected_paths_relative),
+            "affected_storage_refs": [
+                {"token": ref.token, "namespace": ref.namespace}
+                for ref in self.affected_storage_refs
+            ],
             "kg_generation_id": self.kg_generation_id,
             "software_version": self.software_version,
             "quarantined_at": self.quarantined_at,
@@ -177,8 +154,8 @@ _QUARANTINE_COUNTER_LABELS = (
 )
 
 _QuarantineCounterKey = tuple[str, str, str, str]
-_quarantine_counter: dict[_QuarantineCounterKey, int] = {}
-_quarantine_counter_lock = threading.Lock()
+_quarantine_counter = runtime_state("kg.quarantine.counter", dict)
+_quarantine_counter_lock = runtime_lock("kg.quarantine.counter")
 
 
 def _bump_quarantine_counter(
@@ -232,19 +209,6 @@ def reset_quarantine_counter() -> None:
         _quarantine_counter.clear()
 
 
-# --- The service ---------------------------------------------------------------
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _retention_until(retention_days: int) -> str:
-    return (
-        datetime.now(timezone.utc) + timedelta(days=retention_days)
-    ).isoformat()
-
-
 def _bucket_reason(reason: str) -> str:
     """Map an operator-supplied reason string to a bounded counter bucket.
 
@@ -264,55 +228,38 @@ def _bucket_reason(reason: str) -> str:
     return QuarantineReason.UNKNOWN.value
 
 
-def _read_software_version() -> str:
-    try:
-        from importlib.metadata import version
-        return version("okto-pulse-core")
-    except Exception:
-        return SOFTWARE_VERSION_FALLBACK
+# --- The service ---------------------------------------------------------------
 
 
 class KGQuarantineService:
-    """Atomically move affected paths into quarantine + manifest.
-
-    The service is process-local but file-system safe — each quarantine
-    gets a unique directory keyed by a fresh `quarantine_id`. Two
-    concurrent calls cannot collide because the directory create uses
-    `os.makedirs(..., exist_ok=False)` on a fresh UUID-style name.
-
-    `scope_roots` is the closed set of filesystem prefixes the service
-    will accept. Any `affected_path` not under one of these prefixes is
-    rejected with `AFFECTED_PATH_OUT_OF_SCOPE` per FR10 — the spec
-    forbids the recovery service from touching app data outside of the
-    KG storage roots.
-    """
+    """Core quarantine policy facade over an edition artifact store."""
 
     def __init__(
         self,
         *,
-        base_dir: Path,
-        scope_roots: list[Path],
+        scope_storage_refs: list[StorageRef],
+        base_storage_ref_hint: StorageRef | None = None,
         config: QuarantineConfig | None = None,
+        artifact_store: Any | None = None,
     ) -> None:
-        if not scope_roots:
-            raise ValueError("scope_roots must include at least one KG storage root")
-        self._base_dir = Path(base_dir)
-        self._scope_roots = [Path(r).resolve() for r in scope_roots]
+        if not scope_storage_refs:
+            raise ValueError("scope_storage_refs must include at least one storage scope")
+        self._base_storage_ref_hint = base_storage_ref_hint
+        self._scope_storage_refs = tuple(scope_storage_refs)
         self._config = config or QuarantineConfig()
-
-    # --- public API --------------------------------------------------------
+        self._artifact_store = artifact_store
 
     def create(
         self,
         *,
         board_id: str,
         graph_type: str,
-        affected_paths: list[str],
+        affected_storage_refs: list[StorageRef],
         reason: str,
         correlation_ids: list[str],
         kg_generation_id: str | None = None,
     ) -> QuarantineResponse:
-        """Quarantine the supplied paths and write the manifest.
+        """Quarantine the supplied storage references and write the manifest.
 
         Returns the contract-shaped response on success; raises
         ``QuarantineError`` with the appropriate typed code on failure.
@@ -326,11 +273,11 @@ class KGQuarantineService:
                 reason=QuarantineReason.UNKNOWN.value,
             )
             raise QuarantineError(
-                QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
+                QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE,
                 retryable=False,
                 reason=f"unknown graph_type: {graph_type}",
             )
-        if not affected_paths:
+        if not affected_storage_refs:
             _bump_quarantine_counter(
                 board_id=board_id,
                 graph_type=graph_type,
@@ -338,150 +285,65 @@ class KGQuarantineService:
                 reason=QuarantineReason.UNKNOWN.value,
             )
             raise QuarantineError(
-                QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
+                QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE,
                 retryable=False,
-                reason="affected_paths must be non-empty",
+                reason="affected_storage_refs must be non-empty",
             )
 
-        # Validate all paths BEFORE moving anything. Any single out-of-
-        # scope path aborts the whole operation — partial quarantine
-        # would leak app-data into the recovery storage.
-        resolved_paths: list[Path] = []
-        for raw in affected_paths:
-            candidate = Path(raw).resolve()
-            if not self._is_in_scope(candidate):
-                _bump_quarantine_counter(
-                    board_id=board_id,
-                    graph_type=graph_type,
-                    outcome="out_of_scope",
-                    reason=_bucket_reason(reason),
-                )
-                raise QuarantineError(
-                    QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
-                    retryable=False,
-                    reason=(
-                        f"path {candidate} is not under any KG storage root"
-                    ),
-                )
-            resolved_paths.append(candidate)
-
-        # Allocate the quarantine directory atomically. `exist_ok=False`
-        # is the guard — two concurrent calls can't share a dir.
-        quarantine_id = f"q_{secrets.token_urlsafe(16)}"
-        quarantine_dir = self._base_dir / QUARANTINE_DIRNAME / quarantine_id
+        store = self._store()
+        reason_bucket = _bucket_reason(reason)
         try:
-            quarantine_dir.mkdir(parents=True, exist_ok=False)
-        except FileExistsError:
-            # Astronomical odds — but retryable.
-            _bump_quarantine_counter(
+            payload = store.quarantine_storage(
                 board_id=board_id,
                 graph_type=graph_type,
-                outcome="storage_unavailable",
-                reason=_bucket_reason(reason),
-            )
-            raise QuarantineError(
-                QuarantineErrorCode.QUARANTINE_STORAGE_UNAVAILABLE,
-                retryable=True,
-                reason=f"quarantine_id collision: {quarantine_id}",
-            )
-        except OSError as exc:
-            _bump_quarantine_counter(
-                board_id=board_id,
-                graph_type=graph_type,
-                outcome="storage_unavailable",
-                reason=_bucket_reason(reason),
-            )
-            raise QuarantineError(
-                QuarantineErrorCode.QUARANTINE_STORAGE_UNAVAILABLE,
-                retryable=True,
-                reason=f"mkdir failed: {exc}",
-            ) from exc
-
-        moved_relatives: list[str] = []
-        files_moved = 0
-        try:
-            for src in resolved_paths:
-                if not src.exists():
-                    # The source vanished between validation and move —
-                    # acceptable in a corruption scenario where the FS
-                    # is unstable. Record None in the manifest.
-                    moved_relatives.append(src.name)
-                    continue
-                dst = quarantine_dir / src.name
-                shutil.move(str(src), str(dst))
-                moved_relatives.append(src.name)
-                files_moved += 1
-
-            reason_bucket = _bucket_reason(reason)
-            manifest = QuarantineManifest(
-                quarantine_id=quarantine_id,
-                board_id=board_id,
-                graph_type=graph_type,
+                affected_storage_refs=tuple(affected_storage_refs),
                 reason=reason,
                 reason_bucket=reason_bucket,
                 correlation_ids=tuple(correlation_ids),
-                affected_paths_relative=tuple(moved_relatives),
                 kg_generation_id=kg_generation_id,
-                software_version=_read_software_version(),
-                quarantined_at=_now_iso(),
-                retention_until=_retention_until(self._config.retention_days),
-                files_moved=files_moved,
+                retention_days=self._config.retention_days,
+                scope_storage_refs=self._scope_storage_refs,
+                base_storage_ref_hint=self._base_storage_ref_hint,
             )
-            manifest_path = quarantine_dir / MANIFEST_FILENAME
-            with manifest_path.open("w", encoding="utf-8") as fh:
-                json.dump(manifest.to_disk_dict(), fh, indent=2)
-        except QuarantineError:
-            raise
-        except Exception as exc:
-            # Manifest write failed AFTER files were moved. val_79e6f555
-            # rework: NEVER rmtree the partial quarantine — that would
-            # destroy the very evidence we just rescued. Instead rename
-            # the directory to `<quarantine_id>.partial` so the operator
-            # can recover it manually, and surface the typed error.
-            logger.error(
-                "kg.quarantine.manifest_write_failed quarantine_id=%s err=%s "
-                "preserved_dir=%s.partial",
-                quarantine_id, exc, quarantine_dir,
+        except QuarantineError as exc:
+            outcome = (
+                "out_of_scope"
+                if exc.code is QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE
+                else "storage_unavailable"
             )
-            partial_dir = quarantine_dir.with_name(quarantine_dir.name + ".partial")
-            try:
-                # If a previous partial exists with the same name
-                # (astronomical), append a unique suffix so we never
-                # overwrite preserved evidence.
-                if partial_dir.exists():
-                    partial_dir = quarantine_dir.with_name(
-                        f"{quarantine_dir.name}.partial.{secrets.token_hex(4)}"
-                    )
-                quarantine_dir.rename(partial_dir)
-            except OSError as rename_exc:
-                logger.error(
-                    "kg.quarantine.partial_preserve_failed src=%s err=%s",
-                    quarantine_dir, rename_exc,
-                )
             _bump_quarantine_counter(
                 board_id=board_id,
                 graph_type=graph_type,
-                outcome="manifest_failed",
-                reason=_bucket_reason(reason),
+                outcome=outcome,
+                reason=reason_bucket,
+            )
+            raise
+        except Exception as exc:
+            _bump_quarantine_counter(
+                board_id=board_id,
+                graph_type=graph_type,
+                outcome="storage_unavailable",
+                reason=reason_bucket,
             )
             raise QuarantineError(
                 QuarantineErrorCode.QUARANTINE_STORAGE_UNAVAILABLE,
                 retryable=True,
-                reason=f"manifest write failed: {exc} (preserved at {partial_dir})",
+                reason=f"artifact_store_quarantine_failed: {type(exc).__name__}",
             ) from exc
 
+        manifest = self._manifest_from_payload(payload)
         logger.warning(
             "kg.quarantine.created quarantine_id=%s board=%s graph_type=%s "
             "files=%d reason=%s",
-            quarantine_id, board_id, graph_type, files_moved, reason,
+            manifest.quarantine_id, board_id, graph_type, manifest.files_moved, reason,
             extra={
                 "event": "kg.quarantine.created",
-                "quarantine_id": quarantine_id,
+                "quarantine_id": manifest.quarantine_id,
                 "board_id": board_id,
                 "graph_type": graph_type,
                 "reason_bucket": manifest.reason_bucket,
                 "correlation_ids": list(correlation_ids),
-                "files_moved": files_moved,
+                "files_moved": manifest.files_moved,
             },
         )
         _bump_quarantine_counter(
@@ -491,90 +353,70 @@ class KGQuarantineService:
             reason=manifest.reason_bucket,
         )
         return QuarantineResponse(
-            quarantine_id=quarantine_id,
-            manifest_ref=str(manifest_path),
+            quarantine_id=manifest.quarantine_id,
+            manifest_ref=str(payload.get("manifest_ref") or manifest.quarantine_id),
             retention_until=manifest.retention_until,
-            files_moved=files_moved,
+            files_moved=manifest.files_moved,
         )
 
     def list_active(self) -> list[QuarantineManifest]:
-        """Return manifests still within their retention window.
-
-        Read-only inspection used by the recovery service and the
-        operator dashboard. Never raises — corrupt manifests are
-        logged and skipped.
-        """
-        root = self._base_dir / QUARANTINE_DIRNAME
-        if not root.exists():
-            return []
-        out: list[QuarantineManifest] = []
-        now = datetime.now(timezone.utc)
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            manifest = self._read_manifest(entry)
-            if manifest is None:
-                continue
-            try:
-                retention_until = datetime.fromisoformat(manifest.retention_until)
-            except ValueError:
-                continue
-            if retention_until > now:
-                out.append(manifest)
-        return out
+        rows = self._store().list_quarantine_manifests(
+            active_after_iso=datetime.now(timezone.utc).isoformat(),
+            base_storage_ref_hint=self._base_storage_ref_hint,
+        )
+        return [self._manifest_from_payload(row) for row in rows]
 
     def inspect(self, quarantine_id: str) -> QuarantineManifest | None:
-        """Read one manifest by id, or None if missing/corrupt."""
-        return self._read_manifest(
-            self._base_dir / QUARANTINE_DIRNAME / quarantine_id
+        payload = self._store().read_quarantine_manifest(
+            quarantine_id=quarantine_id,
+            base_storage_ref_hint=self._base_storage_ref_hint,
         )
-
-    # --- internals ---------------------------------------------------------
-
-    def _is_in_scope(self, path: Path) -> bool:
-        try:
-            resolved = path.resolve()
-        except (OSError, RuntimeError):
-            return False
-        for root in self._scope_roots:
-            try:
-                resolved.relative_to(root)
-                return True
-            except ValueError:
-                continue
-        return False
-
-    def _read_manifest(self, quarantine_dir: Path) -> QuarantineManifest | None:
-        manifest_path = quarantine_dir / MANIFEST_FILENAME
-        try:
-            with manifest_path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            return QuarantineManifest(
-                quarantine_id=str(data["quarantine_id"]),
-                board_id=str(data["board_id"]),
-                graph_type=str(data["graph_type"]),
-                reason=str(data["reason"]),
-                reason_bucket=str(data["reason_bucket"]),
-                correlation_ids=tuple(data.get("correlation_ids") or ()),
-                affected_paths_relative=tuple(
-                    data.get("affected_paths_relative") or ()
-                ),
-                kg_generation_id=(
-                    str(data["kg_generation_id"])
-                    if data.get("kg_generation_id") is not None
-                    else None
-                ),
-                software_version=str(data.get("software_version", SOFTWARE_VERSION_FALLBACK)),
-                quarantined_at=str(data["quarantined_at"]),
-                retention_until=str(data["retention_until"]),
-                files_moved=int(data.get("files_moved", 0)),
-            )
-        except (FileNotFoundError, OSError, ValueError, KeyError) as exc:
-            logger.warning(
-                "kg.quarantine.manifest_unreadable path=%s err=%s",
-                manifest_path, exc,
-            )
+        if payload is None:
             return None
+        return self._manifest_from_payload(payload)
+
+    def _store(self) -> Any:
+        if self._artifact_store is not None:
+            return self._artifact_store
+        try:
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+
+            return get_kg_registry().require_rebuild_audit_artifact_store()
+        except Exception as exc:
+            raise QuarantineError(
+                QuarantineErrorCode.QUARANTINE_STORAGE_UNAVAILABLE,
+                retryable=False,
+                reason=f"quarantine artifact store unavailable: {exc}",
+            ) from exc
+
+    @staticmethod
+    def _manifest_from_payload(payload: Mapping[str, Any]) -> QuarantineManifest:
+        return QuarantineManifest(
+            quarantine_id=str(payload["quarantine_id"]),
+            board_id=str(payload["board_id"]),
+            graph_type=str(payload["graph_type"]),
+            reason=str(payload["reason"]),
+            reason_bucket=str(payload["reason_bucket"]),
+            correlation_ids=tuple(payload.get("correlation_ids") or ()),
+            affected_storage_refs=tuple(
+                StorageRef(
+                    token=str(ref["token"]),
+                    namespace=str(ref.get("namespace") or "graph"),
+                )
+                for ref in (payload.get("affected_storage_refs") or ())
+            ),
+            kg_generation_id=(
+                str(payload["kg_generation_id"])
+                if payload.get("kg_generation_id") is not None
+                else None
+            ),
+            software_version=str(
+                payload.get("software_version", SOFTWARE_VERSION_FALLBACK)
+            ),
+            quarantined_at=str(payload["quarantined_at"]),
+            retention_until=str(payload["retention_until"]),
+            files_moved=int(payload.get("files_moved", 0)),
+        )
 
 
 __all__ = [

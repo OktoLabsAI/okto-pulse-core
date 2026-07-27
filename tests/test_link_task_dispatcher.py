@@ -19,6 +19,8 @@ Each per-type tool has a different name for the "intermediate" id parameter:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -26,7 +28,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server
-from okto_pulse.core.models.db import Board, Card, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
+from okto_pulse.core.models.schemas import SpecUpdate
+from okto_pulse.core.services.main import SpecLockedError, SpecService
 
 
 # Each tuple is (target_type, requires_spec_id)
@@ -243,7 +247,7 @@ async def test_fr_target_persists_direct_traceability_without_closing_fr_coverag
             "permissions": ["card.entity.update"],
         },
     )()
-    server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(server, "check_permission", return_value=None):
         result = json.loads(await server.okto_pulse_link_task.fn(
@@ -263,3 +267,116 @@ async def test_fr_target_persists_direct_traceability_without_closing_fr_coverag
         spec = await db.get(Spec, spec_id)
         assert spec.functional_requirements[0]["linked_task_ids"] == [card_id]
         assert spec_coverage_summary(spec)["fr_coverage_pct"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "target_type,target_id,field",
+    [
+        ("fr", "fr_locked", "functional_requirements"),
+        ("tr", "tr_locked", "technical_requirements"),
+        ("decision", "dec_locked", "decisions"),
+    ],
+)
+async def test_locked_spec_allows_traceability_only_links_for_fr_tr_decision(
+    db_factory,
+    target_type,
+    target_id,
+    field,
+):
+    board_id = f"locked-link-board-{uuid.uuid4().hex[:8]}"
+    spec_id = f"locked-link-spec-{uuid.uuid4().hex[:8]}"
+    card_id = f"locked-link-card-{uuid.uuid4().hex[:8]}"
+    actor_id = "link-task-agent"
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Locked Traceability Links", owner_id=actor_id))
+        db.add(Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Locked Traceability Spec",
+            status=SpecStatus.APPROVED,
+            created_by=actor_id,
+            functional_requirements=[{"id": "fr_locked", "text": "Locked FR"}],
+            technical_requirements=[{"id": "tr_locked", "text": "Locked TR"}],
+            decisions=[
+                {
+                    "id": "dec_locked",
+                    "title": "Locked decision",
+                    "rationale": "Traceability-only coverage",
+                    "status": "active",
+                }
+            ],
+            acceptance_criteria=[],
+            test_scenarios=[],
+            business_rules=[],
+            api_contracts=[],
+            skip_rules_coverage=True,
+            skip_trs_coverage=True,
+            skip_contract_coverage=True,
+            skip_decisions_coverage=True,
+        ))
+        db.add(Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Implementation card",
+            created_by=actor_id,
+        ))
+        await db.commit()
+        service = SpecService(db)
+        await service.submit_spec_validation(
+            spec_id=spec_id,
+            reviewer_id=actor_id,
+            reviewer_name="Validator",
+            data={
+                "completeness": 90,
+                "completeness_justification": "Complete enough for execution",
+                "assertiveness": 90,
+                "assertiveness_justification": "Requirements are measurable",
+                "ambiguity": 5,
+                "ambiguity_justification": "Terminology is clear",
+                "general_justification": "Approved for implementation",
+                "recommendation": "approve",
+            },
+        )
+        await db.commit()
+
+    ctx = type(
+        "Ctx",
+        (),
+        {
+            "agent_id": actor_id,
+            "agent_name": actor_id,
+            "board_id": board_id,
+            "permissions": ["card.entity.update"],
+        },
+    )()
+    register_mcp_test_runtime(db_factory)
+    with patch.object(server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
+         patch.object(server, "check_permission", return_value=None):
+        result = json.loads(await server.okto_pulse_link_task.fn(
+            board_id=board_id,
+            target_type=target_type,
+            target_id=target_id,
+            card_id=card_id,
+            spec_id=spec_id,
+        ))
+
+    assert result["success"] is True
+    assert result["traceability_only"] is True
+    assert result["link_changed"] is True
+
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.version == 1
+        assert spec.current_validation_id is not None
+        collection = getattr(spec, field)
+        target = next(item for item in collection if item["id"] == target_id)
+        assert target["linked_task_ids"] == [card_id]
+        with pytest.raises(SpecLockedError):
+            await SpecService(db).update_spec(
+                spec_id,
+                actor_id,
+                SpecUpdate(description="semantic edit still blocked"),
+            )

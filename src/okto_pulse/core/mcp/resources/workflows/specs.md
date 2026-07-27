@@ -2,11 +2,15 @@
 version: "1.0"
 ---
 
+Knowledge Base placement, authority, and safe promotion are governed by
+`okto-pulse://reference/knowledge-governance`. KB content cannot substitute for
+FR/TR/BR/AC, decisions, contracts, architecture, or test scenarios.
+
 # Specs Workflow — Saturation, Gate, Evaluation & Coverage Progress
 
 ## 2.3 Specs — CRITICAL: Analysis Before Populating
 
-> **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `okto_pulse_kg_get_related_context(artifact_id=<spec_id>)`, board-wide `okto_pulse_kg_find_contradictions()`, per-major-FR/BR `okto_pulse_kg_find_similar_decisions`, and `okto_pulse_kg_explain_constraint` for every constraint cited. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation.
+> **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `okto_pulse_kg_get_related_context(artifact_id="spec:<uuid>")` (the `spec:` discriminator is required; a raw UUID is rejected), board-wide `okto_pulse_kg_find_contradictions()`, per-major-FR/BR `okto_pulse_kg_find_similar_decisions`, and `okto_pulse_kg_explain_constraint` for every constraint cited. Its `constraint_id` is the canonical graph node id, not a TR/worker-candidate id; resolve it by `source_artifact_ref` with the parameterized `okto_pulse_kg_query_cypher(..., include_working=true)` recipe in `okto-pulse://workflows/kg`. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation.
 
 **A spec is NOT a copy of the ideation.** When populating a spec's structured fields, you MUST:
 
@@ -54,45 +58,22 @@ version: "1.0"
 
 When the board has `require_spec_validation=true`, advancing a spec from `approved` to `validated` is gated by `okto_pulse_submit_spec_validation`.
 
-**The canonical flow:**
+**The order that actually works:**
 
 1. Populate the spec in `draft` → move through `review` → `approved`.
-2. Iterate coverage until ALL deterministic gates are green (AC, FR, TR, contract).
-3. When genuinely ready, call `okto_pulse_submit_spec_validation(board_id, spec_id, completeness, completeness_justification, assertiveness, assertiveness_justification, ambiguity, ambiguity_justification, general_justification, recommendation)`.
-4. The gate runs coverage checks first. If any fail, you get a coverage error — fix the gap and retry.
-5. If coverage passes, the gate computes `outcome` atomically:
-   - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
-   - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
-6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock**.
-7. To edit a locked spec, move it back to `draft` or `approved` via `okto_pulse_move_spec`. Both transitions clear `current_validation_id`.
+2. **With the spec in `approved`, create the test cards** (`okto_pulse_create_card(card_type="test", test_scenario_ids=...)` — the server rejects test card creation before `approved`) and **link each scenario** to a test card via `okto_pulse_link_task(target_type="scenario", ...)` until `scenario_task_linkage_pct = 100`. The validation gate fails on any scenario without a linked `card_type="test"` card.
+3. Iterate until ALL deterministic gates are green — the complete gate enumeration is the one in `okto-pulse://reference/spec_gates` (single source; it includes more gates than just AC/FR coverage).
+4. Only then call `okto_pulse_submit_spec_validation`.
 
-**Thresholds** (default 80/80/30):
-- `completeness` (0-100, higher is better): are all ACs concrete, every AC has a test scenario, BRs capture invariants, TRs are grounded in real code, contracts have request/response shapes, edge cases covered?
-- `assertiveness` (0-100, higher is better): is every statement measurable and testable?
-- `ambiguity` (0-100, LOWER is better, max threshold): how many sentences admit multiple interpretations?
+**Thresholds** (default 80/80/30): `completeness` and `assertiveness` higher-is-better minimums; `ambiguity` LOWER-is-better maximum. All scores are 0-100 integers, not 1-5 — a value like `5` is read literally as 5/100 and will usually fail the gate.
 
-Use a 0-100 scale, not a 1-5 scale. A value like `5` is treated literally as 5/100 and will usually fail the gate.
+**Single source for gate mechanics** — canonical flow, atomic `outcome` computation, content lock, and the unlock path (`okto_pulse_move_spec` back to `draft`/`approved`, clearing `current_validation_id`): `okto-pulse://reference/spec_gates`.
 
 ## 2.3b Spec Evaluation — Quality Gate for Execution
 
-After a spec reaches `validated` status, it must undergo **qualitative evaluation** before moving to `in_progress`.
+After a spec reaches `validated`, it must undergo **qualitative evaluation** via `okto_pulse_submit_spec_evaluation` before moving to `in_progress`: 4 dimensions + `overall_score`, each 0-100 with mandatory justification, and a `recommendation` of `approve` | `request_changes` | `reject`.
 
-**Tool:** `okto_pulse_submit_spec_evaluation(board_id, spec_id, breakdown_completeness, breakdown_justification, granularity, granularity_justification, dependency_coherence, dependency_justification, test_coverage_quality, test_coverage_justification, overall_score, overall_justification, recommendation)`
-
-**Evaluation dimensions (each scored 0-100 with mandatory justification):**
-
-| Dimension | What to assess | Score guide |
-|-----------|---------------|-------------|
-| `breakdown_completeness` | Do derived cards fully cover the spec's scope? | 90+: every requirement traced to ≥1 card. |
-| `granularity` | Are cards properly sized for independent execution? | 90+: each card is 1-3 days of focused work. |
-| `dependency_coherence` | Do card dependencies reflect the real execution order? | 90+: clean DAG, parallelizable where possible. |
-| `test_coverage_quality` | Do test scenarios cover happy paths AND edge cases? | 90+: every AC has meaningful tests with edge cases. |
-| `overall_score` | Holistic assessment. | 90+: ready to go. 70-89: minor issues. |
-
-**Gate enforcement (validated → in_progress):**
-- At least 1 evaluation with `recommendation="approve"`
-- Zero evaluations with `recommendation="reject"`
-- Average `overall_score` of approvals ≥ `validation_threshold` (default 70)
+**Single source for the evaluation gate** — signature, dimension definitions, the full recommendation semantics (including `request_changes` and the `skip_qualitative_validation` escape), and enforcement of validated → in_progress: `okto-pulse://reference/spec_gates`.
 
 ## 2.3c Coverage Progress — Zero-Friction Gate Tracking
 

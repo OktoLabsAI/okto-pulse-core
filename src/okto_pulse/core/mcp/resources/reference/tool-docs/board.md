@@ -49,14 +49,16 @@ Returns:
 
 ## `okto_pulse_list_default_board_config_versions`
 
-List default board configuration versions.
+List default board-configuration template versions for a scope, plus the
+active template id (admin read). REST twin: GET /default-board-config/versions.
 
 Args:
     board_id: Board ID used for authentication.
-    include_inactive: Optional boolean-like string to include inactive versions.
+    scope: Template scope (default `global`).
 
 Returns:
-    JSON list with version, active flag, author, and created timestamp.
+    JSON list of template versions (version, active flag, author, created
+    timestamp) and the active template id.
 
 ## `okto_pulse_get_board_default_config_diff`
 
@@ -71,40 +73,53 @@ Returns:
 
 ## `okto_pulse_create_default_board_config_version`
 
-Create a new default board configuration version.
+Create a new default board-configuration template version (admin write).
+REST twin: POST /default-board-config/versions. Perm: SPECS_UPDATE.
 
-Use this to define the gate/settings defaults that future boards should inherit.
-Creating a version does not necessarily activate it.
+Use this to define the gate/settings defaults that future boards should
+inherit. Creating a version does not activate it unless `activate=true`
+(single-active is enforced). New versions default
+`reviewer_separation_mode="enforce"`; pass `warn` or `off` explicitly only when
+that is the intended policy. Historical boards/templates with the field absent
+are not backfilled and resolve through `legacy_absent_compat`.
+The same `enforce` default is materialized when a new board is created before
+any active template exists; an explicitly supplied `warn`/`off` is preserved.
 
 Args:
     board_id: Board ID used for authentication.
-    name: Template name.
-    description: Optional description.
-    settings_json: JSON settings payload.
+    settings_payload: Settings dict — validated as BoardSettings.
+    scope: Template scope (default `global`).
+    guideline_default_refs: Optional list of default guideline refs — must
+        reference GLOBAL catalog guidelines.
+    design_system_default_ref: Optional default Design System ref dict — its
+        gate_mode must be valid.
+    activate: When true, activates the new version (default false).
 
 Returns:
-    JSON with created template version and validation results.
+    JSON with the created template version and validation results.
 
 ## `okto_pulse_activate_default_board_config_version`
 
-Activate one default board configuration version for new boards.
+Activate a default board-configuration template version (admin write);
+deactivates every other active version in the scope. REST twin:
+POST /default-board-config/versions/{template_id}/activate. Perm: SPECS_UPDATE.
 
 Args:
     board_id: Board ID used for authentication.
-    template_id: Default configuration template ID.
-    version: Version to activate.
+    template_id: Default configuration template ID to activate.
 
 Returns:
     JSON with the activated version and prior active version, if any.
 
 ## `okto_pulse_deactivate_default_board_config_version`
 
-Deactivate the current default board configuration version.
+Deactivate a default board-configuration template version (admin write).
+REST twin: POST /default-board-config/versions/{template_id}/deactivate.
+Perm: SPECS_UPDATE.
 
 Args:
     board_id: Board ID used for authentication.
-    template_id: Default configuration template ID.
-    version: Version to deactivate.
+    template_id: Default configuration template ID to deactivate.
 
 Returns:
     JSON with updated active/default state.
@@ -115,8 +130,9 @@ Associate a global design system with the current board.
 
 Args:
     board_id: Board ID.
-    design_system_id: Global design system ID.
-    priority: Optional ordering priority.
+    design_system_id: Active global Design System ID, or an inline Design
+        System owned by this same board. The board has one effective link, so
+        this operation has no priority argument.
 
 Returns:
     JSON with board design-system link details.
@@ -127,7 +143,8 @@ Remove a design system association from the current board.
 
 Args:
     board_id: Board ID.
-    design_system_id: Design system ID to unlink.
+    The board has a single effective link; no design_system_id argument is
+    accepted.
 
 Returns:
     JSON success payload and remaining board design-system count.
@@ -160,8 +177,8 @@ List top-level entities of a board by type.
         entity_type: One of: spec, ideation, refinement, sprint, story, topic
         filters: Optional filter dict OR JSON string; validated server-side per entity_type.
             spec: status, labels, assignee_id
-            ideation: status, labels
-            refinement: status, labels, ideation_id
+            ideation: status, labels, derivation_pending
+            refinement: status, labels, ideation_id, derivation_pending
             sprint: status (requires filters.spec_id to identify parent spec)
             story: status, topic_id, linked, converted, include_archived
             topic: include_archived
@@ -170,6 +187,18 @@ List top-level entities of a board by type.
 
     Returns:
         JSON {items: [...], total: int, entity_type: str} or structured error
+
+    Notes:
+        derivation_pending=true is available for ideation and refinement only,
+        and is the canonical triage for done work lacking a derived child.
+        For ideations it means DONE medium/large ideations with zero active
+        child refinements, plus DONE small ideations with zero active direct
+        specs. For refinements it means DONE refinements with zero active
+        child specs. Archived or cancelled children are not active
+        derivations. Follow-up tools: okto_pulse_derive_spec_from_ideation
+        (small), okto_pulse_create_refinement (medium/large),
+        okto_pulse_derive_spec_from_refinement.
+        Full table + examples: okto-pulse://reference/list_tools
 
 ## `okto_pulse_list_my_boards`
 

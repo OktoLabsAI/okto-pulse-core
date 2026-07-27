@@ -36,7 +36,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 NOW = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)
@@ -88,7 +88,7 @@ async def test_ts22aa3b7e_terminal_no_action_without_artificial_learning(
     _seed_bug_pending(store, board, gen)
 
     # ledger-only: se o skip tocar o grafo KG (fabricar Learning/node), explode.
-    import okto_pulse.core.kg.schema as schema_mod
+    import kg_schema_testing as schema_mod
     monkeypatch.setattr(
         schema_mod, "open_board_connection",
         lambda *a, **k: (_ for _ in ()).throw(

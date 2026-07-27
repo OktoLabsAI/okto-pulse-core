@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from okto_pulse.core.api.specs import _spec_update_permission_requirements
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.application.use_cases.spec_crud import (
+    _spec_update_permission_requirements,
+)
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.main import CardService, SpecService
@@ -289,7 +293,7 @@ async def test_add_integration_requirement_accepts_external_service_mcp(db_facto
         (),
         {"agent_id": actor_id, "agent_name": actor_id, "permissions": None},
     )()
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         raw = await mcp_server.okto_pulse_add_integration_requirement.fn(
             board_id=board_id,
@@ -334,7 +338,7 @@ async def test_add_integration_requirement_accepts_mcp_tool_type(db_factory):
         (),
         {"agent_id": actor_id, "agent_name": actor_id, "permissions": None},
     )()
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         raw = await mcp_server.okto_pulse_add_integration_requirement.fn(
             board_id=board_id,

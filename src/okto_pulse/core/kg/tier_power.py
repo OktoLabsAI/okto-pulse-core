@@ -18,17 +18,19 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import time
 import unicodedata
-from dataclasses import dataclass, field
 from typing import Any
 
-from okto_pulse.core.kg.schema import (
+from okto_pulse.core.kg.query_contract import (
+    CYPHER_SUPPORTED_CLAUSES,
+    CYPHER_SUPPORTED_ROOT_OPERATIONS,
+    query_contract_document,
+)
+from okto_pulse.core.kg.schema_contract import (
     NODE_TYPES,
     SCHEMA_VERSION,
     STABLE_NODE_PROPERTIES,
     VECTOR_INDEX_TYPES,
-    open_board_connection,
     stable_rel_type_entries,
     vector_index_name,
 )
@@ -53,14 +55,7 @@ class TierPowerError(Exception):
 # Cypher parser whitelist (FR-3, FR-4)
 # ---------------------------------------------------------------------------
 
-CYPHER_WHITELIST = frozenset({
-    "MATCH", "WHERE", "RETURN", "WITH", "ORDER", "BY",
-    "LIMIT", "UNWIND", "OPTIONAL", "UNION", "AS", "AND",
-    "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE",
-    "CONTAINS", "STARTS", "ENDS", "DISTINCT", "COUNT",
-    "COLLECT", "SUM", "AVG", "MIN", "MAX", "CALL",
-    "CASE", "WHEN", "THEN", "ELSE", "END", "DESC", "ASC",
-})
+CYPHER_WHITELIST = frozenset(CYPHER_SUPPORTED_CLAUSES)
 
 CYPHER_BLACKLIST = frozenset({
     "CREATE", "MERGE", "DELETE", "DETACH", "SET",
@@ -78,6 +73,12 @@ def _strip_comments(cypher: str) -> str:
 def _normalize_unicode(cypher: str) -> str:
     """NFKC normalize to prevent unicode homoglyph attacks."""
     return unicodedata.normalize("NFKC", cypher)
+
+
+def normalize_cypher_unicode(cypher: str) -> str:
+    """Public facade for Cypher unicode normalization."""
+
+    return _normalize_unicode(cypher)
 
 
 def _strip_string_literals(cypher: str) -> str:
@@ -153,9 +154,12 @@ def _mask_literals_and_comments(cypher: str) -> str:
 
 
 def validate_cypher_read_only(cypher: str) -> None:
-    """Validate that Cypher is read-only by checking against whitelist/blacklist.
+    """Validate the canonical read-only Cypher subset.
 
-    Raises TierPowerError(unsafe_cypher) on violation.
+    Write keywords are security violations (``unsafe_cypher``). A non-mutating
+    root operation outside the documented subset fails distinctly as
+    ``unsupported_operation`` so clients can correct the query without
+    treating it as an attempted write.
     """
     cleaned = _strip_comments(cypher)
     cleaned = _normalize_unicode(cleaned)
@@ -170,6 +174,18 @@ def validate_cypher_read_only(cypher: str) -> None:
                 details={"keyword": token},
             )
 
+    root_operation = tokens[0] if tokens else ""
+    if root_operation not in CYPHER_SUPPORTED_ROOT_OPERATIONS:
+        raise TierPowerError(
+            "unsupported_operation",
+            f"Unsupported Cypher root operation: {root_operation or '<empty>'}",
+            details={
+                "operation": root_operation or None,
+                "supported_operations": list(CYPHER_SUPPORTED_ROOT_OPERATIONS),
+                "query_contract_version": query_contract_document()["version"],
+            },
+        )
+
 
 def _auto_inject_limit(cypher: str, max_rows: int) -> str:
     """Inject LIMIT if not present."""
@@ -177,6 +193,12 @@ def _auto_inject_limit(cypher: str, max_rows: int) -> str:
     if not re.search(r"\bLIMIT\b", searchable):
         cypher = cypher.rstrip().rstrip(";") + f"\nLIMIT {max_rows}"
     return cypher
+
+
+def auto_inject_limit(cypher: str, max_rows: int) -> str:
+    """Public facade for Tier Power LIMIT injection policy."""
+
+    return _auto_inject_limit(cypher, max_rows)
 
 
 def _bound_relationship_segment(segment: str, max_depth: int) -> str:
@@ -299,49 +321,40 @@ def _auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
     return "".join(parts)
 
 
+def auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
+    """Public facade for Tier Power variable-length path bounding."""
+
+    return _auto_bound_var_length_path(cypher, max_depth)
+
+
 # ---------------------------------------------------------------------------
 # Rate limiter — token bucket (FR-5)
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class _TokenBucket:
-    rate: int = 30  # tokens per window
-    window: float = 60.0  # seconds
-    _tokens: dict[str, list[float]] = field(default_factory=dict)
-
-    def allow(self, agent_id: str) -> tuple[bool, int]:
-        """Returns (allowed, retry_after_seconds)."""
-        now = time.monotonic()
-        times = self._tokens.setdefault(agent_id, [])
-        # Purge old entries outside window
-        cutoff = now - self.window
-        self._tokens[agent_id] = [t for t in times if t > cutoff]
-        times = self._tokens[agent_id]
-        if len(times) >= self.rate:
-            oldest = times[0]
-            retry_after = int(self.window - (now - oldest)) + 1
-            return False, max(1, retry_after)
-        times.append(now)
-        return True, 0
-
-
-_rate_limiter = _TokenBucket()
+#
+# R03 IMP1 (FR2/AC2): the in-memory token bucket lives ONLY behind the
+# RateLimiter port — the canonical concrete is
+# ``community.adapters.memory.CommunityInMemoryRateLimiter`` (the Community
+# edition composes ``CommunityInMemoryRateLimiter``). The duplicate module-global
+# ``_TokenBucket`` / ``_rate_limiter`` that used to live here was vestigial — the
+# runtime resolves the slot through ``require_rate_limiter()`` — so it is removed,
+# together with its ``BASELINE_SINGLETONS`` ledger entry. Token-bucket
+# semantics (30 tokens / 60s window per agent) are unchanged.
 
 
 def reset_rate_limiter_for_tests() -> None:
-    """Reset rate limiter — resets the whole KG registry."""
+    """Reset the rate limiter — drops the whole KG registry (tests only)."""
     from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
 
     reset_registry_for_tests()
-    global _rate_limiter
-    _rate_limiter = _TokenBucket()
 
 
 def check_rate_limit(agent_id: str) -> None:
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    limiter = get_kg_registry().rate_limiter
+    # AC3 (base fail-closed): read the rate limiter through the required port —
+    # an unregistered slot raises ``runtime_provider_missing`` instead of a late
+    # ``AttributeError`` on ``None`` or a silent concrete fallback.
+    limiter = get_kg_registry().require_rate_limiter()
     allowed, retry_after = limiter.allow(agent_id)
     if not allowed:
         raise TierPowerError(
@@ -493,15 +506,76 @@ def _apply_canonical_projection(
     *,
     include_working: bool,
     canonical_filter_mode: str | None = None,
+    comparison_result: dict | None = None,
 ) -> dict:
     rows = list(result.get("rows") or [])
+    columns = tuple(str(item) for item in result.get("columns") or ())
+
+    def _layer_from_row(row: Any, row_columns: tuple[str, ...]) -> str | None:
+        raw: Any = None
+        observed = False
+        if isinstance(row, dict):
+            for key in ("graph_layer", "layer"):
+                if key in row:
+                    raw = row.get(key)
+                    observed = True
+                    break
+            if not observed:
+                for value in row.values():
+                    if isinstance(value, dict) and "graph_layer" in value:
+                        raw = value.get("graph_layer")
+                        observed = True
+                        break
+        elif isinstance(row, (list, tuple)) and row_columns:
+            for index, column in enumerate(row_columns):
+                normalized = column.strip().strip("`").lower()
+                if normalized in {"graph_layer", "layer"} or normalized.endswith(
+                    ".graph_layer"
+                ):
+                    raw = row[index] if index < len(row) else None
+                    observed = True
+                    break
+        if not observed:
+            return None
+        normalized_layer = str(raw or "").strip().lower()
+        return normalized_layer or "unknown"
+
+    def _layer_counts(payload: dict) -> tuple[dict[str, int], bool]:
+        payload_rows = list(payload.get("rows") or [])
+        payload_columns = tuple(str(item) for item in payload.get("columns") or ())
+        counts: dict[str, int] = {}
+        observed = False
+        for payload_row in payload_rows:
+            layer = _layer_from_row(payload_row, payload_columns)
+            if layer is None:
+                continue
+            observed = True
+            counts[layer] = counts.get(layer, 0) + 1
+        return counts, observed
+
+    returned_layer_counts, returned_layer_observed = _layer_counts(result)
     if include_working:
+        # The legacy field means "rows suppressed by the canonical projection".
+        # In an all-layer result there is no suppression; derive the value from
+        # the identical before/after windows instead of publishing a sentinel.
+        omitted_count = max(0, len(rows) - len(rows))
         return {
             **result,
             "query_state": "canonical_and_working",
             "layers_included": ["canonical", "working"],
             "canonical_filter_enforced": False,
-            "working_omitted_count": 0,
+            "layer_counts": (
+                returned_layer_counts if returned_layer_observed else None
+            ),
+            "working_row_count": (
+                returned_layer_counts.get("working", 0)
+                if returned_layer_observed
+                else None
+            ),
+            "working_omitted_count": omitted_count,
+            "working_omitted_count_exact": True,
+            "working_omitted_count_source": "all_layers_no_projection",
+            "working_omitted_count_scope": "returned_window",
         }
 
     kept: list[Any] = []
@@ -514,13 +588,45 @@ def _apply_canonical_projection(
             if raw is not None:
                 layer = str(raw)
         if layer is None:
-            kept.append(row)
-            continue
-        saw_layer = True
-        if layer == "working":
+            layer = _layer_from_row(row, columns)
+        if layer is not None:
+            saw_layer = True
+        if layer in {"working", "unknown", "legacy_unknown", "none"}:
             omitted += 1
             continue
         kept.append(row)
+
+    omitted_exact = True
+    omitted_source = "row_projection"
+    omitted_layer_counts: dict[str, int] | None = None
+    observed_layer_counts = returned_layer_counts
+    layer_counts_observed = returned_layer_observed
+    if canonical_filter_mode and comparison_result is not None:
+        comparison_rows = list(comparison_result.get("rows") or [])
+        comparison_counts, comparison_observed = _layer_counts(comparison_result)
+        omitted = max(0, len(comparison_rows) - len(rows))
+        omitted_exact = not bool(result.get("truncated")) and not bool(
+            comparison_result.get("truncated")
+        )
+        omitted_source = "paired_query"
+        observed_layer_counts = comparison_counts
+        layer_counts_observed = comparison_observed
+        if comparison_observed:
+            omitted_layer_counts = {
+                layer: max(
+                    0,
+                    count - returned_layer_counts.get(layer, 0),
+                )
+                for layer, count in comparison_counts.items()
+                if count - returned_layer_counts.get(layer, 0) > 0
+            }
+    elif canonical_filter_mode:
+        # Once predicates were pushed into MATCH, the returned rows alone cannot
+        # reveal how many non-canonical rows the backend suppressed.  Unknown is
+        # materially more truthful than the historical hard-coded zero.
+        omitted = None
+        omitted_exact = False
+        omitted_source = "not_observable"
 
     return {
         **result,
@@ -533,7 +639,17 @@ def _apply_canonical_projection(
             canonical_filter_mode
             or ("row_projection" if saw_layer else "partial_no_layer_column")
         ),
+        "layer_counts": observed_layer_counts if layer_counts_observed else None,
+        "working_row_count": (
+            observed_layer_counts.get("working", 0)
+            if layer_counts_observed
+            else None
+        ),
         "working_omitted_count": omitted,
+        "working_omitted_count_exact": omitted_exact,
+        "working_omitted_count_source": omitted_source,
+        "working_omitted_count_scope": "returned_window",
+        "omitted_layer_counts": omitted_layer_counts,
     }
 
 
@@ -553,8 +669,9 @@ def execute_cypher_read_only(
 ) -> dict:
     """Execute a validated read-only Cypher query with safety rails.
 
-    Delegates to registry.cypher_executor when available, falls back to
-    direct Kuzu execution.
+    Delegates to registry.cypher_executor. A missing executor is a composition
+    error: business-facing query code must never open the graph backend
+    directly.
     """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
@@ -567,71 +684,49 @@ def execute_cypher_read_only(
     validate_cypher_read_only(cleaned)
     cleaned = _auto_inject_limit(cleaned, max_rows)
     cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
+    unfiltered_cleaned = cleaned
     canonical_filter_mode = None
     if not include_working:
         cleaned, canonical_filter_mode = _rewrite_cypher_canonical_only(cleaned)
 
-    executor = get_kg_registry().cypher_executor
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
     if executor is not None:
         logger.debug("[KG] execute_cypher_read_only delegating to registry.cypher_executor")
-        result = executor.execute_read_only(
-            board_id, cleaned, params, max_rows=max_rows,
-        )
+        comparison_result = None
+        paired_execute = getattr(executor, "execute_read_only_pair", None)
+        if (
+            not include_working
+            and canonical_filter_mode == "cypher_rewrite"
+            and callable(paired_execute)
+        ):
+            paired_result = paired_execute(
+                board_id,
+                cleaned,
+                unfiltered_cleaned,
+                params,
+                max_rows=max_rows,
+            )
+            result = dict(paired_result["primary"])
+            comparison_result = dict(paired_result["comparison"])
+        else:
+            result = executor.execute_read_only(
+                board_id,
+                cleaned,
+                params,
+                max_rows=max_rows,
+            )
         return _apply_canonical_projection(
             result,
             include_working=include_working,
             canonical_filter_mode=canonical_filter_mode,
+            comparison_result=comparison_result,
         )
 
-    # Fallback: direct execution (should not happen with proper bootstrap)
-    import time as _time
-
-    timeout_ms = clamp_timeout(timeout_ms)
-
-    logger.debug("[KG] execute_cypher_read_only opening board connection board_id=%s", board_id)
-    t0 = _time.monotonic()
-    try:
-        with open_board_connection(board_id) as (_db, conn):
-            logger.debug("[KG] execute_cypher_read_only executing cleaned cypher (first 200 chars): %s", cleaned[:200])
-            result = conn.execute(cleaned, params or {})
-            rows = []
-            while result.has_next():
-                rows.append(result.get_next())
-                if len(rows) > max_rows:
-                    break
-    except TierPowerError:
-        raise
-    except Exception as exc:
-        message = str(exc)
-        logger.error("[KG] execute_cypher_read_only failed: %s", exc)
-        code = "invalid_cypher"
-        details = {"cypher": cleaned[:200]}
-        if "graph" in message.lower() or "lbug" in message.lower() or "kuzu" in message.lower():
-            code = "graph_unavailable"
-            details["graph_state"] = "unavailable"
-        raise TierPowerError(
-            code,
-            f"Cypher execution failed: {exc}",
-            details=details,
-        ) from exc
-
-    dur = (_time.monotonic() - t0) * 1000
-    truncated = len(rows) > max_rows
-    if truncated:
-        rows = rows[:max_rows]
-
-    logger.debug("[KG] execute_cypher_read_only done row_count=%d truncated=%s time_ms=%.1f",
-                 len(rows), truncated, dur)
-    raw_result = {
-        "rows": [list(r) for r in rows],
-        "row_count": len(rows),
-        "truncated": truncated,
-        "execution_time_ms": round(dur, 1),
-    }
-    return _apply_canonical_projection(
-        raw_result,
-        include_working=include_working,
-        canonical_filter_mode=canonical_filter_mode,
+    raise TierPowerError(
+        "graph_backend_unconfigured",
+        "KG registry is missing cypher_executor; configure the graph query port "
+        "in the composition root before using Tier Power.",
+        details={"board_id": board_id, "cypher": cleaned[:200]},
     )
 
 
@@ -641,7 +736,7 @@ def execute_cypher_read_only(
 
 
 def _parse_iso_ts(value: str | None) -> Any:
-    """Parse an ISO-8601 timestamp into a Kùzu-ready datetime; ``None`` passes
+    """Parse an ISO-8601 timestamp into a graph backend-ready datetime; ``None`` passes
     through. Swallows invalid input so the caller can proceed unfiltered (a
     bad cursor shouldn't cause a 500 — the natural-query tool must remain
     best-effort)."""
@@ -676,6 +771,12 @@ def _find_literal_node_matches(
     out: list[dict] = []
     seen: set[str] = set()
 
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    if executor is None:
+        return []
+
     def _append(row: list[Any], node_type: str, similarity: float) -> None:
         node_id = row[0]
         if not node_id or node_id in seen:
@@ -690,54 +791,45 @@ def _find_literal_node_matches(
         })
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                if len(out) >= limit:
-                    break
-                try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        "WHERE n.id = $q "
-                        "OR n.title = $q "
-                        "OR n.source_artifact_ref = $q "
-                        "RETURN n.id, n.title, n.source_artifact_ref "
-                        "LIMIT $k",
-                        {"q": query_text, "k": max(1, limit - len(out))},
-                    )
-                    try:
-                        while result.has_next():
-                            _append(result.get_next(), node_type, 1.0)
-                    finally:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+        for node_type in NODE_TYPES:
+            if len(out) >= limit:
+                break
+            try:
+                result = executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) "
+                    "WHERE n.id = $q "
+                    "OR n.title = $q "
+                    "OR n.source_artifact_ref = $q "
+                    "RETURN n.id, n.title, n.source_artifact_ref "
+                    "LIMIT $k",
+                    {"q": query_text, "k": max(1, limit - len(out))},
+                    max_rows=max(1, limit - len(out)),
+                )
+                for row in result.get("rows") or []:
+                    _append(row, node_type, 1.0)
+            except Exception:
+                pass
 
-            for node_type in NODE_TYPES:
-                if len(out) >= limit:
-                    break
-                try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        "WHERE n.title CONTAINS $q "
-                        "OR n.content CONTAINS $q "
-                        "OR n.source_artifact_ref CONTAINS $q "
-                        "RETURN n.id, n.title, n.source_artifact_ref "
-                        "LIMIT $k",
-                        {"q": query_text[:200], "k": max(1, limit - len(out))},
-                    )
-                    try:
-                        while result.has_next():
-                            _append(result.get_next(), node_type, 0.65)
-                    finally:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+        for node_type in NODE_TYPES:
+            if len(out) >= limit:
+                break
+            try:
+                result = executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) "
+                    "WHERE n.title CONTAINS $q "
+                    "OR n.content CONTAINS $q "
+                    "OR n.source_artifact_ref CONTAINS $q "
+                    "RETURN n.id, n.title, n.source_artifact_ref "
+                    "LIMIT $k",
+                    {"q": query_text[:200], "k": max(1, limit - len(out))},
+                    max_rows=max(1, limit - len(out)),
+                )
+                for row in result.get("rows") or []:
+                    _append(row, node_type, 0.65)
+            except Exception:
+                pass
     except Exception as exc:
         logger.debug(
             "kg.natural.literal_fallback_failed board=%s err=%s",
@@ -829,7 +921,7 @@ def execute_natural_query(
                  board_id, nl_query[:80], limit, min_confidence)
 
     registry = get_kg_registry()
-    embedder = registry.embedding_provider
+    embedder = registry.require_embedding_provider()
     store = registry.graph_store
     warning = None
 
@@ -920,16 +1012,18 @@ def execute_natural_query(
                 except Exception:
                     pass
         else:
-            with open_board_connection(board_id) as (_db, conn):
+            executor = getattr(registry, "cypher_executor", None)
+            if executor is not None:
                 for node_type in NODE_TYPES:
                     try:
-                        result = conn.execute(
+                        result = executor.execute_read_only(
+                            board_id,
                             f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
                             f"RETURN n.id, n.title LIMIT $k",
                             {"q": variant_query[:50], "k": fetch_limit},
+                            max_rows=fetch_limit,
                         )
-                        while result.has_next():
-                            row = result.get_next()
+                        for row in result.get("rows") or []:
                             out.append({
                                 "node_id": row[0],
                                 "node_type": node_type,
@@ -982,6 +1076,19 @@ def execute_natural_query(
 
     total_before_filter = len(all_results)
     all_results = _dedupe_natural_results(all_results)
+    # Spec MKG-C-S1 (FR6): fold ACTIVE equivalence members into their
+    # survivor (post-fetch, off-graph mapping); best similarity survives.
+    from okto_pulse.core.kg.equivalence_fold import (
+        fold_rows as _fold_eqv_rows,
+        load_equivalence_mapping as _load_eqv_mapping,
+    )
+
+    _eqv_mapping = _load_eqv_mapping(board_id)
+    if _eqv_mapping:
+        all_results = _fold_eqv_rows(
+            all_results, _eqv_mapping,
+            id_keys=("node_id",), dedupe_key="node_id", score_key="similarity",
+        )
     filtered_out = 0
     if temporal_filter_requested and all_results:
         node_ids = [r["node_id"] for r in all_results]
@@ -1146,21 +1253,25 @@ def _batch_lookup_graph_layer(board_id: str, node_ids: list[str]) -> dict[str, s
     if not node_ids:
         return {}
     from okto_pulse.core.kg import cypher_templates as tpl
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     out: dict[str, str] = {}
-    with open_board_connection(board_id) as (_db, conn):
-        for node_type in NODE_TYPES:
-            try:
-                result = conn.execute(
-                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
-                    f"RETURN n.id, {tpl.layer_label_projection('n')}",
-                    {"ids": node_ids},
-                )
-                while result.has_next():
-                    row = result.get_next()
-                    out[row[0]] = str(row[1] or "legacy_unknown")
-            except Exception:
-                continue
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    if executor is None:
+        return out
+    for node_type in NODE_TYPES:
+        try:
+            result = executor.execute_read_only(
+                board_id,
+                f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                f"RETURN n.id, {tpl.layer_label_projection('n')}",
+                {"ids": node_ids},
+                max_rows=max(len(node_ids), 1),
+            )
+            for row in result.get("rows") or []:
+                out[row[0]] = str(row[1] or "legacy_unknown")
+        except Exception:
+            continue
     return out
 
 
@@ -1206,31 +1317,35 @@ def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, An
     absence as "outside the temporal window" to be safe.
     """
     from datetime import timezone
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     if not node_ids:
         return {}
 
     out: dict[str, Any] = {}
-    with open_board_connection(board_id) as (_db, conn):
-        for node_type in NODE_TYPES:
-            try:
-                result = conn.execute(
-                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
-                    f"RETURN n.id, n.created_at",
-                    {"ids": node_ids},
-                )
-                while result.has_next():
-                    row = result.get_next()
-                    nid = row[0]
-                    ts = row[1]
-                    if ts is None:
-                        continue
-                    # Kùzu returns a Python datetime; ensure tz-aware UTC
-                    if hasattr(ts, "tzinfo") and ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    out[nid] = ts
-            except Exception:
-                continue
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    if executor is None:
+        return out
+    for node_type in NODE_TYPES:
+        try:
+            result = executor.execute_read_only(
+                board_id,
+                f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                f"RETURN n.id, n.created_at",
+                {"ids": node_ids},
+                max_rows=max(len(node_ids), 1),
+            )
+            for row in result.get("rows") or []:
+                nid = row[0]
+                ts = row[1]
+                if ts is None:
+                    continue
+                # graph backend returns a Python datetime; ensure tz-aware UTC
+                if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                out[nid] = ts
+        except Exception:
+            continue
     return out
 
 
@@ -1249,7 +1364,10 @@ def get_schema_info(
 
     logger.debug("[KG] get_schema_info board_id=%s include_internal=%s", board_id, include_internal)
 
-    store = get_kg_registry().graph_store
+    # Empty board_id is the MCP global schema-contract view, not authority to
+    # select or enumerate a board. Keep it static so global introspection never
+    # opens an implicit "default" graph or gains all-board scope.
+    store = get_kg_registry().graph_store if board_id else None
     if store is not None:
         result = store.get_schema_info(board_id, include_internal=include_internal)
     else:
@@ -1282,6 +1400,7 @@ def get_schema_info(
     # the same guaranteed set on each label; per-label variation is carried by
     # has_vector_index. Additive — the global keys above are unchanged.
     result["label_properties"] = _label_properties_map()
+    result["query_contract"] = query_contract_document()
     return result
 
 

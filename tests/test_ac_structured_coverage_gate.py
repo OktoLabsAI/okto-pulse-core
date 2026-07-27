@@ -32,7 +32,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecMove
 from okto_pulse.core.services.main import CardService, SpecService
 
@@ -272,7 +272,7 @@ def test_api_analytics_resolver_is_canonical_service_function():
     services/analytics_service.py — guarding against the historical copy/paste drift
     that let the two implementations diverge.
     """
-    from okto_pulse.core.api import analytics as api_analytics
+    from okto_pulse.community.api import analytics as api_analytics
     from okto_pulse.core.services.analytics_service import (
         resolve_linked_criteria_to_indices as canonical,
     )

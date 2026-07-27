@@ -4,16 +4,16 @@ The pipeline runs in five stages, mirrored by five checks:
 
 1. ``consolidation_queue`` — SQLite row per pending artifact. Healthy when
    ``status='pending' | 'claimed'`` count is zero (worker drained everything).
-2. ``kuzu`` — per-board Kùzu graph. Healthy when at least one node exists
+2. ``graph`` — per-board graph backend graph. Healthy when at least one node exists
    across the 11 node types (otherwise "unpopulated").
-3. ``kuzu_node_refs`` — SQLite mirror of the Kùzu writes. Healthy when the
-   mirror count matches the Kùzu node count (detects partial/aborted writes).
+3. ``graph_node_refs`` — SQLite mirror of the graph backend writes. Healthy when the
+   mirror count matches the graph backend node count (detects partial/aborted writes).
 4. ``global_update_outbox`` — SQLite transactional outbox feeding the global
    discovery meta-graph. Healthy when ``pending`` == 0 and ``dead_letter`` == 0.
-5. ``global_discovery`` — global Kùzu meta-graph. Healthy when
+5. ``global_discovery`` — global graph backend meta-graph. Healthy when
    ``DecisionDigest`` count for the given board matches the per-board
    digestable-nodes count (the types listed in
-   :data:`okto_pulse.core.kg.global_discovery.outbox_worker.DIGESTED_NODE_TYPES`).
+   :data:`okto_pulse.core.application.processors.global_outbox.DIGESTED_NODE_TYPES`).
 
 Each check returns a :class:`LayerHealth` dataclass with the same shape so
 the CLI table renderer and the JSON emitter both consume the same payload.
@@ -25,23 +25,17 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-from sqlalchemy import func, select
+from typing import Any
 
 from okto_pulse.core.kg.global_discovery.metrics import (
     get_missing_embedding_skipped_count,
 )
-from okto_pulse.core.kg.global_discovery.outbox_worker import DIGESTED_NODE_TYPES
-from okto_pulse.core.kg.schema import NODE_TYPES, board_kuzu_path, open_board_connection
-from okto_pulse.core.models.db import (
-    ConsolidationQueue,
-    GlobalUpdateOutbox,
-    KuzuNodeRef,
+from okto_pulse.core.application.processors.global_outbox import DIGESTED_NODE_TYPES
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema_contract import NODE_TYPES
+from okto_pulse.core.ports.kg_operational import (
+    get_kg_operational_read_model_port,
 )
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("okto_pulse.kg.health")
 
@@ -55,7 +49,7 @@ class LayerHealth:
 
     Attributes:
         layer: stable identifier — one of
-            ``queue`` | ``kuzu`` | ``kuzu_node_refs`` | ``outbox`` | ``global``.
+            ``queue`` | ``graph`` | ``graph_node_refs`` | ``outbox`` | ``global``.
         healthy: boolean summary. The CLI renders a green/red glyph from this.
         counts: layer-specific integer buckets (e.g. ``{"pending": 0, "claimed": 0}``).
             Always populated so the CLI table does not have to special-case empties.
@@ -68,19 +62,13 @@ class LayerHealth:
     details: str = ""
 
 
-async def check_queue(db: "AsyncSession", board_id: str) -> LayerHealth:
+async def check_queue(context: Any, board_id: str) -> LayerHealth:
     """Inspect the ``consolidation_queue`` for a given board.
 
     Healthy when no ``pending`` or ``claimed`` rows remain. ``failed`` is a
     warning, not a fatal — the worker may retry on the next tick, but an
     operator should still see it in the CLI output.
     """
-    status_col = ConsolidationQueue.status
-    result = await db.execute(
-        select(status_col, func.count())
-        .where(ConsolidationQueue.board_id == board_id)
-        .group_by(status_col)
-    )
     buckets: dict[str, int] = {
         "pending": 0,
         "claimed": 0,
@@ -88,7 +76,11 @@ async def check_queue(db: "AsyncSession", board_id: str) -> LayerHealth:
         "failed": 0,
         "paused": 0,
     }
-    for status, count in result.all():
+    rows = await get_kg_operational_read_model_port().queue_status_counts(
+        context,
+        board_id=board_id,
+    )
+    for status, count in rows.items():
         buckets[status] = int(count)
 
     backlog = buckets["pending"] + buckets["claimed"]
@@ -109,65 +101,55 @@ async def check_queue(db: "AsyncSession", board_id: str) -> LayerHealth:
     )
 
 
-def check_kuzu(board_id: str) -> LayerHealth:
-    """Open the per-board Kùzu graph and count nodes per type.
+def check_graph(board_id: str) -> LayerHealth:
+    """Open the per-board graph backend graph and count nodes per type.
 
     Healthy when at least one node exists across all node types — a
     bootstrapped-but-empty graph returns ``healthy=False`` with
     ``details="no nodes committed yet"`` so the operator can distinguish an
     un-consolidated board from a broken one.
 
-    When the ``.kuzu`` directory does not exist yet the layer is reported
+    When the ``.graph`` directory does not exist yet the layer is reported
     unhealthy with a distinct ``details`` string — the CLI uses this branch
     to advise running ``okto-pulse init`` / waiting for the first
     consolidation before the check is meaningful.
     """
-    path = board_kuzu_path(board_id)
-    if not path.exists():
+    state = get_kg_registry().graph_runtime_store.graph_state(board_id)
+    if not state.exists:
         return LayerHealth(
-            layer="kuzu",
+            layer="graph",
             healthy=False,
             counts={"total": 0},
-            details=f"graph not bootstrapped at {path}",
+            details=f"graph not bootstrapped ({state.status})",
         )
 
     counts: dict[str, int] = {node_type: 0 for node_type in NODE_TYPES}
     total = 0
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                qr = None
-                try:
-                    qr = conn.execute(f"MATCH (n:{node_type}) RETURN count(n) AS c")
-                    # Kùzu 0.6+ exposes .get_next() / .has_next(); fall back
-                    # to iterating when the driver changes shape.
-                    row = None
-                    if hasattr(qr, "has_next") and hasattr(qr, "get_next"):
-                        if qr.has_next():
-                            row = qr.get_next()
-                    else:
-                        iterator = iter(qr)
-                        row = next(iterator, None)
-                    if row is None:
-                        continue
-                    value = row[0] if isinstance(row, (list, tuple)) else row
-                    counts[node_type] = int(value)
-                    total += int(value)
-                except Exception as exc:
-                    logger.warning(
-                        "health.kuzu.count_failed board=%s type=%s err=%s",
-                        board_id, node_type, exc,
-                        extra={"event": "health.kuzu.count_failed", "board_id": board_id},
-                    )
-                finally:
-                    if qr is not None:
-                        try:
-                            qr.close()
-                        except Exception:
-                            pass
+        cypher = get_kg_registry().cypher_executor
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) RETURN count(n) AS c",
+                    max_rows=1,
+                )
+                rows = result.get("rows", [])
+                if not rows:
+                    continue
+                row = rows[0]
+                value = row[0] if isinstance(row, (list, tuple)) else row
+                counts[node_type] = int(value)
+                total += int(value)
+            except Exception as exc:
+                logger.warning(
+                    "health.graph.count_failed board=%s type=%s err=%s",
+                    board_id, node_type, exc,
+                    extra={"event": "health.graph.count_failed", "board_id": board_id},
+                )
     except Exception as exc:
         return LayerHealth(
-            layer="kuzu",
+            layer="graph",
             healthy=False,
             counts={"total": 0},
             details=f"failed to open graph: {exc}",
@@ -176,7 +158,7 @@ def check_kuzu(board_id: str) -> LayerHealth:
     counts["total"] = total
     if total == 0:
         return LayerHealth(
-            layer="kuzu",
+            layer="graph",
             healthy=False,
             counts=counts,
             details="no nodes committed yet",
@@ -184,63 +166,60 @@ def check_kuzu(board_id: str) -> LayerHealth:
 
     populated_types = [f"{t}={c}" for t, c in counts.items() if t != "total" and c > 0]
     return LayerHealth(
-        layer="kuzu",
+        layer="graph",
         healthy=True,
         counts=counts,
         details=f"{total} nodes ({', '.join(populated_types) or 'none'})",
     )
 
 
-async def check_kuzu_node_refs(
-    db: "AsyncSession",
+async def check_graph_node_refs(
+    context: Any,
     board_id: str,
-    kuzu_total: int | None = None,
+    graph_total: int | None = None,
 ) -> LayerHealth:
-    """Count rows in ``kuzu_node_refs`` for a board and compare to the
-    per-board Kùzu count.
+    """Count persisted graph references and compare to the graph node count.
 
     The mirror is written in the same SQLite transaction as the audit row at
     commit_consolidation, so a mismatch points to a partial write or a
-    silently-aborted session. Pass ``kuzu_total`` to avoid a second Kùzu
-    scan when :func:`check_kuzu` already ran.
+    silently-aborted session. Pass ``graph_total`` to avoid a second graph backend
+    scan when :func:`check_graph` already ran.
     """
-    op_col = KuzuNodeRef.operation
-    result = await db.execute(
-        select(op_col, func.count())
-        .where(KuzuNodeRef.board_id == board_id)
-        .group_by(op_col)
-    )
     by_op: dict[str, int] = {"add": 0, "update": 0, "supersede": 0}
-    for op, count in result.all():
+    rows = await get_kg_operational_read_model_port().graph_node_ref_operation_counts(
+        context,
+        board_id=board_id,
+    )
+    for op, count in rows.items():
         by_op[op] = int(count)
-    # Kùzu node count = add+update net of supersede (supersede replaces, not deletes).
+    # graph backend node count = add+update net of supersede (supersede replaces, not deletes).
     # The mirror is append-only so we compare against total rows.
     total_rows = sum(by_op.values())
 
     counts = dict(by_op)
     counts["total"] = total_rows
 
-    if kuzu_total is None:
+    if graph_total is None:
         healthy = True
         details = f"{total_rows} ref rows (add={by_op['add']} update={by_op['update']} supersede={by_op['supersede']})"
     else:
-        # add - supersede ≈ Kùzu live nodes; allow equality when supersede is 0.
+        # add - supersede ≈ graph backend live nodes; allow equality when supersede is 0.
         expected = by_op["add"] - by_op["supersede"]
-        healthy = expected == kuzu_total
+        healthy = expected == graph_total
         details = (
-            f"{total_rows} ref rows, expected_live={expected}, kuzu_live={kuzu_total} "
+            f"{total_rows} ref rows, expected_live={expected}, graph_live={graph_total} "
             f"{'ok' if healthy else 'MISMATCH'}"
         )
 
     return LayerHealth(
-        layer="kuzu_node_refs",
+        layer="graph_node_refs",
         healthy=healthy,
         counts=counts,
         details=details,
     )
 
 
-async def check_outbox(db: "AsyncSession", board_id: str) -> LayerHealth:
+async def check_outbox(context: Any, board_id: str) -> LayerHealth:
     """Inspect ``global_update_outbox`` for a board.
 
     Buckets:
@@ -252,42 +231,27 @@ async def check_outbox(db: "AsyncSession", board_id: str) -> LayerHealth:
 
     Healthy when ``pending == 0`` AND ``dead_letter == 0``.
     """
-    # Pending: still in the worker's retry window.
-    pending_q = select(func.count()).where(
-        GlobalUpdateOutbox.board_id == board_id,
-        GlobalUpdateOutbox.processed_at.is_(None),
-        GlobalUpdateOutbox.retry_count >= 0,
-        GlobalUpdateOutbox.retry_count < MAX_OUTBOX_RETRIES,
+    outbox = await get_kg_operational_read_model_port().global_outbox_counts(
+        context,
+        board_id=board_id,
+        max_retries=MAX_OUTBOX_RETRIES,
+        dead_letter_retry_sentinel=DEAD_LETTER_RETRY_SENTINEL,
     )
-    pending = int((await db.execute(pending_q)).scalar_one())
-
-    # Dead letter: worker gave up (either hit MAX_RETRIES or set sentinel).
-    dead_q = select(func.count()).where(
-        GlobalUpdateOutbox.board_id == board_id,
-        GlobalUpdateOutbox.processed_at.is_(None),
-        (GlobalUpdateOutbox.retry_count >= MAX_OUTBOX_RETRIES)
-        | (GlobalUpdateOutbox.retry_count == DEAD_LETTER_RETRY_SENTINEL),
-    )
-    dead_letter = int((await db.execute(dead_q)).scalar_one())
-
-    processed_q = select(func.count()).where(
-        GlobalUpdateOutbox.board_id == board_id,
-        GlobalUpdateOutbox.processed_at.is_not(None),
-    )
-    processed = int((await db.execute(processed_q)).scalar_one())
 
     counts = {
-        "pending": pending,
-        "dead_letter": dead_letter,
-        "processed": processed,
+        "pending": int(outbox.pending),
+        "dead_letter": int(outbox.dead_letter),
+        "processed": int(outbox.processed),
     }
-    healthy = pending == 0 and dead_letter == 0
+    healthy = counts["pending"] == 0 and counts["dead_letter"] == 0
     if healthy:
-        details = f"{processed} processed, 0 pending"
-    elif pending > 0 and dead_letter == 0:
-        details = f"{pending} pending — worker will retry"
+        details = f"{counts['processed']} processed, 0 pending"
+    elif counts["pending"] > 0 and counts["dead_letter"] == 0:
+        details = f"{counts['pending']} pending — worker will retry"
     else:
-        details = f"{dead_letter} dead-lettered event(s) — inspect last_error"
+        details = (
+            f"{counts['dead_letter']} dead-lettered event(s) — inspect last_error"
+        )
 
     return LayerHealth(
         layer="outbox",
@@ -300,46 +264,28 @@ async def check_outbox(db: "AsyncSession", board_id: str) -> LayerHealth:
 def check_global(board_id: str) -> LayerHealth:
     """Count ``DecisionDigest`` rows in the global meta-graph for this board.
 
-    Healthy when the count is > 0 and the global Kùzu file is openable. Does
-    NOT compare against the per-board Kùzu count — the outbox may legitimately
+    Healthy when the count is > 0 and the global graph backend file is openable. Does
+    NOT compare against the per-board graph backend count — the outbox may legitimately
     lag the per-board writes briefly. For strict equality checks use
     :func:`check_outbox` (pending=0) combined with this.
     """
     try:
-        from okto_pulse.core.kg.global_discovery.schema import open_global_connection
-    except ImportError as exc:
+        global_runtime = get_kg_registry().require_global_discovery_runtime()
+    except Exception as exc:
         return LayerHealth(
             layer="global",
             healthy=False,
             counts={"digests": 0},
-            details=f"global discovery module unavailable: {exc}",
+            details=f"global discovery runtime unavailable: {exc}",
         )
 
     try:
-        _db, conn = open_global_connection()
-        qr = None
-        try:
-            qr = conn.execute(
-                "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c",
-                {"bid": board_id},
-            )
-            row = None
-            if hasattr(qr, "has_next") and hasattr(qr, "get_next"):
-                if qr.has_next():
-                    row = qr.get_next()
-            else:
-                row = next(iter(qr), None)
-            digests = int(row[0]) if row is not None else 0
-        finally:
-            if qr is not None:
-                try:
-                    qr.close()
-                except Exception:
-                    pass
-            try:
-                conn.close()
-            except Exception:
-                pass
+        qr = global_runtime.execute(
+            "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c",
+            {"bid": board_id},
+        )
+        row = qr.rows[0] if qr.rows else None
+        digests = int(row[0]) if row is not None else 0
     except Exception as exc:
         return LayerHealth(
             layer="global",

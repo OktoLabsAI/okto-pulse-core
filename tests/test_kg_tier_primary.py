@@ -28,7 +28,7 @@ from okto_pulse.core.kg.kg_service import (
     get_kg_service,
     reset_kg_service_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     SCHEMA_VERSION,
     bootstrap_board_graph,
     open_board_connection,
@@ -51,61 +51,74 @@ BOARD = "board-tier1-test"
 @pytest.fixture(scope="module", autouse=True)
 def _seed_data():
     """Seed a board with test data for the tier primario queries."""
+    from kg_registry_testing import (
+        configure_real_graph_test_kg_registry,
+        configure_test_kg_registry,
+    )
+
     os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_t1_"))
     reset_kg_service_for_tests()
+    # This module seeds a real board graph via bootstrap/open_board_connection.
+    # In core-only environments the helper skips explicitly before the fake graph
+    # runtime can be used partially.
+    configure_real_graph_test_kg_registry()
     clear_cache()
 
     _handle = bootstrap_board_graph(BOARD)
-    db, conn = open_board_connection(BOARD)
     emb_a = [0.1] * 384
     emb_b = [0.2] * 384
     emb_c = [0.3] * 384
 
-    for nid, title, content, emb, score in [
-        ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, 0.8),
-        ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, 0.8),
-        ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, 0.2),
-    ]:
+    with open_board_connection(BOARD) as (_db, conn):
+        for nid, title, content, emb, score in [
+            ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, 0.8),
+            ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, 0.8),
+            ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, 0.2),
+        ]:
+            conn.execute(
+                "CREATE (d:Decision {id: $id, title: $t, content: $c, "
+                "source_artifact_ref: $ref, source_session_id: 's1', "
+                "source_confidence: 0.9, relevance_score: $score, "
+                "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
+                "created_by_agent: 'agent-1', embedding: $emb})",
+                {"id": nid, "t": title, "c": content, "ref": "spec-1",
+                 "score": score, "emb": emb},
+            )
         conn.execute(
-            "CREATE (d:Decision {id: $id, title: $t, content: $c, "
-            "source_artifact_ref: $ref, source_session_id: 's1', "
-            "source_confidence: 0.9, relevance_score: $score, "
+            "CREATE (c:Constraint {id: 'cst-1', title: 'No Docker', "
+            "content: 'Embedded only', source_artifact_ref: 'spec-1', "
+            "source_session_id: 's1', source_confidence: 0.85, "
+            "relevance_score: 0.8, query_hits: 0, "
+            "created_at: timestamp('2026-04-15T10:00:00'), "
+            "created_by_agent: 'agent-1', embedding: $emb})",
+            {"emb": emb_b},
+        )
+        conn.execute(
+            "CREATE (a:Alternative {id: 'alt-1', title: 'Use Neo4j', "
+            "content: 'Server-based', justification: 'Rejected: Docker', "
+            "source_artifact_ref: 'spec-1', source_session_id: 's1', "
+            "source_confidence: 0.7, relevance_score: 0.6, "
             "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
             "created_by_agent: 'agent-1', embedding: $emb})",
-            {"id": nid, "t": title, "c": content, "ref": "spec-1",
-             "score": score, "emb": emb},
+            {"emb": emb_c},
         )
-    conn.execute(
-        "CREATE (c:Constraint {id: 'cst-1', title: 'No Docker', "
-        "content: 'Embedded only', source_artifact_ref: 'spec-1', "
-        "source_session_id: 's1', source_confidence: 0.85, "
-        "relevance_score: 0.8, query_hits: 0, "
-        "created_at: timestamp('2026-04-15T10:00:00'), "
-        "created_by_agent: 'agent-1', embedding: $emb})",
-        {"emb": emb_b},
-    )
-    conn.execute(
-        "CREATE (a:Alternative {id: 'alt-1', title: 'Use Neo4j', "
-        "content: 'Server-based', justification: 'Rejected: Docker', "
-        "source_artifact_ref: 'spec-1', source_session_id: 's1', "
-        "source_confidence: 0.7, relevance_score: 0.6, "
-        "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
-        "created_by_agent: 'agent-1', embedding: $emb})",
-        {"emb": emb_c},
-    )
-    # Rels
-    conn.execute(
-        "MATCH (d:Decision {id: 'dec-1'}), (a:Alternative {id: 'alt-1'}) "
-        "CREATE (d)-[:relates_to {confidence: 0.8, created_by_session_id: 's1', "
-        "created_at: timestamp('2026-04-15T10:00:00')}]->(a)"
-    )
-    conn.execute(
-        "MATCH (a:Decision {id: 'dec-1'}), (b:Decision {id: 'dec-2'}) "
-        "CREATE (a)-[:contradicts {confidence: 0.6, created_by_session_id: 's1', "
-        "created_at: timestamp('2026-04-15T10:00:00')}]->(b)"
-    )
-    del conn, db
+        # Rels
+        conn.execute(
+            "MATCH (d:Decision {id: 'dec-1'}), (a:Alternative {id: 'alt-1'}) "
+            "CREATE (d)-[:relates_to {confidence: 0.8, "
+            "created_by_session_id: 's1', "
+            "created_at: timestamp('2026-04-15T10:00:00')}]->(a)"
+        )
+        conn.execute(
+            "MATCH (a:Decision {id: 'dec-1'}), (b:Decision {id: 'dec-2'}) "
+            "CREATE (a)-[:contradicts {confidence: 0.6, "
+            "created_by_session_id: 's1', "
+            "created_at: timestamp('2026-04-15T10:00:00')}]->(b)"
+        )
     yield
+    # R-P2-03: at module teardown the function-scope conftest fixture has already
+    # reset the registry, so reconfigure the fakes before the teardown clear_cache.
+    configure_test_kg_registry()
     clear_cache()
 
 

@@ -12,12 +12,15 @@ the six heterogeneous families are kept separate with a rejected_reason.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import logging
 import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import func, select
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -27,12 +30,20 @@ from okto_pulse.core.mcp.tool_family_registry import (
     ToolFamilyRegistry,
     emit_alias_usage,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
+    ActivityLog,
     Board,
     Card,
     CardStatus,
     CardType,
+    Ideation,
+    IdeationQAItem,
+    IdeationStatus,
+    Refinement,
+    RefinementQAItem,
+    RefinementStatus,
     Spec,
+    SpecQAItem,
     SpecStatus,
 )
 
@@ -57,7 +68,7 @@ def _stub_ctx(board_id: str, permissions=None):
 
 
 async def _call(name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     return json.loads(await tool.fn(**kwargs))
 
@@ -278,6 +289,134 @@ async def test_ask_sprint_skips_permission_gate_card_does_not():
     assert "error" in card_res and "denied" in json.dumps(card_res).lower()
     # ...sprint path skipped it and reached the service (sprint not found).
     assert sprint_res.get("error") == "Sprint not found"
+
+
+@pytest.mark.asyncio
+async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
+    db_factory = get_session_factory()
+    board_id, foreign_board_id = _id("r4scope-board"), _id("r4scope-foreign")
+    async with db_factory() as db:
+        db.add_all(
+            (
+                Board(id=board_id, name="R4 scope", owner_id=USER_ID),
+                Board(id=foreign_board_id, name="R4 foreign", owner_id=USER_ID),
+            )
+        )
+        await db.flush()
+        local_ideation = Ideation(
+            board_id=board_id,
+            title="Local ideation",
+            status=IdeationStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        foreign_ideation = Ideation(
+            board_id=foreign_board_id,
+            title="Foreign ideation",
+            status=IdeationStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        db.add_all((local_ideation, foreign_ideation))
+        await db.flush()
+        local_refinement = Refinement(
+            board_id=board_id,
+            ideation_id=local_ideation.id,
+            title="Local refinement",
+            status=RefinementStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        foreign_refinement = Refinement(
+            board_id=foreign_board_id,
+            ideation_id=foreign_ideation.id,
+            title="Foreign refinement",
+            status=RefinementStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        local_spec = Spec(
+            board_id=board_id,
+            ideation_id=local_ideation.id,
+            title="Local spec",
+            status=SpecStatus.IN_PROGRESS,
+            created_by=USER_ID,
+        )
+        foreign_spec = Spec(
+            board_id=foreign_board_id,
+            ideation_id=foreign_ideation.id,
+            title="Foreign spec",
+            status=SpecStatus.IN_PROGRESS,
+            created_by=USER_ID,
+        )
+        db.add_all(
+            (
+                local_refinement,
+                foreign_refinement,
+                local_spec,
+                foreign_spec,
+            )
+        )
+        await db.commit()
+        local_ids = {
+            "ideation": local_ideation.id,
+            "refinement": local_refinement.id,
+            "spec": local_spec.id,
+        }
+        foreign_ids = {
+            "ideation": foreign_ideation.id,
+            "refinement": foreign_refinement.id,
+            "spec": foreign_spec.id,
+        }
+
+    async def _counts() -> tuple[int, int, int, int]:
+        async with db_factory() as db:
+            return (
+                int(await db.scalar(select(func.count()).select_from(IdeationQAItem)) or 0),
+                int(await db.scalar(select(func.count()).select_from(RefinementQAItem)) or 0),
+                int(await db.scalar(select(func.count()).select_from(SpecQAItem)) or 0),
+                int(await db.scalar(select(func.count()).select_from(ActivityLog)) or 0),
+            )
+
+    before = await _counts()
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=_stub_ctx(board_id)),
+    ), patch.object(mcp_server, "check_permission", return_value=None):
+        cross = {
+            entity_type: await _call(
+                "okto_pulse_ask",
+                board_id=board_id,
+                target_type=entity_type,
+                parent_id=parent_id,
+                question="must-not-create",
+            )
+            for entity_type, parent_id in foreign_ids.items()
+        }
+
+    assert cross == {
+        "ideation": {"error": "Ideation not found"},
+        "refinement": {"error": "Refinement not found"},
+        "spec": {"error": "Spec not found"},
+    }
+    assert await _counts() == before
+
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=_stub_ctx(board_id)),
+    ), patch.object(mcp_server, "check_permission", return_value=None):
+        same_board = {
+            entity_type: await _call(
+                "okto_pulse_ask",
+                board_id=board_id,
+                target_type=entity_type,
+                parent_id=parent_id,
+                question="same-board question",
+            )
+            for entity_type, parent_id in local_ids.items()
+        }
+
+    assert all(result.get("success") is True for result in same_board.values())
+    after = await _counts()
+    assert tuple(after[i] - before[i] for i in range(4)) == (1, 1, 1, 3)
 
 
 # ===========================================================================

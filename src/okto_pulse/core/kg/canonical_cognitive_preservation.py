@@ -1,13 +1,13 @@
 """R2-IMP2 — preserve canonical cognitive knowledge across a board rebuild.
 
-A deterministic rebuild purges the board Kùzu graph and re-materializes only
-SQL-derived deterministic nodes. Canonical COGNITIVE nodes (Learning / Alternative
-/ Assumption of cognitive origin) have no SQL source, so without preservation they
-are SILENTLY LOST. This module snapshots them (node attrs + relevant edges) BEFORE
-the purge and restores them AFTER deterministic re-materialization. Anything that
-cannot be literally restored is reported as ``unrestorable`` so the rebuild can be
-flagged ``degraded`` (never a silent clean success), and bug-derived Learnings get
-a traceable R7 cognitive hold.
+A deterministic rebuild purges the board graph backend graph and re-materializes only
+SQL-derived deterministic nodes. Canonical COGNITIVE nodes (Decision / Learning /
+Alternative / Assumption of cognitive origin) may have no SQL source, so without
+preservation they are SILENTLY LOST. This module snapshots them (node attrs +
+relevant edges) BEFORE the purge and restores them AFTER deterministic
+re-materialization. Anything that cannot be literally restored is reported as
+``unrestorable`` so the rebuild can be flagged ``degraded`` (never a silent clean
+success), and bug-derived Learnings get a traceable R7 cognitive hold.
 
 Outcome semantics (R2-IMP2 / codex gate):
 - ``clean``           — everything snapshotted was restored literally;
@@ -24,13 +24,24 @@ NOT an MCP mutating tool. Global Discovery digest sync is R2-IMP5, not here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
+import uuid
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from typing import Any
 
+from okto_pulse.core.kg.schema_contract import STABLE_NODE_PROPERTIES
+
 logger = logging.getLogger("okto_pulse.kg.canonical_cognitive_preservation")
 
-COGNITIVE_TYPES: tuple[str, ...] = ("Learning", "Alternative", "Assumption")
+COGNITIVE_TYPES: tuple[str, ...] = (
+    "Decision",
+    "Learning",
+    "Alternative",
+    "Assumption",
+)
 GRAPH_LAYER_CANONICAL = "canonical"
 
 # Outcome status vocabulary (structured report field, NOT a persisted enum).
@@ -47,6 +58,80 @@ _COGNITIVE_EDGE_TYPES: tuple[str, ...] = (
     "validates", "derives_from", "relates_to", "supersedes", "contradicts",
     "depends_on", "mentions",
 )
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised below
+            box["error"] = exc
+
+    context = copy_context()
+    thread = threading.Thread(
+        target=context.run,
+        args=(_runner,),
+        name="kg-cognitive-preservation-graph-write",
+        daemon=True,
+    )
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+def _execute_read_rows(
+    board_id: str,
+    cypher: str,
+    params: dict[str, Any] | None = None,
+    *,
+    max_rows: int = 10000,
+) -> list[list[Any]]:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    result = get_kg_registry().cypher_executor.execute_read_only(
+        board_id,
+        cypher,
+        params or {},
+        max_rows=max_rows,
+    )
+    return [list(row) for row in result.get("rows", [])]
+
+
+def _execute_write_has_row(
+    board_id: str,
+    cypher: str,
+    params: dict[str, Any] | None = None,
+) -> bool:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    async def _run() -> bool:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+            result = scope.execute(cypher, params or {})
+            return _result_has_row(result)
+
+    return _run_async_blocking(_run())
+
+
+def _result_has_row(result: Any) -> bool:
+    if result is None:
+        return False
+    rows = getattr(result, "rows", None)
+    if rows is not None:
+        return bool(rows)
+    try:
+        next(iter(result))
+        return True
+    except (StopIteration, TypeError):
+        return False
 
 
 @dataclass
@@ -70,49 +155,44 @@ class RestoreResult:
     error: str | None = None
 
 
-def _table_columns(conn, node_type: str) -> list[str]:
-    cols: list[str] = []
+def _table_columns(board_id: str, node_type: str) -> list[str]:
     try:
-        res = conn.execute(f"CALL TABLE_INFO('{node_type}') RETURN *")
-        while res.has_next():
-            row = res.get_next()
-            for cell in row:
-                if isinstance(cell, str) and cell:
-                    cols.append(cell)
-                    break
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        store = get_kg_registry().graph_store
+        if store is None:
+            return list(STABLE_NODE_PROPERTIES)
+        return list(store.list_node_properties(board_id, node_type))
     except Exception:
-        return []
-    return cols
+        return list(STABLE_NODE_PROPERTIES)
 
 
 def snapshot_canonical_cognitive(board_id: str) -> CognitiveSnapshot:
     """Read canonical cognitive nodes + their outgoing semantic edges BEFORE the
     rebuild purge. Degrades to ``readable=False`` (auditable) if the graph cannot
     be opened/read — never claims an empty snapshot as a clean success."""
-    from okto_pulse.core.kg.schema import open_board_connection
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            nodes: list[dict[str, Any]] = []
-            node_ids: set[str] = set()
-            for ntype in COGNITIVE_TYPES:
-                cols = _table_columns(conn, ntype)
-                if not cols:
+        nodes: list[dict[str, Any]] = []
+        node_ids: set[str] = set()
+        for ntype in COGNITIVE_TYPES:
+            cols = _table_columns(board_id, ntype)
+            if not cols:
+                continue
+            projection = ", ".join(f"n.{c}" for c in cols)
+            rows = _execute_read_rows(
+                board_id,
+                f"MATCH (n:{ntype}) WHERE n.graph_layer = $c RETURN {projection}",
+                {"c": GRAPH_LAYER_CANONICAL},
+            )
+            for row in rows:
+                attrs = {cols[i]: row[i] for i in range(len(cols))}
+                nid = str(attrs.get("id") or "")
+                if not nid:
                     continue
-                projection = ", ".join(f"n.{c}" for c in cols)
-                res = conn.execute(
-                    f"MATCH (n:{ntype}) WHERE n.graph_layer = $c RETURN {projection}",
-                    {"c": GRAPH_LAYER_CANONICAL},
-                )
-                while res.has_next():
-                    row = res.get_next()
-                    attrs = {cols[i]: row[i] for i in range(len(cols))}
-                    nid = str(attrs.get("id") or "")
-                    if not nid:
-                        continue
-                    node_ids.add(nid)
-                    nodes.append({"node_type": ntype, "id": nid, "attrs": attrs})
-            edges = _snapshot_edges(conn, node_ids) if node_ids else []
+                node_ids.add(nid)
+                nodes.append({"node_type": ntype, "id": nid, "attrs": attrs})
+        edges = _snapshot_edges(board_id, node_ids) if node_ids else []
         return CognitiveSnapshot(board_id=board_id, readable=True, nodes=nodes, edges=edges)
     except Exception as exc:
         logger.warning(
@@ -124,21 +204,21 @@ def snapshot_canonical_cognitive(board_id: str) -> CognitiveSnapshot:
         return CognitiveSnapshot(board_id=board_id, readable=False)
 
 
-def _snapshot_edges(conn, node_ids: set[str]) -> list[dict[str, Any]]:
+def _snapshot_edges(board_id: str, node_ids: set[str]) -> list[dict[str, Any]]:
     edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     ids = list(node_ids)
     for etype in _COGNITIVE_EDGE_TYPES:
         try:
-            res = conn.execute(
+            rows = _execute_read_rows(
+                board_id,
                 f"MATCH (a)-[:{etype}]->(b) WHERE a.id IN $ids "
                 f"RETURN a.id, b.id",
                 {"ids": ids},
             )
         except Exception:
             continue
-        while res.has_next():
-            row = res.get_next()
+        for row in rows:
             from_id, to_id = str(row[0]), str(row[1])
             key = (etype, from_id, to_id)
             if key in seen:
@@ -148,29 +228,125 @@ def _snapshot_edges(conn, node_ids: set[str]) -> list[dict[str, Any]]:
     return edges
 
 
-def _node_present(conn, node_type: str, node_id: str) -> bool:
-    res = conn.execute(
-        f"MATCH (n:{node_type} {{id: $id}}) RETURN n.id", {"id": node_id}
+def _node_present(board_id: str, node_type: str, node_id: str) -> bool:
+    rows = _execute_read_rows(
+        board_id,
+        f"MATCH (n:{node_type} {{id: $id}}) RETURN n.id",
+        {"id": node_id},
+        max_rows=1,
     )
-    return res.has_next()
+    return bool(rows)
 
 
-def _node_label(conn, node_id: str) -> str | None:
+def _node_label(board_id: str, node_id: str) -> str | None:
     """Resolve the label of an existing node id in the rebuilt graph (for edge
     endpoint typing). Returns None if absent."""
-    from okto_pulse.core.kg.schema import VECTOR_INDEX_TYPES
+    from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 
     candidates = tuple(VECTOR_INDEX_TYPES) + ("Alternative", "Assumption")
     for label in candidates:
         try:
-            res = conn.execute(
-                f"MATCH (n:{label} {{id: $id}}) RETURN n.id", {"id": node_id}
+            rows = _execute_read_rows(
+                board_id,
+                f"MATCH (n:{label} {{id: $id}}) RETURN n.id",
+                {"id": node_id},
+                max_rows=1,
             )
-            if res.has_next():
+            if rows:
                 return label
         except Exception:
             continue
     return None
+
+
+def _create_node(
+    board_id: str,
+    node_type: str,
+    node_id: str,
+    attrs: dict[str, Any],
+) -> None:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    store = get_kg_registry().graph_store
+    if store is None:
+        raise RuntimeError("semantic_graph_store_unavailable")
+    store.create_node(board_id, node_type, node_id, attrs)
+    if not _node_present(board_id, node_type, node_id):
+        raise ValueError(f"node was not created: {node_type}({node_id})")
+
+
+def _edge_present(
+    board_id: str,
+    edge_type: str,
+    from_type: str,
+    to_type: str,
+    from_id: str,
+    to_id: str,
+) -> bool:
+    rows = _execute_read_rows(
+        board_id,
+        f"MATCH (a:{from_type} {{id: $from_id}})-[r:{edge_type}]->"
+        f"(b:{to_type} {{id: $to_id}}) RETURN r.created_by_session_id LIMIT 1",
+        {"from_id": from_id, "to_id": to_id},
+        max_rows=1,
+    )
+    return bool(rows)
+
+
+def _create_edge(
+    board_id: str,
+    edge_type: str,
+    from_type: str,
+    to_type: str,
+    from_id: str,
+    to_id: str,
+    session_id: str,
+) -> bool:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    if _edge_present(board_id, edge_type, from_type, to_type, from_id, to_id):
+        return False
+
+    edge_attrs: dict[str, Any] = {
+        "confidence": 0.7,
+        "created_by_session_id": session_id,
+        "created_at": _now_iso(),
+        "layer": "cognitive",
+        "rule_id": "",
+        "created_by": session_id,
+        "fallback_reason": "",
+    }
+    store = get_kg_registry().graph_store
+    if store is None:
+        raise RuntimeError("semantic_graph_store_unavailable")
+    store.create_edge(
+        board_id,
+        edge_type,
+        from_id,
+        to_id,
+        edge_attrs,
+        from_type=from_type,
+        to_type=to_type,
+    )
+    if not _edge_present(
+        board_id,
+        edge_type,
+        from_type,
+        to_type,
+        from_id,
+        to_id,
+    ):
+        raise ValueError(
+            "edge was not created because endpoint nodes were not matched: "
+            f"{edge_type} {from_type}({from_id}) -> {to_type}({to_id})"
+        )
+    return True
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 
 def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> RestoreResult:
@@ -178,11 +354,6 @@ def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> R
     re-materialized deterministic nodes. Idempotent (skips nodes already present).
     Edges are restored only when BOTH endpoints exist and the rel can be created;
     otherwise the edge/node is recorded ``unrestorable`` (never a guard bypass)."""
-    from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
-    from okto_pulse.core.kg.schema import open_board_connection
-    from okto_pulse.core.kg.transaction import TransactionOrchestrator
-    import uuid as _uuid
-
     if not snapshot.readable:
         return RestoreResult(unreadable=True)
     if not snapshot.nodes:
@@ -190,60 +361,72 @@ def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> R
 
     result = RestoreResult()
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            orch = TransactionOrchestrator(
-                kuzu_conn=conn, sqlite_session=None,
-                session_id=f"cogrestore_{_uuid.uuid4().hex[:8]}", board_id=board_id,
-            )
-            node_by_id = {n["id"]: n for n in snapshot.nodes}
-            present: set[str] = set()
-            for node in snapshot.nodes:
-                ntype, nid = node["node_type"], node["id"]
-                if _node_present(conn, ntype, nid):
-                    present.add(nid)
-                    continue  # idempotent — survived / already restored
-                attrs = {k: v for k, v in node["attrs"].items() if k != "id"}
-                try:
-                    _apply_kuzu_node_create_with_timestamp(orch, ntype, nid, attrs)
-                    result.restored_nodes += 1
-                    present.add(nid)
-                except Exception as exc:
-                    result.unrestorable.append({
-                        "kind": "node", "node_type": ntype, "node_id": nid,
-                        "source_artifact_ref": str(node["attrs"].get("source_artifact_ref") or ""),
-                        "reason": f"node_create_failed:{type(exc).__name__}",
-                    })
-            for edge in snapshot.edges:
-                from_id, to_id, etype = edge["from_id"], edge["to_id"], edge["edge_type"]
-                from_node = node_by_id.get(from_id, {})
-                from_ctx = {
-                    "from_node_type": from_node.get("node_type", ""),
-                    "from_source_artifact_ref": str(
-                        (from_node.get("attrs") or {}).get("source_artifact_ref") or ""
+        session_id = f"cogrestore_{uuid.uuid4().hex[:8]}"
+        node_by_id = {n["id"]: n for n in snapshot.nodes}
+        present: set[str] = set()
+        for node in snapshot.nodes:
+            ntype, nid = node["node_type"], node["id"]
+            if _node_present(board_id, ntype, nid):
+                present.add(nid)
+                continue  # idempotent — survived / already restored
+            attrs = {k: v for k, v in node["attrs"].items() if k != "id"}
+            try:
+                _create_node(board_id, ntype, nid, attrs)
+                result.restored_nodes += 1
+                present.add(nid)
+            except Exception as exc:
+                logger.warning(
+                    "kg.cognitive_preservation.node_restore_failed "
+                    "board=%s type=%s node=%s err=%s",
+                    board_id,
+                    ntype,
+                    nid,
+                    exc,
+                )
+                result.unrestorable.append({
+                    "kind": "node", "node_type": ntype, "node_id": nid,
+                    "source_artifact_ref": str(
+                        node["attrs"].get("source_artifact_ref") or ""
                     ),
-                }
-                from_label = _node_label(conn, from_id)
-                to_label = _node_label(conn, to_id)
-                if from_label is None or to_label is None:
-                    result.unrestorable.append({
-                        "kind": "edge", "edge_type": etype, "from_id": from_id,
-                        "to_id": to_id, "reason": "endpoint_absent_after_rebuild",
-                        **from_ctx,
-                    })
-                    continue
-                try:
-                    orch.create_edge(
-                        edge_type=etype, from_id=from_id, to_id=to_id,
-                        attrs={}, from_type=from_label, to_type=to_label,
-                    )
+                    "reason": f"node_create_failed:{type(exc).__name__}",
+                })
+        for edge in snapshot.edges:
+            from_id, to_id, etype = edge["from_id"], edge["to_id"], edge["edge_type"]
+            from_node = node_by_id.get(from_id, {})
+            from_ctx = {
+                "from_node_type": from_node.get("node_type", ""),
+                "from_source_artifact_ref": str(
+                    (from_node.get("attrs") or {}).get("source_artifact_ref") or ""
+                ),
+            }
+            from_label = _node_label(board_id, from_id)
+            to_label = _node_label(board_id, to_id)
+            if from_label is None or to_label is None:
+                result.unrestorable.append({
+                    "kind": "edge", "edge_type": etype, "from_id": from_id,
+                    "to_id": to_id, "reason": "endpoint_absent_after_rebuild",
+                    **from_ctx,
+                })
+                continue
+            try:
+                created = _create_edge(
+                    board_id,
+                    etype,
+                    from_label,
+                    to_label,
+                    from_id,
+                    to_id,
+                    session_id,
+                )
+                if created:
                     result.restored_edges += 1
-                except Exception as exc:
-                    result.unrestorable.append({
-                        "kind": "edge", "edge_type": etype, "from_id": from_id,
-                        "to_id": to_id,
-                        "reason": f"edge_create_rejected:{type(exc).__name__}",
-                        **from_ctx,
-                    })
+            except Exception as exc:
+                result.unrestorable.append({
+                    "kind": "edge", "edge_type": etype, "from_id": from_id,
+                    "to_id": to_id,
+                    "reason": f"edge_create_rejected:{type(exc).__name__}",
+                    **from_ctx,
+                })
     except Exception as exc:  # mechanism itself broke -> integrity error upstream
         logger.warning(
             "kg.cognitive_preservation.restore_failed board=%s err=%s",
@@ -251,6 +434,107 @@ def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> R
         )
         result.error = f"restore_failed:{type(exc).__name__}"
     return result
+
+
+def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
+    """Literal replay of the durable cognitive source (spec MKG-A-S1 FR5/D4).
+
+    Runs AFTER :func:`restore_canonical_cognitive` in the rebuild restore
+    step. Create-if-absent MERGE per ``node_id``: nodes already present
+    (survivors or snapshot-restored) are NEVER touched — no duplication
+    (AC5) and ``human_curated`` content is trivially inviolable (BR3/AC6).
+    Restoration is literal: no LLM, payload and evidence binding come
+    byte-for-byte from the durable record. A second run is a no-op.
+
+    When the pre-purge snapshot was ``unreadable`` this replay is what
+    brings the cognitive knowledge back (AC4) — the failure class of the
+    2026-07-10 incident (73 nodes lost) is closed here.
+
+    Returns a dict merged into the preservation summary:
+    ``replayed_cognitive_count`` (OR2), ``replay_skipped_present_count``,
+    ``durable_source_status`` (``ok`` | ``absent`` | ``error:<reason>``)
+    and ``replay_failed`` items (never silently dropped).
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        CognitiveSourceError,
+        latest_cognitive_source_records,
+        resolve_cognitive_source_store,
+    )
+
+    store = resolve_cognitive_source_store()
+    if store is None:
+        logger.warning(
+            "kg.cognitive_replay.store_absent board=%s — durable replay "
+            "skipped (no CognitiveSourceStore registered)",
+            board_id,
+        )
+        return {
+            "replayed_cognitive_count": 0,
+            "replay_skipped_present_count": 0,
+            "durable_source_status": "absent",
+            "replay_failed": [],
+        }
+
+    try:
+        records = latest_cognitive_source_records(
+            _run_async_blocking(store.enumerate(board_id))
+        )
+    except CognitiveSourceError as exc:
+        logger.error(
+            "kg.cognitive_replay.enumerate_failed board=%s reason=%s",
+            board_id,
+            exc.failure_reason,
+        )
+        return {
+            "replayed_cognitive_count": 0,
+            "replay_skipped_present_count": 0,
+            "durable_source_status": f"error:{exc.failure_reason}",
+            "replay_failed": [],
+        }
+
+    replayed = 0
+    skipped_present = 0
+    failed: list[dict[str, Any]] = []
+    for record in records:
+        node_type = record.node_type
+        if node_type not in COGNITIVE_TYPES:
+            continue
+        if _node_present(board_id, node_type, record.node_id):
+            skipped_present += 1
+            continue
+        attrs = dict(record.payload)
+        attrs.pop("id", None)
+        # The durable ledger keeps provenance alongside (rather than inside)
+        # the literal payload.  Restore it when older payloads do not already
+        # carry the field, while never overriding an explicitly persisted
+        # payload value.
+        attrs.setdefault("source_session_id", record.source_session_id or "")
+        try:
+            _create_node(board_id, node_type, record.node_id, attrs)
+            replayed += 1
+        except Exception as exc:  # noqa: BLE001 — recorded, never silent
+            failed.append({"node_id": record.node_id, "error": str(exc)})
+    if failed:
+        logger.error(
+            "kg.cognitive_replay.partial board=%s replayed=%d failed=%d",
+            board_id,
+            replayed,
+            len(failed),
+        )
+    else:
+        logger.info(
+            "kg.cognitive_replay.done board=%s replayed=%d skipped_present=%d",
+            board_id,
+            replayed,
+            skipped_present,
+        )
+    return {
+        "replayed_cognitive_count": replayed,
+        "replay_skipped_present_count": skipped_present,
+        "durable_source_status": "ok",
+        "replay_failed": failed,
+    }
 
 
 def preservation_summary(

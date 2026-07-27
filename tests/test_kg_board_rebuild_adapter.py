@@ -9,8 +9,37 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
+from okto_pulse.core.kg.interfaces.graph_lifecycle import PurgeReport
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
+
+_board_rebuild_ingestion = pytest.importorskip(
+    "okto_pulse.community.adapters.board_rebuild_ingestion",
+    reason="AF-04 Community integration test requires the Community rebuild ingestion adapter.",
+)
+BoardRebuildIngestionAdapter = _board_rebuild_ingestion.BoardRebuildIngestionAdapter
+
+
+def _noop_purge_report(self, *, board_id: str, reason: str) -> PurgeReport:
+    return PurgeReport(board_id=board_id, status="noop", reason=reason)
+
+
+def _create_consolidation_queue(conn: sqlite3.Connection) -> None:
+    """Create the governed multi-kind queue shape used by current runtime."""
+
+    conn.execute(
+        "CREATE TABLE consolidation_queue ("
+        "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
+        "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
+        "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
+        "claim_timeout_at TEXT, next_retry_at TEXT, claim_token TEXT, "
+        "work_kind TEXT NOT NULL DEFAULT 'consolidate', "
+        "generation INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX uq_queue_consolidate_board_artifact "
+        "ON consolidation_queue(board_id, artifact_type, artifact_id) "
+        "WHERE work_kind='consolidate'"
+    )
 
 
 def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
@@ -23,13 +52,7 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         conn.commit()
 
     adapter = BoardRebuildIngestionAdapter(db_path=db_path)
@@ -67,25 +90,146 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
     ]
 
 
-def test_enqueue_sources_resets_existing_pending_failures_for_new_rebuild(
+@pytest.mark.parametrize("status", ["pending", "claimed"])
+def test_enqueue_sources_leaves_active_rows_alone_for_new_rebuild(
     tmp_path: Path,
+    status: str,
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         conn.execute(
             "INSERT INTO consolidation_queue "
             "(id, board_id, artifact_type, artifact_id, priority, source, status, "
             "triggered_at, attempts, last_error, claimed_by_session_id, claimed_at, "
             "worker_id, claim_timeout_at, next_retry_at) "
             "VALUES ('q1', 'b1', 'spec', 's1', 'low', 'old-rebuild', "
-            "'pending', datetime('now'), 4, 'corrupt graph', 'old-worker', "
+            "?, datetime('now'), 4, 'corrupt graph', 'old-session', "
+            "'2026-05-27 10:00:00', 'old-worker', '2026-05-27 10:30:00', "
+            "'2026-05-27 11:00:00')",
+            (status,),
+        )
+        conn.commit()
+
+    adapter = BoardRebuildIngestionAdapter(db_path=db_path)
+    counts = adapter.enqueue_sources(
+        board_id="b1",
+        run_id="new-manifest",
+        sources=[{"artifact_type": "spec", "id": "s1"}],
+    )
+
+    assert counts == {"inserted": 0, "reset_to_pending": 0, "left_alone": 1}
+    with sqlite3.connect(str(db_path)) as conn:
+        row = conn.execute(
+            "SELECT status, attempts, last_error, claimed_by_session_id, "
+            "claimed_at, worker_id, claim_timeout_at, next_retry_at, priority, source "
+            "FROM consolidation_queue WHERE id='q1'"
+        ).fetchone()
+    assert row == (
+        status,
+        4,
+        "corrupt graph",
+        "old-session",
+        "2026-05-27 10:00:00",
+        "old-worker",
+        "2026-05-27 10:30:00",
+        "2026-05-27 11:00:00",
+        "low",
+        "old-rebuild",
+    )
+
+
+def test_enqueue_sources_preserves_row_claimed_after_source_enumeration(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "pulse.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        _create_consolidation_queue(conn)
+        conn.execute(
+            "INSERT INTO consolidation_queue "
+            "(id, board_id, artifact_type, artifact_id, priority, source, status, "
+            "triggered_at, attempts, last_error, claimed_by_session_id, claimed_at, "
+            "worker_id, claim_timeout_at, next_retry_at) "
+            "VALUES ('q1', 'b1', 'spec', 's1', 'low', 'old-rebuild', "
+            "'pending', datetime('now'), 4, 'corrupt graph', NULL, "
+            "NULL, NULL, NULL, '2026-05-27 11:00:00')"
+        )
+        conn.commit()
+
+    # The rebuild source set was already enumerated while the queue row was
+    # pending. A worker then claims the same row before enqueue_sources writes.
+    enumerated_sources = [{"artifact_type": "spec", "id": "s1"}]
+    claim_started = threading.Event()
+    claim_done = threading.Event()
+    worker_errors: list[BaseException] = []
+
+    def claim_pending_row() -> None:
+        claim_started.wait(timeout=1.0)
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.execute(
+                    "UPDATE consolidation_queue SET "
+                    "status='claimed', claimed_by_session_id='race-session', "
+                    "claimed_at='2026-05-27 10:00:00', worker_id='race-worker', "
+                    "claim_timeout_at='2026-05-27 10:30:00' "
+                    "WHERE id='q1'"
+                )
+                conn.commit()
+        except BaseException as exc:  # pragma: no cover - surfaced below.
+            worker_errors.append(exc)
+        finally:
+            claim_done.set()
+
+    worker = threading.Thread(target=claim_pending_row)
+    worker.start()
+    try:
+        claim_started.set()
+        assert claim_done.wait(timeout=1.0)
+        assert worker_errors == []
+
+        adapter = BoardRebuildIngestionAdapter(db_path=db_path)
+        counts = adapter.enqueue_sources(
+            board_id="b1",
+            run_id="new-manifest",
+            sources=enumerated_sources,
+        )
+    finally:
+        worker.join(timeout=1.0)
+
+    assert counts == {"inserted": 0, "reset_to_pending": 0, "left_alone": 1}
+    with sqlite3.connect(str(db_path)) as conn:
+        row = conn.execute(
+            "SELECT status, attempts, last_error, claimed_by_session_id, "
+            "claimed_at, worker_id, claim_timeout_at, next_retry_at, priority, source "
+            "FROM consolidation_queue WHERE id='q1'"
+        ).fetchone()
+    assert row == (
+        "claimed",
+        4,
+        "corrupt graph",
+        "race-session",
+        "2026-05-27 10:00:00",
+        "race-worker",
+        "2026-05-27 10:30:00",
+        "2026-05-27 11:00:00",
+        "low",
+        "old-rebuild",
+    )
+
+
+def test_enqueue_sources_resets_terminal_rows_for_new_rebuild(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "pulse.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        _create_consolidation_queue(conn)
+        conn.execute(
+            "INSERT INTO consolidation_queue "
+            "(id, board_id, artifact_type, artifact_id, priority, source, status, "
+            "triggered_at, attempts, last_error, claimed_by_session_id, claimed_at, "
+            "worker_id, claim_timeout_at, next_retry_at) "
+            "VALUES ('q1', 'b1', 'spec', 's1', 'low', 'old-rebuild', "
+            "'failed', datetime('now'), 4, 'corrupt graph', 'old-session', "
             "'2026-05-27 10:00:00', 'old-worker', '2026-05-27 10:30:00', "
             "'2026-05-27 11:00:00')"
         )
@@ -119,36 +263,65 @@ def test_enqueue_sources_resets_existing_pending_failures_for_new_rebuild(
     )
 
 
+def test_enqueue_sources_docstring_documents_active_row_contract() -> None:
+    doc = BoardRebuildIngestionAdapter.enqueue_sources.__doc__ or ""
+    lowered = " ".join(doc.lower().split())
+
+    assert "pending and claimed rows are left alone" in lowered
+    assert "claim ownership fields" in lowered
+    assert "terminal/retryable rows are reset" in lowered
+    assert "supersedes older behavior that reset pending/claimed rows" in lowered
+    assert "pending/claimed rows are reset" not in lowered
+    assert "pending and claimed rows are reset" not in lowered
+
+
 def test_prepare_board_graph_storage_quarantines_existing_graph(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from okto_pulse.core.kg import schema
-
     graph = tmp_path / "boards" / "b1" / "graph.lbug"
     graph.parent.mkdir(parents=True)
     graph.write_text("graph", encoding="utf-8")
     wal = tmp_path / "boards" / "b1" / "graph.lbug.wal"
     wal.write_text("wal", encoding="utf-8")
 
-    def fake_purge(board_id: str, *, reason: str = "manual") -> list[str]:
-        assert board_id == "b1"
-        assert reason == "explicit_rebuild:test"
-        moved: list[str] = []
-        for path in (graph, wal):
-            if path.exists():
-                moved.append(str(path))
-                path.unlink()
-        return moved
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+    from okto_pulse.core.kg.interfaces.graph_lifecycle import PurgeReport
+    from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
-    monkeypatch.setattr(schema, "board_kuzu_path", lambda board_id: graph)
-    monkeypatch.setattr(schema, "purge_board_graph_storage", fake_purge)
+    class _Lifecycle:
+        async def purge(self, board_id: str, *, reason: str) -> PurgeReport:
+            assert board_id == "b1"
+            assert reason == "explicit_rebuild:test"
+            moved: list[str] = []
+            for path in (graph, wal):
+                if path.exists():
+                    moved.append(str(path))
+                    path.unlink()
+            return PurgeReport(
+                board_id=board_id,
+                status="purged",
+                reason=reason,
+                affected_storage_refs=tuple(
+                    StorageRef(path, "test_graph") for path in moved
+                ),
+                quarantined=True,
+            )
 
-    adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
-    moved = adapter.prepare_board_graph_storage(
-        board_id="b1",
-        reason="explicit_rebuild:test",
-    )
+    configure_test_kg_registry()
+    get_kg_registry().graph_lifecycle = _Lifecycle()
+    original_board_path = kg_runtime.board_kuzu_path
+    kg_runtime.board_kuzu_path = lambda board_id: graph
+
+    try:
+        adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
+        moved = adapter.prepare_board_graph_storage(
+            board_id="b1",
+            reason="explicit_rebuild:test",
+        )
+    finally:
+        kg_runtime.board_kuzu_path = original_board_path
 
     assert moved == (str(graph), str(wal))
     assert not graph.exists()
@@ -168,13 +341,7 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         conn.commit()
 
     adapter = BoardRebuildIngestionAdapter(
@@ -185,8 +352,8 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
-        "prepare_board_graph_storage",
-        lambda self, **_: (),
+        "prepare_board_graph_storage_report",
+        _noop_purge_report,
     )
     step = adapter.build_step_adapter(
         source_resolver=lambda _req: ({"artifact_type": "spec", "id": "s1"},),
@@ -212,18 +379,75 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
     assert result.drilldown["queue_drain"]["grace_applied"] is False
 
 
+def test_rebuild_step_result_counts_include_enqueue_left_alone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from okto_pulse.core.kg import canonical_cognitive_preservation
+
+    adapter = BoardRebuildIngestionAdapter(
+        db_path=tmp_path / "pulse.db",
+        drain_timeout_seconds=0.01,
+        drain_hard_timeout_seconds=0.02,
+        drain_poll_interval_seconds=0.001,
+    )
+    monkeypatch.setattr(
+        canonical_cognitive_preservation,
+        "snapshot_canonical_cognitive",
+        lambda board_id: canonical_cognitive_preservation.CognitiveSnapshot(
+            board_id=board_id,
+            readable=True,
+        ),
+    )
+    monkeypatch.setattr(
+        BoardRebuildIngestionAdapter,
+        "prepare_board_graph_storage_report",
+        _noop_purge_report,
+    )
+    monkeypatch.setattr(
+        BoardRebuildIngestionAdapter,
+        "enqueue_sources",
+        lambda self, **_: {
+            "inserted": 2,
+            "reset_to_pending": 3,
+            "left_alone": 4,
+        },
+    )
+    monkeypatch.setattr(
+        BoardRebuildIngestionAdapter,
+        "queue_depth",
+        lambda self, _board_id: 4,
+    )
+    step = adapter.build_step_adapter(
+        source_resolver=lambda _req: ({"artifact_type": "spec", "id": "s1"},),
+    )
+
+    result = step(
+        RebuildStepInput(
+            board_id="b1",
+            manifest_ref="manifest-1",
+            source_set_hash="a" * 64,
+            actor_id="user-1",
+            operation="rebuild",
+            owner_token="owner-token",
+            previous_kg_generation_id=None,
+            candidate_kg_generation_id="gen-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.counts["enqueue_inserted"] == 2
+    assert result.counts["enqueue_reset_to_pending"] == 3
+    assert result.counts["enqueue_left_alone"] == 4
+    assert result.drilldown["enqueue"]["left_alone"] == 4
+
+
 def test_drain_until_idle_uses_final_grace_for_nearly_drained_queue(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         conn.execute(
             "INSERT INTO consolidation_queue "
             "(id, board_id, artifact_type, artifact_id, priority, source, status, "
@@ -268,13 +492,7 @@ def test_drain_until_idle_does_not_grace_large_stuck_backlog(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         for idx in range(5):
             conn.execute(
                 "INSERT INTO consolidation_queue "
@@ -312,13 +530,7 @@ def test_drain_until_idle_renews_window_while_queue_progresses(
     é janela de ESTAGNAÇÃO: enquanto a profundidade cair, o drain segue."""
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         for idx in range(6):
             conn.execute(
                 "INSERT INTO consolidation_queue "
@@ -371,13 +583,7 @@ def test_drain_until_idle_hard_ceiling_stops_endless_progress(
     sempre: progresso constante mas fila nunca zera → hard timeout."""
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT)"
-        )
+        _create_consolidation_queue(conn)
         for idx in range(50):
             conn.execute(
                 "INSERT INTO consolidation_queue "
@@ -432,22 +638,22 @@ def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from okto_pulse.core.kg import schema
+    from okto_pulse.community.adapters import kg_runtime
 
     graph = tmp_path / "boards" / "b1" / "graph.lbug"
     graph.parent.mkdir(parents=True)
     graph.write_bytes(b"not-a-valid-ladybug-graph")
 
-    monkeypatch.setattr(schema, "board_kuzu_path", lambda board_id: graph)
-    monkeypatch.setattr(schema, "close_all_connections", lambda *_: None)
-    monkeypatch.setattr(schema, "close_board_db_cache", lambda *_: None)
+    monkeypatch.setattr(kg_runtime, "board_kuzu_path", lambda board_id: graph)
+    monkeypatch.setattr(kg_runtime, "close_all_connections", lambda *_: None)
+    monkeypatch.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
     monkeypatch.setattr(
-        schema,
+        kg_runtime,
         "_open_kuzu_db_path_cached",
         lambda _path: (_ for _ in ()).throw(RuntimeError("bad wal")),
     )
 
-    result = schema.apply_ladybug_lifecycle_step(
+    result = kg_runtime.apply_ladybug_lifecycle_step(
         "b1",
         "board_graph",
         "close_reopen_probe",
@@ -458,15 +664,9 @@ def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
     assert "bad wal" in result.detail
 
 
-def test_rebuild_endpoint_wires_real_ladybug_lifecycle_adapter() -> None:
-    endpoint = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "okto_pulse"
-        / "core"
-        / "api"
-        / "kg_rebuild.py"
-    ).read_text(encoding="utf-8")
+def test_rebuild_endpoint_wires_registry_lifecycle_adapter() -> None:
+    endpoint_module = pytest.importorskip("okto_pulse.community.api.kg_rebuild")
+    endpoint = Path(endpoint_module.__file__).resolve().read_text(encoding="utf-8")
 
     assert "step_adapter=lambda b, g, s: LifecycleStepResult(ok=True)" not in endpoint
-    assert "step_adapter=apply_ladybug_lifecycle_step" in endpoint
+    assert "step_adapter=resolve_graph_lifecycle().apply_step" in endpoint

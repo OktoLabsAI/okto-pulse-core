@@ -123,7 +123,7 @@ Returns:
       bodies. `projection` is the canonical R5 envelope (`profile`, `outcome`,
       `payload_bytes`, `truncated`, `omitted_count`, `deduped_count`,
       `follow_up[{rel, target_ref}]`). The full bodies are persisted on the card
-      regardless of profile — read them with `okto_pulse_get_task_context(profile=full)`
+      regardless of profile — read them with `okto_pulse_get_task_context(profile=full, context_scope=all)`
       or re-call here with `profile=full`.
     - `full` / `legacy`: the prior payload with complete bodies —
       `{success, copied, architecture_designs:[...]}`, no projection envelope.

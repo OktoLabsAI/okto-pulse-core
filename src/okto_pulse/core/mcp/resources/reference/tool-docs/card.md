@@ -9,7 +9,10 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 ## `okto_pulse_add_card_dependency`
 
 Add a dependency: card_id cannot advance until depends_on_id is done/cancelled.
-Circular dependencies are blocked automatically.
+Repeated requests are idempotent and return the existing dependency. Invalid
+graph shapes return typed errors: `dependency_self_reference` or
+`dependency_cycle_detected`. A forward move with unfinished blockers returns
+`dependencies_incomplete`.
 
 Args:
     board_id: Board ID
@@ -17,7 +20,7 @@ Args:
     depends_on_id: The card it depends on
 
 Returns:
-    JSON with success or error
+    JSON with success and dependency_id, or a typed error envelope
 
 ## `okto_pulse_copy_qa_to_card`
 
@@ -49,10 +52,7 @@ Args:
     status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
     priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
     assignee_id: User ID to assign (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
-        legacy string accepted as JSON array ``'["bug", "frontend"]'`` or
-        pipe-separated ``"bug|frontend"``. Comma-only string is REJECTED.
-        See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
     test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
         — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
         A single card is capped by the board's ``max_scenarios_per_card`` setting
@@ -90,9 +90,33 @@ Args:
     observed_behavior: REQUIRED for bug cards — what actually happens
     steps_to_reproduce: Steps to reproduce the bug (optional)
     action_plan: Plan for fixing the bug (optional)
+    knowledge_propagation: Optional selective Knowledge contract-v2 envelope.
+        Omit the whole field to preserve legacy v1 card creation and automatic
+        Knowledge copy behavior. Supplying it selects v2, including when
+        selection_state="omitted". Fields:
+        - contract_version: 2 (default)
+        - selection_state: omitted | explicit_empty | explicit_ids
+        - mode: absent for omitted; drop for explicit_empty; reference,
+          snapshot, or drop for explicit_ids
+        - knowledge_ids: empty for omitted/explicit_empty; non-empty stable
+          source Knowledge IDs for explicit_ids
+        - justification: required and non-empty unless selection_state=omitted
+        - idempotency_key: required caller-stable key for exact retries
+        - expected_revision: omit or pass 0 for creation
+        - relevance_links: optional list of {entity_type, entity_id}; the input
+          alias linkage is also accepted. entity_type is
+          functional_requirement, acceptance_criterion, or test_scenario, and
+          every entity must belong to this card's linked spec.
 
 Returns:
-    JSON with created card details
+    Without knowledge_propagation: the unchanged v1 JSON with created card
+    details.
+
+    With knowledge_propagation: `{success, contract_version, card,
+    operation_id, revision, replayed, selection_state, assignments}`. The
+    `card` projection and operation result are rebuilt from the durable
+    idempotency receipt. Replaying the exact same request/key returns the same
+    result with `replayed=true`; reusing the key for a changed request fails.
 
 Bug regression decision rule:
     Path A is traceability-only reuse. Use
@@ -119,7 +143,10 @@ Bug regression decision rule:
     amendment lineage. When a done spec or closed origin sprint blocks bug
     execution, use the returned next_action (`assign_hotfix_lane` or
     `activate_hotfix_lane`) to put the bug and its regression test card on an
-    active `lane_type="hotfix"` sprint. The lane only unblocks execution; the
+    active `lane_type="hotfix"` sprint. Cards are same-spec by default. The exact
+    cross-spec Path B test task may join the original-spec lane only after its
+    non-blocking complete amendment and persisted validator attestation bind the
+    bug, task, scenario and revision spec. The lane only unblocks execution; the
     regression must still satisfy Path A reuse or the Path B amendment lineage
     above. Keep the original closed sprint unchanged.
 
@@ -130,6 +157,12 @@ Delete a card from the board. This operation is permanent and cannot be undone.
 ## `okto_pulse_get_card`
 
 Get detailed card information including attachments, Q&A, and comments.
+
+## Card Knowledge assignments
+
+The canonical contract for card Knowledge v2 replace, drop, refresh, read,
+revision-CAS, and replay behavior lives at
+`okto-pulse://reference/tool-docs/knowledge`.
 
 ## `okto_pulse_get_card_dependencies`
 
@@ -201,9 +234,8 @@ Returns:
 
 Update card details. Pass only the fields you want to change; omit the rest.
 
-Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
-native list; legacy pipe-separated string is also accepted. Comma-only strings
-are REJECTED. For bidirectional scenario linking, use
+Multi-value fields (labels, test_scenario_ids, linked_test_task_ids) — formats:
+okto-pulse://reference/multivalue. For bidirectional scenario linking, use
 `okto_pulse_link_task(target_type="scenario", ...)`.
 
 ## Path B amendment revisions (cross-spec regression evidence)
@@ -217,14 +249,17 @@ sequence in `workflows/cards.md` and the error codes in `reference/errors.md`.
 ## `okto_pulse_create_amendment_revision`
 
 Create a Path B `AmendmentHotfixRevision` for a bug (REST twin: `POST
-.../amendment-revisions`). The amendment binds to the bug's OWN `done`/`validated`
-(locked) spec and always starts as `draft` — you cannot mint `approved`/`done`
-(`invalid_initial_status`) and you cannot inject a coverage confirmation (that is
-the validator's job, non-forgeable). Args: `board_id`, `bug_id`, optional
-`original_spec_id` (defaults to the bug's spec; a mismatch is `bug_spec_mismatch`),
-`revision_spec_id`, `origin_task_ids`, `affected_task_ids`,
-`regression_scenario_ids`, `regression_test_task_ids`, `automated_regression_refs`.
-Rejects creating against an `in_progress` spec (`original_spec_not_done_or_locked`).
+.../amendment-revisions`). The amendment binds to the bug's OWN **content-locked**
+spec (`done`/`validated`, OR `in_progress` still content-locked by an active passed
+validation — `current_validation_id` → outcome=success) and always starts as `draft`
+— you cannot mint `approved`/`done` (`invalid_initial_status`) and you cannot inject
+a coverage confirmation (that is the validator's job, non-forgeable). Args:
+`board_id`, `bug_id`, optional `original_spec_id` (defaults to the bug's spec; a
+mismatch is `bug_spec_mismatch`), `revision_spec_id`, `origin_task_ids`,
+`affected_task_ids`, `regression_scenario_ids`, `regression_test_task_ids`,
+`automated_regression_refs`. Rejects an `in_progress` spec that is NOT content-locked
+— still editable, or with a `failed`/`stale`/`superseded` validation —
+(`original_spec_not_done_or_locked`); edit the spec directly there.
 
 ## `okto_pulse_list_amendment_revisions`
 
@@ -259,20 +294,37 @@ so the bug gate can reach `path_b_ready`. Args: `board_id`, `bug_id`,
 are rejected (`invalid_amendment_status`/`invalid_lineage_state`);
 `lineage_state=complete` needs the declared regression scenario + test-task
 artifacts and the bug's authoritative origin task (`incomplete_lineage_artifacts`);
-`approved`/`done` need complete lineage (`cannot_promote_incomplete_lineage`); a
-`cancelled`/`superseded` revision is terminal and cannot be promoted back
-(`terminal_amendment_revision`). It has NO coverage parameter and **never**
-confirms coverage — that stays validator-only via
+`approved`/`done` need complete lineage (`cannot_promote_incomplete_lineage`).
+A `cancelled`/`superseded` revision is permanently immutable
+(`terminal_amendment_revision`): no later status, lineage, coverage, or artifact
+association mutation is allowed. Only an exact retry of the current terminal
+status is accepted as an effect-free idempotent operation; create a new revision
+for further work. This tool has NO coverage parameter and **never** confirms
+coverage — that stays validator-only via
 `okto_pulse_confirm_amendment_coverage`, so on its own this tool leaves the bug
 `coverage_pending` (it does not close it).
 
 ## `okto_pulse_confirm_amendment_coverage`
 
 VALIDATOR-ONLY. Records the non-forgeable coverage attestation that lets the gate
-treat a Path B regression artifact as closure-ready. Args: `board_id`, `bug_id`,
-`regression_test_task_id`, `regression_scenario_id` (both MUST be declared by the
-amendment). Fail-closed: the regression test task must be `done` with its declared
-scenario `passed`/`automated` carrying re-executable evidence (`test_file_path`+
-`test_function`, or an explicit replayable evidence_class such as
-`mcp_replay_manifest` plus `expected_output_snapshot`) — lineage/evidence alone is necessary but NOT
-sufficient. Until this runs, the bug stays `coverage_pending`.
+treat a Path B regression artifact as closure-ready. Args: `board_id`,
+`amendment_id`, `regression_test_task_id`, `regression_scenario_id` (the test task
++ scenario MUST be declared by the amendment). There is **no** `bug_id` argument —
+the amendment already carries bug/board/original_spec. Fail-closed: the regression
+test task must be `done` with its declared scenario `passed`/`automated` carrying
+re-executable evidence (`test_file_path`+`test_function`, or an explicit replayable
+evidence_class such as `mcp_replay_manifest` plus `expected_output_snapshot`) —
+binding + validator authorization + reexecutable evidence are necessary but NOT
+sufficient.
+
+Gate-consumability preflight (BUG-01): BEFORE persisting, the tool runs the SAME
+eligibility predicate the bug regression gate uses for this `(amendment_id,
+regression_test_task_id, regression_scenario_id)`, so success implies the
+attestation is persisted AND consumable by the gate. A **same-spec** scenario is
+routed through **Path A** and is eligible ONLY when linked to the bug's
+origin/affected-task lineage — an amendment declaration does NOT convert an
+`unrelated_scenario` into valid Path B coverage. A **cross-spec** scenario is
+routed through **Path B** and consumable only when the candidate attestation drives
+`path_b_ready`. An inert tuple fails closed with `coverage_not_gate_consumable`
+(see `reference/errors.md`), distinct from `coverage_pending`. Until a consumable
+attestation is recorded, the bug stays `coverage_pending`.

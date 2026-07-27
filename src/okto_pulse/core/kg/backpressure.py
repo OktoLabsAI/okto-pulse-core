@@ -50,16 +50,23 @@ same `(board_id, operation)` returns the prior decision verbatim (same
 `correlation_id`) so retries don't duplicate writes or pollute the queue.
 The idempotency cache is per-board and bounded; eviction is FIFO.
 
-This module is dependency-free — no DB, no Kùzu, no asyncio. The
+This module is dependency-free — no DB, no graph backend, no asyncio. The
 KG-01.3 single-writer lock and KG-01.5 safe observability wire actual
 writers and Prometheus emission around it.
 """
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+    runtime_lock,
+    runtime_state,
+)
+
 import logging
 import threading
-import time
 import uuid
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
@@ -243,8 +250,8 @@ def _queue_depth_bucket(depth: int) -> str:
 
 
 _CounterKey = tuple[str, str, str, str, str]
-_decision_counter: dict[_CounterKey, int] = {}
-_decision_counter_lock = threading.Lock()
+_decision_counter = runtime_state("kg.backpressure.decision_counter", dict)
+_decision_counter_lock = runtime_lock("kg.backpressure.decision_counter")
 
 
 def get_decision_count(
@@ -632,8 +639,8 @@ class KGBackpressureGate:
         return max(1, int(round(seconds)))
 
 
-_default_gate: KGBackpressureGate | None = None
-_default_gate_lock = threading.Lock()
+_default_gate_lock = runtime_lock("kg.backpressure.default_gate")
+_RUNTIME_KEY = "kg.backpressure.default_gate"
 
 
 def get_default_gate() -> KGBackpressureGate:
@@ -642,18 +649,18 @@ def get_default_gate() -> KGBackpressureGate:
     Tests should construct their own ``KGBackpressureGate`` rather than
     sharing this singleton.
     """
-    global _default_gate
     with _default_gate_lock:
-        if _default_gate is None:
-            _default_gate = KGBackpressureGate()
-        return _default_gate
+        gate = resolve_runtime_value(_RUNTIME_KEY)
+        if gate is None:
+            gate = KGBackpressureGate()
+            register_runtime_value(_RUNTIME_KEY, gate)
+        return gate
 
 
 def reset_default_gate_for_tests() -> None:
     """Drop the module-level singleton (used by tests)."""
-    global _default_gate
     with _default_gate_lock:
-        _default_gate = None
+        reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

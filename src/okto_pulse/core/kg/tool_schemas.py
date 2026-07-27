@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from okto_pulse.core.kg.query_contract import KGEdgeType
+
 
 # ---------------------------------------------------------------------------
 # Shared result DTOs
@@ -46,8 +48,8 @@ class ContextHop(BaseModel):
     hop1_title: str | None = None
     hop2_id: str | None = None
     hop2_title: str | None = None
-    rel1_type: str | None = None
-    rel2_type: str | None = None
+    rel1_type: KGEdgeType | None = None
+    rel2_type: KGEdgeType | None = None
 
 
 class SupersedenceEntry(BaseModel):
@@ -62,7 +64,7 @@ class SimilarDecisionResult(BaseModel):
     id: str
     title: str
     source_artifact_ref: str | None = None
-    similarity: float = 0.0
+    similarity: float = Field(0.0, ge=0.0, le=1.0)
     combined_score: float = 0.0
 
 
@@ -100,7 +102,7 @@ class GlobalResult(BaseModel):
     board_id: str
     id: str
     title: str
-    similarity: float = 0.0
+    similarity: float = Field(0.0, ge=0.0, le=1.0)
     graph_layer: str | None = None
 
 

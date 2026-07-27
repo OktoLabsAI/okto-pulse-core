@@ -1,5 +1,5 @@
 """Regression tests for bug card 4a430c6d — ConsolidationEnqueuer race
-condition fix (SELECT-then-INSERT replaced by dialect-aware UPSERT).
+condition fix (SELECT-then-INSERT delegated to a relational effects port).
 
 The handler at events/handlers/consolidation_enqueuer.py:_enqueue_one was
 vulnerable to a TOCTOU race: when two domain events for the same
@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -34,8 +35,13 @@ from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,
 )
 from okto_pulse.core.events.types import CardMoved, StoryMoved
-from okto_pulse.core.infra.database import Base
-from okto_pulse.core.models.db import Board, ConsolidationQueue
+from sqlalchemy_test_models import (
+    ArtifactDeletionTombstone,
+    Base,
+    Board,
+    ConsolidationDeadLetter,
+    ConsolidationQueue,
+)
 
 
 @pytest_asyncio.fixture
@@ -52,9 +58,7 @@ async def race_db_factory(tmp_path):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     # Seed a board so FK constraints don't fire on the queue inserts.
     board_id = str(uuid.uuid4())
@@ -92,6 +96,7 @@ def _card_moved_event(board_id: str, card_id: str) -> CardMoved:
 # ---------------------------------------------------------------------------
 # Behavioural — race condition reproducer + fix verification
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_concurrent_enqueues_for_same_artifact_atomically_merge(race_db_factory):
@@ -131,13 +136,20 @@ async def test_concurrent_enqueues_for_same_artifact_atomically_merge(race_db_fa
     # Exactly 1 row in the queue for this artifact.
     async with factory() as session:
         from sqlalchemy import select
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_type == "card",
-                ConsolidationQueue.artifact_id == card_id,
+
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_type == "card",
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
     assert len(rows) == 1, f"expected 1 merged row; got {len(rows)}"
     assert rows[0].status == "pending"
     assert rows[0].attempts == 0
@@ -177,13 +189,16 @@ async def test_terminal_state_row_reset_to_pending_under_new_event(race_db_facto
 
     async with factory() as session:
         from sqlalchemy import select
-        row = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_type == "card",
-                ConsolidationQueue.artifact_id == card_id,
+
+        row = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card_id,
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
     assert row.status == "pending"
     assert row.attempts == 0
     assert row.last_error is None
@@ -222,13 +237,16 @@ async def test_in_flight_pending_row_left_untouched(race_db_factory):
 
     async with factory() as session:
         from sqlalchemy import select
-        row = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_type == "card",
-                ConsolidationQueue.artifact_id == card_id,
+
+        row = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card_id,
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
     # WHERE filter blocked the update — original triggered_by_event is preserved.
     assert row.triggered_by_event == "card.created", (
         "in-flight row was overwritten — WHERE filter regressed"
@@ -254,24 +272,102 @@ async def test_serial_events_on_same_artifact_produce_one_row(race_db_factory):
 
     async with factory() as session:
         from sqlalchemy import select
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_id == card_id,
+
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_pre_delete_event_drained_after_tombstone_is_suppressed(
+    race_db_factory,
+):
+    """AC5/TS2: a late event never recreates legacy queue or DLQ work."""
+
+    factory, board_id = race_db_factory
+    card_id = str(uuid.uuid4())
+    event = _card_moved_event(board_id, card_id)
+
+    async with factory() as session:
+        session.add_all(
+            [
+                ArtifactDeletionTombstone(
+                    board_id=board_id,
+                    artifact_type="card",
+                    artifact_id=card_id,
+                    generation=1,
+                    delete_event_id="delete-after-event",
+                ),
+                ConsolidationQueue(
+                    board_id=board_id,
+                    artifact_type="card",
+                    artifact_id=card_id,
+                    work_kind="stale_reconcile",
+                    generation=1,
+                    delete_event_id="delete-after-event",
+                    payload={
+                        "schema_version": 1,
+                        "delete_event_id": "delete-after-event",
+                        "source_refs": [f"card:{card_id}"],
+                    },
+                    priority="high",
+                    source="governed_delete",
+                    status="pending",
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with factory() as session:
+        await ConsolidationEnqueuer().handle(event, session)
+        await session.commit()
+
+    async with factory() as session:
+        queue_rows = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card_id,
+                )
+            )
+        ).scalars().all()
+        dlq_rows = (
+            await session.execute(
+                select(ConsolidationDeadLetter).where(
+                    ConsolidationDeadLetter.board_id == board_id,
+                    ConsolidationDeadLetter.artifact_type == "card",
+                    ConsolidationDeadLetter.artifact_id == card_id,
+                )
+            )
+        ).scalars().all()
+
+    assert [(row.work_kind, row.generation) for row in queue_rows] == [
+        ("stale_reconcile", 1)
+    ]
+    assert dlq_rows == []
 
 
 # ---------------------------------------------------------------------------
 # Structural — verify the legacy SELECT-then-INSERT idiom is gone
 # ---------------------------------------------------------------------------
 
+
 def test_legacy_select_then_insert_idiom_is_gone():
     """The previous v1 path used `session.add(ConsolidationQueue(...))`
-    after a SELECT lookup. Post-fix uses `session.execute(stmt)` with a
-    dialect-specific upsert. A future regression that copy-pastes the old
-    idiom back into _enqueue_one gets caught by this grep-style assertion.
+    after a SELECT lookup. AF30-3cR keeps concrete SQL conflict handling behind
+    a registered relational effects port. A future regression that copy-pastes
+    the old idiom or dialect branch back into _enqueue_one gets caught here.
     """
     src = (
         Path(__file__).resolve().parent.parent
@@ -289,12 +385,11 @@ def test_legacy_select_then_insert_idiom_is_gone():
     assert "session.add(ConsolidationQueue(" not in src, (
         "v1 SELECT-then-INSERT idiom returned to _enqueue_one — race fix regressed"
     )
-    # Required post-fix idiom present.
-    assert "on_conflict_do_update" in src, (
-        "ConflictDoUpdate UPSERT call missing — race fix not in place"
-    )
-    assert "from sqlalchemy.dialects.sqlite import insert" in src
-    assert "from sqlalchemy.dialects.postgresql import insert" in src
+    assert "upsert_consolidation_queue_unless_tombstoned" in src
+    assert "get_relational_effects_port" in src
+    assert "on_conflict_do_update" not in src
+    assert "sqlalchemy.dialects" not in src
+    assert "dialect_name" not in src
 
 
 def test_story_lifecycle_events_enqueue_story_artifact():

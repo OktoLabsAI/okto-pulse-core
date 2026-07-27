@@ -7,16 +7,24 @@ non-allowlisted zero-degree nodes without leaking user-authored payloads.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 import uuid
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol
 
+from okto_pulse.core.kg.board_rebuild_adapter import (
+    CARD_SOURCE_ARTIFACT_TYPES,
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES,
+)
 from okto_pulse.core.kg.connectivity_guard import (
     KGConnectivityRuleRegistry,
     SourceResolutionStatus,
 )
-from okto_pulse.core.kg.schema import MULTI_REL_TYPES, NODE_TYPES, REL_TYPES
+from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, NODE_TYPES, REL_TYPES
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 
 logger = logging.getLogger("okto_pulse.kg.orphan_integrity")
 
@@ -30,6 +38,20 @@ ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL = "pending_backfill"
 ZERO_ORPHAN_VALIDATION_FAILED = "failed_orphan_validation"
 ZERO_ORPHAN_VALIDATION_UNAVAILABLE = "unavailable"
 ZERO_ORPHAN_VALIDATION_NOT_EVALUATED = "not_evaluated"
+SOURCE_REF_MISSING = "missing_source_artifact_ref"
+SOURCE_REF_RESOLVED = "resolved_source_artifact_ref"
+SOURCE_REF_UNRESOLVED = SourceResolutionStatus.UNRESOLVED_SOURCE_REF.value
+_RELATIONAL_SOURCE_LOOKUP_BATCH_SIZE = 400
+
+_WRITE_KEYWORDS = (
+    " CREATE ",
+    " DELETE ",
+    " DETACH DELETE ",
+    " SET ",
+    " MERGE ",
+    " DROP ",
+    " ALTER ",
+)
 
 
 SAFE_ORPHAN_SAMPLE_FIELDS: tuple[str, ...] = (
@@ -132,6 +154,55 @@ class OrphanAuditSinkProtocol(Protocol):
         """Record one safe orphan-integrity audit record."""
 
 
+class OrphanSourceResolverProtocol(Protocol):
+    def resolve_many(
+        self,
+        *,
+        board_id: str,
+        source_artifact_refs: tuple[str, ...],
+    ) -> dict[str, str]:
+        """Resolve source refs against their owning board's relational data."""
+
+
+class RelationalOrphanSourceResolver:
+    """Board-scoped source resolver backed by the edition persistence ports."""
+
+    def resolve_many(
+        self,
+        *,
+        board_id: str,
+        source_artifact_refs: tuple[str, ...],
+    ) -> dict[str, str]:
+        refs = tuple(dict.fromkeys(source_artifact_refs))
+        statuses = {ref: SOURCE_REF_UNRESOLVED for ref in refs}
+        identities = tuple(
+            identity
+            for ref in refs
+            if (identity := _parse_relational_source_ref(ref)) is not None
+        )
+        if not identities:
+            return statuses
+        try:
+            resolved_refs = _run_async_blocking(
+                _resolve_relational_source_identities(
+                    board_id=board_id,
+                    identities=identities,
+                )
+            )
+        except Exception:
+            # Resolution failure must never hide a zero-degree node. Keep every
+            # affected ref unresolved and preserve the structural orphan signal.
+            logger.warning(
+                "kg.orphan.source_resolution_unavailable board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return statuses
+        for ref in resolved_refs:
+            statuses[ref] = SOURCE_REF_RESOLVED
+        return statuses
+
+
 @dataclass
 class InMemoryOrphanMetricSink:
     events: list[OrphanMetricEvent] = field(default_factory=list)
@@ -146,6 +217,70 @@ class InMemoryOrphanAuditSink:
 
     def emit(self, record: OrphanAuditRecord) -> None:
         self.records.append(record)
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised below
+            box["error"] = exc
+
+    context = copy_context()
+    thread = threading.Thread(
+        target=context.run,
+        args=(_runner,),
+        name="kg-orphan-integrity-graph-write",
+        daemon=True,
+    )
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+class _BoardGraphPortConnection:
+    """Minimal connection-shaped adapter over the KG graph ports.
+
+    The scanner/backfill code predates the hexagonal ports and expects a
+    ``graph_scope.execute(...)`` object. This adapter preserves that local API without
+    opening backend-specific graph connections from core.
+    """
+
+    def __init__(self, board_id: str) -> None:
+        self._board_id = board_id
+
+    def execute(self, cypher: str, params: dict[str, Any] | None = None) -> Any:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        normalized = f" {cypher.upper()} "
+        is_write = any(keyword in normalized for keyword in _WRITE_KEYWORDS)
+        if not is_write:
+            result = get_kg_registry().cypher_executor.execute_read_only(
+                self._board_id,
+                cypher,
+                params or {},
+                max_rows=10000,
+            )
+            if result.get("truncated"):
+                raise RuntimeError("orphan integrity graph read was truncated")
+            return GraphStatementResult.from_rows(result.get("rows", []))
+
+        async def _run() -> Any:
+            async with await get_kg_registry().graph_transaction.begin(
+                self._board_id
+            ) as scope:
+                return scope.execute(cypher, params or {})
+
+        return _run_async_blocking(_run())
 
 
 class LoggingOrphanAuditSink:
@@ -371,6 +506,17 @@ class _NodeRow:
     writer_path: str
 
 
+class OrphanScanQueryError(RuntimeError):
+    """Fail-closed signal for an incomplete orphan-integrity graph read."""
+
+    def __init__(self, *, phase: str, node_type: str) -> None:
+        self.phase = phase
+        self.node_type = node_type
+        super().__init__(
+            f"orphan integrity {phase} query failed for node type {node_type}"
+        )
+
+
 class OrphanNodeScanner:
     """Scan graph nodes for non-allowlisted zero-degree nodes."""
 
@@ -380,10 +526,12 @@ class OrphanNodeScanner:
         registry: KGConnectivityRuleRegistry | None = None,
         metric_sink: OrphanMetricSinkProtocol | None = None,
         audit_sink: OrphanAuditSinkProtocol | None = None,
+        source_resolver: OrphanSourceResolverProtocol | None = None,
     ) -> None:
         self._registry = registry or KGConnectivityRuleRegistry()
         self._metric_sink = metric_sink
         self._audit_sink = audit_sink or LoggingOrphanAuditSink()
+        self._source_resolver = source_resolver or RelationalOrphanSourceResolver()
 
     def rule_node_types(self) -> tuple[str, ...]:
         return self._registry.rule_node_types()
@@ -409,17 +557,7 @@ class OrphanNodeScanner:
         node_types = _selected_node_types(node_type)
 
         if connection is None:
-            from okto_pulse.core.kg.schema import open_board_connection
-
-            with open_board_connection(board_id) as (_db, kconn):
-                return self._scan_with_connection(
-                    kconn,
-                    board_id=board_id,
-                    generation_id=generation_id,
-                    sample_limit=sample_limit,
-                    node_types=node_types,
-                    correlation_id=correlation_id,
-                )
+            connection = _BoardGraphPortConnection(board_id)
         return self._scan_with_connection(
             connection,
             board_id=board_id,
@@ -431,7 +569,7 @@ class OrphanNodeScanner:
 
     def _scan_with_connection(
         self,
-        kconn: Any,
+        graph_scope: Any,
         *,
         board_id: str,
         generation_id: str | None,
@@ -444,10 +582,27 @@ class OrphanNodeScanner:
         by_writer_path: dict[str, int] = {}
         unresolved_reasons: dict[str, int] = {}
         allowlisted_root_count = 0
+        orphan_rows: list[_NodeRow] = []
 
         for current_type in node_types:
-            for row in _iter_node_rows(kconn, current_type):
-                if _node_degree(kconn, row.node_type, row.node_id) != 0:
+            try:
+                node_rows = tuple(_iter_node_rows(graph_scope, current_type))
+            except Exception as exc:
+                raise OrphanScanQueryError(
+                    phase="enumeration",
+                    node_type=current_type,
+                ) from exc
+
+            try:
+                connected_node_ids = _connected_node_ids(graph_scope, current_type)
+            except Exception as exc:
+                raise OrphanScanQueryError(
+                    phase="connectivity",
+                    node_type=current_type,
+                ) from exc
+
+            for row in node_rows:
+                if row.node_id in connected_node_ids:
                     continue
                 if self._is_allowlisted_root(row):
                     allowlisted_root_count += 1
@@ -457,21 +612,35 @@ class OrphanNodeScanner:
                 by_writer_path[row.writer_path] = (
                     by_writer_path.get(row.writer_path, 0) + 1
                 )
-                status = _source_resolution_status(row.source_artifact_ref)
-                unresolved_reasons[status] = unresolved_reasons.get(status, 0) + 1
-                if len(samples) < sample_limit:
-                    samples.append(
-                        OrphanNodeSample(
-                            node_id=row.node_id,
-                            node_type=row.node_type,
-                            writer_path=row.writer_path,
-                            source_artifact_ref=row.source_artifact_ref,
-                            source_resolution_status=status,
-                            generation_id=generation_id,
-                            reason=ZERO_DEGREE_REASON,
-                            correlation_id=correlation_id,
-                        )
+                orphan_rows.append(row)
+
+        source_statuses = self._source_resolver.resolve_many(
+            board_id=board_id,
+            source_artifact_refs=tuple(
+                row.source_artifact_ref
+                for row in orphan_rows
+                if row.source_artifact_ref
+            ),
+        )
+        for row in orphan_rows:
+            status = _source_resolution_status(
+                row.source_artifact_ref,
+                source_statuses=source_statuses,
+            )
+            unresolved_reasons[status] = unresolved_reasons.get(status, 0) + 1
+            if len(samples) < sample_limit:
+                samples.append(
+                    OrphanNodeSample(
+                        node_id=row.node_id,
+                        node_type=row.node_type,
+                        writer_path=row.writer_path,
+                        source_artifact_ref=row.source_artifact_ref,
+                        source_resolution_status=status,
+                        generation_id=generation_id,
+                        reason=ZERO_DEGREE_REASON,
+                        correlation_id=correlation_id,
                     )
+                )
 
         orphan_count = sum(by_type.values())
         report = OrphanScanReport(
@@ -588,31 +757,42 @@ class OrphanBackfillReconciler:
         requested_node_ids = tuple(str(node_id) for node_id in (node_ids or ()))
 
         if connection is None:
-            from okto_pulse.core.kg.schema import open_board_connection
+            connection = _BoardGraphPortConnection(board_id)
+        run_args = {
+            "board_id": board_id,
+            "dry_run": dry_run,
+            "sample_limit": sample_limit,
+            "requested_node_ids": requested_node_ids,
+            "generation_id": generation_id,
+            "correlation_id": correlation_id,
+        }
+        if dry_run:
+            return self._run_with_connection(connection, **run_args)
 
-            with open_board_connection(board_id) as (_db, kconn):
-                return self._run_with_connection(
-                    kconn,
-                    board_id=board_id,
-                    dry_run=dry_run,
-                    sample_limit=sample_limit,
-                    requested_node_ids=requested_node_ids,
-                    generation_id=generation_id,
-                    correlation_id=correlation_id,
-                )
-        return self._run_with_connection(
-            connection,
-            board_id=board_id,
-            dry_run=dry_run,
-            sample_limit=sample_limit,
-            requested_node_ids=requested_node_ids,
-            generation_id=generation_id,
-            correlation_id=correlation_id,
-        )
+        # Backfill is one board-scoped mutation, even when it materializes
+        # several edges through short-lived graph transactions. Keep the
+        # writer token and safe-write barrier around the complete batch, then
+        # durably checkpoint before the successful result can escape. The
+        # ``finally`` is intentional: a later row can fail after an earlier
+        # edge committed, and that partial write still requires lifecycle
+        # completion before the error is propagated.
+        from okto_pulse.core.kg.guarded_write import guarded_board_write
+
+        with guarded_board_write(
+            board_id,
+            operation="kg_orphan_backfill",
+            owner_id="system:kg_orphan_backfill",
+            mutation_ref=correlation_id,
+        ) as lease:
+            try:
+                result = self._run_with_connection(connection, **run_args)
+            finally:
+                lease.ensure_durable(mutation_ref=correlation_id)
+        return result
 
     def _run_with_connection(
         self,
-        kconn: Any,
+        graph_scope: Any,
         *,
         board_id: str,
         dry_run: bool,
@@ -622,11 +802,12 @@ class OrphanBackfillReconciler:
         correlation_id: str,
     ) -> OrphanBackfillResult:
         rows = self._candidate_rows(
-            kconn,
+            graph_scope,
             board_id=board_id,
             generation_id=generation_id,
             limit=sample_limit,
             requested_node_ids=requested_node_ids,
+            correlation_id=correlation_id,
         )
         counters = {
             "connected": 0,
@@ -638,7 +819,7 @@ class OrphanBackfillReconciler:
         samples: list[OrphanBackfillSample] = []
         for row in rows:
             outcome = self._evaluate_row(
-                kconn,
+                graph_scope,
                 board_id=board_id,
                 row=row,
                 dry_run=dry_run,
@@ -664,36 +845,60 @@ class OrphanBackfillReconciler:
 
     def _candidate_rows(
         self,
-        kconn: Any,
+        graph_scope: Any,
         *,
         board_id: str,
         generation_id: str | None,
         limit: int,
         requested_node_ids: tuple[str, ...],
+        correlation_id: str,
     ) -> tuple[_NodeRow, ...]:
         if requested_node_ids:
             rows: list[_NodeRow] = []
             for node_id in requested_node_ids:
-                row = _lookup_node_row_by_id(kconn, node_id)
+                row = _lookup_node_row_by_id(graph_scope, node_id)
                 if row is not None and not self._is_allowlisted_root(row):
                     rows.append(row)
             return tuple(rows[:limit])
 
-        report = self._scanner.scan(
-            board_id=board_id,
-            generation_id=generation_id,
-            limit=limit,
-            connection=kconn,
-        )
-        return tuple(
-            _NodeRow(
-                node_id=sample.node_id,
-                node_type=sample.node_type,
-                source_artifact_ref=sample.source_artifact_ref,
-                writer_path=sample.writer_path,
+        # A diagnostic scan bounds only its samples. Reusing those first N
+        # samples for mutation permanently starves later actionable orphans
+        # when unresolved rows sort first and remain zero-degree forever.
+        # Enumerate the complete zero-degree set (the scanner already pays
+        # this bounded-per-label cost), preview exact deterministic resolution,
+        # then spend the mutation budget on actionable rows first.
+        orphan_rows: list[_NodeRow] = []
+        for node_type in _selected_node_types(None):
+            node_rows = tuple(_iter_node_rows(graph_scope, node_type))
+            connected_node_ids = _connected_node_ids(graph_scope, node_type)
+            orphan_rows.extend(
+                row
+                for row in node_rows
+                if row.node_id not in connected_node_ids
+                and not self._is_allowlisted_root(row)
             )
-            for sample in report.samples
-        )
+        orphan_rows.sort(key=lambda row: (row.node_type, row.node_id))
+
+        actionable: list[_NodeRow] = []
+        deferred: list[_NodeRow] = []
+        for row in orphan_rows:
+            preview = self._evaluate_row(
+                graph_scope,
+                board_id=board_id,
+                row=row,
+                dry_run=True,
+                generation_id=generation_id,
+                correlation_id=f"{correlation_id}:selection",
+                assume_zero_degree=True,
+            )
+            if preview.edge_type is not None or preview.outcome == "noop":
+                actionable.append(row)
+            else:
+                deferred.append(row)
+
+        # Both dry-run and apply consume this same priority/order, so a preview
+        # is an exact bounded projection of the next mutation run.
+        return tuple((*actionable, *deferred)[:limit])
 
     def _is_allowlisted_root(self, row: _NodeRow) -> bool:
         return self._registry.is_technical_root_allowlisted(
@@ -704,15 +909,19 @@ class OrphanBackfillReconciler:
 
     def _evaluate_row(
         self,
-        kconn: Any,
+        graph_scope: Any,
         *,
         board_id: str,
         row: _NodeRow,
         dry_run: bool,
         generation_id: str | None,
         correlation_id: str,
+        assume_zero_degree: bool = False,
     ) -> OrphanBackfillSample:
-        if _node_degree(kconn, row.node_type, row.node_id) != 0:
+        if (
+            not assume_zero_degree
+            and _node_degree(graph_scope, row.node_type, row.node_id) != 0
+        ):
             return _backfill_sample(
                 row,
                 outcome="noop",
@@ -725,11 +934,11 @@ class OrphanBackfillReconciler:
         if row.node_type == "Learning" and _is_bug_derived_source_ref(
             row.source_artifact_ref
         ):
-            bug_resolution = _resolve_bug_target(kconn, row.source_artifact_ref)
+            bug_resolution = _resolve_bug_target(graph_scope, row.source_artifact_ref)
             if len(bug_resolution) == 1:
                 bug_id = bug_resolution[0]
                 if _edge_count(
-                    kconn,
+                    graph_scope,
                     "validates",
                     "Learning",
                     "Bug",
@@ -749,7 +958,7 @@ class OrphanBackfillReconciler:
                     )
                 if not dry_run:
                     _create_edge(
-                        kconn,
+                        graph_scope,
                         board_id=board_id,
                         edge_type="validates",
                         from_type="Learning",
@@ -786,11 +995,11 @@ class OrphanBackfillReconciler:
                 correlation_id=correlation_id,
             )
 
-        entity_resolution = _resolve_entity_target(kconn, row.source_artifact_ref)
+        entity_resolution = _resolve_entity_target(graph_scope, row.source_artifact_ref)
         if len(entity_resolution) == 1 and _belongs_to_accepts(row.node_type, "Entity"):
             entity_id = entity_resolution[0]
             if _edge_count(
-                kconn,
+                graph_scope,
                 "belongs_to",
                 row.node_type,
                 "Entity",
@@ -810,7 +1019,7 @@ class OrphanBackfillReconciler:
                 )
             if not dry_run:
                 _create_edge(
-                    kconn,
+                    graph_scope,
                     board_id=board_id,
                     edge_type="belongs_to",
                     from_type=row.node_type,
@@ -936,73 +1145,62 @@ def get_orphan_audit_fields() -> tuple[str, ...]:
     return SAFE_ORPHAN_AUDIT_FIELDS
 
 
-def _lookup_node_row_by_id(kconn: Any, node_id: str) -> _NodeRow | None:
+def _lookup_node_row_by_id(graph_scope: Any, node_id: str) -> _NodeRow | None:
     for node_type in NODE_TYPES:
-        result = None
-        try:
-            result = kconn.execute(
-                f"MATCH (n:{node_type}) "
-                "WHERE n.id = $node_id "
-                "RETURN n.id, n.source_artifact_ref, n.source_session_id, "
-                "n.created_by_agent LIMIT 1",
-                {"node_id": node_id},
+        result = graph_scope.execute(
+            f"MATCH (n:{node_type}) "
+            "WHERE n.id = $node_id "
+            "RETURN n.id, n.source_artifact_ref, n.source_session_id, "
+            "n.created_by_agent LIMIT 1",
+            {"node_id": node_id},
+        )
+        if result.rows:
+            row = result.rows[0]
+            return _NodeRow(
+                node_id=str(row[0]),
+                node_type=node_type,
+                source_artifact_ref=_optional_str(row[1] if len(row) > 1 else None),
+                writer_path=_safe_writer_path(
+                    row[3] if len(row) > 3 else None,
+                    row[2] if len(row) > 2 else None,
+                ),
             )
-            if result.has_next():
-                row = result.get_next()
-                return _NodeRow(
-                    node_id=str(row[0]),
-                    node_type=node_type,
-                    source_artifact_ref=_optional_str(row[1] if len(row) > 1 else None),
-                    writer_path=_safe_writer_path(
-                        row[3] if len(row) > 3 else None,
-                        row[2] if len(row) > 2 else None,
-                    ),
-                )
-        finally:
-            _close_result(result)
     return None
 
 
-def _resolve_entity_target(kconn: Any, source_artifact_ref: str | None) -> tuple[str, ...]:
+def _resolve_entity_target(graph_scope: Any, source_artifact_ref: str | None) -> tuple[str, ...]:
     if not source_artifact_ref:
         return ()
     matches: list[str] = []
     for source_ref in _entity_source_ref_candidates(source_artifact_ref):
-        matches.extend(_lookup_node_ids_by_source_ref(kconn, "Entity", source_ref))
+        matches.extend(_lookup_node_ids_by_source_ref(graph_scope, "Entity", source_ref))
     return _dedupe(matches)
 
 
-def _resolve_bug_target(kconn: Any, source_artifact_ref: str | None) -> tuple[str, ...]:
+def _resolve_bug_target(graph_scope: Any, source_artifact_ref: str | None) -> tuple[str, ...]:
     if not source_artifact_ref:
         return ()
     candidates = _bug_ref_candidates(source_artifact_ref)
     matches: list[str] = []
     for candidate in candidates:
-        matches.extend(_lookup_node_ids_by_source_ref(kconn, "Bug", candidate))
-        row = _lookup_node_row_by_id(kconn, candidate)
+        matches.extend(_lookup_node_ids_by_source_ref(graph_scope, "Bug", candidate))
+        row = _lookup_node_row_by_id(graph_scope, candidate)
         if row is not None and row.node_type == "Bug":
             matches.append(row.node_id)
     return _dedupe(matches)
 
 
 def _lookup_node_ids_by_source_ref(
-    kconn: Any,
+    graph_scope: Any,
     node_type: str,
     source_artifact_ref: str,
 ) -> tuple[str, ...]:
-    result = None
-    try:
-        result = kconn.execute(
-            f"MATCH (n:{node_type}) "
-            "WHERE n.source_artifact_ref = $ref RETURN n.id",
-            {"ref": source_artifact_ref},
-        )
-        ids: list[str] = []
-        while result.has_next():
-            ids.append(str(result.get_next()[0]))
-        return tuple(ids)
-    finally:
-        _close_result(result)
+    result = graph_scope.execute(
+        f"MATCH (n:{node_type}) "
+        "WHERE n.source_artifact_ref = $ref RETURN n.id",
+        {"ref": source_artifact_ref},
+    )
+    return tuple(str(row[0]) for row in result.rows)
 
 
 def _entity_source_ref_candidates(source_artifact_ref: str) -> tuple[str, ...]:
@@ -1060,7 +1258,7 @@ def _belongs_to_accepts(from_type: str, to_type: str) -> bool:
 
 
 def _edge_count(
-    kconn: Any,
+    graph_scope: Any,
     edge_type: str,
     from_type: str,
     to_type: str,
@@ -1068,7 +1266,7 @@ def _edge_count(
     to_id: str,
 ) -> int:
     return _count_relationship(
-        kconn,
+        graph_scope,
         f"MATCH (a:{from_type})-[r:{edge_type}]->(b:{to_type}) "
         "WHERE a.id = $from_id AND b.id = $to_id RETURN count(r)",
         {"from_id": from_id, "to_id": to_id},
@@ -1076,7 +1274,7 @@ def _edge_count(
 
 
 def _create_edge(
-    kconn: Any,
+    graph_scope: Any,
     *,
     board_id: str,
     edge_type: str,
@@ -1088,8 +1286,8 @@ def _create_edge(
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     orch = TransactionOrchestrator(
-        kuzu_conn=kconn,
-        sqlite_session=None,
+        graph_scope=graph_scope,
+
         session_id=f"{BACKFILL_SESSION_PREFIX}_{uuid.uuid4().hex[:8]}",
         board_id=board_id,
     )
@@ -1150,42 +1348,59 @@ def _relationship_pairs() -> Iterable[tuple[str, str, str]]:
             yield rel_name, from_type, to_type
 
 
-def _iter_node_rows(kconn: Any, node_type: str) -> Iterable[_NodeRow]:
-    result = None
-    try:
-        result = kconn.execute(
-            f"MATCH (n:{node_type}) "
-            "RETURN n.id, n.source_artifact_ref, n.source_session_id, "
-            "n.created_by_agent"
+def _iter_node_rows(graph_scope: Any, node_type: str) -> Iterable[_NodeRow]:
+    result = graph_scope.execute(
+        f"MATCH (n:{node_type}) "
+        "RETURN n.id, n.source_artifact_ref, n.source_session_id, "
+        "n.created_by_agent"
+    )
+    for row in result.rows:
+        yield _NodeRow(
+            node_id=str(row[0]),
+            node_type=node_type,
+            source_artifact_ref=_optional_str(row[1] if len(row) > 1 else None),
+            writer_path=_safe_writer_path(
+                row[3] if len(row) > 3 else None,
+                row[2] if len(row) > 2 else None,
+            ),
         )
-        while result.has_next():
-            row = result.get_next()
-            yield _NodeRow(
-                node_id=str(row[0]),
-                node_type=node_type,
-                source_artifact_ref=_optional_str(row[1] if len(row) > 1 else None),
-                writer_path=_safe_writer_path(
-                    row[3] if len(row) > 3 else None,
-                    row[2] if len(row) > 2 else None,
-                ),
-            )
-    finally:
-        _close_result(result)
 
 
-def _node_degree(kconn: Any, node_type: str, node_id: str) -> int:
+def _connected_node_ids(graph_scope: Any, node_type: str) -> frozenset[str]:
+    """Return connected ids for one label with one board-scoped graph query.
+
+    Outgoing and incoming degree are aggregated separately so direction is
+    explicit and each node is classified once. Query count is therefore bound
+    by the selected schema labels, never by the number of nodes or edges.
+    """
+
+    result = graph_scope.execute(
+        f"MATCH (n:{node_type}) "
+        "OPTIONAL MATCH (n)-[r_out]->() "
+        "WITH n, COUNT(r_out) AS out_degree "
+        "OPTIONAL MATCH (n)<-[r_in]-() "
+        "RETURN n.id, out_degree, COUNT(r_in) AS in_degree"
+    )
+    return frozenset(
+        str(row[0])
+        for row in result.rows
+        if int(row[1] or 0) > 0 or int(row[2] or 0) > 0
+    )
+
+
+def _node_degree(graph_scope: Any, node_type: str, node_id: str) -> int:
     degree = 0
     for rel_name, from_type, to_type in _relationship_pairs():
         if from_type == node_type:
             degree += _count_relationship(
-                kconn,
+                graph_scope,
                 f"MATCH (n:{from_type})-[r:{rel_name}]->(m:{to_type}) "
                 "WHERE n.id = $node_id RETURN count(r)",
                 node_id,
             )
         if to_type == node_type:
             degree += _count_relationship(
-                kconn,
+                graph_scope,
                 f"MATCH (m:{from_type})-[r:{rel_name}]->(n:{to_type}) "
                 "WHERE n.id = $node_id RETURN count(r)",
                 node_id,
@@ -1195,18 +1410,16 @@ def _node_degree(kconn: Any, node_type: str, node_id: str) -> int:
     return degree
 
 
-def _count_relationship(kconn: Any, cypher: str, node_id: str) -> int:
+def _count_relationship(graph_scope: Any, cypher: str, node_id: str) -> int:
     result = None
     try:
         params = node_id if isinstance(node_id, dict) else {"node_id": node_id}
-        result = kconn.execute(cypher, params)
-        if result.has_next():
-            return int(result.get_next()[0])
+        result = graph_scope.execute(cypher, params)
+        if result.rows:
+            return int(result.rows[0][0])
     except Exception:
         logger.debug("kg.orphan.degree_query_failed", exc_info=True)
         return 0
-    finally:
-        _close_result(result)
     return 0
 
 
@@ -1231,6 +1444,7 @@ def _safe_writer_path(created_by_agent: Any, source_session_id: Any) -> str:
             "cognitive",
             "commit_consolidation",
             "consolidation",
+            "kgses_",
             "agent",
             "mcp",
         )
@@ -1239,10 +1453,187 @@ def _safe_writer_path(created_by_agent: Any, source_session_id: Any) -> str:
     return "unknown"
 
 
-def _source_resolution_status(source_artifact_ref: str | None) -> str:
+@dataclass(frozen=True, slots=True)
+class _RelationalSourceIdentity:
+    source_ref: str
+    artifact_type: str
+    artifact_id: str
+    expected_card_type: str | None = None
+
+
+_RELATIONAL_SOURCE_TYPES = frozenset(
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES - CARD_SOURCE_ARTIFACT_TYPES
+)
+_CARD_SOURCE_TYPES = frozenset(
+    {*CARD_SOURCE_ARTIFACT_TYPES, "card_relationship_target"}
+)
+_SOURCE_CHILD_MARKERS = frozenset(
+    {
+        "fr",
+        "tr",
+        "ac",
+        "business_rule",
+        "test_scenario",
+        "api_contract",
+        "integration_requirement",
+        "observability_requirement",
+        "decision",
+        "decision_legacy",
+        "learning",
+        "alternative",
+        "assumption",
+        "boost_audit",
+    }
+)
+
+
+def _parse_relational_source_ref(
+    source_artifact_ref: str,
+) -> _RelationalSourceIdentity | None:
+    """Parse only writer-owned structured refs; malformed/unknown stays unresolved."""
+
+    ref = str(source_artifact_ref or "")
+    if not ref or ref != ref.strip() or any(char.isspace() for char in ref):
+        return None
+    parts = ref.split(":")
+    if len(parts) < 2 or not all(parts):
+        return None
+    source_type = parts[0]
+    if source_type == "board":
+        if len(parts) != 2:
+            return None
+        return _RelationalSourceIdentity(ref, "board", parts[1])
+
+    expected_card_type: str | None = None
+    artifact_type = source_type
+    suffix_index = 2
+    if source_type == "card" and len(parts) >= 3 and parts[1] in {
+        "bug",
+        "test",
+        "task",
+    }:
+        expected_card_type = parts[1]
+        artifact_id = parts[2]
+        artifact_type = "card"
+        suffix_index = 3
+    elif source_type in _CARD_SOURCE_TYPES:
+        artifact_id = parts[1]
+        artifact_type = "card"
+        if source_type in {"bug", "test", "task"}:
+            expected_card_type = source_type
+    elif source_type in _RELATIONAL_SOURCE_TYPES:
+        artifact_id = parts[1]
+    else:
+        return None
+
+    suffix = parts[suffix_index:]
+    if suffix and (
+        len(suffix) != 2
+        or suffix[0] not in _SOURCE_CHILD_MARKERS
+    ):
+        return None
+    return _RelationalSourceIdentity(
+        ref,
+        artifact_type,
+        artifact_id,
+        expected_card_type,
+    )
+
+
+def _card_type_matches(row: object, expected: str | None) -> bool:
+    if expected is None:
+        return True
+    raw = getattr(row, "card_type", None)
+    actual = str(getattr(raw, "value", raw or "normal")).lower()
+    if expected == "task":
+        return actual not in {"bug", "test"}
+    return actual == expected
+
+
+async def _resolve_relational_source_identities(
+    *,
+    board_id: str,
+    identities: tuple[_RelationalSourceIdentity, ...],
+) -> frozenset[str]:
+    """Resolve refs in bounded type batches and enforce board ownership."""
+
+    from okto_pulse.core.ports.consolidation import (
+        get_consolidation_persistence_port,
+    )
+    from okto_pulse.core.ports.relational_runtime import get_db_session
+
+    persistence = get_consolidation_persistence_port()
+    resolved: set[str] = set()
+    async with get_db_session() as context:
+        board_refs = tuple(
+            identity
+            for identity in identities
+            if identity.artifact_type == "board"
+        )
+        if board_refs and await persistence.board_exists(
+            context,
+            board_id=board_id,
+        ):
+            resolved.update(
+                identity.source_ref
+                for identity in board_refs
+                if identity.artifact_id == board_id
+            )
+
+        artifact_types = sorted(
+            {
+                identity.artifact_type
+                for identity in identities
+                if identity.artifact_type != "board"
+            }
+        )
+        for artifact_type in artifact_types:
+            scoped = tuple(
+                identity
+                for identity in identities
+                if identity.artifact_type == artifact_type
+            )
+            identities_by_id: dict[str, list[_RelationalSourceIdentity]] = {}
+            for identity in scoped:
+                identities_by_id.setdefault(identity.artifact_id, []).append(identity)
+            artifact_ids = tuple(identities_by_id)
+            for start in range(
+                0,
+                len(artifact_ids),
+                _RELATIONAL_SOURCE_LOOKUP_BATCH_SIZE,
+            ):
+                batch_ids = artifact_ids[
+                    start : start + _RELATIONAL_SOURCE_LOOKUP_BATCH_SIZE
+                ]
+                rows = await persistence.list_artifacts(
+                    context,
+                    artifact_type=artifact_type,
+                    artifact_ids=batch_ids,
+                    board_id=board_id,
+                )
+                for row in rows:
+                    row_id = str(getattr(row, "id", ""))
+                    for identity in identities_by_id.get(row_id, ()):
+                        if _card_type_matches(
+                            row,
+                            identity.expected_card_type,
+                        ):
+                            resolved.add(identity.source_ref)
+    return frozenset(resolved)
+
+
+def _source_resolution_status(
+    source_artifact_ref: str | None,
+    *,
+    source_statuses: dict[str, str],
+) -> str:
     if not source_artifact_ref:
-        return "missing_source_artifact_ref"
-    return SourceResolutionStatus.UNRESOLVED_SOURCE_REF.value
+        return SOURCE_REF_MISSING
+    return (
+        SOURCE_REF_RESOLVED
+        if source_statuses.get(source_artifact_ref) == SOURCE_REF_RESOLVED
+        else SOURCE_REF_UNRESOLVED
+    )
 
 
 def _optional_str(value: Any) -> str | None:
@@ -1258,17 +1649,6 @@ def _coerce_limit(limit: int) -> int:
     except Exception:
         value = DEFAULT_ORPHAN_SAMPLE_LIMIT
     return max(0, min(value, MAX_ORPHAN_SAMPLE_LIMIT))
-
-
-def _close_result(result: Any) -> None:
-    if result is None:
-        return
-    close = getattr(result, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception:
-            pass
 
 
 __all__ = [
@@ -1288,10 +1668,16 @@ __all__ = [
     "OrphanMetricSinkProtocol",
     "OrphanNodeSample",
     "OrphanNodeScanner",
+    "OrphanScanQueryError",
     "OrphanScanReport",
+    "OrphanSourceResolverProtocol",
+    "RelationalOrphanSourceResolver",
     "SAFE_ORPHAN_AUDIT_FIELDS",
     "SAFE_ORPHAN_METRIC_LABELS",
     "SAFE_ORPHAN_SAMPLE_FIELDS",
+    "SOURCE_REF_MISSING",
+    "SOURCE_REF_RESOLVED",
+    "SOURCE_REF_UNRESOLVED",
     "ZERO_DEGREE_REASON",
     "ZERO_ORPHAN_VALIDATION_FAILED",
     "ZERO_ORPHAN_VALIDATION_NOT_EVALUATED",

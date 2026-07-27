@@ -11,12 +11,14 @@ Covers spec ``MCP High-Frequency Response Projection and Dedup`` scenarios:
 - ``ts_cb1046ab`` — projected responses use the R5 canonical metadata names.
 - ``ts_85b00d36`` — summary spec context deduplicates resolved references.
 
-OWNER DECISION (R2.1 card): summary is CONSERVATIVE/dedup-only — it keeps the
-unique content an agent needs (card body, spec requirement texts, this card's
-scenarios, validations) and removes only the duplication.
+Small contexts remain conservative/dedup-first. Oversized task contexts now use
+explicit 32/64 KiB exploration budgets; full/all and legacy remain unchanged,
+while full/gate is the bounded mandatory pre-mutation slice.
 """
 
 from __future__ import annotations
+
+from mcp_runtime_testing import register_mcp_test_runtime
 
 import copy
 import json
@@ -27,11 +29,18 @@ import pytest
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.mcp.context_projection import (
+    CONTEXT_DETAIL_BUDGET_BYTES,
+    CONTEXT_GATE_BUDGET_BYTES,
+    CONTEXT_SUMMARY_BUDGET_BYTES,
+    project_entity_context,
     project_spec_context,
     project_task_context,
 )
-from okto_pulse.core.mcp.projection_envelope import ENVELOPE_METADATA_KEYS
-from okto_pulse.core.models.db import (
+from okto_pulse.core.mcp.projection_envelope import (
+    ENVELOPE_METADATA_KEYS,
+    _stable_payload_bytes,
+)
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -217,6 +226,301 @@ def test_detail_enriches_refs_without_full_bodies():
     assert detail["projection"]["profile"] == "detail"
 
 
+def test_summary_and_detail_remove_primary_artifact_bodies():
+    src = _full_task_result()
+    src["spec"]["knowledge_bases"] = [
+        {
+            "id": "kb-primary",
+            "title": "Primary KB",
+            "description": "Detail-only description",
+            "content": "large primary body " * 200,
+            "mime_type": "text/markdown",
+            "source_type": "manual",
+        }
+    ]
+    src["card_knowledge_bases"] = [
+        {
+            "id": "kb-card",
+            "title": "Card KB",
+            "description": "Card detail",
+            "content": "card body " * 100,
+        }
+    ]
+
+    summary = project_task_context(src, card_id="c1", profile="summary")
+    detail = project_task_context(src, card_id="c1", profile="detail")
+    full = project_task_context(src, card_id="c1", profile="full")
+
+    assert "content" not in summary["spec"]["knowledge_bases"][0]
+    assert "description" not in summary["spec"]["knowledge_bases"][0]
+    assert "content" not in detail["spec"]["knowledge_bases"][0]
+    assert detail["spec"]["knowledge_bases"][0]["description"] == (
+        "Detail-only description"
+    )
+    assert detail["spec"]["knowledge_bases"][0]["content_preview"].startswith(
+        "large primary body"
+    )
+    assert detail["spec"]["knowledge_bases"][0][
+        "content_preview_truncated"
+    ] is True
+    assert _stable_payload_bytes(summary) < _stable_payload_bytes(detail)
+    assert "content" not in summary["card_knowledge_bases"][0]
+    assert full["spec"]["knowledge_bases"][0]["content"].startswith(
+        "large primary body"
+    )
+
+
+def test_large_context_profiles_are_distinct_bounded_and_truthfully_truncated():
+    src = _full_task_result()
+    src["card"]["comments"] = [
+        {
+            "id": f"comment-{index}",
+            "content": f"comment {index} " + ("C" * 1800),
+            "author_id": "agent",
+        }
+        for index in range(80)
+    ]
+    src["spec"]["functional_requirements"] = [
+        {
+            "id": f"fr-{index}",
+            "text": f"requirement {index} " + ("R" * 1800),
+            "linked_task_ids": ["c1"] if index == 0 else [],
+        }
+        for index in range(80)
+    ]
+    scenario = {
+        "id": "ts_a",
+        "title": "linked scenario",
+        "status": "passed",
+        "evidence": {
+            "evidence_class": "replay_command",
+            "replay_command": "pytest tests/test_x.py::test_y",
+            "expected_output_snapshot": "1 passed",
+            "non_replayable_justification": "n/a",
+        },
+    }
+    src["spec"]["test_scenarios"] = [
+        scenario,
+        *[
+            {
+                "id": f"ts-{index}",
+                "title": f"scenario {index}",
+                "description": "S" * 1600,
+            }
+            for index in range(80)
+        ],
+    ]
+    src["my_test_scenarios"] = [scenario]
+    src["validations"] = [
+        {"id": "validation-current", "outcome": "failed", "feedback": "V" * 3000}
+    ]
+    src["gate_readiness"] = {
+        "would_block_done": True,
+        "active_gate": "task_validation",
+        "required_tool": "okto_pulse_submit_task_validation",
+    }
+
+    summary = project_task_context(src, card_id="c1", profile="summary")
+    detail = project_task_context(src, card_id="c1", profile="detail")
+    full = project_task_context(src, card_id="c1", profile="full")
+
+    summary_bytes = _stable_payload_bytes(summary)
+    detail_bytes = _stable_payload_bytes(detail)
+    full_bytes = _stable_payload_bytes(full)
+
+    assert summary_bytes <= CONTEXT_SUMMARY_BUDGET_BYTES
+    assert detail_bytes <= CONTEXT_DETAIL_BUDGET_BYTES
+    assert summary_bytes < detail_bytes < full_bytes
+    for projected, expected_bytes, expected_budget in (
+        (summary, summary_bytes, CONTEXT_SUMMARY_BUDGET_BYTES),
+        (detail, detail_bytes, CONTEXT_DETAIL_BUDGET_BYTES),
+    ):
+        wire_bytes = len(
+            json.dumps(
+                projected,
+                default=str,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        )
+        assert wire_bytes <= expected_budget
+        assert projected["projection"]["payload_bytes"] == expected_bytes
+        assert projected["projection"]["budget_bytes"] == expected_budget
+        assert projected["projection"]["truncated"] is True
+        assert projected["projection"]["truncation_reason"] == (
+            "profile_payload_budget"
+        )
+        assert projected["gate_readiness"]["would_block_done"] is True
+        assert projected["validations"]
+        assert projected["my_test_scenarios"][0]["evidence"]["replay_command"]
+
+    # Full remains the uncapped, mandatory gate source and preserves every body.
+    assert "projection" not in full
+    assert len(full["card"]["comments"]) == 80
+    assert len(full["spec"]["functional_requirements"]) == 80
+
+
+def test_full_gate_scope_is_bounded_manifested_and_full_all_stays_unchanged():
+    src = _full_task_result()
+    huge_refs = [
+        {
+            "id": f"kb-{index}",
+            "title": f"KB {index}",
+            "content": "K" * 4000,
+            "origin_evidence": {"body": "E" * 2000},
+        }
+        for index in range(50)
+    ]
+    gate_summary = {
+        "board_id": "b1",
+        "entity_type": "card",
+        "entity_id": "c1",
+        "blocking": True,
+        "resources": [
+            {
+                "resource_type": "architecture",
+                "state": "missing",
+                "direct_count": 0,
+                "inherited_count": 0,
+                "total_count": 0,
+                "blocking": True,
+                "authority": "blocking",
+                "direct_refs": huge_refs,
+                "inherited_refs": huge_refs,
+            }
+        ],
+        "missing_resources": [
+            {
+                "resource_type": "architecture",
+                "state": "missing",
+                "blocking": True,
+                "authority": "blocking",
+            }
+        ],
+        "resource_lineage": {
+            "attachments": huge_refs,
+            "unique_resources": huge_refs,
+        },
+        "lineage_counts": {
+            "attachments": len(huge_refs),
+            "by_unique_resource": huge_refs,
+        },
+    }
+    src["resource_gate_summary"] = copy.deepcopy(gate_summary)
+    src["spec"]["resource_gate_summary"] = copy.deepcopy(gate_summary)
+    src["spec"]["functional_requirements"] = [
+        {"id": f"fr-{index}", "text": "R" * 3000} for index in range(40)
+    ]
+    src["resolved_references"]["functional_requirements"] = copy.deepcopy(
+        src["spec"]["functional_requirements"]
+    )
+    src["validations"] = [
+        {
+            "id": f"validation-{index}",
+            "outcome": "failed",
+            "confidence": 10 + index,
+            "general_justification": "V" * 5000,
+        }
+        for index in range(20)
+    ]
+    src["validation_config"] = {
+        "required": True,
+        "min_confidence": 70,
+        "min_completeness": 80,
+        "max_drift": 50,
+        "resolved_from": "board",
+    }
+    src["reviewer_separation"] = {
+        "mode": "enforce",
+        "allowed": False,
+        "conflicts": ["card_creator:c1"],
+        "source": "board_settings",
+    }
+    src["gate_readiness"] = {
+        "would_block_done": True,
+        "active_gate": {
+            "gate_type": "task_validation",
+            "required_tool": "okto_pulse_submit_task_validation",
+        },
+        "mutation_allowed": False,
+    }
+    snapshot = copy.deepcopy(src)
+
+    full_all = project_task_context(src, card_id="c1", profile="full")
+    full_gate = project_task_context(
+        src,
+        card_id="c1",
+        profile="full",
+        context_scope="gate",
+    )
+    repeated = project_task_context(
+        src,
+        card_id="c1",
+        profile="full",
+        context_scope="gate",
+    )
+
+    assert full_all == snapshot
+    assert "projection" not in full_all
+    assert _stable_payload_bytes(full_all) > 100_000
+    assert src == snapshot
+
+    gate_bytes = _stable_payload_bytes(full_gate)
+    wire_bytes = len(
+        json.dumps(
+            full_gate,
+            default=str,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    )
+    assert gate_bytes <= CONTEXT_GATE_BUDGET_BYTES
+    assert wire_bytes <= CONTEXT_GATE_BUDGET_BYTES
+    assert full_gate == repeated
+    assert full_gate["projection"]["profile"] == "full"
+    assert full_gate["projection"]["context_scope"] == "gate"
+    assert full_gate["projection"]["payload_bytes"] == gate_bytes
+    assert full_gate["projection"]["budget_bytes"] == CONTEXT_GATE_BUDGET_BYTES
+    assert full_gate["projection"]["content_omitted"] is True
+    assert full_gate["projection"]["truncated"] is False
+    assert full_gate["resource_gate_summary"]["blocking"] is True
+    assert "resource_lineage" not in full_gate["resource_gate_summary"]
+    assert full_gate["validation_config"] == src["validation_config"]
+    assert full_gate["reviewer_separation"] == src["reviewer_separation"]
+    assert full_gate["gate_readiness"] == src["gate_readiness"]
+    assert len(full_gate["validations"]) == 5
+    assert full_gate["validations"][-1]["id"] == "validation-19"
+    assert full_gate["validation_history"] == {
+        "total_count": 20,
+        "returned_count": 5,
+        "has_more": True,
+        "order": "oldest_to_newest_within_latest_window",
+    }
+    manifest = full_gate["content_manifest"]
+    assert manifest["source_payload_bytes"] > 100_000
+    assert len(manifest["source_payload_sha256"]) == 64
+    assert {
+        item["path"] for item in manifest["sections"]
+    } >= {
+        "spec.functional_requirements",
+        "resolved_references",
+        "validations",
+    }
+
+
+def test_gate_scope_requires_full_profile_and_rejects_unknown_scope():
+    for profile, scope in (("summary", "gate"), ("full", "everything")):
+        out = project_task_context(
+            _full_task_result(),
+            card_id="c1",
+            profile=profile,
+            context_scope=scope,
+        )
+        assert out["error_code"] == "unsupported_context_scope"
+        assert out["supported_context_scopes"] == ["all", "gate"]
+        assert out["gate_scope_profile"] == "full"
+
+
 # ---------------------------------------------------------------------------
 # ts_385e7a75 — unsupported profile → structured error with supported list
 # ---------------------------------------------------------------------------
@@ -246,6 +550,31 @@ def test_projection_metadata_uses_r5_canonical_names():
     assert meta["follow_up"] == [
         {"rel": "read_full_context", "target_ref": "okto_pulse_get_task_context"}
     ]
+
+
+def test_other_context_families_share_profiles_metadata_and_error_contract():
+    source = {"id": "i1", "description": "body", "empty": None}
+    out = project_entity_context(
+        source,
+        profile="summary",
+        tool_name="okto_pulse_get_ideation_context",
+    )
+    assert out["projection"]["profile"] == "summary"
+    assert out["projection"]["outcome"] == "ok"
+    assert out["projection"]["follow_up"] == [
+        {
+            "rel": "read_full_context",
+            "target_ref": "okto_pulse_get_ideation_context",
+        }
+    ]
+
+    bad = project_entity_context(
+        source,
+        profile="verbose",
+        tool_name="okto_pulse_get_ideation_context",
+    )
+    assert bad["error_code"] == "unsupported_projection"
+    assert bad["supported_profiles"] == ["summary", "detail", "full", "legacy"]
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +617,7 @@ def _stub_ctx(board_id: str):
 
 
 async def _call(name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     return json.loads(await tool.fn(**kwargs))
 
@@ -335,8 +664,22 @@ async def test_get_task_context_default_summary_and_full_passthrough():
         full = await _call(
             "okto_pulse_get_task_context", board_id=board_id, card_id=card_id, profile="full"
         )
+        full_gate = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
+            context_scope="gate",
+        )
         bad = await _call(
             "okto_pulse_get_task_context", board_id=board_id, card_id=card_id, profile="nope"
+        )
+        bad_scope = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="summary",
+            context_scope="gate",
         )
         # include flag still respected under projection
         no_kb = await _call(
@@ -358,8 +701,16 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     assert "projection" not in full
     assert full["spec"]["functional_requirements"][0]["text"] == "FR text"
 
+    # full/gate is a bounded, content-addressed pre-mutation projection.
+    assert full_gate["context_scope"] == "gate"
+    assert full_gate["projection"]["profile"] == "full"
+    assert full_gate["projection"]["payload_bytes"] <= CONTEXT_GATE_BUDGET_BYTES
+    assert full_gate["content_manifest"]["source_payload_sha256"]
+    assert full_gate["spec"]["id"] == spec_id
+
     # unsupported profile → structured error, no silent fallback
     assert bad["error_code"] == "unsupported_projection"
+    assert bad_scope["error_code"] == "unsupported_context_scope"
 
     # include_knowledge=false honored even under the full profile
     assert no_kb["resolved_references"].get("knowledge_bases") == []

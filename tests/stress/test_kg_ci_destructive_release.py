@@ -35,7 +35,11 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
+from coordination_fakes import (
+    FakeRebuildAuditArtifactStore,
+    FakeWriteLockPort,
+)
+from okto_pulse.community.adapters.kg_chaos_executor import KGChaosExecutor
 from okto_pulse.core.kg.stress_runner import (
     CI_DESTRUCTIVE_ITERATIONS_FLOOR,
     ChaosMode,
@@ -52,7 +56,13 @@ def test_ci_destructive_release_evidence_against_primitives(tmp_path: Path):
     chaos_dir = tmp_path / "chaos-scratch"
     evidence_dir = tmp_path / "evidence"
 
-    executor = KGChaosExecutor(base_dir=chaos_dir)
+    executor = KGChaosExecutor(
+        base_dir=chaos_dir,
+        write_lock_port=FakeWriteLockPort(),
+        artifact_store=FakeRebuildAuditArtifactStore(
+            tmp_path / "chaos-artifacts"
+        ),
+    )
     # Defence in depth: the runner gate also enforces this, but the
     # release-evidence pipeline should fail loudly if the marker
     # regresses.

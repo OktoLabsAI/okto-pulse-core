@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.community.api.router import api_router
+from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.kg.orphan_integrity import (
     OrphanBackfillResult,
     OrphanBackfillSample,
@@ -20,16 +21,34 @@ BOARD_ID = "board-orphan-api"
 USER_ID = "user-orphan-api"
 
 
-class _FakeSession:
-    async def __aenter__(self):
-        return self
+class _Boards:
+    async def get(self, board_id: str):
+        if board_id != BOARD_ID:
+            return None
+        return SimpleNamespace(id=BOARD_ID, owner_id=USER_ID)
 
-    async def __aexit__(self, *args):
-        pass
+
+class _Shares:
+    async def get_user_permission(self, _board_id: str, _user_id: str):
+        return None
 
 
-async def _fake_db():
-    yield _FakeSession()
+class _KGOperations:
+    async def invoke_health_reader(
+        self,
+        reader,
+        board_id: str,
+        *,
+        scheduler_control,
+    ):
+        return await reader(board_id, None, scheduler_control=scheduler_control)
+
+
+async def _fake_uow():
+    yield SimpleNamespace(
+        boards=_Boards(),
+        services=SimpleNamespace(shares=_Shares(), kg=_KGOperations()),
+    )
 
 
 def _client() -> TestClient:
@@ -40,18 +59,29 @@ def _client() -> TestClient:
         return USER_ID
 
     app.dependency_overrides[require_user] = _fake_user
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 
 
 def test_orphan_integrity_routes_are_registered() -> None:
-    paths = {route.path for route in api_router.routes}
+    paths = set()
+    for route in api_router.routes:
+        path = getattr(route, "path", None)
+        if path:
+            paths.add(path)
+        effective_route_contexts = getattr(route, "effective_route_contexts", None)
+        if callable(effective_route_contexts):
+            paths.update(
+                context.path
+                for context in effective_route_contexts()
+                if getattr(context, "path", None)
+            )
     assert "/api/v1/kg/orphan-integrity/report" in paths
     assert "/api/v1/kg/orphan-integrity/backfill" in paths
 
 
 def test_get_orphan_integrity_report_returns_bounded_safe_payload(monkeypatch) -> None:
-    import okto_pulse.core.api.kg_orphan_integrity as orphan_api
+    import okto_pulse.community.api.kg_orphan_integrity as orphan_api
 
     class _FakeScanner:
         def scan(self, *, board_id, generation_id, limit):
@@ -101,9 +131,9 @@ def test_get_orphan_integrity_report_returns_bounded_safe_payload(monkeypatch) -
 
 
 def test_post_orphan_backfill_refuses_recovery_needed_health(monkeypatch) -> None:
-    import okto_pulse.core.api.kg_orphan_integrity as orphan_api
+    import okto_pulse.community.api.kg_orphan_integrity as orphan_api
 
-    async def _recovery_needed(board_id, db):
+    async def _recovery_needed(board_id, db, scheduler_control=None):
         return {
             "overall_state": "recovery_needed",
             "graph_state": "recovery_needed",
@@ -128,9 +158,9 @@ def test_post_orphan_backfill_refuses_recovery_needed_health(monkeypatch) -> Non
 
 
 def test_post_orphan_backfill_returns_explicit_dry_run_summary(monkeypatch) -> None:
-    import okto_pulse.core.api.kg_orphan_integrity as orphan_api
+    import okto_pulse.community.api.kg_orphan_integrity as orphan_api
 
-    async def _healthy(board_id, db):
+    async def _healthy(board_id, db, scheduler_control=None):
         return {"overall_state": "at_risk", "graph_state": "at_risk"}
 
     class _FakeReconciler:

@@ -4,7 +4,8 @@ Spec 9aedfe78 / card d3263170 (FR6/TR6/TR11/TR12; ts_fe9fe207, ts_110b573e).
 
 Anti-test-theater: the canonical evidence comes from the REAL SQL source + the
 maturity classifier; the post-commit chain runs the REAL worker
-``_process_queue_entry``. No direct Kuzu/DecisionDigest seed of canonical state.
+``ConsolidationProcessor.process_batch``. No direct Kuzu/DecisionDigest seed of
+canonical state.
 """
 
 from __future__ import annotations
@@ -19,13 +20,12 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2i3_"))
 
-from okto_pulse.core.kg.board_source_store import BoardSourceStore
 from okto_pulse.core.kg.canonical_debt_replay import (
-    _pulse_db_path,
     replay_canonical_debt_by_maturity,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph
-from okto_pulse.core.models.db import Board, Spec
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from kg_schema_testing import bootstrap_board_graph
+from sqlalchemy_test_models import Board, Spec
 from okto_pulse.core.services.canonical_debt_service import (
     list_canonical_debt,
     upsert_canonical_debt,
@@ -70,10 +70,11 @@ async def _set_spec_status(db_factory, spec_id, status):
 
 
 def _spec_source(board_id, spec_id) -> dict:
-    for row in BoardSourceStore(db_path=_pulse_db_path()).fetch(board_id):
+    reader = get_kg_registry().require_board_source_reader()
+    for row in reader.fetch(board_id):
         if str(row.get("id")) == spec_id and row.get("artifact_type") == "spec":
             return row
-    raise AssertionError(f"spec {spec_id} not found in BoardSourceStore")
+    raise AssertionError(f"spec {spec_id} not found in BoardSourceReader")
 
 
 async def _open_debt_count(db_factory, board_id) -> int:
@@ -202,11 +203,11 @@ async def test_replay_does_not_touch_cognitive_pending(db_factory, _tmp_rebuild_
 
 @pytest.mark.asyncio
 async def test_worker_post_commit_chain_triggers_replay(db_factory):
-    """ts_110b573e: a real consolidation through the worker's _process_queue_entry
-    fires the post-commit replay, closing a now-canonical debt — the same chain a
-    rebuild drain uses (no theoretical-only coverage)."""
-    from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-    from okto_pulse.core.models.db import ConsolidationQueue
+    """ts_110b573e: a real worker batch commits then replays canonical debt."""
+    from okto_pulse.core.application.processors.consolidation import (
+        ConsolidationProcessor,
+    )
+    from sqlalchemy_test_models import ConsolidationQueue
 
     board_id = await _new_board(db_factory)
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"
@@ -216,8 +217,10 @@ async def test_worker_post_commit_chain_triggers_replay(db_factory):
                           src["source_ref"], src.get("source_version"))
     assert await _open_debt_count(db_factory, board_id) == 1
 
-    # Enqueue + run the REAL worker entry processor (the path a rebuild drain uses).
+    # Keep the shared session DB hermetic, then run the public worker batch. It
+    # owns defer -> relational commit -> finalization and post-commit maintenance.
     async with db_factory() as db:
+        await db.execute(ConsolidationQueue.__table__.delete())
         entry = ConsolidationQueue(
             id=str(uuid.uuid4()), board_id=board_id, artifact_type="spec",
             artifact_id=spec_id, priority="high", source="r2i3_test",
@@ -225,9 +228,8 @@ async def test_worker_post_commit_chain_triggers_replay(db_factory):
         )
         db.add(entry)
         await db.commit()
-        await db.refresh(entry)
-        await _process_queue_entry(db, entry)
-        await db.commit()
+
+    assert await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
 
     # The post-commit replay closed the now-canonical debt via the real chain.
     assert await _open_debt_count(db_factory, board_id) == 0

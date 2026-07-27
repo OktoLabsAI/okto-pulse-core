@@ -33,9 +33,14 @@ mode — positive `success` is intentionally omitted there. `success: true` and
 An unsupported profile returns a structured error `unsupported_projection`
 with the allowed list under `supported_profiles`.
 
+**Per-family variance:** the `copy_*_to_card` family supports a 3-value
+profile set — `summary`/`full`/`legacy`, **no `detail`**. Passing `detail`
+to a copy tool that exposes `profile` (e.g. `copy_architecture_to_card`)
+returns `unsupported_projection` with the 3-value `supported_profiles` list.
+
 ## Envelope metadata (shared contract SC1)
 
-Every projected response carries:
+`summary` and `detail` responses carry a nested `projection` object with:
 
 - `profile` — the profile that produced this shape.
 - `outcome` — `ok` or `error` (canonical success key).
@@ -46,11 +51,50 @@ Every projected response carries:
 - `follow_up` — compact, machine-readable next-step affordances, e.g.
   `{ "rel": "read_full_context", "target_ref": "okto_pulse_get_task_context" }`.
 
-## Context dedup in `summary` (`get_task_context` / `get_spec_context`)
+`full` returns the complete modern payload and `legacy` preserves the prior
+payload exactly, so those two profiles normally do not inject the nested
+projection object. The additive task-only
+`profile="full", context_scope="gate"` view is the exception: it carries
+projection metadata because it is explicitly bounded and content-manifested.
+At the MCP transport boundary, every non-legacy call is still wrapped once by
+the `okto-pulse.mcp-tool-outcome` V2 envelope, whose `meta` identifies the
+contract and tool.
+
+## Context tools
+
+`get_task_context` and `get_spec_context` default to `summary` for exploration.
+`get_ideation_context`, `get_refinement_context`, and `get_sprint_context`
+default to `full` for backward compatibility, but now accept the same four
+profiles and return the same `unsupported_projection` error for invalid values.
+
+`get_task_context` enforces deterministic wire-response budgets: 32 KiB for
+`summary` and 64 KiB for `detail`. If an assembled projection exceeds its
+budget, long strings/collections and optional drill-down sections are bounded,
+`projection.truncated` is `true`, and `projection.truncation_reason` is
+`profile_payload_budget`. The response also exposes `projection.budget_bytes`.
+
+For card mutation pre-flight, use
+`profile="full", context_scope="gate"`. This 32 KiB task-only scope keeps card
+and spec workflow identity, validation configuration and recent validation
+metadata, reviewer separation, test-card operational flow, cognitive/gate
+readiness, and compact Resource Gate state. Artifact/spec bodies and full
+lineage are represented by a deterministic `content_manifest` with per-section
+counts, byte sizes and SHA-256 digests. Its `follow_up` entries point to bounded
+detail and complete drill-down reads.
+
+The historical `profile="full", context_scope="all"` response remains the
+default and is byte-compatible for API clients that can accept a large body;
+`legacy` is also unchanged. Neither is the required in-band card mutation
+pre-flight. Mutation services independently resolve and fingerprint complete
+context server-side, so omitting large bodies from the client-side gate slice
+does not weaken the critical-context guard.
+
+## Context dedup in `summary`
 
 Under `summary`/`detail` the two high-frequency context tools deduplicate the
 largest repeated blocks. **Nothing is lost** — every body stays reachable via
-`profile=full` or the `follow_up` affordance below.
+`profile=full, context_scope=all`, a dedicated content tool, or the `follow_up`
+affordance below.
 
 - **`decisions_markdown` is gated.** The structured `decisions[]` and
   `decisions_stats` stay; the redundant rendered markdown is dropped and replaced
@@ -67,13 +111,22 @@ largest repeated blocks. **Nothing is lost** — every body stays reachable via
 - **`resolved_references` bodies** (`content`/`text`, plus prose in `summary`)
   are dropped — the same facts live in `spec`/`card`. `deduped_count` totals
   every duplicated body removed.
+- **Primary KB/mockup bodies** are also omitted from `summary`/`detail`;
+  metadata, governance and provenance remain visible. `detail` additionally
+  retains descriptive prose and bounded 2 KiB `*_preview` fields with an
+  accompanying `*_preview_truncated` flag. Use `profile=full` for complete
+  content or markup.
 
-`full`/`legacy` preserve all of the above bodies exactly for back-compat.
+`full/all` and `legacy` preserve all of the above bodies exactly for back-compat.
 
 ## Invariant: full context before status-changing moves
 
 Summary-first reads are for **exploration only**. The SDLC safety rule is
-unchanged: you MUST read full context (e.g. `okto_pulse_get_*_context`) before
-any status-changing move (moving a card/spec/sprint, submitting a gate,
-deciding a transition). Summary-first discovery never replaces that mandatory
-full read before a mutation.
+unchanged: you MUST read full gate context before any status-changing move
+(moving a card/spec/sprint, submitting a gate, deciding a transition). For a
+card, the mandatory in-band call is
+`okto_pulse_get_task_context(profile="full", context_scope="gate")`; for the
+other entity-context tools it remains `profile="full"`. Summary-first discovery
+never replaces that mandatory full gate read before a mutation. Fetch
+`detail`/follow-up content separately when implementation or review requires the
+artifact bodies.

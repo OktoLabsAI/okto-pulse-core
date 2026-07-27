@@ -18,6 +18,8 @@ Reproduce:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 
@@ -25,7 +27,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, BoardDesignSystem, DesignSystem
+from sqlalchemy_test_models import Board, BoardDesignSystem, DesignSystem
 from okto_pulse.core.models.schemas import BoardCreate, BoardSettings
 from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationError,
@@ -49,7 +51,7 @@ async def _call(name: str, **kwargs) -> dict:
 
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
@@ -206,6 +208,38 @@ async def test_board_link_is_singular_and_effective_read_is_real():
         assert await svc.get_board_effective_design_system(board.id) is None
 
 
+@pytest.mark.parametrize("status", ["draft", "archived"])
+async def test_board_link_rejects_non_active_design_systems(status: str):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        svc = DesignSystemService(db)
+        board = await _board(db)
+        ds = await svc.create_design_system(
+            USER_ID,
+            title=f"{status.title()} DS",
+            scope="global",
+            status=status,
+        )
+
+        with pytest.raises(DesignSystemError) as exc:
+            await svc.link_design_system_to_board(
+                board.id,
+                ds.id,
+                owner_id=USER_ID,
+                board_access_authorized=True,
+            )
+
+        assert exc.value.code == "design_system_not_active"
+        assert exc.value.status_code == 422
+        assert exc.value.details == {
+            "design_system_id": ds.id,
+            "status": status,
+            "required_status": "active",
+        }
+        assert await svc.get_board_effective_design_system(board.id) is None
+
+
 # ---------------------------------------------------------------------------
 # MCP twins — shared service, structured errors
 # ---------------------------------------------------------------------------
@@ -224,8 +258,26 @@ async def test_mcp_twins_catalog_link_and_effective():
 
     try:
         listed = await _call("okto_pulse_list_design_systems", board_id=ids["board"], scope="global")
-        assert ids["g"] in {d["id"] for d in listed}
+        assert listed["profile"] == "summary"
+        assert ids["g"] in {d["id"] for d in listed["items"]}
+        assert all("payload" not in item for item in listed["items"])
 
+        # MCP requires a board_id even for the actor's global catalog. An owned
+        # item returned by list must therefore be retrievable before it is
+        # linked as the board's effective Design System.
+        unlinked = await _call(
+            "okto_pulse_get_design_system",
+            board_id=ids["board"],
+            design_system_id=ids["g"],
+        )
+        assert unlinked.get("id") == ids["g"], unlinked
+
+        linked = await _call(
+            "okto_pulse_link_board_design_system",
+            board_id=ids["board"],
+            design_system_id=ids["g"],
+        )
+        assert linked["design_system_id"] == ids["g"]
         got = await _call("okto_pulse_get_design_system", board_id=ids["board"], design_system_id=ids["g"])
         assert got["id"] == ids["g"] and got["version"] == 1
 
@@ -234,10 +286,6 @@ async def test_mcp_twins_catalog_link_and_effective():
         )
         assert inline["scope"] == "inline" and inline["board_id"] == ids["board"]
 
-        linked = await _call(
-            "okto_pulse_link_board_design_system", board_id=ids["board"], design_system_id=ids["g"]
-        )
-        assert linked["design_system_id"] == ids["g"]
         eff = await _call("okto_pulse_get_board_design_system", board_id=ids["board"])
         assert eff["effective"]["design_system_id"] == ids["g"]
 
@@ -251,4 +299,87 @@ async def test_mcp_twins_catalog_link_and_effective():
             await db.execute(delete(BoardDesignSystem).where(BoardDesignSystem.board_id == ids["board"]))
             await db.execute(delete(DesignSystem).where(DesignSystem.owner_id == USER_ID))
             await db.execute(delete(Board).where(Board.id == ids["board"]))
+            await db.commit()
+
+
+async def test_ts_9c7f3ee0_mcp_catalog_summary_and_profile_aware_get():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    large_payload = {"tokens": "x" * 50_000}
+    async with get_session_factory()() as db:
+        board = await _board(db)
+        service = DesignSystemService(db)
+        created = []
+        for title in ("A payload", "B payload", "C payload"):
+            created.append(
+                await service.create_design_system(
+                    USER_ID,
+                    title=title,
+                    scope="global",
+                    payload=large_payload,
+                )
+            )
+        await db.commit()
+        board_id = board.id
+
+    created_ids = {item.id for item in created}
+    try:
+        page_one = await _call(
+            "okto_pulse_list_design_systems",
+            board_id=board_id,
+            scope="global",
+            limit=2,
+        )
+        assert page_one["count"] == 2
+        assert page_one["next_cursor"]
+        assert all("payload" not in item for item in page_one["items"])
+        assert len(json.dumps(page_one)) < 5_000
+
+        page_two = await _call(
+            "okto_pulse_list_design_systems",
+            board_id=board_id,
+            scope="global",
+            limit=2,
+            cursor=page_one["next_cursor"],
+        )
+        ids = {item["id"] for item in page_one["items"] + page_two["items"]}
+        assert ids == created_ids
+        assert page_two["next_cursor"] is None
+
+        await _call(
+            "okto_pulse_link_board_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+        )
+        full = await _call(
+            "okto_pulse_get_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+            profile="full",
+        )
+        assert full["payload"] == large_payload
+        assert full["profile"] == "full"
+
+        detail = await _call(
+            "okto_pulse_get_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+            profile="detail",
+        )
+        assert detail["payload"] == large_payload
+        assert detail["profile"] == "detail"
+
+        summary = await _call(
+            "okto_pulse_get_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+            profile="summary",
+        )
+        assert summary["profile"] == "summary"
+        assert summary["payload_available"] is True
+        assert "payload" not in summary
+    finally:
+        async with get_session_factory()() as db:
+            await db.execute(delete(DesignSystem).where(DesignSystem.id.in_(created_ids)))
+            await db.execute(delete(Board).where(Board.id == board_id))
             await db.commit()

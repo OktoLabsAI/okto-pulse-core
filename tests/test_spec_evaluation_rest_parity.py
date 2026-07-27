@@ -20,11 +20,11 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.ideations import router as ideations_router
-from okto_pulse.core.api.specs import router as specs_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api.ideations import router as ideations_router
+from okto_pulse.community.api.specs import router as specs_router
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 
 USER_ID = "spec-eval-rest-user"
 
@@ -64,6 +64,11 @@ async def spec_eval_client(db_factory):
             skip_trs_coverage=True, skip_contract_coverage=True,
             skip_ir_coverage=True, skip_or_coverage=True,
             skip_decisions_coverage=True,
+            # O gate decision-required (spec 4028ebd4) ignora o skip acima e
+            # roda antes do gate qualitativo de evaluations sob teste.
+            decisions=[{"id": "dec_seed", "title": "Seed decision",
+                        "rationale": "Decision de fixture p/ o gate decision-required.",
+                        "status": "active"}],
         ))
         db.add(Spec(
             id=draft_spec_id, board_id=board_id, title="Draft Spec",
@@ -83,6 +88,7 @@ async def spec_eval_client(db_factory):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app), validated_spec_id, draft_spec_id, board_id
 
 
@@ -185,7 +191,7 @@ def test_ideation_complexity_accepts_enum_values(value):
 
 
 def test_ideation_complexity_description_matches_enum():
-    from okto_pulse.core.models.db import IdeationComplexity
+    from sqlalchemy_test_models import IdeationComplexity
     from okto_pulse.core.models.schemas import IdeationCreate, IdeationUpdate
 
     for model in (IdeationCreate, IdeationUpdate):

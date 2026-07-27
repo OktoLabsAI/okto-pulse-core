@@ -10,6 +10,7 @@ not a rebuild. Exercises the REAL board graph + REAL outbox + REAL global graph.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 import sys
 import tempfile
@@ -24,29 +25,43 @@ from sqlalchemy import delete
 
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
-from okto_pulse.core.kg.global_discovery.outbox_worker import (
+from okto_pulse.core.application.processors.global_outbox import (
     DIGESTED_NODE_TYPES,
-    OutboxWorker,
+    GlobalOutboxProcessor,
 )
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.health import check_global
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     VECTOR_INDEX_TYPES,
     bootstrap_board_graph,
     open_board_connection,
 )
-from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import (
+    Board,
+    ConsolidationAudit,
+    GlobalUpdateOutbox,
+    KuzuNodeRef,
+)
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    configure_test_kg_registry,
+)
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -77,6 +92,28 @@ async def _run_outbox(db_factory, board_id, refs):
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Global Discovery Health {board_id}",
+                    owner_id="global-discovery-health-test",
+                )
+            )
+            await db.flush()
+        now = datetime.now(timezone.utc)
+        db.add(
+            ConsolidationAudit(
+                session_id=session_id,
+                board_id=board_id,
+                artifact_id="global-discovery-health",
+                artifact_type="test",
+                agent_id="global-discovery-health-test",
+                started_at=now,
+                committed_at=now,
+            )
+        )
+        await db.flush()
         for node_type, node_id in refs:
             db.add(KuzuNodeRef(
                 session_id=session_id, board_id=board_id,
@@ -88,7 +125,7 @@ async def _run_outbox(db_factory, board_id, refs):
             payload={"session_id": session_id, "nodes_added": len(refs)},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 @pytest.mark.asyncio

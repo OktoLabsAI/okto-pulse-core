@@ -1,83 +1,55 @@
-"""Authentication abstractions — provider pattern with FastAPI dependencies."""
+"""Authentication registration seam with no transport dependency.
 
-from abc import ABC, abstractmethod
-from typing import Any
+The provider contract lives in :mod:`okto_pulse.core.ports.authentication`.
+FastAPI dependencies live in ``okto_pulse.community.api.auth_deps`` so a Core
+use case, worker, or future SaaS composition can import this module without
+loading an edition transport.
+"""
 
-from fastapi import Depends, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from __future__ import annotations
 
-security = HTTPBearer(auto_error=False)
+from okto_pulse.core.ports.authentication import AuthenticationPort
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
+# Compatibility type name retained for external composition roots.  It is a
+# structural, transport-free Protocol rather than the former FastAPI-coupled ABC.
+AuthProvider = AuthenticationPort
 
-class AuthProvider(ABC):
-    """Abstract authentication provider.
-
-    Ecosystem packages implement this to plug in Clerk, internal-BFF, or
-    any other auth mechanism.
-    """
-
-    @abstractmethod
-    async def get_current_user(
-        self,
-        request: Request,
-        credentials: HTTPAuthorizationCredentials | None,
-    ) -> dict[str, Any] | None: ...
-
-    @abstractmethod
-    def get_user_id(self, user: dict[str, Any] | None) -> str: ...
-
-    @abstractmethod
-    async def get_realm_id(
-        self,
-        request: Request,
-        user: dict[str, Any] | None,
-    ) -> str | None: ...
+_RUNTIME_KEY = "infra.auth.provider"
 
 
-_auth_provider: AuthProvider | None = None
+def configure_auth(provider: AuthenticationPort) -> None:
+    """Register the edition-owned authentication port at startup."""
+    register_runtime_value(_RUNTIME_KEY, provider)
 
 
-def configure_auth(provider: AuthProvider) -> None:
-    """Register the active AuthProvider at startup."""
-    global _auth_provider
-    _auth_provider = provider
+def reset_auth_for_tests() -> None:
+    """Clear the registered provider for isolated composition tests."""
+    reset_runtime_values(_RUNTIME_KEY)
 
 
-def get_auth_provider() -> AuthProvider:
-    """Return the registered AuthProvider or raise."""
-    if _auth_provider is None:
-        raise RuntimeError("AuthProvider not configured. Call configure_auth() first.")
-    return _auth_provider
+def get_auth_provider() -> AuthenticationPort:
+    """Return the registered port or fail closed before processing work."""
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.auth_provider is not None:
+        return composition.auth_provider
+    provider = resolve_runtime_value(_RUNTIME_KEY)
+    if provider is None:
+        raise RuntimeError(
+            "AuthenticationPort not configured. Call configure_auth() from the "
+            "edition composition root first."
+        )
+    return provider
 
 
-# ---------------------------------------------------------------------------
-# FastAPI dependencies that delegate to the registered provider
-# ---------------------------------------------------------------------------
-
-
-async def get_current_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> dict[str, Any] | None:
-    """Resolve the current user via the registered AuthProvider."""
-    return await get_auth_provider().get_current_user(request, credentials)
-
-
-async def get_current_user_id(
-    user: dict | None = Depends(get_current_user),
-) -> str:
-    """Extract user ID from the resolved user dict."""
-    return get_auth_provider().get_user_id(user)
-
-
-def require_user(user_id: str = Depends(get_current_user_id)) -> str:
-    """Dependency that ensures a user is authenticated."""
-    return user_id
-
-
-async def get_realm_id(
-    request: Request,
-    user: dict | None = Depends(get_current_user),
-) -> str | None:
-    """Resolve the realm/org ID via the registered AuthProvider."""
-    return await get_auth_provider().get_realm_id(request, user)
+__all__ = [
+    "AuthProvider",
+    "AuthenticationPort",
+    "configure_auth",
+    "get_auth_provider",
+    "reset_auth_for_tests",
+]

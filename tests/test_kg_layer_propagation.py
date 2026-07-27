@@ -26,24 +26,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_layer_"))
 
 import okto_pulse.core.mcp.kg_query_tools as qt
-from okto_pulse.core.api.kg_routes import get_subgraph
+from okto_pulse.community.api.kg_routes import get_subgraph
 from okto_pulse.core.kg.embedding import get_embedding_provider
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
-    reset_global_db_for_tests,
+    execute_global_write,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 # ---------------------------------------------------------------------------
@@ -123,36 +123,42 @@ def _seed_global_digests() -> str:
                     "emb": emb,
                 },
             )
-    _gdb, gconn = open_global_connection()
-    try:
-        gconn.execute(
-            "CREATE (b:Board {board_id:$bid, name:$bid, summary:'', "
-            "summary_embedding:$emb, topic_count:0, entity_count:0, "
-            "decision_count:3, last_sync_at:timestamp($ts)})",
-            {"bid": board_id, "emb": emb, "ts": ts},
+    execute_global_write(
+        "CREATE (b:Board {board_id:$bid, name:$bid, summary:'', "
+        "summary_embedding:$emb, topic_count:0, entity_count:0, "
+        "decision_count:3, last_sync_at:timestamp($ts)})",
+        {"bid": board_id, "emb": emb, "ts": ts},
+        operation="test_layer_propagation_seed_board",
+    )
+    for did, layer in (
+        ("dd_canon", "canonical"),
+        ("dd_work", "working"),
+        ("dd_stale", "canonical"),
+    ):
+        execute_global_write(
+            "CREATE (d:DecisionDigest {id:$did, board_id:$bid, "
+            "original_node_id:$oid, title:$title, one_line_summary:$s, "
+            "node_type:'Decision', graph_layer:$layer, embedding:$emb, "
+            "created_at:timestamp($ts)})",
+            {
+                "did": f"{did}_{board_id[:8]}",
+                "bid": board_id,
+                "oid": did,
+                "title": f"{layer} digest",
+                "s": QUERY_TEXT,
+                "layer": layer,
+                "emb": emb,
+                "ts": ts,
+            },
+            operation="test_layer_propagation_seed_digest",
         )
-        for did, layer in (
-            ("dd_canon", "canonical"),
-            ("dd_work", "working"),
-            ("dd_stale", "canonical"),
-        ):
-            gconn.execute(
-                "CREATE (d:DecisionDigest {id:$did, board_id:$bid, "
-                "original_node_id:$oid, title:$title, one_line_summary:$s, "
-                "node_type:'Decision', graph_layer:$layer, embedding:$emb, "
-                "created_at:timestamp($ts)})",
-                {"did": f"{did}_{board_id[:8]}", "bid": board_id,
-                 "oid": did, "title": f"{layer} digest", "s": QUERY_TEXT,
-                 "layer": layer, "emb": emb, "ts": ts},
-            )
-            gconn.execute(
-                "MATCH (b:Board {board_id:$bid}), "
-                "(d:DecisionDigest {id:$did}) "
-                "MERGE (b)-[:CONTAINS_DECISION]->(d)",
-                {"bid": board_id, "did": f"{did}_{board_id[:8]}"},
-            )
-    finally:
-        del gconn, _gdb
+        execute_global_write(
+            "MATCH (b:Board {board_id:$bid}), "
+            "(d:DecisionDigest {id:$did}) "
+            "MERGE (b)-[:CONTAINS_DECISION]->(d)",
+            {"bid": board_id, "did": f"{did}_{board_id[:8]}"},
+            operation="test_layer_propagation_link_digest",
+        )
     return board_id
 
 
@@ -346,10 +352,20 @@ def _register_query_tools(board_id, monkeypatch):
     async def _fake_user_boards(*_a, **_k):
         return _FakeAgent(), [board_id]
 
+    async def _board_agent(_board_id: str):
+        return _FakeAgent()
+
+    async def _global_agent():
+        return _FakeAgent()
+
     monkeypatch.setattr(qt, "_get_user_boards", _fake_user_boards)
     double = _MCPDouble()
     register_kg_query_tools(
-        double, get_agent=lambda: None, get_db=lambda: None,
+        double,
+        get_agent=lambda: None,
+        get_uow=lambda: None,
+        get_board_agent=_board_agent,
+        get_global_agent=_global_agent,
     )
     return double.tools
 

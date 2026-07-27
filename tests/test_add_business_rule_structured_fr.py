@@ -19,6 +19,8 @@ still handles both fr_ids and indices on read.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -26,7 +28,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.services.analytics_service import resolve_linked_fr_indices
 from okto_pulse.core.services.main import SpecService
 
@@ -87,7 +89,7 @@ async def _seed(db_factory) -> tuple[str, str]:
 
 
 async def _call(tool_name: str, board_id: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(db_factory_ref[0])
+    register_mcp_test_runtime(db_factory_ref[0])
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
     ), patch.object(mcp_server, "check_permission", return_value=None):
@@ -285,6 +287,72 @@ async def test_update_api_contract_tr_text_structured_requirement(db_factory):
 # ====================================================================
 # add_decision — decisions can be linked to FRs and structured TRs
 # ====================================================================
+
+
+async def test_add_decision_linked_requirements_schema_accepts_native_list():
+    tool = await mcp_server.mcp.get_tool("okto_pulse_add_decision")
+    schema = tool.parameters["properties"]["linked_requirements"]
+    branches = schema.get("anyOf", [])
+
+    assert any(
+        branch.get("type") == "array"
+        and branch.get("items", {}).get("type") == "string"
+        for branch in branches
+    ), schema
+    assert any(branch.get("type") == "string" for branch in branches), schema
+
+
+async def test_add_decision_linked_requirements_native_list_and_pipe_are_equivalent(
+    db_factory,
+):
+    board_id, spec_id = await _seed(db_factory)
+
+    native = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Native requirement links",
+        rationale="Exercise the native MCP wire shape",
+        linked_requirements=["0", "tr_3333cccc"],
+    )
+    pipe = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Pipe requirement links",
+        rationale="Exercise the compatibility wire shape",
+        linked_requirements="0|tr_3333cccc",
+    )
+
+    assert native.get("success") is True, native
+    assert pipe.get("success") is True, pipe
+    assert native["decision"]["linked_requirements"] == [
+        "fr_1111aaaa",
+        "tr_3333cccc",
+    ]
+    assert pipe["decision"]["linked_requirements"] == native["decision"][
+        "linked_requirements"
+    ]
+
+
+async def test_add_decision_linked_requirements_rejects_ambiguous_comma_input(
+    db_factory,
+):
+    board_id, spec_id = await _seed(db_factory)
+
+    payload = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Ambiguous links",
+        rationale="Must fail before persistence",
+        linked_requirements="0,tr_3333cccc",
+    )
+
+    assert payload.get("error") == "invalid_multi_value_input", payload
+    assert "comma-separated input is rejected" in payload.get("detail", ""), payload
+    spec = await _read_spec(spec_id)
+    assert not spec.decisions
 
 
 async def test_add_decision_tr_id_structured_requirement(db_factory):

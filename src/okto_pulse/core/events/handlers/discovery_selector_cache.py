@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import DomainEvent
@@ -37,7 +36,7 @@ _STRUCTURED_SELECTOR_EVENTS = {
 class DiscoverySelectorCacheInvalidationHandler:
     """Invalidate selector metadata when structured spec content changes."""
 
-    async def handle(self, event: DomainEvent, session: AsyncSession) -> None:
+    async def handle(self, event: DomainEvent, session: object) -> None:
         del session
         started = time.perf_counter()
         spec_id = getattr(event, "spec_id", None)

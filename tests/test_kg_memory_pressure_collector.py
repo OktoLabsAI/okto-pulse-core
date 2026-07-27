@@ -28,7 +28,7 @@ from okto_pulse.core.kg.memory_pressure_collector import (
     record_failure,
     record_sample,
 )
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 # ---------------------------------------------------------------------------

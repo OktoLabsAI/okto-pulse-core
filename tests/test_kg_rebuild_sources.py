@@ -12,6 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from source_reader_schema_testing import (
+    create_complete_source_catalog,
+    insert_source_board,
+)
+
 from okto_pulse.core.kg.rebuild_confirmation import (
     CANONICAL_OPERATIONS,
     ConfirmationOutcome,
@@ -21,6 +26,11 @@ from okto_pulse.core.kg.rebuild_confirmation import (
     get_confirmation_samples,
     reset_confirmation_counter,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.kg.rebuild_sources import (
     CANONICAL_ARTIFACT_TYPES,
     EnumerationOutcome,
@@ -30,8 +40,13 @@ from okto_pulse.core.kg.rebuild_sources import (
     get_enumeration_counter_labels,
     reset_enumeration_counter,
 )
-from okto_pulse.core.kg.board_source_store import BoardSourceStore
 from okto_pulse.core.kg.source_maturity import classify_source_for_kg
+
+_board_source_reader = pytest.importorskip(
+    "okto_pulse.community.adapters.board_source_reader",
+    reason="AF-04 Community integration test requires the Community board source reader.",
+)
+BoardSourceStore = _board_source_reader.BoardSourceStore
 
 
 # ---------------------------------------------------------------------------
@@ -39,48 +54,33 @@ from okto_pulse.core.kg.source_maturity import classify_source_for_kg
 # ---------------------------------------------------------------------------
 
 def _make_rebuild_test_app(board_id: str = "b-test"):
-    """Return a FastAPI app with get_db overridden to satisfy FR10/FR9 gates."""
+    """Return a FastAPI app with the UoW overridden for FR10/FR9 gates."""
     from types import SimpleNamespace
 
     from fastapi import FastAPI
 
-    from okto_pulse.core.api.router import api_router
-    from okto_pulse.core.infra.database import get_db
+    from okto_pulse.community.api.deps import get_unit_of_work
+    from okto_pulse.community.api.router import api_router
 
     _fake_board = SimpleNamespace(id=board_id, owner_id="user-lifecycle-test")
 
-    class _FakeResult:
-        def scalar_one_or_none(self):
-            # ShareService.get_user_permission calls execute() for BoardShare rows;
-            # return a fake share with "owner" permission so the 403 gate passes.
-            return SimpleNamespace(permission="owner")
+    class _Boards:
+        async def get(self, candidate_board_id):
+            return _fake_board if candidate_board_id == board_id else None
 
-    class _FakeSession:
-        async def __aenter__(self):
-            return self
+    class _Shares:
+        async def get_user_permission(self, candidate_board_id, _user_id):
+            return "editor" if candidate_board_id == board_id else None
 
-        async def __aexit__(self, *args):
-            pass
-
-        async def execute(self, stmt):
-            return _FakeResult()
-
-        async def get(self, model_class, pk):
-            # _require_board_access + ShareService._get_board call db.get(Board, id).
-            return _fake_board
-
-        async def commit(self):
-            pass
-
-        async def rollback(self):
-            pass
-
-    async def _fake_db():
-        yield _FakeSession()
+    async def _fake_uow():
+        yield SimpleNamespace(
+            boards=_Boards(),
+            services=SimpleNamespace(shares=_Shares()),
+        )
 
     app = FastAPI()
     app.include_router(api_router)
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return app
 
 
@@ -303,6 +303,48 @@ def test_rebuild_legacy_missing_hash_is_not_canonical():
     assert result.has_non_deterministic_inputs is True
 
 
+def test_legacy_unknown_warning_is_aggregated_once_per_enumeration(caplog):
+    rows = [
+        _row(artifact_type="decision", id_=f"decision-{index}")
+        for index in range(12)
+    ] + [
+        _row(id_="missing-hash-a", content_hash=""),
+        _row(id_="missing-hash-b", content_hash=""),
+    ]
+
+    with caplog.at_level("WARNING", logger="okto_pulse.kg.rebuild_sources"):
+        result = RebuildSourceEnumerator(
+            source_store=lambda _board_id: rows
+        ).enumerate(board_id="board-legacy-diagnostics")
+
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("kg.rebuild_sources.legacy_unknown")
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.legacy_unknown_count == 14
+    assert record.legacy_unknown_breakdown == [
+        {
+            "artifact_type": "decision",
+            "reason_code": "unknown_artifact_type",
+            "count": 12,
+        },
+        {
+            "artifact_type": "spec",
+            "reason_code": "missing_status_or_content_hash",
+            "count": 2,
+        },
+    ]
+    assert result.legacy_unknown_count == 14
+    assert {row.id for row in result.legacy_unknown} == {
+        *(f"decision-{index}" for index in range(12)),
+        "missing-hash-a",
+        "missing-hash-b",
+    }
+
+
 def test_regression_fresh_working_sources_are_not_dropped_from_partition():
     """Regression for SPEC4 bug 5187f991 (test card 7414f1a7 / ts_df112b35).
 
@@ -462,33 +504,12 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
+        create_complete_source_catalog(conn)
+        insert_source_board(conn, "b1")
         conn.execute(
-            "CREATE TABLE specs ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, version INTEGER, decisions TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE refinements ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, analysis TEXT, version INTEGER)"
-        )
-        conn.execute(
-            "CREATE TABLE ideations ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, title TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE stories ("
-            "id TEXT, board_id TEXT, topic_id TEXT, status TEXT, "
-            "created_at TEXT, title TEXT, description TEXT, actor TEXT, "
-            "goal TEXT, benefit TEXT, labels TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE cards ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, card_type TEXT, archived INTEGER)"
-        )
-        conn.execute(
-            "INSERT INTO specs VALUES "
+            "INSERT INTO specs "
+            "(id, board_id, status, created_at, title, description, version, decisions) "
+            "VALUES "
             "('s1', 'b1', 'done', '2026-05-01T00:00:00Z', 'Spec', 'D', 2, ?)",
             (json.dumps([
                 {"id": "dec-active", "title": "Use hosted KG", "status": "active"},
@@ -496,20 +517,27 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
             ]),),
         )
         conn.execute(
-            "INSERT INTO refinements VALUES "
+            "INSERT INTO refinements "
+            "(id, board_id, status, created_at, title, description, analysis, version) "
+            "VALUES "
             "('r1', 'b1', 'done', '2026-05-01T00:00:01Z', 'Ref', 'D', 'A', 1)"
         )
         conn.execute(
-            "INSERT INTO ideations VALUES "
+            "INSERT INTO ideations "
+            "(id, board_id, status, created_at, title) VALUES "
             "('i1', 'b1', 'done', '2026-05-01T00:00:02Z', 'Idea')"
         )
         conn.execute(
-            "INSERT INTO stories VALUES ("
+            "INSERT INTO stories "
+            "(id, board_id, topic_id, status, created_at, title, description, "
+            "actor, goal, benefit, labels) VALUES ("
             "'st1', 'b1', 'topic1', 'ready', '2026-05-01T00:00:02Z', "
             "'Story', 'D', 'Actor', 'Goal', 'Benefit', '[]')"
         )
         conn.executemany(
-            "INSERT INTO cards VALUES (?, 'b1', ?, ?, ?, 'D', ?, ?)",
+            "INSERT INTO cards "
+            "(id, board_id, status, created_at, title, description, card_type, archived) "
+            "VALUES (?, 'b1', ?, ?, ?, 'D', ?, ?)",
             [
                 ("t1", "done", "2026-05-01T00:00:03Z", "Task", "normal", 0),
                 ("tc1", "done", "2026-05-01T00:00:04Z", "Test", "test", 0),
@@ -568,23 +596,18 @@ def test_board_source_store_propagates_working_ttl_board_override(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
+        create_complete_source_catalog(conn)
+        insert_source_board(conn, "b1")
         conn.execute(
-            "CREATE TABLE boards (id TEXT, settings TEXT)"
+            "UPDATE boards SET settings = ? WHERE id = ?",
+            (json.dumps({"kg_working_ttl_days": 30}), "b1"),
         )
         conn.execute(
-            "CREATE TABLE specs ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "updated_at TEXT, title TEXT, description TEXT, version INTEGER, "
-            "functional_requirements TEXT, technical_requirements TEXT, "
-            "acceptance_criteria TEXT, test_scenarios TEXT, business_rules TEXT, "
-            "api_contracts TEXT, decisions TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO boards VALUES (?, ?)",
-            ("b1", json.dumps({"kg_working_ttl_days": 30})),
-        )
-        conn.execute(
-            "INSERT INTO specs VALUES ("
+            "INSERT INTO specs "
+            "(id, board_id, status, created_at, updated_at, title, description, "
+            "version, functional_requirements, technical_requirements, "
+            "acceptance_criteria, test_scenarios, business_rules, api_contracts, "
+            "decisions) VALUES ("
             "'s1', 'b1', 'approved', '2026-05-01T00:00:00Z', "
             "'2026-05-01T00:00:00Z', 'Spec', 'D', 1, '[]', '[]', '[]', "
             "'[]', '[]', '[]', '[]')"
@@ -963,18 +986,26 @@ def _client_with_router(board_id: str = "b-life"):
     session whose Board SELECT always succeeds and also patch get_kg_health
     to return a healthy state so the admission gate never blocks.
     """
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
+    import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
 
-    async def _fake_health(_board_id, _db):
+    async def _fake_health(_board_id, _db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
                 "current_kg_generation_id": None}
 
     # Monkeypatch at module level (safe: tests run in same process, sequential).
     _original_health = kg_rebuild_mod.get_kg_health
     kg_rebuild_mod.get_kg_health = _fake_health  # type: ignore[assignment]
+
+    source_db_path = resolve_database_runtime().local_database_path()
+    assert source_db_path is not None
+    with sqlite3.connect(str(source_db_path)) as source_connection:
+        create_complete_source_catalog(source_connection)
+        source_board_inserted = insert_source_board(source_connection, board_id)
+        source_connection.commit()
 
     app = _make_rebuild_test_app(board_id=board_id)
 
@@ -990,9 +1021,17 @@ def _client_with_router(board_id: str = "b-life"):
             return client.__enter__()
 
         def __exit__(self, *args):
-            result = client.__exit__(*args)
-            kg_rebuild_mod.get_kg_health = _original_health  # type: ignore[assignment]
-            return result
+            try:
+                return client.__exit__(*args)
+            finally:
+                kg_rebuild_mod.get_kg_health = _original_health  # type: ignore[assignment]
+                if source_board_inserted:
+                    with sqlite3.connect(str(source_db_path)) as source_connection:
+                        source_connection.execute(
+                            "DELETE FROM boards WHERE id = ?",
+                            (board_id,),
+                        )
+                        source_connection.commit()
 
     return _CtxClient()
 
@@ -1001,10 +1040,7 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
     """val_d0da4a75 #1: /preflight is the manifest issuance point.
     Response MUST include manifest_ref + source_set_hash, and the
     manifest must be loadable via the canonical store."""
-    from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR
-    from okto_pulse.core.kg.rebuild_sources import KGRebuildSourceManifest
-
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b-life") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-life"},
@@ -1016,7 +1052,9 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
     assert len(body["preflight_hash"]) == 64
 
     # Manifest is loadable from the canonical store.
-    store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    store = KGRebuildSourceManifest(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     manifest = store.load(body["manifest_ref"])
     assert manifest is not None
     assert manifest.board_id == "b-life"
@@ -1027,18 +1065,7 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
 def test_confirm_uses_existing_manifest_does_not_recreate():
     """val_d0da4a75 #1: /confirm loads the manifest_ref produced by
     /preflight; it MUST NOT enumerate or build a new manifest."""
-    import shutil
-    from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR
-    from okto_pulse.core.kg.rebuild_sources import KGRebuildSourceManifest
-
-    # Isolate this test from manifests left over by sibling tests
-    # (the endpoint uses a process-wide tmp dir).
-    manifests_dir = _REBUILD_BASE_DIR / "rebuild" / "manifests"
-    if manifests_dir.exists():
-        shutil.rmtree(manifests_dir)
-    manifests_dir.mkdir(parents=True, exist_ok=True)
-
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b-confirm-isolated") as client:
         pre = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-confirm-isolated"},
@@ -1062,20 +1089,24 @@ def test_confirm_uses_existing_manifest_does_not_recreate():
 
     # Only ONE manifest exists in the store for this board (no
     # recreation by confirm).
-    store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
-    matching = 0
-    for entry in manifests_dir.iterdir():
-        if entry.suffix != ".json":
-            continue
-        loaded = store.load(entry.stem)
-        if loaded and loaded.board_id == "b-confirm-isolated":
-            matching += 1
+    artifact_store = require_rebuild_audit_artifact_store()
+    payloads = artifact_store.list_json(
+        RebuildAuditKey(
+            namespace="source_manifest",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+        )
+    )
+    matching = sum(
+        1
+        for payload in payloads
+        if payload.get("board_id") == "b-confirm-isolated"
+    )
     assert matching == 1, f"expected exactly 1 manifest, got {matching}"
 
 
 def test_confirm_fails_when_manifest_ref_not_found():
     """val_d0da4a75 regression: confirm must reject unknown manifest_ref."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b1") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/confirm",
             json={
@@ -1093,7 +1124,7 @@ def test_confirm_fails_when_manifest_ref_not_found():
 def test_confirm_fails_when_preflight_hash_mismatch():
     """val_d0da4a75 regression: confirm must reject when preflight_hash
     does not match the manifest's bound hash."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b-mismatch") as client:
         pre = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-mismatch"},
@@ -1116,7 +1147,7 @@ def test_confirm_fails_when_preflight_hash_mismatch():
 
 def test_confirm_rejects_invalid_preflight_hash_shape():
     """val_d0da4a75 #3: short or non-hex preflight_hash rejected."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b1") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/confirm",
             json={
@@ -1207,7 +1238,7 @@ def test_validate_manifest_ref_rejects_traversal_and_alias():
 def test_post_rebuild_confirm_rejects_unsupported_operation():
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.auth_deps import require_user
 
     app = _make_rebuild_test_app(board_id="b1")
 

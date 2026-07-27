@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -36,7 +36,8 @@ from okto_pulse.core.kg.agent.extractors.source_ref import (
     content_hash8,
     per_concept_source_ref,
 )
-from okto_pulse.core.models.db import CardType
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from sqlalchemy_test_models import CardType
 
 
 # --------------------------------------------------------------------------
@@ -162,7 +163,7 @@ def test_reorder_and_insertion_do_not_change_other_refs():
 
 
 @pytest.mark.asyncio
-async def test_per_candidate_probe_skips_only_existing_concept(caplog):
+async def test_per_candidate_probe_skips_only_existing_concept(caplog, monkeypatch):
     """AC3: when ONE concept already exists in the KG, the other distinct
     concepts of the same type are still emitted — the probe is per-candidate,
     not the old any-exists probe that suppressed the whole type."""
@@ -189,43 +190,31 @@ async def test_per_candidate_probe_skips_only_existing_concept(caplog):
     # The Redis concept already exists; the probe must return True ONLY for it.
     existing_ref = per_concept_source_ref("spec:spec-1", "alternative", _ALT_REDIS)
 
-    class _Res:
-        def __init__(self, count: int):
-            self._rows = [[count]]
-            self._idx = 0
-
-        def has_next(self) -> bool:
-            return self._idx < len(self._rows)
-
-        def get_next(self):
-            v = self._rows[self._idx]
-            self._idx += 1
-            return v
-
-    class _Conn:
-        def execute(self, cypher: str, params: dict | None = None):
+    class _CypherExecutor:
+        def execute_read_only(
+            self,
+            board_id: str,  # noqa: ARG002
+            cypher: str,  # noqa: ARG002
+            params: dict | None = None,
+            *,
+            max_rows: int = 1000,  # noqa: ARG002
+        ) -> dict:
             ref = (params or {}).get("ref")
-            return _Res(1 if ref == existing_ref else 0)
-
-    class _Wrapper:
-        def __init__(self, board_id):  # noqa: ARG002
-            pass
-
-        def __enter__(self):
-            return (None, _Conn())
-
-        def __exit__(self, *a):
-            return False
+            return {
+                "rows": [[1 if ref == existing_ref else 0]],
+                "row_count": 1,
+                "truncated": False,
+            }
 
     event = CardMoved(
         board_id="board-1", card_id="card-1",
         from_status="validation", to_status="done",
     )
-    with patch("okto_pulse.core.kg.schema.BoardConnection", _Wrapper):
-        with caplog.at_level(
-            logging.DEBUG, logger="okto_pulse.core.events.cognitive_extraction"
-        ):
-            await handler.handle(event, sess)
+    monkeypatch.setattr(get_kg_registry(), "cypher_executor", _CypherExecutor())
+    with caplog.at_level(
+        logging.DEBUG, logger="okto_pulse.core.events.cognitive_extraction"
+    ):
+        await handler.handle(event, sess)
 
     cand_refs = [
         getattr(r, "source_ref", None)

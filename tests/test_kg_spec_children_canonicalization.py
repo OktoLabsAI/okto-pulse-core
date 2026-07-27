@@ -14,14 +14,15 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     begin_consolidation,
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import open_board_connection
+from kg_schema_testing import open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -30,11 +31,11 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 
 
 def _full_spec(status: str) -> dict:
@@ -205,7 +206,7 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         )
 
     assert commit.connectivity["passed"] is True
-    assert _count_api_implements_constraint(
+    assert await _count_api_implements_constraint_async(
         board_id,
         api_title="POST /login",
         tr_title="Login API emits audit events",
@@ -222,7 +223,7 @@ def _seed_decision(board_id, *, title, human_curated):
     ``belongs_to`` it, so the source_artifact_ref merge has a CONNECTED node to
     reuse (the connectivity guard otherwise rejects an isolated node). Returns
     the Decision's source_artifact_ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     spec_ref = f"spec:{uuid.uuid4().hex[:10]}"
@@ -254,16 +255,16 @@ def _seed_decision(board_id, *, title, human_curated):
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Entity", root_id,
             _attrs("Spec root", "", spec_ref, False, "canonical"),
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", node_id,
             _attrs(title, "ORIGINAL CONTENT", decision_ref, human_curated, "working"),
         )
@@ -279,31 +280,66 @@ def _seed_decision(board_id, *, title, human_curated):
 
 
 def _read_decision(board_id, source_ref):
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
             "MATCH (n:Learning) WHERE n.source_artifact_ref = $ref "
-            "RETURN count(n), coalesce(n.graph_layer, 'legacy_unknown'), "
-            "n.maturity_status, n.title, n.content",
+            "RETURN n.id, coalesce(n.graph_layer, 'legacy_unknown'), "
+            "n.maturity_status, n.title, n.content, n.superseded_by",
             {"ref": source_ref},
         )
+        rows = []
         try:
-            if res.has_next():
+            while res.has_next():
                 row = res.get_next()
-                return {
-                    "count": int(row[0]),
-                    "graph_layer": row[1],
-                    "maturity_status": row[2],
-                    "title": row[3],
-                    "content": row[4],
-                }
+                rows.append(row)
         finally:
             try:
                 res.close()
             except Exception:
                 pass
+        active = next((row for row in rows if not row[5]), None)
+        if active is not None:
+            return {
+                "count": len(rows),
+                "superseded_count": sum(bool(row[5]) for row in rows),
+                "graph_layer": active[1],
+                "maturity_status": active[2],
+                "title": active[3],
+                "content": active[4],
+            }
     return None
+
+
+async def _count_api_implements_constraint_async(
+    board_id: str,
+    *,
+    api_title: str,
+    tr_title: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_api_implements_constraint(
+            board_id, api_title=api_title, tr_title=tr_title
+        ),
+        task_name="tests.spec_children.count_api_constraint",
+    )
+
+
+async def _seed_decision_async(board_id, *, title, human_curated):
+    return await run_blocking_graph_io(
+        lambda: _seed_decision(
+            board_id, title=title, human_curated=human_curated
+        ),
+        task_name="tests.spec_children.seed_decision",
+    )
+
+
+async def _read_decision_async(board_id, source_ref):
+    return await run_blocking_graph_io(
+        lambda: _read_decision(board_id, source_ref),
+        task_name="tests.spec_children.read_decision",
+    )
 
 
 async def _promote(board_id, agent_id, db_factory, *, source_ref, cand_id):
@@ -353,7 +389,7 @@ async def test_promotion_curated_promotes_maturity_preserves_content(
 ):
     # A human-curated WORKING decision: promotion must lift graph_layer to
     # canonical (maturity metadata) WITHOUT overwriting the curated content.
-    source_ref = _seed_decision(
+    source_ref = await _seed_decision_async(
         board_id, title="CURATED TITLE", human_curated=True
     )
 
@@ -363,7 +399,7 @@ async def test_promotion_curated_promotes_maturity_preserves_content(
     assert commit.nodes_merged == 1  # reused, not duplicated
     assert commit.nodes_added == 0
 
-    node = _read_decision(board_id, source_ref)
+    node = await _read_decision_async(board_id, source_ref)
     assert node is not None
     assert node["count"] == 1  # no duplicate
     assert node["graph_layer"] == "canonical"  # maturity METADATA promoted
@@ -376,21 +412,23 @@ async def test_promotion_curated_promotes_maturity_preserves_content(
 async def test_promotion_non_curated_promotes_and_updates_content(
     board_id, agent_id, db_factory, board_handle,
 ):
-    # A non-curated WORKING decision: promotion lifts the layer AND updates the
-    # agent-managed content (current behavior, unchanged by the fix).
-    source_ref = _seed_decision(
+    # A title change is identity-bearing under MKG-D: promotion creates a
+    # canonical successor and preserves the previous working state as history.
+    source_ref = await _seed_decision_async(
         board_id, title="OLD TITLE", human_curated=False
     )
 
     commit = await _promote(
         board_id, agent_id, db_factory, source_ref=source_ref, cand_id="cand_agent"
     )
-    assert commit.nodes_merged == 1
+    assert commit.nodes_superseded == 1
+    assert commit.nodes_merged == 0
     assert commit.nodes_added == 0
 
-    node = _read_decision(board_id, source_ref)
+    node = await _read_decision_async(board_id, source_ref)
     assert node is not None
-    assert node["count"] == 1
+    assert node["count"] == 2
+    assert node["superseded_count"] == 1
     assert node["graph_layer"] == "canonical"
     assert node["title"] == "UPDATED TITLE"  # agent-managed content updated
     assert node["content"] == "UPDATED CONTENT"

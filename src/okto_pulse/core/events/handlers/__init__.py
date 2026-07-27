@@ -9,6 +9,8 @@ is complete when drain begins.
 from okto_pulse.core.events.handlers.cancellation_decay import (  # noqa: F401
     CancellationDecayHandler,
     CancellationRestoreHandler,
+    SourceArchiveLifecycleHandler,
+    SourceCancellationLifecycleHandler,
 )
 from okto_pulse.core.events.handlers.cognitive_extraction import (  # noqa: F401
     CognitiveExtractionHandler,
@@ -28,11 +30,14 @@ from okto_pulse.core.events.handlers.card_boost_recompute import (  # noqa: F401
 )
 from okto_pulse.core.events.handlers.kg_decay_tick import (  # noqa: F401
     KGDailyTickHandler,
+    KGDeliveryRedriveTickHandler,
 )
 
 __all__ = [
     "CancellationDecayHandler",
     "CancellationRestoreHandler",
+    "SourceArchiveLifecycleHandler",
+    "SourceCancellationLifecycleHandler",
     "CognitiveExtractionHandler",
     "ConsolidationEnqueuer",
     "DiscoverySelectorCacheInvalidationHandler",
@@ -40,4 +45,5 @@ __all__ = [
     "CardPriorityChangedHandler",
     "CardSeverityChangedHandler",
     "KGDailyTickHandler",
+    "KGDeliveryRedriveTickHandler",
 ]

@@ -26,9 +26,9 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.models.schemas import CardMove, SpecUpdate
 from okto_pulse.core.services.main import CardService, SpecLockedError, SpecService
 from okto_pulse.core.services.resource_gate import ResourceGateService
@@ -386,6 +386,29 @@ async def test_delete_test_scenario_not_found(db_factory):
             await svc.delete_test_scenario(spec_id, USER, "ts_ghost")
 
 
+async def test_delete_spec_removes_only_its_scenario_ids_from_surviving_card(
+    db_factory,
+):
+    _board_id, spec_id, card_id = await _seed_spec(
+        db_factory,
+        scenarios=[
+            {"id": "ts_a", "title": "A", "status": "ready"},
+            {"id": "ts_b", "title": "B", "status": "ready"},
+        ],
+        card_scenarios=["ts_a", "foreign_scenario", "ts_b"],
+    )
+
+    async with db_factory() as db:
+        assert await SpecService(db).delete_spec(spec_id, USER)
+        await db.commit()
+
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        assert card is not None
+        assert card.spec_id is None
+        assert card.test_scenario_ids == ["foreign_scenario"]
+
+
 # ====================================================================
 # TC-6 — status guard (in_progress allowed, locked specs need executable test card)
 # ====================================================================
@@ -565,7 +588,7 @@ async def test_status_path_preserves_non_target_scenarios(db_factory):
 
 @pytest_asyncio.fixture
 async def rest_client(db_factory):
-    from okto_pulse.core.api.specs import router as specs_router
+    from okto_pulse.community.api.specs import router as specs_router
 
     _b, approved_id, _c = await _seed_spec(
         db_factory,
@@ -586,6 +609,7 @@ async def rest_client(db_factory):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app), approved_id, validated_id
 
 

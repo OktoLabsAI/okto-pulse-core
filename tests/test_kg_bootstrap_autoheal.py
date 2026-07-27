@@ -24,7 +24,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     bootstrap_board_graph,
     board_kuzu_path,
     close_all_connections,
@@ -32,6 +32,20 @@ from okto_pulse.core.kg.schema import (
     open_board_connection,
     reset_bootstrap_cache_for_tests,
 )
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    from kg_registry_testing import (
+        RealBoardCypherExecutorForTests,
+        RealBoardGraphTransactionForTests,
+        configure_test_kg_registry,
+    )
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +76,21 @@ def _purge_board_graph(board_id: str) -> None:
     if parent.exists() and not any(parent.iterdir()):
         shutil.rmtree(parent, ignore_errors=True)
     reset_bootstrap_cache_for_tests()
+
+
+async def _register_relational_board(db_factory, board_id: str) -> None:
+    """Mirror the real board lifecycle while keeping the graph intentionally cold."""
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name=f"Cold board {board_id}",
+                owner_id="bootstrap-autoheal-test",
+            )
+        )
+        await db.commit()
 
 
 @pytest.fixture
@@ -148,7 +177,7 @@ def test_corrupt_ladybug_wal_is_preserved_and_blocks_rebootstrap(fresh_board, mo
     preserving graph.lbug + graph.lbug.wal is safer than silently creating an
     empty graph.
     """
-    from okto_pulse.core.kg import schema as schema_module
+    from okto_pulse.community.adapters import kg_runtime
 
     path = board_kuzu_path(fresh_board)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,11 +191,11 @@ def test_corrupt_ladybug_wal_is_preserved_and_blocks_rebootstrap(fresh_board, mo
             "Read out invalid WAL record type."
         )
 
-    monkeypatch.setattr(schema_module, "_open_kuzu_db_path_cached", _raise_corrupt)
+    monkeypatch.setattr(kg_runtime, "_open_kuzu_db_path_cached", _raise_corrupt)
     reset_bootstrap_cache_for_tests()
 
     with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
-        schema_module._graph_needs_bootstrap(fresh_board)
+        kg_runtime._graph_needs_bootstrap(fresh_board)
     assert path.exists()
     assert wal_path.exists()
 
@@ -199,8 +228,10 @@ def test_concurrent_opens_serialize_bootstrap(fresh_board):
         except BaseException as exc:  # pragma: no cover — recorded for assert
             errors.append(exc)
 
-    t1 = threading.Thread(target=_worker)
-    t2 = threading.Thread(target=_worker)
+    from contextvars import copy_context
+
+    t1 = threading.Thread(target=copy_context().run, args=(_worker,))
+    t2 = threading.Thread(target=copy_context().run, args=(_worker,))
     t1.start()
     t2.start()
     t1.join(timeout=15)
@@ -242,6 +273,7 @@ async def test_worker_commits_on_cold_board(fresh_board, db_factory):
     # Confirm we truly start cold.
     path = board_kuzu_path(fresh_board)
     assert not path.exists()
+    await _register_relational_board(db_factory, fresh_board)
 
     agent_id = "system:layer1_worker"
     artifact_id = f"spec-{uuid.uuid4().hex[:8]}"
@@ -338,6 +370,7 @@ async def test_event_triggered_consolidation_on_cold_board(fresh_board, db_facto
     # Double-check we did not accidentally seed the graph.
     path = board_kuzu_path(fresh_board)
     assert not path.exists()
+    await _register_relational_board(db_factory, fresh_board)
 
     agent_id = "system:layer1_worker"
     artifact_id = f"spec-{uuid.uuid4().hex[:8]}"

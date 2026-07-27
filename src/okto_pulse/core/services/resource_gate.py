@@ -1,39 +1,36 @@
-"""Resource Gate domain service.
-
-The gate intentionally persists only explicit N/A marks. Provided resources
-remain inferred from the existing Architecture, Mockup and Knowledge artifacts.
-"""
+"""Resource Gate application policy over an edition-owned relational adapter."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterable, Literal
+from typing import Any
 
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-from okto_pulse.core.models.db import (
-    ArchitectureDesign,
-    Card,
-    CardStatus,
-    CardType,
-    Ideation,
-    IdeationKnowledgeBase,
-    Refinement,
-    RefinementKnowledgeBase,
-    ResourceNotApplicable,
-    Spec,
-    SpecKnowledgeBase,
+from okto_pulse.core.ports.relational_services import (
+    resolve_resource_gate_adapter_factory,
 )
 from okto_pulse.core.services.architecture import (
-    ArchitectureDesignRepository,
     ArchitectureFindingGate,
     ArchitecturePropagationEligibilityPolicy,
 )
 from okto_pulse.core.services.architecture_observability import (
     observe_architecture_done_blocker,
+)
+from okto_pulse.core.services.resource_gate_contracts import (
+    ENTITY_TYPES,
+    RESOURCE_TYPES,
+    SOURCE_CHANNELS,
+    EntityType,
+    ResourceGateError,
+    ResourceGateJustificationRequired,
+    ResourceGateNotFound,
+    ResourceGateViolation,
+    ResourceState,
+    ResourceType,
+    SourceChannel,
+)
+from okto_pulse.core.services.resource_gate_authority import (
+    ResourceGateAuthorityContext,
+    ResourceGateAuthorityPolicy,
+    resource_gate_authority_policy,
 )
 from okto_pulse.core.services.resource_lineage import (
     ResolvedResourceLineage,
@@ -42,84 +39,43 @@ from okto_pulse.core.services.resource_lineage import (
     observe_resource_lineage_coverage_uncovered,
 )
 
-EntityType = Literal["ideation", "refinement", "spec", "card"]
-ResourceType = Literal["architecture", "mockup", "knowledge_base"]
-ResourceState = Literal["provided", "not_applicable", "missing"]
-SourceChannel = Literal["ui", "api", "mcp"]
-
-ENTITY_TYPES: tuple[str, ...] = ("ideation", "refinement", "spec", "card")
-RESOURCE_TYPES: tuple[str, ...] = ("architecture", "mockup", "knowledge_base")
-SOURCE_CHANNELS: tuple[str, ...] = ("ui", "api", "mcp")
-
-
-class ResourceGateError(ValueError):
-    """Base exception carrying a stable machine-readable error code."""
-
-    def __init__(self, code: str, message: str, *, details: dict[str, Any] | None = None):
-        super().__init__(message)
-        self.code = code
-        self.details = details or {}
-
-
-class ResourceGateNotFound(ResourceGateError):
-    """Raised when the target entity does not exist on the requested board."""
-
-    def __init__(self, entity_type: str, entity_id: str, board_id: str):
-        super().__init__(
-            "entity_not_found",
-            f"{entity_type} '{entity_id}' was not found on board '{board_id}'.",
-            details={"entity_type": entity_type, "entity_id": entity_id, "board_id": board_id},
-        )
-
-
-class ResourceGateJustificationRequired(ResourceGateError):
-    """Raised when API/MCP attempts to mark N/A without justification."""
-
-    def __init__(self, source_channel: str):
-        super().__init__(
-            "justification_required",
-            f"Justification is required when source_channel is '{source_channel}'.",
-            details={"source_channel": source_channel},
-        )
-
-
-class ResourceGateViolation(ResourceGateError):
-    """Raised when a Resource Gate blocks a transition."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        *,
-        details: dict[str, Any] | None = None,
-    ):
-        super().__init__(code, message, details=details)
-
-
-@dataclass(frozen=True)
-class _EntityRef:
-    entity_type: str
-    entity_id: str
-    title: str | None
-    entity: Any
-
 
 class ResourceGateService:
-    """Resolve Resource Gate state for SDLC entities."""
+    """Own invariant gate decisions while delegating persistence and mapping."""
 
     warning_message = (
         "WARNING: marking this resource as N/A may lead to partial or incorrect "
         "solutions if the resource is actually needed."
     )
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(
+        self,
+        relational_context: object | None = None,
+        *,
+        db: object | None = None,
+    ) -> None:
+        if relational_context is None:
+            relational_context = db
+        self.db = relational_context
+        self._adapter = resolve_resource_gate_adapter_factory()(
+            relational_context
+        )
 
     @staticmethod
     def is_spec_resource_task_coverage_required(board: Any | None) -> bool:
-        """Return the board-level Level 2 gate setting, defaulting to enabled."""
-        board_settings = (getattr(board, "settings", None) or {}) if board else {}
-        return bool(board_settings.get("require_spec_resource_task_coverage", True))
+        settings = (getattr(board, "settings", None) or {}) if board else {}
+        return bool(settings.get("require_spec_resource_task_coverage", True))
+
+    @staticmethod
+    def is_spec_architecture_required_for_validation(board: Any | None) -> bool:
+        settings = (getattr(board, "settings", None) or {}) if board else {}
+        if not bool(settings.get("auto_derive_spec_resources_enabled", False)):
+            return False
+        configured = settings.get("auto_derive_spec_resource_types") or []
+        return "architecture" in {
+            str(getattr(resource_type, "value", resource_type))
+            for resource_type in configured
+        }
 
     async def get_summary(
         self,
@@ -127,8 +83,6 @@ class ResourceGateService:
         entity_type: EntityType | str,
         entity_id: str,
     ) -> dict[str, Any]:
-        """Return Provided/N/A/Missing summary for the entity."""
-        self._validate_entity_type(entity_type)
         lineage = await self._resolve_resource_lineage(
             board_id,
             str(entity_type),
@@ -141,64 +95,8 @@ class ResourceGateService:
             entity_type=str(entity_type),
             entity_id=entity_id,
             lineage=lineage,
+            authority_context="entity_completion",
         )
-
-    async def get_effective_resources(
-        self,
-        board_id: str,
-        entity_type: EntityType | str,
-        entity_id: str,
-    ) -> dict[str, Any]:
-        """Return hydrated effective resources with provenance metadata.
-
-        Resource Gate summaries intentionally expose lightweight refs for gate
-        evaluation. This read model is for UI rendering: direct resources remain
-        editable by the owning screen, while inherited resources are hydrated and
-        marked read-only without changing their original id/provenance.
-        """
-        self._validate_entity_type(entity_type)
-        lineage = await self._resolve_resource_lineage(
-            board_id,
-            str(entity_type),
-            entity_id,
-            include_coverage=False,
-            projection_profile="full",
-        )
-        resources: dict[str, list[dict[str, Any]]] = {
-            resource_type: [] for resource_type in RESOURCE_TYPES
-        }
-
-        for state in lineage.resource_states:
-            resource_type = state.resource_type
-            for ref in state.direct_refs:
-                resources[resource_type].append(
-                    await self._effective_resource_item(
-                        board_id=board_id,
-                        resource_type=resource_type,
-                        ref=dict(ref),
-                        attachment_kind="direct",
-                        inherited=False,
-                    )
-                )
-            for ref in state.inherited_refs:
-                resources[resource_type].append(
-                    await self._effective_resource_item(
-                        board_id=board_id,
-                        resource_type=resource_type,
-                        ref=dict(ref),
-                        attachment_kind="inherited_reference",
-                        inherited=True,
-                    )
-                )
-
-        return {
-            "board_id": board_id,
-            "entity_type": str(entity_type),
-            "entity_id": entity_id,
-            "resources": resources,
-            "lineage_counts": lineage.counts,
-            "resource_lineage": lineage.to_dict(),
-        }
 
     async def _summary_from_lineage(
         self,
@@ -207,29 +105,41 @@ class ResourceGateService:
         entity_type: str,
         entity_id: str,
         lineage: ResolvedResourceLineage,
+        authority_context: ResourceGateAuthorityContext,
     ) -> dict[str, Any]:
-        resources: list[dict[str, Any]] = [
-            self._legacy_resource_state_from_lineage_state(item.to_dict())
+        authority_policy = resource_gate_authority_policy(authority_context)
+        resources = [
+            self._project_resource_authority(
+                self._legacy_resource_state_from_lineage_state(item.to_dict()),
+                authority_policy,
+            )
             for item in lineage.resource_states
         ]
-
         missing_resources = [
-            item for item in resources if item["state"] == "missing"
+            item
+            for item in resources
+            if item["state"] == "missing" and item["authority"] == "blocking"
+        ]
+        advisory_resources = [
+            item for item in resources if item["authority"] == "advisory"
         ]
         architecture_resource = next(
             (
-                item for item in resources
+                item
+                for item in resources
                 if item["resource_type"] == "architecture"
             ),
             None,
         )
-        architecture_findings_result = await ArchitectureFindingGate(self.db).evaluate(
+        findings_result = await ArchitectureFindingGate(self.db).evaluate(
             board_id=board_id,
-            owner_type=str(entity_type),
+            owner_type=entity_type,
             owner_id=entity_id,
-            architecture_refs=self._effective_architecture_refs(architecture_resource),
+            architecture_refs=self._effective_architecture_refs(
+                architecture_resource
+            ),
         )
-        architecture_findings = architecture_findings_result["architecture_findings"]
+        architecture_findings = findings_result["architecture_findings"]
         architecture_propagation = await self._architecture_propagation_block(
             architecture_resource=architecture_resource,
         )
@@ -256,6 +166,10 @@ class ResourceGateService:
                     ),
                 }
             )
+        lineage_payload = self._project_lineage_authority(
+            lineage.to_dict(),
+            authority_policy,
+        )
         return {
             "board_id": board_id,
             "entity_type": entity_type,
@@ -263,14 +177,23 @@ class ResourceGateService:
             "resources": resources,
             "blocking": bool(missing_resources),
             "missing_resources": missing_resources,
+            "advisory_resources": advisory_resources,
+            "advisory_missing_resources": [
+                item
+                for item in advisory_resources
+                if item["state"] == "missing"
+            ],
+            "authority_policy": authority_policy.to_dict(),
             "warnings": warnings,
             "architecture_findings": architecture_findings,
             "architecture_findings_blocking": bool(
                 architecture_findings["active_count"]
             ),
             "architecture_propagation": architecture_propagation,
-            "architecture_propagation_blocking": architecture_propagation["blocking"],
-            "resource_lineage": lineage.to_dict(),
+            "architecture_propagation_blocking": architecture_propagation[
+                "blocking"
+            ],
+            "resource_lineage": lineage_payload,
             "lineage_counts": lineage.counts,
         }
 
@@ -279,12 +202,11 @@ class ResourceGateService:
         *,
         architecture_resource: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Spec C: distinguish a MISSING architecture resource from an INHERITED one whose
-        SOURCE is ineligible for propagation (TR 83009a1e). Read-only — surfaces the
-        canonical eligibility verdict + actionable remediation so the operator fixes the
-        SOURCE design instead of marking architecture N/A artificially. Acknowledgement is
-        audit-only and never authorizes propagation; this method never mutates state."""
-        empty: dict[str, Any] = {"blocking": False, "ineligible_sources": [], "remediation": None}
+        empty: dict[str, Any] = {
+            "blocking": False,
+            "ineligible_sources": [],
+            "remediation": None,
+        }
         if not architecture_resource:
             return empty
         inherited = list(architecture_resource.get("inherited_refs") or [])
@@ -294,7 +216,9 @@ class ResourceGateService:
         ineligible: list[dict[str, Any]] = []
         seen: set[str] = set()
         for ref in inherited:
-            design_id = str(ref.get("id") or ref.get("source_design_id") or "").strip()
+            design_id = str(
+                ref.get("id") or ref.get("source_design_id") or ""
+            ).strip()
             if not design_id or design_id in seen:
                 continue
             seen.add(design_id)
@@ -307,12 +231,62 @@ class ResourceGateService:
             "blocking": True,
             "ineligible_sources": ineligible,
             "remediation": (
-                "An inherited Architecture Design source is ineligible for propagation. "
-                "Fix the SOURCE design (resolve the active critic findings or restore its "
-                "verdict) and re-run the architecture critic, then retry the copy. "
-                "Acknowledgement is audit-only and does NOT authorize propagation; do not "
-                "mark architecture N/A to bypass this."
+                "An inherited Architecture Design source is ineligible for "
+                "propagation. Fix the SOURCE design (resolve the active critic "
+                "findings or restore its verdict) and re-run the architecture "
+                "critic, then retry the copy. Acknowledgement is audit-only and "
+                "does NOT authorize propagation; do not mark architecture N/A "
+                "to bypass this."
             ),
+        }
+
+    async def get_effective_resources(
+        self,
+        board_id: str,
+        entity_type: EntityType | str,
+        entity_id: str,
+    ) -> dict[str, Any]:
+        lineage = await self._resolve_resource_lineage(
+            board_id,
+            str(entity_type),
+            entity_id,
+            include_coverage=False,
+            projection_profile="full",
+        )
+        resources: dict[str, list[dict[str, Any]]] = {
+            resource_type: [] for resource_type in RESOURCE_TYPES
+        }
+        representatives: dict[str, Any] = {}
+        for attachment in lineage.attachments:
+            if (
+                not attachment.effective
+                or attachment.attachment_kind == "not_applicable"
+            ):
+                continue
+            current = representatives.get(attachment.unique_resource_id)
+            if current is None or (
+                current.attachment_kind != "direct"
+                and attachment.attachment_kind == "direct"
+            ):
+                representatives[attachment.unique_resource_id] = attachment
+
+        for attachment in representatives.values():
+            resources[attachment.resource_type].append(
+                await self._effective_resource_item(
+                    board_id=board_id,
+                    resource_type=attachment.resource_type,
+                    ref=dict(attachment.raw),
+                    attachment_kind=attachment.attachment_kind,
+                    inherited=attachment.inherited,
+                )
+            )
+        return {
+            "board_id": board_id,
+            "entity_type": str(entity_type),
+            "entity_id": entity_id,
+            "resources": resources,
+            "lineage_counts": lineage.counts,
+            "resource_lineage": lineage.to_dict(),
         }
 
     async def _resolve_resource_lineage(
@@ -322,7 +296,7 @@ class ResourceGateService:
         entity_id: str,
         *,
         include_coverage: bool,
-        projection_profile: Literal["legacy", "summary", "full"],
+        projection_profile: str,
     ) -> ResolvedResourceLineage:
         try:
             return await ResolvedResourceLineageService(self).resolve(
@@ -348,6 +322,56 @@ class ResourceGateService:
                 },
             ) from exc
 
+    async def _effective_resource_item(self, **request: Any) -> dict[str, Any]:
+        ref = dict(request["ref"])
+        inherited = bool(request["inherited"])
+        metadata = {
+            "resource_type": request["resource_type"],
+            "resource_id": ref.get("id"),
+            "id": ref.get("id"),
+            "title": ref.get("title"),
+            "attachment_kind": request["attachment_kind"],
+            "inherited": inherited,
+            "read_only": inherited or ref.get("source_entity_type") == "card",
+            "source_entity_type": ref.get("source_entity_type"),
+            "source_entity_id": ref.get("source_entity_id"),
+            "source_entity_title": ref.get("source_entity_title"),
+            "provenance": {
+                "source_entity_type": ref.get("source_entity_type"),
+                "source_entity_id": ref.get("source_entity_id"),
+                "source_entity_title": ref.get("source_entity_title"),
+                "resource_id": ref.get("id"),
+            },
+            "ref": ref,
+            "hydrated": False,
+        }
+        try:
+            resource = await self._hydrate_effective_resource(
+                board_id=request["board_id"],
+                resource_type=request["resource_type"],
+                ref=ref,
+            )
+        except Exception as exc:
+            return {**metadata, "hydration_error": str(exc)}
+        if not resource:
+            return {
+                **metadata,
+                "hydration_error": (
+                    "Resource payload not found for effective ref."
+                ),
+            }
+        return {
+            **resource,
+            **metadata,
+            "resource": resource,
+            "hydrated": True,
+        }
+
+    async def _hydrate_effective_resource(
+        self, **request: Any
+    ) -> dict[str, Any] | None:
+        return await self._adapter.hydrate_effective_resource(**request)
+
     async def mark_not_applicable(
         self,
         board_id: str,
@@ -359,33 +383,20 @@ class ResourceGateService:
         justification: str | None = None,
         source_channel: SourceChannel | str = "ui",
     ) -> dict[str, Any]:
-        """Persist an explicit N/A mark and return the updated summary."""
-        self._validate_resource_type(resource_type)
-        self._validate_source_channel(source_channel)
+        self._validate_entity_type(str(entity_type))
+        self._validate_resource_type(str(resource_type))
+        self._validate_source_channel(str(source_channel))
         if source_channel in {"api", "mcp"} and not (justification or "").strip():
-            raise ResourceGateJustificationRequired(source_channel)
-
-        await self._load_entity_ref(board_id, entity_type, entity_id)
-        await self._deactivate_marks(
+            raise ResourceGateJustificationRequired(str(source_channel))
+        mark_id = await self._adapter.save_not_applicable(
             board_id,
-            entity_type,
+            str(entity_type),
             entity_id,
-            resource_type,
-            actor_id=actor_id,
-            reason="superseded by new N/A mark",
-        )
-        mark = ResourceNotApplicable(
-            board_id=board_id,
-            entity_type=str(entity_type),
-            entity_id=entity_id,
-            resource_type=str(resource_type),
-            justification=(justification or None),
+            str(resource_type),
+            actor_id,
+            justification=justification,
             source_channel=str(source_channel),
-            created_by=actor_id,
         )
-        self.db.add(mark)
-        await self.db.flush()
-
         summary = await self.get_summary(board_id, entity_type, entity_id)
         warning = self.warning_message if source_channel in {"api", "mcp"} else None
         if warning:
@@ -393,10 +404,15 @@ class ResourceGateService:
                 {
                     "code": "resource_not_applicable_risk",
                     "message": warning,
-                    "resource_type": resource_type,
+                    "resource_type": str(resource_type),
                 }
             )
-        return {"success": True, "mark_id": mark.id, "summary": summary, "warning": warning}
+        return {
+            "success": True,
+            "mark_id": mark_id,
+            "summary": summary,
+            "warning": warning,
+        }
 
     async def clear_not_applicable(
         self,
@@ -408,19 +424,21 @@ class ResourceGateService:
         *,
         reason: str | None = None,
     ) -> dict[str, Any]:
-        """Deactivate the active N/A mark for an entity/resource type."""
-        self._validate_resource_type(resource_type)
-        await self._load_entity_ref(board_id, entity_type, entity_id)
-        affected = await self._deactivate_marks(
+        self._validate_entity_type(str(entity_type))
+        self._validate_resource_type(str(resource_type))
+        affected = await self._adapter.clear_not_applicable(
             board_id,
-            entity_type,
+            str(entity_type),
             entity_id,
-            resource_type,
-            actor_id=actor_id,
+            str(resource_type),
+            actor_id,
             reason=reason or "cleared",
         )
-        summary = await self.get_summary(board_id, entity_type, entity_id)
-        return {"success": True, "cleared": affected, "summary": summary}
+        return {
+            "success": True,
+            "cleared": affected,
+            "summary": await self.get_summary(board_id, entity_type, entity_id),
+        }
 
     async def validate_entity_completion(
         self,
@@ -428,30 +446,37 @@ class ResourceGateService:
         entity_type: EntityType | str,
         entity_id: str,
     ) -> dict[str, Any]:
-        """Return whether Level 1 completion is allowed."""
+        """Apply the Core Level 1 completion policy to adapter evidence."""
+
         summary = await self.get_summary(board_id, entity_type, entity_id)
-        blocking_resources = [
-            resource
-            for resource in summary["resources"]
-            if resource["state"] == "missing"
-        ]
+        blocking_resources = list(
+            summary.get("missing_resources")
+            or [
+                resource
+                for resource in summary["resources"]
+                if resource["state"] == "missing"
+                and resource_gate_authority_policy(
+                    "entity_completion"
+                ).is_blocking(resource["resource_type"])
+            ]
+        )
         architecture_findings = summary.get("architecture_findings") or {}
-        blocking_findings = list(architecture_findings.get("top_remediation") or [])
+        blocking_findings = list(
+            architecture_findings.get("top_remediation") or []
+        )
         architecture_propagation = summary.get("architecture_propagation") or {}
-        blocking_architecture_propagation = (
+        blocking_propagation = (
             architecture_propagation
             if summary.get("architecture_propagation_blocking")
             else {}
         )
         return {
-            "allowed": (
-                not blocking_resources
-                and not blocking_findings
-                and not blocking_architecture_propagation
+            "allowed": not (
+                blocking_resources or blocking_findings or blocking_propagation
             ),
             "blocking_resources": blocking_resources,
             "blocking_architecture_findings": blocking_findings,
-            "blocking_architecture_propagation": blocking_architecture_propagation,
+            "blocking_architecture_propagation": blocking_propagation,
             "architecture_findings": architecture_findings,
             "summary": summary,
         }
@@ -470,7 +495,9 @@ class ResourceGateService:
             board_id=board_id,
             owner_type=str(entity_type),
             active_count=0,
-            design_count=len(architecture_propagation.get("ineligible_sources") or []),
+            design_count=len(
+                architecture_propagation.get("ineligible_sources") or []
+            ),
             phase=phase,
         )
         raise ResourceGateViolation(
@@ -498,11 +525,15 @@ class ResourceGateService:
         *,
         phase: str = "completion",
     ) -> dict[str, Any]:
-        """Validate Level 1 completion and raise a structured violation on failure."""
-        result = await self.validate_entity_completion(board_id, entity_type, entity_id)
+        """Enforce the Core completion transition and emit stable violations."""
+
+        result = await self.validate_entity_completion(
+            board_id,
+            entity_type,
+            entity_id,
+        )
         if result["allowed"]:
             return result
-
         if result["blocking_resources"]:
             labels = ", ".join(
                 self._resource_label(item["resource_type"])
@@ -511,9 +542,9 @@ class ResourceGateService:
             raise ResourceGateViolation(
                 "resource_gate_missing_resources",
                 (
-                    f"Cannot complete {entity_type} '{entity_id}': "
-                    f"missing mandatory resource(s): {labels}. "
-                    "Attach the resource(s) or mark each one as N/A before completing."
+                    f"Cannot complete {entity_type} '{entity_id}': missing "
+                    f"mandatory resource(s): {labels}. Attach the resource(s) "
+                    "or mark each one as N/A before completing."
                 ),
                 details={
                     "board_id": board_id,
@@ -524,35 +555,30 @@ class ResourceGateService:
                     "summary": result["summary"],
                 },
             )
-
-        architecture_findings = result["architecture_findings"]
-        if not result["blocking_architecture_findings"]:
-            if result["blocking_architecture_propagation"]:
-                self._raise_architecture_propagation_block(
-                    board_id,
-                    entity_type,
-                    entity_id,
-                    phase=phase,
-                    architecture_propagation=result["blocking_architecture_propagation"],
-                    summary=result["summary"],
-                )
-            return result
-
-        label_items = []
-        for item in result["blocking_architecture_findings"][:5]:
-            target = item.get("target_ref") or item.get("path") or "unknown target"
-            label_items.append(f"{item.get('code', 'architecture_warning')} ({target})")
-        labels = ", ".join(label_items)
-        extra = (
-            f" and {len(result['blocking_architecture_findings']) - 5} more"
-            if len(result["blocking_architecture_findings"]) > 5
-            else ""
+        blocking = result["blocking_architecture_findings"]
+        if not blocking and result["blocking_architecture_propagation"]:
+            self._raise_architecture_propagation_block(
+                board_id,
+                entity_type,
+                entity_id,
+                phase=phase,
+                architecture_propagation=result[
+                    "blocking_architecture_propagation"
+                ],
+                summary=result["summary"],
+            )
+        labels = ", ".join(
+            f"{item.get('code', 'architecture_warning')} "
+            f"({item.get('target_ref') or item.get('path') or 'unknown target'})"
+            for item in blocking[:5]
         )
+        extra = f" and {len(blocking) - 5} more" if len(blocking) > 5 else ""
+        findings = result["architecture_findings"]
         observe_architecture_done_blocker(
             board_id=board_id,
             owner_type=str(entity_type),
-            active_count=int(architecture_findings.get("active_count") or 0),
-            design_count=int(architecture_findings.get("design_count") or 0),
+            active_count=int(findings.get("active_count") or 0),
+            design_count=int(findings.get("design_count") or 0),
             phase=phase,
         )
         raise ResourceGateViolation(
@@ -568,9 +594,54 @@ class ResourceGateService:
                 "entity_type": str(entity_type),
                 "entity_id": entity_id,
                 "phase": phase,
-                "architecture_findings": architecture_findings,
-                "blocking_architecture_findings": result["blocking_architecture_findings"],
+                "architecture_findings": findings,
+                "blocking_architecture_findings": blocking,
                 "summary": result["summary"],
+            },
+        )
+
+    async def validate_or_raise_spec_architecture_validation_resource(
+        self,
+        board_id: str,
+        spec_id: str,
+        *,
+        board: Any | None,
+        phase: str,
+    ) -> dict[str, Any]:
+        if not self.is_spec_architecture_required_for_validation(board):
+            return {
+                "allowed": True,
+                "enabled": False,
+                "board_id": board_id,
+                "spec_id": spec_id,
+                "blocking_resources": [],
+            }
+        result = await self.validate_entity_completion(board_id, "spec", spec_id)
+        missing = [
+            resource
+            for resource in result["blocking_resources"]
+            if resource["resource_type"] == "architecture"
+        ]
+        if not missing:
+            return result
+        raise ResourceGateViolation(
+            "resource_gate_spec_missing_architecture",
+            (
+                "Cannot validate spec: Architecture is required by the board's "
+                "Spec resource propagation policy and is still missing. Attach "
+                "an Architecture Design to the spec or mark Architecture as N/A "
+                "with justification before validation."
+            ),
+            details={
+                "board_id": board_id,
+                "spec_id": spec_id,
+                "phase": phase,
+                "blocking_resources": missing,
+                "summary": result["summary"],
+                "policy": {
+                    "auto_derive_spec_resources_enabled": True,
+                    "required_resource_type": "architecture",
+                },
             },
         )
 
@@ -582,63 +653,31 @@ class ResourceGateService:
         *,
         phase: str = "completion",
     ) -> dict[str, Any]:
-        """Bloqueia a completion quando os designs referenciados têm findings
-        ativos — SEM arrastar o gate de recursos Level 1.
-
-        Investigação 2026-06-10: spec→done validava cognitive closeout e
-        Level 2 task coverage, mas nunca passava pelo ArchitectureFindingGate
-        (que vivia apenas em validate_or_raise_entity_completion, usado por
-        card/ideation/refinement). Specs com findings ativos completavam.
-        Este método isola o gate de findings para a transição de spec, onde
-        a obrigação de recursos já é coberta pelo Level 2.
-        """
         summary = await self.get_summary(board_id, entity_type, entity_id)
-        architecture_findings = summary.get("architecture_findings") or {}
-        blocking = list(architecture_findings.get("top_remediation") or [])
+        findings = summary.get("architecture_findings") or {}
+        blocking = list(findings.get("top_remediation") or [])
         if not blocking:
-            architecture_propagation = summary.get("architecture_propagation") or {}
+            propagation = summary.get("architecture_propagation") or {}
             if summary.get("architecture_propagation_blocking"):
                 self._raise_architecture_propagation_block(
                     board_id,
                     entity_type,
                     entity_id,
                     phase=phase,
-                    architecture_propagation=architecture_propagation,
+                    architecture_propagation=propagation,
                     summary=summary,
                 )
             return summary
-
-        label_items = []
-        for item in blocking[:5]:
-            target = item.get("target_ref") or item.get("path") or "unknown target"
-            label_items.append(f"{item.get('code', 'architecture_warning')} ({target})")
-        labels = ", ".join(label_items)
-        extra = f" and {len(blocking) - 5} more" if len(blocking) > 5 else ""
-        observe_architecture_done_blocker(
-            board_id=board_id,
-            owner_type=str(entity_type),
-            active_count=int(architecture_findings.get("active_count") or 0),
-            design_count=int(architecture_findings.get("design_count") or 0),
+        self._raise_architecture_findings_block(
+            board_id,
+            entity_type,
+            entity_id,
             phase=phase,
+            findings=findings,
+            blocking=blocking,
+            summary=summary,
         )
-        raise ResourceGateViolation(
-            "architecture_findings_block_done",
-            (
-                f"Cannot complete {entity_type} '{entity_id}': active "
-                f"Architecture Design finding(s) remain: {labels}{extra}. "
-                "Resolve the findings by updating the architecture design; "
-                "warning acknowledgement is audit-only and does not bypass Done."
-            ),
-            details={
-                "board_id": board_id,
-                "entity_type": str(entity_type),
-                "entity_id": entity_id,
-                "phase": phase,
-                "architecture_findings": architecture_findings,
-                "blocking_architecture_findings": blocking,
-                "summary": summary,
-            },
-        )
+        raise AssertionError("unreachable")
 
     async def validate_spec_resource_task_coverage(
         self,
@@ -646,13 +685,11 @@ class ResourceGateService:
         spec_id: str,
         *,
         enabled: bool = True,
+        authority_context: ResourceGateAuthorityContext = "spec_validation",
     ) -> dict[str, Any]:
-        """Validate that every effective spec resource is covered by a task.
+        """Apply Level 2 coverage policy to lineage and task evidence."""
 
-        Level 2 only applies to resources actually provided to the spec, either
-        directly or inherited. N/A and Missing states remain Level 1 signals and
-        are not represented as task coverage obligations.
-        """
+        authority_policy = resource_gate_authority_policy(authority_context)
         lineage = await self._resolve_resource_lineage(
             board_id,
             "spec",
@@ -665,11 +702,26 @@ class ResourceGateService:
             entity_type="spec",
             entity_id=spec_id,
             lineage=lineage,
+            authority_context=authority_context,
         )
-        provided_refs: list[dict[str, Any]] = [
-            obligation.to_dict() for obligation in lineage.coverage_obligations
-        ]
-
+        provided_refs = list(
+            summary["resource_lineage"]["coverage_obligations"]
+        )
+        advisory_refs = list(
+            summary["resource_lineage"]["advisory_coverage_resources"]
+        )
+        if len(provided_refs) + len(advisory_refs) != len(
+            lineage.coverage_obligations
+        ):
+            raise ResourceGateViolation(
+                "resource_gate_authority_projection_incomplete",
+                "Resource Gate authority projection dropped lineage evidence.",
+                details={
+                    "board_id": board_id,
+                    "spec_id": spec_id,
+                    "authority_context": authority_context,
+                },
+            )
         if not enabled or not provided_refs:
             return {
                 "allowed": True,
@@ -677,15 +729,18 @@ class ResourceGateService:
                 "board_id": board_id,
                 "spec_id": spec_id,
                 "required_resources": provided_refs,
+                "advisory_coverage_resources": advisory_refs,
                 "uncovered_resources": [],
+                "authority_policy": authority_policy.to_dict(),
                 "architecture_findings": summary.get("architecture_findings"),
                 "summary": summary,
             }
 
-        task_cards = await self._load_spec_task_cards(spec_id)
-        coverage_ids = await self._collect_task_resource_id_coverage(task_cards)
+        task_cards = await self._adapter.load_spec_task_cards(spec_id)
+        coverage_ids = await self._adapter.collect_task_resource_id_coverage(
+            task_cards
+        )
         uncovered: list[dict[str, Any]] = []
-
         for ref in provided_refs:
             resource_type = ref["resource_type"]
             identities = self._resource_identity_values(ref)
@@ -693,44 +748,43 @@ class ResourceGateService:
             cancelled_ids = coverage_ids[resource_type]["cancelled"]
             if identities and identities.intersection(eligible_ids):
                 continue
-
             if identities and identities.intersection(cancelled_ids):
                 reason = "covered_only_by_cancelled_task"
                 remediation = (
-                    "Attach or copy this resource to at least one non-cancelled task. "
-                    "Cancelled tasks do not count as coverage."
+                    "Attach or copy this resource to at least one non-cancelled "
+                    "task. Cancelled tasks do not count as coverage."
                 )
             else:
                 reason = "uncovered"
                 remediation = (
-                    "Attach or copy this resource directly to at least one non-cancelled task."
+                    "Attach or copy this resource directly to at least one "
+                    "non-cancelled task."
                 )
             observe_resource_lineage_coverage_uncovered(
                 resource_type=resource_type,
                 reason=reason,
             )
-            uncovered.append(
-                {
-                    "resource_type": resource_type,
-                    "resource_id": ref.get("id"),
-                    "unique_resource_id": ref.get("unique_resource_id"),
-                    "resource_title": ref.get("title"),
-                    "source_entity_type": ref.get("source_entity_type"),
-                    "source_entity_id": ref.get("source_entity_id"),
-                    "source_entity_title": ref.get("source_entity_title"),
-                    "origin_evidence": dict(ref.get("origin_evidence") or {}),
-                    "reason": reason,
-                    "remediation": remediation,
-                }
-            )
-
+            uncovered.append({
+                "resource_type": resource_type,
+                "resource_id": ref.get("id"),
+                "unique_resource_id": ref.get("unique_resource_id"),
+                "resource_title": ref.get("title"),
+                "source_entity_type": ref.get("source_entity_type"),
+                "source_entity_id": ref.get("source_entity_id"),
+                "source_entity_title": ref.get("source_entity_title"),
+                "origin_evidence": dict(ref.get("origin_evidence") or {}),
+                "reason": reason,
+                "remediation": remediation,
+            })
         return {
             "allowed": not uncovered,
             "enabled": enabled,
             "board_id": board_id,
             "spec_id": spec_id,
             "required_resources": provided_refs,
+            "advisory_coverage_resources": advisory_refs,
             "uncovered_resources": uncovered,
+            "authority_policy": authority_policy.to_dict(),
             "architecture_findings": summary.get("architecture_findings"),
             "summary": summary,
         }
@@ -743,74 +797,45 @@ class ResourceGateService:
         phase: str,
         enabled: bool = True,
     ) -> dict[str, Any]:
-        """Validate Level 2 coverage and raise a structured violation on failure."""
         result = await self.validate_spec_resource_task_coverage(
             board_id,
             spec_id,
             enabled=enabled,
+            authority_context=phase,
         )
         if result["allowed"]:
-            architecture_findings = result.get("architecture_findings") or {}
-            if phase == "spec_done" and architecture_findings.get("active_count"):
-                top = architecture_findings.get("top_remediation") or []
-                label_items = []
-                for item in top[:5]:
-                    target = item.get("target_ref") or item.get("path") or "unknown target"
-                    label_items.append(f"{item.get('code', 'architecture_warning')} ({target})")
-                labels = ", ".join(label_items)
-                extra = (
-                    f" and {len(top) - 5} more"
-                    if len(top) > 5
-                    else ""
-                )
-                observe_architecture_done_blocker(
-                    board_id=board_id,
-                    owner_type="spec",
-                    active_count=int(architecture_findings.get("active_count") or 0),
-                    design_count=int(architecture_findings.get("design_count") or 0),
+            findings = result.get("architecture_findings") or {}
+            if phase == "spec_done" and findings.get("active_count"):
+                self._raise_architecture_findings_block(
+                    board_id,
+                    "spec",
+                    spec_id,
                     phase=phase,
-                )
-                raise ResourceGateViolation(
-                    "architecture_findings_block_done",
-                    (
-                        "Cannot move spec to 'done': active Architecture Design "
-                        f"finding(s) remain: {labels}{extra}. Resolve the "
-                        "findings by updating the architecture design; warning "
-                        "acknowledgement is audit-only and does not bypass Done."
-                    ),
-                    details={
-                        "board_id": board_id,
-                        "spec_id": spec_id,
-                        "entity_type": "spec",
-                        "entity_id": spec_id,
-                        "phase": phase,
-                        "architecture_findings": architecture_findings,
-                        "blocking_architecture_findings": top,
-                        "summary": result["summary"],
-                    },
+                    findings=findings,
+                    blocking=list(findings.get("top_remediation") or []),
+                    summary=result["summary"],
                 )
             return result
-
-        label_items = []
-        for item in result["uncovered_resources"][:5]:
-            label = self._resource_label(item["resource_type"])
-            if item.get("resource_title"):
-                label = f"{label} ({item['resource_title']})"
-            label_items.append(label)
-        labels = ", ".join(label_items)
-        extra = (
-            f" and {len(result['uncovered_resources']) - 5} more"
-            if len(result["uncovered_resources"]) > 5
-            else ""
+        labels = ", ".join(
+            (
+                f"{self._resource_label(item['resource_type'])} "
+                f"({item['resource_title']})"
+                if item.get("resource_title")
+                else self._resource_label(item["resource_type"])
+            )
+            for item in result["uncovered_resources"][:5]
         )
+        extra_count = len(result["uncovered_resources"]) - 5
+        extra = f" and {extra_count} more" if extra_count > 0 else ""
         raise ResourceGateViolation(
             "resource_gate_spec_task_coverage",
             (
-                "Cannot advance spec: mandatory spec resource(s) are not covered "
-                f"by non-cancelled task cards: {labels}{extra}. "
-                "Copy or attach every effective spec Architecture, Mockup and "
-                "Knowledge Base resource to at least one task, or disable the "
-                "board setting 'require_spec_resource_task_coverage'."
+                "Cannot advance spec: mandatory spec resource(s) are not "
+                "covered by non-cancelled task cards: "
+                f"{labels}{extra}. Copy or attach every effective spec "
+                "Architecture and Mockup resource to at least "
+                "one task, or disable the board setting "
+                "'require_spec_resource_task_coverage'."
             ),
             details={
                 "board_id": board_id,
@@ -822,513 +847,78 @@ class ResourceGateService:
             },
         )
 
-    async def _load_active_marks(
+    def _raise_architecture_findings_block(
         self,
         board_id: str,
-        entity_type: str,
+        entity_type: EntityType | str,
         entity_id: str,
-    ) -> dict[str, ResourceNotApplicable]:
-        result = await self.db.execute(
-            select(ResourceNotApplicable)
-            .where(
-                ResourceNotApplicable.board_id == board_id,
-                ResourceNotApplicable.entity_type == entity_type,
-                ResourceNotApplicable.entity_id == entity_id,
-                ResourceNotApplicable.active.is_(True),
-            )
-            .order_by(ResourceNotApplicable.created_at.desc())
-        )
-        marks: dict[str, ResourceNotApplicable] = {}
-        for mark in result.scalars().all():
-            marks.setdefault(mark.resource_type, mark)
-        return marks
-
-    async def _deactivate_marks(
-        self,
-        board_id: str,
-        entity_type: str,
-        entity_id: str,
-        resource_type: str,
         *,
-        actor_id: str,
-        reason: str,
-    ) -> int:
-        result = await self.db.execute(
-            update(ResourceNotApplicable)
-            .where(
-                ResourceNotApplicable.board_id == board_id,
-                ResourceNotApplicable.entity_type == entity_type,
-                ResourceNotApplicable.entity_id == entity_id,
-                ResourceNotApplicable.resource_type == resource_type,
-                ResourceNotApplicable.active.is_(True),
-            )
-            .values(
-                active=False,
-                cleared_by=actor_id,
-                cleared_at=datetime.now(timezone.utc),
-                clear_reason=reason,
-            )
+        phase: str,
+        findings: dict[str, Any],
+        blocking: list[dict[str, Any]],
+        summary: dict[str, Any],
+    ) -> None:
+        labels = ", ".join(
+            f"{item.get('code', 'architecture_warning')} "
+            f"({item.get('target_ref') or item.get('path') or 'unknown target'})"
+            for item in blocking[:5]
         )
-        return int(result.rowcount or 0)
-
-    async def _load_entity_ref(
-        self,
-        board_id: str,
-        entity_type: str,
-        entity_id: str,
-    ) -> _EntityRef:
-        self._validate_entity_type(entity_type)
-        model, options = self._model_options(entity_type)
-        result = await self.db.execute(
-            select(model)
-            .options(*options)
-            .where(model.id == entity_id, model.board_id == board_id)
+        extra = f" and {len(blocking) - 5} more" if len(blocking) > 5 else ""
+        observe_architecture_done_blocker(
+            board_id=board_id,
+            owner_type=str(entity_type),
+            active_count=int(findings.get("active_count") or 0),
+            design_count=int(findings.get("design_count") or 0),
+            phase=phase,
         )
-        entity = result.scalar_one_or_none()
-        if entity is None:
-            raise ResourceGateNotFound(entity_type, entity_id, board_id)
-        return _EntityRef(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            title=getattr(entity, "title", None),
-            entity=entity,
-        )
-
-    async def load_entity_ref(
-        self,
-        board_id: str,
-        entity_type: str,
-        entity_id: str,
-    ) -> _EntityRef:
-        return await self._load_entity_ref(board_id, entity_type, entity_id)
-
-    async def load_parent_refs(
-        self,
-        board_id: str,
-        root: _EntityRef,
-    ) -> list[_EntityRef]:
-        return await self._load_parent_refs(board_id, root)
-
-    async def collect_refs(self, ref: _EntityRef) -> dict[str, list[dict[str, Any]]]:
-        return await self._collect_refs(ref)
-
-    async def load_active_marks(
-        self,
-        board_id: str,
-        entity_type: str,
-        entity_id: str,
-    ) -> dict[str, ResourceNotApplicable]:
-        return await self._load_active_marks(board_id, entity_type, entity_id)
-
-    def serialize_na_mark(
-        self,
-        mark: ResourceNotApplicable | None,
-        *,
-        effective: bool,
-        source: _EntityRef | None = None,
-    ) -> dict[str, Any] | None:
-        return self._serialize_na_mark(mark, effective=effective, source=source)
-
-    async def _load_parent_refs(self, board_id: str, root: _EntityRef) -> list[_EntityRef]:
-        entity = root.entity
-        parents: list[_EntityRef] = []
-        seen: set[tuple[str, str]] = set()
-
-        async def add_parent(entity_type: str, entity_id: str | None) -> None:
-            if not entity_id or (entity_type, entity_id) in seen:
-                return
-            ref = await self._load_entity_ref(board_id, entity_type, entity_id)
-            seen.add((entity_type, entity_id))
-            parents.append(ref)
-
-        if root.entity_type == "refinement":
-            await add_parent("ideation", getattr(entity, "ideation_id", None))
-        elif root.entity_type == "spec":
-            await add_parent("refinement", getattr(entity, "refinement_id", None))
-            await add_parent("ideation", getattr(entity, "ideation_id", None))
-            if getattr(entity, "refinement_id", None):
-                refinement = parents[0].entity if parents and parents[0].entity_type == "refinement" else None
-                await add_parent("ideation", getattr(refinement, "ideation_id", None))
-        elif root.entity_type == "card":
-            await add_parent("spec", getattr(entity, "spec_id", None))
-            spec_ref = next((p for p in parents if p.entity_type == "spec"), None)
-            spec = spec_ref.entity if spec_ref else None
-            await add_parent("refinement", getattr(spec, "refinement_id", None))
-            await add_parent("ideation", getattr(spec, "ideation_id", None))
-            refinement_ref = next((p for p in parents if p.entity_type == "refinement"), None)
-            refinement = refinement_ref.entity if refinement_ref else None
-            await add_parent("ideation", getattr(refinement, "ideation_id", None))
-
-        return parents
-
-    async def _collect_refs(self, ref: _EntityRef) -> dict[str, list[dict[str, Any]]]:
-        return {
-            "architecture": await self._architecture_refs(ref),
-            "mockup": self._mockup_refs(ref),
-            "knowledge_base": await self._knowledge_refs(ref),
-        }
-
-    async def _load_spec_task_cards(self, spec_id: str) -> list[Card]:
-        result = await self.db.execute(
-            select(Card).where(
-                Card.spec_id == spec_id,
-                Card.card_type == CardType.NORMAL,
-                Card.archived.is_(False),
-            )
-        )
-        return list(result.scalars().all())
-
-    async def _collect_task_resource_id_coverage(
-        self,
-        cards: list[Card],
-    ) -> dict[str, dict[str, set[str]]]:
-        coverage: dict[str, dict[str, set[str]]] = {
-            resource_type: {"eligible": set(), "cancelled": set()}
-            for resource_type in RESOURCE_TYPES
-        }
-        if not cards:
-            return coverage
-
-        cards_by_id = {card.id: card for card in cards}
-        card_ids = list(cards_by_id)
-
-        for card in cards:
-            bucket = "cancelled" if card.status == CardStatus.CANCELLED else "eligible"
-            for item in (card.screen_mockups or []):
-                coverage["mockup"][bucket].update(self._resource_identity_values(item))
-            for item in (card.knowledge_bases or []):
-                coverage["knowledge_base"][bucket].update(self._resource_identity_values(item))
-
-        result = await self.db.execute(
-            select(
-                ArchitectureDesign.card_id.label("card_id"),
-                ArchitectureDesign.id.label("id"),
-                ArchitectureDesign.source_design_id.label("source_design_id"),
-                ArchitectureDesign.source_ref.label("source_ref"),
-            ).where(ArchitectureDesign.card_id.in_(card_ids))
-        )
-        for row in result.mappings().all():
-            card_id = row.get("card_id")
-            if not card_id or card_id not in cards_by_id:
-                continue
-            bucket = (
-                "cancelled"
-                if cards_by_id[card_id].status == CardStatus.CANCELLED
-                else "eligible"
-            )
-            coverage["architecture"][bucket].update(
-                self._resource_identity_values(dict(row))
-            )
-
-        return coverage
-
-    async def _architecture_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
-        result = await self.db.execute(
-            select(
-                ArchitectureDesign.id,
-                ArchitectureDesign.title,
-                ArchitectureDesign.source_design_id,
-                ArchitectureDesign.source_ref,
-            )
-            .where(
-                ArchitectureDesign.board_id == getattr(ref.entity, "board_id"),
-                ArchitectureDesign.parent_type == ref.entity_type,
-                self._architecture_parent_column(ref.entity_type) == ref.entity_id,
-            )
-            .order_by(ArchitectureDesign.created_at.asc())
-        )
-        refs: list[dict[str, Any]] = []
-        for row in result.mappings().all():
-            item = self._artifact_ref(
-                ref,
-                artifact_id=row.get("id"),
-                title=row.get("title"),
-            )
-            if row.get("source_design_id"):
-                item["source_design_id"] = row.get("source_design_id")
-            if row.get("source_ref"):
-                item["source_ref"] = row.get("source_ref")
-            refs.append(item)
-        return refs
-
-    def _mockup_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
-        mockups = getattr(ref.entity, "screen_mockups", None) or []
-        return [
-            self._artifact_ref(
-                ref,
-                artifact_id=(item.get("id") if isinstance(item, dict) else None),
-                title=(
-                    item.get("title") or item.get("name")
-                    if isinstance(item, dict)
-                    else None
-                ),
-            )
-            for item in mockups
-        ]
-
-    async def _knowledge_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
-        entity = ref.entity
-        if ref.entity_type == "card":
-            return [
-                self._artifact_ref(
-                    ref,
-                    artifact_id=item.get("id") if isinstance(item, dict) else None,
-                    title=item.get("title") if isinstance(item, dict) else None,
-                )
-                for item in (getattr(entity, "knowledge_bases", None) or [])
-            ]
-
-        kb_model, fk_column = {
-            "ideation": (IdeationKnowledgeBase, IdeationKnowledgeBase.ideation_id),
-            "refinement": (RefinementKnowledgeBase, RefinementKnowledgeBase.refinement_id),
-            "spec": (SpecKnowledgeBase, SpecKnowledgeBase.spec_id),
-        }[ref.entity_type]
-        result = await self.db.execute(
-            select(kb_model.id, kb_model.title)
-            .where(fk_column == ref.entity_id)
-            .order_by(kb_model.created_at.asc())
-        )
-        return [
-            self._artifact_ref(ref, artifact_id=row[0], title=row[1])
-            for row in result.all()
-        ]
-
-    async def _effective_resource_item(
-        self,
-        *,
-        board_id: str,
-        resource_type: str,
-        ref: dict[str, Any],
-        attachment_kind: str,
-        inherited: bool,
-    ) -> dict[str, Any]:
-        metadata = {
-            "resource_type": resource_type,
-            "resource_id": ref.get("id"),
-            "id": ref.get("id"),
-            "title": ref.get("title"),
-            "attachment_kind": attachment_kind,
-            "inherited": inherited,
-            "read_only": inherited or ref.get("source_entity_type") == "card",
-            "source_entity_type": ref.get("source_entity_type"),
-            "source_entity_id": ref.get("source_entity_id"),
-            "source_entity_title": ref.get("source_entity_title"),
-            "provenance": {
-                "source_entity_type": ref.get("source_entity_type"),
-                "source_entity_id": ref.get("source_entity_id"),
-                "source_entity_title": ref.get("source_entity_title"),
-                "resource_id": ref.get("id"),
+        raise ResourceGateViolation(
+            "architecture_findings_block_done",
+            (
+                f"Cannot complete {entity_type} '{entity_id}': active "
+                f"Architecture Design finding(s) remain: {labels}{extra}. "
+                "Resolve the findings by updating the architecture design; "
+                "warning acknowledgement is audit-only and does not bypass Done."
+            ),
+            details={
+                "board_id": board_id,
+                "entity_type": str(entity_type),
+                "entity_id": entity_id,
+                "phase": phase,
+                "architecture_findings": findings,
+                "blocking_architecture_findings": blocking,
+                "summary": summary,
             },
-            "ref": dict(ref),
-            "hydrated": False,
-        }
-        try:
-            resource = await self._hydrate_effective_resource(
-                board_id=board_id,
-                resource_type=resource_type,
-                ref=ref,
-            )
-        except Exception as exc:  # pragma: no cover - defensive legacy projection
-            return {
-                **metadata,
-                "hydration_error": str(exc),
-            }
-        if not resource:
-            return {
-                **metadata,
-                "hydration_error": "Resource payload not found for effective ref.",
-            }
-        return {
-            **resource,
-            **metadata,
-            "resource": resource,
-            "hydrated": True,
-        }
-
-    async def _hydrate_effective_resource(
-        self,
-        *,
-        board_id: str,
-        resource_type: str,
-        ref: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        if resource_type == "architecture":
-            return await self._hydrate_architecture_ref(ref)
-        if resource_type == "mockup":
-            return await self._hydrate_mockup_ref(board_id, ref)
-        if resource_type == "knowledge_base":
-            return await self._hydrate_knowledge_ref(board_id, ref)
-        return None
-
-    async def _hydrate_architecture_ref(self, ref: dict[str, Any]) -> dict[str, Any] | None:
-        design_id = str(ref.get("id") or "").strip()
-        if not design_id:
-            return None
-        repo = ArchitectureDesignRepository(self.db)
-        design = await repo.get(design_id, include_payloads=True)
-        if design is None:
-            return None
-        return self._dump_model(repo.to_response(design))
-
-    async def _hydrate_mockup_ref(
-        self,
-        board_id: str,
-        ref: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        source = await self._load_source_entity_ref(board_id, ref)
-        if source is None:
-            return None
-        resource_id = str(ref.get("id") or "")
-        for item in getattr(source.entity, "screen_mockups", None) or []:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("id") or "") == resource_id:
-                return dict(item)
-        return None
-
-    async def _hydrate_knowledge_ref(
-        self,
-        board_id: str,
-        ref: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        source = await self._load_source_entity_ref(board_id, ref)
-        if source is None:
-            return None
-        resource_id = str(ref.get("id") or "")
-        if source.entity_type == "card":
-            for item in getattr(source.entity, "knowledge_bases", None) or []:
-                if not isinstance(item, dict):
-                    continue
-                if str(item.get("id") or "") == resource_id:
-                    return dict(item)
-            return None
-
-        kb_model, fk_column, fk_name = {
-            "ideation": (
-                IdeationKnowledgeBase,
-                IdeationKnowledgeBase.ideation_id,
-                "ideation_id",
-            ),
-            "refinement": (
-                RefinementKnowledgeBase,
-                RefinementKnowledgeBase.refinement_id,
-                "refinement_id",
-            ),
-            "spec": (SpecKnowledgeBase, SpecKnowledgeBase.spec_id, "spec_id"),
-        }[source.entity_type]
-        result = await self.db.execute(
-            select(kb_model).where(
-                kb_model.id == resource_id,
-                fk_column == source.entity_id,
-            )
         )
-        kb = result.scalar_one_or_none()
-        if kb is None:
-            return None
-        return {
-            "id": kb.id,
-            fk_name: source.entity_id,
-            "title": kb.title,
-            "description": kb.description,
-            "content": kb.content,
-            "mime_type": kb.mime_type,
-            "source_type": kb.source_type,
-            "source_id": kb.source_id,
-            "source_title": kb.source_title,
-            "source_version": kb.source_version,
-            "source_kb_id": kb.source_kb_id,
-            "root_source_kb_id": kb.root_source_kb_id,
-            "immediate_parent_kb_id": kb.immediate_parent_kb_id,
-            "created_by": kb.created_by,
-            "created_at": self._isoformat(kb.created_at),
-            "updated_at": self._isoformat(kb.updated_at),
-        }
 
-    async def _load_source_entity_ref(
+    async def load_entity_ref(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._adapter.load_entity_ref(*args, **kwargs)
+
+    async def load_parent_refs(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return await self._adapter.load_parent_refs(*args, **kwargs)
+
+    async def collect_refs(self, *args: Any, **kwargs: Any) -> dict[str, list[dict]]:
+        return await self._adapter.collect_refs(*args, **kwargs)
+
+    async def filter_inherited_refs(
         self,
-        board_id: str,
-        ref: dict[str, Any],
-    ) -> _EntityRef | None:
-        source_type = str(ref.get("source_entity_type") or "").strip()
-        source_id = str(ref.get("source_entity_id") or "").strip()
-        if not source_type or not source_id:
-            return None
-        return await self._load_entity_ref(board_id, source_type, source_id)
+        *args: Any,
+        **kwargs: Any,
+    ) -> dict[str, list[dict]]:
+        filter_refs = getattr(self._adapter, "filter_inherited_refs", None)
+        if not callable(filter_refs):
+            return args[2] if len(args) > 2 else kwargs["refs"]
+        return await filter_refs(*args, **kwargs)
 
-    @staticmethod
-    def _dump_model(value: Any) -> dict[str, Any]:
-        if hasattr(value, "model_dump"):
-            return value.model_dump(mode="json")
-        return dict(value)
+    async def load_active_marks(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return await self._adapter.load_active_marks(*args, **kwargs)
 
-    @staticmethod
-    def _isoformat(value: Any) -> str | None:
-        return value.isoformat() if value else None
-
-    @staticmethod
-    def _artifact_ref(
-        ref: _EntityRef,
-        *,
-        artifact_id: str | None,
-        title: str | None,
-    ) -> dict[str, Any]:
-        return {
-            "id": artifact_id,
-            "title": title,
-            "source_entity_type": ref.entity_type,
-            "source_entity_id": ref.entity_id,
-            "source_entity_title": ref.title,
-        }
+    def serialize_na_mark(self, *args: Any, **kwargs: Any) -> dict | None:
+        return self._adapter.serialize_na_mark(*args, **kwargs)
 
     @staticmethod
     def _coverage_obligation_refs(resource: dict[str, Any]) -> list[dict[str, Any]]:
-        """Return the resource refs that must be permeated to task cards.
-
-        Direct spec resources are snapshots of the formalized parent context. When
-        they exist, requiring the parent inherited copies as separate task
-        obligations double-counts the same artifact and makes the gate impossible
-        to satisfy with the public copy tools.
-        """
         direct = list(resource.get("direct_refs") or [])
-        if direct:
-            return direct
-        return list(resource.get("inherited_refs") or [])
-
-    @staticmethod
-    def _effective_architecture_refs(
-        resource: dict[str, Any] | None,
-    ) -> list[dict[str, Any]]:
-        if not resource or resource.get("resource_type") != "architecture":
-            return []
-        direct = list(resource.get("direct_refs") or [])
-        if direct:
-            return direct
-        return list(resource.get("inherited_refs") or [])
-
-    @staticmethod
-    def _resource_identity_values(item: Any) -> set[str]:
-        values: set[str] = set()
-        if isinstance(item, dict):
-            for key in (
-                "id",
-                "origin_id",
-                "source_id",
-                "source_mockup_id",
-                "source_kb_id",
-                "source_design_id",
-            ):
-                value = item.get(key)
-                if value:
-                    text = str(value)
-                    values.add(text)
-                    if text.startswith("cardkb_") and len(text) > len("cardkb_"):
-                        values.add(text[len("cardkb_") :])
-            values.update(ResourceGateService._source_ref_values(item.get("source_ref")))
-            values.update(ResourceGateService._source_ref_values(item.get("origin_ref")))
-            values.update(ResourceGateService._source_ref_values(item.get("source")))
-        elif item:
-            values.add(str(item))
-        return values
+        return direct or list(resource.get("inherited_refs") or [])
 
     @staticmethod
     def _source_ref_values(source_ref: Any) -> set[str]:
@@ -1336,93 +926,41 @@ class ResourceGateService:
             return set()
         text = str(source_ref)
         values = {text}
-        for sep in (":", "/", "\\"):
-            if sep in text:
-                values.add(text.rsplit(sep, 1)[-1])
+        for separator in (":", "/", "\\"):
+            if separator in text:
+                values.add(text.rsplit(separator, 1)[-1])
         return values
 
     @staticmethod
-    def _resolve_state(
-        direct: Iterable[dict[str, Any]],
-        inherited: Iterable[dict[str, Any]],
-        na_mark: ResourceNotApplicable | None,
-    ) -> ResourceState:
+    def _resource_identity_values(item: Any) -> set[str]:
+        if not isinstance(item, dict):
+            return {str(item)} if item else set()
+        values: set[str] = set()
+        for key in (
+            "id",
+            "origin_id",
+            "source_id",
+            "source_mockup_id",
+            "source_kb_id",
+            "source_design_id",
+        ):
+            value = item.get(key)
+            if value:
+                text = str(value)
+                values.add(text)
+                if text.startswith("cardkb_"):
+                    values.add(text[len("cardkb_"):])
+        for key in ("source_ref", "origin_ref", "source"):
+            values.update(ResourceGateService._source_ref_values(item.get(key)))
+        return values
+
+    @staticmethod
+    def _resolve_state(direct: Any, inherited: Any, na_mark: Any) -> ResourceState:
         if list(direct) or list(inherited):
             return "provided"
         if na_mark is not None:
             return "not_applicable"
         return "missing"
-
-    def _serialize_resource_state(
-        self,
-        *,
-        resource_type: str,
-        state: ResourceState,
-        direct: list[dict[str, Any]],
-        inherited: list[dict[str, Any]],
-        na_mark: ResourceNotApplicable | None,
-        na_source: _EntityRef | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "resource_type": resource_type,
-            "state": state,
-            "direct_count": len(direct),
-            "inherited_count": len(inherited),
-            "total_count": len(direct) + len(inherited),
-            "direct_refs": direct,
-            "inherited_refs": inherited,
-            "na_mark": self._serialize_na_mark(
-                na_mark, effective=state == "not_applicable", source=na_source
-            ),
-            "blocking": state == "missing",
-            "reason": None if state != "missing" else "missing",
-            "remediation": self._remediation(resource_type, state),
-        }
-
-    def _legacy_resource_state_from_lineage_state(
-        self,
-        state: dict[str, Any],
-    ) -> dict[str, Any]:
-        resource_type = str(state["resource_type"])
-        resource_state = state["state"]
-        return {
-            **state,
-            "reason": None if resource_state != "missing" else "missing",
-            "remediation": self._remediation(resource_type, resource_state),
-        }
-
-    @staticmethod
-    def _serialize_na_mark(
-        mark: ResourceNotApplicable | None,
-        *,
-        effective: bool,
-        source: _EntityRef | None = None,
-    ) -> dict[str, Any] | None:
-        if mark is None:
-            return None
-        return {
-            "id": mark.id,
-            "active": bool(mark.active),
-            "effective": effective,
-            "inherited": source is not None,
-            "source_entity_type": source.entity_type if source is not None else None,
-            "source_entity_id": source.entity_id if source is not None else None,
-            "justification": mark.justification,
-            "source_channel": mark.source_channel,
-            "created_by": mark.created_by,
-            "created_at": mark.created_at.isoformat() if mark.created_at else None,
-        }
-
-    @staticmethod
-    def _remediation(resource_type: str, state: ResourceState) -> str | None:
-        if state != "missing":
-            return None
-        labels = {
-            "architecture": "Architecture",
-            "mockup": "Mockup",
-            "knowledge_base": "Knowledge Base",
-        }
-        return f"Attach a {labels[resource_type]} resource or mark it as N/A."
 
     @staticmethod
     def _resource_label(resource_type: str) -> str:
@@ -1433,32 +971,105 @@ class ResourceGateService:
         }.get(resource_type, resource_type)
 
     @staticmethod
-    def _model_options(entity_type: str) -> tuple[type[Any], list[Any]]:
-        if entity_type == "ideation":
-            return Ideation, [selectinload(Ideation.architecture_designs)]
-        if entity_type == "refinement":
-            return Refinement, [selectinload(Refinement.architecture_designs)]
-        if entity_type == "spec":
-            return Spec, [selectinload(Spec.architecture_designs)]
-        if entity_type == "card":
-            return Card, [selectinload(Card.architecture_designs)]
-        raise AssertionError(entity_type)
+    def _effective_architecture_refs(
+        resource: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        if not resource or resource.get("resource_type") != "architecture":
+            return []
+        direct = list(resource.get("direct_refs") or [])
+        return direct or list(resource.get("inherited_refs") or [])
+
+    @classmethod
+    def _legacy_resource_state_from_lineage_state(
+        cls,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        resource_type = str(state["resource_type"])
+        resource_state = state["state"]
+        return {
+            **state,
+            "reason": None if resource_state != "missing" else "missing",
+            "remediation": cls._remediation(resource_type, resource_state),
+        }
+
+    @classmethod
+    def _project_resource_authority(
+        cls,
+        state: dict[str, Any],
+        policy: ResourceGateAuthorityPolicy,
+    ) -> dict[str, Any]:
+        resource_type = str(state["resource_type"])
+        authority = policy.authority_for(resource_type)
+        missing = state.get("state") == "missing"
+        projected = {
+            **state,
+            "authority": authority,
+            "blocking": bool(missing and authority == "blocking"),
+        }
+        if missing and authority == "advisory":
+            projected["reason"] = "advisory_missing"
+            projected["remediation"] = (
+                "Attach a Knowledge Base only when it materially improves "
+                "implementation context; its absence does not block this gate."
+            )
+        return projected
+
+    @classmethod
+    def _project_lineage_authority(
+        cls,
+        lineage: dict[str, Any],
+        policy: ResourceGateAuthorityPolicy,
+    ) -> dict[str, Any]:
+        """Project blocking/advisory authority without mutating lineage history."""
+
+        projected = dict(lineage)
+        projected["resource_states"] = [
+            cls._project_resource_authority(dict(state), policy)
+            for state in lineage.get("resource_states") or []
+        ]
+        obligations = [
+            dict(item) for item in lineage.get("coverage_obligations") or []
+        ]
+        projected["coverage_obligations"] = [
+            {
+                **item,
+                "authority": "blocking",
+                "blocking": True,
+            }
+            for item in obligations
+            if policy.is_blocking(str(item["resource_type"]))
+        ]
+        projected["advisory_coverage_resources"] = [
+            {
+                **item,
+                "authority": "advisory",
+                "blocking": False,
+            }
+            for item in obligations
+            if not policy.is_blocking(str(item["resource_type"]))
+        ]
+        projected["authority_policy"] = policy.to_dict()
+        return projected
 
     @staticmethod
-    def _architecture_parent_column(entity_type: str):
-        return {
-            "ideation": ArchitectureDesign.ideation_id,
-            "refinement": ArchitectureDesign.refinement_id,
-            "spec": ArchitectureDesign.spec_id,
-            "card": ArchitectureDesign.card_id,
-        }[entity_type]
+    def _remediation(
+        resource_type: str,
+        state: ResourceState,
+    ) -> str | None:
+        if state != "missing":
+            return None
+        return (
+            f"Attach a {ResourceGateService._resource_label(resource_type)} "
+            "resource or mark it as N/A."
+        )
 
     @staticmethod
     def _validate_entity_type(entity_type: str) -> None:
         if entity_type not in ENTITY_TYPES:
             raise ResourceGateError(
                 "invalid_entity_type",
-                f"Invalid entity_type '{entity_type}'. Expected one of: {', '.join(ENTITY_TYPES)}.",
+                f"Invalid entity_type '{entity_type}'. Expected one of: "
+                f"{', '.join(ENTITY_TYPES)}.",
             )
 
     @staticmethod
@@ -1466,7 +1077,8 @@ class ResourceGateService:
         if resource_type not in RESOURCE_TYPES:
             raise ResourceGateError(
                 "invalid_resource_type",
-                f"Invalid resource_type '{resource_type}'. Expected one of: {', '.join(RESOURCE_TYPES)}.",
+                f"Invalid resource_type '{resource_type}'. Expected one of: "
+                f"{', '.join(RESOURCE_TYPES)}.",
             )
 
     @staticmethod
@@ -1474,5 +1086,23 @@ class ResourceGateService:
         if source_channel not in SOURCE_CHANNELS:
             raise ResourceGateError(
                 "invalid_source_channel",
-                f"Invalid source_channel '{source_channel}'. Expected one of: {', '.join(SOURCE_CHANNELS)}.",
+                f"Invalid source_channel '{source_channel}'. Expected one of: "
+                f"{', '.join(SOURCE_CHANNELS)}.",
             )
+
+
+__all__ = [
+    "ENTITY_TYPES",
+    "RESOURCE_TYPES",
+    "SOURCE_CHANNELS",
+    "EntityType",
+    "ResourceGateError",
+    "ResourceGateJustificationRequired",
+    "ResourceGateNotFound",
+    "ResourceGateService",
+    "ResourceGateViolation",
+    "ResolvedResourceLineageService",
+    "ResourceState",
+    "ResourceType",
+    "SourceChannel",
+]

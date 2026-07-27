@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-from typing import Sequence
+from typing import Any, Sequence
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import Card, CardType, Spec
+from okto_pulse.core.domain.enums import CardType
+from okto_pulse.core.ports.bug_regression_preview import (
+    RegressionCardFact,
+    get_bug_regression_preview_read_port,
+)
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_observability import (
     observe_bug_regression_resolution,
@@ -53,7 +54,7 @@ class BugRegressionScenarioPreviewService:
 
     def __init__(
         self,
-        db: AsyncSession,
+        db: Any,
         resolver: BugRegressionScenarioEligibilityResolver | None = None,
         remediation_builder: BugWorkflowRemediationMessageBuilder | None = None,
     ) -> None:
@@ -94,7 +95,8 @@ class BugRegressionScenarioPreviewService:
                 status_code=404,
             )
 
-        spec = await self._db.get(Spec, bug_card.spec_id)
+        reader = get_bug_regression_preview_read_port()
+        spec = await reader.get_spec(self._db, spec_id=bug_card.spec_id)
         if not spec or spec.board_id != board_id:
             raise BugRegressionScenarioPreviewError(
                 code="spec_not_found",
@@ -104,7 +106,10 @@ class BugRegressionScenarioPreviewService:
 
         origin_task = None
         if bug_card.origin_task_id:
-            origin_task = await self._db.get(Card, bug_card.origin_task_id)
+            origin_task = await reader.get_card(
+                self._db,
+                card_id=bug_card.origin_task_id,
+            )
             if not origin_task or origin_task.board_id != board_id:
                 raise BugRegressionScenarioPreviewError(
                     code="origin_task_missing",
@@ -170,8 +175,16 @@ class BugRegressionScenarioPreviewService:
             remediation=remediation,
         )
 
-    async def _load_card(self, card_id: str, board_id: str, code: str) -> Card:
-        card = await self._db.get(Card, card_id)
+    async def _load_card(
+        self,
+        card_id: str,
+        board_id: str,
+        code: str,
+    ) -> RegressionCardFact:
+        card = await get_bug_regression_preview_read_port().get_card(
+            self._db,
+            card_id=card_id,
+        )
         if not card or card.board_id != board_id:
             raise BugRegressionScenarioPreviewError(
                 code=code,
@@ -186,10 +199,13 @@ class BugRegressionScenarioPreviewService:
         board_id: str,
         spec_id: str,
         task_ids: Sequence[str],
-    ) -> list[Card]:
-        affected: list[Card] = []
+    ) -> list[RegressionCardFact]:
+        affected: list[RegressionCardFact] = []
         for task_id in self._ordered_unique(task_ids):
-            task = await self._db.get(Card, task_id)
+            task = await get_bug_regression_preview_read_port().get_card(
+                self._db,
+                card_id=task_id,
+            )
             if not task or task.board_id != board_id:
                 raise BugRegressionScenarioPreviewError(
                     code="affected_task_not_found",
@@ -215,20 +231,11 @@ class BugRegressionScenarioPreviewService:
         if not candidate_scenario_ids:
             return {}
 
-        candidate_set = set(self._ordered_unique(candidate_scenario_ids))
-        stmt = select(Spec.id, Spec.test_scenarios).where(Spec.board_id == board_id)
-        rows = (await self._db.execute(stmt)).all()
-        mapping: dict[str, str] = {}
-        for spec_id, scenarios in rows:
-            for scenario in scenarios or []:
-                if not isinstance(scenario, dict):
-                    continue
-                scenario_id = scenario.get("id")
-                if scenario_id is None:
-                    continue
-                scenario_id_str = str(scenario_id)
-                if scenario_id_str in candidate_set:
-                    mapping.setdefault(scenario_id_str, str(spec_id))
+        mapping = await get_bug_regression_preview_read_port().candidate_spec_ids(
+            self._db,
+            board_id=board_id,
+            candidate_scenario_ids=self._ordered_unique(candidate_scenario_ids),
+        )
 
         # The pure resolver only needs foreign-spec mapping for scenarios not
         # present on the current spec. Keeping current-spec IDs is harmless, but
@@ -299,6 +306,6 @@ class BugRegressionScenarioPreviewService:
         return ordered
 
     @staticmethod
-    def _card_type_value(card: Card) -> str:
+    def _card_type_value(card: RegressionCardFact) -> str:
         value = getattr(card, "card_type", None)
         return value.value if hasattr(value, "value") else str(value or "")

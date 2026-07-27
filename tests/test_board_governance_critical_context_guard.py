@@ -13,7 +13,7 @@ USER_ID = "bg-guard-user"
 
 
 async def _create_board(db, *, settings: dict | None = None):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     board = Board(
         id=f"bg-guard-board-{uuid.uuid4().hex[:8]}",

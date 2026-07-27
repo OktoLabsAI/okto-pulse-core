@@ -21,14 +21,16 @@ from pathlib import Path
 import pytest
 
 import ladybug
-from okto_pulse.core.kg import schema
-from okto_pulse.core.kg.schema import (
-    _open_kuzu_db,
-    _quarantine_interrupted_checkpoint_sidecars,
-    board_kuzu_path,
-    bootstrap_board_graph,
-    close_all_connections,
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+schema = kg_runtime
+_open_kuzu_db = kg_runtime._open_kuzu_db
+_quarantine_interrupted_checkpoint_sidecars = (
+    kg_runtime._quarantine_interrupted_checkpoint_sidecars
 )
+board_kuzu_path = kg_runtime.board_kuzu_path
+bootstrap_board_graph = kg_runtime.bootstrap_board_graph
+close_all_connections = kg_runtime.close_all_connections
 
 
 @pytest.fixture

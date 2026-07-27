@@ -14,40 +14,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from okto_pulse.core.kg.query_contract import KGEdgeType, KGNodeType
+
 
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
-
-
-class KGNodeType(str, Enum):
-    DECISION = "Decision"
-    CRITERION = "Criterion"
-    CONSTRAINT = "Constraint"
-    ASSUMPTION = "Assumption"
-    REQUIREMENT = "Requirement"
-    ENTITY = "Entity"
-    API_CONTRACT = "APIContract"
-    TEST_SCENARIO = "TestScenario"
-    BUG = "Bug"
-    LEARNING = "Learning"
-    ALTERNATIVE = "Alternative"
-
-
-class KGEdgeType(str, Enum):
-    SUPERSEDES = "supersedes"
-    CONTRADICTS = "contradicts"
-    DERIVES_FROM = "derives_from"
-    RELATES_TO = "relates_to"
-    MENTIONS = "mentions"
-    DEPENDS_ON = "depends_on"
-    VIOLATES = "violates"
-    IMPLEMENTS = "implements"
-    TESTS = "tests"
-    VALIDATES = "validates"
-    BELONGS_TO = "belongs_to"
-    ORIGINATES_FROM = "originates_from"
-    COVERED_BY = "covered_by"
 
 
 class ReconciliationOperation(str, Enum):
@@ -72,7 +44,12 @@ class SessionStatus(str, Enum):
 class NodeCandidate(BaseModel):
     """A node proposed by the agent during a session (not yet committed)."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    # Candidate payloads are an agent-facing write contract.  Ignoring an
+    # unknown key is unsafe here because Pydantic would silently substitute a
+    # default for a misspelled semantic field (for example ``confidence``
+    # instead of ``source_confidence``) while the tool still reported the
+    # candidate as accepted.
+    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     candidate_id: str = Field(..., description="Agent-supplied id, unique within session")
     node_type: KGNodeType
@@ -102,25 +79,38 @@ class NodeCandidate(BaseModel):
         le=0.2,
         description="Additive boost derived from source card priority, frozen at insert time",
     )
+    # Spec MKG-B-S1 (FR1, D1): optional extraction provenance carried by the
+    # candidate and written verbatim at commit when present. The quote is
+    # truncated to 500 chars at the commit boundary (BR2), not here — the
+    # session preserves what the agent sent.
+    source_span_start: int | None = Field(None, ge=0)
+    source_span_end: int | None = Field(None, ge=0)
+    source_span_quote: str | None = None
+    extraction_model_id: str | None = None
+    extraction_prompt_hash: str | None = None
+    # Spec MKG-E-S1 (FR4, D3): optional declarative subtype — when present
+    # it MUST be declared in the NodeSubtypeRegistry (validated fail-closed
+    # at commit); absent is always valid (incremental adoption).
+    kind_of: str | None = None
 
 
 class EdgeCandidate(BaseModel):
     """An edge proposed by the agent during a session."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     candidate_id: str
     edge_type: KGEdgeType
     from_candidate_id: str = Field(
         ...,
-        description="candidate_id of source node (either this session OR existing kuzu_node_id prefix 'kg:')",
+        description="candidate_id of source node (either this session OR existing graph_node_id prefix 'kg:')",
     )
     to_candidate_id: str
     confidence: float = Field(0.7, ge=0.0, le=1.0)
     # v0.2.0 provenance metadata (spec c48a5c33). Optional so legacy callers
     # keep working — TransactionOrchestrator fills sensible defaults. When the
     # Layer 1 deterministic worker feeds candidates in, these fields carry the
-    # rule_id/layer up to Kùzu so /metrics can segment correctly.
+    # rule_id/layer up to graph backend so /metrics can segment correctly.
     layer: str | None = None
     rule_id: str | None = None
     created_by: str | None = None
@@ -135,7 +125,7 @@ class ReconciliationHint(BaseModel):
     candidate_id: str
     operation: ReconciliationOperation
     target_node_id: str | None = Field(
-        None, description="Existing kuzu node id when operation=UPDATE/SUPERSEDE"
+        None, description="Existing graph node id when operation=UPDATE/SUPERSEDE"
     )
     confidence: float = Field(..., ge=0.0, le=1.0)
     reason: str
@@ -144,7 +134,7 @@ class ReconciliationHint(BaseModel):
 class SimilarNode(BaseModel):
     """A node found via similarity search."""
 
-    kuzu_node_id: str
+    graph_node_id: str
     node_type: str
     title: str
     source_artifact_ref: str | None = None
@@ -275,7 +265,7 @@ class CommitConsolidationResponse(BaseModel):
     edges_added: int
     # Spec eca49df9 (FR5/FR6): counters are mutually exclusive per candidate
     # and processed_candidates closes as their sum. merge_audit_items carries
-    # the NC-8 dedup-reuse audit payload (no KuzuWriteRecord written).
+    # the NC-8 dedup-reuse audit payload (no GraphWriteRecord written).
     nodes_merged: int = 0
     nodes_noop: int = 0
     processed_candidates: int = 0

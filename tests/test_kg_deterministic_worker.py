@@ -17,7 +17,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from okto_pulse.core.kg.primitives import _validate_local_edge_pair
-from okto_pulse.core.kg.workers.deterministic_worker import (
+from okto_pulse.core.application.processors.deterministic_kg import (
     DeterministicWorker,
     WORKER_ID,
     WorkerResult,
@@ -208,7 +208,7 @@ def test_process_story_ready_is_working_only():
 
 
 def test_consolidation_lineage_nodes_keep_source_maturity_layer():
-    from okto_pulse.core.kg.workers.consolidation import (
+    from okto_pulse.core.application.processors.consolidation import (
         _append_ideation_entity_node,
         _append_refinement_entity_node,
     )

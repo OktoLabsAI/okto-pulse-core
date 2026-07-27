@@ -6,14 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.api.architecture import _http_error_from_value
-from okto_pulse.core.api.cards import _resource_gate_detail as _card_resource_gate_detail
-from okto_pulse.core.api.specs import _resource_gate_detail as _spec_resource_gate_detail
+from okto_pulse.community.api.architecture import _http_error_from_value
+from okto_pulse.community.api.cards import _resource_gate_detail as _card_resource_gate_detail
+from okto_pulse.community.api.specs import _resource_gate_detail as _spec_resource_gate_detail
+from okto_pulse.community.adapters.sqlalchemy_resource_gate_service import (
+    CommunitySqlAlchemyResourceGateAdapter,
+)
 from okto_pulse.core.mcp.server import (
     _mcp_architecture_error,
     _resource_gate_error_response,
 )
-from okto_pulse.core.models.db import ArchitectureDesign, Board, Ideation
+from sqlalchemy_test_models import ArchitectureDesign, Board, Ideation
 from okto_pulse.core.services.architecture import (
     ArchitectureFindingGate,
     ArchitectureDesignRepository,
@@ -184,10 +187,19 @@ async def test_architecture_finding_gate_runtime_follows_store_when_payload_woul
 
 def test_resource_gate_is_the_only_done_blocking_wiring_surface() -> None:
     resource_gate_source = _read_core_source("services/resource_gate.py")
+    resource_gate_impl_path = Path(
+        inspect.getsourcefile(CommunitySqlAlchemyResourceGateAdapter) or ""
+    )
+    resource_gate_impl_source = resource_gate_impl_path.read_text(encoding="utf-8")
     transition_service_source = _read_core_source("services/main.py")
 
-    assert "from okto_pulse.core.services.architecture import ArchitectureFindingGate" in resource_gate_source
+    legacy_core_adapter = SRC / "repositories" / "sqlalchemy" / "resource_gate_service.py"
+    assert not legacy_core_adapter.exists()
+
+    # Core owns the gate decision; the SQLAlchemy adapter only supplies evidence.
+    assert "from okto_pulse.core.services.architecture import" in resource_gate_source
     assert "ArchitectureFindingGate(self.db).evaluate" in resource_gate_source
+    assert "ArchitectureFindingGate" not in resource_gate_impl_source
     for token in (
         "TopologyWarningEngine",
         "ArchitectureWarningRecord",
@@ -198,6 +210,10 @@ def test_resource_gate_is_the_only_done_blocking_wiring_surface() -> None:
         assert token not in resource_gate_source, (
             "ResourceGateService must delegate to ArchitectureFindingGate instead "
             f"of deriving architecture topology or warning lifecycle itself ({token})."
+        )
+        assert token not in resource_gate_impl_source, (
+            "The SQLAlchemy adapter must not derive architecture topology or "
+            f"warning lifecycle via {token!r}."
         )
         assert token not in transition_service_source, (
             "Status transition services must stay behind ResourceGateService and "
@@ -213,6 +229,8 @@ def test_resource_gate_is_the_only_done_blocking_wiring_surface() -> None:
         SRC / "services" / "architecture_observability.py",
     }
     blocker_token = "architecture_findings_block_done"
+    assert blocker_token in resource_gate_source
+    assert blocker_token not in resource_gate_impl_source
     offenders: list[str] = []
     for path in SRC.rglob("*.py"):
         text = path.read_text(encoding="utf-8")

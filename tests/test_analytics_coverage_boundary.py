@@ -15,7 +15,7 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "fastapi",
     "sqlalchemy",
     "okto_pulse.core.mcp",
-    "okto_pulse.core.api",
+    "okto_pulse.community.api",
     "okto_pulse.core.models",
     "okto_pulse.community",
 )

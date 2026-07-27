@@ -11,8 +11,9 @@ Profiles for the copy tools are a 3-value set — there is no ``detail`` middle
 ground: either copy metadata (``summary``) or the full copied bodies
 (``full``/``legacy``):
 
-- ``summary`` (DEFAULT) — ``copied`` + ``design_ids`` + ``total_on_card`` + the
-  canonical ``projection`` metadata. NO ``architecture_designs`` body.
+- ``summary`` (DEFAULT) — ``success`` + ``copied`` + ``design_ids`` +
+  ``total_on_card`` + the canonical ``projection`` metadata. NO
+  ``architecture_designs`` body.
 - ``full`` / ``legacy`` — the prior payload exactly: ``{success, copied,
   architecture_designs:[full bodies]}`` (FR-2 back-compat, no envelope injected).
 - unsupported profile (including ``detail``) → structured ``unsupported_projection``
@@ -153,6 +154,10 @@ def project_copy_architecture_response(
         "follow_up": [{"rel": "read_full_architecture", "target_ref": TOOL_NAME}],
     }
     response: dict[str, Any] = {
+        # Keep the sibling resource-copy contract uniform. ``projection.outcome``
+        # remains the canonical projection envelope, while this positive flag is
+        # the stable workflow-level acknowledgement used by all three copy tools.
+        "success": True,
         "copied": copied,
         "design_ids": design_ids,
         "total_on_card": int(total_on_card),

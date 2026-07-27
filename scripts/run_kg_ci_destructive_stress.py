@@ -53,6 +53,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    try:
+        from okto_pulse.community.adapters.coordination import (
+            CommunityLocalWriteLockPort,
+        )
+        from okto_pulse.community.adapters.rebuild_audit_storage import (
+            CommunityFileSystemRebuildAuditArtifactStore,
+        )
+    except ModuleNotFoundError as exc:
+        print(
+            "FATAL: KG destructive stress requires edition-provided local "
+            f"adapters; Community package is unavailable ({exc}).",
+            file=sys.stderr,
+        )
+        return 1
     from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
     from okto_pulse.core.kg.stress_runner import (
         CI_DESTRUCTIVE_ITERATIONS_FLOOR,
@@ -62,16 +76,20 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     tmp_root: Path
-    cleanup_tmp = False
     if args.evidence_dir is None or args.chaos_dir is None:
         tmp_root = Path(tempfile.mkdtemp(prefix="kg-stress-"))
-        cleanup_tmp = False  # leave the directory behind for post-mortem
     evidence_dir = args.evidence_dir or (tmp_root / "evidence")
     chaos_dir = args.chaos_dir or (tmp_root / "chaos-scratch")
     evidence_dir.mkdir(parents=True, exist_ok=True)
     chaos_dir.mkdir(parents=True, exist_ok=True)
 
-    executor = KGChaosExecutor(base_dir=chaos_dir)
+    executor = KGChaosExecutor(
+        base_dir=chaos_dir,
+        write_lock_port=CommunityLocalWriteLockPort(),
+        artifact_store=CommunityFileSystemRebuildAuditArtifactStore(
+            chaos_dir / "artifacts"
+        ),
+    )
     if not getattr(executor, "release_evidence_executor", False):
         print(
             "FATAL: KGChaosExecutor is missing the release_evidence_executor "

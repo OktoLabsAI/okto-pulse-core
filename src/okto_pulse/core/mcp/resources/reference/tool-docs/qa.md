@@ -79,10 +79,8 @@ Respond to a choice board comment by selecting one or more options.
 Args:
     board_id: Board ID
     comment_id: Comment ID of the choice board
-    selected: Option IDs to select, accepted in three formats:
-        ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-        (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    selected: Option IDs to select — multi-value; formats:
+        okto-pulse://reference/multivalue.
     free_text: Optional free-text response (only if allow_free_text is enabled)
 
 Returns:

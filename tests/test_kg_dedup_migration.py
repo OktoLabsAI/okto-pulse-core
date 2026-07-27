@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 pytestmark = pytest.mark.asyncio
@@ -38,11 +39,12 @@ def dedup_migration_tempdir(monkeypatch):
     monkeypatch.setenv("KG_BASE_DIR", str(kg_path))
     monkeypatch.setenv("KG_CLEANUP_ENABLED", "false")
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
+    configure_real_graph_test_kg_registry()
 
     yield base
 
     try:
-        from okto_pulse.core.kg.schema import close_all_connections
+        from kg_schema_testing import close_all_connections
         close_all_connections()
     except Exception:
         pass
@@ -52,7 +54,7 @@ def dedup_migration_tempdir(monkeypatch):
 
 def _bootstrap_board() -> str:
     """Create an empty per-board Kuzu graph and return its id."""
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     gc.collect()
@@ -65,7 +67,7 @@ def _inject_entity(
     """Insert one Entity node directly via Cypher with a controlled
     created_at — used to fabricate duplicates with known ordering.
     """
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     node_id = f"entity_{uuid.uuid4().hex[:12]}"
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
@@ -89,7 +91,7 @@ def _inject_belongs_to_edge(
     board_id: str, from_id: str, to_id: str
 ) -> None:
     """Create a `belongs_to` rel between two existing Entity nodes."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         kconn.execute(
@@ -101,7 +103,7 @@ def _inject_belongs_to_edge(
 
 
 def _count_entities(board_id: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -118,7 +120,7 @@ def _count_entities(board_id: str, source_ref: str) -> int:
 
 
 def _count_belongs_to_into(board_id: str, target_id: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -181,18 +183,19 @@ async def test_ts4_migration_consolidates_duplicates_preserves_edges(
     # Sanity: 5 duplicates + 10 source cards = 15 entities for this ref/cards
     assert _count_entities(board_id, source_ref) == 5
 
-    report = migrate_dedup_entities(board_id, dry_run=False)
+    report = migrate_dedup_entities(board_id, dry_run=False, confirmed=True)
 
     assert report["groups"] == 1
-    assert report["total_duplicates_removed"] == 4
-    # Edges_repointed accounts for both inbound + outbound passes per
-    # duplicate. Each dup has 2 inbound belongs_to edges → 4 dups × 2 = 8.
-    assert report["edges_repointed"] >= 8
+    assert report["total_duplicates_removed"] == 0
+    assert report["nodes_tombstoned"] == 4
+    assert report["ledger_records_created"] == 1
+    assert report["edges_repointed"] == 0
 
-    # Only the canonical survives.
-    assert _count_entities(board_id, source_ref) == 1
-    # All 10 belongs_to edges from source cards now point to canonical.
-    assert _count_belongs_to_into(board_id, expected_canonical) == 10
+    # Reversible dedup keeps all nodes and relationships; the fold/active-memory
+    # projection resolves the survivor without destroying graph evidence.
+    assert _count_entities(board_id, source_ref) == 5
+    assert sum(_count_belongs_to_into(board_id, node_id) for node_id in dup_ids) == 10
+    assert _count_belongs_to_into(board_id, expected_canonical) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +255,12 @@ async def test_ts6_idempotent_on_clean_board(dedup_migration_tempdir):
         "2026-04-27T19:00:01",
     )
 
-    first = migrate_dedup_entities(board_id, dry_run=False)
+    first = migrate_dedup_entities(board_id, dry_run=False, confirmed=True)
     assert first["groups"] == 0
     assert first["total_duplicates_removed"] == 0
     assert first["edges_repointed"] == 0
 
-    second = migrate_dedup_entities(board_id, dry_run=False)
+    second = migrate_dedup_entities(board_id, dry_run=False, confirmed=True)
     assert second["groups"] == 0
     assert second["total_duplicates_removed"] == 0
     assert second["edges_repointed"] == 0

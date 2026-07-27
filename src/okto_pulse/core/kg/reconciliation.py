@@ -3,7 +3,7 @@
 Decides ADD / UPDATE / SUPERSEDE / NOOP for each node candidate based on:
 
 1. Content hash of the full artifact → NOOP short-circuit for the whole session
-2. stable id match (ORN, kuzu_node_id prefix kg:, etc.) → UPDATE
+2. exact source ref → same lineage; changed Decisions → SUPERSEDE
 3. semantic similarity threshold → SUPERSEDE hint (agent confirms via override)
 4. otherwise → ADD
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from okto_pulse.core.kg.node_identity import normalize_text
 from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ReconciliationHint,
@@ -31,13 +32,48 @@ SIMILARITY_UPDATE_THRESHOLD = 0.95
 
 @dataclass
 class ExistingNodeSummary:
-    """Minimal info the engine needs about an existing kuzu node."""
+    """Minimal info the engine needs about an existing graph node."""
 
-    kuzu_node_id: str
+    graph_node_id: str
     node_type: str
     stable_id: str | None  # ORN or external id if present
     title: str
+    content: str | None = None
+    context: str | None = None
+    justification: str | None = None
     similarity: float = 0.0  # 0.0–1.0 against the candidate
+
+
+def decision_semantics_differ(candidate: Any, existing: Any) -> bool:
+    """Whether a Decision candidate changes assertion-bearing fields."""
+
+    def _value(source: Any, field: str) -> Any:
+        if isinstance(source, dict):
+            return source.get(field)
+        return getattr(source, field, None)
+
+    return any(
+        normalize_text(_value(candidate, field))
+        != normalize_text(_value(existing, field))
+        for field in ("title", "content", "context", "justification")
+    )
+
+
+def _is_decision(node_type: Any) -> bool:
+    return _same_node_type(node_type, "Decision")
+
+
+def _evidence_confidence(
+    candidate: NodeCandidate,
+    match: ExistingNodeSummary,
+) -> float:
+    """Use observed similarity when available, otherwise extraction confidence."""
+
+    return (
+        match.similarity
+        if match.similarity > 0.0
+        else candidate.source_confidence
+    )
 
 
 def reconcile_candidate(
@@ -64,22 +100,36 @@ def reconcile_candidate(
             reason="content_hash matches last committed session",
         )
 
-    # Stable-id match: candidate carries source_artifact_ref that already
-    # exists on an existing node → UPDATE (same logical entity).
+    # An exact source ref proves lineage, not semantic identity. Decisions are
+    # immutable assertions: any semantic delta must create a new generation.
     if candidate.source_artifact_ref:
         for match in existing_matches:
             if (
                 match.stable_id == candidate.source_artifact_ref
                 and _same_node_type(candidate.node_type, match.node_type)
             ):
+                semantic_change = (
+                    _is_decision(candidate.node_type)
+                    and decision_semantics_differ(candidate, match)
+                )
                 return ReconciliationHint(
                     candidate_id=candidate.candidate_id,
-                    operation=ReconciliationOperation.UPDATE,
-                    target_node_id=match.kuzu_node_id,
-                    confidence=0.95,
+                    operation=(
+                        ReconciliationOperation.SUPERSEDE
+                        if semantic_change
+                        else ReconciliationOperation.UPDATE
+                    ),
+                    target_node_id=match.graph_node_id,
+                    confidence=_evidence_confidence(candidate, match),
                     reason=(
-                        f"stable id {candidate.source_artifact_ref!r} already "
-                        f"exists as {match.kuzu_node_id}"
+                        f"exact source ref {candidate.source_artifact_ref!r} "
+                        f"selects lineage {match.graph_node_id}; "
+                        + (
+                            "Decision semantics changed, so preserve the prior "
+                            "assertion as a superseded generation"
+                            if semantic_change
+                            else "assertion semantics are unchanged"
+                        )
                     ),
                 )
 
@@ -87,21 +137,34 @@ def reconcile_candidate(
     if existing_matches:
         top = existing_matches[0]
         if top.similarity >= SIMILARITY_UPDATE_THRESHOLD:
+            semantic_change = (
+                _is_decision(candidate.node_type)
+                and decision_semantics_differ(candidate, top)
+            )
             return ReconciliationHint(
                 candidate_id=candidate.candidate_id,
-                operation=ReconciliationOperation.UPDATE,
-                target_node_id=top.kuzu_node_id,
+                operation=(
+                    ReconciliationOperation.SUPERSEDE
+                    if semantic_change
+                    else ReconciliationOperation.UPDATE
+                ),
+                target_node_id=top.graph_node_id,
                 confidence=top.similarity,
                 reason=(
                     f"semantic match {top.similarity:.2f} ≥ "
-                    f"{SIMILARITY_UPDATE_THRESHOLD:.2f} — same logical entity"
+                    f"{SIMILARITY_UPDATE_THRESHOLD:.2f} — "
+                    + (
+                        "Decision assertion differs; preserve history"
+                        if semantic_change
+                        else "same logical assertion"
+                    )
                 ),
             )
         if top.similarity >= SIMILARITY_SUPERSEDE_THRESHOLD:
             return ReconciliationHint(
                 candidate_id=candidate.candidate_id,
                 operation=ReconciliationOperation.SUPERSEDE,
-                target_node_id=top.kuzu_node_id,
+                target_node_id=top.graph_node_id,
                 confidence=top.similarity,
                 reason=(
                     f"semantic match {top.similarity:.2f} in "

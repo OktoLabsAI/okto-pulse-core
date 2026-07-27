@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -176,8 +176,8 @@ class RebuildPreflightResult:
 _PREFLIGHT_LABELS = ("board_id", "outcome", "reason")
 
 _PreflightCounterKey = tuple[str, str, str]
-_preflight_counter: dict[_PreflightCounterKey, int] = {}
-_preflight_counter_lock = threading.Lock()
+_preflight_counter = runtime_state("kg.rebuild_preflight.counter", dict)
+_preflight_counter_lock = runtime_lock("kg.rebuild_preflight.counter")
 
 
 def _bump_preflight(*, board_id: str, outcome: str, reason: str) -> None:

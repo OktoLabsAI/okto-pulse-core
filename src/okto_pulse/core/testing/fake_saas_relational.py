@@ -1,0 +1,295 @@
+"""In-memory SaaS-shaped implementation of the relational application port.
+
+This fake deliberately accepts an opaque session object.  It proves Core use
+cases depend on the adapter contract rather than on Community, SQLAlchemy or a
+Local First database lifecycle.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+from okto_pulse.core.ports.mcp_auth import AgentAuthSession
+from okto_pulse.core.ports.permission_policy import (
+    builtin_preset_name,
+    flatten_permission_flags,
+    get_permission_flag,
+    resolve_effective_permissions,
+    set_permission_flag,
+)
+from okto_pulse.core.ports.relational_application import (
+    AgentPermissionContext,
+    EffectivePermissions,
+    PermissionPresetView,
+)
+
+
+@dataclass
+class _FakeAgent:
+    agent_id: str
+    name: str
+    api_key_hash: str
+    is_active: bool = True
+    permissions: Any = field(default_factory=dict)
+    board_ids: set[str] = field(default_factory=set)
+    preset_id: str | None = None
+
+
+@dataclass
+class _FakePreset:
+    id: str
+    owner_id: str | None
+    name: str
+    description: str | None
+    is_builtin: bool
+    base_preset_id: str | None
+    flags: dict[str, Any] | None
+    created_at: datetime
+    updated_at: datetime
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _preset_view(preset: _FakePreset) -> PermissionPresetView:
+    return PermissionPresetView(
+        id=preset.id,
+        owner_id=preset.owner_id,
+        name=preset.name,
+        description=preset.description,
+        is_builtin=preset.is_builtin,
+        base_preset_id=preset.base_preset_id,
+        flags=copy.deepcopy(preset.flags) if preset.flags is not None else None,
+        created_at=preset.created_at,
+        updated_at=preset.updated_at,
+    )
+
+
+class _FakePermissionPresetGateway:
+    def __init__(self, adapter: "FakeSaaSRelationalApplicationAdapter") -> None:
+        self._adapter = adapter
+
+    async def get_effective_permissions(
+        self, *, user_id: str, board_id: str
+    ) -> EffectivePermissions:
+        agent = self._adapter._agents.get(user_id)
+        agent_flags = agent.permissions if isinstance(getattr(agent, "permissions", None), dict) else None
+        preset = (
+            self._adapter._presets.get(agent.preset_id)
+            if agent is not None and agent.preset_id
+            else None
+        )
+        resolved = resolve_effective_permissions(
+            agent_flags,
+            preset.flags if preset is not None else None,
+            None,
+        )
+        return EffectivePermissions(
+            board_id=board_id,
+            preset_name=(
+                preset.name
+                if preset is not None
+                else builtin_preset_name(resolved.flags)
+            ),
+            flags=copy.deepcopy(resolved.flags),
+        )
+
+    async def list_presets(self, *, user_id: str) -> list[PermissionPresetView]:
+        presets = [
+            preset
+            for preset in self._adapter._presets.values()
+            if preset.is_builtin or preset.owner_id == user_id
+        ]
+        presets.sort(key=lambda preset: (not preset.is_builtin, preset.name))
+        return [_preset_view(preset) for preset in presets]
+
+    async def create_preset(
+        self,
+        *,
+        user_id: str,
+        name: str,
+        description: str,
+        flags: dict[str, Any] | None,
+    ) -> PermissionPresetView:
+        created_at = _now()
+        preset = _FakePreset(
+            id=str(uuid.uuid4()),
+            owner_id=user_id,
+            name=name,
+            description=description or None,
+            is_builtin=False,
+            base_preset_id=None,
+            flags=copy.deepcopy(flags) if flags is not None else None,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        self._adapter._presets[preset.id] = preset
+        return _preset_view(preset)
+
+    async def clone_preset(
+        self,
+        *,
+        source_preset_id: str,
+        user_id: str,
+        name: str,
+        description: str,
+        flags: dict[str, Any] | None,
+    ) -> PermissionPresetView | None:
+        source = self._adapter._presets.get(source_preset_id)
+        if source is None:
+            return None
+        cloned_flags = copy.deepcopy(source.flags) if source.flags is not None else {}
+        if flags:
+            for path in flatten_permission_flags(flags):
+                value = get_permission_flag(flags, path)
+                if value is not None:
+                    set_permission_flag(cloned_flags, path, value)
+        created_at = _now()
+        preset = _FakePreset(
+            id=str(uuid.uuid4()),
+            owner_id=user_id,
+            name=name,
+            description=description or source.description,
+            is_builtin=False,
+            base_preset_id=source.id,
+            flags=cloned_flags,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        self._adapter._presets[preset.id] = preset
+        return _preset_view(preset)
+
+    async def update_preset(
+        self,
+        *,
+        preset_id: str,
+        user_id: str,
+        name: str | None,
+        description: str | None,
+        flags: dict[str, Any] | None,
+    ) -> PermissionPresetView | None:
+        preset = self._adapter._presets.get(preset_id)
+        if preset is None:
+            return None
+        if preset.is_builtin:
+            raise PermissionError("Built-in presets cannot be modified or deleted")
+        if preset.owner_id != user_id:
+            raise PermissionError("You can only modify your own presets")
+        if name is not None:
+            preset.name = name
+        if description is not None:
+            preset.description = description
+        if flags is not None:
+            preset.flags = copy.deepcopy(flags)
+        preset.updated_at = _now()
+        return _preset_view(preset)
+
+    async def delete_preset(self, *, preset_id: str, user_id: str) -> bool:
+        preset = self._adapter._presets.get(preset_id)
+        if preset is None:
+            return False
+        if preset.is_builtin:
+            raise PermissionError("Built-in presets cannot be modified or deleted")
+        if preset.owner_id != user_id:
+            raise PermissionError("You can only delete your own presets")
+        del self._adapter._presets[preset_id]
+        return True
+
+
+class _FakeAgentAuthenticationGateway:
+    def __init__(self, adapter: "FakeSaaSRelationalApplicationAdapter") -> None:
+        self._adapter = adapter
+
+    async def authenticate_agent_by_api_key(
+        self, api_key: str, *, credential_source: str
+    ) -> AgentAuthSession | None:
+        digest = hashlib.sha256(api_key.encode()).hexdigest()
+        for agent in self._adapter._agents.values():
+            if agent.api_key_hash == digest and agent.is_active:
+                return AgentAuthSession(
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name,
+                    is_active=True,
+                    metadata={"credential_source": credential_source},
+                )
+        return None
+
+    async def list_accessible_board_ids_for_agent(self, agent_id: str) -> list[str]:
+        agent = self._adapter._agents.get(agent_id)
+        return sorted(agent.board_ids) if agent is not None and agent.is_active else []
+
+    async def agent_has_board_access(self, agent_id: str, board_id: str) -> bool:
+        agent = self._adapter._agents.get(agent_id)
+        return bool(agent is not None and agent.is_active and board_id in agent.board_ids)
+
+    async def resolve_agent_permission_context(
+        self, agent_id: str, *, board_id: str | None = None
+    ) -> AgentPermissionContext | None:
+        agent = self._adapter._agents.get(agent_id)
+        if agent is None or not agent.is_active:
+            return None
+        if board_id is not None and board_id not in agent.board_ids:
+            return None
+        preset = self._adapter._presets.get(agent.preset_id) if agent.preset_id else None
+        permissions = resolve_effective_permissions(
+            agent.permissions if isinstance(agent.permissions, dict) else None,
+            preset.flags if preset is not None else None,
+            None,
+        )
+        return AgentPermissionContext(
+            agent_id=agent.agent_id,
+            agent_name=agent.name,
+            permissions=permissions,
+        )
+
+
+class FakeSaaSRelationalApplicationAdapter:
+    """Opaque-session fake representing a future tenant-aware SaaS adapter."""
+
+    def __init__(self) -> None:
+        self._agents: dict[str, _FakeAgent] = {}
+        self._presets: dict[str, _FakePreset] = {}
+        self._permission_gateway = _FakePermissionPresetGateway(self)
+        self._authentication_gateway = _FakeAgentAuthenticationGateway(self)
+
+    def add_agent(
+        self,
+        *,
+        agent_id: str,
+        name: str,
+        api_key: str,
+        board_ids: set[str] | None = None,
+        permissions: Any = None,
+        preset_id: str | None = None,
+        is_active: bool = True,
+    ) -> None:
+        self._agents[agent_id] = _FakeAgent(
+            agent_id=agent_id,
+            name=name,
+            api_key_hash=hashlib.sha256(api_key.encode()).hexdigest(),
+            is_active=is_active,
+            permissions=copy.deepcopy(permissions) if permissions is not None else {},
+            board_ids=set(board_ids or ()),
+            preset_id=preset_id,
+        )
+
+    def permission_presets(self, session: Any) -> _FakePermissionPresetGateway:
+        _ = session
+        return self._permission_gateway
+
+    def amendment_revision_backend(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError("The SaaS fake does not model amendment persistence.")
+
+    def agent_authentication(self, session: Any) -> _FakeAgentAuthenticationGateway:
+        _ = session
+        return self._authentication_gateway
+
+
+__all__ = ["FakeSaaSRelationalApplicationAdapter"]

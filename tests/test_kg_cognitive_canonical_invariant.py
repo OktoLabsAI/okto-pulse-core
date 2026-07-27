@@ -20,9 +20,10 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     _require_open_session,
     add_edge_candidate,
     add_node_candidate,
@@ -47,6 +48,7 @@ from okto_pulse.core.kg.source_maturity import (
     classify_source_for_kg,
 )
 from okto_pulse.core.mcp.kg_tools import register_kg_tools
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 COGNITIVE_CODE = "cognitive_node_candidates_must_be_canonical"
 SYSTEM_WORKER = "system:layer1_worker"
@@ -58,7 +60,7 @@ SYSTEM_WORKER = "system:layer1_worker"
 
 
 def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> None:
-    _apply_kuzu_node_create_with_timestamp(
+    _apply_graph_node_create(
         orch,
         node_type,
         node_id,
@@ -82,15 +84,15 @@ def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> No
 
 
 def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str]:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
     decision_id = f"decision_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -110,7 +112,7 @@ def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str
 def _get_decision_layer_maturity(
     board_id: str, source_ref: str,
 ) -> tuple[str | None, str | None]:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -128,6 +130,26 @@ def _get_decision_layer_maturity(
             except Exception:
                 pass
     return None, None
+
+
+async def _seed_spec_root_and_decision_async(
+    board_id: str,
+    spec_ref: str,
+) -> tuple[str, str]:
+    return await run_blocking_graph_io(
+        lambda: _seed_spec_root_and_decision(board_id, spec_ref),
+        task_name="tests.cognitive_canonical.seed_spec_root_and_decision",
+    )
+
+
+async def _get_decision_layer_maturity_async(
+    board_id: str,
+    source_ref: str,
+) -> tuple[str | None, str | None]:
+    return await run_blocking_graph_io(
+        lambda: _get_decision_layer_maturity(board_id, source_ref),
+        task_name="tests.cognitive_canonical.get_decision_layer_maturity",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -183,11 +205,26 @@ async def test_cognitive_working_candidate_rejected_without_mutating_session(
 
 @pytest.mark.asyncio
 async def test_accepted_cognitive_candidate_persists_canonical_eligible(
-    board_id, agent_id, db_factory, board_handle,
+    board_id,
+    agent_id,
+    db_factory,
+    board_handle,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    configure_real_graph_test_kg_registry()
+
+    async def _healthy(*_args, **_kwargs) -> str:
+        return "healthy"
+
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.primitives._resolve_commit_kg_health_state",
+        _healthy,
+    )
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec_ref = f"spec:{spec_id}"
-    _root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    _root_id, existing_decision_id = await _seed_spec_root_and_decision_async(
+        board_id, spec_ref
+    )
     decision_ref = f"{spec_ref}:decision:canon"
 
     async with db_factory() as db:
@@ -249,7 +286,9 @@ async def test_accepted_cognitive_candidate_persists_canonical_eligible(
         )
 
     assert commit.connectivity["passed"] is True
-    layer, maturity = _get_decision_layer_maturity(board_id, decision_ref)
+    layer, maturity = await _get_decision_layer_maturity_async(
+        board_id, decision_ref
+    )
     assert layer == "canonical"
     assert maturity == MATURITY_CANONICAL_ELIGIBLE
 
@@ -345,8 +384,16 @@ def _register_add_node_tool(agent_id: str):
     async def _get_agent():
         return _FakeAgent(agent_id)
 
+    async def _get_board_agent(_board_id: str):
+        return await _get_agent()
+
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_get_agent, get_db=lambda: _NullDb())
+    register_kg_tools(
+        mcp,
+        get_agent=_get_agent,
+        get_uow=lambda: _NullDb(),
+        get_board_agent=_get_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_add_node_candidate"]
 
 

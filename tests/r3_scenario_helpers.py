@@ -8,18 +8,21 @@ Gate / lineage services.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Card,
     CardStatus,
     CardType,
     Ideation,
+    IdeationStatus,
     Refinement,
     RefinementKnowledgeBase,
     RefinementStatus,
@@ -44,9 +47,10 @@ async def call_tool(name: str, **kwargs) -> dict:
     """Invoke a real MCP tool against the test DB with a stubbed auth ctx."""
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
+         patch.object(mcp_server, "_mcp_check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_architecture_copy_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
         raw = await tool.fn(**kwargs)
@@ -73,7 +77,7 @@ async def seed_refinement(
     design_id = sid("refdesign")
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="R3 ideation",
-                        created_by=USER_ID))
+                        status=IdeationStatus.DONE, created_by=USER_ID))
         db.add(Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="R3 refinement", created_by=USER_ID,

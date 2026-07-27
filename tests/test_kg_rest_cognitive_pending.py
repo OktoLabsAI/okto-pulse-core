@@ -25,16 +25,17 @@ Invariants tested:
 
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.router import api_router
+from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemListOutcome,
@@ -45,6 +46,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     get_list_counter_labels,
     get_list_event_count,
     get_list_samples,
+    require_rebuild_audit_artifact_store,
     reset_list_counter,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
@@ -80,7 +82,19 @@ def client() -> TestClient:
     async def _fake_user() -> str:
         return "user-kg03-4-test"
 
+    async def _fake_uow():
+        async def _get_board(board_id: str):
+            return SimpleNamespace(
+                id=board_id,
+                owner_id="user-kg03-4-test",
+            )
+
+        yield SimpleNamespace(
+            boards=SimpleNamespace(get=_get_board),
+        )
+
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 
 
@@ -93,8 +107,10 @@ def _row(artifact_type: str, id_: str) -> dict:
 
 
 def _seed(base_dir: Path, sources: list[dict]) -> str:
+    del base_dir
     gen = generate_kg_generation_id()
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    artifact_store = require_rebuild_audit_artifact_store()
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=BOARD,
         kg_generation_id=gen,
@@ -104,6 +120,12 @@ def _seed(base_dir: Path, sources: list[dict]) -> str:
     return gen
 
 
+def _openapi_paths() -> dict[str, dict]:
+    app = FastAPI()
+    app.include_router(api_router)
+    return app.openapi()["paths"]
+
+
 # -------- Router registration -------------------------------------------
 
 
@@ -111,7 +133,7 @@ def test_cognitive_pending_route_is_registered_in_api_router() -> None:
     """The new GET endpoint must be wired into the live api_router so
     UI requests actually reach it."""
 
-    paths = {route.path for route in api_router.routes}
+    paths = set(_openapi_paths())
     assert "/api/v1/kg/cognitive-pending" in paths, (
         f"cognitive-pending route not registered; have: "
         f"{sorted(p for p in paths if 'cognitive' in p or '/kg/' in p)}"
@@ -122,10 +144,8 @@ def test_endpoint_is_read_only_no_mutating_methods_registered() -> None:
     """ir_0b66c7af + br_2065f80b: ONLY GET is exposed at this path;
     POST/PUT/PATCH/DELETE must NOT be registered."""
 
-    methods_for_path: set[str] = set()
-    for route in api_router.routes:
-        if getattr(route, "path", None) == "/api/v1/kg/cognitive-pending":
-            methods_for_path.update(route.methods or ())
+    path_contract = _openapi_paths()["/api/v1/kg/cognitive-pending"]
+    methods_for_path = {method.upper() for method in path_contract}
     assert "GET" in methods_for_path
     forbidden = {"POST", "PUT", "PATCH", "DELETE"}
     assert not forbidden.intersection(methods_for_path), (
@@ -141,7 +161,7 @@ def test_kg02_rebuild_routes_still_registered() -> None:
     """AC11 regression: adding the new router must not unwire existing
     KG-01/KG-02 endpoints."""
 
-    paths = {route.path for route in api_router.routes}
+    paths = set(_openapi_paths())
     for required in (
         "/api/v1/kg/rebuild/preflight",
         "/api/v1/kg/rebuild/confirm",
@@ -261,11 +281,8 @@ def test_legacy_mode_true_for_aggregate_only_record(
     isolated_base_dir: Path,
     client: TestClient,
 ) -> None:
+    del isolated_base_dir
     gen = generate_kg_generation_id()
-    record_dir = (
-        isolated_base_dir / "rebuild" / "audit" / "cognitive_pending" / BOARD
-    )
-    record_dir.mkdir(parents=True, exist_ok=True)
     legacy = {
         "board_id": BOARD,
         "kg_generation_id": gen,
@@ -275,7 +292,10 @@ def test_legacy_mode_true_for_aggregate_only_record(
         "status": "pending_marked",
         "recorded_at": "2026-05-25T00:00:00+00:00",
     }
-    (record_dir / f"{gen}.json").write_text(json.dumps(legacy), encoding="utf-8")
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
+    store.artifact_store.write_json_atomic(store._record_key(BOARD, gen), legacy)
 
     body = client.get(
         "/api/v1/kg/cognitive-pending",
@@ -331,7 +351,9 @@ def test_status_filter_applies_to_response(
         _row("spec", "s2"),
         _row("refinement", "r1"),
     ])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     items = store.list_items(BOARD, gen)
     store.update_item(
         board_id=BOARD,

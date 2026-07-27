@@ -30,9 +30,9 @@ CORE_DIR = Path(__file__).parent.parent / "src" / "okto_pulse" / "core"
 TOOLDOCS = RESOURCES_DIR / "reference" / "tool-docs"
 HELPERS = CORE_DIR / "mcp" / "helpers.py"
 SERVER = CORE_DIR / "mcp" / "server.py"
-CONFIG = CORE_DIR / "infra" / "config.py"
 
-CANONICAL_MARKER = "Comma-only string is REJECTED"
+CANONICAL_RESOURCE = "okto-pulse://reference/multivalue"
+MULTIVALUE_REFERENCE = RESOURCES_DIR / "reference" / "multivalue.md"
 
 # Stale wording that documented exactly the input the strict comma-REJECT
 # coercion (coerce_to_list_str strict_mode) rejects. Must be gone.
@@ -47,15 +47,11 @@ FORBIDDEN_STALE = [
 # tool-docs whose strict-coercion multivalue params were reconciled.
 RECONCILED_TOOLDOCS = ["ideation.md", "refinement.md", "spec.md", "sprint.md"]
 
-# Legitimate "Comma-separated" usages that MUST be preserved (NOT strict coercion):
-# board include is a plain include.split(",") (server.py:1554), and the four
-# canonical-footer legacy-shape lines correctly describe comma as the fragile form.
+# Legitimate "Comma-separated" usage that MUST be preserved (NOT strict coercion):
+# board include is a plain include.split(",") (server.py:1554). Multi-value
+# compatibility prose is centralized in the canonical reference resource.
 LEGIT_KEPT = [
     ("board.md", "Comma-separated list of collections"),
-    ("comment.md", "Comma-separated (legacy, fragile"),
-    ("ideation.md", "Comma-separated (legacy, fragile"),
-    ("refinement.md", "Comma-separated (legacy, fragile"),
-    ("spec.md", "Comma-separated (legacy, fragile"),
 ]
 
 LINK_TASK_ANNOTATIONS = [
@@ -103,9 +99,11 @@ def test_ac1_strict_coercion_lines_reconciled() -> None:
         assert _no_forbidden_stale(text), (
             f"{fname}: a strict-coercion multivalue param still says 'Comma-separated'."
         )
-        assert CANONICAL_MARKER in _normalized(text), (
-            f"{fname}: missing the canonical footer marker {CANONICAL_MARKER!r}."
+        assert CANONICAL_RESOURCE in _normalized(text), (
+            f"{fname}: missing the canonical resource pointer {CANONICAL_RESOURCE!r}."
         )
+    canonical = _read(MULTIVALUE_REFERENCE)
+    assert "Comma-only string" in canonical and "REJECTED" in canonical
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +115,7 @@ def test_ac2_create_story_has_canonical_footer() -> None:
     text = _read(TOOLDOCS / "story.md")
     assert "okto_pulse_create_story" in text
     assert "labels:" in text, "story.md still has no labels entry."
-    assert CANONICAL_MARKER in _normalized(text)
+    assert CANONICAL_RESOURCE in _normalized(text)
     assert _no_forbidden_stale(text)
 
 
@@ -145,8 +143,9 @@ def test_ac4_legitimate_usages_preserved() -> None:
         assert phrase in text, (
             f"{fname}: legitimate usage {phrase!r} was wrongly removed."
         )
-    # config.py env-var "Comma-separated" (a genuinely comma-delimited env var) is untouched.
-    assert "Comma-separated" in _read(CONFIG)
+    canonical = _read(MULTIVALUE_REFERENCE)
+    assert "Pipe-separated strings" in canonical
+    assert "Comma-only string" in canonical and "REJECTED" in canonical
 
 
 # ---------------------------------------------------------------------------

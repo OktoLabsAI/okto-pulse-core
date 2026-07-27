@@ -24,11 +24,10 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2t5_"))
 
 from r2_scenario_helpers import insert_spec, new_board, set_spec_status
 
-from okto_pulse.core.kg.board_source_store import BoardSourceStore
 from okto_pulse.core.kg.canonical_debt_replay import (
-    _pulse_db_path,
     replay_canonical_debt_by_maturity,
 )
+from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.services.canonical_debt_service import (
     OPEN_STATES,
     list_canonical_debt,
@@ -45,10 +44,11 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 
 
 def _spec_source(board_id, spec_id) -> dict:
-    for row in BoardSourceStore(db_path=_pulse_db_path()).fetch(board_id):
+    reader = get_kg_registry().require_board_source_reader()
+    for row in reader.fetch(board_id):
         if str(row.get("id")) == spec_id and row.get("artifact_type") == "spec":
             return row
-    raise AssertionError(f"spec {spec_id} not found in BoardSourceStore")
+    raise AssertionError(f"spec {spec_id} not found in BoardSourceReader")
 
 
 async def _open_debt_count(db_factory, board_id) -> int:

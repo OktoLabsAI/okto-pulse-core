@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 import re
-import threading
 from typing import Any, Mapping
+
+from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 logger = logging.getLogger(__name__)
@@ -127,8 +129,8 @@ _FORBIDDEN_VALUE_FRAGMENTS = (
     "context body",
 )
 
-_METRIC_SAMPLES_LOCK = threading.Lock()
-_METRIC_SAMPLES: list[dict[str, Any]] = []
+_METRIC_SAMPLES_LOCK = runtime_lock("services.governance.samples")
+_METRIC_SAMPLES = runtime_sample_buffer("services.governance")
 _TOKEN_RE = re.compile(r"[^A-Za-z0-9_.:/-]+")
 
 
@@ -185,7 +187,7 @@ def get_governance_metric_samples() -> list[dict[str, Any]]:
                 "value": item["value"],
                 "labels": dict(item["labels"]),
             }
-            for item in _METRIC_SAMPLES
+            for item in _METRIC_SAMPLES.snapshot()
         ]
 
 

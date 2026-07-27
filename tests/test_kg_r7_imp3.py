@@ -2,7 +2,7 @@
 
 The rebuild/recovery drain (BoardRebuildIngestionAdapter -> ConsolidationQueue
 source=rebuild:* -> _process_queue_entry -> _commit_consolidation_with_board_graph_lifecycle
--> commit_consolidation -> _validate_kuzu_connectivity_before_commit + the IMP2
+-> commit_consolidation -> _validate_graph_connectivity_before_commit + the IMP2
 post-commit maintenance hook) inherits the IMP1 guard and IMP2 partition ledger
 by construction — there is NO rebuild-only classifier and the deterministic
 worker never emits Learning cognition.
@@ -30,7 +30,7 @@ from okto_pulse.core.kg.connectivity_guard import (
 )
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     add_node_candidate,
     begin_consolidation,
@@ -54,13 +54,14 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     AGENT_ID,
     _commit_consolidation_with_board_graph_lifecycle,
     _process_queue_entry,
+    _run_post_commit_maintenance,
     _run_deterministic_worker,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -83,7 +84,7 @@ USER_ID = "user-r7-imp3"
 
 
 async def _setup_board(db_factory) -> str:
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     board_id = f"r7imp3-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(board_id)
@@ -95,7 +96,7 @@ async def _setup_board(db_factory) -> str:
 
 
 def _seed_bug(board_id: str, *, graph_layer: str) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"r7i3b_{uuid.uuid4().hex[:12]}"
@@ -106,10 +107,10 @@ def _seed_bug(board_id: str, *, graph_layer: str) -> str:
     )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Bug", bug_id,
             _node_attrs(f"bug:{bug_id}", graph_layer, maturity),
         )
@@ -119,21 +120,21 @@ def _seed_bug(board_id: str, *, graph_layer: str) -> str:
 def _seed_materialized_learning_with_working_bug(board_id: str, source_ref: str) -> str:
     """Pre-existing canonical Learning validating only a WORKING Bug (historical
     partition-integrity violation already on the graph)."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"r7i3l_{uuid.uuid4().hex[:12]}"
     bug_id = f"r7i3b_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Bug", bug_id,
             _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE),
         )
@@ -377,6 +378,16 @@ async def test_rebuild_entry_triggers_canonical_partition_maintenance(
         db.add_all([bug, entry])
         await db.flush()
         ok = await _process_queue_entry(db, entry)
+        await db.commit()
+    # Production invokes best-effort maintenance in a separate transaction
+    # after ledger/audit/ACK durability. Reproduce that boundary explicitly;
+    # a maintenance rollback must never erase the main consolidation ledger.
+    async with db_factory() as db:
+        await _run_post_commit_maintenance(
+            db,
+            entry=entry,
+            session_id="kgses-r7-rebuild-maintenance",
+        )
         await db.commit()
     assert ok is True
     assert seen.get("called_board") == board_id

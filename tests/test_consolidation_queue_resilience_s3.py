@@ -16,11 +16,11 @@ from sqlalchemy import select
 
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
 from okto_pulse.core.kg.commit_coordinator import (
-    kuzu_lock_retries_5m,
-    record_kuzu_lock_retry,
-    reset_kuzu_lock_retries_for_tests,
+    graph_lock_retries_5m,
+    record_graph_lock_retry,
+    reset_commit_coordinator_for_tests,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -46,10 +46,10 @@ def _restore_settings():
 @pytest.fixture(autouse=True)
 def _reset_counters():
     reset_claim_counters_for_tests()
-    reset_kuzu_lock_retries_for_tests()
+    reset_commit_coordinator_for_tests()
     yield
     reset_claim_counters_for_tests()
-    reset_kuzu_lock_retries_for_tests()
+    reset_commit_coordinator_for_tests()
 
 
 @pytest_asyncio.fixture
@@ -66,27 +66,19 @@ async def s3_board(db_factory):
 async def s3_clean(db_factory, s3_board):
     async with db_factory() as session:
         await session.execute(
-            ConsolidationQueue.__table__.delete().where(
-                ConsolidationQueue.board_id == BOARD_ID_S3
-            )
+            ConsolidationQueue.__table__.delete()
         )
         await session.execute(
-            ConsolidationDeadLetter.__table__.delete().where(
-                ConsolidationDeadLetter.board_id == BOARD_ID_S3
-            )
+            ConsolidationDeadLetter.__table__.delete()
         )
         await session.commit()
     yield
     async with db_factory() as session:
         await session.execute(
-            ConsolidationQueue.__table__.delete().where(
-                ConsolidationQueue.board_id == BOARD_ID_S3
-            )
+            ConsolidationQueue.__table__.delete()
         )
         await session.execute(
-            ConsolidationDeadLetter.__table__.delete().where(
-                ConsolidationDeadLetter.board_id == BOARD_ID_S3
-            )
+            ConsolidationDeadLetter.__table__.delete()
         )
         await session.commit()
 
@@ -95,9 +87,11 @@ async def s3_clean(db_factory, s3_board):
 async def health_client():
     """Minimal ASGI client wrapping just the queue_health router."""
     from fastapi import FastAPI
-    from okto_pulse.core.api.queue_health import router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.queue_health import router
+    from okto_pulse.community.api.auth_deps import require_principal, require_user
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
     from okto_pulse.core.infra.database import get_db, get_session_factory
+    from okto_pulse.core.ports.authentication import Principal
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
@@ -111,6 +105,11 @@ async def health_client():
             yield session
 
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        "user-test",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
     app.dependency_overrides[get_db] = _override_db
 
     transport = ASGITransport(app=app)
@@ -119,7 +118,7 @@ async def health_client():
 
 
 # ----------------------------------------------------------------------
-# AC9 — Health endpoint returns the 13 expected keys
+# AC9 — Health endpoint returns all expected keys
 # ----------------------------------------------------------------------
 
 
@@ -127,7 +126,7 @@ async def health_client():
 async def test_ac9_health_endpoint_returns_all_expected_keys(
     health_client, s3_clean,
 ):
-    """AC9: GET /api/v1/kg/queue/health returns the 13 keys with the
+    """AC9: GET /api/v1/kg/queue/health returns the health keys with the
     correct types (queue_depth INT, claimed_boards LIST, alert_active BOOL,
     etc.)."""
     resp = await health_client.get("/api/v1/kg/queue/health")
@@ -135,7 +134,8 @@ async def test_ac9_health_endpoint_returns_all_expected_keys(
     body = resp.json()
     expected_keys = {
         "queue_depth", "oldest_pending_age_s", "claimed_count", "claimed_boards",
-        "dead_letter_count", "claims_per_min_1m", "claims_per_min_5m",
+        "dead_letter_count", "global_outbox_dead_letter_count",
+        "claims_per_min_1m", "claims_per_min_5m",
         "alert_threshold", "alert_active", "alert_fired_total",
         "workers_active", "workers_idle", "workers_draining_count",
         "kuzu_lock_retries_5m",
@@ -146,6 +146,7 @@ async def test_ac9_health_endpoint_returns_all_expected_keys(
     assert isinstance(body["claimed_count"], int)
     assert isinstance(body["claimed_boards"], list)
     assert isinstance(body["dead_letter_count"], int)
+    assert isinstance(body["global_outbox_dead_letter_count"], int)
     assert isinstance(body["alert_threshold"], int)
     assert isinstance(body["alert_active"], bool)
     assert isinstance(body["alert_fired_total"], int)
@@ -217,25 +218,25 @@ async def test_alert_active_toggles_with_depth(
 
 
 # ----------------------------------------------------------------------
-# kuzu_lock_retries_5m sliding-window counter
+# graph_lock_retries_5m sliding-window counter
 # ----------------------------------------------------------------------
 
 
-def test_kuzu_lock_retries_5m_counter_records_and_prunes():
+def test_graph_lock_retries_5m_counter_records_and_prunes():
     """Records are appended chronologically (real callers always pass
     monotonically-increasing now()). The counter prunes entries that fall
     outside the 5min window when a fresh observation arrives."""
     base = datetime.now(timezone.utc)
     # 3 retries 100s ago — all inside the 5min window.
     for offset in (-120, -110, -100):
-        record_kuzu_lock_retry(now=base + timedelta(seconds=offset))
-    assert kuzu_lock_retries_5m(now=base) == 3
+        record_graph_lock_retry(now=base + timedelta(seconds=offset))
+    assert graph_lock_retries_5m(now=base) == 3
 
     # Reading 5min later: all 3 originals fall outside the window and get
     # pruned. A fresh retry at the new "now" remains visible.
     later = base + timedelta(seconds=400)
-    record_kuzu_lock_retry(now=later)
-    assert kuzu_lock_retries_5m(now=later) == 1
+    record_graph_lock_retry(now=later)
+    assert graph_lock_retries_5m(now=later) == 1
 
 
 # ----------------------------------------------------------------------
@@ -259,6 +260,32 @@ def test_claims_per_min_sliding_window():
 # ----------------------------------------------------------------------
 # AC3 — Per-board serialization (structural — claim filter)
 # ----------------------------------------------------------------------
+
+
+def test_ac3_batch_selector_never_tops_up_with_same_or_claimed_board():
+    """Every claim in a sequential batch represents immediately runnable work."""
+
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.processors.consolidation import (
+        _select_board_aware_entries,
+    )
+
+    ready = [
+        SimpleNamespace(id="a-1", board_id="board-a"),
+        SimpleNamespace(id="a-2", board_id="board-a"),
+        SimpleNamespace(id="b-1", board_id="board-b"),
+        SimpleNamespace(id="c-1", board_id="board-claimed"),
+        SimpleNamespace(id="b-2", board_id="board-b"),
+    ]
+
+    selected = _select_board_aware_entries(
+        ready,
+        claimed_board_ids=frozenset({"board-claimed"}),
+        limit=5,
+    )
+
+    assert [entry.id for entry in selected] == ["a-1", "b-1"]
 
 
 @pytest.mark.asyncio
@@ -404,17 +431,10 @@ def test_ac15_settings_change_does_not_corrupt_in_flight_state():
 
 
 def test_ac18_snapshot_pool_reports_steady_state():
-    """AC18 (structural): worker.snapshot_pool() returns active/idle/
-    draining counts. At rest (no pool started), draining == 0."""
-    from okto_pulse.core.kg.workers.consolidation import (
-        get_consolidation_worker,
-        reset_consolidation_worker_for_tests,
-    )
+    """Pool state belongs to the edition runner, not the Core processor."""
+    from okto_pulse.core.application.processors import ConsolidationProcessor
 
-    reset_consolidation_worker_for_tests()
-    worker = get_consolidation_worker()
-    snap = worker.snapshot_pool()
-    assert set(snap.keys()) == {"active", "idle", "draining"}
-    assert snap["draining"] == 0
-    # At rest: not started, active=0
-    assert snap["active"] == 0
+    processor = ConsolidationProcessor(relational_scope_factory=lambda: None)
+    assert not hasattr(processor, "snapshot_pool")
+    assert not hasattr(processor, "is_running")
+    assert not hasattr(processor, "_task")

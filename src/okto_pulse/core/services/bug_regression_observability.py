@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
-import threading
 from typing import Any, Mapping
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import BugRegressionScenarioReuseDecision
 from okto_pulse.core.services.bug_regression_scenarios import (
@@ -92,8 +92,8 @@ _FORBIDDEN_LABEL_FRAGMENTS = (
     "when",
 )
 _MAX_LABEL_VALUE_CHARS = 128
-_METRIC_SAMPLES_LOCK = threading.Lock()
-_METRIC_SAMPLES: list[dict[str, Any]] = []
+_METRIC_SAMPLES_LOCK = runtime_lock("services.bug_regression.samples")
+_METRIC_SAMPLES = runtime_sample_buffer("services.bug_regression")
 
 
 @dataclass(frozen=True)
@@ -254,7 +254,7 @@ async def record_bug_regression_decision(
     coverage_state: str = "",
     actor_id: str | None = None,
     actor_type: str = "user",
-    session: AsyncSession | None = None,
+    session: object | None = None,
 ) -> None:
     """Persist the bounded decision audit event.
 
@@ -340,7 +340,7 @@ def get_bug_regression_metric_samples() -> list[dict[str, Any]]:
                 "value": sample["value"],
                 "labels": dict(sample["labels"]),
             }
-            for sample in _METRIC_SAMPLES
+            for sample in _METRIC_SAMPLES.snapshot()
         ]
 
 

@@ -37,7 +37,10 @@ The sibling `*_choice_question` tools (which add `options`/`question_type`) are
 - `okto_pulse_ask_spec_question(board_id, spec_id, question)`
 - `okto_pulse_ask_sprint_question(board_id, sprint_id, question)`
 
-Short alias: `ask` (additive; no `okto_pulse_` prefix).
+Registry-only short name: `ask`. It exists for internal family resolution,
+collision checks, and bounded telemetry labels; it is **not** an MCP tool token,
+does not appear in `tools/list`, and cannot be invoked remotely. The five
+`okto_pulse_*` entries above are the live additive MCP aliases.
 
 ## Telemetry
 

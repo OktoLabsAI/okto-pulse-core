@@ -36,14 +36,23 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 import threading
+import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable
+
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.query_contract import CognitiveOutcomeType
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 
 
 def confirmation_fingerprint(confirmation_id: str) -> str:
@@ -62,6 +71,7 @@ def confirmation_fingerprint(confirmation_id: str) -> str:
     digest = hashlib.sha256(confirmation_id.encode("utf-8")).hexdigest()
     return f"conf_fp_{digest}"
 
+
 logger = logging.getLogger("okto_pulse.kg.rebuild_audit")
 
 
@@ -72,26 +82,33 @@ EVENT_AUDIT_DIRNAME = "events"
 COGNITIVE_PENDING_DIRNAME = "cognitive_pending"
 
 
-def default_rebuild_base_dir() -> Path:
-    """Single source of truth for the rebuild/audit storage root.
+def require_rebuild_audit_artifact_store() -> RebuildAuditArtifactStore:
+    """Return the edition-composed rebuild audit artifact store."""
 
-    Both the REST layer (api/kg_rebuild.py) and the MCP layer
-    (mcp/kg_tools.py) MUST resolve to the same directory or they observe
-    divergent state. Default is ``<tempdir>/okto_pulse_kg_rebuild``,
-    overridable via the ``OKTO_PULSE_REBUILD_BASE_DIR`` environment
-    variable for production deployments.
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    return get_kg_registry().require_rebuild_audit_artifact_store()
+
+
+def resolve_rebuild_audit_artifact_store(
+    *,
+    base_dir: object | None,
+    artifact_store: RebuildAuditArtifactStore | None,
+) -> RebuildAuditArtifactStore:
+    """Resolve productive artifact IO through the edition registry.
+
+    ``base_dir`` is an opaque compatibility token. Only an edition resolver may
+    interpret it; Core never performs path operations or chooses a backend.
     """
 
-    import os
-    import tempfile
-    override = os.environ.get("OKTO_PULSE_REBUILD_BASE_DIR")
-    base = (
-        Path(override)
-        if override
-        else Path(tempfile.gettempdir()) / "okto_pulse_kg_rebuild"
-    )
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    if artifact_store is not None:
+        return artifact_store
+    if base_dir is not None:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        resolver = get_kg_registry().require_rebuild_audit_artifact_store_resolver()
+        return resolver.resolve(base_dir)
+    return require_rebuild_audit_artifact_store()
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +157,8 @@ class EventPublishResult:
 
 
 _EVENT_LABELS = ("board_id", "status", "outcome")
-_event_counter: dict[tuple[str, str, str], int] = {}
-_event_counter_lock = threading.Lock()
+_event_counter = runtime_state("kg.rebuild_audit.event_counter", dict)
+_event_counter_lock = runtime_lock("kg.rebuild_audit.event_counter")
 
 
 def _bump_event(*, board_id: str, status: str, outcome: str) -> None:
@@ -210,13 +227,18 @@ def validate_kg_rebuilt_event(payload: Mapping[str, Any]) -> tuple[bool, str | N
         return False, "kg_generation_id_must_be_uuid_v4"
     prev_gen = payload.get("previous_kg_generation_id")
     if prev_gen is not None and (
-        not isinstance(prev_gen, str)
-        or not is_valid_kg_generation_id(prev_gen)
+        not isinstance(prev_gen, str) or not is_valid_kg_generation_id(prev_gen)
     ):
         return False, "previous_kg_generation_id_must_be_uuid_v4_or_null"
     if not isinstance(payload.get("counts"), dict):
         return False, "counts_must_be_dict"
-    for field_name in ("triggered_by", "started_at", "finished_at", "status", "report_ref"):
+    for field_name in (
+        "triggered_by",
+        "started_at",
+        "finished_at",
+        "status",
+        "report_ref",
+    ):
         if not isinstance(payload.get(field_name), str) or not payload[field_name]:
             return False, f"{field_name}_must_be_non_empty_string"
     return True, None
@@ -263,21 +285,29 @@ class KGRebuiltEventPublisher:
     re-drive the event from the audit without losing the report.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
     publish_adapter: KGRebuiltPublishAdapter = _default_publish_adapter
+    artifact_store: RebuildAuditArtifactStore | None = None
 
-    def _audit_dir(self, board_id: str) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / AUDIT_DIRNAME
-            / EVENT_AUDIT_DIRNAME
-            / board_id
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
         )
 
-    def publish(
-        self, *, event_payload: Mapping[str, Any]
-    ) -> EventPublishResult:
+    @staticmethod
+    def _audit_key(board_id: str, event_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="event_audit",
+            board_id=board_id,
+            artifact_id=event_id,
+        )
+
+    def publish(self, *, event_payload: Mapping[str, Any]) -> EventPublishResult:
         valid, reason = validate_kg_rebuilt_event(event_payload)
         board_id = str(event_payload.get("board_id", "unknown"))
         status = str(event_payload.get("status", "unknown"))
@@ -295,25 +325,22 @@ class KGRebuiltEventPublisher:
                 detail=reason,
             )
 
-        directory = self._audit_dir(board_id)
         try:
-            directory.mkdir(parents=True, exist_ok=True)
             event_id = f"evt_{uuid.uuid4().hex}"
-            audit_path = directory / f"{event_id}.json"
             audit_payload = {
                 "event_id": event_id,
                 "event": "kg.rebuilt",
                 "persisted_at": datetime.now(timezone.utc).isoformat(),
                 **dict(event_payload),
             }
-            tmp = audit_path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(audit_payload, fh, indent=2)
-            tmp.replace(audit_path)
+            audit_key = self._audit_key(board_id, event_id)
+            self.artifact_store.write_json_atomic(audit_key, audit_payload)
+            audit_ref = self.artifact_store.reference(audit_key)
         except Exception as exc:
             logger.error(
                 "kg.rebuilt.audit_persist_failed board=%s err=%s",
-                board_id, exc,
+                board_id,
+                exc,
             )
             _bump_event(
                 board_id=board_id,
@@ -332,7 +359,8 @@ class KGRebuiltEventPublisher:
         except Exception as exc:
             logger.error(
                 "kg.rebuilt.publish_adapter_failed board=%s err=%s",
-                board_id, exc,
+                board_id,
+                exc,
             )
             _bump_event(
                 board_id=board_id,
@@ -343,7 +371,7 @@ class KGRebuiltEventPublisher:
                 accepted=False,
                 outcome=EventPublishOutcome.PUBLISH_FAILED.value,
                 event_ref=event_id,
-                audit_ref=str(audit_path),
+                audit_ref=audit_ref,
                 error_code=EventPublishErrorCode.EVENT_PUBLISH_FAILED.value,
                 detail=f"publish_adapter_exception={type(exc).__name__}",
             )
@@ -358,7 +386,7 @@ class KGRebuiltEventPublisher:
                 accepted=False,
                 outcome=EventPublishOutcome.PUBLISH_FAILED.value,
                 event_ref=event_id,
-                audit_ref=str(audit_path),
+                audit_ref=audit_ref,
                 error_code=EventPublishErrorCode.EVENT_PUBLISH_FAILED.value,
                 detail="publish_adapter_returned_false",
             )
@@ -372,7 +400,7 @@ class KGRebuiltEventPublisher:
             accepted=True,
             outcome=EventPublishOutcome.PUBLISHED.value,
             event_ref=event_id,
-            audit_ref=str(audit_path),
+            audit_ref=audit_ref,
         )
 
 
@@ -381,21 +409,12 @@ class KGRebuiltEventPublisher:
 # ---------------------------------------------------------------------------
 
 
-class CognitivePendingOutcomeType(str, Enum):
-    """KG-03A.3 — bounded outcome enum for terminal ``consolidated``
-    cognitive pending transitions (br_7500e5f9 + tr_16ec917c).
+CognitivePendingOutcomeType = CognitiveOutcomeType
+"""Backward-compatible domain name for the canonical KG outcome enum.
 
-    Every successful ``consolidated`` mutation MUST attribute one of
-    these outcome types (or use ``no_action_required`` with a
-    justifying reason). Empty consolidations are rejected.
-    """
-
-    RELATION_CREATED = "relation_created"
-    CANDIDATE_CREATED = "candidate_created"
-    FORMAL_DECISION_PROMOTED = "formal_decision_promoted"
-    EXISTING_DECISION_LINKED = "existing_decision_linked"
-    CONTRADICTION_DISMISSED = "contradiction_dismissed"
-    NO_ACTION_REQUIRED = "no_action_required"
+The values now originate in :mod:`okto_pulse.core.kg.query_contract`, which is
+also consumed by MCP schema introspection and contract-parity tests.
+"""
 
 
 class CognitiveItemStatus(str, Enum):
@@ -415,11 +434,13 @@ class CognitiveItemStatus(str, Enum):
     FAILED = "failed"
 
 
-ACTIVE_ITEM_STATUSES: frozenset[str] = frozenset({
-    CognitiveItemStatus.PENDING.value,
-    CognitiveItemStatus.IN_PROGRESS.value,
-    CognitiveItemStatus.FAILED.value,
-})
+ACTIVE_ITEM_STATUSES: frozenset[str] = frozenset(
+    {
+        CognitiveItemStatus.PENDING.value,
+        CognitiveItemStatus.IN_PROGRESS.value,
+        CognitiveItemStatus.FAILED.value,
+    }
+)
 
 
 def compute_cognitive_item_id(
@@ -508,22 +529,273 @@ class CognitiveMaterializeOutcome(str, Enum):
     FAILED = "failed"
 
 
-_materialized_samples: list[dict[str, Any]] = []
-_materialized_samples_lock = threading.Lock()
+_materialized_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.materialized",
+    _MATERIALIZED_LABELS,
+    sum_fields=("item_count",),
+)
+
+_COGNITIVE_OVERLAY_REVISION_VERSION = 1
+_COGNITIVE_OVERLAY_REVISION_ARTIFACT_ID = "cognitive_pending_overlay_revision"
+_COGNITIVE_OVERLAY_MAX_BOARDS = 2_000
+_COGNITIVE_OVERLAY_MAX_GENERATIONS_PER_BOARD = 256
+_COGNITIVE_OVERLAY_MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
+_COGNITIVE_OVERLAY_MAX_ITEMS_PER_BOARD = 10_000
+_COGNITIVE_OVERLAY_MAX_CAPTURE_SECONDS = 300.0
 
 
-def _emit_materialized_sample(
-    *, board_id: str, outcome: str, item_count: int
-) -> None:
+class CognitivePendingOverlaySnapshotError(RuntimeError):
+    """A bounded cognitive publication-overlay snapshot could not be proven."""
+
+    def __init__(self, code: str, reason: str) -> None:
+        super().__init__(f"{code}: {reason}")
+        self.code = code
+        self.reason = reason
+
+
+def _cognitive_overlay_revision_key() -> RebuildAuditKey:
+    return RebuildAuditKey(
+        namespace="global_discovery_recovery",
+        board_id="_global",
+        artifact_id=_COGNITIVE_OVERLAY_REVISION_ARTIFACT_ID,
+    )
+
+
+def _valid_stable_cognitive_overlay_revision(
+    payload: Mapping[str, Any] | None,
+) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    revision = payload.get("revision")
+    nonce = payload.get("nonce")
+    return (
+        payload.get("version") == _COGNITIVE_OVERLAY_REVISION_VERSION
+        and payload.get("state") == "stable"
+        and isinstance(revision, int)
+        and not isinstance(revision, bool)
+        and revision >= 0
+        and isinstance(nonce, str)
+        and 16 <= len(nonce) <= 128
+    )
+
+
+def _cognitive_overlay_revision_fingerprint(payload: Mapping[str, Any]) -> str:
+    binding = {
+        "version": payload["version"],
+        "revision": payload["revision"],
+        "nonce": payload["nonce"],
+    }
+    encoded = json.dumps(
+        binding,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _next_cognitive_overlay_revision(
+    current: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    raw_revision = current.get("revision") if isinstance(current, dict) else None
+    base_revision = (
+        raw_revision
+        if isinstance(raw_revision, int)
+        and not isinstance(raw_revision, bool)
+        and raw_revision >= 0
+        else 0
+    )
+    revision = base_revision + 1
+    nonce = secrets.token_urlsafe(24)
+    common = {
+        "version": _COGNITIVE_OVERLAY_REVISION_VERSION,
+        "revision": revision,
+        "nonce": nonce,
+    }
+    return ({**common, "state": "mutating"}, {**common, "state": "stable"})
+
+
+@dataclass(frozen=True, slots=True)
+class CognitivePendingOverlaySnapshot:
+    """Immutable active-hold projection bound to one durable revision."""
+
+    revision_fingerprint: str
+    exclusions: tuple[tuple[str, tuple[tuple[str, str], ...]], ...]
+
+    def exclusions_for_board(self, board_id: str) -> dict[str, str]:
+        requested = str(board_id)
+        for captured_board_id, rows in self.exclusions:
+            if captured_board_id == requested:
+                return dict(rows)
+        return {}
+
+
+@dataclass(frozen=True, slots=True)
+class CognitivePendingOverlaySnapshotService:
+    """Cheap revision reads plus bounded, drift-checked overlay capture."""
+
+    artifact_store: RebuildAuditArtifactStore
+
+    def current_fingerprint(self) -> str:
+        key = _cognitive_overlay_revision_key()
+        current = self.artifact_store.read_json(key)
+        if _valid_stable_cognitive_overlay_revision(current):
+            return _cognitive_overlay_revision_fingerprint(current)
+        if isinstance(current, Mapping) and current.get("state") == "unfenced":
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_revision_unfenced",
+                "artifact adapter cannot serialize ledger and revision writes",
+            )
+
+        def repair(
+            observed: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            if _valid_stable_cognitive_overlay_revision(observed):
+                return dict(observed)
+            _pending, stable = _next_cognitive_overlay_revision(observed)
+            return stable
+
+        repaired = self.artifact_store.replace_json(key, repair)
+        if not _valid_stable_cognitive_overlay_revision(repaired):
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_revision_invalid",
+                "overlay revision could not be initialized or repaired",
+            )
+        return _cognitive_overlay_revision_fingerprint(repaired)
+
+    def capture(
+        self,
+        *,
+        board_ids: Sequence[str],
+        deadline_seconds: float,
+    ) -> CognitivePendingOverlaySnapshot:
+        normalized = tuple(sorted({str(board_id).strip() for board_id in board_ids}))
+        if not normalized or any(not board_id for board_id in normalized):
+            raise ValueError("board_ids must contain non-empty identifiers")
+        if len(normalized) > _COGNITIVE_OVERLAY_MAX_BOARDS:
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_board_limit_exceeded",
+                f"board count exceeds {_COGNITIVE_OVERLAY_MAX_BOARDS}",
+            )
+        if any(len(board_id) > 255 for board_id in normalized):
+            raise ValueError("board_id length must not exceed 255 characters")
+        budget = float(deadline_seconds)
+        if not 0 < budget <= _COGNITIVE_OVERLAY_MAX_CAPTURE_SECONDS:
+            raise ValueError(
+                "deadline_seconds must be positive and no greater than 300"
+            )
+        deadline = time.monotonic() + budget
+        before = self.current_fingerprint()
+        captured: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+        from okto_pulse.core.kg.connectivity_guard import (
+            CANONICAL_LEARNING_WORKING_ONLY_REASON,
+        )
+
+        bounded_list = getattr(self.artifact_store, "list_json_bounded", None)
+        bounded_implementation = getattr(
+            type(self.artifact_store), "list_json_bounded", None
+        )
+        if (
+            not callable(bounded_list)
+            or bounded_implementation
+            is RebuildAuditArtifactStore.list_json_bounded
+        ):
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_bounded_reader_unavailable",
+                "artifact adapter does not provide bounded overlay reads",
+            )
+        for board_id in normalized:
+            if time.monotonic() >= deadline:
+                raise CognitivePendingOverlaySnapshotError(
+                    "cognitive_overlay_capture_timeout",
+                    "overlay capture exceeded its explicit deadline",
+                )
+            try:
+                records = bounded_list(
+                    RebuildAuditKey(
+                        namespace="cognitive_pending",
+                        board_id=board_id,
+                    ),
+                    max_results=_COGNITIVE_OVERLAY_MAX_GENERATIONS_PER_BOARD,
+                    max_document_bytes=_COGNITIVE_OVERLAY_MAX_DOCUMENT_BYTES,
+                )
+            except Exception as exc:
+                raise CognitivePendingOverlaySnapshotError(
+                    "cognitive_overlay_capture_failed",
+                    f"bounded overlay read failed for board {board_id!r}",
+                ) from exc
+            latest = max(
+                records,
+                key=lambda row: (
+                    str(row.get("recorded_at", "")),
+                    str(row.get("kg_generation_id", "")),
+                ),
+                default=None,
+            )
+            exclusions: dict[str, str] = {}
+            if latest is not None:
+                items = latest.get("items")
+                if items is not None and not isinstance(items, list):
+                    raise CognitivePendingOverlaySnapshotError(
+                        "cognitive_overlay_record_invalid",
+                        f"overlay items are invalid for board {board_id!r}",
+                    )
+                if isinstance(items, list):
+                    if len(items) > _COGNITIVE_OVERLAY_MAX_ITEMS_PER_BOARD:
+                        raise CognitivePendingOverlaySnapshotError(
+                            "cognitive_overlay_item_limit_exceeded",
+                            f"overlay item limit exceeded for board {board_id!r}",
+                        )
+                    for raw in items:
+                        if not isinstance(raw, Mapping):
+                            raise CognitivePendingOverlaySnapshotError(
+                                "cognitive_overlay_record_invalid",
+                                f"overlay item is invalid for board {board_id!r}",
+                            )
+                        if (
+                            str(raw.get("status") or "") in ACTIVE_ITEM_STATUSES
+                            and str(raw.get("reason_code") or "")
+                            == CANONICAL_LEARNING_WORKING_ONLY_REASON
+                        ):
+                            artifact_id = normalize_cognitive_artifact_id(
+                                str(raw.get("source_ref") or "")
+                            )
+                            if artifact_id:
+                                exclusions[artifact_id] = (
+                                    CANONICAL_LEARNING_WORKING_ONLY_REASON
+                                )
+            captured.append((board_id, tuple(sorted(exclusions.items()))))
+
+        after = self.current_fingerprint()
+        if before != after:
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_snapshot_drift",
+                "cognitive overlay changed while it was captured",
+            )
+        if time.monotonic() >= deadline:
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_capture_timeout",
+                "overlay capture exceeded its explicit deadline",
+            )
+        return CognitivePendingOverlaySnapshot(
+            revision_fingerprint=before,
+            exclusions=tuple(captured),
+        )
+_materialized_samples_lock = runtime_lock("kg.rebuild_audit.materialized.samples")
+
+
+def _emit_materialized_sample(*, board_id: str, outcome: str, item_count: int) -> None:
     """Emit one materialization sample. ``item_count`` is the value of the
     sample — labels are restricted to (board_id, outcome)."""
 
     with _materialized_samples_lock:
-        _materialized_samples.append({
-            "board_id": board_id,
-            "outcome": outcome,
-            "item_count": int(item_count),
-        })
+        _materialized_samples.append(
+            {
+                "board_id": board_id,
+                "outcome": outcome,
+                "item_count": int(item_count),
+            }
+        )
 
 
 def get_materialized_count(
@@ -536,14 +808,11 @@ def get_materialized_count(
     This is the metric value an exporter would publish."""
 
     with _materialized_samples_lock:
-        total = 0
-        for sample in _materialized_samples:
-            if sample["board_id"] != board_id:
-                continue
-            if outcome is not None and sample["outcome"] != outcome:
-                continue
-            total += int(sample["item_count"])
-        return total
+        return _materialized_samples.sum(
+            "item_count",
+            board_id=board_id,
+            outcome=outcome,
+        )
 
 
 def get_materialized_event_count(
@@ -555,12 +824,7 @@ def get_materialized_event_count(
     -per-marker invariant required by or_3b71e3c1."""
 
     with _materialized_samples_lock:
-        return sum(
-            1
-            for sample in _materialized_samples
-            if sample["board_id"] == board_id
-            and (outcome is None or sample["outcome"] == outcome)
-        )
+        return _materialized_samples.count(board_id=board_id, outcome=outcome)
 
 
 def get_materialized_counter_labels() -> tuple[str, ...]:
@@ -572,7 +836,7 @@ def get_materialized_samples() -> list[dict[str, Any]]:
     only the contract-mandated keys: board_id, outcome, item_count."""
 
     with _materialized_samples_lock:
-        return [dict(sample) for sample in _materialized_samples]
+        return _materialized_samples.snapshot()
 
 
 def reset_materialized_counter() -> None:
@@ -628,8 +892,11 @@ _LIST_LABELS = (
     "status_filter_present",
     "reason_code",
 )
-_list_samples: list[dict[str, Any]] = []
-_list_samples_lock = threading.Lock()
+_list_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.list",
+    _LIST_LABELS,
+)
+_list_samples_lock = runtime_lock("kg.rebuild_audit.list.samples")
 
 
 def _emit_list_sample(
@@ -648,16 +915,16 @@ def _emit_list_sample(
     caller see"; it is NOT a label."""
 
     with _list_samples_lock:
-        _list_samples.append({
-            "surface": surface,
-            "board_id": board_id,
-            "outcome": outcome,
-            "status_filter_present": (
-                "true" if status_filter_present else "false"
-            ),
-            "reason_code": reason_code,
-            "item_count": int(item_count),
-        })
+        _list_samples.append(
+            {
+                "surface": surface,
+                "board_id": board_id,
+                "outcome": outcome,
+                "status_filter_present": ("true" if status_filter_present else "false"),
+                "reason_code": reason_code,
+                "item_count": int(item_count),
+            }
+        )
 
 
 def get_list_event_count(
@@ -668,13 +935,11 @@ def get_list_event_count(
     reason_code: str | None = None,
 ) -> int:
     with _list_samples_lock:
-        return sum(
-            1
-            for sample in _list_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (surface is None or sample["surface"] == surface)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _list_samples.count(
+            board_id=board_id,
+            surface=surface,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 
@@ -684,7 +949,7 @@ def get_list_counter_labels() -> tuple[str, ...]:
 
 def get_list_samples() -> list[dict[str, Any]]:
     with _list_samples_lock:
-        return [dict(sample) for sample in _list_samples]
+        return _list_samples.snapshot()
 
 
 def reset_list_counter() -> None:
@@ -701,14 +966,21 @@ def reset_list_counter() -> None:
 # the three operational-signal listings KG Health points at — cognitive
 # pending, dead-letter queue, canonical debt (kept as separate `signal`
 # values per dec_68fd26a2). Labels only; no free-form text.
-OPERATIONAL_INSPECTION_SIGNALS: frozenset[str] = frozenset({
-    "cognitive_pending",
-    "dead_letter",
-    "canonical_debt",
-})
+OPERATIONAL_INSPECTION_SIGNALS: frozenset[str] = frozenset(
+    {
+        "cognitive_pending",
+        "dead_letter",
+        "canonical_debt",
+    }
+)
 _OPERATIONAL_INSPECTION_LABELS = ("signal", "surface", "outcome", "board_id")
-_operational_inspection_samples: list[dict[str, Any]] = []
-_operational_inspection_lock = threading.Lock()
+_operational_inspection_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.operational_inspection",
+    _OPERATIONAL_INSPECTION_LABELS,
+)
+_operational_inspection_lock = runtime_lock(
+    "kg.rebuild_audit.operational_inspection.samples"
+)
 
 
 def emit_operational_inspection_sample(
@@ -728,13 +1000,15 @@ def emit_operational_inspection_sample(
     """
 
     with _operational_inspection_lock:
-        _operational_inspection_samples.append({
-            "signal": signal,
-            "surface": surface,
-            "outcome": outcome,
-            "board_id": board_id,
-            "item_count": int(item_count),
-        })
+        _operational_inspection_samples.append(
+            {
+                "signal": signal,
+                "surface": surface,
+                "outcome": outcome,
+                "board_id": board_id,
+                "item_count": int(item_count),
+            }
+        )
 
 
 def get_operational_inspection_event_count(
@@ -745,13 +1019,11 @@ def get_operational_inspection_event_count(
     board_id: str | None = None,
 ) -> int:
     with _operational_inspection_lock:
-        return sum(
-            1
-            for sample in _operational_inspection_samples
-            if (signal is None or sample["signal"] == signal)
-            and (surface is None or sample["surface"] == surface)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (board_id is None or sample["board_id"] == board_id)
+        return _operational_inspection_samples.count(
+            signal=signal,
+            surface=surface,
+            outcome=outcome,
+            board_id=board_id,
         )
 
 
@@ -761,12 +1033,103 @@ def get_operational_inspection_counter_labels() -> tuple[str, ...]:
 
 def get_operational_inspection_samples() -> list[dict[str, Any]]:
     with _operational_inspection_lock:
-        return [dict(sample) for sample in _operational_inspection_samples]
+        return _operational_inspection_samples.snapshot()
 
 
 def reset_operational_inspection_counter() -> None:
     with _operational_inspection_lock:
         _operational_inspection_samples.clear()
+
+
+# ---------------------------------------------------------------------------
+# Counter for OR or_36e0cd85 — okto_pulse_kg_cognitive_technical_signal_total (RKG-05)
+# ---------------------------------------------------------------------------
+#
+# Contract (or_36e0cd85): one bounded sample whenever a NON-MASKABLE technical KG
+# signal (technical_dlq / dead_letter_backlog / canonical_debt_open /
+# persistence_error) is surfaced through the health/readiness projection — so the
+# PRESENCE of a technical blocker, and whether it is gate-blocking vs advisory, is
+# observable independently of any cognitive skip/no_action. Labels only.
+COGNITIVE_TECHNICAL_SIGNALS: frozenset[str] = frozenset(
+    {
+        "technical_dlq",
+        "dead_letter_backlog",
+        "canonical_debt_open",
+        "persistence_error",
+    }
+)
+_COGNITIVE_TECHNICAL_SIGNAL_LABELS = (
+    "signal",
+    "surface",
+    "blocking",
+    "would_block_done",
+    "board_id",
+)
+_cognitive_technical_signal_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.cognitive_technical_signal",
+    _COGNITIVE_TECHNICAL_SIGNAL_LABELS,
+)
+_cognitive_technical_signal_lock = runtime_lock(
+    "kg.rebuild_audit.cognitive_technical_signal.samples"
+)
+
+
+def emit_cognitive_technical_signal_sample(
+    *,
+    signal: str,
+    surface: str,
+    blocking: bool,
+    would_block_done: bool,
+    board_id: str,
+) -> None:
+    """Emit one sample on ``okto_pulse_kg_cognitive_technical_signal_total`` (or_36e0cd85).
+
+    ``signal`` is one of COGNITIVE_TECHNICAL_SIGNALS; ``surface`` is rest/mcp;
+    ``blocking`` is whether a technical problem is visible; ``would_block_done``
+    is whether the gate would actually block (enforcement-aware, advisory→False).
+    """
+    with _cognitive_technical_signal_lock:
+        _cognitive_technical_signal_samples.append(
+            {
+                "signal": signal,
+                "surface": surface,
+                "blocking": bool(blocking),
+                "would_block_done": bool(would_block_done),
+                "board_id": board_id,
+            }
+        )
+
+
+def get_cognitive_technical_signal_event_count(
+    *,
+    signal: str | None = None,
+    surface: str | None = None,
+    blocking: bool | None = None,
+    would_block_done: bool | None = None,
+    board_id: str | None = None,
+) -> int:
+    with _cognitive_technical_signal_lock:
+        return _cognitive_technical_signal_samples.count(
+            signal=signal,
+            surface=surface,
+            blocking=blocking,
+            would_block_done=would_block_done,
+            board_id=board_id,
+        )
+
+
+def get_cognitive_technical_signal_counter_labels() -> tuple[str, ...]:
+    return _COGNITIVE_TECHNICAL_SIGNAL_LABELS
+
+
+def get_cognitive_technical_signal_samples() -> list[dict[str, Any]]:
+    with _cognitive_technical_signal_lock:
+        return _cognitive_technical_signal_samples.snapshot()
+
+
+def reset_cognitive_technical_signal_counter() -> None:
+    with _cognitive_technical_signal_lock:
+        _cognitive_technical_signal_samples.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -816,8 +1179,11 @@ _INVALID_TARGET_STATUS = "invalid"
 
 
 _UPDATE_LABELS = ("board_id", "target_status", "outcome", "reason_code")
-_update_samples: list[dict[str, Any]] = []
-_update_samples_lock = threading.Lock()
+_update_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.update",
+    _UPDATE_LABELS,
+)
+_update_samples_lock = runtime_lock("kg.rebuild_audit.update.samples")
 
 
 def _emit_update_sample(
@@ -830,12 +1196,14 @@ def _emit_update_sample(
     """Emit one sample on ``kg_cognitive_item_update_total``."""
 
     with _update_samples_lock:
-        _update_samples.append({
-            "board_id": board_id,
-            "target_status": target_status,
-            "outcome": outcome,
-            "reason_code": reason_code,
-        })
+        _update_samples.append(
+            {
+                "board_id": board_id,
+                "target_status": target_status,
+                "outcome": outcome,
+                "reason_code": reason_code,
+            }
+        )
 
 
 def get_update_event_count(
@@ -846,13 +1214,11 @@ def get_update_event_count(
     reason_code: str | None = None,
 ) -> int:
     with _update_samples_lock:
-        return sum(
-            1
-            for sample in _update_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (target_status is None or sample["target_status"] == target_status)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _update_samples.count(
+            board_id=board_id,
+            target_status=target_status,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 
@@ -862,7 +1228,7 @@ def get_update_counter_labels() -> tuple[str, ...]:
 
 def get_update_samples() -> list[dict[str, Any]]:
     with _update_samples_lock:
-        return [dict(sample) for sample in _update_samples]
+        return _update_samples.snapshot()
 
 
 def reset_update_counter() -> None:
@@ -891,8 +1257,11 @@ class CognitivePendingReopenReasonCode(str, Enum):
 
 
 _REOPEN_LABELS = ("entity_type", "outcome", "reason_code")
-_reopen_samples: list[dict[str, Any]] = []
-_reopen_samples_lock = threading.Lock()
+_reopen_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.reopen",
+    _REOPEN_LABELS,
+)
+_reopen_samples_lock = runtime_lock("kg.rebuild_audit.reopen.samples")
 
 
 def _emit_reopen_sample(
@@ -913,11 +1282,13 @@ def _emit_reopen_sample(
     """
 
     with _reopen_samples_lock:
-        _reopen_samples.append({
-            "entity_type": entity_type,
-            "outcome": outcome,
-            "reason_code": reason_code,
-        })
+        _reopen_samples.append(
+            {
+                "entity_type": entity_type,
+                "outcome": outcome,
+                "reason_code": reason_code,
+            }
+        )
 
 
 def get_reopen_event_count(
@@ -927,12 +1298,10 @@ def get_reopen_event_count(
     reason_code: str | None = None,
 ) -> int:
     with _reopen_samples_lock:
-        return sum(
-            1
-            for sample in _reopen_samples
-            if (entity_type is None or sample["entity_type"] == entity_type)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _reopen_samples.count(
+            entity_type=entity_type,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 
@@ -942,7 +1311,7 @@ def get_reopen_counter_labels() -> tuple[str, ...]:
 
 def get_reopen_samples() -> list[dict[str, Any]]:
     with _reopen_samples_lock:
-        return [dict(sample) for sample in _reopen_samples]
+        return _reopen_samples.snapshot()
 
 
 def reset_reopen_counter() -> None:
@@ -980,21 +1349,24 @@ class CognitiveUnsafePayloadReason(str, Enum):
 
 
 _UNSAFE_LABELS = ("surface", "board_id", "reason")
-_unsafe_samples: list[dict[str, Any]] = []
-_unsafe_samples_lock = threading.Lock()
+_unsafe_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.unsafe",
+    _UNSAFE_LABELS,
+)
+_unsafe_samples_lock = runtime_lock("kg.rebuild_audit.unsafe.samples")
 
 
-def _emit_unsafe_payload_sample(
-    *, surface: str, board_id: str, reason: str
-) -> None:
+def _emit_unsafe_payload_sample(*, surface: str, board_id: str, reason: str) -> None:
     """Emit one sample on ``kg_cognitive_item_unsafe_payload_total``."""
 
     with _unsafe_samples_lock:
-        _unsafe_samples.append({
-            "surface": surface,
-            "board_id": board_id,
-            "reason": reason,
-        })
+        _unsafe_samples.append(
+            {
+                "surface": surface,
+                "board_id": board_id,
+                "reason": reason,
+            }
+        )
 
 
 def get_unsafe_payload_event_count(
@@ -1004,12 +1376,10 @@ def get_unsafe_payload_event_count(
     reason: str | None = None,
 ) -> int:
     with _unsafe_samples_lock:
-        return sum(
-            1
-            for sample in _unsafe_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (surface is None or sample["surface"] == surface)
-            and (reason is None or sample["reason"] == reason)
+        return _unsafe_samples.count(
+            board_id=board_id,
+            surface=surface,
+            reason=reason,
         )
 
 
@@ -1019,7 +1389,7 @@ def get_unsafe_payload_counter_labels() -> tuple[str, ...]:
 
 def get_unsafe_payload_samples() -> list[dict[str, Any]]:
     with _unsafe_samples_lock:
-        return [dict(sample) for sample in _unsafe_samples]
+        return _unsafe_samples.snapshot()
 
 
 def reset_unsafe_payload_counter() -> None:
@@ -1059,12 +1429,8 @@ def project_item_for_update_api(
         "reason_code": item.reason_code,
         "outcome_type": item.outcome_type,
         "evidence_refs": list(item.evidence_refs),
-        "generated_candidate_decision_ids": list(
-            item.generated_candidate_decision_ids
-        ),
-        "promoted_formal_decision_ids": list(
-            item.promoted_formal_decision_ids
-        ),
+        "generated_candidate_decision_ids": list(item.generated_candidate_decision_ids),
+        "promoted_formal_decision_ids": list(item.promoted_formal_decision_ids),
     }
 
 
@@ -1160,9 +1526,7 @@ class MaterializeFromMarkerResult:
     item_count: int
     counts: dict[str, int]
     outcome: str = CognitiveMaterializeOutcome.MATERIALIZED.value
-    items: tuple["CognitiveConsolidationItem", ...] = field(
-        default_factory=tuple
-    )
+    items: tuple["CognitiveConsolidationItem", ...] = field(default_factory=tuple)
 
 
 # Fields exposed by the MCP / REST list contracts (api_ae3a932a +
@@ -1320,9 +1684,7 @@ class CognitiveConsolidationItem:
             "generated_candidate_decision_ids": list(
                 self.generated_candidate_decision_ids
             ),
-            "promoted_formal_decision_ids": list(
-                self.promoted_formal_decision_ids
-            ),
+            "promoted_formal_decision_ids": list(self.promoted_formal_decision_ids),
             "content_hash": self.content_hash,
             "reason_code": self.reason_code,
             "justification": self.justification,
@@ -1394,30 +1756,70 @@ class CognitiveConsolidationItemStore:
     marker writes them.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
-    def _record_path(
-        self, board_id: str, kg_generation_id: str
-    ) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / AUDIT_DIRNAME
-            / COGNITIVE_PENDING_DIRNAME
-            / board_id
-            / f"{kg_generation_id}.json"
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
         )
 
-    def _board_dir(self, board_id: str) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / AUDIT_DIRNAME
-            / COGNITIVE_PENDING_DIRNAME
-            / board_id
+    def _replace_record_with_overlay_revision(
+        self,
+        *,
+        key: RebuildAuditKey,
+        transform: Callable[[dict[str, Any] | None], dict[str, Any]],
+    ) -> dict[str, Any]:
+        revisioned_replace = getattr(
+            self.artifact_store, "replace_json_with_revision", None
+        )
+        implementation = getattr(
+            type(self.artifact_store), "replace_json_with_revision", None
+        )
+        if (
+            not callable(revisioned_replace)
+            or implementation
+            is RebuildAuditArtifactStore.replace_json_with_revision
+        ):
+            # Backward-compatible normal ledger operation for an older edition
+            # adapter.  Mark the overlay explicitly *unfenced* so Global
+            # Discovery recovery remains fail-closed until the adapter is
+            # upgraded; never misrepresent three separate writes as atomic.
+            revision_key = _cognitive_overlay_revision_key()
+            pending, _stable = _next_cognitive_overlay_revision(
+                self.artifact_store.read_json(revision_key)
+            )
+            unfenced = {
+                **pending,
+                "state": "unfenced",
+                "reason": "revisioned_replace_unavailable",
+            }
+            self.artifact_store.write_json_atomic(revision_key, unfenced)
+            target = self.artifact_store.replace_json(key, transform)
+            self.artifact_store.write_json_atomic(revision_key, unfenced)
+            return dict(target)
+        target, _committed_revision = revisioned_replace(
+            key=key,
+            transform=transform,
+            revision_key=_cognitive_overlay_revision_key(),
+            revision_transition=_next_cognitive_overlay_revision,
+        )
+        return dict(target)
+
+    @staticmethod
+    def _record_key(board_id: str, kg_generation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board_id,
+            kg_generation_id=kg_generation_id,
         )
 
     def load_record(
@@ -1426,31 +1828,27 @@ class CognitiveConsolidationItemStore:
         """Read the aggregate + items record. Returns None if not found
         or unparseable."""
 
-        path = self._record_path(board_id, kg_generation_id)
-        if not path.exists():
-            return None
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                return json.load(fh)
+            return self.artifact_store.read_json(
+                self._record_key(board_id, kg_generation_id)
+            )
         except Exception as exc:
             logger.error(
                 "kg.cognitive_item_store.read_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             return None
 
-    def record_exists(
-        self, board_id: str, kg_generation_id: str
-    ) -> bool:
+    def record_exists(self, board_id: str, kg_generation_id: str) -> bool:
         """True iff a ledger file is on disk for this generation. Used
         by MCP/REST adapters to distinguish ``generation_not_found`` from
         an empty-but-extant record (api_ae3a932a + api_cce40fa6)."""
 
-        return self._record_path(board_id, kg_generation_id).exists()
+        return self.artifact_store.exists(self._record_key(board_id, kg_generation_id))
 
-    def is_legacy_record(
-        self, board_id: str, kg_generation_id: str
-    ) -> bool:
+    def is_legacy_record(self, board_id: str, kg_generation_id: str) -> bool:
         """True iff the persisted record predates KG-03.1 — i.e. it has
         the KG-02 aggregate ``pending_refs`` but lacks the ``items``
         array. Adapters surface this as ``legacy_mode=true`` so the UI
@@ -1499,18 +1897,20 @@ class CognitiveConsolidationItemStore:
                 artifact_type = "unknown"
                 if isinstance(source_ref, str) and ":" in source_ref:
                     artifact_type = source_ref.split(":", 1)[0]
-                synth.append(CognitiveConsolidationItem(
-                    item_id=compute_cognitive_item_id(
-                        board_id, kg_generation_id, str(source_ref)
-                    ),
-                    board_id=board_id,
-                    kg_generation_id=kg_generation_id,
-                    source_ref=str(source_ref),
-                    artifact_type=artifact_type,
-                    status=CognitiveItemStatus.PENDING.value,
-                    recorded_at=recorded_at,
-                    event_ref=event_ref,
-                ))
+                synth.append(
+                    CognitiveConsolidationItem(
+                        item_id=compute_cognitive_item_id(
+                            board_id, kg_generation_id, str(source_ref)
+                        ),
+                        board_id=board_id,
+                        kg_generation_id=kg_generation_id,
+                        source_ref=str(source_ref),
+                        artifact_type=artifact_type,
+                        status=CognitiveItemStatus.PENDING.value,
+                        recorded_at=recorded_at,
+                        event_ref=event_ref,
+                    )
+                )
             items = synth
         else:
             items = [
@@ -1527,7 +1927,9 @@ class CognitiveConsolidationItemStore:
         return items
 
     def _previous_terminal_state_by_source_ref(
-        self, board_id: str, exclude_generation_id: str,
+        self,
+        board_id: str,
+        exclude_generation_id: str,
     ) -> dict[str, dict[str, Any]]:
         """KG-03A.7 — walk PRIOR generations newest→oldest and return
         the most recent terminal row per ``source_ref``.
@@ -1539,40 +1941,35 @@ class CognitiveConsolidationItemStore:
         between dedupe-carry-forward and reopen).
         """
 
-        board_dir = self._board_dir(board_id)
-        if not board_dir.exists():
-            return {}
-
         terminal_statuses = {
             CognitiveItemStatus.CONSOLIDATED.value,
             CognitiveItemStatus.SKIPPED.value,
             CognitiveItemStatus.FAILED.value,
         }
 
-        entries: list[tuple[str, str, Path]] = []
-        for entry in board_dir.glob("*.json"):
-            gen_id = entry.stem
-            if gen_id == exclude_generation_id:
-                continue
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    record = json.load(fh)
-            except Exception:
+        entries: list[tuple[str, str, dict[str, Any]]] = []
+        records = self.artifact_store.list_json(
+            RebuildAuditKey(
+                namespace="cognitive_pending",
+                board_id=board_id,
+            )
+        )
+        for record in records:
+            gen_id = str(record.get("kg_generation_id", ""))
+            if not gen_id or gen_id == exclude_generation_id:
                 continue
             recorded_at = str(record.get("recorded_at", ""))
-            entries.append((recorded_at, gen_id, entry))
+            entries.append((recorded_at, gen_id, dict(record)))
+
+        if not entries:
+            return {}
 
         # Newest first; ties broken by lexically greater generation_id
         # (deterministic for UUID v4).
         entries.sort(key=lambda t: (t[0], t[1]), reverse=True)
 
         terminal_by_source: dict[str, dict[str, Any]] = {}
-        for _, _, entry in entries:
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    record = json.load(fh)
-            except Exception:
-                continue
+        for _, _, record in entries:
             raw_items = record.get("items")
             if not isinstance(raw_items, list):
                 continue
@@ -1591,28 +1988,23 @@ class CognitiveConsolidationItemStore:
     def latest_generation(self, board_id: str) -> str | None:
         """Per br_d510e1e3: deterministic latest-generation fallback.
 
-        Reads recorded_at across all <gen>.json files in the board dir
-        and returns the generation_id with the most recent ISO8601
-        timestamp. Ties (same timestamp) broken by lexically greater
-        generation_id, which is deterministic for UUID v4 strings.
+        Reads recorded_at across all generation records and returns the
+        generation_id with the most recent ISO8601 timestamp. Ties (same
+        timestamp) are broken by lexically greater generation_id.
         """
 
-        board_dir = self._board_dir(board_id)
-        if not board_dir.exists():
-            return None
-        best: tuple[str, str] | None = None  # (recorded_at, gen_id)
-        for entry in board_dir.glob("*.json"):
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    record = json.load(fh)
-            except Exception:
+        best: tuple[str, str] | None = None
+        for record in self.artifact_store.list_json(
+            RebuildAuditKey(
+                namespace="cognitive_pending",
+                board_id=board_id,
+            )
+        ):
+            gen_id = str(record.get("kg_generation_id", ""))
+            if not gen_id:
                 continue
-            gen_id = entry.stem
             recorded_at = str(record.get("recorded_at", ""))
-            if best is None:
-                best = (recorded_at, gen_id)
-                continue
-            if (recorded_at, gen_id) > best:
+            if best is None or (recorded_at, gen_id) > best:
                 best = (recorded_at, gen_id)
         return best[1] if best else None
 
@@ -1710,7 +2102,7 @@ class CognitiveConsolidationItemStore:
         int,
         list[CognitiveConsolidationItem],
         dict[str, int],
-        Path,
+        str,
     ]:
         """Internal helper that performs the atomic write. Returns
         ``(item_count, items, counts_by_type, record_path)``.
@@ -1722,6 +2114,7 @@ class CognitiveConsolidationItemStore:
         deterministic replay does not erase agent-owned state.
         """
 
+        existing_by_source: dict[str, dict[str, Any]] = {}
         existing_terminal_by_source: dict[str, dict[str, Any]] = {}
         existing_record = self.load_record(board_id, kg_generation_id)
         if existing_record is not None:
@@ -1735,11 +2128,11 @@ class CognitiveConsolidationItemStore:
                     if not isinstance(raw, Mapping):
                         continue
                     status = raw.get("status")
-                    if status not in terminal_statuses:
-                        continue
                     src = str(raw.get("source_ref", ""))
                     if src:
-                        existing_terminal_by_source[src] = dict(raw)
+                        existing_by_source[src] = dict(raw)
+                        if status in terminal_statuses:
+                            existing_terminal_by_source[src] = dict(raw)
 
         # KG-03A.7 — cross-generation terminal lookup. Used to:
         #   1. carry forward terminal items when content_hash matches
@@ -1748,7 +2141,8 @@ class CognitiveConsolidationItemStore:
         #      reason_code=content_changed when the content hash differs.
         prior_terminal_by_source = (
             self._previous_terminal_state_by_source_ref(
-                board_id, exclude_generation_id=kg_generation_id,
+                board_id,
+                exclude_generation_id=kg_generation_id,
             )
             if not existing_terminal_by_source
             else {}
@@ -1756,6 +2150,7 @@ class CognitiveConsolidationItemStore:
 
         items: list[CognitiveConsolidationItem] = []
         counts_by_type: dict[str, int] = {}
+        incoming_source_refs: set[str] = set()
         for row in source_set:
             artifact_type = str(row.get("artifact_type", ""))
             if artifact_type not in CONSOLIDABLE_ARTIFACT_TYPES:
@@ -1763,23 +2158,18 @@ class CognitiveConsolidationItemStore:
             source_ref = str(row.get("source_ref", row.get("id", "")))
             if not source_ref:
                 continue
+            incoming_source_refs.add(source_ref)
 
             row_content_hash = row.get("content_hash")
-            row_content_hash = (
-                str(row_content_hash) if row_content_hash else None
-            )
+            row_content_hash = str(row_content_hash) if row_content_hash else None
 
             terminal = existing_terminal_by_source.get(source_ref)
             if terminal is not None:
-                items.append(
-                    CognitiveConsolidationItem.from_dict(terminal)
-                )
+                items.append(CognitiveConsolidationItem.from_dict(terminal))
             elif source_ref in prior_terminal_by_source:
                 prior = prior_terminal_by_source[source_ref]
                 prior_hash = prior.get("content_hash")
-                prior_hash_str = (
-                    str(prior_hash) if prior_hash else None
-                )
+                prior_hash_str = str(prior_hash) if prior_hash else None
                 if (
                     row_content_hash is not None
                     and prior_hash_str is not None
@@ -1788,9 +2178,7 @@ class CognitiveConsolidationItemStore:
                     # Dedupe: content unchanged since the prior terminal
                     # transition. Carry the terminal row forward verbatim
                     # so the new generation does NOT re-open pending debt.
-                    items.append(
-                        CognitiveConsolidationItem.from_dict(prior)
-                    )
+                    items.append(CognitiveConsolidationItem.from_dict(prior))
                 else:
                     # Reopen: source_ref has a terminal prior, but the
                     # content has changed (or one of the hashes is
@@ -1813,6 +2201,7 @@ class CognitiveConsolidationItemStore:
                     from okto_pulse.core.kg.refinement_cognitive_guard import (
                         assert_deterministic_only_pending,
                     )
+
                     assert_deterministic_only_pending(
                         board_id=board_id, items=[reopened]
                     )
@@ -1849,21 +2238,24 @@ class CognitiveConsolidationItemStore:
                 from okto_pulse.core.kg.refinement_cognitive_guard import (
                     assert_deterministic_only_pending,
                 )
-                assert_deterministic_only_pending(
-                    board_id=board_id, items=[new_item]
-                )
+
+                assert_deterministic_only_pending(board_id=board_id, items=[new_item])
                 items.append(new_item)
-            counts_by_type[artifact_type] = (
-                counts_by_type.get(artifact_type, 0) + 1
-            )
+            counts_by_type[artifact_type] = counts_by_type.get(artifact_type, 0) + 1
+
+        # Live closeout handlers append one source at a time to the current KG
+        # generation. Keep unrelated rows already present in that generation;
+        # otherwise opening bug B silently erases pending/in-progress work for
+        # bug A. Rows replayed in the incoming set retain the existing terminal
+        # ownership rules above.
+        for source_ref, raw in existing_by_source.items():
+            if source_ref not in incoming_source_refs:
+                items.append(CognitiveConsolidationItem.from_dict(raw))
 
         with self._lock:
-            self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
-            active_refs = sorted({
-                i.source_ref
-                for i in items
-                if i.status in ACTIVE_ITEM_STATUSES
-            })
+            active_refs = sorted(
+                {i.source_ref for i in items if i.status in ACTIVE_ITEM_STATUSES}
+            )
             payload = {
                 "board_id": board_id,
                 "kg_generation_id": kg_generation_id,
@@ -1874,13 +2266,14 @@ class CognitiveConsolidationItemStore:
                 "recorded_at": recorded_at,
                 "items": [i.to_dict() for i in items],
             }
-            path = self._record_path(board_id, kg_generation_id)
-            tmp = path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(payload, fh, indent=2)
-            tmp.replace(path)
+            key = self._record_key(board_id, kg_generation_id)
+            self._replace_record_with_overlay_revision(
+                key=key,
+                transform=lambda _current: payload,
+            )
+            record_ref = self.artifact_store.reference(key)
 
-        return len(items), items, counts_by_type, path
+        return len(items), items, counts_by_type, record_ref
 
     def update_item(
         self,
@@ -1931,18 +2324,20 @@ class CognitiveConsolidationItemStore:
                     artifact_type = "unknown"
                     if isinstance(source_ref, str) and ":" in source_ref:
                         artifact_type = source_ref.split(":", 1)[0]
-                    items_raw.append({
-                        "item_id": compute_cognitive_item_id(
-                            board_id, kg_generation_id, str(source_ref)
-                        ),
-                        "board_id": board_id,
-                        "kg_generation_id": kg_generation_id,
-                        "source_ref": str(source_ref),
-                        "artifact_type": artifact_type,
-                        "status": CognitiveItemStatus.PENDING.value,
-                        "recorded_at": str(record.get("recorded_at", "")),
-                        "event_ref": record.get("event_ref"),
-                    })
+                    items_raw.append(
+                        {
+                            "item_id": compute_cognitive_item_id(
+                                board_id, kg_generation_id, str(source_ref)
+                            ),
+                            "board_id": board_id,
+                            "kg_generation_id": kg_generation_id,
+                            "source_ref": str(source_ref),
+                            "artifact_type": artifact_type,
+                            "status": CognitiveItemStatus.PENDING.value,
+                            "recorded_at": str(record.get("recorded_at", "")),
+                            "event_ref": record.get("event_ref"),
+                        }
+                    )
 
             target_idx = None
             for idx, it in enumerate(items_raw):
@@ -1953,9 +2348,7 @@ class CognitiveConsolidationItemStore:
                 return None
 
             now = datetime.now(timezone.utc).isoformat()
-            evidence_refs_list = (
-                list(evidence_refs) if evidence_refs else []
-            )
+            evidence_refs_list = list(evidence_refs) if evidence_refs else []
             generated_candidates_list = (
                 list(generated_candidate_decision_ids)
                 if generated_candidate_decision_ids
@@ -1991,39 +2384,47 @@ class CognitiveConsolidationItemStore:
                 # DROPS the stale skip metadata; otherwise the preserve-when-None
                 # default holds (tr_3d6b29fe) so a concurrent update never loses it.
                 "reason_code": (
-                    None if clear_readiness_metadata
-                    else reason_code if reason_code is not None
+                    None
+                    if clear_readiness_metadata
+                    else reason_code
+                    if reason_code is not None
                     else existing.get("reason_code")
                 ),
                 "justification": (
-                    None if clear_readiness_metadata
-                    else justification if justification is not None
+                    None
+                    if clear_readiness_metadata
+                    else justification
+                    if justification is not None
                     else existing.get("justification")
                 ),
                 "actor": actor if actor is not None else existing.get("actor"),
                 "revisit_at": (
-                    None if clear_readiness_metadata
-                    else revisit_at if revisit_at is not None
+                    None
+                    if clear_readiness_metadata
+                    else revisit_at
+                    if revisit_at is not None
                     else existing.get("revisit_at")
                 ),
             }
 
             # Recompute aggregate counts from items (br_d544da65 keeps
             # aggregate in sync without the caller needing to remember).
-            active_refs = sorted({
-                it["source_ref"]
-                for it in items_raw
-                if it.get("status") in ACTIVE_ITEM_STATUSES
-            })
+            active_refs = sorted(
+                {
+                    it["source_ref"]
+                    for it in items_raw
+                    if it.get("status") in ACTIVE_ITEM_STATUSES
+                }
+            )
             record["items"] = items_raw
             record["pending_count"] = len(active_refs)
             record["pending_refs"] = active_refs
 
-            path = self._record_path(board_id, kg_generation_id)
-            tmp = path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(record, fh, indent=2)
-            tmp.replace(path)
+            key = self._record_key(board_id, kg_generation_id)
+            self._replace_record_with_overlay_revision(
+                key=key,
+                transform=lambda _current: record,
+            )
 
             # NOTE (Codex audit val_036cb81e):
             # update_item MUST NOT emit on
@@ -2058,7 +2459,8 @@ def record_cognitive_working_only_hold(
     board_id: str,
     hold_payload: Mapping[str, Any],
     actor_id: str,
-    base_dir: Path | None = None,
+    base_dir: object | None = None,
+    artifact_store: RebuildAuditArtifactStore | None = None,
 ) -> dict[str, str] | None:
     """Persist an R7 working-only canonical Learning go-forward HOLD as a
     cognitive pending item (NEVER CanonicalDebt / DLQ / a parallel store).
@@ -2071,8 +2473,10 @@ def record_cognitive_working_only_hold(
 
     Generation resolution follows the read-side fallback chain and never
     promotes the ``current`` pointer because of a live hold:
-    ``KGGenerationRepository.get_current`` -> ``store.latest_generation``
-    -> ``generate_kg_generation_id`` (first live ledger).
+    ``RebuildAuditKGGenerationRepository.get_current`` ->
+    ``store.latest_generation`` -> ``generate_kg_generation_id`` (first live
+    ledger). A legacy ``KGGenerationRepository`` fallback remains only when the
+    runtime registry is unavailable in tests/legacy callsites.
 
     Returns ``{generation_id, item_id, artifact_type}`` on success, or None
     when the payload is unusable / the artifact_type is not consolidable (the
@@ -2094,15 +2498,25 @@ def record_cognitive_working_only_hold(
         )
         return None
 
-    base = base_dir or default_rebuild_base_dir()
     from okto_pulse.core.kg.rebuild_generation import (
-        KGGenerationRepository,
+        RebuildAuditKGGenerationRepository,
         generate_kg_generation_id,
     )
 
-    store = CognitiveConsolidationItemStore(base_dir=base)
+    resolved_store = resolve_rebuild_audit_artifact_store(
+        base_dir=base_dir,
+        artifact_store=artifact_store,
+    )
+
+    store = CognitiveConsolidationItemStore(
+        base_dir=base_dir,
+        artifact_store=resolved_store,
+    )
+    current_generation_id = RebuildAuditKGGenerationRepository(
+        artifact_store=resolved_store
+    ).get_current(board_id)
     generation_id = (
-        KGGenerationRepository(base).get_current(board_id)
+        current_generation_id
         or store.latest_generation(board_id)
         or generate_kg_generation_id()
     )
@@ -2162,14 +2576,16 @@ class CognitiveMarkerErrorCode(str, Enum):
 # and semantic cognitive sources. Sources outside this set are skipped silently
 # — the count returned to the caller reflects only what would be queued for the
 # agent.
-CONSOLIDABLE_ARTIFACT_TYPES: frozenset[str] = frozenset({
-    "spec",
-    "decision",
-    "refinement",
-    "task",
-    "test",
-    "bug",
-})
+CONSOLIDABLE_ARTIFACT_TYPES: frozenset[str] = frozenset(
+    {
+        "spec",
+        "decision",
+        "refinement",
+        "task",
+        "test",
+        "bug",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2189,8 +2605,8 @@ class PendingMarkResult:
 
 
 _PENDING_LABELS = ("board_id", "status")
-_pending_counter: dict[tuple[str, str], int] = {}
-_pending_counter_lock = threading.Lock()
+_pending_counter = runtime_state("kg.rebuild_audit.pending_counter", dict)
+_pending_counter_lock = runtime_lock("kg.rebuild_audit.pending_counter")
 
 
 def _bump_pending(*, board_id: str, status: str, count: int = 1) -> None:
@@ -2199,9 +2615,7 @@ def _bump_pending(*, board_id: str, status: str, count: int = 1) -> None:
         _pending_counter[key] = _pending_counter.get(key, 0) + count
 
 
-def get_pending_count(
-    board_id: str, *, status: str | None = None
-) -> int:
+def get_pending_count(board_id: str, *, status: str | None = None) -> int:
     with _pending_counter_lock:
         total = 0
         for (b, st), value in _pending_counter.items():
@@ -2230,9 +2644,7 @@ def reset_pending_counter() -> None:
         _pending_counter.clear()
 
 
-CognitivePendingAdapter = Callable[
-    [str, str, tuple[Mapping[str, Any], ...]], int
-]
+CognitivePendingAdapter = Callable[[str, str, tuple[Mapping[str, Any], ...]], int]
 
 
 def _default_pending_adapter(
@@ -2258,19 +2670,18 @@ class CognitivePendingMarker:
     the new KG generation. NEVER marks completed (br_0d710a8f + TR9).
     """
 
-    base_dir: Path
+    base_dir: object | None = None
     pending_adapter: CognitivePendingAdapter = _default_pending_adapter
+    artifact_store: RebuildAuditArtifactStore | None = None
 
-    def _record_path(
-        self, board_id: str, kg_generation_id: str
-    ) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / AUDIT_DIRNAME
-            / COGNITIVE_PENDING_DIRNAME
-            / board_id
-            / f"{kg_generation_id}.json"
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
         )
 
     def mark_for_generation(
@@ -2305,19 +2716,18 @@ class CognitivePendingMarker:
             sorted(
                 str(row.get("source_ref", row.get("id", "")))
                 for row in rows
-                if str(row.get("artifact_type", ""))
-                in CONSOLIDABLE_ARTIFACT_TYPES
+                if str(row.get("artifact_type", "")) in CONSOLIDABLE_ARTIFACT_TYPES
             )
         )
 
         try:
-            adapter_count = int(
-                self.pending_adapter(board_id, kg_generation_id, rows)
-            )
+            adapter_count = int(self.pending_adapter(board_id, kg_generation_id, rows))
         except Exception as exc:
             logger.error(
                 "kg.cognitive_pending.adapter_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             _bump_pending(
                 board_id=board_id,
@@ -2347,7 +2757,10 @@ class CognitivePendingMarker:
         # sample with labels (board_id, outcome) and item_count value.
         recorded_at = datetime.now(timezone.utc).isoformat()
         try:
-            item_store = CognitiveConsolidationItemStore(base_dir=self.base_dir)
+            item_store = CognitiveConsolidationItemStore(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            )
             materialization = item_store.materialize_from_marker(
                 board_id=board_id,
                 kg_generation_id=kg_generation_id,
@@ -2360,20 +2773,21 @@ class CognitivePendingMarker:
             # default adapter (counts CONSOLIDABLE_ARTIFACT_TYPES) is wired.
             # If a custom adapter overrides this we trust the adapter and
             # keep pending_count for compatibility with KG-02.7.
-            if (
-                materialization.item_count != pending_count
-                and pending_count > 0
-            ):
+            if materialization.item_count != pending_count and pending_count > 0:
                 logger.warning(
                     "kg.cognitive_pending.materialized_mismatch board=%s gen=%s "
                     "adapter_count=%d materialized=%d",
-                    board_id, kg_generation_id, pending_count,
+                    board_id,
+                    kg_generation_id,
+                    pending_count,
                     materialization.item_count,
                 )
         except Exception as exc:
             logger.error(
                 "kg.cognitive_pending.record_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             _bump_pending(
                 board_id=board_id,
@@ -2393,7 +2807,9 @@ class CognitivePendingMarker:
         _bump_pending(
             board_id=board_id,
             status=status_value,
-            count=max(1, pending_count) if status_value == CognitivePendingStatus.PENDING_MARKED.value else 1,
+            count=max(1, pending_count)
+            if status_value == CognitivePendingStatus.PENDING_MARKED.value
+            else 1,
         )
         return PendingMarkResult(
             pending_count=pending_count,
@@ -2428,14 +2844,16 @@ class ConfirmationAuditErrorCode(str, Enum):
     INVALID_OUTCOME = "invalid_outcome"
 
 
-CANONICAL_AUDIT_OPERATIONS: frozenset[str] = frozenset({
-    "reset",
-    "quarantine",
-    "rebuild",
-    "promote",
-    "rollback",
-    "reindex_discovery",
-})
+CANONICAL_AUDIT_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "reset",
+        "quarantine",
+        "rebuild",
+        "promote",
+        "rollback",
+        "reindex_discovery",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2451,8 +2869,8 @@ class ConfirmationAuditResult:
 
 
 _AUDIT_LABELS = ("board_id", "operation", "outcome")
-_audit_counter: dict[tuple[str, str, str], int] = {}
-_audit_counter_lock = threading.Lock()
+_audit_counter = runtime_state("kg.rebuild_audit.audit_counter", dict)
+_audit_counter_lock = runtime_lock("kg.rebuild_audit.audit_counter")
 
 
 def _bump_audit(*, board_id: str, operation: str, outcome: str) -> None:
@@ -2512,9 +2930,11 @@ _SAFE_FINGERPRINT_PREFIX = "conf_fp_"
 # Allowlist for canonical safe field names whose values are vetted by
 # construction (fingerprints, opaque refs). These keys never count as
 # "credential-shaped" even if the leaf value contains a long string.
-_ALLOWLISTED_AUDIT_KEYS: frozenset[str] = frozenset({
-    "confirmation_ref",  # always conf_fp_<sha256>
-})
+_ALLOWLISTED_AUDIT_KEYS: frozenset[str] = frozenset(
+    {
+        "confirmation_ref",  # always conf_fp_<sha256>
+    }
+)
 
 
 def _is_raw_token_shape(value: str) -> bool:
@@ -2539,9 +2959,8 @@ def _audit_payload_is_safe(
         if isinstance(node, Mapping):
             for key, value in node.items():
                 key_str = str(key)
-                if (
-                    key_str not in _ALLOWLISTED_AUDIT_KEYS
-                    and suspect_key_pat.search(key_str)
+                if key_str not in _ALLOWLISTED_AUDIT_KEYS and suspect_key_pat.search(
+                    key_str
                 ):
                     return False, ".".join((*path, key_str))
                 ok, reason = _walk(value, (*path, key_str))
@@ -2571,15 +2990,25 @@ class ConfirmationConsumptionAuditRecorder:
     * audit row persisted atomically before the counter bump.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
 
-    def _audit_dir(self, board_id: str) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / AUDIT_DIRNAME
-            / CONFIRMATION_AUDIT_DIRNAME
-            / board_id
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
+
+    @staticmethod
+    def _audit_key(board_id: str, audit_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="confirmation_audit",
+            board_id=board_id,
+            artifact_id=audit_id,
         )
 
     def record(
@@ -2641,7 +3070,9 @@ class ConfirmationConsumptionAuditRecorder:
         if not safe:
             logger.warning(
                 "kg.confirmation_audit.unsafe_payload board=%s op=%s path=%s",
-                board_id, operation, reason_safe,
+                board_id,
+                operation,
+                reason_safe,
             )
             return ConfirmationAuditResult(
                 audit_ref=None,
@@ -2651,25 +3082,23 @@ class ConfirmationConsumptionAuditRecorder:
                 detail=f"unsafe_field={reason_safe}",
             )
 
-        directory = self._audit_dir(board_id)
         try:
-            directory.mkdir(parents=True, exist_ok=True)
             audit_id = f"audit_{uuid.uuid4().hex}"
-            audit_path = directory / f"{audit_id}.json"
             recorded_at = datetime.now(timezone.utc).isoformat()
             record_payload = {
                 "audit_id": audit_id,
                 "recorded_at": recorded_at,
                 **payload,
             }
-            tmp = audit_path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(record_payload, fh, indent=2)
-            tmp.replace(audit_path)
+            audit_key = self._audit_key(board_id, audit_id)
+            self.artifact_store.write_json_atomic(audit_key, record_payload)
+            audit_ref = self.artifact_store.reference(audit_key)
         except Exception as exc:
             logger.error(
                 "kg.confirmation_audit.persist_failed board=%s op=%s err=%s",
-                board_id, operation, exc,
+                board_id,
+                operation,
+                exc,
             )
             return ConfirmationAuditResult(
                 audit_ref=None,
@@ -2681,7 +3110,7 @@ class ConfirmationConsumptionAuditRecorder:
 
         _bump_audit(board_id=board_id, operation=operation, outcome=outcome)
         return ConfirmationAuditResult(
-            audit_ref=str(audit_path),
+            audit_ref=audit_ref,
             recorded_at=recorded_at,
             outcome=outcome,
         )
@@ -2698,9 +3127,7 @@ class ConfirmationConsumptionAuditRecorder:
 # ``manifest_ref`` so the resolver can load sources from the manifest
 # store deterministically. Returning ``()`` is legitimate (rebuild of an
 # empty board); raising propagates as a marker SKIPPED outcome.
-SourceSetResolver = Callable[
-    [Mapping[str, Any]], Sequence[Mapping[str, Any]]
-]
+SourceSetResolver = Callable[[Mapping[str, Any]], Sequence[Mapping[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -2749,8 +3176,7 @@ def build_kg_rebuilt_event_handler(
             return KGRebuiltHandlerResult(
                 publish=publish_result,
                 mark=None,
-                skipped_reason=publish_result.error_code
-                or "publish_not_accepted",
+                skipped_reason=publish_result.error_code or "publish_not_accepted",
             )
 
         kg_generation_id = event_payload.get("kg_generation_id")
@@ -2766,7 +3192,8 @@ def build_kg_rebuilt_event_handler(
         except Exception as exc:
             logger.error(
                 "kg.rebuilt_handler.source_resolver_failed board=%s err=%s",
-                event_payload.get("board_id"), exc,
+                event_payload.get("board_id"),
+                exc,
             )
             sources = ()
 
@@ -2785,6 +3212,10 @@ def build_kg_rebuilt_event_handler(
     return _handler
 
 
+emit_list_sample = _emit_list_sample
+is_raw_token_shape = _is_raw_token_shape
+
+
 __all__ = [
     "AUDIT_DIRNAME",
     "ACTIVE_ITEM_STATUSES",
@@ -2800,6 +3231,9 @@ __all__ = [
     "CognitiveItemUpdateOutcome",
     "CognitiveItemUpdateReasonCode",
     "CognitivePendingOutcomeType",
+    "CognitivePendingOverlaySnapshot",
+    "CognitivePendingOverlaySnapshotError",
+    "CognitivePendingOverlaySnapshotService",
     "CognitivePendingReopenOutcome",
     "CognitivePendingReopenReasonCode",
     "CognitiveMarkerErrorCode",
@@ -2827,14 +3261,13 @@ __all__ = [
     "REBUILD_DIRNAME",
     "SourceSetResolver",
     "_API_ITEM_FIELDS",
-    "_emit_list_sample",
+    "emit_list_sample",
     "_emit_unsafe_payload_sample",
     "_emit_update_sample",
     "build_kg_rebuilt_event_handler",
     "compute_cognitive_item_id",
     "compute_status_counts",
     "confirmation_fingerprint",
-    "default_rebuild_base_dir",
     "detect_unsafe_update_payload",
     "empty_status_counts",
     "record_cognitive_working_only_hold",
@@ -2873,5 +3306,8 @@ __all__ = [
     "get_reopen_event_count",
     "get_reopen_samples",
     "reset_reopen_counter",
+    "require_rebuild_audit_artifact_store",
+    "resolve_rebuild_audit_artifact_store",
     "validate_kg_rebuilt_event",
+    "is_raw_token_shape",
 ]

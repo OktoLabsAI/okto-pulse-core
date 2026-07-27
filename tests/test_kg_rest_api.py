@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from okto_pulse.core.api.kg_routes import (
+from okto_pulse.community.api.kg_routes import (
     ProblemDetail,
     decode_cursor,
     encode_cursor,

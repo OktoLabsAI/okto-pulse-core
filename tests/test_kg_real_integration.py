@@ -8,7 +8,7 @@ It must be invoked explicitly:
 Environment requirements:
 - ~/.okto-pulse/data/pulse.db must exist (the real SQLite database)
 - ~/.okto-pulse/boards/<BOARD_ID>/graph.kuzu must exist (the real Kùzu graph)
-- sentence-transformers must be installed (pip install okto-pulse-core[kg-embeddings])
+- the Community edition must be installed for real sentence-transformers tests
 - The server must NOT be running (to avoid DB lock conflicts)
 
 NOTE: This test is designed to coexist with conftest.py's autouse fixtures.
@@ -30,30 +30,22 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# ENVIRONMENT SETUP — must happen BEFORE any okto_pulse import
+# ENVIRONMENT SETUP — real paths, applied per-module via fixture below.
+#
+# NEVER mutate os.environ at module level here: this module is imported during
+# pytest COLLECTION of any broad run, and a bare os.environ assignment would
+# repoint DATABASE_URL at the user's real ~/.okto-pulse database for the whole
+# test session (any later create_database(CoreSettings().database_url) call
+# would then hijack the process-global engine and leak test writes into real
+# data). The env swap now lives in `_real_env`, which only runs when a test in
+# THIS module actually executes (explicit `-m real_kg` invocation) and undoes
+# itself afterwards.
 # ---------------------------------------------------------------------------
 
 _REAL_DATA_DIR = Path(os.path.expanduser("~/.okto-pulse"))
 _REAL_BOARD_ID = "72474fc3-0162-4bd9-8444-f7b8ffcf1bcf"
 _REAL_SQLITE_DB = _REAL_DATA_DIR / "data" / "pulse.db"
 _REAL_KUZU_GRAPH = _REAL_DATA_DIR / "boards" / _REAL_BOARD_ID / "graph.kuzu"
-
-# Set env vars BEFORE importing any okto_pulse module
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_REAL_SQLITE_DB}"
-os.environ["KG_BASE_DIR"] = str(_REAL_DATA_DIR)
-os.environ["KG_EMBEDDING_MODE"] = "sentence-transformers"
-os.environ["KG_CLEANUP_ENABLED"] = "false"
-os.environ["KG_CLEANUP_INTERVAL_SECONDS"] = "3600"
-
-# ---------------------------------------------------------------------------
-# Verbose logging setup — show ALL [KG] debug messages
-# ---------------------------------------------------------------------------
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s %(name)s %(levelname)s [KG-TEST] %(message)s",
-    force=True,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +58,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
-from okto_pulse.core.kg.schema import NODE_TYPES
+from kg_schema_testing import NODE_TYPES
 from okto_pulse.core.kg.tier_power import get_schema_info
 
 
@@ -85,6 +77,31 @@ skip_no_real_kuzu = pytest.mark.skipif(
 
 real_kg = pytest.mark.real_kg
 real_timeout = pytest.mark.timeout(60)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _real_env():
+    """Point the environment at the real ~/.okto-pulse data — execution only.
+
+    Module-scoped so the swap happens once per explicit run of this file, and
+    ONLY when a test here actually executes (skipped/deselected tests never
+    trigger it). MonkeyPatch.undo() restores the suite's temp-database env.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{_REAL_SQLITE_DB}")
+    mp.setenv("KG_BASE_DIR", str(_REAL_DATA_DIR))
+    mp.setenv("KG_EMBEDDING_MODE", "sentence-transformers")
+    mp.setenv("KG_CLEANUP_ENABLED", "false")
+    mp.setenv("KG_CLEANUP_INTERVAL_SECONDS", "3600")
+    # Verbose logging for the explicit real-KG run — also execution-only so a
+    # broad run's logging config is never force-reset during collection.
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(name)s %(levelname)s [KG-TEST] %(message)s",
+        force=True,
+    )
+    yield
+    mp.undo()
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +240,7 @@ def test_real_count_relationships():
 
     db, conn = _open_real_kuzu()
     try:
-        from okto_pulse.core.kg.schema import REL_TYPES
+        from kg_schema_testing import REL_TYPES
         for rel_name, from_type, to_type in REL_TYPES:
             try:
                 res = conn.execute(f"MATCH ()-[r:{rel_name}]->() RETURN count(r)")
@@ -240,7 +257,7 @@ def test_real_count_relationships():
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Real embedding via SentenceTransformerProvider
+# Test 5: Real embedding via CommunitySentenceTransformerProvider
 # ---------------------------------------------------------------------------
 
 @real_kg
@@ -250,9 +267,12 @@ def test_real_embedding():
     """Test that sentence-transformers embedding works."""
     logger.info("[KG-TEST] === Test 5: Real Embedding ===")
 
-    from okto_pulse.core.kg.embedding import SentenceTransformerProvider
+    community_embedding = pytest.importorskip(
+        "okto_pulse.community.adapters.embedding",
+        reason="real sentence-transformers provider lives in okto-pulse-community",
+    )
 
-    provider = SentenceTransformerProvider(
+    provider = community_embedding.CommunitySentenceTransformerProvider(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         dim=384,
     )
@@ -286,9 +306,12 @@ def test_real_hnsw_search():
     """Run a HNSW vector search directly against real Kùzu."""
     logger.info("[KG-TEST] === Test 6: HNSW Vector Search ===")
 
-    from okto_pulse.core.kg.embedding import SentenceTransformerProvider
+    community_embedding = pytest.importorskip(
+        "okto_pulse.community.adapters.embedding",
+        reason="real sentence-transformers provider lives in okto-pulse-community",
+    )
 
-    provider = SentenceTransformerProvider(
+    provider = community_embedding.CommunitySentenceTransformerProvider(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         dim=384,
     )

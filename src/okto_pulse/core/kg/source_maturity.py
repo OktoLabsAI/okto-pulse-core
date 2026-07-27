@@ -31,6 +31,9 @@ MATURITY_WORKING_DISCARDED = "working_discarded"
 MATURITY_CANCELLED = "cancelled"
 MATURITY_LEGACY_UNKNOWN = "legacy_unknown"
 
+CANCELLATION_REVOCATION_REASON = "source_cancelled"
+CANCELLATION_SCORE_PENALTY = 0.5
+
 CANONICAL_STATUS_BY_ARTIFACT_TYPE: dict[str, frozenset[str]] = {
     "refinement": frozenset({"done"}),
     "spec": frozenset({"done"}),
@@ -43,17 +46,19 @@ CANONICAL_STATUS_BY_ARTIFACT_TYPE: dict[str, frozenset[str]] = {
     "amendment_hotfix_revision": frozenset({"done"}),
 }
 
-WORKING_ARTIFACT_TYPES = frozenset({
-    "story",
-    "ideation",
-    "refinement",
-    "spec",
-    "task",
-    "test",
-    "bug",
-    "sprint",
-    "amendment_hotfix_revision",
-})
+WORKING_ARTIFACT_TYPES = frozenset(
+    {
+        "story",
+        "ideation",
+        "refinement",
+        "spec",
+        "task",
+        "test",
+        "bug",
+        "sprint",
+        "amendment_hotfix_revision",
+    }
+)
 
 REBUILD_ARTIFACT_TYPES: tuple[str, ...] = (
     "story",
@@ -205,7 +210,11 @@ def classify_source_for_kg(
             disposition=DISPOSITION_SKIPPED_BY_MATURITY,
             reason_code="bug_done_without_minimal_evidence",
         )
-    if kind == "amendment_hotfix_revision" and status == "done" and not lineage_complete:
+    if (
+        kind == "amendment_hotfix_revision"
+        and status == "done"
+        and not lineage_complete
+    ):
         # Path B amendment (spec 7ea1e4be FR5): a done amendment whose lineage is
         # NOT complete stays working-only — never canonical. This mirrors
         # evaluate_amendment_eligibility.canonicalization_candidate
@@ -263,7 +272,9 @@ def classify_source_for_kg(
         artifact_status=status,
         graph_layer=GRAPH_LAYER_WORKING,
         maturity_status=MATURITY_WORKING_IMMATURE,
-        disposition=DISPOSITION_WORKING if kind == "ideation" else DISPOSITION_SKIPPED_BY_MATURITY,
+        disposition=DISPOSITION_WORKING
+        if kind == "ideation"
+        else DISPOSITION_SKIPPED_BY_MATURITY,
         reason_code=(
             "ideation_never_canonical"
             if kind == "ideation"
@@ -276,6 +287,8 @@ def classify_source_for_kg(
 __all__ = [
     "CANONICAL_ARTIFACT_TYPES",
     "CANONICAL_STATUS_BY_ARTIFACT_TYPE",
+    "CANCELLATION_REVOCATION_REASON",
+    "CANCELLATION_SCORE_PENALTY",
     "DEFAULT_WORKING_TTL_DAYS",
     "DISPOSITION_CANONICAL",
     "DISPOSITION_LEGACY_UNKNOWN",

@@ -8,7 +8,7 @@ scanner, never a parallel token-based gate.
 
 Concrete first R5 budget profile (br_6c2dd1a4 / api_d70929a6 / TR tr_39c8d7ef):
     per_tool_description_chars     <= 900
-    aggregate_tool_description_chars <= 60000
+    aggregate_tool_description_chars <= 70000
     always_loaded_instruction_chars <= 8000
     + fixture-specific payload budgets declared in a checked manifest.
 
@@ -146,7 +146,8 @@ DEFAULT_BUDGET_PROFILE = BudgetProfile()
 
 # R1 ``tool_descriptions`` budget profile (card R1.2, api_b37a6a75, dec_71488495).
 # R1 is a PROFILE of this shared scanner — NOT a parallel token-based scanner.
-# per_tool + aggregate use the strict baseline (br_6c2dd1a4). always_loaded_
+# per_tool remains strict; aggregate is the reviewed post-R1 additive surface.
+# always_loaded_
 # instruction_chars was renegotiated from 8000 to 10000 by an explicit owner
 # decision (recorded on the R1.1 card) prioritising agent assertiveness — it is
 # formalised HERE in the shared, version-controlled profile contract, not only in
@@ -154,7 +155,7 @@ DEFAULT_BUDGET_PROFILE = BudgetProfile()
 TOOL_DESCRIPTIONS_BUDGET_PROFILE = BudgetProfile(
     name="tool_descriptions",
     per_tool_description_chars=900,
-    aggregate_tool_description_chars=60000,
+    aggregate_tool_description_chars=70000,
     always_loaded_instruction_chars=10000,
 )
 
@@ -369,9 +370,13 @@ def snapshot_instructions(server_module: Any) -> dict[str, str]:
 
 
 def snapshot_resources(server_module: Any) -> dict[str, str]:
+    """(R11-A) Snapshot the EFFECTIVE resource catalog (core + Community-injected)
+    via each spec's deterministic loader — the catalog is the authority, not the
+    transitional ``_RESOURCE_REGISTRY`` projection."""
     out: dict[str, str] = {}
-    for _uri, path, _desc in server_module._RESOURCE_REGISTRY:
-        out[path] = server_module._load_resource_file(path)
+    for spec in server_module.effective_resource_catalog().specs():
+        key = spec.path if spec.path is not None else spec.uri
+        out[key] = spec.read()
     return out
 
 

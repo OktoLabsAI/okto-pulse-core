@@ -6,13 +6,7 @@ version: "1.0"
 
 ## Spec Status Transitions
 
-| From | To | Pre-requisites |
-|------|-----|---------------|
-| `draft` | `review` | — |
-| `review` | `approved` | — |
-| `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve` |
-| `validated` | `in_progress` | `okto_pulse_submit_spec_evaluation` with `recommendation=approve` |
-| `in_progress` | `done` | All cards done |
+Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed — see `okto-pulse://workflows/sprints`).
 
 ## Spec Validation Gate — `okto_pulse_submit_spec_validation`
 
@@ -108,6 +102,8 @@ When the **Task Validation Gate** is enabled (`validation_config.required == tru
 **Threshold violations auto-fail the validation regardless of the reviewer's recommendation.** Even with `recommendation="approve"`, the validation fails if any threshold is violated.
 
 The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`).
+
+**Independent reviewer policy:** `reviewer_separation_mode` is resolved from the board before any task-validation mutation. The full task context projects the current caller's `reviewer_separation` decision against card creator, assignee, and executor identities. `enforce` blocks with the action-required code `reviewer_separation_required`; `warn` and `off` proceed and persist the decision in the append-only validation. Legacy persisted boards with the setting absent resolve explicitly to `off` / `legacy_absent_compat`; new boards and new default-board template versions use `enforce` unless configured otherwise.
 
 **Coverage summary tools:**
 - `okto_pulse_list_spec_evaluations(board_id, spec_id)` — evaluations history.

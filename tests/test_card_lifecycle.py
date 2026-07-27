@@ -15,11 +15,12 @@ Rules:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     Card,
@@ -31,13 +32,38 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
-from okto_pulse.core.services.main import CardResourceReadOnlyError, CardService
+from okto_pulse.core.domain.knowledge_selection import KnowledgeSelectionState
+from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationScope
+from okto_pulse.core.services import main as main_service
+from okto_pulse.core.services.main import (
+    CardOperationError,
+    CardResourceReadOnlyError,
+    CardService,
+)
+from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgePropagationServiceError,
+)
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
 BOARD_ID = "card-lifecycle-board-001"
 AGENT_ID = "card-lifecycle-agent-001"
 USER_ID = AGENT_ID
+
+
+class _CardKnowledgeScopePort:
+    def __init__(self, *, v2_active: bool) -> None:
+        self.v2_active = v2_active
+
+    async def load_scope(self, _context, request):
+        return KnowledgePropagationScope(
+            target=request.target,
+            scope_revision=1 if self.v2_active else 0,
+            v2_active=self.v2_active,
+            selection_state=(
+                KnowledgeSelectionState.OMITTED if self.v2_active else None
+            ),
+        )
 
 
 async def _mark_all_resources_na(db, entity_type: str, entity_id: str) -> None:
@@ -245,6 +271,32 @@ class TestCardCreation:
             with pytest.raises(ValueError, match="not found in spec"):
                 await svc.create_card(BOARD_ID, USER_ID, data)
 
+    @pytest.mark.parametrize("card_type", ["normal", "test"])
+    async def test_all_card_types_reject_advanced_initial_status(
+        self,
+        db_factory,
+        card_type,
+    ):
+        """Normal and test cards cannot bypass lifecycle gates during creation."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            spec = (
+                await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))
+            ).scalars().first()
+            data = CardCreate(
+                title=f"Invalid initial {card_type} card",
+                status=CardStatus.DONE,
+                card_type=card_type,
+                spec_id=spec.id,
+                test_scenario_ids=["ts-001"] if card_type == "test" else None,
+            )
+
+            with pytest.raises(CardOperationError) as exc_info:
+                await CardService(db).create_card(BOARD_ID, USER_ID, data)
+
+            assert exc_info.value.code == "card_initial_status_invalid"
+            assert exc_info.value.facts["requested_status"] == "done"
+
 
 # ============================================================================
 # 2. Card status transitions
@@ -252,10 +304,16 @@ class TestCardCreation:
 
 
 @pytest.mark.asyncio
-class TestCardStatusTransitions:  # noqa: F811
+class TestCardStatusTransitionMatrix:
     """AC-2: Card status transitions through the state machine."""
 
-    async def _create_card_for_transition(self, db_factory, status=CardStatus.NOT_STARTED):
+    async def _create_card_for_transition(
+        self,
+        db_factory,
+        status=CardStatus.NOT_STARTED,
+        *,
+        require_task_validation: bool = False,
+    ):
         """Helper: create a card in a given status for transition testing."""
         await _seed_board(db_factory)
         async with db_factory() as db:
@@ -264,13 +322,19 @@ class TestCardStatusTransitions:  # noqa: F811
                 __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
             )).scalars().all()
             actual_spec_id = specs[0].id
+            specs[0].status = SpecStatus.IN_PROGRESS
+            specs[0].require_task_validation = require_task_validation
 
             data = CardCreate(
                 title=f"Transition Card ({status.value})",
-                status=status,
+                status=CardStatus.NOT_STARTED,
                 spec_id=actual_spec_id,
             )
             card = await svc.create_card(BOARD_ID, USER_ID, data)
+            # The transition suite needs fixtures at every source state. Seed
+            # that state directly so production creation stays fail-closed.
+            card.status = status
+            await db.commit()
             return card, actual_spec_id
 
     async def test_transition_not_started_to_started(self, db_factory):
@@ -284,6 +348,22 @@ class TestCardStatusTransitions:  # noqa: F811
             )
             assert moved is not None
             assert moved.status == CardStatus.STARTED
+
+    async def test_same_status_move_is_idempotent_reorder(self, db_factory):
+        """A lateral move preserves status while accepting a new position."""
+        card, _ = await self._create_card_for_transition(
+            db_factory, CardStatus.NOT_STARTED
+        )
+        async with db_factory() as db:
+            svc = CardService(db)
+            moved = await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(status=CardStatus.NOT_STARTED, position=0),
+            )
+            assert moved is not None
+            assert moved.status == CardStatus.NOT_STARTED
+            assert moved.position == 0
 
     async def test_transition_started_to_in_progress(self, db_factory):
         """started → in_progress is a valid forward transition."""
@@ -349,6 +429,7 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="No deviation from plan",
                 ),
             )
+            await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
             result = await svc.submit_task_validation(
                 card.id,
@@ -365,6 +446,7 @@ class TestCardStatusTransitions:  # noqa: F811
                     "recommendation": "approve",
                 },
             )
+            await db.commit()
 
             persisted = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.id == card.id)
@@ -377,10 +459,11 @@ class TestCardStatusTransitions:  # noqa: F811
             assert persisted.conclusions[0]["text"] == "Executor claim for validator review"
 
     async def test_transition_validation_to_done_with_required_fields(self, db_factory):
-        """validation → done requires conclusion, completeness, drift."""
+        """validation → done remains available when task validation is disabled."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.VALIDATION)
         async with db_factory() as db:
             svc = CardService(db)
+            await _mark_all_resources_na(db, "card", card.id)
             moved = await svc.move_card(
                 card.id, USER_ID,
                 CardMove(
@@ -399,30 +482,50 @@ class TestCardStatusTransitions:  # noqa: F811
             assert moved.conclusions[0]["completeness"] == 100
             assert moved.conclusions[0]["drift"] == 0
 
-    async def test_transition_done_backward_to_not_started(self, db_factory):
-        """done → not_started is a valid backward transition (reset)."""
+    async def test_direct_validation_to_done_cannot_bypass_required_gate(
+        self,
+        db_factory,
+    ):
+        card, _ = await self._create_card_for_transition(
+            db_factory,
+            CardStatus.VALIDATION,
+            require_task_validation=True,
+        )
+        async with db_factory() as db:
+            with pytest.raises(ValueError, match="submit_task_validation"):
+                await CardService(db).move_card(
+                    card.id,
+                    USER_ID,
+                    CardMove(
+                        status=CardStatus.DONE,
+                        conclusion="Attempted direct completion",
+                        completeness=100,
+                        completeness_justification="Complete",
+                        drift=0,
+                        drift_justification="No deviation",
+                    ),
+                )
+
+    async def test_transition_done_backward_to_in_progress(self, db_factory):
+        """done → in_progress is the canonical backward transition."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.DONE)
         async with db_factory() as db:
             svc = CardService(db)
             moved = await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.NOT_STARTED),
+                CardMove(status=CardStatus.IN_PROGRESS),
             )
             assert moved is not None
-            assert moved.status == CardStatus.NOT_STARTED
+            assert moved.status == CardStatus.IN_PROGRESS
 
     async def test_invalid_transition_not_started_to_done_raises(self, db_factory):
         """not_started → done without required fields must raise ValueError."""
-        card, _ = await self._create_card_for_transition(db_factory, CardStatus.NOT_STARTED)
+        card, _ = await self._create_card_for_transition(
+            db_factory,
+            CardStatus.IN_PROGRESS,
+        )
         async with db_factory() as db:
             svc = CardService(db)
-            # Move to in_progress first (required before done)
-            await svc.move_card(
-                card.id, USER_ID,
-                CardMove(status=CardStatus.IN_PROGRESS),
-            )
-            # Now try to go directly to done without going through validation
-            # (validation gate may block, but definitely missing required fields)
             with pytest.raises(ValueError, match="conclusion"):
                 await svc.move_card(
                     card.id, USER_ID,
@@ -520,8 +623,9 @@ class TestCardStatusTransitions:  # noqa: F811
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.VALIDATION)
         async with db_factory() as db:
             svc = CardService(db)
+            await _mark_all_resources_na(db, "card", card.id)
             # First completion
-            await svc.move_card(
+            moved = await svc.move_card(
                 card.id, USER_ID,
                 CardMove(
                     status=CardStatus.DONE,
@@ -532,13 +636,13 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="No deviation",
                 ),
             )
-            # Reset to validation
+            # Reopen through the canonical reverse path.
             await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.VALIDATION),
+                CardMove(status=CardStatus.IN_PROGRESS),
             )
             # Second completion
-            await svc.move_card(
+            moved = await svc.move_card(
                 card.id, USER_ID,
                 CardMove(
                     status=CardStatus.DONE,
@@ -549,10 +653,10 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="Minor deviation",
                 ),
             )
-            await db.refresh(card)
-            assert len(card.conclusions) == 2
-            assert card.conclusions[0]["text"] == "First completion"
-            assert card.conclusions[1]["text"] == "Second completion"
+            assert moved is not None
+            assert len(moved.conclusions) == 2
+            assert moved.conclusions[0]["text"] == "First completion"
+            assert moved.conclusions[1]["text"] == "Second completion"
 
 
 # ============================================================================
@@ -576,10 +680,11 @@ class TestCardValidationReportGate:
                 USER_ID,
                 CardCreate(
                     title="Validation report gate card",
-                    status=CardStatus.IN_PROGRESS,
+                    status=CardStatus.STARTED,
                     spec_id=specs[0].id,
                 ),
             )
+            card.status = CardStatus.IN_PROGRESS
             await db.commit()
             return card
 
@@ -629,6 +734,7 @@ class TestCardValidationReportGate:
                     drift_justification="No deviation from plan",
                 ),
             )
+            await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
             result = await svc.submit_task_validation(
                 card.id,
@@ -645,6 +751,7 @@ class TestCardValidationReportGate:
                     "recommendation": "approve",
                 },
             )
+            await db.commit()
 
             persisted = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.id == card.id)
@@ -681,6 +788,25 @@ class TestCardUpdates:
             assert updated.title == "Updated Title"
             assert updated.description == "Updated description text"
 
+    async def test_update_card_rejects_direct_status_change(self, db_factory):
+        """CRUD updates cannot bypass move_card transition gates."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            card = (
+                await db.execute(select(Card).where(Card.board_id == BOARD_ID))
+            ).scalars().first()
+            original_status = card.status
+
+            with pytest.raises(CardOperationError) as exc_info:
+                await CardService(db).update_card(
+                    card.id,
+                    USER_ID,
+                    CardUpdate(status=CardStatus.DONE),
+                )
+
+            assert exc_info.value.code == "card_status_update_requires_move"
+            assert card.status == original_status
+
     async def test_update_priority(self, db_factory):
         """Update card priority."""
         await _seed_board(db_factory)
@@ -715,7 +841,12 @@ class TestCardUpdates:
         """Card KB/mockup snapshots can only be refreshed by propagation/copy paths."""
         await _seed_board(db_factory)
         async with db_factory() as db:
-            svc = CardService(db)
+            svc = CardService(
+                db,
+                knowledge_propagation_port=_CardKnowledgeScopePort(
+                    v2_active=False
+                ),
+            )
             card = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
             )).scalars().first()
@@ -734,6 +865,44 @@ class TestCardUpdates:
                 allow_card_resource_write=True,
             )
             assert updated.knowledge_bases == [{"id": "cardkb_copied"}]
+
+    async def test_internal_resource_write_is_forbidden_for_v2_target(
+        self,
+        db_factory,
+    ):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(
+                db,
+                knowledge_propagation_port=_CardKnowledgeScopePort(
+                    v2_active=True
+                ),
+            )
+            card = (
+                await db.execute(
+                    __import__("sqlalchemy")
+                    .select(Card)
+                    .where(Card.board_id == BOARD_ID)
+                )
+            ).scalars().first()
+            before = list(card.knowledge_bases or [])
+
+            with pytest.raises(KnowledgePropagationServiceError) as caught:
+                await svc.update_card(
+                    card.id,
+                    USER_ID,
+                    CardUpdate(
+                        knowledge_bases=[{"id": "cardkb_forbidden"}]
+                    ),
+                    allow_card_resource_write=True,
+                )
+
+            assert (
+                caught.value.code
+                == "knowledge_propagation_legacy_write_forbidden"
+            )
+            await db.refresh(card)
+            assert list(card.knowledge_bases or []) == before
 
     async def test_update_assignee(self, db_factory):
         """Change card assignee."""
@@ -763,7 +932,59 @@ class TestCardUpdates:
 
 
 # ============================================================================
-# 4. Card dependencies
+# 4. Task validation evidence deletion
+# ============================================================================
+
+
+@pytest.mark.asyncio
+class TestTaskValidationDeletion:
+    async def test_completed_card_retains_last_required_success(self, db_factory):
+        """A done card must retain the validation evidence required to finish it."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            card = (
+                await db.execute(select(Card).where(Card.board_id == BOARD_ID))
+            ).scalars().first()
+            spec = await db.get(Spec, card.spec_id)
+            spec.require_task_validation = True
+            card.status = CardStatus.DONE
+            card.validations = [
+                {
+                    "id": "validation-success",
+                    "outcome": "success",
+                    "reviewer_id": "reviewer-1",
+                },
+                {
+                    "id": "validation-failed",
+                    "outcome": "failed",
+                    "reviewer_id": "reviewer-2",
+                },
+            ]
+
+            service = CardService(db)
+            assert await service.delete_task_validation(
+                card.id,
+                "validation-failed",
+                USER_ID,
+            )
+            await db.commit()
+
+            with pytest.raises(CardOperationError) as exc_info:
+                await service.delete_task_validation(
+                    card.id,
+                    "validation-success",
+                    USER_ID,
+                )
+
+            assert exc_info.value.code == "task_validation_history_required"
+            persisted = await service.get_card(card.id)
+            assert [item["id"] for item in persisted.validations] == [
+                "validation-success"
+            ]
+
+
+# ============================================================================
+# 5. Card dependencies
 # ============================================================================
 
 
@@ -775,11 +996,38 @@ class TestCardDependencies:
         """Helper: seed board and return the two cards for dependency testing."""
         await _seed_board(db_factory)
         async with db_factory() as db:
-            cards = (await db.execute(
-                __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
-            )).scalars().all()
-            assert len(cards) >= 2
-            return cards[0], cards[1]
+            spec = (
+                await db.execute(
+                    __import__("sqlalchemy")
+                    .select(Spec)
+                    .where(Spec.board_id == BOARD_ID)
+                )
+            ).scalars().first()
+            card_a = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=spec.id,
+                title=f"Dependency A {uuid.uuid4().hex[:8]}",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            card_b = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=spec.id,
+                title=f"Dependency B {uuid.uuid4().hex[:8]}",
+                status=CardStatus.STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            db.add_all([card_a, card_b])
+            await db.commit()
+            return card_a, card_b
 
     async def test_add_dependency(self, db_factory):
         """Card A depends on Card B — dependency is created."""
@@ -806,8 +1054,9 @@ class TestCardDependencies:
             assert dep1 is not None
 
             # Second: B depends on A — should be blocked
-            dep2 = await svc.add_dependency(card_b.id, card_a.id)
-            assert dep2 is None
+            with pytest.raises(CardOperationError) as caught:
+                await svc.add_dependency(card_b.id, card_a.id)
+            assert caught.value.code == "dependency_cycle_detected"
 
             # Verify: only A→B exists
             deps_a = await svc.get_dependencies(card_a.id)
@@ -848,7 +1097,9 @@ class TestCardDependencies:
             # B→C
             assert await svc.add_dependency(cb.id, cc.id) is not None
             # C→A — should be blocked (creates A→B→C→A cycle)
-            assert await svc.add_dependency(cc.id, ca.id) is None
+            with pytest.raises(CardOperationError) as caught:
+                await svc.add_dependency(cc.id, ca.id)
+            assert caught.value.code == "dependency_cycle_detected"
 
     async def test_remove_dependency(self, db_factory):
         """Adding and then removing a dependency."""
@@ -872,8 +1123,20 @@ class TestCardDependencies:
         card_a, _ = await self._setup_dependency_test(db_factory)
         async with db_factory() as db:
             svc = CardService(db)
-            dep = await svc.add_dependency(card_a.id, card_a.id)
-            assert dep is None
+            with pytest.raises(CardOperationError) as caught:
+                await svc.add_dependency(card_a.id, card_a.id)
+            assert caught.value.code == "dependency_self_reference"
+
+    async def test_duplicate_dependency_is_idempotent(self, db_factory):
+        """A repeated edge returns the original record without duplication."""
+        card_a, card_b = await self._setup_dependency_test(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            created = await svc.add_dependency(card_a.id, card_b.id)
+            duplicate = await svc.add_dependency(card_a.id, card_b.id)
+
+            assert duplicate.id == created.id
+            assert len(await svc.get_dependencies(card_a.id)) == 1
 
     async def test_block_forward_move_on_unmet_dependency(self, db_factory):
         """Forward move should be blocked if dependencies are not met."""
@@ -891,11 +1154,13 @@ class TestCardDependencies:
             await svc.add_dependency(card_b.id, card_a.id)
 
             # Try to move card_b forward — should be blocked because card_a is not done
-            with pytest.raises(ValueError, match="Dependências"):
+            with pytest.raises(CardOperationError) as caught:
                 await svc.move_card(
                     card_b.id, USER_ID,
                     CardMove(status=CardStatus.IN_PROGRESS),
                 )
+            assert caught.value.code == "dependencies_incomplete"
+            assert caught.value.facts["blocking_dependencies"] == [card_a.title]
 
     async def test_forward_move_unblocked_after_dependency_done(self, db_factory):
         """Forward move should succeed after dependency card is moved to done."""
@@ -916,6 +1181,14 @@ class TestCardDependencies:
             # Move card_a through the validation gate first.
             await svc.move_card(
                 card_a.id, USER_ID,
+                CardMove(status=CardStatus.STARTED),
+            )
+            await svc.move_card(
+                card_a.id, USER_ID,
+                CardMove(status=CardStatus.IN_PROGRESS),
+            )
+            await svc.move_card(
+                card_a.id, USER_ID,
                 CardMove(
                     status=CardStatus.VALIDATION,
                     conclusion="Dependency done",
@@ -925,6 +1198,7 @@ class TestCardDependencies:
                     drift_justification="No deviation",
                 ),
             )
+            await db.commit()
             await svc.submit_task_validation(
                 card_a.id,
                 "reviewer-1",
@@ -1119,6 +1393,112 @@ class TestBugCardCreation:
             assert card.expected_behavior == data.expected_behavior
             assert card.observed_behavior == data.observed_behavior
 
+    async def test_v2_bug_creation_fences_origin_parent_change(self, db_factory):
+        """A stale preflight parent cannot be replaced during target staging."""
+
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            original_spec = (
+                await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))
+            ).scalars().first()
+            assert original_spec is not None
+            current_spec = Spec(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                title="Origin moved here",
+                status=SpecStatus.APPROVED,
+                created_by=USER_ID,
+            )
+            db.add(current_spec)
+            origin_card = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=current_spec.id,
+                title="Moved origin task",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            db.add(origin_card)
+            await db.flush()
+
+            with pytest.raises(KnowledgePropagationServiceError) as raised:
+                await svc.create_card(
+                    BOARD_ID,
+                    USER_ID,
+                    CardCreate(
+                        title="Stale governed bug",
+                        card_type="bug",
+                        origin_task_id=origin_card.id,
+                        severity="major",
+                        expected_behavior="Expected",
+                        observed_behavior="Observed",
+                        spec_id=original_spec.id,
+                    ),
+                    target_id=str(uuid.uuid4()),
+                    knowledge_propagation_v2=True,
+                )
+
+            assert raised.value.code == "knowledge_propagation_parent_changed"
+            assert raised.value.details["expected_spec_id"] == original_spec.id
+            assert raised.value.details["actual_spec_id"] == current_spec.id
+
+    async def test_v2_bug_creation_fails_closed_when_origin_fence_loses(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            spec = (
+                await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))
+            ).scalars().first()
+            assert spec is not None
+            origin_card = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=spec.id,
+                title="Origin changed after the fresh read",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            db.add(origin_card)
+            await db.flush()
+
+            async def _lost_fence(*_args, **_kwargs):
+                return False
+
+            monkeypatch.setattr(
+                main_service,
+                "_application_fence",
+                _lost_fence,
+            )
+            with pytest.raises(KnowledgePropagationServiceError) as raised:
+                await svc.create_card(
+                    BOARD_ID,
+                    USER_ID,
+                    CardCreate(
+                        title="Fenced governed bug",
+                        card_type="bug",
+                        origin_task_id=origin_card.id,
+                        severity="major",
+                        expected_behavior="Expected",
+                        observed_behavior="Observed",
+                        spec_id=spec.id,
+                    ),
+                    target_id=str(uuid.uuid4()),
+                    knowledge_propagation_v2=True,
+                )
+
+            assert raised.value.code == "knowledge_propagation_parent_changed"
+
     async def test_create_bug_card_inherits_origin_traceability_links(self, db_factory):
         """Bug card inherits spec item links from the origin task."""
         await _seed_board(db_factory)
@@ -1195,6 +1575,7 @@ class TestBugCardCreation:
                     observed_behavior="Traceability is missing on the bug",
                 ),
             )
+            await db.commit()
 
             assert bug is not None
             assert bug.spec_id == spec_id
@@ -1448,7 +1829,7 @@ class TestMultipleStatusCards:
     """AC-8: Create and manage cards in different statuses."""
 
     async def test_create_cards_in_different_statuses(self, db_factory):
-        """Create cards in various statuses on the same board."""
+        """Creation accepts only lifecycle entry states."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             svc = CardService(db)
@@ -1457,12 +1838,7 @@ class TestMultipleStatusCards:
             )).scalars().all()
             spec_id = specs[0].id
 
-            statuses = [
-                CardStatus.NOT_STARTED,
-                CardStatus.STARTED,
-                CardStatus.IN_PROGRESS,
-                CardStatus.VALIDATION,
-            ]
+            statuses = [CardStatus.NOT_STARTED, CardStatus.STARTED]
             created_cards = []
             for status in statuses:
                 data = CardCreate(
@@ -1473,14 +1849,21 @@ class TestMultipleStatusCards:
                 card = await svc.create_card(BOARD_ID, USER_ID, data)
                 created_cards.append(card)
 
-            # Verify all cards exist with correct statuses
-            all_cards = (await db.execute(
-                __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
-            )).scalars().all()
-            assert len(all_cards) >= 4  # seed cards + created cards
-
             for card in created_cards:
                 assert card.status in statuses
+
+            for status in (CardStatus.IN_PROGRESS, CardStatus.VALIDATION):
+                with pytest.raises(CardOperationError) as exc_info:
+                    await svc.create_card(
+                        BOARD_ID,
+                        USER_ID,
+                        CardCreate(
+                            title=f"Rejected {status.value}",
+                            status=status,
+                            spec_id=spec_id,
+                        ),
+                    )
+                assert exc_info.value.code == "card_initial_status_invalid"
 
     async def test_card_positions_per_status(self, db_factory):
         """Cards in different statuses should have positions within their column."""
@@ -1524,14 +1907,35 @@ class TestActivityLog:
             specs = (await db.execute(
                 __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
             )).scalars().all()
-            actual_spec_id = specs[0].id
+            spec = specs[0]
+            actual_spec_id = spec.id
 
             data = CardCreate(
                 title=f"Move Card ({status.value})",
-                status=status,
+                status=CardStatus.NOT_STARTED,
                 spec_id=actual_spec_id,
             )
             card = await svc.create_card(BOARD_ID, USER_ID, data)
+            # The helper must be order-independent: forward card transitions
+            # require an execution-ready spec, rather than relying on an
+            # earlier test to have promoted the shared fixture.
+            spec.status = SpecStatus.IN_PROGRESS
+            if status != CardStatus.NOT_STARTED:
+                await svc.move_card(
+                    card.id,
+                    USER_ID,
+                    CardMove(status=CardStatus.STARTED),
+                )
+            if status in (
+                CardStatus.IN_PROGRESS,
+                CardStatus.VALIDATION,
+                CardStatus.DONE,
+            ):
+                await svc.move_card(
+                    card.id,
+                    USER_ID,
+                    CardMove(status=CardStatus.IN_PROGRESS),
+                )
             await db.commit()
             return card, actual_spec_id
 
@@ -1552,6 +1956,7 @@ class TestActivityLog:
                     drift_justification="No deviation from plan",
                 ),
             )
+            await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
             await db.execute(DomainEventRow.__table__.delete())
             result = await svc.submit_task_validation(
@@ -1634,17 +2039,26 @@ class TestActivityLog:
             assert logs[0].details.get("to_status") == "started"
 
     async def test_activity_logged_on_card_update(self, db_factory):
-        """Updating a card should log a card_updated activity."""
+        """Card updates preserve legacy details and add field-level diffs."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             svc = CardService(db)
             card = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
             )).scalars().first()
+            old_title = card.title
+            old_priority = card.priority.value
+            old_labels = list(card.labels or [])
+            new_due_date = datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc)
 
             await svc.update_card(
                 card.id, USER_ID,
-                CardUpdate(title="Updated via test"),
+                CardUpdate(
+                    title="Updated via test",
+                    priority=CardPriority.CRITICAL,
+                    labels=["label-a", "activity-diff"],
+                    due_date=new_due_date,
+                ),
             )
             await db.commit()
 
@@ -1655,6 +2069,28 @@ class TestActivityLog:
                 .where(ActivityLog.card_id == card.id)
             )).scalars().all()
             assert len(logs) >= 1
+            details = logs[0].details
+            assert details is not None
+            # Backward compatibility: existing consumers still receive the
+            # submitted values at the top level.
+            assert details["title"] == "Updated via test"
+            assert details["priority"] == "critical"
+            assert details["labels"] == ["label-a", "activity-diff"]
+            assert details["due_date"] == new_due_date.isoformat()
+
+            changes = {
+                change["field"]: {"old": change["old"], "new": change["new"]}
+                for change in details["changes"]
+            }
+            assert changes == {
+                "title": {"old": old_title, "new": "Updated via test"},
+                "priority": {"old": old_priority, "new": "critical"},
+                "labels": {
+                    "old": old_labels,
+                    "new": ["label-a", "activity-diff"],
+                },
+                "due_date": {"old": None, "new": new_due_date.isoformat()},
+            }
 
     async def test_activity_logged_on_card_deletion(self, db_factory):
         """Deleting a card should log a card_deleted activity."""

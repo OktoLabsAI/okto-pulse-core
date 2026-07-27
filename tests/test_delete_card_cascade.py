@@ -16,13 +16,28 @@ Covers spec 0bef8df6-2171-4a35-85bf-f8902538f719 AC-1..AC-5.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.db import Board, Card, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import (
+    Attachment,
+    ArtifactDeletionTombstone,
+    Board,
+    CanonicalDebt,
+    Card,
+    CardType,
+    ConsolidationDeadLetter,
+    ConsolidationQueue,
+    Spec,
+    SpecStatus,
+)
+from okto_pulse.core.services import main as services_main
 from okto_pulse.core.services.main import CardService
 
 
@@ -169,21 +184,39 @@ async def test_ac2_all_containers_cleaned(db_session, board):
     spec = _spec_factory(
         board.id,
         business_rules=[
-            {"id": "br_1", "title": "", "rule": "", "when": "", "then": "",
-             "linked_requirements": [], "linked_task_ids": [card_id]}
+            {
+                "id": "br_1",
+                "title": "",
+                "rule": "",
+                "when": "",
+                "then": "",
+                "linked_requirements": [],
+                "linked_task_ids": [card_id],
+            }
         ],
         api_contracts=[
-            {"id": "ac_1", "method": "GET", "path": "/x", "description": "",
-             "linked_requirements": [], "linked_rules": [],
-             "linked_task_ids": [card_id]}
+            {
+                "id": "ac_1",
+                "method": "GET",
+                "path": "/x",
+                "description": "",
+                "linked_requirements": [],
+                "linked_rules": [],
+                "linked_task_ids": [card_id],
+            }
         ],
         technical_requirements=[
             {"id": "tr_1", "text": "tr", "linked_task_ids": [card_id]}
         ],
         decisions=[
-            {"id": "d_1", "title": "", "rationale": "",
-             "status": "active", "linked_requirements": [],
-             "linked_task_ids": [card_id]}
+            {
+                "id": "d_1",
+                "title": "",
+                "rationale": "",
+                "status": "active",
+                "linked_requirements": [],
+                "linked_task_ids": [card_id],
+            }
         ],
     )
     db_session.add(spec)
@@ -322,6 +355,7 @@ async def test_ac4_delete_then_recreate_succeeds(db_session, board):
     # stamps the scenario's linked_task_ids).
     spec.test_scenarios[0]["linked_task_ids"] = [new_card.id]
     from sqlalchemy.orm.attributes import flag_modified
+
     flag_modified(spec, "test_scenarios")
     await db_session.commit()
 
@@ -353,3 +387,169 @@ async def test_ac5_spec_less_card_deletes_without_cascade(db_session, board):
     # Row is gone
     got = await db_session.get(Card, card.id)
     assert got is None
+
+
+@pytest.mark.asyncio
+async def test_card_delete_removes_attachment_row_and_physical_bytes(
+    db_session,
+    board,
+    tmp_path,
+    monkeypatch,
+):
+    card = await _make_card(
+        db_session,
+        board_id=board.id,
+        spec_id=None,
+        card_type=CardType.NORMAL,
+    )
+    object_path = tmp_path / board.id / "evidence.bin"
+    object_path.parent.mkdir(parents=True)
+    object_path.write_bytes(b"physical attachment evidence")
+    attachment = Attachment(
+        id=str(uuid.uuid4()),
+        card_id=card.id,
+        filename=object_path.name,
+        original_filename="evidence.bin",
+        mime_type="application/octet-stream",
+        size=object_path.stat().st_size,
+        path=str(object_path),
+        uploaded_by=USER_ID,
+    )
+    db_session.add(attachment)
+    await db_session.commit()
+
+    class _ExactFileStorage:
+        async def load(self, path: str) -> bytes:
+            return await asyncio.to_thread(Path(path).read_bytes)
+
+        async def delete(self, path: str) -> bool:
+            candidate = Path(path)
+            try:
+                await asyncio.to_thread(candidate.unlink)
+            except FileNotFoundError:
+                return False
+            return True
+
+        async def restore(self, path: str, content: bytes) -> None:
+            await asyncio.to_thread(Path(path).write_bytes, content)
+
+    monkeypatch.setattr(
+        services_main,
+        "get_storage_provider",
+        lambda: _ExactFileStorage(),
+    )
+
+    receipt = await CardService(db_session).delete_card(
+        card.id,
+        USER_ID,
+        return_receipt=True,
+    )
+    assert receipt
+    assert [item.attachment_id for item in receipt.attachment_deletions] == [
+        attachment.id
+    ]
+    assert not object_path.exists()
+
+    await db_session.commit()
+
+    assert await db_session.get(Card, card.id) is None
+    assert await db_session.get(Attachment, attachment.id) is None
+    assert not object_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_hard_delete_discards_legacy_work_and_persists_intent(db_session, board):
+    card = await _make_card(
+        db_session,
+        board_id=board.id,
+        spec_id=None,
+        card_type=CardType.NORMAL,
+    )
+    db_session.add_all(
+        [
+            ConsolidationQueue(
+                board_id=board.id,
+                artifact_type="card",
+                artifact_id=card.id,
+                status="pending",
+            ),
+            ConsolidationDeadLetter(
+                board_id=board.id,
+                artifact_type="card",
+                artifact_id=card.id,
+                attempts=5,
+                errors=[],
+            ),
+            CanonicalDebt(
+                board_id=board.id,
+                artifact_type="card",
+                artifact_id=card.id,
+                source_ref=f"card:{card.id}",
+                content_hash="deleted-card-hash",
+                target_status="done",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    assert await CardService(db_session).delete_card(card.id, USER_ID) is True
+    await db_session.commit()
+
+    legacy_queue_count = await db_session.scalar(
+        select(func.count())
+        .select_from(ConsolidationQueue)
+        .where(
+            ConsolidationQueue.board_id == board.id,
+            ConsolidationQueue.artifact_type == "card",
+            ConsolidationQueue.artifact_id == card.id,
+            ConsolidationQueue.work_kind == "consolidate",
+        )
+    )
+    assert legacy_queue_count == 0
+
+    for model in (ConsolidationDeadLetter, CanonicalDebt):
+        count = await db_session.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(
+                model.board_id == board.id,
+                model.artifact_type == "card",
+                model.artifact_id == card.id,
+            )
+        )
+        assert count == 0
+
+    tombstone = (
+        (
+            await db_session.execute(
+                select(ArtifactDeletionTombstone).where(
+                    ArtifactDeletionTombstone.board_id == board.id,
+                    ArtifactDeletionTombstone.artifact_type == "card",
+                    ArtifactDeletionTombstone.artifact_id == card.id,
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    intent = (
+        (
+            await db_session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board.id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card.id,
+                    ConsolidationQueue.work_kind == "stale_reconcile",
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert tombstone.generation == intent.generation == 1
+    assert tombstone.delete_event_id == intent.delete_event_id
+    assert intent.payload == {
+        "schema_version": 1,
+        "delete_event_id": tombstone.delete_event_id,
+        "source_refs": [f"card:{card.id}"],
+    }

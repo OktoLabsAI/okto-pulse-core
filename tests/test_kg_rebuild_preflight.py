@@ -48,6 +48,18 @@ def _source(
     )
 
 
+def _source_row() -> dict[str, str]:
+    return {
+        "artifact_type": "spec",
+        "id": "spec-test",
+        "source_ref": "spec:spec-test",
+        "source_version": "1",
+        "content_hash": "a" * 64,
+        "created_at": "2026-05-01T00:00:00Z",
+        "status": "validated",
+    }
+
+
 def _service(health=None, source=None, status_probe=None) -> RebuildPreflightService:
     return RebuildPreflightService(
         source_probe=lambda _b: source if source else _source(),
@@ -238,9 +250,12 @@ def test_empty_board_id_raises():
 def test_kg_rebuild_router_is_registered_in_api_router():
     """val_7a768ee2: the new router MUST be wired into api_router so
     the endpoint is actually reachable via the live FastAPI app."""
-    from okto_pulse.core.api.router import api_router
+    from fastapi import FastAPI
+    from okto_pulse.community.api.router import api_router
 
-    paths = {route.path for route in api_router.routes}
+    app = FastAPI()
+    app.include_router(api_router)
+    paths = set(app.openapi()["paths"])
     assert "/api/v1/kg/rebuild/preflight" in paths, (
         f"preflight route not registered; have: {sorted(paths)}"
     )
@@ -259,40 +274,35 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.router import api_router
-    from okto_pulse.core.infra.auth import require_user
-    from okto_pulse.core.infra.database import get_db
+    from okto_pulse.community.api.router import api_router
+    from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.community.api.deps import get_unit_of_work
 
     # FR10 gate: a fake Board row so the scope check passes.
     _fake_board = SimpleNamespace(id="b-test", owner_id="user-rebuild-test")
 
-    class _FakeResult:
-        def scalar_one_or_none(self):
-            return _fake_board
-
-    class _FakeShare:
-        """Simulates a BoardShare row — permission "owner" via get_user_permission."""
-        permission = "owner"
-
-    class _FakeShareResult:
-        def scalar_one_or_none(self):
-            return _FakeShare()
-
     class _FakeSession:
+        def __init__(self):
+            self.boards = SimpleNamespace(get=self._get_board)
+            self.services = SimpleNamespace(
+                shares=SimpleNamespace(
+                    get_user_permission=self._get_user_permission
+                )
+            )
+
+        async def _get_board(self, board_id):
+            return _fake_board if board_id == "b-test" else None
+
+        async def _get_user_permission(self, board_id, user_id):
+            if board_id == "b-test" and user_id == "user-rebuild-test":
+                return "owner"
+            return None
+
         async def __aenter__(self):
             return self
 
         async def __aexit__(self, *args):
             pass
-
-        async def execute(self, stmt):
-            # Called by ShareService.get_user_permission for the BoardShare query.
-            return _FakeShareResult()
-
-        async def get(self, model_class, pk):
-            # Called by _require_board_access to check board existence.
-            # Also called by ShareService._get_board for owner check.
-            return _fake_board
 
         async def commit(self):
             pass
@@ -305,13 +315,18 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
         yield session
 
     # FR9 gate: healthy response so the admission gate passes.
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
+    import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
 
-    async def _fake_health(board_id, db):
+    async def _fake_health(board_id, db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
                 "current_kg_generation_id": None}
 
     monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+    monkeypatch.setattr(
+        kg_rebuild_mod,
+        "_build_source_store",
+        lambda: lambda _board_id: [_source_row()],
+    )
 
     app = FastAPI()
     app.include_router(api_router)
@@ -320,7 +335,7 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
         return "user-rebuild-test"
 
     app.dependency_overrides[require_user] = _fake_user
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_unit_of_work] = _fake_db
 
     with TestClient(app) as client:
         response = client.post(
@@ -396,7 +411,7 @@ def _graph_store_fingerprint(path) -> dict:
 def test_preflight_is_non_mutating_and_diagnostic_on_recovery_needed():
     import uuid
 
-    from okto_pulse.core.kg.schema import (
+    from kg_schema_testing import (
         board_kuzu_path,
         bootstrap_board_graph,
         close_board_db_cache,
@@ -452,8 +467,8 @@ def test_post_preflight_missing_board_id_returns_400():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.router import api_router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.router import api_router
+    from okto_pulse.community.api.auth_deps import require_user
 
     app = FastAPI()
     app.include_router(api_router)

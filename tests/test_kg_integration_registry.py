@@ -15,11 +15,13 @@ from okto_pulse.core.kg.interfaces.registry import (
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -78,7 +80,7 @@ class TestCacheBackendIntegration:
         assert "ttl_seconds" in s
 
     def test_ttl_expiry(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
 
         cache = InMemoryCacheBackend(ttl_seconds=0.05)
         cache.put("tool", "b1", {"k": 1}, "val")
@@ -90,7 +92,7 @@ class TestCacheBackendIntegration:
         assert hit is False
 
     def test_lru_eviction_at_max_size(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
 
         cache = InMemoryCacheBackend(max_size=3)
         for i in range(4):
@@ -208,8 +210,11 @@ class TestBackwardCompat:
         from okto_pulse.core.kg.cache import emit_tool_metrics
 
         emit_tool_metrics(
-            tool_name="test", board_id="b", cache_hit=False,
-            duration_ms=1.0, result_count=0,
+            tool_name="test",
+            board_id="b",
+            cache_hit=False,
+            duration_ms=1.0,
+            result_count=0,
         )
 
     def test_get_embedding_provider_import_works(self):
@@ -234,7 +239,9 @@ class TestBackwardCompat:
         assert hit is True
         assert val == "from_compat"
 
-        get_kg_registry().cache_backend.put("tool", "board-z", {"x": 2}, "from_registry")
+        get_kg_registry().cache_backend.put(
+            "tool", "board-z", {"x": 2}, "from_registry"
+        )
         hit, val = cache_get("tool", "board-z", {"x": 2})
         assert hit is True
         assert val == "from_registry"
@@ -244,6 +251,10 @@ class TestBackwardCompat:
 
         p1 = get_kg_registry().embedding_provider
         reset_embedding_provider_cache()
+        # reset_embedding_provider_cache() resets the whole KG registry; R-P2-03
+        # no longer lazy-rebuilds, so reconfigure the embedded fakes explicitly to
+        # observe a fresh provider instance.
+        configure_test_kg_registry()
         p2 = get_kg_registry().embedding_provider
         assert p1 is not p2
 
@@ -257,5 +268,17 @@ class TestBackwardCompat:
 
         assert len(NODE_TYPES) == 11
         assert len(REL_TYPES) == 10
-        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
+        assert SCHEMA_VERSION in {
+            "0.3.2",
+            "0.3.3",
+            "0.3.4",
+            "0.3.5",
+            "0.3.6",
+            "0.3.7",
+            "0.3.8",
+            "0.3.9",
+            "0.3.10",
+            "0.3.11",
+            "0.3.12",
+        }
         assert get_embedding_provider() is not None

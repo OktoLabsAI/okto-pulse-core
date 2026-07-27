@@ -9,26 +9,22 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import subprocess
-import sys
 import time
 import uuid
 from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg import schema as schema_mod
 from okto_pulse.core.kg import primitives as primitives_mod
-from okto_pulse.core.kg.schema import (
-    BoardConnection,
-    NODE_TYPES,
-    _BOOTSTRAPPED_BOARDS,
-    _MIGRATED_BOARDS,
-    bootstrap_board_graph,
-    ensure_board_graph_bootstrapped,
-    migrate_schema_for_board,
-)
+from kg_schema_testing import NODE_TYPES
+
+schema_mod = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+BoardConnection = schema_mod.BoardConnection
+_BOOTSTRAPPED_BOARDS = schema_mod._BOOTSTRAPPED_BOARDS
+_MIGRATED_BOARDS = schema_mod._MIGRATED_BOARDS
+bootstrap_board_graph = schema_mod.bootstrap_board_graph
+ensure_board_graph_bootstrapped = schema_mod.ensure_board_graph_bootstrapped
+migrate_schema_for_board = schema_mod.migrate_schema_for_board
 
 
 # ---------------------------------------------------------------------------
@@ -41,20 +37,26 @@ def temp_okto_home(tmp_path, monkeypatch):
     """Force `~/.okto-pulse/boards` under tmp_path."""
     from okto_pulse.core.infra import config as config_mod
     from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
+    from kg_registry_testing import configure_test_kg_registry
 
     monkeypatch.setenv("OKTO_PULSE_HOME", str(tmp_path))
     monkeypatch.setenv("KG_BASE_DIR", str(tmp_path))
     monkeypatch.setattr(
-        "okto_pulse.core.kg.schema.kg_base_dir",
+        "okto_pulse.community.adapters.kg_runtime.kg_base_dir",
         lambda: tmp_path / "kg",
         raising=False,
     )
-    monkeypatch.setattr(config_mod, "_settings_instance", None)
+    original_settings = config_mod.get_settings()
+    config_mod.configure_settings(
+        original_settings.model_copy(update={"kg_base_dir": str(tmp_path)})
+    )
     reset_registry_for_tests()
+    configure_test_kg_registry()
     try:
         yield tmp_path
     finally:
         reset_registry_for_tests()
+        config_mod.configure_settings(original_settings)
 
 
 @pytest.fixture
@@ -132,36 +134,41 @@ def test_ts2_already_migrated_no_overhead(fresh_board):
 # ---------------------------------------------------------------------------
 
 
-def test_ts3_cli_single_board_returns_json(fresh_board):
-    """AC3: `python -m okto_pulse.tools.kg_migrate_schema --board <id>`
-    returns valid JSON with the expected schema."""
-    # Bug d0f6bab2: parent process keeps the cached Database open per
-    # board; the subprocess opens its own kuzu.Database against the same
-    # path, which Kùzu blocks at OS level. Drop the cache before the
-    # subprocess so the lock is free.
-    from okto_pulse.core.kg.schema import close_board_db_cache
-    close_board_db_cache(board_id=fresh_board)
+def test_ts3_bare_core_schema_migration_tool_is_not_packaged():
+    """The executable belongs to Community, never the standalone Core wheel."""
 
-    repo_root = Path(__file__).resolve().parent.parent
-    src = repo_root / "src"
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(src),
-        "KG_BASE_DIR": os.environ["KG_BASE_DIR"],
-        "OKTO_PULSE_HOME": os.environ.get("OKTO_PULSE_HOME", ""),
-    }
-    result = subprocess.run(
-        [sys.executable, "-m", "okto_pulse.tools.kg_migrate_schema",
-         "--board", fresh_board],
-        capture_output=True, text=True, env=env, cwd=str(repo_root),
+    core_source = Path(__file__).resolve().parents[1] / "src" / "okto_pulse"
+    assert not (core_source / "tools" / "kg_migrate_schema.py").exists()
+
+    from okto_pulse.community.commands import kg_migrate_schema
+
+    assert "community" in Path(kg_migrate_schema.__file__).parts
+
+
+def test_ts3_in_process_single_board_returns_json_shape(fresh_board, capsys):
+    """AC3 (R-P2-03): the migration JSON-payload contract TS3 used to assert via
+    the bare-core subprocess is validated IN-PROCESS against a COMPOSED registry —
+    the edition-composed path the real migration uses. ``configure_test_kg_registry``
+    stands in for the edition composition (the sanctioned test/fake route)."""
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.community.commands.kg_migrate_schema import (
+        _emit_single,
+        _run_single_board,
     )
-    assert result.returncode == 0, f"stderr: {result.stderr}"
-    payload = json.loads(result.stdout)
-    assert payload["board_id"] == fresh_board
-    assert payload["migrated"] is True
-    assert isinstance(payload["columns_added"], dict)
-    assert isinstance(payload["errors"], list)
-    assert isinstance(payload["duration_ms"], int)
+
+    configure_test_kg_registry()
+    summary = _run_single_board(fresh_board)
+    rc = _emit_single(summary)
+
+    assert rc == 0
+    assert summary["board_id"] == fresh_board
+    assert summary["migrated"] is True
+    assert isinstance(summary["columns_added"], dict)
+    assert summary["errors"] == []
+    assert isinstance(summary["duration_ms"], int)
+    # _emit_single emitted the JSON payload to stdout (the CLI contract shape).
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["board_id"] == fresh_board and payload["migrated"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +183,10 @@ def test_ts4_cli_all_boards_iterates_known_boards(fresh_board):
     Direct unit test (subprocess + DB init costs too much in CI). The CLI
     function `_run_single_board` is the same path the all-boards loop uses.
     """
-    from okto_pulse.tools.kg_migrate_schema import _run_single_board, _emit_all
+    from okto_pulse.community.commands.kg_migrate_schema import (
+        _emit_all,
+        _run_single_board,
+    )
     summary1 = _run_single_board(fresh_board)
     assert summary1["migrated"] is True
     assert summary1["board_id"] == fresh_board
@@ -197,7 +207,7 @@ def test_ts5_mcp_rest_payload_parity(fresh_board):
     `migrate_schema_for_board(board_id)` and serialize the dict. The shape
     must match exactly.
     """
-    from okto_pulse.core.api.kg_routes import MigrateSchemaResponse
+    from okto_pulse.community.api.kg_routes import MigrateSchemaResponse
     rest_summary = migrate_schema_for_board(fresh_board)
     rest_payload = MigrateSchemaResponse(**rest_summary).model_dump()
 
@@ -217,16 +227,21 @@ def test_ts5_mcp_rest_payload_parity(fresh_board):
 
 
 def test_ts6_compensate_sync_warning_with_guidance(caplog, monkeypatch):
-    """AC6: `_compensate_kuzu_writes` failure logs at WARNING level with
+    """AC6: `_compensate_graph_writes` failure logs at WARNING level with
     `migrate-schema` guidance and NO destructive message."""
-    # `open_board_connection` is imported lazily inside the function body
-    # (see primitives.py:475). Patch the source module so the lazy import
-    # picks up the mock.
-    def boom(board_id):  # noqa: ARG001
-        raise RuntimeError("simulated_lock_contention")
-    monkeypatch.setattr(schema_mod, "open_board_connection", boom)
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    class _BrokenGraphTransaction:
+        async def begin(self, board_id):  # noqa: ARG002
+            raise RuntimeError("simulated_lock_contention")
+
+    monkeypatch.setattr(
+        get_kg_registry(),
+        "graph_transaction",
+        _BrokenGraphTransaction(),
+    )
     with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.primitives"):
-        primitives_mod._compensate_kuzu_writes("board-x", "session-x", [])
+        primitives_mod._compensate_graph_writes("board-x", "session-x", [])
 
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
     msgs = [r.getMessage() for r in warnings]
@@ -260,6 +275,29 @@ def test_ts7_re_run_idempotent(fresh_board):
     total_added = sum(len(v) for v in summary2["columns_added"].values())
     assert total_added == 0
     assert summary2["errors"] == []
+
+
+def test_ts7_migration_stamps_and_verifies_current_schema_version(fresh_board):
+    """An additive rel-pair migration must not leave stale BoardMeta health."""
+
+    with BoardConnection(fresh_board) as (_db, conn):
+        result = conn.execute(
+            "MATCH (m:BoardMeta {board_id: $bid}) SET m.schema_version = $v",
+            {"bid": fresh_board, "v": "0.3.11"},
+        )
+        result.close()
+
+    summary = migrate_schema_for_board(fresh_board)
+
+    assert summary["migrated"] is True
+    assert summary["errors"] == []
+    with BoardConnection(fresh_board) as (_db, conn):
+        result = conn.execute(
+            "MATCH (m:BoardMeta {board_id: $bid}) RETURN m.schema_version",
+            {"bid": fresh_board},
+        )
+        assert result.get_next()[0] == schema_mod.SCHEMA_VERSION
+        result.close()
 
 
 # ---------------------------------------------------------------------------

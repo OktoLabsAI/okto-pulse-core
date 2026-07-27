@@ -8,7 +8,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     ArchitectureFinding,
     ArchitectureFindingRun,

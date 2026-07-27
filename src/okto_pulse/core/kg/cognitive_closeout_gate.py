@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -22,6 +21,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
 )
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 ELIGIBLE_CLOSEOUT_ENTITY_TYPES: frozenset[str] = frozenset(
@@ -140,8 +141,11 @@ _CLOSEOUT_LABELS = (
     "skip_enabled",
     "blocking_count_bucket",
 )
-_closeout_samples: list[dict[str, Any]] = []
-_closeout_samples_lock = threading.Lock()
+_closeout_samples = runtime_counter_sample_buffer(
+    "kg.cognitive_closeout_gate",
+    _CLOSEOUT_LABELS,
+)
+_closeout_samples_lock = runtime_lock("kg.cognitive_closeout_gate.samples")
 
 
 def _board_id_hash(board_id: str) -> str:
@@ -200,7 +204,7 @@ def get_closeout_gate_counter_labels() -> tuple[str, ...]:
 
 def get_closeout_gate_samples() -> list[dict[str, Any]]:
     with _closeout_samples_lock:
-        return [dict(sample) for sample in _closeout_samples]
+        return _closeout_samples.snapshot()
 
 
 def get_closeout_gate_event_count(
@@ -211,13 +215,11 @@ def get_closeout_gate_event_count(
     skip_enabled: str | None = None,
 ) -> int:
     with _closeout_samples_lock:
-        return sum(
-            1
-            for sample in _closeout_samples
-            if (entity_type is None or sample["entity_type"] == entity_type)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason is None or sample["reason"] == reason)
-            and (skip_enabled is None or sample["skip_enabled"] == skip_enabled)
+        return _closeout_samples.count(
+            entity_type=entity_type,
+            outcome=outcome,
+            reason=reason,
+            skip_enabled=skip_enabled,
         )
 
 
@@ -600,10 +602,12 @@ class CognitiveCloseoutGate:
 
 
 def build_default_cognitive_closeout_gate() -> CognitiveCloseoutGate:
-    from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
+    from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 
     return CognitiveCloseoutGate(
-        store=CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        store=CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
     )
 
 

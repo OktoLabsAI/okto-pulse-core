@@ -13,12 +13,17 @@ multi-process setups this would need to move to Redis — out of scope for MVP.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 import asyncio
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+)
 from okto_pulse.core.kg.schemas import (
     EdgeCandidate,
     NodeCandidate,
@@ -29,6 +34,12 @@ from okto_pulse.core.kg.schemas import (
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def now_utc() -> datetime:
+    """Public facade for consolidation-session UTC timestamps."""
+
+    return _now()
 
 
 def compute_content_hash(raw_content: str, artifact_id: str, board_id: str) -> str:
@@ -58,9 +69,22 @@ class ConsolidationSession:
     raw_content: str = ""
     node_candidates: dict[str, NodeCandidate] = field(default_factory=dict)
     edge_candidates: dict[str, EdgeCandidate] = field(default_factory=dict)
+    spec_lineage_parent_intent: SpecLineageParentIntent = (
+        SpecLineageParentIntent.PRESERVE
+    )
     reconciliation_hints: dict[str, ReconciliationHint] = field(default_factory=dict)
     # Fields populated during commit — used by abort/compensating delete.
-    committed_kuzu_node_refs: list[dict[str, Any]] = field(default_factory=list)
+    committed_graph_node_refs: list[dict[str, Any]] = field(default_factory=list)
+    # Spec MKG-B-S1 (FR5, D2): set once a count-only attestation has been
+    # registered for this session's identical-content detection, so a
+    # begin→propose flow never double-counts the same re-assertion.
+    count_only_attested: bool = False
+    # A deferred commit has already applied its graph mutation but is waiting
+    # for the caller-owned relational UnitOfWork to commit.  The concrete
+    # snapshot is private to ``kg.primitives``; keeping it on the process-local
+    # session lets an MCP retry restage SQLite records without replaying graph
+    # writes.
+    pending_commit: Any | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def is_expired(self) -> bool:
@@ -78,7 +102,9 @@ class SessionManager:
     """Backward-compat wrapper — delegates to the registry's SessionStore.
 
     Existing code that calls get_session_manager() continues to work.
-    New code should use get_kg_registry().session_store directly.
+    New runtime code should resolve the store through
+    ``get_kg_registry().require_session_store()`` so missing composition is
+    reported as ``runtime_provider_missing``.
     """
 
     def __init__(self, default_ttl_seconds: int = 3600):
@@ -87,11 +113,19 @@ class SessionManager:
     def _store(self):
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-        return get_kg_registry().session_store
+        # AC3 (base fail-closed): the session porta requires the registered store;
+        # an absent slot raises ``runtime_provider_missing`` instead of a late
+        # ``AttributeError`` on ``None`` or a silent concrete fallback.
+        return get_kg_registry().require_session_store()
 
     @property
     def default_ttl_seconds(self) -> int:
-        store = self._store()
+        # A benign config read keeps its graceful default: unlike real session
+        # operations (which go through the fail-closed ``_store()`` porta), the TTL
+        # default does not gate on provider presence.
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+        store = get_kg_registry().session_store
         return store.default_ttl_seconds if store else self._default_ttl
 
     async def create(self, **kwargs) -> ConsolidationSession:
@@ -115,23 +149,23 @@ class SessionManager:
             store.clear_for_tests()
 
 
-_singleton: SessionManager | None = None
+_RUNTIME_KEY = "kg.session_manager"
 
 
 def get_session_manager() -> SessionManager:
     """Return the process-wide SessionManager (backward compat wrapper)."""
-    global _singleton
-    if _singleton is None:
+    manager = resolve_runtime_value(_RUNTIME_KEY)
+    if manager is None:
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
         config = get_kg_registry().config
-        _singleton = SessionManager(
+        manager = SessionManager(
             default_ttl_seconds=config.kg_session_ttl_seconds if config else 3600
         )
-    return _singleton
+        register_runtime_value(_RUNTIME_KEY, manager)
+    return manager
 
 
 def reset_session_manager_for_tests() -> None:
     """Drop the cached SessionManager — tests only."""
-    global _singleton
-    _singleton = None
+    reset_runtime_values(_RUNTIME_KEY)

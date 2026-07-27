@@ -172,6 +172,42 @@ def test_ac1_aggregate_pending_count_and_refs_preserved(base_dir: Path) -> None:
     assert len(payload["items"]) == 2
 
 
+def test_incremental_same_generation_materialization_preserves_unrelated_work(
+    base_dir: Path,
+) -> None:
+    """Opening a second live closeout item must not erase the first one."""
+
+    store = CognitiveConsolidationItemStore(base_dir=base_dir)
+    gen = generate_kg_generation_id()
+    store.materialize_from_marker(
+        board_id=BOARD,
+        kg_generation_id=gen,
+        event_ref="cognitive.closeout.pending",
+        source_set=[_row("bug", "bug-a")],
+    )
+    first = store.list_items(BOARD, gen)[0]
+    store.update_item(
+        board_id=BOARD,
+        kg_generation_id=gen,
+        item_id=first.item_id,
+        new_status=CognitiveItemStatus.IN_PROGRESS.value,
+        updated_by_agent_id="agent-1",
+    )
+
+    result = store.materialize_from_marker(
+        board_id=BOARD,
+        kg_generation_id=gen,
+        event_ref="cognitive.closeout.pending",
+        source_set=[_row("bug", "bug-b")],
+    )
+
+    items = {item.source_ref: item for item in store.list_items(BOARD, gen)}
+    assert result.item_count == 2
+    assert set(items) == {"bug:bug-a", "bug:bug-b"}
+    assert items["bug:bug-a"].status == CognitiveItemStatus.IN_PROGRESS.value
+    assert items["bug:bug-b"].status == CognitiveItemStatus.PENDING.value
+
+
 # -------- AC7 — legacy aggregate-only compat -----------------------------
 
 

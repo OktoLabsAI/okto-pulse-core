@@ -11,6 +11,8 @@ over a REAL spec/test-card; the block reflects the live scenario statuses.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import inspect
 import json
 import uuid
@@ -19,7 +21,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -46,7 +48,7 @@ class _Ctx:
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -82,7 +84,11 @@ def test_operational_flow_block_blocked_and_ready():
         card_id="c1", board_id="b1", spec_id="s1", current_status="in_progress",
         linked_scenarios=[
             {"id": "ts1", "title": "A", "status": "draft"},
-            {"id": "ts2", "title": "B", "status": "passed", "last_run_at": "2026-01-01"},
+            {"id": "ts2", "title": "B", "status": "passed", "evidence": {
+                "evidence_class": "automated_test_pointer",
+                "test_file_path": "tests/test_x.py",
+                "test_function": "test_b",
+            }},
         ],
     )
     assert blocked["card_type"] == "test"
@@ -119,7 +125,10 @@ def test_operational_flow_block_blocked_and_ready():
 
     ready = operational_flow_for_test_card(
         card_id="c1", board_id="b1", spec_id="s1", current_status="in_progress",
-        linked_scenarios=[{"id": "ts1", "title": "A", "status": "automated"}],
+        linked_scenarios=[{"id": "ts1", "title": "A", "status": "automated",
+                           "evidence": {"evidence_class": "automated_test_pointer",
+                                        "test_file_path": "tests/test_x.py",
+                                        "test_function": "test_a"}}],
     )
     assert ready["would_block_done"] is False
     assert ready["pending_scenarios"] == []
@@ -167,7 +176,10 @@ async def test_next_action_params_cross_check_real_mcp_signatures():
 
     ready = operational_flow_for_test_card(
         card_id="c1", board_id="b1", spec_id="s1", current_status="in_progress",
-        linked_scenarios=[{"id": "ts1", "title": "A", "status": "passed"}],
+        linked_scenarios=[{"id": "ts1", "title": "A", "status": "passed",
+                           "evidence": {"evidence_class": "automated_test_pointer",
+                                        "test_file_path": "tests/test_x.py",
+                                        "test_function": "test_a"}}],
     )
     rp_keys = set(ready["next_action"]["params"].keys())
     assert rp_keys <= move_params and {"board_id", "card_id", "status"} <= rp_keys
@@ -202,7 +214,11 @@ async def test_get_task_context_test_card_blocked_flow(db_factory):
 async def test_get_task_context_test_card_ready_flow(db_factory):
     board_id, card_id = await _seed_test_card(db_factory, scenarios=[
         {"id": "ts1", "title": "Done scenario", "given": "g", "when": "w", "then": "t",
-         "status": "passed", "last_run_at": "2026-06-18T00:00:00Z"},
+         "status": "passed", "evidence": {
+             "evidence_class": "automated_test_pointer",
+             "test_file_path": "tests/test_x.py",
+             "test_function": "test_done",
+         }},
     ])
 
     result = await _call("okto_pulse_get_task_context", board_id=board_id, card_id=card_id,

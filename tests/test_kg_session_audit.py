@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,14 +24,16 @@ from okto_pulse.core.kg.interfaces.registry import (
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
-from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
+from okto_pulse.core.kg.providers.testing.memory import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -161,16 +164,18 @@ class TestAuditRepositoryCRUD:
         refs = [
             NodeRefData(
                 session_id="ses1", board_id="b1",
-                kuzu_node_id="n1", kuzu_node_type="Decision", operation="add",
+                graph_node_id="n1", graph_node_type="Decision", operation="add",
             )
         ]
         event = OutboxEventData(
             event_id="evt1", board_id="b1", session_id="ses1",
             event_type="consolidation_committed", payload={"nodes_added": 3},
         )
-        await repo.commit_consolidation_records(audit, refs, event)
+        await repo.stage_consolidation_records(object(), audit, refs, event)
 
-        latest = await repo.get_latest_for_artifact("b1", "a1")
+        latest = await repo.get_latest_for_artifact(
+            "b1", "a1", artifact_type="spec"
+        )
         assert latest is not None
         assert latest.session_id == "ses1"
         assert latest.nodes_added == 3
@@ -186,10 +191,15 @@ class TestAuditRepositoryCRUD:
             artifact_type="spec", agent_id="agent-1",
             started_at=now, committed_at=now,
         )
-        await repo.commit_consolidation_records(audit, [], OutboxEventData(
-            event_id="e2", board_id="b1", session_id="ses2",
-            event_type="test", payload={},
-        ))
+        await repo.stage_consolidation_records(
+            object(),
+            audit,
+            [],
+            OutboxEventData(
+                event_id="e2", board_id="b1", session_id="ses2",
+                event_type="test", payload={},
+            ),
+        )
 
         result = await repo.get_audit_by_session("ses2")
         assert result is not None
@@ -205,16 +215,23 @@ class TestAuditRepositoryCRUD:
             artifact_type="spec", agent_id="agent-1",
             started_at=now, committed_at=now,
         )
-        await repo.commit_consolidation_records(audit, [], OutboxEventData(
-            event_id="e3", board_id="b1", session_id="ses3",
-            event_type="test", payload={},
-        ))
+        await repo.stage_consolidation_records(
+            object(),
+            audit,
+            [],
+            OutboxEventData(
+                event_id="e3", board_id="b1", session_id="ses3",
+                event_type="test", payload={},
+            ),
+        )
 
         await repo.mark_audit_undone("ses3")
         result = await repo.get_audit_by_session("ses3")
         assert result.undo_status == "undone"
 
-        latest = await repo.get_latest_for_artifact("b1", "a1")
+        latest = await repo.get_latest_for_artifact(
+            "b1", "a1", artifact_type="spec"
+        )
         assert latest is None
 
     @pytest.mark.asyncio
@@ -223,7 +240,8 @@ class TestAuditRepositoryCRUD:
         now = datetime.now(timezone.utc)
 
         for i in range(3):
-            await repo.commit_consolidation_records(
+            await repo.stage_consolidation_records(
+                object(),
                 ConsolidationAuditData(
                     session_id=f"s{i}", board_id="b1", artifact_id="a1",
                     artifact_type="spec", agent_id="agent-1",
@@ -246,12 +264,13 @@ class TestAuditRepositoryCRUD:
         now = datetime.now(timezone.utc)
 
         refs = [
-            NodeRefData(session_id="s1", board_id="b1", kuzu_node_id="n1",
-                        kuzu_node_type="Decision", operation="add"),
-            NodeRefData(session_id="s1", board_id="b1", kuzu_node_id="n2",
-                        kuzu_node_type="Criterion", operation="add"),
+            NodeRefData(session_id="s1", board_id="b1", graph_node_id="n1",
+                        graph_node_type="Decision", operation="add"),
+            NodeRefData(session_id="s1", board_id="b1", graph_node_id="n2",
+                        graph_node_type="Criterion", operation="add"),
         ]
-        await repo.commit_consolidation_records(
+        await repo.stage_consolidation_records(
+            object(),
             ConsolidationAuditData(
                 session_id="s1", board_id="b1", artifact_id="a1",
                 artifact_type="spec", agent_id="agent-1",
@@ -283,6 +302,85 @@ class TestAuditRepositoryCRUD:
             elif isinstance(imp, ast.Import):
                 for alias in imp.names:
                     assert "sqlalchemy" not in alias.name.lower()
+
+    @pytest.mark.asyncio
+    async def test_primitive_forwards_caller_owned_relational_context(self):
+        from okto_pulse.core.kg.primitives import _commit_audit_records
+
+        class CapturingAuditRepository(InMemoryAuditRepository):
+            transaction_context = None
+
+            async def stage_consolidation_records(
+                self, transaction_context, audit, node_refs, outbox_event,
+            ):
+                self.transaction_context = transaction_context
+                await super().stage_consolidation_records(
+                    transaction_context,
+                    audit,
+                    node_refs,
+                    outbox_event,
+                )
+
+        repository = CapturingAuditRepository()
+        relational_context = object()
+        now = datetime.now(timezone.utc)
+
+        await _commit_audit_records(
+            SimpleNamespace(audit_repo=repository),
+            relational_context,
+            [
+                SimpleNamespace(
+                    entity_id="entity-forward-context",
+                    entity_type="Entity",
+                    kind="node",
+                )
+            ],
+            SimpleNamespace(
+                nodes_added=1,
+                nodes_updated=0,
+                nodes_superseded=0,
+                edges_added=0,
+            ),
+            SimpleNamespace(
+                session_id="session-forward-context",
+                summary_text="same transaction",
+            ),
+            SimpleNamespace(
+                board_id="board-forward-context",
+                artifact_id="artifact-forward-context",
+                artifact_type="card",
+                started_at=now,
+                content_hash="content-forward-context",
+            ),
+            "agent-forward-context",
+            now,
+        )
+
+        assert repository.transaction_context is relational_context
+        assert repository.audits[0].session_id == "session-forward-context"
+        assert repository.node_refs[0].graph_node_id == "entity-forward-context"
+
+    def test_commit_only_adapter_does_not_satisfy_core_protocol(self):
+        from dataclasses import replace
+
+        from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
+
+        class CommitOnlyAuditRepository:
+            async def commit_consolidation_records(
+                self, audit, node_refs, outbox_event,
+            ):
+                ...
+
+        repository = CommitOnlyAuditRepository()
+        assert not isinstance(repository, AuditRepository)
+
+        incompatible_registry = replace(
+            get_kg_registry(),
+            audit_repo=repository,
+        )
+        reset_registry_for_tests()
+        with pytest.raises(RuntimeError, match="stage_consolidation_records"):
+            configure_kg_registry(base_registry=incompatible_registry)
 
 
 # -----------------------------------------------------------------------

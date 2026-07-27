@@ -17,26 +17,41 @@ Every time you start a session or pick up a new task, follow the matching sequen
 
 ### Entity context pre-flight — before moving or validating anything
 
-Call the matching `okto_pulse_get_{ideation,refinement,spec,sprint}_context` (or `okto_pulse_get_task_context` for cards) **with `profile="full"`** before any move/validation — the default `summary` profile is for cheap exploration, not for status-changing work (see `okto-pulse://reference/projection-profiles`).
+Call the matching `okto_pulse_get_{ideation,refinement,spec,sprint}_context`
+with `profile="full"` before any move/validation. For cards, call
+`okto_pulse_get_task_context(profile="full", context_scope="gate")`: it is the
+bounded full gate/readiness slice and includes a content manifest plus
+drilldowns. The default `summary` profile is for cheap exploration, not for
+status-changing work (see
+`okto-pulse://reference/projection-profiles`).
 
 ### Card execution pre-flight — before implementation work
 
 ```
-1. okto_pulse_get_task_context(board_id, card_id, profile="full", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
-2. okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)
-3. okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id)
-4. okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id)
-5. okto_pulse_move_card(status="in_progress")
-6. BEGIN WORK
+1. okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
+2. Attach applicable artifacts — follow the Card-Level Artifact Attachment path in §2.8 of okto-pulse://workflows/cards (the single source: copy tools per artifact, decide per KE/mockup/Architecture Design, and any skip requires a one-line justifying comment)
+3. okto_pulse_move_card(status="in_progress")
+4. BEGIN WORK
 ```
 
-**Never skip card execution steps 1 and 5.**
+**Never skip card execution steps 1 and 3.**
 
-This is an operational protocol rule: the MCP server does not prove that you read context; your audit trail and artifact quality do.
+Use `profile="detail"` and follow its drilldowns when implementation/review
+needs artifact or requirement bodies. Do not replace the gate-scope call with a
+potentially oversized `profile="full", context_scope="all"` response. Mutation
+services resolve and fingerprint complete context server-side; the client-side
+gate slice is the bounded operational view.
+
+This is an operational protocol rule: the MCP server does not prove that you
+read context; your audit trail and artifact quality do.
 
 ### Resource Gate pre-flight — mandatory before completion
 
-Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.
+Architecture, Mockup, and Knowledge Base are all tracked by Resource Gate, but
+their authority differs: **Architecture and Mockup are blocking**;
+**Knowledge Base is advisory**. A missing or uncovered KB remains visible in
+the summary/workspace and never blocks entity completion, `spec_validation`, or
+`spec_done`.
 
 | Work item | Resource Gate `entity_type` |
 |---|---|
@@ -45,7 +60,9 @@ Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.
 | Spec | `spec` |
 | Card, task, test, bug | `card` |
 
-Before finalization call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every `missing` resource by attaching the artifact or marking N/A with `justification`.
+Before finalization call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every entry in `missing_resources` by attaching the blocking Architecture/Mockup artifact or marking it N/A with `justification`. Review `advisory_missing_resources` for useful KB context, but do not create filler or mark KB N/A solely to satisfy a gate.
+
+The blocking-resource playbook remains reversible and auditable: marking N/A with `justification` records intent, and `okto_pulse_clear_resource_not_applicable` restores the normal presence check when the resource becomes applicable.
 
 ### Design System pre-flight — before creating or editing mockups
 

@@ -1,99 +1,74 @@
-"""Core application configuration using pydantic-settings."""
+"""Pure, pre-materialized application configuration for Core policies.
 
-from functools import lru_cache
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
-from pathlib import Path
-import tomllib
+Environment and ``.env`` loading are edition responsibilities.  Core accepts a
+validated settings snapshot through composition and never reads process state.
+"""
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
+from okto_pulse.core.ports.package_version import (
+    ImportlibMetadataVersionProvider,
+    PackageVersionProvider,
+)
+from pydantic import BaseModel, ConfigDict, Field
+
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
+
+
+_VERSION_PROVIDER_KEY = "infra.config.version_provider"
+_SETTINGS_KEY = "infra.config.settings"
+_DEFAULT_VERSION_PROVIDER = ImportlibMetadataVersionProvider()
+
+
+def register_package_version_provider(provider: PackageVersionProvider) -> None:
+    """Register the runtime package version provider."""
+    register_runtime_value(_VERSION_PROVIDER_KEY, provider)
+
+
+def reset_package_version_provider_for_tests() -> None:
+    """Restore the default metadata-backed version provider."""
+    reset_runtime_values(_VERSION_PROVIDER_KEY)
 
 
 def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
-    """Read version from installed package metadata; fallback if not installed
-    (e.g. running from source tree without ``pip install -e``)."""
-    pyproject = Path(__file__).resolve().parents[4] / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            return tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
-        except Exception:
-            pass
+    """Resolve version through provider/package metadata, never source files."""
     try:
-        return _pkg_version(package_name)
-    except PackageNotFoundError:
-        return fallback
+        provider = resolve_runtime_value(_VERSION_PROVIDER_KEY) or _DEFAULT_VERSION_PROVIDER
+        resolved = provider.version(package_name)
+    except Exception:
+        resolved = None
+    return resolved or fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.6+local")
-GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
-DEFAULT_METRICS_BEACON_URL = "https://metrics.oktolabs.ai"
+def _default_core_version() -> str:
+    return _resolve_version("okto-pulse-core", fallback=_CORE_PACKAGE_VERSION)
 
 
-def validate_graph_db_max_size_gb(value: int) -> int:
-    """Ensure Ladybug receives a max_db_size that is a power of two in bytes."""
-    if value not in GRAPH_DB_MAX_SIZE_GB_VALUES:
-        allowed = ", ".join(str(v) for v in GRAPH_DB_MAX_SIZE_GB_VALUES)
-        raise ValueError(
-            "kg_kuzu_max_db_size_gb must be one of "
-            f"{allowed} GB. Ladybug requires max_db_size to be a power of 2 "
-            "in bytes; even values such as 6 GB are still invalid."
-        )
-    return value
+class CoreSettings(BaseModel):
+    """Validated settings snapshot supplied by an edition composition root."""
 
-
-class CoreSettings(BaseSettings):
-    """Core application settings loaded from environment variables."""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
+    model_config = ConfigDict(
+        extra="allow",
     )
 
     # Application — single source of truth via importlib.metadata
     # so /health, FastAPI title and MCP server-info stay aligned with
     # the installed wheel without manual sync (NC-2 fix).
     app_name: str = "Okto Pulse"
-    app_version: str = _CORE_VERSION
-    debug: bool = False
-    environment: str = "development"
-
-    # Server
-    host: str = "127.0.0.1"
-    port: int = 8100
-
-    # Database
-    database_url: str = "sqlite+aiosqlite:///./dashboard.db"
-
-    # Storage
-    upload_dir: str = "./uploads"
-    max_upload_size: int = 10 * 1024 * 1024  # 10MB
-
-    # Local-first telemetry (v0.2.1). Empty values mean "not explicitly set"
-    # so the resolver can still let persisted consent win over defaults.
+    app_version: str = Field(default_factory=_default_core_version)
+    # Telemetry policy. Delivery endpoints and local paths are edition-owned.
     metrics_mode: str = ""
-    metrics_dir: str = ""
     metrics_retention_days: int = Field(30, ge=1, le=400)
-    metrics_beacon_url: str = DEFAULT_METRICS_BEACON_URL
     metrics_policy_version: str = "2026-05-11"
     metrics_schema_version: str = "1.1.0"
     metrics_opt_in_prompt_interval_days: int = Field(30, ge=1, le=365)
     metrics_token_refresh_margin_hours: int = Field(24, ge=0, le=168)
 
-    # MCP Server
-    mcp_server_name: str = "okto-pulse"
-    mcp_server_version: str = _CORE_VERSION
-    mcp_port: int = 8101
-
-    # CORS
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
-
-    # Knowledge Graph (MVP Fase 0)
-    kg_base_dir: str = "~/.okto-pulse"
-    kg_embedding_mode: str = "sentence-transformers"  # "stub" | "sentence-transformers"
-    kg_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    kg_embedding_dim: int = 384
+    # Knowledge-graph application policy. Physical storage and providers are
+    # supplied through KG ports by the edition.
     kg_session_ttl_seconds: int = 3600
     kg_cleanup_interval_seconds: int = 60
     kg_cleanup_enabled: bool = True
@@ -101,19 +76,6 @@ class CoreSettings(BaseSettings):
     # until v0.5.0; the settings_service maps the legacy value into
     # kg_queue_alert_threshold and emits a DeprecationWarning at startup.
     kg_max_queue_depth: int = Field(200, ge=10, le=10000)
-
-    # Kùzu runtime tuning (0.1.4) — defaults avoid Ladybug 0.16 HNSW buffer
-    # exhaustion while keeping max_db_size in the supported power-of-two set.
-    # Kùzu's own defaults (buffer_pool_size=0 → ~80% system RAM, max_db_size=1<<43=8TB VA)
-    # caused 128GB RSS with 3 instances in field reports.
-    kg_kuzu_buffer_pool_mb: int = Field(512, ge=128, le=512)
-    kg_kuzu_max_db_size_gb: int = Field(2, ge=2, le=64)
-    kg_connection_pool_size: int = Field(8, ge=1, le=32)
-
-    @field_validator("kg_kuzu_max_db_size_gb")
-    @classmethod
-    def _validate_graph_db_max_size_gb(cls, value: int) -> int:
-        return validate_graph_db_max_size_gb(value)
 
     # Consolidation queue runtime tuning (spec bdcda842, v0.2.0) — all
     # hot-reload (worker pool re-reads on every claim with 5s debounce).
@@ -148,18 +110,8 @@ class CoreSettings(BaseSettings):
     kg_queue_dlq_auto_drain_backoff_s: int = Field(300, ge=30, le=86400)
     kg_queue_dlq_auto_drain_max_requeue_attempts: int = Field(3, ge=1, le=20)
 
-    # Spec R2c (FR5/TR5/TR6/TR7) — DLQ auto-drain opt-in defaults.
-    # The feature is disabled by default (board-level flag controls opt-in).
-    # kg_queue_dlq_auto_drain_backoff_s: minimum seconds between auto-drain
-    #   runs for the same board (in-process per-board cooldown dict).
-    # kg_queue_dlq_auto_drain_max_requeue_attempts: DLQ rows that have been
-    #   requeued this many times without success are considered poison pills
-    #   and are permanently deleted with a WARN log.
-    kg_queue_dlq_auto_drain_backoff_s: int = Field(300, ge=30, le=86400)
-    kg_queue_dlq_auto_drain_max_requeue_attempts: int = Field(3, ge=1, le=20)
-
     # Spec 54399628 (NC-Wave2 — KG decay tick controllability) — 3 settings
-    # persistidos com hot-reload via APScheduler.reschedule_job. Defaults
+    # persistidos com hot-reload via SchedulerControl.reschedule_job. Defaults
     # preservam comportamento atual (cron 24h staleness 7d, no max-age cap).
     # Ranges: 5min-7d para interval (impede DoS auto-infligido + impede
     # esquecer); 1-365d para staleness; 0=no-cap, >0 força recompute em
@@ -167,47 +119,54 @@ class CoreSettings(BaseSettings):
     kg_decay_tick_interval_minutes: int = Field(1440, ge=5, le=10080)
     kg_decay_tick_staleness_days: int = Field(7, ge=1, le=365)
     kg_decay_tick_max_age_days: int = Field(0, ge=0, le=365)
-
-    @property
-    def cors_origins_list(self) -> list[str]:
-        """Parse CORS origins from comma-separated string."""
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-
-class MCPSettings(BaseSettings):
-    """MCP-specific settings for agent authentication."""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-        env_prefix="MCP_",
-    )
-
-    # MCP authentication
-    require_agent_key: bool = True
-    agent_keys_env: str = ""  # Comma-separated agent keys for validation
-
-
-_settings_instance: "CoreSettings | None" = None
+    kg_stale_sweep_budget: int = Field(50, ge=1, le=1000)
 
 
 def configure_settings(s: "CoreSettings") -> None:
-    """Register a pre-built CoreSettings instance."""
-    global _settings_instance
-    _settings_instance = s
+    """Register a pre-built settings instance.
+
+    A composed runtime may keep a stateful provider in its frozen wiring.  When
+    that provider exposes the snapshot replacement seam, update it first so
+    later reads in the same composition observe the new validated snapshot.
+    The runtime-value registration remains for legacy/non-composed callers.
+    """
+    from okto_pulse.core.composition import current_runtime_composition
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.settings_provider is not None:
+        replace_snapshot = getattr(
+            composition.settings_provider,
+            "replace_settings_snapshot",
+            None,
+        )
+        if callable(replace_snapshot):
+            replace_snapshot(s)
+    register_runtime_value(_SETTINGS_KEY, s)
+
+
+def reset_settings_for_tests() -> None:
+    """Remove the composed settings snapshot for isolated tests."""
+
+    reset_runtime_values(_SETTINGS_KEY)
 
 
 def get_settings() -> "CoreSettings":
-    """Get the active CoreSettings (lazy-creates a default if none registered)."""
-    global _settings_instance
-    if _settings_instance is None:
-        _settings_instance = CoreSettings()
-    return _settings_instance
+    """Get the composed settings snapshot, failing closed when absent."""
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
 
-
-@lru_cache
-def get_mcp_settings() -> MCPSettings:
-    """Get cached MCP settings instance."""
-    return MCPSettings()
+    composition = current_runtime_composition()
+    if composition is not None and composition.settings_provider is not None:
+        provider = composition.settings_provider
+        get_snapshot = getattr(provider, "get_settings_snapshot", None)
+        if callable(get_snapshot):
+            return get_snapshot()
+        return provider
+    settings = resolve_runtime_value(_SETTINGS_KEY)
+    if settings is None:
+        raise RuntimeError(
+            "Core settings are not configured. The edition composition root must "
+            "call configure_settings() before application work begins."
+        )
+    return settings

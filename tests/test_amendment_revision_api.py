@@ -9,6 +9,8 @@ shapes match. Reproduce:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 from datetime import datetime, timedelta, timezone
 import json
 import uuid
@@ -16,13 +18,14 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from okto_pulse.core.api.amendment_revisions import AmendmentRevisionCreateRequest
+from okto_pulse.community.api.amendment_revisions import AmendmentRevisionCreateRequest
 from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
+    ActivityLog,
     AmendmentHotfixRevision,
     Board,
     BugSeverity,
@@ -127,6 +130,84 @@ async def test_create_rejects_in_progress_spec():
             )
     assert exc.value.code == "original_spec_not_done_or_locked"
     assert exc.value.status_code == 409
+    # fr_58b6aa0b: actionable hint — in_progress without lock is still editable.
+    assert "still editable" in exc.value.message
+    assert exc.value.details.get("content_locked") is False
+
+
+async def _lock_spec(db, spec_id, *, outcome="success", dangling=False):
+    """Mark a spec content-locked (current_validation_id -> success validation)."""
+    spec = await db.get(Spec, spec_id)
+    vid = f"val_{uuid.uuid4().hex[:8]}"
+    spec.current_validation_id = vid
+    spec.validations = [] if dangling else [{"id": vid, "outcome": outcome}]
+    await db.flush()
+    return vid
+
+
+async def test_create_accepts_in_progress_content_locked_spec():
+    # spec 62cf2d36 fr_0d2f84a1 / ac_b81f927c: in_progress + current_validation_id
+    # pointing to an outcome=success validation IS Path-B eligible.
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed(db, spec_status=SpecStatus.IN_PROGRESS)
+        await _lock_spec(db, ids["spec"])
+        created = await AmendmentRevisionApiService(db).create(
+            board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+            origin_task_ids=[ids["origin"]], regression_scenario_ids=["ts_a"],
+        )
+        assert created["status"] == "draft"
+        assert created["original_spec_id"] == ids["spec"]
+
+
+async def test_path_b_docs_distinguish_content_locked_in_progress():
+    # fr_6348d040: agent-facing docs/tool-contracts must distinguish
+    # in_progress-editable from in_progress-content-locked; the stale absolute
+    # "only done/validated" / "rejects in_progress" claims must not survive.
+    import re
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core" / "mcp"
+    files = {
+        "errors.md": base / "resources" / "reference" / "errors.md",
+        "cards.md": base / "resources" / "workflows" / "cards.md",
+        "card.md": base / "resources" / "reference" / "tool-docs" / "card.md",
+        "misc.md": base / "resources" / "reference" / "tool-docs" / "misc.md",
+        "server.py": base / "server.py",
+    }
+    # Whitespace- AND backtick-normalized so markdown formatting can't hide a
+    # stale claim (this is how a backticked checklist variant slipped through once).
+    stale = [
+        "binds to the bug's own done/validated (locked) spec and always",
+        "rejects creating against an in_progress spec",
+        "only attach to a done/validated (locked) spec",
+        "amendment revision for a bug tied to a locked spec.",
+        "if it is still in_progress, edit the spec directly",
+        "binds to the bug's own locked spec and starts as draft",
+    ]
+    for name, path in files.items():
+        raw = path.read_text(encoding="utf-8").replace("`", "")
+        norm = re.sub(r"\s+", " ", raw).lower()
+        assert "content-lock" in norm, f"{name}: content-lock guidance missing"
+        for phrase in stale:
+            assert phrase not in norm, f"{name}: stale Path B text survived: {phrase!r}"
+
+
+async def test_create_rejects_in_progress_failed_stale_or_superseded():
+    # ac_6e16f722: current_validation_id pointing to a failed validation, or a
+    # dangling/stale pointer, is NOT a content lock -> still rejected.
+    from okto_pulse.core.infra.database import get_session_factory
+
+    for kw in ({"outcome": "failed"}, {"dangling": True}):
+        async with get_session_factory()() as db:
+            ids = await _seed(db, spec_status=SpecStatus.IN_PROGRESS)
+            await _lock_spec(db, ids["spec"], **kw)
+            with pytest.raises(AmendmentRevisionApiError) as exc:
+                await AmendmentRevisionApiService(db).create(
+                    board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+                )
+        assert exc.value.code == "original_spec_not_done_or_locked", kw
 
 
 async def test_create_rejects_spec_mismatch_and_bad_status_and_non_bug():
@@ -213,7 +294,7 @@ async def _call(name: str, **kwargs) -> dict:
 
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
@@ -347,6 +428,11 @@ async def _seed_cross_spec_bug(db, *, amendment_kwargs=None):
         card_type=CardType.TEST, test_scenario_ids=[ids["foreign_scenario"]],
         created_by=USER_ID, created_at=now + timedelta(seconds=1),
     ))
+    # AmendmentHotfixRevision intentionally exposes only scalar lineage fields
+    # (no ORM relationship to Board), so the unit of work cannot infer insert
+    # ordering from an object relationship.  Materialize the real board/spec/card
+    # parents before the FK-backed amendment row is added.
+    await db.flush()
     if amendment_kwargs is not None:
         base = dict(
             id=ids["amendment"], board_id=ids["board"],
@@ -587,6 +673,114 @@ async def test_transition_terminal_state_cannot_resurrect():
         assert e.value.code == "terminal_amendment_revision"
 
 
+@pytest.mark.parametrize("terminal_status", ["cancelled", "superseded"])
+async def test_terminal_revision_api_is_monotonic_and_returns_typed_409(
+    terminal_status,
+):
+    """Every API mutation is blocked after terminality, not only promotion."""
+    from sqlalchemy import select
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed(db)
+        api = AmendmentRevisionApiService(db)
+        created = await api.create(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            author=USER_ID,
+        )
+        amendment_id = created["id"]
+        terminal = await api.transition_lifecycle(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            amendment_id=amendment_id,
+            actor=USER_ID,
+            status=terminal_status,
+        )
+        before_updated_at = terminal["updated_at"]
+        audit_count = len(
+            (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == ids["board"]
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # An exact terminal-status retry succeeds without a persistence/audit
+        # side effect.  It is the only accepted operation after terminality.
+        retry = await api.transition_lifecycle(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            amendment_id=amendment_id,
+            actor=USER_ID,
+            status=terminal_status,
+        )
+        assert retry["status"] == terminal_status
+        assert datetime.fromisoformat(retry["updated_at"]).replace(
+            tzinfo=None
+        ) == datetime.fromisoformat(before_updated_at).replace(tzinfo=None)
+
+        other_terminal = (
+            "superseded" if terminal_status == "cancelled" else "cancelled"
+        )
+        lifecycle_mutations = [
+            {"status": "draft"},
+            {"status": "review"},
+            {"status": other_terminal},
+            {"lineage_state": "complete"},
+            {"lineage_state": "incomplete"},
+            {"status": terminal_status, "lineage_state": "incomplete"},
+        ]
+        for mutation in lifecycle_mutations:
+            with pytest.raises(AmendmentRevisionApiError) as exc:
+                await api.transition_lifecycle(
+                    board_id=ids["board"],
+                    bug_id=ids["bug"],
+                    amendment_id=amendment_id,
+                    actor=USER_ID,
+                    **mutation,
+                )
+            assert exc.value.code == "terminal_amendment_revision", mutation
+            assert exc.value.status_code == 409
+            assert exc.value.to_dict()["details"] == {
+                "amendment_id": amendment_id,
+                "current_status": terminal_status,
+                "mutation_applied": False,
+            }
+
+        with pytest.raises(AmendmentRevisionApiError) as associate_exc:
+            await api.associate(
+                board_id=ids["board"],
+                bug_id=ids["bug"],
+                amendment_id=amendment_id,
+                actor=USER_ID,
+                regression_test_task_ids=["test-1"],
+            )
+        assert associate_exc.value.code == "terminal_amendment_revision"
+        assert associate_exc.value.status_code == 409
+        assert associate_exc.value.details["mutation_applied"] is False
+
+        assert (
+            len(
+                (
+                    await db.execute(
+                        select(ActivityLog).where(
+                            ActivityLog.board_id == ids["board"]
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            == audit_count
+        )
+
+
 async def test_transition_lifecycle_tool_has_no_coverage_or_bypass_param():
     # FR5/G2: the lifecycle MCP tool structurally accepts ONLY status + lineage_state
     # — it can never carry coverage_confirmation/coverage_confirmed nor a bypass field.
@@ -626,3 +820,96 @@ async def test_mcp_twin_transition_amendment_revision():
         board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id, status="frozen",
     )
     assert err["code"] == "invalid_amendment_status"
+
+
+# ---------------------------------------------------------------------------
+# BUG-03 (spec e5f61c7f) — the MCP confirm handler must PRESERVE the structured
+# CardOperationError (e.g. coverage_not_gate_consumable with bounded facts)
+# instead of degrading it to a textual {"error": str(e)} via the ValueError arm.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_inert_confirm(db):
+    """A bug whose only regression scenario is a SAME-SPEC AC scenario NOT linked
+    to its lineage (Path A unrelated). The board owner is USER_ID so the MCP
+    `_Ctx` agent passes the validator critical-context guard."""
+    suffix = uuid.uuid4().hex[:8]
+    ids = {
+        "board": f"c3-board-{suffix}", "spec": f"c3-spec-{suffix}",
+        "origin": f"c3-origin-{suffix}", "bug": f"c3-bug-{suffix}",
+        "test": f"c3-test-{suffix}", "scenario": f"ts-samespec-{suffix}",
+    }
+    db.add(Board(id=ids["board"], name="C3 Board", owner_id=USER_ID))
+    db.add(Spec(
+        id=ids["spec"], board_id=ids["board"], title="Bug spec", status=SpecStatus.DONE,
+        created_by=USER_ID, functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        test_scenarios=[{
+            "id": ids["scenario"], "title": "AC scenario", "status": "automated",
+            "evidence": {"test_file_path": "tests/test_reg.py", "test_function": "test_reg"},
+        }],
+        business_rules=[], api_contracts=[],
+    ))
+    db.add(Card(
+        id=ids["origin"], board_id=ids["board"], spec_id=ids["spec"], title="Origin",
+        status=CardStatus.DONE, card_type=CardType.NORMAL, created_by=USER_ID,
+        test_scenario_ids=[],
+    ))
+    db.add(Card(
+        id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"], title="Bug",
+        status=CardStatus.NOT_STARTED, card_type=CardType.BUG, origin_task_id=ids["origin"],
+        severity=BugSeverity.MAJOR, expected_behavior="ok", observed_behavior="bad",
+        linked_test_task_ids=[ids["test"]], created_by=USER_ID,
+    ))
+    db.add(Card(
+        id=ids["test"], board_id=ids["board"], spec_id=ids["spec"], title="Regression test",
+        status=CardStatus.DONE, card_type=CardType.TEST,
+        test_scenario_ids=[ids["scenario"]], created_by=USER_ID,
+    ))
+    await db.flush()
+    return ids
+
+
+async def test_mcp_confirm_preserves_structured_coverage_not_gate_consumable():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_inert_confirm(db)
+        await db.commit()
+
+    # Build a done/complete amendment that DECLARES the same-spec scenario + test
+    # task and CLAIMS the origin (intersecting the bug authoritative set) — a
+    # syntactically valid but gate-inert tuple.
+    created = await _call(
+        "okto_pulse_create_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], origin_task_ids=[ids["origin"]],
+        regression_scenario_ids=[ids["scenario"]],
+    )
+    amd = created["amendment_revision"]["id"]
+    await _call(
+        "okto_pulse_associate_amendment_revision_artifacts",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd,
+        regression_test_task_ids=[ids["test"]],
+    )
+    await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd, lineage_state="complete",
+    )
+    await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd, status="done",
+    )
+
+    result = await _call(
+        "okto_pulse_confirm_amendment_coverage",
+        board_id=ids["board"], amendment_id=amd,
+        regression_test_task_id=ids["test"], regression_scenario_id=ids["scenario"],
+    )
+
+    # The handler serialized the STRUCTURED error, not a degraded textual one.
+    assert result.get("code") == "coverage_not_gate_consumable", result
+    facts = result.get("facts") or {}
+    assert facts.get("routed_path") == "path_a"
+    assert facts.get("resolver_reason") == "unrelated_scenario"
+    assert facts.get("bug_id") == ids["bug"]
+    # Regression guard: a degraded handler would return ONLY {"error": "<text>"}.
+    assert set(result) != {"error"}

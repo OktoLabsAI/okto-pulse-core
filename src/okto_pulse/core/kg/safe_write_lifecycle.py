@@ -1,14 +1,14 @@
-"""Safe write lifecycle for LadybugDB graphs (KG-01, FR6, contract api_1c9d19e1).
+"""Safe write lifecycle for embedded graph backend graphs (KG-01, FR6, contract api_1c9d19e1).
 
-Every bulk write or shutdown-time operation against `graph.lbug` or
-`discovery.lbug` MUST go through this wrapper AFTER the caller has
+Every bulk write or shutdown-time operation against `board graph` or
+`global graph` MUST go through this wrapper AFTER the caller has
 acquired the single-writer lock (FR5, KG-01.3). The wrapper is the
 canonical place where checkpoint, flush, fsync and close/reopen probes
 are applied in a deterministic order so KG-02 rebuild and normal writes
 share the same correctness invariants.
 
 The wrapper is pure-Python and takes the storage adapter as an injected
-callable interface, so this module remains decoupled from the LadybugDB
+callable interface, so this module remains decoupled from the embedded graph backend
 runtime: tests pass a fake adapter, production passes the real one.
 
 Contract surface (api_1c9d19e1):
@@ -33,11 +33,13 @@ the owner_token presented to it.
 from __future__ import annotations
 
 import logging
-import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 import uuid
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Iterable
+
+from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycleStepResult
 
 logger = logging.getLogger("okto_pulse.kg.safe_write_lifecycle")
 
@@ -62,8 +64,8 @@ _LIFECYCLE_COUNTER_LABELS = (
 )
 
 _LifecycleCounterKey = tuple[str, str, str, str, str]
-_lifecycle_counter: dict[_LifecycleCounterKey, int] = {}
-_lifecycle_counter_lock = threading.Lock()
+_lifecycle_counter = runtime_state("kg.safe_write_lifecycle.counter", dict)
+_lifecycle_counter_lock = runtime_lock("kg.safe_write_lifecycle.counter")
 
 
 def _bump_lifecycle_counter(
@@ -214,17 +216,12 @@ class SafeWriteLifecycleResponse:
     correlation_id: str
 
 
-@dataclass(frozen=True, slots=True)
-class LifecycleStepResult:
-    """Per-step result returned by the storage adapter callable."""
-
-    ok: bool
-    detail: str | None = None
+LifecycleStepResult = GraphLifecycleStepResult
 
 
 # A storage adapter is a callable that knows how to execute one of the
 # canonical lifecycle steps on a (board_id, graph_type) pair. Tests
-# wire fakes; production wires the LadybugDB driver. Keeping the
+# wire fakes; production wires the embedded graph backend driver. Keeping the
 # adapter as a callable rather than a class keeps the wrapper testable
 # without subclassing the entire driver.
 StorageStepAdapter = Callable[[str, str, str], LifecycleStepResult]
@@ -270,13 +267,13 @@ def _conservative_health_classifier(
 
 
 class KGSafeWriteLifecycle:
-    """Apply the safe write lifecycle around a LadybugDB mutation.
+    """Apply the safe write lifecycle around a embedded graph backend mutation.
 
     The wrapper is stateless; it composes the supplied adapters and
     enforces the canonical step ordering. Typical usage:
 
         wrapper = KGSafeWriteLifecycle(
-            step_adapter=ladybug_step_adapter,
+            step_adapter=graph_step_adapter,
             owner_probe=LockOwnerProbe(is_active_owner=single_writer_lock.is_owner),
             health_probe=HealthProbe(classify=health_classifier_callable),
         )

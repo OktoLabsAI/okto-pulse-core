@@ -13,6 +13,8 @@ stubbed auth and the conftest DB factory (mirrors tests/test_card_knowledge_mcp.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from pathlib import Path
@@ -21,7 +23,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 
 CORE = Path(__file__).resolve().parent.parent / "src" / "okto_pulse" / "core"
 HELPERS_PY = CORE / "mcp" / "helpers.py"
@@ -132,7 +134,7 @@ def _stub_ctx():
 def _stub_auth():
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
-        mcp_server.register_session_factory(__import__("okto_pulse.core.infra.database", fromlist=["get_session_factory"]).get_session_factory())
+        register_mcp_test_runtime(__import__("okto_pulse.core.infra.database", fromlist=["get_session_factory"]).get_session_factory())
         yield
 
 
@@ -218,6 +220,39 @@ async def test_ac6_add_decision_comma_only_uniform_envelope(_seed_spec):
     res = json.loads(raw)
     assert res.get("error") == "invalid_multi_value_input", res
     assert "detail" in res and res["detail"], res
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "kwargs"),
+    [
+        (
+            "okto_pulse_create_card",
+            {
+                "title": "Card envelope",
+                "spec_id": "spec-fake",
+                "labels": "alpha,beta",
+            },
+        ),
+        (
+            "okto_pulse_update_card",
+            {"card_id": "card-fake", "labels": "alpha,beta"},
+        ),
+        (
+            "okto_pulse_update_card",
+            {"card_id": "card-fake", "test_scenario_ids": "ts_a,ts_b"},
+        ),
+        (
+            "okto_pulse_update_card",
+            {"card_id": "card-fake", "linked_test_task_ids": "a,b"},
+        ),
+    ],
+)
+async def test_card_multi_value_errors_use_uniform_envelope(tool_name, kwargs):
+    raw = await getattr(mcp_server, tool_name).fn(board_id=BOARD_ID, **kwargs)
+    res = json.loads(raw)
+    assert res.get("error") == "invalid_multi_value_input", res
+    assert res.get("detail"), res
 
 
 # ---------------------------------------------------------------------------

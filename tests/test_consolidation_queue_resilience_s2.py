@@ -23,11 +23,11 @@ from okto_pulse.core.events.handlers.consolidation_enqueuer import (
 )
 from okto_pulse.core.events.types import CardCreated
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
-from okto_pulse.core.kg.workers.dead_letter import (
+from okto_pulse.core.application.processors.dead_letter import (
     build_attempt_entry,
     route_to_dead_letter,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -221,9 +221,8 @@ async def test_ac16_priority_high_for_cancelled_cards(db_factory, s2_clean):
 # ----------------------------------------------------------------------
 
 
-def test_ac17_attempt_entry_schema_has_5_keys():
-    """AC17: each entry in the DLQ errors[] array has EXACTLY the 5 fixed
-    keys (attempt, occurred_at, error_type, message, traceback)."""
+def test_ac17_attempt_entry_schema_includes_recovery_contract():
+    """DLQ entries preserve the legacy fields plus typed recovery metadata."""
     entry = build_attempt_entry(
         attempt=3,
         error_type="RuntimeError",
@@ -232,11 +231,15 @@ def test_ac17_attempt_entry_schema_has_5_keys():
     )
     assert set(entry.keys()) == {
         "attempt", "occurred_at", "error_type", "message", "traceback",
+        "recovery_class", "reason_code", "replay_safe", "correlation_id",
     }
     assert entry["attempt"] == 3
     assert entry["error_type"] == "RuntimeError"
     assert entry["message"] == "something went wrong"
     assert entry["traceback"] is None
+    assert entry["recovery_class"] == "invalid_payload"
+    assert entry["reason_code"] == "kg_recovery.invalid_payload"
+    assert entry["replay_safe"] is False
     # ISO8601 UTC parseable by datetime.fromisoformat
     parsed = datetime.fromisoformat(entry["occurred_at"])
     assert parsed.tzinfo is not None
@@ -287,7 +290,8 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     readable through a live process handle.
     """
 
-    import okto_pulse.core.kg.workers.consolidation as worker
+    import okto_pulse.core.application.processors.consolidation as worker
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.safe_write_lifecycle import (
         LifecycleStepResult,
     )
@@ -302,10 +306,26 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     set_barrier_mode(BarrierMode.STRICT)
     events: list[str] = []
 
-    async def fake_commit(req, *, agent_id, db):
+    class RecordingBlockingExecution:
+        async def run(self, operation):
+            events.append("executor")
+            return operation()
+
+    executor = RecordingBlockingExecution()
+
+    async def fake_commit(
+        req,
+        *,
+        agent_id,
+        db,
+        blocking_execution,
+        defer_session_finalization,
+    ):
         guard = require_write_token(BOARD_ID_S2)
         assert guard is not None
         assert guard.operation == worker.CONSOLIDATION_COMMIT_OPERATION
+        assert blocking_execution is executor
+        assert defer_session_finalization is False
         events.append(f"commit:{req.session_id}")
         return SimpleNamespace(nodes_added=1, edges_added=2)
 
@@ -318,9 +338,9 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
         return LifecycleStepResult(ok=True)
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
-    monkeypatch.setattr(
-        worker, "apply_ladybug_lifecycle_step", fake_lifecycle_step
-    )
+    registry = get_kg_registry()
+    original_step_adapter = registry.graph_lifecycle.apply_step
+    registry.graph_lifecycle.apply_step = fake_lifecycle_step
     entry = SimpleNamespace(
         id="queue-guarded",
         board_id=BOARD_ID_S2,
@@ -334,8 +354,10 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
             session_id="session-guarded",
             summary_text="guarded commit",
             db=object(),
+            blocking_execution=executor,
         )
     finally:
+        registry.graph_lifecycle.apply_step = original_step_adapter
         set_barrier_mode(original_mode)
 
     assert resp.nodes_added == 1
@@ -343,7 +365,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     # (checkpoint/flush/fsync) — o close_reopen_probe sai do hot path e fica
     # exclusivo das lanes de rebuild/recovery (DEFAULT_REQUIRED_STEPS).
     assert events == (
-        ["commit:session-guarded"]
+        ["commit:session-guarded", "executor"]
         + [f"step:{step}" for step in worker.WORKER_COMMIT_LIFECYCLE_STEPS]
     )
 
@@ -357,13 +379,23 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
     o close_reopen_probe, que saiu do hot path por FR-4).
     """
 
-    import okto_pulse.core.kg.workers.consolidation as worker
+    import okto_pulse.core.application.processors.consolidation as worker
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.safe_write_lifecycle import (
         STEP_CHECKPOINT,
         LifecycleStepResult,
     )
 
-    async def fake_commit(req, *, agent_id, db):
+    async def fake_commit(
+        req,
+        *,
+        agent_id,
+        db,
+        blocking_execution,
+        defer_session_finalization,
+    ):
+        assert blocking_execution is None
+        assert defer_session_finalization is False
         return SimpleNamespace(nodes_added=1, edges_added=0)
 
     def fake_lifecycle_step(board_id: str, graph_type: str, step: str):
@@ -372,9 +404,9 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         return LifecycleStepResult(ok=True)
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
-    monkeypatch.setattr(
-        worker, "apply_ladybug_lifecycle_step", fake_lifecycle_step
-    )
+    registry = get_kg_registry()
+    original_step_adapter = registry.graph_lifecycle.apply_step
+    registry.graph_lifecycle.apply_step = fake_lifecycle_step
     entry = SimpleNamespace(
         id="queue-probe-failed",
         board_id=BOARD_ID_S2,
@@ -382,13 +414,58 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         artifact_id="spec-probe-failed",
     )
 
-    with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
+    try:
+        with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
+            await worker._commit_consolidation_with_board_graph_lifecycle(
+                entry=entry,
+                session_id="session-probe-failed",
+                summary_text="probe failure",
+                db=object(),
+            )
+    finally:
+        registry.graph_lifecycle.apply_step = original_step_adapter
+
+
+@pytest.mark.asyncio
+async def test_worker_commit_error_still_drains_possible_autocommit(
+    monkeypatch,
+):
+    """A primitive error can follow an auto-commit plus compensation."""
+
+    import okto_pulse.core.application.processors.consolidation as worker
+
+    events: list[str] = []
+
+    async def fake_commit(*_args, **_kwargs):
+        events.append("graph_partial_error")
+        raise RuntimeError("result materialization failed")
+
+    class _Lease:
+        durability_applied = False
+
+        def ensure_durable(self, **_kwargs) -> None:
+            events.append("durability")
+            self.durability_applied = True
+
+    lease = _Lease()
+    monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
+    entry = SimpleNamespace(
+        id="queue-partial-error",
+        board_id=BOARD_ID_S2,
+        artifact_type="spec",
+        artifact_id="spec-partial-error",
+    )
+
+    with pytest.raises(RuntimeError, match="result materialization failed"):
         await worker._commit_consolidation_with_board_graph_lifecycle(
             entry=entry,
-            session_id="session-probe-failed",
-            summary_text="probe failure",
+            session_id="session-partial-error",
+            summary_text="partial error",
             db=object(),
+            enter_graph_write=lambda _mutation_ref: lease,
         )
+
+    assert events == ["graph_partial_error", "durability"]
 
 
 # ----------------------------------------------------------------------
@@ -436,6 +513,7 @@ async def test_ac7_route_to_dead_letter_moves_row_with_history(
             assert err["attempt"] == i
             assert set(err.keys()) == {
                 "attempt", "occurred_at", "error_type", "message", "traceback",
+                "recovery_class", "reason_code", "replay_safe", "correlation_id",
             }
         assert dlq_row.errors[-1]["message"] == "final failure on attempt 5"
         assert dlq_row.errors[-1]["error_type"] == "ValueError"

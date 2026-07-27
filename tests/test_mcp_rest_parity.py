@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -289,6 +289,9 @@ class TestSpecCoverageSummaryParity:
         # IR/OR first-class requirement coverage
         "ir_task_linkage_pct", "irs_linked", "irs_total", "irs_uncovered_ids",
         "or_task_linkage_pct", "ors_linked", "ors_total", "ors_uncovered_ids",
+        "cards_total", "cards_done",
+        "cards_total_raw", "cards_done_raw",
+        "cards_total_effective", "cards_done_effective",
         "skip_test_coverage", "skip_rules_coverage", "skip_decisions_coverage",
         "skip_ir_coverage", "skip_or_coverage",
     }
@@ -374,6 +377,33 @@ class TestBlockersParity:
         assert filtered["filter_type"] == "stale"
         for b in filtered["blockers"]:
             assert b["type"] == "stale"
+
+    async def test_cancelled_specs_do_not_surface_uncovered_scenarios(self, db_factory):
+        board_id = f"cancelled-spec-board-{uuid.uuid4().hex[:8]}"
+        spec_id = f"cancelled-spec-{uuid.uuid4().hex[:8]}"
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Cancelled spec blockers", owner_id="owner-1"))
+            db.add(Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Cancelled spec with orphan scenario",
+                status=SpecStatus.CANCELLED,
+                archived=False,
+                acceptance_criteria=["AC1"],
+                test_scenarios=[
+                    {"id": "ts_cancelled", "title": "orphan", "status": "draft"},
+                ],
+                created_by="user-1",
+            ))
+            await db.commit()
+
+        async with db_factory() as db:
+            filtered = await compute_blockers(
+                db, board_id, filter_type="uncovered_scenario"
+            )
+
+        assert filtered["total"] == 0
+        assert filtered["blockers"] == []
 
     async def test_invalid_stale_hours_raises(self, db_factory):
         async with db_factory() as db:
@@ -476,24 +506,43 @@ class TestDelegationContract:
     """
 
     def test_rest_analytics_imports_service_functions(self):
-        from okto_pulse.core.api import analytics as rest_mod
-        src = inspect.getsource(rest_mod)
-        for fn in (
-            "compute_coverage", "compute_funnel", "compute_velocity",
-            "compute_blockers",
-            "aggregate_task_validation_gate", "aggregate_spec_validation_gate",
+        # Post-strangler (spec R01A REST-FU2a/b/c): the REST adapter delegates to
+        # transport-free use cases, which call the typed analytics catalog.
+        # The delegation contract moved from the HTTP adapter to the application
+        # (use case) + service layers — assert it there, not in api/analytics.py.
+        from okto_pulse.core.application.use_cases import analytics_helpers
+        uc_src = inspect.getsource(analytics_helpers)
+        for capability in (
+            ".analytics.coverage", ".analytics.funnel", ".analytics.velocity",
+            ".analytics.blockers", ".analytics.quality", ".analytics.validations",
+            ".analytics.spec", ".analytics.sprint",
         ):
-            assert fn in src, f"REST analytics missing service import: {fn}"
+            assert capability in uc_src, (
+                f"analytics use cases missing catalog delegation: {capability}"
+            )
+        from okto_pulse.core.services import analytics_service
+        svc_src = inspect.getsource(analytics_service)
+        for fn in ("aggregate_task_validation_gate", "aggregate_spec_validation_gate"):
+            assert fn in svc_src, f"analytics service missing gate aggregator: {fn}"
 
-    def test_mcp_server_imports_service_functions(self):
+    def test_mcp_server_delegates_analytics_to_use_cases(self):
         from okto_pulse.core.mcp import server as mcp_mod
         src = inspect.getsource(mcp_mod)
-        for fn in (
-            "compute_coverage", "compute_funnel", "compute_velocity",
-            "compute_blockers",
-            "aggregate_task_validation_gate",
+        for symbol in (
+            "McpGetAnalyticsUseCase",
+            "McpGetAnalyticsCommand",
+            "McpListBlockersUseCase",
+            "McpListBlockersCommand",
         ):
-            assert fn in src, f"MCP server missing service import: {fn}"
+            assert symbol in src, f"MCP server missing analytics use-case delegation: {symbol}"
+
+        from okto_pulse.core.application.use_cases import mcp_admin_validation_analytics
+
+        uc_src = inspect.getsource(mcp_admin_validation_analytics)
+        for capability in (".analytics.mcp_board_analytics", ".analytics.blockers"):
+            assert capability in uc_src, (
+                f"MCP analytics use cases missing catalog delegation: {capability}"
+            )
 
     def test_mcp_re_exports_decisions_helpers(self):
         """D-8 — MCP server re-exports filter_decisions_by_status + decisions_stats
@@ -507,15 +556,24 @@ class TestDelegationContract:
         assert hasattr(mcp_mod, "_spec_coverage")
 
     def test_architecture_rest_and_mcp_share_core_services(self):
-        from okto_pulse.core.api import architecture as rest_mod
+        # REST architecture.py was strangled (R01A FU5-S1) onto the
+        # ``architecture_crud`` use cases, which hold the repository / diagram-store
+        # / propagation-service delegation. The delegation contract moved from the
+        # HTTP adapter to the application (use case) layer — assert it there, not in
+        # api/architecture.py (mirrors the analytics delegation fix above). The MCP
+        # architecture tools are not yet migrated, so they still reference the
+        # typed UoW service catalog in mcp/server.py.
+        from okto_pulse.core.application.use_cases import architecture_crud
         from okto_pulse.core.mcp import server as mcp_mod
 
-        rest_src = inspect.getsource(rest_mod)
+        uc_src = inspect.getsource(architecture_crud)
         mcp_src = inspect.getsource(mcp_mod)
-        for symbol in (
-            "ArchitectureDesignRepository",
-            "ArchitectureDiagramStore",
-            "ArchitecturePropagationService",
+        for capability in (
+            "uow.services.architecture_designs",
+            "uow.services.architecture_diagrams",
+            "uow.services.architecture_propagation",
         ):
-            assert symbol in rest_src, f"REST architecture missing service: {symbol}"
-            assert symbol in mcp_src, f"MCP architecture missing service: {symbol}"
+            assert capability in uc_src, (
+                f"architecture use case missing catalog capability: {capability}"
+            )
+        assert "services.architecture_designs" in mcp_src

@@ -48,7 +48,7 @@ class MemoryPressureStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class HighWaterMarkSample:
-    """A single LadybugDB high-water-mark observation."""
+    """A single embedded graph backend high-water-mark observation."""
 
     timestamp: datetime
     high_water_mark_pct: float
@@ -57,7 +57,7 @@ class HighWaterMarkSample:
 
 @dataclass(frozen=True, slots=True)
 class FailureEvent:
-    """A WAL/commit failure event surfaced by LadybugDB instrumentation.
+    """A WAL/commit failure event surfaced by embedded graph backend instrumentation.
 
     `event_kind` MUST match one of the names the spec already documents
     in the telemetry boundary so observability storage can join correlator

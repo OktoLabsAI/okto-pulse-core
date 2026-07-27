@@ -1,0 +1,283 @@
+"""RuntimeComposition + PulseRuntime — explicit composition root (spec #03).
+
+Card 2fb92914 / tr_1436632a / tr_b6ac52cf / tr_f9d2f84f. ``RuntimeComposition``
+is the immutable wiring of the providers the composition root owns; ``create_app``
+consumes it and, under ``strict_runtime=True``, fails fast with
+``runtime_provider_missing`` when a required owned provider is absent — never a
+silent fallback to a concrete default.
+
+Ownership (Remediacao #03 v2): the providers OWNED/wired by #03 in this phase are
+settings, auth, storage, event_bus, UnitOfWorkFactory, scheduler_control,
+telemetry and lifecycle hooks. Relational engines and session factories stay
+inside edition adapters. The KG registry
+(``kg_registry``) is transitional debt deferred to #05 and is NOT a required
+provider here. ``event_bus`` is a #03-owned provider key supplied by the edition
+composition root; core code must not instantiate a concrete relational event-bus
+adapter.
+
+Providers are duck-typed (held as opaque objects) so this module imports no
+concrete adapter; it is composition-layer wiring, not application logic.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Iterator, Protocol, Sequence, runtime_checkable
+
+from .runtime_context import (
+    RuntimeValueRegistry,
+    runtime_lock,
+    runtime_state,
+    runtime_value_scope,
+    snapshot_runtime_values,
+)
+
+#: Providers owned by #03 that MUST be present under ``strict_runtime=True``.
+REQUIRED_OWNED_PROVIDERS: tuple[str, ...] = (
+    "settings_provider",
+    "auth_provider",
+    "storage_provider",
+    "event_bus",
+    "uow_factory",
+)
+
+#: Optional owned providers (may be ``None`` even in strict mode).
+OPTIONAL_OWNED_PROVIDERS: tuple[str, ...] = (
+    "scheduler_control",
+    "telemetry",
+    "lifecycle_hooks",
+    "worker_registry",
+    "content_ingestion_resolver",
+    "relational_runtime_factory",
+)
+
+#: Providers that must be present when an environment explicitly opts into
+#: strict runtime-shell mode. ``lifecycle_hooks`` stays optional for the
+#: historical default path, but empty hooks are not a valid strict runtime.
+STRICT_RUNTIME_REQUIRED_PROVIDERS: tuple[str, ...] = (
+    *REQUIRED_OWNED_PROVIDERS,
+    "lifecycle_hooks",
+)
+
+#: Boundary deferred to spec #05 — never a ``runtime_provider_missing`` here.
+DEFERRED_TO_05_PROVIDERS: tuple[str, ...] = ("kg_registry",)
+
+ALL_PROVIDER_KEYS: tuple[str, ...] = (
+    *REQUIRED_OWNED_PROVIDERS,
+    *OPTIONAL_OWNED_PROVIDERS,
+    *DEFERRED_TO_05_PROVIDERS,
+)
+
+
+class RuntimeProviderMissing(Exception):
+    """Raised when a required owned provider is absent (runtime_provider_missing)."""
+
+    code = "runtime_provider_missing"
+
+    def __init__(self, provider_key: str, *, missing: Sequence[str] | None = None):
+        self.provider_key = provider_key
+        self.missing = list(missing) if missing is not None else [provider_key]
+        super().__init__(
+            f"runtime_provider_missing: required provider(s) not supplied: "
+            f"{', '.join(self.missing)}"
+        )
+
+
+class InvalidRuntimeComposition(Exception):
+    """Raised when the composition object is structurally incomplete."""
+
+    code = "invalid_runtime_composition"
+
+
+@runtime_checkable
+class LifecycleHook(Protocol):
+    """A startup/shutdown hook driven by the runtime, not by the app layer."""
+
+    async def on_startup(self) -> None:
+        ...
+
+    async def on_shutdown(self) -> None:
+        ...
+
+
+@dataclass(frozen=True)
+class RuntimeComposition:
+    """Immutable wiring of the providers the #03 composition root owns."""
+
+    settings_provider: Any
+    auth_provider: Any
+    storage_provider: Any
+    event_bus: Any
+    # Edition-owned transaction boundary; the Core never constructs a fallback.
+    uow_factory: Any
+    kg_registry: Any = None  # deferred_to_05 boundary
+    scheduler_control: Any = None
+    telemetry: Any = None
+    lifecycle_hooks: Sequence[LifecycleHook] = field(default_factory=tuple)
+    worker_registry: Any = None
+    content_ingestion_resolver: Any = None
+    relational_runtime_factory: Any = None
+    runtime_values: RuntimeValueRegistry = field(default_factory=snapshot_runtime_values)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "lifecycle_hooks", tuple(self.lifecycle_hooks))
+
+    def missing_required(self, *, require_lifecycle_hooks: bool = False) -> list[str]:
+        """Required owned providers that are absent (``None``)."""
+        missing = [
+            key for key in REQUIRED_OWNED_PROVIDERS if getattr(self, key, None) is None
+        ]
+        if require_lifecycle_hooks and not self.lifecycle_hooks:
+            missing.append("lifecycle_hooks")
+        return missing
+
+    def provider_keys(self) -> list[str]:
+        """All provider keys whose value is currently supplied (non-None)."""
+        return [key for key in ALL_PROVIDER_KEYS if getattr(self, key, None) is not None]
+
+    def require_provider(self, key: str) -> Any:
+        """Return a supplied provider or raise ``runtime_provider_missing``."""
+        if key not in ALL_PROVIDER_KEYS:
+            raise InvalidRuntimeComposition(f"unknown provider key: {key}")
+        value = getattr(self, key, None)
+        if value is None:
+            raise RuntimeProviderMissing(key)
+        return value
+
+
+def validate_required_providers(
+    composition: RuntimeComposition, *, require_lifecycle_hooks: bool = False
+) -> None:
+    """Raise ``RuntimeProviderMissing`` if any required owned provider is absent."""
+    missing = composition.missing_required(
+        require_lifecycle_hooks=require_lifecycle_hooks
+    )
+    if missing:
+        raise RuntimeProviderMissing(missing[0], missing=missing)
+
+
+_active_runtime_composition: ContextVar[RuntimeComposition | None] = ContextVar(
+    "okto_pulse_active_runtime_composition",
+    default=None,
+)
+_bridge_usage = runtime_state("composition.bridge_usage", Counter)
+_bridge_usage_lock = runtime_lock("composition.bridge_usage")
+
+
+def current_runtime_composition() -> RuntimeComposition | None:
+    """Return the composition bound to the current ASGI/task context."""
+
+    return _active_runtime_composition.get()
+
+
+@contextmanager
+def runtime_composition_scope(composition: RuntimeComposition):
+    """Bind one immutable composition for the current sync/async task."""
+
+    if not isinstance(composition, RuntimeComposition):
+        raise InvalidRuntimeComposition("composition must be a RuntimeComposition")
+    token = _active_runtime_composition.set(composition)
+    try:
+        with runtime_value_scope(composition.runtime_values):
+            yield composition
+    finally:
+        _active_runtime_composition.reset(token)
+
+
+@contextmanager
+def isolated_runtime_provider_scope() -> Iterator[None]:
+    """Fork runtime providers for one task and restore them on scope exit.
+
+    Edition composition roots occasionally need to replace providers for one
+    bounded operation (for example, an offline first-boot seed).  The active
+    registry is copied instead of mutated, so registrations made in this scope
+    cannot leak into sibling tasks or the caller.  The underlying ContextVar
+    token restores the previous registry on both normal and exceptional exits.
+
+    The registry itself intentionally remains private to Core; editions receive
+    only this lifecycle-safe composition seam.
+    """
+
+    with runtime_value_scope(snapshot_runtime_values()):
+        yield
+
+
+def record_runtime_bridge_usage(bridge: str) -> None:
+    """Count a compatibility fallback so its removal gate is measurable."""
+
+    with _bridge_usage_lock:
+        _bridge_usage[bridge] += 1
+
+
+def runtime_bridge_usage_snapshot() -> dict[str, int]:
+    with _bridge_usage_lock:
+        return dict(_bridge_usage)
+
+
+def reset_runtime_bridge_usage_for_tests() -> None:
+    with _bridge_usage_lock:
+        _bridge_usage.clear()
+
+
+@runtime_checkable
+class PulseRuntime(Protocol):
+    """Composition-driven runtime lifecycle (tr_b6ac52cf)."""
+
+    async def startup(self) -> None:
+        ...
+
+    async def shutdown(self) -> None:
+        ...
+
+    def app_lifespan(self) -> Any:  # AsyncContextManager[None]
+        ...
+
+    def require_provider(self, key: str) -> Any:
+        ...
+
+
+class CompositionRuntime:
+    """Default :class:`PulseRuntime` driven entirely by a RuntimeComposition.
+
+    ``startup``/``shutdown`` run the composition's lifecycle hooks (shutdown in
+    reverse); ``require_provider`` delegates to the composition. No concrete
+    provider is instantiated here — that is the edition adapter's job.
+    """
+
+    def __init__(self, composition: RuntimeComposition, *, strict_runtime: bool = True):
+        if not isinstance(composition, RuntimeComposition):
+            raise InvalidRuntimeComposition("composition must be a RuntimeComposition")
+        if strict_runtime:
+            validate_required_providers(
+                composition, require_lifecycle_hooks=True
+            )
+        self._composition = composition
+        self._started = False
+
+    @property
+    def composition(self) -> RuntimeComposition:
+        return self._composition
+
+    async def startup(self) -> None:
+        for hook in self._composition.lifecycle_hooks:
+            await hook.on_startup()
+        self._started = True
+
+    async def shutdown(self) -> None:
+        for hook in reversed(list(self._composition.lifecycle_hooks)):
+            await hook.on_shutdown()
+        self._started = False
+
+    @asynccontextmanager
+    async def app_lifespan(self) -> AsyncIterator[None]:
+        await self.startup()
+        try:
+            yield None
+        finally:
+            await self.shutdown()
+
+    def require_provider(self, key: str) -> Any:
+        return self._composition.require_provider(key)

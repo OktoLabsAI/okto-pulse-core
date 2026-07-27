@@ -1,7 +1,7 @@
 """KG Health state machine + telemetry classifier (Spec KG-01, FR1 + FR2).
 
-Maps the live telemetry, errors and lock state of `graph.lbug` and
-`discovery.lbug` to the canonical 5-state machine defined in FR1:
+Maps the live telemetry, errors and lock state of `board graph` and
+`global graph` to the canonical 5-state machine defined in FR1:
 
     healthy | at_risk | backpressure | recovery_needed | quarantined
 
@@ -13,7 +13,7 @@ storage corrupts, instead of waiting for a recovery-needed event.
 The classifier is intentionally pure: it accepts the inputs it needs and
 returns a deterministic decision plus the reasons that drove it. The
 `KGHealthService` wraps this classifier and supplies the inputs from
-SQL, LadybugDB telemetry and the cross-process advisory lock.
+SQL, embedded graph backend telemetry and the cross-process advisory lock.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class MetricStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class GraphTelemetry:
-    """Minimum signal set classifier needs about graph.lbug / discovery.lbug.
+    """Minimum signal set classifier needs about board graph / global graph.
 
     Any field set to None means the metric could not be read — the
     classifier turns this into `metric_status=unavailable` rather than
@@ -89,12 +89,12 @@ class HealthClassification:
 
 
 def _classify_metric_status(telemetries: Iterable[GraphTelemetry]) -> MetricStatus:
-    """Compute the metric_status across graph.lbug + discovery.lbug.
+    """Compute the metric_status across board graph + global graph.
 
     Rule (FR2): if every numeric field on every telemetry is None →
     UNAVAILABLE; if SOME but not all → PARTIAL; otherwise AVAILABLE. This
     is what stops the service from degrading silently to zero on a
-    transient LadybugDB open failure.
+    transient embedded graph backend open failure.
     """
     has_any = False
     has_missing = False

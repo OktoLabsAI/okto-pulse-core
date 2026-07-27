@@ -30,10 +30,15 @@ chokepoint:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from typing import Any
+
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +101,33 @@ class SchemaLayerRemediation:
         return self.outcome == SchemaLayerOutcome.MIGRATION_FAILED
 
 
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised in caller
+            box["error"] = exc
+
+    context = copy_context()
+    thread = threading.Thread(
+        target=context.run,
+        args=(_runner,),
+        name="kg-schema-layer-migrate",
+    )
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box["result"]
+
+
 def is_graph_layer_schema_error(error: Any) -> bool:
     """Recognise a "missing graph_layer/maturity_status column" engine error.
 
@@ -135,7 +167,7 @@ def build_structured_schema_layer_error(
     """
     action = (
         f"run MCP `okto_pulse_kg_migrate_schema --board {board_id}` "
-        f"(CLI: `python -m okto_pulse.tools.kg_migrate_schema --board {board_id}`) "
+        f"(CLI: `okto-pulse kg migrate-schema --board {board_id}`) "
         "to add the graph_layer/maturity_status columns and backfill defaults, "
         "then retry the rebuild/reprocess. Do NOT delete the graph store."
     )
@@ -174,12 +206,14 @@ def ensure_graph_layer_schema(
     Emits exactly one ``kg_rebuild_schema_layer_migration_failure`` sample per
     call (or_1f52d4fd), labelled by outcome.
     """
-    # Lazy import: schema.py is a low-level module and importing it at module
-    # load time would risk an import cycle through the worker stack.
-    from okto_pulse.core.kg.schema import migrate_schema_for_board
+    # Lazy import: the edition composition configures the registry; importing it
+    # at module load time would risk an import cycle through the worker stack.
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     try:
-        result = migrate_schema_for_board(board_id)
+        result = _run_async_blocking(
+            get_kg_registry().graph_schema_manager.migrate(board_id)
+        )
     except Exception as exc:  # pragma: no cover - migrate is itself defensive
         message = build_structured_schema_layer_error(
             board_id, raw_error=raw_error, migration_errors=[f"{type(exc).__name__}: {exc}"]
@@ -271,8 +305,11 @@ def ensure_graph_layer_schema(
 # of outcome=migration_failed must be 0 once the board has been migrated.
 
 _SCHEMA_LAYER_LABELS = ("board_id", "outcome")
-_schema_layer_samples: list[dict[str, Any]] = []
-_schema_layer_lock = threading.Lock()
+_schema_layer_samples = runtime_counter_sample_buffer(
+    "kg.schema_layer_guard",
+    _SCHEMA_LAYER_LABELS,
+)
+_schema_layer_lock = runtime_lock("kg.schema_layer_guard.samples")
 
 
 def _emit_schema_layer_sample(*, board_id: str, outcome: str) -> None:
@@ -287,12 +324,7 @@ def get_schema_layer_migration_event_count(
     outcome: str | None = None,
 ) -> int:
     with _schema_layer_lock:
-        return sum(
-            1
-            for sample in _schema_layer_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (outcome is None or sample["outcome"] == outcome)
-        )
+        return _schema_layer_samples.count(board_id=board_id, outcome=outcome)
 
 
 def get_schema_layer_migration_counter_labels() -> tuple[str, ...]:
@@ -301,7 +333,7 @@ def get_schema_layer_migration_counter_labels() -> tuple[str, ...]:
 
 def get_schema_layer_migration_samples() -> list[dict[str, Any]]:
     with _schema_layer_lock:
-        return [dict(sample) for sample in _schema_layer_samples]
+        return _schema_layer_samples.snapshot()
 
 
 def reset_schema_layer_migration_counter() -> None:

@@ -14,14 +14,13 @@ Args:
     board_id: Board ID
     card_id: Card ID
     question: The question or prompt text displayed above the options
-    options: Option labels in any of three formats:
-        - JSON array (preferred when labels contain commas):
-          ``'["Option A (with, commas)", "Option B"]'``
-        - Pipe-separated (when labels contain commas but not pipes):
-          ``"Option A|Option B|Option C"``
-        - Comma-separated (legacy, fragile if a label contains a comma):
-          ``"Option A,Option B,Option C"``
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    options: Option labels — multi-value; formats:
+        okto-pulse://reference/multivalue.
+    options_json: Preferred structured options. Pass a native array such as
+        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
+        A JSON-array string is accepted for compatibility. Each item requires
+        label; recommended defaults to false and tradeoff to null. A non-empty
+        options_json takes precedence over options.
     comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to allow a free-text response in addition to selections
 

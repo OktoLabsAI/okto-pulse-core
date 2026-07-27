@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from okto_pulse.core.kg.primitives import KGPrimitiveError, _validate_local_edge_pair
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
+from okto_pulse.core.ports.mcp_resources import (
+    FORBIDDEN_COMMON_TERMS,
+    scan_forbidden_text_surfaces,
+)
 
 
 def _agent_doc_surface() -> str:
@@ -25,6 +30,29 @@ def _agent_doc_surface() -> str:
     if res.is_dir():
         parts += [p.read_text(encoding="utf-8") for p in sorted(res.rglob("*.md"))]
     return "\n".join(parts)
+
+
+def _agent_facing_common_surfaces() -> dict[str, str]:
+    from okto_pulse.core.mcp import server as mcp_server
+
+    base = Path(__file__).parents[1] / "src" / "okto_pulse" / "core" / "mcp"
+    surfaces = {
+        "agent_instructions.md": (base / "agent_instructions.md").read_text(encoding="utf-8")
+    }
+    for spec in mcp_server.effective_resource_catalog().specs():
+        if spec.is_common:
+            surfaces[spec.uri] = (spec.description or "") + "\n" + spec.read()
+    surfaces.update(_registered_tool_description_surfaces(mcp_server.mcp))
+    return surfaces
+
+
+def _registered_tool_description_surfaces(mcp) -> dict[str, str]:
+    from okto_pulse.core.mcp.payload_budget import snapshot_tool_descriptions
+
+    return {
+        f"tool:{name}": description
+        for name, description in snapshot_tool_descriptions(mcp).items()
+    }
 
 
 class _FakeResult:
@@ -50,6 +78,28 @@ class _FakeConnection:
             return self.results.pop(0)
         return _FakeResult(has_row=False)
 
+    def create_node(self, *args, **kwargs):
+        self.statements.append(("create_node", {"args": args, "kwargs": kwargs}))
+
+    def edge_exists(self, *args):
+        self.statements.append(("edge_exists", {"args": args}))
+        result = self.results.pop(0) if self.results else _FakeResult(False)
+        try:
+            return result.has_next()
+        finally:
+            result.close()
+
+    def create_edge(self, *args):
+        self.statements.append(("create_edge", {"args": args}))
+        result = self.results.pop(0) if self.results else _FakeResult(False)
+        try:
+            return result.has_next()
+        finally:
+            result.close()
+
+    def find_node_types(self, _node_id):
+        return ()
+
 
 def test_create_edge_requires_materialized_relationship():
     exists_result = _FakeResult(has_row=False)
@@ -57,20 +107,25 @@ def test_create_edge_requires_materialized_relationship():
     conn = _FakeConnection(exists_result, create_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
 
     with pytest.raises(ValueError, match="endpoint nodes were not matched"):
-        orch.create_edge("supersedes", "missing-source", "missing-target")
+        orch.create_edge(
+            "supersedes",
+            "missing-source",
+            "missing-target",
+            from_type="Decision",
+            to_type="Decision",
+        )
 
     assert orch.counters.edges_added == 0
     assert orch.records == []
     assert exists_result.closed is True
     assert create_result.closed is True
-    assert "RETURN r.created_by_session_id LIMIT 1" in conn.statements[0][0]
-    assert "RETURN r.created_by_session_id" in conn.statements[1][0]
+    assert [item[0] for item in conn.statements] == ["edge_exists", "create_edge"]
 
 
 def test_create_edge_counts_only_confirmed_relationship():
@@ -79,12 +134,18 @@ def test_create_edge_counts_only_confirmed_relationship():
     conn = _FakeConnection(exists_result, create_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
 
-    orch.create_edge("supersedes", "decision-new", "decision-old")
+    orch.create_edge(
+        "supersedes",
+        "decision-new",
+        "decision-old",
+        from_type="Decision",
+        to_type="Decision",
+    )
 
     assert orch.counters.edges_added == 1
     assert len(orch.records) == 1
@@ -96,7 +157,7 @@ def test_create_edge_ambiguous_relationship_requires_endpoint_hints():
     conn = _FakeConnection()
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
@@ -114,7 +175,7 @@ def test_create_edge_implements_constraint_honors_endpoint_hints():
     conn = _FakeConnection(exists_result, create_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
@@ -127,14 +188,7 @@ def test_create_edge_implements_constraint_honors_endpoint_hints():
         to_type="Constraint",
     )
 
-    assert (
-        "MATCH (a:APIContract {id: $from_id})-[r:implements]->"
-        "(b:Constraint {id: $to_id})"
-    ) in conn.statements[0][0]
-    assert (
-        "MATCH (a:APIContract {id: $from_id}), "
-        "(b:Constraint {id: $to_id})"
-    ) in conn.statements[1][0]
+    assert [item[0] for item in conn.statements] == ["edge_exists", "create_edge"]
     assert orch.counters.edges_added == 1
 
 
@@ -143,12 +197,18 @@ def test_create_edge_skips_existing_relationship():
     conn = _FakeConnection(exists_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
 
-    orch.create_edge("supersedes", "decision-new", "decision-old")
+    orch.create_edge(
+        "supersedes",
+        "decision-new",
+        "decision-old",
+        from_type="Decision",
+        to_type="Decision",
+    )
 
     assert orch.counters.edges_added == 0
     assert orch.records == []
@@ -168,9 +228,18 @@ def test_invalid_local_edge_pair_gets_contextual_error():
     assert excinfo.value.code == "invalid_edge_endpoint_types"
     assert "relates_to" in excinfo.value.message
     assert "Decision" in excinfo.value.message
-    assert excinfo.value.details["allowed_pairs"] == [
-        {"from_type": "Decision", "to_type": "Alternative"}
-    ]
+    # S-KG-01 added the canonical Learning taxonomy ADDITIVELY to relates_to
+    # (reusing the existing edge name). Decision->Alternative is unchanged and
+    # leads the list; Entity->Requirement is still rejected; the seven
+    # Learning->canonical-endpoint pairs are now also accepted.
+    allowed = excinfo.value.details["allowed_pairs"]
+    assert allowed[0] == {"from_type": "Decision", "to_type": "Alternative"}
+    for target in (
+        "Entity", "Decision", "Requirement", "Constraint",
+        "TestScenario", "APIContract", "Criterion",
+    ):
+        assert {"from_type": "Learning", "to_type": target} in allowed
+    assert {"from_type": "Entity", "to_type": "Requirement"} not in allowed
 
 
 def test_structured_bug_edges_are_valid_deterministic_pairs():
@@ -237,7 +306,9 @@ def test_agent_instructions_require_qna_for_ambiguity_and_artifacts():
     assert "Be aggressive about clarification" in instructions
     assert "Every inferred requirement becomes latent rework" in instructions
     assert "Prefer `okto_pulse_ask_ideation_choice_question` whenever" in instructions
-    assert "mark the safest or most likely option as **Recommended**" in instructions
+    assert "set `recommended: true` on the safest or most likely option" in instructions
+    assert "do not encode it in the label" in instructions
+    assert "mark the safest or most likely option as **Recommended**" not in instructions
     assert "set `allow_free_text=true`" in instructions
     assert "Question shape requirements" in instructions
     assert "Bias toward multiple choice" in instructions
@@ -265,8 +336,15 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     assert "pattern correto" not in instructions
     assert "spec 3d907a87" not in instructions
     assert "spec d754d004" not in instructions
-    assert "graph.lbug" in instructions
-    assert "discovery.lbug" in instructions
+    # Core common instructions must stay storage-engine agnostic; concrete
+    # operational store names belong to the Community overlay.
+    surfaces = _agent_facing_common_surfaces()
+    tool_surfaces = {name: value for name, value in surfaces.items() if name.startswith("tool:")}
+    assert len(tool_surfaces) >= 200
+    assert "tool:okto_pulse_kg_add_edge_candidate" in tool_surfaces
+
+    findings = scan_forbidden_text_surfaces(surfaces)
+    assert findings == ()
     assert "okto_pulse_kg_begin_consolidation" in instructions
     assert "okto_pulse_kg_query_natural" in instructions
     assert "okto_pulse_get_analytics" in instructions
@@ -276,6 +354,39 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     # "interfaces do not own source/target" is still enforced (architecture.py)
     # and still delivered to agents — but via the architecture tool's dynamic
     # docstring (server.py), not the static doc surface this test inspects.
+
+
+def test_registered_mcp_tool_description_forbidden_terms_fail_closed():
+    fake_mcp = SimpleNamespace(
+        _tool_manager=SimpleNamespace(
+            _tools={
+                "clean": SimpleNamespace(description="Fetch canonical graph-store nodes."),
+                "rogue": SimpleNamespace(description="Fetch a LadybugDB node from graph.lbug"),
+            }
+        )
+    )
+    surfaces = _registered_tool_description_surfaces(fake_mcp)
+
+    findings = scan_forbidden_text_surfaces(
+        surfaces,
+        terms=FORBIDDEN_COMMON_TERMS,
+    )
+
+    assert {"surface": "tool:rogue", "term": "ladybug"} in findings
+    assert {"surface": "tool:rogue", "term": ".lbug"} in findings
+    assert all(finding["surface"] != "tool:clean" for finding in findings)
+
+
+def test_agent_facing_scan_ignores_internal_unregistered_text():
+    internal_helper_doc = "Internal helper can mention LadybugDB without exposure."
+
+    findings = scan_forbidden_text_surfaces(
+        {"tool:clean": "Fetch existing canonical graph store nodes."},
+        terms=FORBIDDEN_COMMON_TERMS,
+    )
+
+    assert "LadybugDB" in internal_helper_doc
+    assert findings == ()
 
 
 def test_agent_instructions_do_not_use_bare_mcp_tool_aliases():

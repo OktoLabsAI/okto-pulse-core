@@ -20,7 +20,9 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.connectivity_guard import (
     KGNodeConnectivityGuard,
     SourceResolutionStatus,
@@ -48,6 +50,25 @@ _REMEDIATION_OPTIONS = (
 )
 
 
+@pytest_asyncio.fixture
+async def board_handle(board_id, db_factory):
+    """Bootstrap both graph and relational board state for commit-path tests."""
+    from kg_schema_testing import bootstrap_board_graph
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Ownership guard {board_id}",
+                    owner_id="ownership-guard-test",
+                )
+            )
+            await db.commit()
+    return bootstrap_board_graph(board_id)
+
+
 def _node(candidate_id: str, node_type: str, source_ref: str = ""):
     return SimpleNamespace(
         candidate_id=candidate_id, node_type=node_type, source_artifact_ref=source_ref
@@ -55,7 +76,7 @@ def _node(candidate_id: str, node_type: str, source_ref: str = ""):
 
 
 def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -71,6 +92,17 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
             except Exception:
                 pass
     return 0
+
+
+async def _count_by_source_ref_async(
+    board_id: str,
+    node_type: str,
+    source_ref: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, node_type, source_ref),
+        task_name="tests.consolidation_rejects.count_by_source_ref",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -198,4 +230,4 @@ async def test_commit_rejects_cognitive_criterion_constraint_before_mutation(
     # no content leak in the safe payload.
     assert "content" not in violation
     # AC4/AC5 + TR3: nothing was durably written to the graph.
-    assert _count_by_source_ref(board_id, label, source_ref) == 0
+    assert await _count_by_source_ref_async(board_id, label, source_ref) == 0

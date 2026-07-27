@@ -23,9 +23,7 @@ Args:
     goal: The "I want <goal>" intent (optional)
     benefit: The "so that <benefit>" outcome (optional)
     status: Story status — draft, triage, or ready (default: draft)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
 
 ## `okto_pulse_move_story`
 

@@ -8,7 +8,7 @@ from okto_pulse.core.events.handlers.discovery_selector_cache import (
     DiscoverySelectorCacheInvalidationHandler,
 )
 from okto_pulse.core.events.types import SpecVersionBumped
-from okto_pulse.core.models.db import Card, CardPriority, CardStatus, Spec, SpecStatus
+from sqlalchemy_test_models import Card, CardPriority, CardStatus, Spec, SpecStatus
 from okto_pulse.core.services.discovery_selector_catalog import (
     SELECTOR_CACHE_MAX_TTL_SECONDS,
     SELECTOR_EVENT_KG_REBUILT,

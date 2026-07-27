@@ -16,6 +16,8 @@ NOTE: Tests exercise REAL service-layer calls (not source inspection).
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from types import SimpleNamespace
@@ -24,6 +26,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 import pytest
 from sqlalchemy import select
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,7 +47,7 @@ async def _create_board(
     allow_agent_self_answering: bool = False,
 ):
     """Create a Board with given qa_require_role_separation setting."""
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     settings = {
         "qa_require_role_separation": qa_require_role_separation,
@@ -70,7 +73,7 @@ async def _create_board(
 
 async def _create_spec(db, board_id: str):
     """Create a minimal Spec."""
-    from okto_pulse.core.models.db import Spec, SpecStatus
+    from sqlalchemy_test_models import Spec, SpecStatus
 
     spec_id = str(uuid.uuid4())
     spec = Spec(
@@ -87,7 +90,7 @@ async def _create_spec(db, board_id: str):
 
 async def _create_ideation(db, board_id: str):
     """Create a minimal Ideation (no Story FK required)."""
-    from okto_pulse.core.models.db import Ideation, IdeationStatus, IdeationComplexity
+    from sqlalchemy_test_models import Ideation, IdeationStatus, IdeationComplexity
 
     ideation_id = str(uuid.uuid4())
     ideation = Ideation(
@@ -105,7 +108,7 @@ async def _create_ideation(db, board_id: str):
 
 async def _create_refinement(db, board_id: str, ideation_id: str):
     """Create a minimal Refinement."""
-    from okto_pulse.core.models.db import Refinement, RefinementStatus
+    from sqlalchemy_test_models import Refinement, RefinementStatus
 
     ref_id = str(uuid.uuid4())
     ref = Refinement(
@@ -123,7 +126,7 @@ async def _create_refinement(db, board_id: str, ideation_id: str):
 
 async def _create_sprint(db, board_id: str, spec_id: str):
     """Create a minimal Sprint."""
-    from okto_pulse.core.models.db import Sprint, SprintStatus
+    from sqlalchemy_test_models import Sprint, SprintStatus
 
     sprint_id = str(uuid.uuid4())
     sprint = Sprint(
@@ -142,7 +145,7 @@ async def _create_sprint(db, board_id: str, spec_id: str):
 
 async def _create_card(db, board_id: str):
     """Create a minimal Card."""
-    from okto_pulse.core.models.db import Card, CardStatus, CardType, CardPriority
+    from sqlalchemy_test_models import Card, CardStatus, CardType, CardPriority
 
     card_id = str(uuid.uuid4())
     card = Card(
@@ -183,7 +186,7 @@ async def test_fr6_board_settings_field_present_and_defaults_false():
 async def test_fr6_helper_reads_board_settings(db_factory):
     """FR6 — _board_qa_require_role_separation helper reads the flag correctly."""
     from okto_pulse.core.services.main import _board_qa_require_role_separation
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     board_id_off = f"board-helper-off-{uuid.uuid4().hex[:8]}"
     board_id_on = f"board-helper-on-{uuid.uuid4().hex[:8]}"
@@ -208,7 +211,7 @@ async def test_fr6_helper_reads_board_settings(db_factory):
 
 async def test_ac8_qa_service_flag_off_same_principal_accepted(db_factory):
     """BG-01 — default policy rejects same-principal answers and records safe audit."""
-    from okto_pulse.core.models.db import ActivityLog, QAItem
+    from sqlalchemy_test_models import ActivityLog, QAItem
     from okto_pulse.core.models.schemas import QAAnswer
     from okto_pulse.core.services.main import QAService
 
@@ -260,7 +263,7 @@ async def test_ac8_qa_service_flag_off_same_principal_accepted(db_factory):
 
 async def test_ac8_spec_qa_service_flag_off_same_principal_accepted(db_factory):
     """BG-01 — positive opt-in allows same-principal Q&A answers."""
-    from okto_pulse.core.models.db import SpecQAItem
+    from sqlalchemy_test_models import SpecQAItem
     from okto_pulse.core.models.schemas import SpecQAAnswer
     from okto_pulse.core.services.main import SpecQAService
 
@@ -299,7 +302,7 @@ async def test_ac8_spec_qa_service_flag_off_same_principal_accepted(db_factory):
 async def test_ac9_qa_service_flag_on_same_principal_rejected(db_factory):
     """AC9 — QAService: flag ON, answered_by == asked_by → ValueError with
     role_separation_required message. REAL service call, not source inspection."""
-    from okto_pulse.core.models.db import QAItem
+    from sqlalchemy_test_models import QAItem
     from okto_pulse.core.models.schemas import QAAnswer
     from okto_pulse.core.services.main import QAService
 
@@ -328,7 +331,7 @@ async def test_ac9_qa_service_flag_on_same_principal_rejected(db_factory):
 
 async def test_ac9_spec_qa_service_flag_on_same_principal_rejected(db_factory):
     """AC9 — SpecQAService: flag ON, answered_by == asked_by → ValueError."""
-    from okto_pulse.core.models.db import SpecQAItem
+    from sqlalchemy_test_models import SpecQAItem
     from okto_pulse.core.models.schemas import SpecQAAnswer
     from okto_pulse.core.services.main import SpecQAService
 
@@ -358,7 +361,7 @@ async def test_ac9_spec_qa_service_flag_on_same_principal_rejected(db_factory):
 
 async def test_ac9_ideation_qa_service_flag_on_same_principal_rejected(db_factory):
     """AC9 — IdeationQAService: flag ON, answered_by == asked_by → ValueError."""
-    from okto_pulse.core.models.db import IdeationQAItem
+    from sqlalchemy_test_models import IdeationQAItem
     from okto_pulse.core.models.schemas import IdeationQAAnswer
     from okto_pulse.core.services.main import IdeationQAService
 
@@ -388,7 +391,7 @@ async def test_ac9_ideation_qa_service_flag_on_same_principal_rejected(db_factor
 
 async def test_ac9_refinement_qa_service_flag_on_same_principal_rejected(db_factory):
     """AC9 — RefinementQAService: flag ON, answered_by == asked_by → ValueError."""
-    from okto_pulse.core.models.db import RefinementQAItem
+    from sqlalchemy_test_models import RefinementQAItem
     from okto_pulse.core.models.schemas import RefinementQAAnswer
     from okto_pulse.core.services.main import RefinementQAService
 
@@ -419,7 +422,7 @@ async def test_ac9_refinement_qa_service_flag_on_same_principal_rejected(db_fact
 
 async def test_ac9_sprint_qa_service_flag_on_same_principal_rejected(db_factory):
     """AC9 — SprintQAService: flag ON, answered_by == asked_by → ValueError."""
-    from okto_pulse.core.models.db import SprintQAItem
+    from sqlalchemy_test_models import SprintQAItem
     from okto_pulse.core.services.main import SprintQAService
 
     board_id = f"board-ac9-sprint-{uuid.uuid4().hex[:8]}"
@@ -454,7 +457,7 @@ async def test_ac9_sprint_qa_service_flag_on_same_principal_rejected(db_factory)
 
 async def test_ac10_qa_service_flag_on_different_principal_accepted(db_factory):
     """AC10 — QAService: flag ON, answered_by != asked_by → accepted."""
-    from okto_pulse.core.models.db import QAItem
+    from sqlalchemy_test_models import QAItem
     from okto_pulse.core.models.schemas import QAAnswer
     from okto_pulse.core.services.main import QAService
 
@@ -482,7 +485,7 @@ async def test_ac10_qa_service_flag_on_different_principal_accepted(db_factory):
 
 async def test_ac10_spec_qa_service_flag_on_different_principal_accepted(db_factory):
     """AC10 — SpecQAService: flag ON, different principal → accepted."""
-    from okto_pulse.core.models.db import SpecQAItem
+    from sqlalchemy_test_models import SpecQAItem
     from okto_pulse.core.models.schemas import SpecQAAnswer
     from okto_pulse.core.services.main import SpecQAService
 
@@ -524,7 +527,7 @@ async def test_ac11_all_5_handlers_reject_same_principal(db_factory):
     The 5 handlers: QAService, SpecQAService, IdeationQAService,
     RefinementQAService, SprintQAService.
     """
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         QAItem, SpecQAItem, IdeationQAItem, RefinementQAItem, SprintQAItem,
     )
     from okto_pulse.core.models.schemas import QAAnswer, SpecQAAnswer, IdeationQAAnswer, RefinementQAAnswer
@@ -592,7 +595,7 @@ async def test_ac11_all_5_handlers_reject_same_principal(db_factory):
 
 async def test_fr8_error_message_contains_remediation(db_factory):
     """BG-01 — The rejection error cites allow_agent_self_answering remediation."""
-    from okto_pulse.core.models.db import SpecQAItem
+    from sqlalchemy_test_models import SpecQAItem
     from okto_pulse.core.models.schemas import SpecQAAnswer
     from okto_pulse.core.services.main import SpecQAService
 
@@ -624,8 +627,8 @@ async def test_fr8_error_message_contains_remediation(db_factory):
 
 async def test_rest_card_qa_answer_returns_typed_self_answering_denial(db_factory):
     """BG-01 — REST wrapper maps policy denial to 403 and commits safe event."""
-    from okto_pulse.core.api.qa import answer_question as answer_card_question
-    from okto_pulse.core.models.db import ActivityLog, QAItem
+    from okto_pulse.community.api.qa import answer_question as answer_card_question
+    from sqlalchemy_test_models import ActivityLog, QAItem
     from okto_pulse.core.models.schemas import QAAnswer
 
     board_id = f"board-rest-self-deny-{uuid.uuid4().hex[:8]}"
@@ -644,12 +647,12 @@ async def test_rest_card_qa_answer_returns_typed_self_answering_denial(db_factor
 
     async with db_factory() as db:
         with pytest.raises(HTTPException) as exc_info:
-            await answer_card_question(
-                qa_id,
-                QAAnswer(answer="not allowed"),
-                user_id=USER_ASKER,
-                db=db,
-            )
+                await answer_card_question(
+                    qa_id,
+                    QAAnswer(answer="not allowed"),
+                    user_id=USER_ASKER,
+                    db=resolve_unit_of_work_factory().wrap(db),
+                )
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail["reason"] == "self_answering_not_allowed"
 
@@ -673,7 +676,7 @@ async def test_rest_card_qa_answer_returns_typed_self_answering_denial(db_factor
 async def test_mcp_card_qa_answer_returns_typed_self_answering_denial(db_factory):
     """BG-01 — MCP wrapper returns typed JSON denial and commits safe event."""
     from okto_pulse.core.mcp import server as mcp_server
-    from okto_pulse.core.models.db import ActivityLog, QAItem
+    from sqlalchemy_test_models import ActivityLog, QAItem
 
     board_id = f"board-mcp-self-deny-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
@@ -689,7 +692,7 @@ async def test_mcp_card_qa_answer_returns_typed_self_answering_denial(db_factory
         await db.commit()
         qa_id = qa.id
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     ctx = SimpleNamespace(
         agent_id=USER_ASKER,
         agent_name="self-answering-test-agent",

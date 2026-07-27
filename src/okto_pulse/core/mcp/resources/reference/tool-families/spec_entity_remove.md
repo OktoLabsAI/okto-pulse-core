@@ -34,7 +34,10 @@ These continue to work and delegate to the same implementation:
 - `okto_pulse_remove_api_contract(board_id, spec_id, contract_id)`
 - `okto_pulse_remove_decision(board_id, spec_id, decision_id)`
 
-Short alias: `remove_spec_entity` (additive; no `okto_pulse_` prefix).
+Registry-only short name: `remove_spec_entity`. It exists for internal family
+resolution, collision checks, and bounded telemetry labels; it is **not** an MCP
+tool token, does not appear in `tools/list`, and cannot be invoked remotely. The
+three `okto_pulse_*` entries above are the live additive MCP aliases.
 
 ## Telemetry
 
