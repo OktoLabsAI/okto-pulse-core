@@ -82,11 +82,13 @@ def test_process_default_runtime_lock_is_shared_across_raw_threads() -> None:
     contender_outcomes: list[bool] = []
 
     def owner() -> None:
+        register_runtime_value("tests.raw_thread.owner", object())
         with lock:
             owner_entered.set()
             assert release_owner.wait(timeout=5)
 
     def contender() -> None:
+        register_runtime_value("tests.raw_thread.contender", object())
         assert owner_entered.wait(timeout=5)
         acquired = lock.acquire(blocking=False)
         contender_outcomes.append(acquired)
@@ -241,7 +243,9 @@ def test_runtime_compositions_do_not_share_mcp_catalog_mutations() -> None:
         second_catalog = mcp.resolve()
         assert set(second_catalog._tool_manager._tools) == first_tools
         assert getattr(second_catalog.tool, "_xml_safety_patched", False) is True
-        assert "runtime_composition_xml_probe" not in second_catalog._tool_manager._tools
+        assert (
+            "runtime_composition_xml_probe" not in second_catalog._tool_manager._tools
+        )
         assert second_catalog.instructions != "first-only"
 
     assert first_catalog is not second_catalog

@@ -101,19 +101,10 @@ class RuntimeLock:
     )
 
     def _resolve(self) -> RLock:
-        registry = current_runtime_values()
-        if registry is None:
-            # Raw ``threading.Thread`` instances do not inherit ContextVars.
-            # Seed their local registry with the descriptor's shared fallback
-            # so acquire/release stay paired without sharing providers/state.
-            registry = current_runtime_values(create=True)
-            assert registry is not None
-            return registry.resolve_or_create(
-                self.key,
-                lambda: self._process_default_lock,
-            )
-        assert registry is not None
-        return registry.resolve_or_create(self.key, RLock)
+        binding = _current_runtime_binding(create=True)
+        assert binding is not None
+        factory = RLock if binding.scoped else lambda: self._process_default_lock
+        return binding.registry.resolve_or_create(self.key, factory)
 
     def bind(self) -> RLock:
         """Bind the concrete lock before work crosses a thread boundary."""
@@ -188,18 +179,32 @@ def runtime_state(key: str, factory: Callable[[], Any]) -> RuntimeState:
     return RuntimeState(f"runtime.state.{key}", factory)
 
 
-_active_runtime_values: ContextVar[RuntimeValueRegistry | None] = ContextVar(
+@dataclass(frozen=True, slots=True)
+class _RuntimeValueBinding:
+    registry: RuntimeValueRegistry
+    scoped: bool
+
+
+_active_runtime_values: ContextVar[_RuntimeValueBinding | None] = ContextVar(
     "okto_pulse_active_runtime_values",
     default=None,
 )
 
 
+def _current_runtime_binding(
+    *,
+    create: bool = False,
+) -> _RuntimeValueBinding | None:
+    binding = _active_runtime_values.get()
+    if binding is None and create:
+        binding = _RuntimeValueBinding(RuntimeValueRegistry(), scoped=False)
+        _active_runtime_values.set(binding)
+    return binding
+
+
 def current_runtime_values(*, create: bool = False) -> RuntimeValueRegistry | None:
-    registry = _active_runtime_values.get()
-    if registry is None and create:
-        registry = RuntimeValueRegistry()
-        _active_runtime_values.set(registry)
-    return registry
+    binding = _current_runtime_binding(create=create)
+    return binding.registry if binding is not None else None
 
 
 def snapshot_runtime_values() -> RuntimeValueRegistry:
@@ -216,7 +221,7 @@ def capture_runtime_values_for_tests() -> RuntimeValueRegistry:
 def restore_runtime_values_for_tests(registry: RuntimeValueRegistry) -> None:
     """Replace the current test context with a previously captured registry."""
 
-    _active_runtime_values.set(registry.copy())
+    _active_runtime_values.set(_RuntimeValueBinding(registry.copy(), scoped=True))
 
 
 def register_runtime_value(key: str, value: Any) -> None:
@@ -238,20 +243,22 @@ def require_runtime_value(key: str, error: str | None = None) -> Any:
 
 
 def reset_runtime_values(*keys: str) -> None:
-    registry = current_runtime_values()
-    if registry is None:
+    binding = _current_runtime_binding()
+    if binding is None:
         return
     if keys:
-        registry.discard(*keys)
+        binding.registry.discard(*keys)
     else:
-        _active_runtime_values.set(RuntimeValueRegistry())
+        _active_runtime_values.set(
+            _RuntimeValueBinding(RuntimeValueRegistry(), scoped=binding.scoped)
+        )
 
 
 @contextmanager
 def runtime_value_scope(
     registry: RuntimeValueRegistry,
 ) -> Iterator[RuntimeValueRegistry]:
-    token = _active_runtime_values.set(registry)
+    token = _active_runtime_values.set(_RuntimeValueBinding(registry, scoped=True))
     try:
         yield registry
     finally:
