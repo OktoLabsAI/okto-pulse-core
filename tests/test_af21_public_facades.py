@@ -6,9 +6,11 @@ import inspect
 from pathlib import Path
 from typing import Any
 
+from repository_checkout_testing import community_repo_for
+
 
 CORE_ROOT = Path(__file__).resolve().parents[1]
-COMMUNITY_ROOT = CORE_ROOT.parent / "okto_labs_pulse_community"
+COMMUNITY_ROOT = community_repo_for(CORE_ROOT)
 
 PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
     "okto_pulse.core.services.application_agents": (
@@ -178,12 +180,16 @@ def test_ts_a87cad8b_docs_do_not_bless_private_modules_as_public_api() -> None:
 
 
 def test_ts_a87cad8b_docs_name_the_enforced_af21_boundary() -> None:
-    core_readme = (CORE_ROOT / "README.md").read_text(encoding="utf-8")
-    community_readme = (COMMUNITY_ROOT / "README.md").read_text(encoding="utf-8")
+    core_architecture = (
+        CORE_ROOT / "docs" / "ARCHITECTURE-OVERVIEW.md"
+    ).read_text(encoding="utf-8")
+    community_architecture = (
+        COMMUNITY_ROOT / "docs" / "ARCHITECTURE.md"
+    ).read_text(encoding="utf-8")
 
-    assert "okto_pulse.core.services.application_kg" in core_readme
-    assert "okto_pulse.core.services.application_agents" in core_readme
-    assert "okto_pulse.core.mcp.build_mcp_asgi_app" in core_readme
-    assert "okto_pulse.core.ports.runtime_workers" in core_readme
-    assert "Community Core Reach-In Ledger" in community_readme
-    assert "audit_community_core_import_boundary" in community_readme
+    assert "okto_pulse.core.services.application_kg" in core_architecture
+    assert "okto_pulse.core.services.application_agents" in core_architecture
+    assert "okto_pulse.core.mcp.build_mcp_asgi_app" in core_architecture
+    assert "okto_pulse.core.ports.runtime_workers" in core_architecture
+    assert "Community Core Reach-In Ledger" in community_architecture
+    assert "audit_community_core_import_boundary" in community_architecture

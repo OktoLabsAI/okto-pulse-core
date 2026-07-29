@@ -719,8 +719,11 @@ def test_kg_hit_flushed_event_class_registered():
     # Ideação #4 took it to 21; later structured-entity canonicalization,
     # story lifecycle, refinement semantic changes, and bug-regression reuse
     # events expanded the registry; delivery-debt recovery and the distinct
-    # fail-closed full-rebuild intent added dedicated event types.
-    assert len(EVENT_TYPES) == 34
+    # fail-closed full-rebuild intent added dedicated event types; the latest
+    # additive events are quality.assessment_recorded.v1, the A3
+    # checklist.binding_changed.v1 governance audit, the two RDL events, and
+    # quality.clarification_changed.v1 for parent-consolidation invalidation.
+    assert len(EVENT_TYPES) == 39
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1376,7 +1379,9 @@ def test_impl_d_kg_daily_tick_event_class_registered():
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    assert len(EVENT_TYPES) == 34
+    # Registry ratchet also includes the two research-decision events and
+    # quality.clarification_changed.v1.
+    assert len(EVENT_TYPES) == 39
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

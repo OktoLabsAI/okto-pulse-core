@@ -113,6 +113,18 @@ the exact transition edge advertised for the concrete card.
 
 Full per-type rules (spec-status matrix, `max_scenarios_per_card` cap, scenario evidence, gate interactions): `okto-pulse://reference/card_types`.
 
+### Quality evidence while executing a card
+
+The parent Spec's opt-in PageEnvelope may expose only lean
+`quality_summaries`. When a task needs the actual rationale, read the current
+receipt or page findings through the dedicated Quality tools and inspect
+currentness; never treat a parent summary or newest head as a complete body.
+The card executes linked test scenarios and implementation work—it does not
+author a separate assessment or checklist template. A legacy
+`manual_checklist_ref` may be reported as historical context but cannot satisfy
+the curated A3 receipt gate. See
+`okto-pulse://reference/quality-assessments`.
+
 ### When Creating Cards from a Spec (MANDATORY ORDER)
 
 1. **Get full spec context**: `okto_pulse_get_spec_context(board_id, spec_id, profile="full")` — returns the spec with all requirements, TRs, BRs, test scenarios, API contracts, KBs, and mockups. (`okto_pulse_get_task_context` needs an existing `card_id` — it belongs to the execution pre-flight in §2.8, not here.)

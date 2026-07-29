@@ -575,6 +575,20 @@ class IdeationQAItem(Base):
     answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revision: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    lifecycle: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'active'"),
+    )
+    tombstoned: Mapped[bool] = mapped_column(
+        nullable=False,
+        server_default=text("false"),
+    )
 
     ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="qa_items")
 
@@ -641,6 +655,12 @@ class Refinement(Base):
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Human-only governance override for the receipt-backed Refinement
+    # ambiguity gate. It intentionally does not change semantic versioning.
+    skip_ambiguity_gate: Mapped[bool] = mapped_column(
+        nullable=False,
+        server_default=text("false"),
+    )
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -751,6 +771,20 @@ class RefinementQAItem(Base):
     answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revision: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    lifecycle: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'active'"),
+    )
+    tombstoned: Mapped[bool] = mapped_column(
+        nullable=False,
+        server_default=text("false"),
+    )
 
     refinement: Mapped["Refinement"] = relationship("Refinement", back_populates="qa_items")
 
@@ -954,6 +988,20 @@ class SpecQAItem(Base):
     )
     answered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    revision: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    lifecycle: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'active'"),
+    )
+    tombstoned: Mapped[bool] = mapped_column(
+        nullable=False,
+        server_default=text("false"),
     )
 
     # Relationships
@@ -1938,6 +1986,9 @@ class DefaultBoardConfiguration(Base):
     # Design System default ref consumed by the design-system adapter (card #4).
     # Shape: {design_system_id, version, snapshot, gate_mode}.
     design_system_default_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    spec_checklist_mode: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -2754,4 +2805,108 @@ class KGTickRun(Base):
     boards_failed: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0"),
     )
+
+
+# ============================================================================
+# SK-A authoritative relational projection sources
+# ============================================================================
+
+
+class QualityAssessmentReceiptFixture(Base):
+    """Test-only schema parity for the immutable SK-A quality receipts."""
+
+    __tablename__ = "quality_assessment_receipts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    board_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    subject_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    subject_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    subject_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assessment_kind: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    channel: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    scale_kind: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    scale_minimum: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scale_maximum: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scale_direction: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    clarification_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ruleset_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    taxonomy_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    policy_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    input_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    canonicalization_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ruleset_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    taxonomy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    analyzer_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    policy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    run_identity_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    authority_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    predecessor_receipt_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    contract_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    head_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class QualityAssessmentHeadFixture(Base):
+    """Test-only schema parity for the mutable SK-A quality heads."""
+
+    __tablename__ = "quality_assessment_heads"
+
+    board_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    subject_type: Mapped[str] = mapped_column(String(50), primary_key=True)
+    subject_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    assessment_kind: Mapped[str] = mapped_column(String(50), primary_key=True)
+    receipt_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResearchDecisionEntryFixture(Base):
+    """Test-only schema parity for immutable SK-A research-decision entries."""
+
+    __tablename__ = "research_decision_entries"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ledger_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    board_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    refinement_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    refinement_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    predecessor_entry_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    unknown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    anchor_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    anchor_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    evidence_refs: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    alternatives: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    decision: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    evidence_absence_justification: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResearchDecisionHeadFixture(Base):
+    """Test-only schema parity for mutable SK-A research-decision heads."""
+
+    __tablename__ = "research_decision_heads"
+
+    ledger_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    board_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    refinement_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_entry_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refinement_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

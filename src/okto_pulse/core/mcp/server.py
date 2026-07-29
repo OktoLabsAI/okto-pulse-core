@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from importlib.resources import files as package_files
 from typing import Annotated, Any, Callable, Literal
 
-from pydantic import Field, PlainValidator
+from pydantic import BaseModel, ConfigDict, Field, PlainValidator
 from pydantic_core import PydanticCustomError
 
 from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
@@ -35,6 +35,12 @@ from okto_pulse.core.application.ideation_scope import (
     IdeationScopeValidationError,
 )
 from okto_pulse.core.domain.datetime_utils import isoformat_utc
+from okto_pulse.core.domain.test_scenarios import (
+    DEFAULT_SCENARIO_TYPE,
+    SCENARIO_TYPE_DESCRIPTION,
+    ScenarioType,
+    VALID_SCENARIO_TYPES,
+)
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource
@@ -80,6 +86,10 @@ from okto_pulse.core.ports.mcp_auth import (
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
+)
+from okto_pulse.core.models.quality_assessment import (
+    QualityFindingInput,
+    QualityProposedQuestionInput,
 )
 from okto_pulse.core.models.knowledge_propagation import (
     KnowledgeAssignmentDropRequest,
@@ -441,6 +451,11 @@ _CORE_RESOURCE_TABLE = [
         "reference/kg-health.md",
         "Full KG health contract: payload fields, when to consult, must-not-do.",
     ),
+    (
+        "okto-pulse://reference/quality-assessments",
+        "reference/quality-assessments.md",
+        "Quality assessments, pinpointed findings, currentness, and pagination.",
+    ),
     # R1.1 — lazy long-form tool docs (args/returns/examples) moved off the
     # compact tools/list surface; one resource per tool family (api_fd7c5878).
     (
@@ -542,6 +557,11 @@ _CORE_RESOURCE_TABLE = [
         "okto-pulse://reference/tool-docs/qa",
         "reference/tool-docs/qa.md",
         "Full long-form docs for qa tools (args/returns/examples).",
+    ),
+    (
+        "okto-pulse://reference/tool-docs/quality",
+        "reference/tool-docs/quality.md",
+        "Full long-form docs for quality-assessment tools (args/returns/examples).",
     ),
     (
         "okto-pulse://reference/tool-docs/refinement",
@@ -842,6 +862,11 @@ _TOOL_DOCS_FAMILY_RULES = [
     ("screen_mockup", "mockup"),
     ("mockup", "mockup"),
     ("knowledge", "knowledge"),
+    ("quality_assessment", "quality"),
+    ("quality_findings", "quality"),
+    ("ambiguity_assessment", "quality"),
+    ("checklist", "spec"),
+    ("research_decision", "refinement"),
     ("decision", "decision"),
     ("guideline", "guideline"),
     ("sprint", "sprint"),
@@ -7722,6 +7747,1128 @@ async def okto_pulse_get_refinement_history(
 
 
 # ============================================================================
+# QUALITY ASSESSMENT TOOLS
+# ============================================================================
+
+
+def _quality_mcp_error(error: Exception) -> str:
+    """Serialize the shared REST/MCP Quality error envelope."""
+
+    from okto_pulse.core.inbound.quality_assessment_error import (
+        project_quality_assessment_error,
+    )
+
+    return json.dumps(project_quality_assessment_error(error))
+
+
+def _quality_mcp_permission_error(message: str) -> str:
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentForbiddenError,
+    )
+
+    return _quality_mcp_error(
+        QualityAssessmentForbiddenError(
+            "assessment_permission_denied",
+            message,
+        )
+    )
+
+
+def _quality_subject_kind(
+    subject_type: str,
+    assessment_kind: str,
+):
+    """Parse and validate the closed subject/kind matrix."""
+
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentKind,
+        AssessmentSubjectType,
+    )
+
+    parsed_subject = AssessmentSubjectType(subject_type)
+    parsed_kind = AssessmentKind(assessment_kind)
+    supported = (
+        parsed_kind is AssessmentKind.AMBIGUITY
+        if parsed_subject
+        in {
+            AssessmentSubjectType.IDEATION,
+            AssessmentSubjectType.REFINEMENT,
+        }
+        else parsed_kind
+        in {
+            AssessmentKind.SPEC_VALIDATION,
+            AssessmentKind.REQUIREMENT_LINT,
+        }
+    )
+    if not supported:
+        raise ValueError("assessment_subject_kind_unsupported")
+    return parsed_subject, parsed_kind
+
+
+@mcp.tool()
+async def okto_pulse_record_ambiguity_assessment(
+    board_id: str,
+    subject_type: Literal["ideation", "refinement"],
+    subject_id: str,
+    idempotency_key: str,
+    expected_subject_version: int,
+    expected_head_revision: int,
+    score: float,
+    findings: list[QualityFindingInput] | None = None,
+    proposed_questions: list[QualityProposedQuestionInput] | None = None,
+) -> str:
+    """Record an ambiguity assessment."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        RecordAmbiguityAssessmentCommand,
+        RecordAmbiguityAssessmentUseCase,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentSubjectType,
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    try:
+        parsed_subject_type = AssessmentSubjectType(subject_type)
+        if parsed_subject_type is AssessmentSubjectType.SPEC:
+            raise ValueError("assessment_subject_type_unsupported")
+    except (TypeError, ValueError) as exc:
+        return _quality_mcp_error(exc)
+    required_permissions = [
+        Permissions.SPECS_UPDATE,
+        f"{parsed_subject_type.value}.quality.assess",
+    ]
+    if proposed_questions:
+        required_permissions.append(f"{parsed_subject_type.value}.qa.ask")
+    for permission in required_permissions:
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _quality_mcp_permission_error(perm_err)
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        parsed_findings = tuple(
+            (
+                item
+                if isinstance(item, QualityFindingInput)
+                else QualityFindingInput.model_validate(item)
+            ).to_domain()
+            for item in (findings or ())
+        )
+        parsed_questions = tuple(
+            (
+                item
+                if isinstance(item, QualityProposedQuestionInput)
+                else QualityProposedQuestionInput.model_validate(item)
+            ).to_domain()
+            for item in (proposed_questions or ())
+        )
+        result = await RecordAmbiguityAssessmentUseCase(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+            uow_factory=get_unit_of_work_factory_for_mcp(),
+        ).execute(
+            RecordAmbiguityAssessmentCommand(
+                board_id=board_id,
+                subject_type=parsed_subject_type,
+                subject_id=subject_id,
+                idempotency_key=idempotency_key,
+                expected_subject_version=expected_subject_version,
+                expected_head_revision=expected_head_revision,
+                score=score,
+                findings=parsed_findings,
+                proposed_questions=parsed_questions,
+            ),
+            actor=actor,
+        )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": {
+                    "receipt_id": result.receipt_id,
+                    "head_revision": result.head_revision,
+                    "qa_id_map": dict(result.qa_id_map),
+                    "replayed": result.replayed,
+                },
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_get_current_quality_assessment(
+    board_id: str,
+    subject_type: Literal["ideation", "refinement", "spec"],
+    subject_id: str,
+    assessment_kind: Literal[
+        "ambiguity",
+        "spec_validation",
+        "requirement_lint",
+    ],
+) -> str:
+    """Get a current Quality assessment."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        GetCurrentQualityAssessmentCommand,
+        QualityAssessmentReadUseCases,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.quality_assessment import (
+        project_current_quality_assessment,
+    )
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    try:
+        parsed_subject_type, parsed_kind = _quality_subject_kind(
+            subject_type,
+            assessment_kind,
+        )
+        for permission in (
+            Permissions.BOARD_READ,
+            f"{parsed_subject_type.value}.quality.read",
+        ):
+            perm_err = check_permission(ctx.permissions, permission)
+            if perm_err:
+                return _quality_mcp_permission_error(perm_err)
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        result = await QualityAssessmentReadUseCases(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+            uow_factory=get_unit_of_work_factory_for_mcp(),
+        ).get_current(
+            GetCurrentQualityAssessmentCommand(
+                board_id=board_id,
+                subject_type=parsed_subject_type,
+                subject_id=subject_id,
+                assessment_kind=parsed_kind,
+            ),
+            actor=actor,
+        )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": project_current_quality_assessment(result),
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_get_quality_assessment_receipt(
+    board_id: str,
+    receipt_id: str,
+) -> str:
+    """Get a Quality receipt."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _quality_mcp_permission_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        GetQualityAssessmentReceiptCommand,
+        QualityAssessmentReadUseCases,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.quality_assessment import (
+        project_quality_receipt_currentness,
+    )
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        result = await QualityAssessmentReadUseCases(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+            uow_factory=get_unit_of_work_factory_for_mcp(),
+        ).get_receipt(
+            GetQualityAssessmentReceiptCommand(
+                receipt_id=receipt_id,
+                board_id=board_id,
+            ),
+            actor=actor,
+        )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": project_quality_receipt_currentness(
+                    result.receipt,
+                    result.currentness,
+                ),
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_list_quality_assessments(
+    board_id: str,
+    subject_type: Literal["ideation", "refinement", "spec"],
+    subject_id: str,
+    assessment_kind: Literal[
+        "",
+        "ambiguity",
+        "spec_validation",
+        "requirement_lint",
+    ] = "",
+    state: Literal["", "current", "stale", "superseded"] = "",
+    limit: int = 50,
+    cursor: str = "",
+    offset: int = 0,
+) -> str:
+    """List Quality assessments."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        ListQualityAssessmentsCommand,
+        QualityAssessmentReadUseCases,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentKind,
+        AssessmentReceiptState,
+        AssessmentSubjectType,
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.quality_assessment import (
+        decode_quality_cursor,
+        project_quality_keyset_page,
+        project_quality_receipt_view,
+    )
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    try:
+        parsed_subject_type = AssessmentSubjectType(subject_type)
+        parsed_kind = AssessmentKind(assessment_kind) if assessment_kind else None
+        if parsed_kind is not None:
+            _quality_subject_kind(subject_type, assessment_kind)
+        for permission in (
+            Permissions.BOARD_READ,
+            f"{parsed_subject_type.value}.quality.read",
+        ):
+            perm_err = check_permission(ctx.permissions, permission)
+            if perm_err:
+                return _quality_mcp_permission_error(perm_err)
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        page = await QualityAssessmentReadUseCases(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+            uow_factory=get_unit_of_work_factory_for_mcp(),
+        ).list_assessments(
+            ListQualityAssessmentsCommand(
+                board_id=board_id,
+                subject_type=parsed_subject_type,
+                subject_id=subject_id,
+                offset=offset,
+                limit=limit,
+                assessment_kind=parsed_kind,
+                state=AssessmentReceiptState(state) if state else None,
+                cursor=decode_quality_cursor(cursor) if cursor else None,
+            ),
+            actor=actor,
+        )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": project_quality_keyset_page(
+                    page,
+                    projector=project_quality_receipt_view,
+                    created_at=lambda item: item.receipt.created_at,
+                    item_id=lambda item: item.receipt.id,
+                ),
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_list_quality_findings(
+    board_id: str,
+    subject_type: Literal["ideation", "refinement", "spec"],
+    subject_id: str,
+    receipt_id: str = "",
+    assessment_kind: Literal[
+        "",
+        "ambiguity",
+        "spec_validation",
+        "requirement_lint",
+    ] = "",
+    category_code: str = "",
+    severity: Literal[
+        "",
+        "info",
+        "low",
+        "medium",
+        "high",
+        "critical",
+    ] = "",
+    limit: int = 50,
+    cursor: str = "",
+    offset: int = 0,
+) -> str:
+    """List Quality findings."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        ListQualityFindingsCommand,
+        QualityAssessmentReadUseCases,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentKind,
+        AssessmentSubjectType,
+        FindingSeverity,
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.quality_assessment import (
+        decode_quality_cursor,
+        project_quality_finding,
+        project_quality_keyset_page,
+    )
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    try:
+        parsed_subject_type = AssessmentSubjectType(subject_type)
+        parsed_kind = AssessmentKind(assessment_kind) if assessment_kind else None
+        if parsed_kind is not None:
+            _quality_subject_kind(subject_type, assessment_kind)
+        for permission in (
+            Permissions.BOARD_READ,
+            f"{parsed_subject_type.value}.quality.read",
+        ):
+            perm_err = check_permission(ctx.permissions, permission)
+            if perm_err:
+                return _quality_mcp_permission_error(perm_err)
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        page = await QualityAssessmentReadUseCases(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+            uow_factory=get_unit_of_work_factory_for_mcp(),
+        ).list_findings(
+            ListQualityFindingsCommand(
+                board_id=board_id,
+                subject_type=parsed_subject_type,
+                subject_id=subject_id,
+                offset=offset,
+                limit=limit,
+                receipt_id=receipt_id.strip() or None,
+                assessment_kind=parsed_kind,
+                category_code=category_code.strip() or None,
+                severity=FindingSeverity(severity) if severity else None,
+                cursor=decode_quality_cursor(cursor) if cursor else None,
+            ),
+            actor=actor,
+        )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": project_quality_keyset_page(
+                    page,
+                    projector=project_quality_finding,
+                    created_at=lambda item: item.created_at,
+                    item_id=lambda item: item.id,
+                ),
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(exc)
+
+
+# ============================================================================
+# CURATED SPEC CHECKLIST TOOLS
+# ============================================================================
+
+
+class _ChecklistItemResultInput(BaseModel):
+    """Closed MCP input shape for one immutable checklist result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    item_id: str
+    outcome: Literal["pass", "fail", "not_applicable"]
+    anchor: str
+    rationale: str | None = None
+
+
+def _checklist_receipt_outcome(receipt) -> Literal["pass", "fail"]:
+    """Project aggregate truth without treating legacy empty items as a pass."""
+
+    return "pass" if receipt.blocking_satisfied else "fail"
+
+
+@mcp.tool()
+async def okto_pulse_get_checklist_binding(board_id: str) -> str:
+    """Read the effective /specify checklist binding for one board."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    for permission in (Permissions.BOARD_READ, "spec.checklist.read"):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
+    from okto_pulse.core.application.use_cases.checklist import (
+        GetChecklistBindingCommand,
+        GetChecklistBindingUseCase,
+    )
+    from okto_pulse.core.domain.checklist import ChecklistContractError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.checklist import ChecklistPersistenceError
+    from okto_pulse.core.services.checklist import ChecklistError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            binding = await GetChecklistBindingUseCase().execute(
+                GetChecklistBindingCommand(board_id),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": {
+                    "id": binding.digest,
+                    "board_id": binding.board_id,
+                    "target_type": binding.target_type.value,
+                    "phase": binding.phase.value,
+                    "mode": binding.mode.value,
+                    "version": binding.version,
+                    "revision": binding.revision,
+                    "digest": binding.digest,
+                    "template_version_id": binding.template_version,
+                },
+            }
+        )
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        ChecklistContractError,
+        ChecklistError,
+        ChecklistPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        from okto_pulse.core.inbound.ska_contract_error import (
+            project_ska_contract_error,
+        )
+
+        return json.dumps(
+            project_ska_contract_error(exc, family="checklist")
+        )
+
+
+@mcp.tool()
+async def okto_pulse_start_checklist_execution(
+    board_id: str,
+    spec_id: str,
+    binding_id: str,
+    expected_spec_version: int,
+    idempotency_key: str,
+) -> str:
+    """Start a frozen checklist execution for the current Spec version."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    for permission in (Permissions.SPECS_UPDATE, "spec.checklist.execute"):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
+    from okto_pulse.core.application.use_cases.checklist import (
+        StartChecklistExecutionCommand,
+        StartChecklistExecutionUseCase,
+    )
+    from okto_pulse.core.domain.checklist import (
+        SPECIFY_CHECKLIST_TEMPLATE_V1,
+        ChecklistContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.checklist import ChecklistPersistenceError
+    from okto_pulse.core.services.checklist import ChecklistError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await StartChecklistExecutionUseCase().execute(
+                StartChecklistExecutionCommand(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    expected_spec_version=expected_spec_version,
+                    binding_digest=binding_id,
+                    idempotency_key=idempotency_key,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        execution = result.execution
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": {
+                    "id": execution.id,
+                    "board_id": execution.board_id,
+                    "spec_id": execution.spec_id,
+                    "spec_version": execution.spec_version,
+                    "content_digest": execution.content_digest,
+                    "input_digest": execution.input_digest,
+                    "template_version_id": execution.template_version,
+                    "template_digest": execution.template_digest,
+                    "binding_version": execution.binding_version,
+                    "binding_id": execution.binding_digest,
+                    "binding_mode": execution.binding_mode.value,
+                    "revision": execution.revision,
+                    "status": execution.status.value,
+                    "receipt_id": execution.receipt_id,
+                    "created_at": execution.created_at.isoformat(),
+                    "replayed": result.replayed,
+                    "items": [
+                        {
+                            "item_id": item.item_id,
+                            "title_en": item.title_en,
+                            "title_pt": item.title_pt,
+                            "description_en": item.description_en,
+                            "description_pt": item.description_pt,
+                            "allow_na": item.allow_na,
+                        }
+                        for item in SPECIFY_CHECKLIST_TEMPLATE_V1.items
+                    ],
+                },
+            }
+        )
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        ChecklistContractError,
+        ChecklistError,
+        ChecklistPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        from okto_pulse.core.inbound.ska_contract_error import (
+            project_ska_contract_error,
+        )
+
+        return json.dumps(
+            project_ska_contract_error(exc, family="checklist")
+        )
+
+
+@mcp.tool()
+async def okto_pulse_submit_checklist_execution(
+    board_id: str,
+    spec_id: str,
+    execution_id: str,
+    expected_execution_revision: int,
+    idempotency_key: str,
+    results: list[_ChecklistItemResultInput],
+) -> str:
+    """Submit all ten curated results and issue an immutable receipt."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    for permission in (Permissions.SPECS_UPDATE, "spec.checklist.execute"):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
+    from okto_pulse.core.application.use_cases.checklist import (
+        SubmitChecklistExecutionCommand,
+        SubmitChecklistExecutionUseCase,
+    )
+    from okto_pulse.core.domain.checklist import (
+        ChecklistContractError,
+        ChecklistItemOutcome,
+        ChecklistItemResult,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.checklist import ChecklistPersistenceError
+    from okto_pulse.core.services.checklist import ChecklistError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        item_results = tuple(
+            ChecklistItemResult(
+                item_id=item.item_id,
+                outcome=ChecklistItemOutcome(item.outcome),
+                anchor=item.anchor,
+                rationale=item.rationale,
+            )
+            for item in results
+        )
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await SubmitChecklistExecutionUseCase().execute(
+                SubmitChecklistExecutionCommand(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    execution_id=execution_id,
+                    expected_execution_revision=expected_execution_revision,
+                    items=item_results,
+                    idempotency_key=idempotency_key,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": {
+                    "receipt_id": result.receipt_id,
+                    "outcome": (
+                        "fail"
+                        if any(
+                            item.outcome is ChecklistItemOutcome.FAIL
+                            for item in item_results
+                        )
+                        else "pass"
+                    ),
+                    "board_id": result.board_id,
+                    "spec_id": result.spec_id,
+                    "spec_version": result.spec_version,
+                    "request_digest": result.request_digest,
+                    "head_revision": result.head_revision,
+                    "replayed": result.replayed,
+                },
+            }
+        )
+    except (
+        KeyError,
+        EntityNotFoundError,
+        PermissionDeniedError,
+        ChecklistContractError,
+        ChecklistError,
+        ChecklistPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        from okto_pulse.core.inbound.ska_contract_error import (
+            project_ska_contract_error,
+        )
+
+        return json.dumps(
+            project_ska_contract_error(exc, family="checklist")
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_checklist_receipt(
+    board_id: str,
+    receipt_id: str,
+) -> str:
+    """Read one immutable checklist receipt inside its board scope."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    for permission in (Permissions.BOARD_READ, "spec.checklist.read"):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
+    from okto_pulse.core.application.use_cases.checklist import (
+        GetChecklistReceiptCommand,
+        GetChecklistReceiptUseCase,
+    )
+    from okto_pulse.core.domain.checklist import ChecklistContractError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.checklist import ChecklistPersistenceError
+    from okto_pulse.core.services.checklist import ChecklistError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            receipt = await GetChecklistReceiptUseCase().execute(
+                GetChecklistReceiptCommand(
+                    board_id=board_id,
+                    receipt_id=receipt_id,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": {
+                    "id": receipt.id,
+                    "board_id": receipt.board_id,
+                    "spec_id": receipt.spec_id,
+                    "spec_version": receipt.spec_version,
+                    "content_digest": receipt.content_digest,
+                    "input_digest": receipt.input_digest,
+                    "template_version_id": receipt.template_version,
+                    "template_digest": receipt.template_digest,
+                    "binding_version": receipt.binding_version,
+                    "binding_id": receipt.binding_digest,
+                    "binding_mode": receipt.binding_mode.value,
+                    "source": receipt.source.value,
+                    "request_digest": receipt.request_digest,
+                    "head_revision": receipt.head_revision,
+                    "predecessor_receipt_id": receipt.predecessor_receipt_id,
+                    "outcome": _checklist_receipt_outcome(receipt),
+                    "blocking_satisfied": receipt.blocking_satisfied,
+                    "created_by": receipt.created_by,
+                    "created_at": receipt.created_at.isoformat(),
+                    "results": [
+                        {
+                            "item_id": item.item_id,
+                            "outcome": item.outcome.value,
+                            "anchor": item.anchor,
+                            "rationale": item.rationale,
+                        }
+                        for item in receipt.items
+                    ],
+                },
+            }
+        )
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        ChecklistContractError,
+        ChecklistError,
+        ChecklistPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        from okto_pulse.core.inbound.ska_contract_error import (
+            project_ska_contract_error,
+        )
+
+        return json.dumps(
+            project_ska_contract_error(exc, family="checklist")
+        )
+
+
+# ============================================================================
+# REFINEMENT RESEARCH DECISION LEDGER TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_append_research_decision(
+    board_id: str,
+    refinement_id: str,
+    idempotency_key: str,
+    expected_refinement_version: int,
+    unknown: str,
+    anchor_type: Literal[
+        "functional_requirement",
+        "acceptance_criterion",
+        "technical_requirement",
+        "qa",
+    ],
+    anchor_ref: str,
+    status: Literal["open", "investigating", "resolved", "deferred"] = "open",
+    evidence_refs: list[str] | str = "",
+    alternatives: list[str] | str = "",
+    decision: str = "",
+    rationale: str = "",
+    confidence: float | None = None,
+    evidence_absence_justification: str = "",
+    ledger_id: str = "",
+    supersedes_entry_id: str = "",
+    expected_head_revision: int = 0,
+) -> str:
+    """Append an immutable research decision to a Refinement.
+
+    To revise an existing decision, pass ``ledger_id``,
+    ``supersedes_entry_id``, and its current ``expected_head_revision``.
+    Existing entries are never edited in place. Exact retries must reuse the
+    same ``idempotency_key`` and payload.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    for permission in (
+        Permissions.SPECS_UPDATE,
+        "refinement.research_decisions.append",
+    ):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
+    from okto_pulse.core.application.use_cases.research_decision_ledger import (
+        WriteResearchDecisionCommand,
+        WriteResearchDecisionUseCase,
+    )
+    from okto_pulse.core.domain.research_decision_ledger import (
+        ResearchDecisionAnchor,
+        ResearchDecisionAnchorType,
+        ResearchDecisionContent,
+        ResearchDecisionContractError,
+        ResearchDecisionStatus,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.research_decision_ledger import (
+        ResearchDecisionWriteResponse,
+    )
+    from okto_pulse.core.ports.research_decision_ledger import (
+        ResearchDecisionPersistenceError,
+    )
+    from okto_pulse.core.services.research_decision_ledger import (
+        ResearchDecisionLedgerError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        parsed_evidence_refs = coerce_to_list_str(evidence_refs)
+        parsed_alternatives = coerce_to_list_str(alternatives)
+        operation_is_supersede = bool(
+            ledger_id.strip() or supersedes_entry_id.strip()
+        )
+        if operation_is_supersede and not (
+            ledger_id.strip() and supersedes_entry_id.strip()
+        ):
+            raise ValueError("research_decision_supersede_fences_required")
+        content = ResearchDecisionContent(
+            unknown=unknown,
+            status=ResearchDecisionStatus(status),
+            anchor=ResearchDecisionAnchor(
+                anchor_type=ResearchDecisionAnchorType(anchor_type),
+                anchor_ref=anchor_ref,
+            ),
+            evidence_refs=tuple(parsed_evidence_refs),
+            alternatives=tuple(parsed_alternatives),
+            decision=decision.strip() or None,
+            rationale=rationale.strip() or None,
+            confidence=confidence,
+            evidence_absence_justification=(
+                evidence_absence_justification.strip() or None
+            ),
+        )
+        command = WriteResearchDecisionCommand(
+            board_id=board_id,
+            refinement_id=refinement_id,
+            expected_refinement_version=expected_refinement_version,
+            expected_head_revision=expected_head_revision,
+            content=content,
+            idempotency_key=idempotency_key,
+            ledger_id=ledger_id.strip() or None,
+            supersedes_entry_id=supersedes_entry_id.strip() or None,
+        )
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await WriteResearchDecisionUseCase().execute(
+                command,
+                actor=actor,
+                uow=uow,
+            )
+        response = ResearchDecisionWriteResponse.from_domain(result.receipt)
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": response.model_dump(mode="json"),
+            }
+        )
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        ResearchDecisionContractError,
+        ResearchDecisionLedgerError,
+        ResearchDecisionPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        from okto_pulse.core.inbound.ska_contract_error import (
+            project_ska_contract_error,
+        )
+
+        return json.dumps(
+            project_ska_contract_error(exc, family="research_decision")
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_research_decisions(
+    board_id: str,
+    refinement_id: str,
+    limit: int = 50,
+    cursor: str = "",
+    ledger_id: str = "",
+    status: Literal[
+        "",
+        "open",
+        "investigating",
+        "resolved",
+        "deferred",
+    ] = "",
+) -> str:
+    """List immutable Refinement research decisions using stable keyset pagination."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    for permission in (
+        Permissions.BOARD_READ,
+        "refinement.research_decisions.read",
+    ):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
+    from okto_pulse.core.application.use_cases.research_decision_ledger import (
+        ListResearchDecisionsCommand,
+        ListResearchDecisionsUseCase,
+    )
+    from okto_pulse.core.domain.research_decision_ledger import (
+        ResearchDecisionContractError,
+        ResearchDecisionStatus,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.research_decision_ledger import (
+        ResearchDecisionListResponse,
+        decode_research_decision_cursor,
+    )
+    from okto_pulse.core.ports.research_decision_ledger import (
+        ResearchDecisionPersistenceError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        command = ListResearchDecisionsCommand(
+            board_id=board_id,
+            refinement_id=refinement_id,
+            limit=limit,
+            cursor=(
+                decode_research_decision_cursor(cursor)
+                if cursor.strip()
+                else None
+            ),
+            ledger_id=ledger_id.strip() or None,
+            status=ResearchDecisionStatus(status) if status.strip() else None,
+        )
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListResearchDecisionsUseCase().execute(
+                command,
+                actor=actor,
+                uow=uow,
+            )
+        response = ResearchDecisionListResponse.from_domain(result.page)
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": response.model_dump(mode="json"),
+            }
+        )
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        ResearchDecisionContractError,
+        ResearchDecisionPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        from okto_pulse.core.inbound.ska_contract_error import (
+            project_ska_contract_error,
+        )
+
+        return json.dumps(
+            project_ska_contract_error(exc, family="research_decision")
+        )
+
+
+# ============================================================================
 # REFINEMENT Q&A TOOLS
 # ============================================================================
 
@@ -8402,14 +9549,13 @@ async def okto_pulse_get_spec_context(
         except Exception:
             pass
 
-        from okto_pulse.core.mcp.context_projection import project_spec_context
-
-        projected = project_spec_context(result, profile=profile)
         # R4-IMP4: read-only gate/readiness block. Spec context does NOT aggregate
         # per-card cognitive verdicts (codex Q1) — cognitive readiness is per-card and
         # lives in get_task_context. Here: the board's cognitive enforcement posture +
-        # the spec's OWN spec_validation gate (derived from the SAME builder move_spec
-        # raises). Injected post-projection so it survives every profile.
+        # the spec's OWN canonical validation/checklist decisions. Assemble this
+        # semantic block before projection so summary/detail payload accounting
+        # includes it; context_projection preserves gate_readiness without compacting
+        # away meaningful empty/currentness values.
         board_obj = await uow.services.get_application_record(
             entity="board",
             record_id=spec.board_id,
@@ -8419,14 +9565,53 @@ async def okto_pulse_get_spec_context(
             uow.services.kg,
             spec.board_id,
         )
-        projected["gate_readiness"] = spec_gate_readiness(
+        checklist_readiness: dict[str, Any] = {}
+        if (
+            _mcp_check_permission(
+                ctx.permissions,
+                "spec.checklist.read",
+            )
+            is None
+        ):
+            from okto_pulse.core.services.checklist import ChecklistService
+
+            checklist_gate = await ChecklistService().evaluate_spec_gate(
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                persistence=uow.services.checklists,
+            )
+            checklist_currentness = checklist_gate.currentness
+            checklist_readiness = {
+                "checklist_mode": checklist_gate.mode.value,
+                "checklist_allowed": checklist_gate.allowed,
+                "checklist_reason": checklist_gate.reason,
+                "checklist_current": (
+                    None
+                    if checklist_currentness is None
+                    else checklist_currentness.current
+                ),
+                "checklist_stale_reasons": (
+                    ()
+                    if checklist_currentness is None
+                    else tuple(
+                        reason.value
+                        for reason in checklist_currentness.stale_reasons
+                    )
+                ),
+            }
+        result["gate_readiness"] = spec_gate_readiness(
             spec_id=spec.id,
             spec_status=spec.status.value,
             require_spec_validation=bool(
                 board_settings.get("require_spec_validation", True)
             ),
             cognitive_enforcement_active=cognitive_enforcement_active,
+            **checklist_readiness,
         )
+
+        from okto_pulse.core.mcp.context_projection import project_spec_context
+
+        projected = project_spec_context(result, profile=profile)
         return json.dumps(projected, default=str)
 
 
@@ -8627,15 +9812,16 @@ async def okto_pulse_add_test_scenario(
     given: str,
     when: str,
     then: str,
-    scenario_type: str = "integration",
+    scenario_type: Annotated[
+        ScenarioType,
+        Field(description=SCENARIO_TYPE_DESCRIPTION),
+    ] = DEFAULT_SCENARIO_TYPE,
     linked_criteria: str = "",
     notes: str = "",
 ) -> str:
-    """Add a test scenario to a spec. Test scenarios translate acceptance
-    criteria into concrete Given/When/Then test plans. scenario_type accepts
-    exactly: unit, integration, e2e, manual, negative (use negative for
-    expected denial/error-path behavior); unsupported values fail closed with
-    no mutation. Errors: invalid_scenario_type.
+    """Add a Given/When/Then scenario to a spec. ``scenario_type`` is closed to
+    unit, integration, e2e, manual, or negative; negative models an expected
+    rejection/failure path. Invalid values fail validation without mutation.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -8656,8 +9842,9 @@ async def okto_pulse_add_test_scenario(
 
     # MCP-FU6 strangler (spec sub-entity test_scenario add, USE-CASE COMMIT): the
     # fail-closed scenario_type + AC token resolution (core) + build + persist live in
-    # McpAddTestScenarioUseCase. The adapter renders the typed envelopes
-    # (invalid_scenario_type with VALID_SCENARIO_TYPES, unresolved with available ids).
+    # McpAddTestScenarioUseCase. Normal FastMCP calls reject an invalid type at
+    # the closed schema; the adapter's invalid_scenario_type envelope remains
+    # defense in depth for direct handler/use-case invocation.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -8866,7 +10053,6 @@ from okto_pulse.core.services.test_scenario_lifecycle import (  # noqa: E402
     InvalidScenarioTypeError,
     StatusNotMutableError,
     VALID_SCENARIO_STATUSES,
-    VALID_SCENARIO_TYPES,
     is_valid_scenario_type,
     validate_test_scenario_evidence,
 )
@@ -9096,21 +10282,23 @@ async def okto_pulse_update_test_scenario(
     given: str = "",
     when: str = "",
     then: str = "",
-    scenario_type: str = "",
+    scenario_type: Annotated[
+        ScenarioType,
+        Field(
+            description=(
+                f"{SCENARIO_TYPE_DESCRIPTION} Omit to preserve the current type."
+            )
+        ),
+    ] = None,  # type: ignore[assignment]  # omitted sentinel; explicit null is invalid
     linked_criteria: str = "",
     notes: str = "",
     clear: str = "",
 ) -> str:
-    """Edit the BODY of a test scenario (title/given/when/then/scenario_type/
-    linked_criteria/notes). Does NOT accept status — status stays exclusive to
-    okto_pulse_update_test_scenario_status (no second NC-9 bypass).
-    Empty-string params mean "leave unchanged"; to intentionally CLEAR a field
-    list it in `clear` (pipe-separated; only notes and linked_criteria are
-    clearable). linked_criteria is a pipe-separated list of AC index/id/text,
-    resolved to AC ids fail-closed. Editing a SEMANTIC field
-    (given/when/then/scenario_type/linked_criteria) of a scenario holding
-    evidence resets status to `ready` and drops the evidence; cosmetic edits
-    (title/notes) preserve both. Respects the spec content-lock.
+    """Edit scenario body fields; status remains exclusive to the status tool.
+    Omit fields, including ``scenario_type``, to preserve them. Explicit null,
+    empty, or unknown scenario types are invalid. ``clear`` may clear notes or
+    linked criteria. Semantic edits reset evidenced scenarios to ``ready`` and
+    drop evidence; title/notes edits preserve both. Respects the content lock.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -9156,8 +10344,8 @@ async def okto_pulse_update_test_scenario(
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
     except InvalidScenarioTypeError as exc:
-        # Fail-closed scenario_type on the body-edit path (spec ac16b3c9): must
-        # precede the generic ValueError handler (it subclasses ValueError).
+        # Defense in depth for direct handler/use-case callers that bypass the
+        # closed FastMCP schema. Must precede the generic ValueError handler.
         return json.dumps(
             {
                 "error": "invalid_scenario_type",
@@ -16333,6 +17521,7 @@ def _default_board_config_imports():
 
 
 _TASK_REQUIREMENT_GATE_DEFAULT_SKIP_FIELD = "skip_task_requirement_link_gate_global"
+_DEFAULT_SPEC_CHECKLIST_MODE = "advisory"
 
 
 def _template_task_requirement_skip_value(settings_payload: Any) -> bool:
@@ -16343,53 +17532,79 @@ def _template_task_requirement_skip_value(settings_payload: Any) -> bool:
     return False
 
 
+def _template_spec_checklist_mode(template: Any) -> str:
+    value = getattr(template, "spec_checklist_mode", None)
+    return value if value in {"off", "advisory", "blocking"} else _DEFAULT_SPEC_CHECKLIST_MODE
+
+
 async def _refuse_mcp_default_config_activation_if_human_skip_changes(
     *,
+    uow: Any,
     board_id: str,
     template_id: str,
     blocked_tool: str,
     blocked_action: str,
+    checklist_blocked_action: str,
 ) -> str | None:
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        target = await uow.services.get_default_board_template(template_id)
-        if target is None:
-            return None
-        active = await uow.services.resolve_active_default_board_template(target.scope)
-        current_value = (
-            _template_task_requirement_skip_value(active.settings_payload)
-            if active is not None
-            else False
+    target = await uow.services.get_default_board_template(template_id)
+    if target is None:
+        return None
+    active = await uow.services.resolve_active_default_board_template(target.scope)
+    current_value = (
+        _template_task_requirement_skip_value(active.settings_payload)
+        if active is not None
+        else False
+    )
+    next_value = _template_task_requirement_skip_value(target.settings_payload)
+    if current_value != next_value:
+        return _refuse_human_control(
+            board_id=board_id,
+            blocked_tool=blocked_tool,
+            blocked_action=blocked_action,
+            target_ref=f"default_board_config:{template_id}",
         )
-        next_value = _template_task_requirement_skip_value(target.settings_payload)
-        if current_value != next_value:
-            return _refuse_human_control(
-                board_id=board_id,
-                blocked_tool=blocked_tool,
-                blocked_action=blocked_action,
-                target_ref=f"default_board_config:{template_id}",
-            )
+    current_checklist_mode = (
+        _template_spec_checklist_mode(active)
+        if active is not None
+        else _DEFAULT_SPEC_CHECKLIST_MODE
+    )
+    if current_checklist_mode != _template_spec_checklist_mode(target):
+        return _refuse_human_control(
+            board_id=board_id,
+            blocked_tool=blocked_tool,
+            blocked_action=checklist_blocked_action,
+            target_ref=f"default_board_config:{template_id}",
+        )
     return None
 
 
 async def _refuse_mcp_default_config_deactivation_if_human_skip_changes(
     *,
+    uow: Any,
     board_id: str,
     template_id: str,
     blocked_tool: str,
     blocked_action: str,
+    checklist_blocked_action: str,
 ) -> str | None:
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        target = await uow.services.get_default_board_template(template_id)
-        if target is None or not target.is_active:
-            return None
-        current_value = _template_task_requirement_skip_value(target.settings_payload)
-        if current_value:
-            return _refuse_human_control(
-                board_id=board_id,
-                blocked_tool=blocked_tool,
-                blocked_action=blocked_action,
-                target_ref=f"default_board_config:{template_id}",
-            )
+    target = await uow.services.get_default_board_template(template_id)
+    if target is None or not target.is_active:
+        return None
+    current_value = _template_task_requirement_skip_value(target.settings_payload)
+    if current_value:
+        return _refuse_human_control(
+            board_id=board_id,
+            blocked_tool=blocked_tool,
+            blocked_action=blocked_action,
+            target_ref=f"default_board_config:{template_id}",
+        )
+    if _template_spec_checklist_mode(target) != _DEFAULT_SPEC_CHECKLIST_MODE:
+        return _refuse_human_control(
+            board_id=board_id,
+            blocked_tool=blocked_tool,
+            blocked_action=checklist_blocked_action,
+            target_ref=f"default_board_config:{template_id}",
+        )
     return None
 
 
@@ -16584,14 +17799,6 @@ async def okto_pulse_activate_default_board_config_version(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    human_control_refusal = await _refuse_mcp_default_config_activation_if_human_skip_changes(
-        board_id=board_id,
-        template_id=template_id,
-        blocked_tool="okto_pulse_activate_default_board_config_version",
-        blocked_action="activate_template_changes_task_requirement_link_gate_default_skip",
-    )
-    if human_control_refusal:
-        return human_control_refusal
     from okto_pulse.core.application.use_cases import (
         McpActivateDefaultBoardConfigVersionCommand,
         McpActivateDefaultBoardConfigVersionUseCase,
@@ -16604,6 +17811,16 @@ async def okto_pulse_activate_default_board_config_version(
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            human_control_refusal = await _refuse_mcp_default_config_activation_if_human_skip_changes(
+                uow=uow,
+                board_id=board_id,
+                template_id=template_id,
+                blocked_tool="okto_pulse_activate_default_board_config_version",
+                blocked_action="activate_template_changes_task_requirement_link_gate_default_skip",
+                checklist_blocked_action="activate_template_changes_spec_checklist_default",
+            )
+            if human_control_refusal:
+                return human_control_refusal
             result = await McpActivateDefaultBoardConfigVersionUseCase().execute(
                 McpActivateDefaultBoardConfigVersionCommand(template_id),
                 actor=actor,
@@ -16627,14 +17844,6 @@ async def okto_pulse_deactivate_default_board_config_version(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    human_control_refusal = await _refuse_mcp_default_config_deactivation_if_human_skip_changes(
-        board_id=board_id,
-        template_id=template_id,
-        blocked_tool="okto_pulse_deactivate_default_board_config_version",
-        blocked_action="deactivate_template_changes_task_requirement_link_gate_default_skip",
-    )
-    if human_control_refusal:
-        return human_control_refusal
     from okto_pulse.core.application.use_cases import (
         McpDeactivateDefaultBoardConfigVersionCommand,
         McpDeactivateDefaultBoardConfigVersionUseCase,
@@ -16647,6 +17856,16 @@ async def okto_pulse_deactivate_default_board_config_version(
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            human_control_refusal = await _refuse_mcp_default_config_deactivation_if_human_skip_changes(
+                uow=uow,
+                board_id=board_id,
+                template_id=template_id,
+                blocked_tool="okto_pulse_deactivate_default_board_config_version",
+                blocked_action="deactivate_template_changes_task_requirement_link_gate_default_skip",
+                checklist_blocked_action="deactivate_template_changes_spec_checklist_default",
+            )
+            if human_control_refusal:
+                return human_control_refusal
             result = await McpDeactivateDefaultBoardConfigVersionUseCase().execute(
                 McpDeactivateDefaultBoardConfigVersionCommand(template_id),
                 actor=actor,
@@ -17202,17 +18421,11 @@ async def okto_pulse_submit_spec_validation(
     general_justification: str,
     recommendation: str,
 ) -> str:
-    """Submit a Spec Validation Gate record for a spec in 'approved' status — a
-    semantic quality gate that runs AFTER the deterministic coverage gates
-    (AC/FR/TR/Contract); if any coverage fails the submit is rejected with the
-    violation. Outcome is FAILED on any threshold violation or
-    recommendation=reject; SUCCESS (all thresholds pass AND
-    recommendation=approve) atomically promotes the spec approved->validated
-    and content-locks it. Scores are 0-100 integers, NOT 1-5:
-    completeness/assertiveness are higher-is-better, ambiguity is
-    lower-is-better. ANTI-PATTERN: never inflate scores to pass the gate —
-    iterate on content (scenarios, BRs, TRs) instead.
-    Errors: resource_gate_missing_resources.
+    """Submit semantic Spec Validation after deterministic gates. The Spec must
+    be approved. Success requires recommendation=approve and every configured
+    threshold; it promotes approved->validated and locks content. Scores are
+    0-100: completeness/assertiveness are higher-is-better and ambiguity is
+    lower-is-better. Remediate content instead of inflating scores.
     Docs: okto-pulse://reference/tool-docs/spec.
     """
     ctx = await _get_agent_ctx(board_id)

@@ -222,7 +222,7 @@ def test_scenario_gate_uses_same_verifier_for_card_and_sprint_consumers():
     assert scenario_has_required_evidence(contradicted) is False
 
 
-def test_semantic_digest_binds_identity_gwt_and_acceptance_criteria_only():
+def test_semantic_digest_binds_identity_type_gwt_and_acceptance_criteria_only():
     scenario = {
         "id": "ts_v2",
         "title": "cosmetic title",
@@ -255,6 +255,13 @@ def test_semantic_digest_binds_identity_gwt_and_acceptance_criteria_only():
             {"id": "ac1", "text": "About is v0.3.0", "linked_task_ids": ["card-2"]}
         ],
     ) == digest
+
+    assert compute_test_scenario_semantic_sha256(
+        board_id="board-1",
+        spec_id="spec-1",
+        scenario={**scenario, "scenario_type": "negative"},
+        acceptance_criteria=criteria,
+    ) != digest
 
     for changed_scenario, changed_criteria, board_id in (
         ({**scenario, "given": "different precondition"}, criteria, "board-1"),

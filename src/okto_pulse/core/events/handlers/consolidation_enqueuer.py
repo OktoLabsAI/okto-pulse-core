@@ -36,6 +36,12 @@ _SPRINT_EVENT_PREFIX = "sprint."
 _REFINEMENT_EVENT_PREFIX = "refinement."
 _STORY_EVENT_PREFIX = "story."
 _IDEATION_EVENT_PREFIX = "ideation."
+_QUALITY_ASSESSMENT_RECORDED_EVENT = "quality.assessment_recorded.v1"
+_QUALITY_CLARIFICATION_CHANGED_EVENT = "quality.clarification_changed.v1"
+_RESEARCH_DECISION_EVENTS = {
+    "research_decision.appended",
+    "research_decision.superseded",
+}
 _DERIVED_EVENTS = {
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
@@ -76,6 +82,10 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "structured_entity.revoked",
     "refinement.semantic_changed",
     "refinement.moved",
+    "quality.assessment_recorded.v1",
+    "quality.clarification_changed.v1",
+    "research_decision.appended",
+    "research_decision.superseded",
     "sprint.created",
     "sprint.moved",
     "sprint.closed",
@@ -325,6 +335,20 @@ class ConsolidationEnqueuer:
             rid = getattr(event, "refinement_id", None)
             if rid:
                 targets.append(("refinement", rid))
+            return targets
+        if et in {
+            _QUALITY_ASSESSMENT_RECORDED_EVENT,
+            _QUALITY_CLARIFICATION_CHANGED_EVENT,
+        }:
+            subject_type = getattr(event, "subject_type", None)
+            subject_id = getattr(event, "subject_id", None)
+            if subject_type in {"ideation", "refinement", "spec"} and subject_id:
+                targets.append((subject_type, subject_id))
+            return targets
+        if et in _RESEARCH_DECISION_EVENTS:
+            refinement_id = getattr(event, "refinement_id", None)
+            if refinement_id:
+                targets.append(("refinement", refinement_id))
             return targets
         if et == "story.linked_to_ideation":
             story_id = getattr(event, "story_id", None)

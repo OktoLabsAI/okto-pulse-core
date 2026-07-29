@@ -23,11 +23,12 @@ from okto_pulse.core.application.boundary.capstone_conformance import (
 from okto_pulse.core.application.boundary.dependency_ledger import (
     build_dependency_ledger,
 )
+from repository_checkout_testing import community_repo_for
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CORE_SOURCE_ROOT = REPO_ROOT / "src" / "okto_pulse" / "core"
-COMMUNITY_ROOT = REPO_ROOT.parent / "okto_labs_pulse_community"
+COMMUNITY_ROOT = community_repo_for(REPO_ROOT)
 
 
 def _community_readme() -> str:

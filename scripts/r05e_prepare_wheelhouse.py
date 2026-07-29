@@ -35,7 +35,14 @@ import tempfile
 from pathlib import Path
 
 _CORE_REPO = Path(__file__).resolve().parents[1]
-_COMMUNITY_REPO = _CORE_REPO.parent / "okto_labs_pulse_community"
+_CORE_SRC = _CORE_REPO / "src"
+if str(_CORE_SRC) not in sys.path:
+    sys.path.insert(0, str(_CORE_SRC))
+
+from okto_pulse.core.application.boundary.repository_checkout import (  # noqa: E402
+    RepositoryCheckoutNotFound,
+    resolve_repository_checkout,
+)
 
 
 def wheelhouse_dir() -> Path:
@@ -49,9 +56,16 @@ def main() -> int:
     if uv is None:
         print("uv not on PATH", file=sys.stderr)
         return 2
-    if not (_COMMUNITY_REPO / "pyproject.toml").exists():
-        print(f"sibling Community repo not found at {_COMMUNITY_REPO}", file=sys.stderr)
+    try:
+        community_checkout = resolve_repository_checkout(
+            "community",
+            anchor_repo=_CORE_REPO,
+        )
+    except RepositoryCheckoutNotFound as exc:
+        print(str(exc), file=sys.stderr)
         return 2
+    assert community_checkout is not None
+    community_repo = community_checkout.repo_root
 
     wh = wheelhouse_dir()
     if wh.exists():
@@ -60,7 +74,7 @@ def main() -> int:
 
     # 1. Build BOTH wheels fresh into the wheelhouse (offline; reflects the real
     #    uncommitted working tree).
-    for label, repo in (("core", _CORE_REPO), ("community", _COMMUNITY_REPO)):
+    for label, repo in (("core", _CORE_REPO), ("community", community_repo)):
         build = subprocess.run(
             (uv, "build", "--wheel", "--offline", "--out-dir", str(wh), str(repo)),
             capture_output=True, text=True,
@@ -73,7 +87,7 @@ def main() -> int:
     constraints = wh / "_constraints.txt"
     export = subprocess.run(
         (uv, "export", "--frozen", "--no-hashes", "--no-emit-project",
-         "--directory", str(_COMMUNITY_REPO), "-o", str(constraints)),
+         "--directory", str(community_repo), "-o", str(constraints)),
         capture_output=True, text=True,
     )
     if export.returncode != 0:

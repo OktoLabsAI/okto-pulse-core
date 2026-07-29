@@ -133,7 +133,9 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         ),
                         capabilities=("complete",),
                         reason_codes=(
-                            "ambiguity_gate_blocked",
+                            "ambiguity_assessment_missing",
+                            "ambiguity_assessment_stale",
+                            "ambiguity_score_exceeds_threshold",
                             "resource_gate_blocked",
                             "transition_not_allowed",
                         ),
@@ -189,9 +191,16 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge(
                         "done",
                         gate="refinement_done",
-                        preconditions=("resource_gate_ready", "cognitive_gate_ready"),
+                        preconditions=(
+                            "ambiguity_gate_ready",
+                            "resource_gate_ready",
+                            "cognitive_gate_ready",
+                        ),
                         capabilities=("complete",),
                         reason_codes=(
+                            "ambiguity_assessment_missing",
+                            "ambiguity_assessment_stale",
+                            "ambiguity_score_exceeds_threshold",
                             "resource_gate_blocked",
                             "cognitive_gate_blocked",
                             "transition_not_allowed",
@@ -239,7 +248,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         gate="spec_validation",
                         preconditions=("spec_validation_ready",),
                         capabilities=("validate",),
-                        reason_codes=("spec_validation_required", "transition_not_allowed"),
+                        reason_codes=(
+                            "spec_validation_required",
+                            "spec_checklist_gate_required",
+                            "transition_not_allowed",
+                        ),
                     ),
                     _edge("draft", gate="unlock_content", capabilities=("reopen",)),
                     _edge("cancelled", **_CANCEL),

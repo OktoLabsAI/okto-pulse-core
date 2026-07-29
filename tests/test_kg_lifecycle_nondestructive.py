@@ -36,6 +36,7 @@ from kg_schema_testing import (
     close_board_db_cache,
     open_board_connection,
 )
+from repository_checkout_testing import community_repo_for
 
 kg_runtime = pytest.importorskip(
     "okto_pulse.community.adapters.kg_runtime",
@@ -257,9 +258,8 @@ bc.close()
 def test_kill_durability_checkpoint_survives_abrupt_death(nd_board, tmp_path):
     env = dict(os.environ)
     env["ND_SRC"] = SRC_DIR
-    env["ND_COMMUNITY_SRC"] = str(
-        Path(__file__).resolve().parents[2] / "okto_labs_pulse_community" / "src"
-    )
+    core_repo = Path(__file__).resolve().parents[1]
+    env["ND_COMMUNITY_SRC"] = str(community_repo_for(core_repo) / "src")
     env["ND_TESTS"] = str(Path(__file__).resolve().parent)
     env["ND_BOARD"] = f"board-kill-{os.urandom(3).hex()}"
     # Reusa o KG_BASE_DIR do ambiente de teste (conftest) — escritor e leitor

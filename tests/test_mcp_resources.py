@@ -329,6 +329,77 @@ def test_related_context_resources_require_typed_artifact_references() -> None:
         assert not any(stale in body for stale in stale_examples)
 
 
+def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter() -> None:
+    """Agent guidance must match the asymmetric write/read type contract."""
+    from okto_pulse.core.mcp import server as _srv
+
+    tool_docs = _srv._load_resource_file(
+        "reference/tool-docs/test-scenario.md"
+    )
+    update_section = tool_docs.split(
+        "## `okto_pulse_update_test_scenario`", 1
+    )[1].split("\n## `", 1)[0]
+    list_section = tool_docs.split(
+        "## `okto_pulse_list_test_scenarios`", 1
+    )[1].split("\n## `", 1)[0]
+    normalized_update = " ".join(update_section.split())
+    normalized_list = " ".join(list_section.split())
+
+    assert "omit `scenario_type` to preserve the current type" in normalized_update
+    assert "an empty string is not part of the closed enum" in normalized_update
+    assert 'scenario_type/notes: New value, or "" to leave as-is' not in update_section
+    assert "raw persisted value" in normalized_list
+    assert "Historical values such as regression" in normalized_list
+    assert "read-only compatibility filter" in normalized_list
+
+
+def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -> None:
+    """Spec workflow owns status routing; Quality keeps shared mechanics."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    quality = _srv._load_resource_file("reference/quality-assessments.md")
+    normalized_specs = " ".join(specs.split())
+    normalized_quality = " ".join(quality.split())
+
+    for heading in (
+        "### Spec Quality — Canonical Agent Flow",
+        "#### Surface responsibilities",
+        "#### Agent flow by Spec status",
+        "#### Token-efficient read sequence",
+    ):
+        assert heading in specs
+    for status in (
+        "`draft`",
+        "`review`",
+        "`approved`",
+        "`validated`, `in_progress`, `done`",
+        "`cancelled` or archived",
+    ):
+        assert status in specs
+
+    assert "Quality is read-only for Specs" in normalized_specs
+    assert "Validation is actionable at `approved`" in normalized_specs
+    assert "its score is the finding count" in normalized_specs
+    assert "No head means **no evidence**, not zero findings" in normalized_specs
+    assert "is migrated audit evidence" in normalized_specs
+    assert "System legacy import" in normalized_quality
+    assert "not a native Quality receipt" in normalized_quality
+    assert (
+        "This resource intentionally does not repeat those lifecycle steps"
+        in normalized_quality
+    )
+
+    # Shared operational details have one canonical home to control token use.
+    for detail in (
+        "limits `25|50|100`",
+        "`subject_version_changed`, `content_changed`",
+        "`{subject}.quality.read`",
+    ):
+        assert detail in quality
+        assert detail not in specs
+
+
 def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
     """Stage 3 must not force clients to guess worker-local constraint ids."""
     from okto_pulse.core.mcp import server as _srv

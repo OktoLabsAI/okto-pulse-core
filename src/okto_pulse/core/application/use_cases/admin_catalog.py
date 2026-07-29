@@ -427,9 +427,10 @@ class GetBoardDefaultConfigDiffUseCase:
                 f"Board '{command.board_id}' was not found or is not accessible.",
                 404,
             )
-        return DataResult(
-            await uow.services.default_board_config.get_board_diff(board_id=command.board_id)
+        data = await uow.services.default_board_config.get_board_diff(
+            board_id=command.board_id
         )
+        return DataResult(data)
 
 
 class ListDefaultGuidelineCandidatesUseCase:

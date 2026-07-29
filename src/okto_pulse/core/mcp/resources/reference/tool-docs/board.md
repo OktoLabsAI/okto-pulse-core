@@ -70,6 +70,8 @@ Args:
 
 Returns:
     JSON with field-level differences and applied default snapshot metadata.
+    The diff also compares the board's current curated Spec checklist binding
+    with the mode captured in that snapshot.
 
 ## `okto_pulse_create_default_board_config_version`
 
@@ -84,6 +86,9 @@ that is the intended policy. Historical boards/templates with the field absent
 are not backfilled and resolve through `legacy_absent_compat`.
 The same `enforce` default is materialized when a new board is created before
 any active template exists; an explicitly supplied `warn`/`off` is preserved.
+The curated Spec checklist default is human-owned and is intentionally not an
+argument of this MCP tool. A new version inherits the active template's mode;
+when no value exists, it resolves to `advisory`.
 
 Args:
     board_id: Board ID used for authentication.
@@ -111,6 +116,10 @@ Args:
 Returns:
     JSON with the activated version and prior active version, if any.
 
+Agent activation is rejected with `human_control_required` when it would change
+the human-owned curated Spec checklist default. A human can make that change in
+Menu → Board → Global Default.
+
 ## `okto_pulse_deactivate_default_board_config_version`
 
 Deactivate a default board-configuration template version (admin write).
@@ -123,6 +132,9 @@ Args:
 
 Returns:
     JSON with updated active/default state.
+
+Agent deactivation is rejected with `human_control_required` when removing the
+active version would change the human-owned curated Spec checklist default.
 
 ## `okto_pulse_link_board_design_system`
 

@@ -6,6 +6,13 @@ version: "1.0"
 The following 4 polymorphic tools are the supported MCP list surface.
 The 15 entity-specific `list_*` MCP tools are no longer registered.
 
+This consolidation does not absorb the bounded SK-A histories.
+`okto_pulse_list_quality_assessments`,
+`okto_pulse_list_quality_findings`, and
+`okto_pulse_list_research_decisions` retain their own typed filters and opaque
+keyset cursors. Do not route them through `list_by_board`; their contracts are
+in `okto-pulse://reference/quality-assessments` and the relevant tool docs.
+
 | New tool | Replaces |
 |---|---|
 | `okto_pulse_list_by_board` | `list_specs`, `list_ideations`, `list_refinements`, `list_sprints`, `list_stories`, `list_topics` |

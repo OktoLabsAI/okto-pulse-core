@@ -63,7 +63,40 @@ Ideations are the starting point for solution definition. Stories may exist befo
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
 7. **Triage pending derivations**: the canonical surface to find done ideations that still lack a derived child is `okto_pulse_list_by_board(entity_type="ideation", filters={"derivation_pending": true})` — see `okto-pulse://reference/list_tools`
 
-## 2.1a Ambiguity-Killer Protocol — ASK Before Advancing (MANDATORY)
+## 2.1a Receipt-Backed Ambiguity and Pinpointing
+
+The scope evaluation's `ambiguity` dimension classifies the Ideation; the
+version-bound Quality receipt proves whether its current semantic content and
+Q&A are sufficiently unambiguous for the `evaluating → done` gate. Do not
+substitute one for the other.
+
+Use this sequence:
+
+1. Resolve ambiguity through Q&A while the Ideation is being shaped. Move to
+   `evaluating` only after the ordinary clarification loop below converges.
+2. Re-read the full Ideation context. Call
+   `okto_pulse_get_current_quality_assessment` with
+   `subject_type="ideation"` and `assessment_kind="ambiguity"` to discover
+   whether a head exists and obtain its revision.
+3. In `evaluating`, call `okto_pulse_record_ambiguity_assessment` with the
+   current Ideation version and head revision. Score 1–5, lower is better.
+   Pinpoint each issue with a stable field, structured-child, Q&A, or
+   whole-artifact anchor; never use an array position.
+4. If the write materializes proposed Q&A, wait for answers and update the
+   semantic text when needed. Either action can stale the receipt. Re-read
+   context and record a new assessment against the new input/head.
+5. Immediately before `done`, read the current assessment again and inspect
+   `currentness.current`, ordered `stale_reasons`, score, and the board's
+   configured maximum. Use `okto_pulse_list_quality_findings` when you need
+   the full pinpoint/remediation set.
+
+When the board requires the Ideation ambiguity gate, `done` requires a current
+receipt whose score is at or below `max_ideation_ambiguity`. A missing, stale,
+or excessive assessment fails closed. The per-Ideation skip is human-owned;
+an agent may report or request it but must not try to set it. Full tool
+contracts: `okto-pulse://reference/tool-docs/quality`.
+
+## 2.1b Ambiguity-Killer Protocol — ASK Before Advancing (MANDATORY)
 
 > **Reducing ambiguity is your primary job at ideation.** A user's first description of a problem is almost never enough to design a solution. Your job is to interrogate the request until the intent is unambiguous, the scope is bounded, and your understanding is provably aligned with what the user actually wants. **Be aggressive about clarification:** when a requirement admits multiple valid interpretations, treat that as unresolved ambiguity even if one interpretation feels obvious. One extra precise question is cheaper than carrying a hidden assumption. **Do not advance the ideation forward (draft → review → approved → evaluating) while ambiguity is still present.**
 

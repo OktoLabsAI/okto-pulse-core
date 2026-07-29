@@ -121,6 +121,14 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
+from okto_pulse.core.services.application_schemas import (
+    PersistedTestScenarioSpecUpdate,
+)
+from okto_pulse.core.services.ambiguity_assessment import (
+    AmbiguityGateError as AmbiguityGateError,
+    AmbiguityGateService,
+    resolve_ambiguity_gate_configuration,
+)
 from okto_pulse.core.services.activity_log import (
     activity_log_changes,
     activity_log_value,
@@ -193,7 +201,17 @@ from okto_pulse.core.services.sprint_scope import (
     SprintScopeResolver,
     completion_blockers,
 )
-from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
+from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
+from okto_pulse.core.domain.quality_canonicalization import (
+    SEMANTIC_FIELD_MANIFEST_V1,
+)
+from okto_pulse.core.services.requirement_lint_writer import (
+    stage_spec_requirement_lint,
+)
+from okto_pulse.core.services.spec_entity_canonicalization import (
+    canonicalize_fr_ac as canonicalize_fr_ac,  # noqa: F401 - compatibility
+    canonicalize_spec_requirement_fields,
+)
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
 )
@@ -205,11 +223,177 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     evidence_invalidated_by_semantic_edit,
     reexecutable_evidence_reference,
     require_test_scenario_status_mutable,
+    resolve_scenario_types_for_whole_list_write,
     scenario_has_required_evidence,
     validate_scenario_type,
     validate_scenario_types_for_write,
     validate_test_scenario_evidence,
 )
+
+
+async def _purge_quality_assessment_subject(
+    db: Any,
+    *,
+    board_id: str,
+    subject_type: str,
+    subject_id: str,
+) -> None:
+    """Purge one SK-A relational slice inside the caller-owned transaction."""
+
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentSubjectType,
+    )
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+    from okto_pulse.core.services.quality_assessment_lifecycle import (
+        QualityAssessmentLifecycleService,
+    )
+
+    service = QualityAssessmentLifecycleService()
+    plan = service.prepare_subject_purge(
+        board_id=board_id,
+        subject_type=AssessmentSubjectType(subject_type),
+        subject_id=subject_id,
+    )
+    persistence = (
+        require_relational_application_adapter().quality_assessment_lifecycle(
+            db
+        )
+    )
+    postcondition = await persistence.apply_purge_plan(plan)
+    service.validate_purge_postcondition(
+        plan=plan,
+        postcondition=postcondition,
+    )
+
+
+async def _apply_quality_assessment_lifecycle_transition(
+    db: Any,
+    *,
+    board_id: str,
+    subject_type: str,
+    subject_id: str,
+    before_version: int,
+    before_status: str,
+    before_archived: bool,
+    after_version: int,
+    after_status: str,
+    after_archived: bool,
+    action: str,
+    actor_id: str,
+) -> None:
+    """Reconcile assessment heads and audit one subject lifecycle change."""
+
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentSubjectRef,
+        AssessmentSubjectType,
+    )
+    from okto_pulse.core.domain.quality_assessment_lifecycle import (
+        AssessmentLifecycleAction,
+        AssessmentLifecycleCurrentInput,
+        AssessmentLifecycleSubjectSnapshot,
+        AssessmentLifecycleTransition,
+    )
+    from okto_pulse.core.domain.quality_canonicalization import (
+        canonical_sha256,
+    )
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+    from okto_pulse.core.services.quality_assessment_lifecycle import (
+        QualityAssessmentLifecycleService,
+    )
+
+    resolved_subject_type = AssessmentSubjectType(subject_type)
+    persistence = (
+        require_relational_application_adapter().quality_assessment_lifecycle(
+            db
+        )
+    )
+    heads, receipts = await persistence.load_lifecycle_state(
+        board_id=board_id,
+        subject_type=resolved_subject_type.value,
+        subject_id=subject_id,
+    )
+    latest_by_kind = {}
+    for receipt in receipts:
+        current = latest_by_kind.get(receipt.assessment_kind)
+        if current is None or (
+            receipt.created_at,
+            receipt.receipt_id,
+        ) > (
+            current.created_at,
+            current.receipt_id,
+        ):
+            latest_by_kind[receipt.assessment_kind] = receipt
+    current_inputs = tuple(
+        AssessmentLifecycleCurrentInput(
+            assessment_kind=kind,
+            input_digest=receipt.input_digest,
+        )
+        for kind, receipt in sorted(
+            latest_by_kind.items(),
+            key=lambda item: item[0].value,
+        )
+    )
+    before_subject = AssessmentSubjectRef(
+        board_id=board_id,
+        subject_type=resolved_subject_type,
+        subject_id=subject_id,
+        subject_version=before_version,
+    )
+    after_subject = AssessmentSubjectRef(
+        board_id=board_id,
+        subject_type=resolved_subject_type,
+        subject_id=subject_id,
+        subject_version=after_version,
+    )
+    occurred_at = datetime.now(timezone.utc)
+    idempotency_digest = canonical_sha256(
+        {
+            "contract": "quality-assessment-lifecycle-hook/v1",
+            "board_id": board_id,
+            "subject_type": resolved_subject_type.value,
+            "subject_id": subject_id,
+            "action": action,
+            "before": {
+                "version": before_version,
+                "status": before_status,
+                "archived": before_archived,
+            },
+            "after": {
+                "version": after_version,
+                "status": after_status,
+                "archived": after_archived,
+            },
+            "occurred_at": occurred_at.isoformat(),
+        }
+    )
+    transition = AssessmentLifecycleTransition(
+        action=AssessmentLifecycleAction(action),
+        before=AssessmentLifecycleSubjectSnapshot(
+            subject=before_subject,
+            status=before_status,
+            archived=before_archived,
+            current_inputs=current_inputs,
+        ),
+        after=AssessmentLifecycleSubjectSnapshot(
+            subject=after_subject,
+            status=after_status,
+            archived=after_archived,
+            current_inputs=current_inputs,
+        ),
+        idempotency_key=f"quality-lifecycle:{idempotency_digest}",
+        actor_id=actor_id,
+        occurred_at=occurred_at,
+    )
+    plan = QualityAssessmentLifecycleService().prepare_transition(
+        transition,
+        heads=heads,
+        receipts=receipts,
+    )
+    await persistence.apply_lifecycle_plan(plan)
 
 
 def _claims_test_evidence_v2(evidence: object) -> bool:
@@ -856,7 +1040,7 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
     board_overrides: dict | None = None
 
     if agent is not None:
-        if isinstance(agent.permission_flags, dict) and agent.permission_flags:
+        if isinstance(agent.permission_flags, dict):
             agent_flags = agent.permission_flags
         elif isinstance(agent.permissions, list) and agent.permissions:
             agent_flags = map_legacy_permissions(agent.permissions)
@@ -867,7 +1051,7 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
                 "permission_preset",
                 agent.preset_id,
             )
-            if preset and preset.flags:
+            if preset and preset.flags is not None:
                 preset_flags = preset.flags
 
         if board_id:
@@ -1055,6 +1239,48 @@ async def _authorize_qa_answer_or_raise(
             emit_governance_metric(details, raise_on_violation=False)
             await _application_flush(db)
         raise
+
+
+async def _publish_quality_clarification_changed(
+    db: Any,
+    *,
+    subject: ApplicationRecord,
+    subject_type: str,
+    qa_id: object,
+    operation: str,
+    actor_id: str | None,
+    actor_type: str = "user",
+) -> None:
+    """Stage the Q&A invalidation signal in the caller-owned transaction."""
+
+    from okto_pulse.core.events import publish as event_publish
+    from okto_pulse.core.events.types import QualityClarificationChanged
+
+    subject_id = str(getattr(subject, "id", "") or "").strip()
+    board_id = str(getattr(subject, "board_id", "") or "").strip()
+    subject_version = getattr(subject, "version", None)
+    if (
+        not subject_id
+        or not board_id
+        or not isinstance(subject_version, int)
+        or isinstance(subject_version, bool)
+        or subject_version < 1
+    ):
+        raise RuntimeError("quality_clarification_subject_invalid")
+    normalized_qa_id = str(qa_id or "").strip() or None
+    await event_publish(
+        QualityClarificationChanged(
+            board_id=board_id,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            subject_version=subject_version,
+            qa_id=normalized_qa_id,
+            operation=operation,
+        ),
+        session=db,
+    )
 
 
 async def _record_critical_context_decision(
@@ -2275,6 +2501,61 @@ class BoardService:
                 exc,
             )
         return board
+
+    async def record_checklist_binding_change(
+        self,
+        *,
+        board_id: str,
+        actor_id: str,
+        binding: Any,
+        previous_binding: Any | None,
+        change_source: str,
+    ) -> None:
+        """Stage the A3 activity history and durable event in this transaction."""
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import ChecklistBindingChanged
+
+        actor_name = await resolve_actor_name(self.db, actor_id, board_id)
+        details = {
+            "target_type": binding.target_type.value,
+            "phase": binding.phase.value,
+            "template_version": binding.template_version,
+            "mode": binding.mode.value,
+            "binding_version": binding.version,
+            "binding_digest": binding.digest,
+            "previous_mode": (
+                None if previous_binding is None else previous_binding.mode.value
+            ),
+            "previous_binding_version": (
+                None if previous_binding is None else previous_binding.version
+            ),
+            "change_source": change_source,
+        }
+        await self._log_activity(
+            board_id=board_id,
+            action="spec_checklist_binding_changed",
+            actor_type="user",
+            actor_id=actor_id,
+            actor_name=actor_name,
+            details=details,
+        )
+        await event_publish(
+            ChecklistBindingChanged(
+                board_id=board_id,
+                actor_id=actor_id,
+                target_type=binding.target_type.value,
+                phase=binding.phase.value,
+                template_version=binding.template_version,
+                mode=binding.mode.value,
+                binding_version=binding.version,
+                binding_digest=binding.digest,
+                previous_mode=details["previous_mode"],
+                previous_binding_version=details["previous_binding_version"],
+                change_source=change_source,
+            ),
+            session=self.db,
+        )
 
     async def get_board(
         self,
@@ -6136,26 +6417,24 @@ class AgentService:
     ) -> tuple[ApplicationRecord, str]:
         """Create a new global agent (no board_id).
 
-        If preset_id is provided, agent.permission_flags is initialised from
-        that preset's flags so the agent immediately reflects the preset.
-        Otherwise, permission_flags defaults to a deep copy of the full
-        registry (all True), giving new agents full access by default.
+        ``permission_flags`` is the direct override layer, never a materialized
+        preset snapshot.  Selecting a preset with no explicit overrides stores
+        an empty delta; no preset and no direct layer stores ``None``, the
+        trusted Full Control sentinel.
         """
         import copy
-
-        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
 
         reveal_once_secret = self.generate_api_key()
         key_hash = self.hash_api_key(reveal_once_secret)
 
-        flags: dict | None = data.permission_flags
+        flags: dict | None = (
+            copy.deepcopy(data.permission_flags)
+            if data.permission_flags is not None
+            else None
+        )
         preset_id = data.preset_id
         if preset_id and flags is None:
-            preset = await _application_get(self.db, "permission_preset", preset_id)
-            if preset and preset.flags:
-                flags = copy.deepcopy(preset.flags)
-        if flags is None:
-            flags = copy.deepcopy(PERMISSION_REGISTRY)
+            flags = {}
 
         agent = _new_application_record(
             "agent",
@@ -6220,7 +6499,7 @@ class AgentService:
             "agent_board",
             filters=(_apf("board_id", "eq", board_id),),
         )
-        return (
+        agents = (
             await _application_list(
                 self.db,
                 "agent",
@@ -6230,6 +6509,14 @@ class AgentService:
             if grants
             else []
         )
+        grants_by_agent = {grant.agent_id: grant for grant in grants}
+        for agent in agents:
+            grant = grants_by_agent.get(agent.id)
+            agent.attach(
+                "permission_overrides",
+                getattr(grant, "permission_overrides", None),
+            )
+        return agents
 
     async def list_agents(self, board_id: str) -> list[ApplicationRecord]:
         """Backward-compat alias for list_agents_for_board."""
@@ -6319,16 +6606,10 @@ class AgentService:
 
         Special handling:
         - If `preset_id` is set (and `permission_flags` is NOT in the same
-          payload), agent.permission_flags is reset from the preset's flags.
-          This makes selecting a preset in the UI behave intuitively: the
-          agent's effective permissions immediately match the preset.
-        - If `preset_id` is explicitly cleared (None), permission_flags is
-          reset to the full registry (all True) — i.e. "Full Control".
+          payload), agent.permission_flags becomes an empty direct delta.
+        - If `preset_id` is explicitly cleared, permission_flags becomes
+          ``None`` — the trusted Full Control sentinel.
         """
-        import copy
-
-        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
-
         agent = await self.get_agent(agent_id)
         if not agent:
             return None
@@ -6344,15 +6625,10 @@ class AgentService:
         if preset_id_in_payload and not flags_in_payload:
             new_preset_id = update_data.get("preset_id")
             if new_preset_id:
-                preset = await _application_get(
-                    self.db, "permission_preset", new_preset_id
-                )
-                if preset and preset.flags:
-                    agent.permission_flags = copy.deepcopy(preset.flags)
-                    agent.mark_dirty("permission_flags")
+                agent.permission_flags = {}
             else:
-                agent.permission_flags = copy.deepcopy(PERMISSION_REGISTRY)
-                agent.mark_dirty("permission_flags")
+                agent.permission_flags = None
+            agent.mark_dirty("permission_flags")
         elif flags_in_payload:
             agent.mark_dirty("permission_flags")
 
@@ -7294,6 +7570,9 @@ class SpecService:
         query_scope: QueryScope | None = None,
         target_id: str | None = None,
         knowledge_propagation_v2: bool = False,
+        requirement_lint_writer: RequirementLintWriter = (
+            RequirementLintWriter.BULK_CREATE
+        ),
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
         if (target_id is None) != (not knowledge_propagation_v2):
@@ -7326,6 +7605,13 @@ class SpecService:
                 [s.model_dump() for s in data.test_scenarios], None
             )
 
+        canonical_requirements = canonicalize_spec_requirement_fields(
+            {
+                "functional_requirements": data.functional_requirements,
+                "technical_requirements": data.technical_requirements,
+                "acceptance_criteria": data.acceptance_criteria,
+            }
+        )
         spec = _new_application_record(
             "spec",
             **({"id": target_id} if target_id is not None else {}),
@@ -7333,13 +7619,13 @@ class SpecService:
             title=data.title,
             description=data.description,
             context=data.context,
-            functional_requirements=canonicalize_fr_ac(
-                "functional_requirement", data.functional_requirements
-            ),
-            technical_requirements=data.technical_requirements,
-            acceptance_criteria=canonicalize_fr_ac(
-                "acceptance_criterion", data.acceptance_criteria
-            ),
+            functional_requirements=canonical_requirements[
+                "functional_requirements"
+            ],
+            technical_requirements=canonical_requirements[
+                "technical_requirements"
+            ],
+            acceptance_criteria=canonical_requirements["acceptance_criteria"],
             test_scenarios=[s.model_dump() for s in data.test_scenarios]
             if data.test_scenarios
             else None,
@@ -7502,6 +7788,21 @@ class SpecService:
                 ),
             ],
         )
+        await stage_spec_requirement_lint(
+            self.db,
+            spec,
+            actor_id=user_id,
+            writer=requirement_lint_writer,
+            changed_fields=tuple(
+                field_name
+                for field_name in SEMANTIC_FIELD_MANIFEST_V1["spec"]
+                if field_name
+                in (
+                    getattr(data, "model_fields_set", None)
+                    or getattr(data, "__fields_set__", set())
+                )
+            ),
+        )
         return spec
 
     async def get_spec(self, spec_id: str) -> ApplicationRecord | None:
@@ -7649,7 +7950,12 @@ class SpecService:
             }
 
         updated = await self.update_spec(
-            spec_id, user_id, SpecUpdate(test_scenarios=scenarios)
+            spec_id,
+            user_id,
+            PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
+            requirement_lint_writer=(
+                RequirementLintWriter.SCENARIO_BODY_UPDATE
+            ),
         )
         new_target = next(
             (
@@ -7720,8 +8026,15 @@ class SpecService:
         if len(remaining) == len(scenarios):
             raise ValueError(f"scenario_not_found: {scenario_id}")
 
-        spec.test_scenarios = remaining
-        spec.mark_dirty("test_scenarios")
+        updated_spec = await self.update_spec(
+            spec_id,
+            user_id,
+            PersistedTestScenarioSpecUpdate.from_iterable(remaining),
+            requirement_lint_writer=RequirementLintWriter.SCENARIO_DELETE,
+        )
+        if updated_spec is None:  # defensive: the Spec was resolved above
+            raise ValueError("scenario_not_found: spec not found")
+        spec = updated_spec
 
         # Cascade: drop the scenario id from every card that references it, in
         # the SAME transaction → all-or-nothing, no orphan in Card.test_scenario_ids.
@@ -8128,15 +8441,23 @@ class SpecService:
             )
 
     async def update_spec(
-        self, spec_id: str, user_id: str, data: SpecUpdate
+        self,
+        spec_id: str,
+        user_id: str,
+        data: SpecUpdate | PersistedTestScenarioSpecUpdate,
+        *,
+        requirement_lint_writer: RequirementLintWriter = (
+            RequirementLintWriter.BULK_UPDATE
+        ),
     ) -> Spec | None:
         """Update a spec. Bumps version on content changes. Records field-level diffs.
 
         Enforces the Spec Validation Gate content lock: if the spec has an active
         validation with outcome='success', raises SpecLockedError. All content tools
         (business rules, contracts, scenarios, mockups, knowledge) flow
-        through this method via SpecUpdate, so applying the lock check here covers
-        the whole surface in one place.
+        through this method via the public ``SpecUpdate`` or the narrow internal
+        persisted-scenario carrier, so applying the lock check here covers the
+        whole surface in one place.
 
         Also enforces referential integrity for `linked_*` fields: any
         `linked_criteria`/`linked_requirements`/`linked_rules`/`linked_task_ids`
@@ -8183,9 +8504,11 @@ class SpecService:
             refinement_id=next_refinement_id,
         )
         content_fields = {
+            "title",
             "functional_requirements",
             "technical_requirements",
             "acceptance_criteria",
+            "test_scenarios",
             "context",
             "description",
             # Legacy bulk writers participate in the same optimistic
@@ -8257,23 +8580,48 @@ class SpecService:
                     for s in update_data[json_list_field]
                 ]
 
-        # Canonicalize FR/AC to structured dicts with stable ids, preserving
-        # text + existing ids (spec 9d66847f). Runs BEFORE
+        if update_data.get("test_scenarios") is not None:
+            update_data["test_scenarios"] = (
+                resolve_scenario_types_for_whole_list_write(
+                    update_data["test_scenarios"],
+                    spec.test_scenarios,
+                )
+            )
+
+        # Canonicalize the complete final FR/TR/AC namespace with stable IDs.
+        # Runs BEFORE
         # _validate_spec_linked_refs so the validator sees canonical ids; the
         # text is preserved, so text-based linked refs keep resolving (no
-        # breaking change).
-        if "functional_requirements" in update_data:
-            update_data["functional_requirements"] = canonicalize_fr_ac(
-                "functional_requirement",
-                update_data["functional_requirements"],
-                existing_items=spec.functional_requirements,
+        # breaking change). Any semantic write lazily materializes untouched
+        # legacy requirement fields too, while already-canonical fields remain
+        # byte-identical and are not added to the diff.
+        if bumps_version:
+            _existing_requirement_fields = {
+                "functional_requirements": spec.functional_requirements,
+                "technical_requirements": spec.technical_requirements,
+                "acceptance_criteria": spec.acceptance_criteria,
+            }
+            _final_requirement_fields = {
+                field_name: (
+                    update_data[field_name]
+                    if field_name in update_data
+                    else current_value
+                )
+                for field_name, current_value in _existing_requirement_fields.items()
+            }
+            _canonical_requirement_fields = canonicalize_spec_requirement_fields(
+                _final_requirement_fields,
+                existing_fields=_existing_requirement_fields,
             )
-        if "acceptance_criteria" in update_data:
-            update_data["acceptance_criteria"] = canonicalize_fr_ac(
-                "acceptance_criterion",
-                update_data["acceptance_criteria"],
-                existing_items=spec.acceptance_criteria,
-            )
+            for _field_name, _canonical_value in (
+                _canonical_requirement_fields.items()
+            ):
+                if (
+                    _field_name in update_data
+                    or _canonical_value
+                    != _existing_requirement_fields[_field_name]
+                ):
+                    update_data[_field_name] = _canonical_value
 
         # FR5 — lazy ref migration (spec c61569b2, IMPL-4).
         # When FR/AC lists are materialised by canonicalize_fr_ac above,
@@ -8499,6 +8847,16 @@ class SpecService:
                 actor_id=user_id,
                 trigger="spec_mockups_changed",
             )
+        if bumps_version:
+            await stage_spec_requirement_lint(
+                self.db,
+                spec,
+                actor_id=user_id,
+                writer=requirement_lint_writer,
+                changed_fields=tuple(
+                    sorted(content_fields & update_data.keys())
+                ),
+            )
         return spec
 
     async def append_locked_traceability_task_link(
@@ -8628,6 +8986,104 @@ class SpecService:
             )
         return spec, changed, task_ids
 
+    async def remove_scenario_traceability_task_link(
+        self,
+        spec_id: str,
+        user_id: str,
+        *,
+        scenario_id: str,
+        card_id: str,
+    ) -> tuple[Spec | None, bool, list[str]]:
+        """Remove one scenario backlink without treating it as authored content.
+
+        ``linked_task_ids`` is traceability metadata excluded from the SK-A
+        semantic snapshot.  This narrow path deliberately preserves the Spec
+        version and does not invoke the requirement-lint writer, while retaining
+        the same event/history/audit visibility as the locked append path.
+        """
+
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            return None, False, []
+        if getattr(spec, "archived", False):
+            raise ValueError(
+                "This spec is archived. Restore it first before unlinking tasks."
+            )
+
+        scenarios = [
+            dict(item) if isinstance(item, dict) else item
+            for item in (spec.test_scenarios or [])
+        ]
+        target = next(
+            (
+                item
+                for item in scenarios
+                if isinstance(item, dict) and item.get("id") == scenario_id
+            ),
+            None,
+        )
+        if target is None:
+            raise ValueError(f"test_scenario '{scenario_id}' not found in spec")
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        old_task_ids = list(task_ids)
+        changed = card_id in task_ids
+        if changed:
+            task_ids.remove(card_id)
+            target["linked_task_ids"] = task_ids
+            spec.test_scenarios = scenarios
+            spec.mark_dirty("test_scenarios")
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecSemanticChanged
+
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    changed_fields=["test_scenarios"],
+                ),
+                session=self.db,
+            )
+
+        actor_name = await resolve_actor_name(self.db, user_id, spec.board_id)
+        await self._log_activity(
+            board_id=spec.board_id,
+            action="spec_traceability_unlinked",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={
+                "spec_id": spec.id,
+                "target_field": "test_scenarios",
+                "target_id": scenario_id,
+                "card_id": card_id,
+                "traceability_only": True,
+                "changed": changed,
+            },
+        )
+        if changed:
+            await self._record_history(
+                spec_id=spec.id,
+                action="traceability_unlinked",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=[
+                    {
+                        "field": "test_scenarios.linked_task_ids",
+                        "old": old_task_ids,
+                        "new": task_ids,
+                    }
+                ],
+                version=spec.version,
+                summary=(
+                    "Traceability-only task link removed from "
+                    f"test scenario {scenario_id}"
+                ),
+            )
+        return spec, changed, task_ids
+
     # ---- Spec state machine ----
     # Direct APPROVED→DRAFT and VALIDATED→DRAFT transitions added for the Spec
     # Validation Gate: editing a validated spec requires one click/call, not three
@@ -8644,6 +9100,59 @@ class SpecService:
     _SPEC_EDITABLE_STATUSES = frozenset(
         {SpecStatus.DRAFT, SpecStatus.REVIEW, SpecStatus.APPROVED}
     )
+
+    async def _enforce_spec_checklist_gate(
+        self,
+        spec: Spec,
+        *,
+        surface: str,
+    ) -> None:
+        """Apply the shared A3 predicate without transport-specific shortcuts."""
+
+        import logging
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.checklist import ChecklistService
+
+        persistence = require_relational_application_adapter().checklists(self.db)
+        decision = await ChecklistService().evaluate_spec_gate(
+            board_id=spec.board_id,
+            spec_id=spec.id,
+            persistence=persistence,
+        )
+        stale_reasons = (
+            tuple(reason.value for reason in decision.currentness.stale_reasons)
+            if decision.currentness is not None
+            else ()
+        )
+        # This structured operational record survives a transaction rollback,
+        # unlike a staged Activity row on a blocking attempt. It contains only
+        # bounded identities and canonical reasons, never checklist bodies.
+        logging.getLogger("okto_pulse.core.spec_checklist_gate").info(
+            "spec_checklist_gate_attempt board_id=%s spec_id=%s "
+            "surface=%s mode=%s allowed=%s reason=%s stale_reasons=%s",
+            spec.board_id,
+            spec.id,
+            surface,
+            decision.mode.value,
+            decision.allowed,
+            decision.reason,
+            ",".join(stale_reasons),
+        )
+        if not decision.allowed:
+            from okto_pulse.core.services.gate_contracts import (
+                spec_checklist_gate_error,
+            )
+
+            raise spec_checklist_gate_error(
+                spec_id=spec.id,
+                current_status=spec.status.value,
+                reason=decision.reason,
+                mode=decision.mode.value,
+                stale_reasons=stale_reasons,
+            )
 
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
@@ -8764,6 +9273,11 @@ class SpecService:
                     spec_id=spec.id,
                     current_status=spec.status.value,
                 )
+
+            await self._enforce_spec_checklist_gate(
+                spec,
+                surface="move_spec",
+            )
 
             resource_gate = ResourceGateService(self.db)
             await resource_gate.validate_or_raise_spec_architecture_validation_resource(
@@ -8990,6 +9504,32 @@ class SpecService:
         ):
             spec.current_validation_id = None
 
+        lifecycle_action = (
+            "cancel"
+            if data.status == SpecStatus.CANCELLED
+            else "reopen"
+            if (
+                data.status == SpecStatus.DRAFT
+                and old_status in (SpecStatus.DONE, SpecStatus.CANCELLED)
+            )
+            else None
+        )
+        if lifecycle_action is not None:
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=spec.board_id,
+                subject_type="spec",
+                subject_id=spec.id,
+                before_version=old_version,
+                before_status=old_status.value,
+                before_archived=False,
+                after_version=spec.version,
+                after_status=spec.status.value,
+                after_archived=False,
+                action=lifecycle_action,
+                actor_id=user_id,
+            )
+
         if old_status != data.status:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecMoved, SpecVersionBumped
@@ -9124,6 +9664,12 @@ class SpecService:
                 artifact_id=spec_id,
             ),
             descendant_deletions=tuple(descendant_deletions),
+        )
+        await _purge_quality_assessment_subject(
+            self.db,
+            board_id=board_id,
+            subject_type="spec",
+            subject_id=spec_id,
         )
         await _application_delete(self.db, spec)
 
@@ -9341,6 +9887,10 @@ class SpecService:
             spec.id,
             phase="spec_validation",
             enabled=resource_gate.is_spec_resource_task_coverage_required(board),
+        )
+        await self._enforce_spec_checklist_gate(
+            spec,
+            surface="submit_spec_validation",
         )
 
         # Extract and validate inputs
@@ -9685,6 +10235,14 @@ class SpecQAService:
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=spec,
+            subject_type="spec",
+            qa_id=getattr(qa, "id", None),
+            operation="created",
+            actor_id=user_id,
+        )
         return qa
 
     async def answer_question(
@@ -9737,6 +10295,17 @@ class SpecQAService:
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
+        if spec is None:
+            raise RuntimeError("quality_clarification_subject_missing")
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=spec,
+            subject_type="spec",
+            qa_id=qa.id,
+            operation="answered",
+            actor_id=user_id,
+            actor_type=actor_type,
+        )
         return qa
 
     async def list_qa(self, spec_id: str) -> list[ApplicationRecord]:
@@ -9753,7 +10322,18 @@ class SpecQAService:
         qa = await _application_get(self.db, "spec_qa_item", qa_id)
         if not qa:
             return False
+        spec = await _application_get(self.db, "spec", qa.spec_id)
+        if spec is None:
+            raise RuntimeError("quality_clarification_subject_missing")
         await _application_delete(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=spec,
+            subject_type="spec",
+            qa_id=qa_id,
+            operation="deleted",
+            actor_id=None,
+        )
         return True
 
 
@@ -10984,14 +11564,23 @@ class StoryService:
         return propagated
 
 
-class AmbiguityGateError(ValueError):
-    """Raised when the Max ambiguity gate blocks an evaluating -> done transition.
+def _build_default_ambiguity_gate_service(db: Any) -> AmbiguityGateService:
+    """Resolve the edition-owned assessment source of truth for one UoW."""
 
-    A ValueError subclass (spec 2485780b, BR4) so the MCP move tool's existing
-    ``except ValueError`` surfaces the actionable detail unchanged, while REST
-    callers catch it specifically to return HTTP 400 without altering the
-    behavior of unrelated move errors.
-    """
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+
+    persistence = require_relational_application_adapter().quality_assessments(db)
+    return AmbiguityGateService(persistence)
+
+
+@dataclass(frozen=True, slots=True)
+class RefinementAmbiguityGateSkipResult:
+    refinement: ApplicationRecord
+    activity_id: str
+    skipped: bool
+    version: int
 
 
 class IdeationService:
@@ -10999,6 +11588,9 @@ class IdeationService:
 
     def __init__(self, db: Any):
         self.db = db
+        self._ambiguity_gate_service_factory: Callable[
+            [Any], AmbiguityGateService
+        ] = _build_default_ambiguity_gate_service
 
     _STATUS_ORDER = {
         IdeationStatus.DRAFT: 0,
@@ -11242,6 +11834,7 @@ class IdeationService:
 
         update_data = data.model_dump(exclude_unset=True)
         content_fields = {
+            "title",
             "description",
             "problem_statement",
             "proposed_approach",
@@ -11412,44 +12005,26 @@ class IdeationService:
         return value
 
     async def _enforce_ambiguity_gate(self, ideation: Ideation) -> None:
-        """Enforce the Max ambiguity gate on an evaluating -> done transition.
+        """Enforce the canonical receipt-backed Ideation ambiguity predicate."""
 
-        Spec 2485780b (TR6/TR8/TR9, BR2/BR4/BR6): only acts when the board gate
-        is enabled and the ideation has not explicitly skipped it. Blocks the
-        transition when the evaluated ambiguity is missing, non-numeric, or
-        greater than the configured threshold, raising AmbiguityGateError with
-        an actionable detail. Reads board settings through the shared
-        normalization path and never touches evaluation/KG/cognitive/resource
-        subsystems. The caller invokes this BEFORE ResourceGate so ambiguity
-        errors take precedence.
-        """
         board = await _application_get(self.db, "board", ideation.board_id)
-        config = self._resolve_ideation_ambiguity_config(board)
-        if not config["require_ideation_ambiguity_gate"]:
+        board_settings = getattr(board, "settings", None) or {}
+        configuration = resolve_ambiguity_gate_configuration(
+            "ideation",
+            board_settings,
+        )
+        if not configuration.required or bool(
+            getattr(ideation, "skip_ambiguity_gate", False)
+        ):
             return
-        if bool(getattr(ideation, "skip_ambiguity_gate", False)):
-            return
-
-        threshold = config["max_ideation_ambiguity"]
-        scope = ideation.scope_assessment or {}
-        score = self._parse_ambiguity_score(scope.get("ambiguity"))
-        if score is None:
-            raise AmbiguityGateError(
-                "Max ambiguity gate failed: ambiguity has not been evaluated. "
-                "Evaluate the ideation's ambiguity (e.g. via Q&A). Skipping the gate "
-                "for this ideation is a human decision applied through the authorized "
-                "UI/REST control — an agent cannot apply the skip and should request a "
-                "human decision."
-            )
-        if score > threshold:
-            raise AmbiguityGateError(
-                f"Max ambiguity gate failed: ambiguity score {score} exceeds "
-                f"configured max {threshold}. Reduce ambiguity through Q&A, or raise "
-                f"the threshold / disable the board gate. Skipping the gate for this "
-                f"ideation is a human decision applied through the authorized UI/REST "
-                f"control — an agent cannot apply the skip and should request a human "
-                f"decision."
-            )
+        await self._ambiguity_gate_service_factory(self.db).evaluate(
+            board_id=ideation.board_id,
+            subject_type="ideation",
+            subject=ideation,
+            board_settings=board_settings,
+            qa_items=list(getattr(ideation, "qa_items", None) or ()),
+            skipped=bool(getattr(ideation, "skip_ambiguity_gate", False)),
+        )
 
     async def move_ideation(
         self,
@@ -11536,6 +12111,37 @@ class IdeationService:
         )
 
         ideation.status = data.status
+
+        lifecycle_action = (
+            "cancel"
+            if data.status == IdeationStatus.CANCELLED
+            else "reopen"
+            if (
+                data.status == IdeationStatus.DRAFT
+                and old_status
+                in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
+            )
+            else None
+        )
+        if lifecycle_action is not None:
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=ideation.board_id,
+                subject_type="ideation",
+                subject_id=ideation.id,
+                before_version=(
+                    ideation.version - 1
+                    if lifecycle_action == "reopen"
+                    else ideation.version
+                ),
+                before_status=old_status.value,
+                before_archived=False,
+                after_version=ideation.version,
+                after_status=ideation.status.value,
+                after_archived=False,
+                action=lifecycle_action,
+                actor_id=user_id,
+            )
 
         # Persist the transition and publish its durable outbox event in the
         # same unit of work.  ConsolidationEnqueuer consumes this event so
@@ -11708,6 +12314,12 @@ class IdeationService:
                 artifact_id=ideation_id,
             ),
             descendant_deletions=tuple(descendant_deletions),
+        )
+        await _purge_quality_assessment_subject(
+            self.db,
+            board_id=board_id,
+            subject_type="ideation",
+            subject_id=ideation_id,
         )
         await _application_delete(self.db, ideation)
 
@@ -11899,6 +12511,7 @@ class IdeationService:
             spec_data,
             skip_ownership_check=skip_ownership_check,
             query_scope=query_scope,
+            requirement_lint_writer=RequirementLintWriter.DERIVE_IDEATION,
         )
         if spec:
             # Propagate mockups and Q&A from ideation to spec
@@ -12001,6 +12614,14 @@ class IdeationQAService:
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=ideation,
+            subject_type="ideation",
+            qa_id=getattr(qa, "id", None),
+            operation="created",
+            actor_id=user_id,
+        )
         return qa
 
     async def answer_question(
@@ -12063,6 +12684,17 @@ class IdeationQAService:
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
+        if ideation is None:
+            raise RuntimeError("quality_clarification_subject_missing")
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=ideation,
+            subject_type="ideation",
+            qa_id=qa.id,
+            operation="answered",
+            actor_id=user_id,
+            actor_type=actor_type,
+        )
         return qa
 
     async def list_qa(self, ideation_id: str) -> list[IdeationQAItem]:
@@ -12079,7 +12711,22 @@ class IdeationQAService:
         qa = await _application_get(self.db, "ideation_qa_item", qa_id)
         if not qa:
             return False
+        ideation = await _application_get(
+            self.db,
+            "ideation",
+            qa.ideation_id,
+        )
+        if ideation is None:
+            raise RuntimeError("quality_clarification_subject_missing")
         await _application_delete(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=ideation,
+            subject_type="ideation",
+            qa_id=qa_id,
+            operation="deleted",
+            actor_id=None,
+        )
         return True
 
 
@@ -12094,6 +12741,9 @@ class RefinementService:
 
     def __init__(self, db: Any):
         self.db = db
+        self._ambiguity_gate_service_factory: Callable[
+            [Any], AmbiguityGateService
+        ] = _build_default_ambiguity_gate_service
         # Cognitive closeout must run BEFORE snapshot/status mutation.
         # Keep the historical attribute name so existing tests and callers
         # that inject a fake guard continue to work.
@@ -12124,6 +12774,33 @@ class RefinementService:
             entity=refinement,
             target_label="refinement",
             resolve_graph_state=True,
+        )
+
+    async def _enforce_ambiguity_gate(
+        self,
+        refinement: ApplicationRecord,
+        board: ApplicationRecord | None = None,
+    ) -> None:
+        """Evaluate the same receipt-backed predicate used by readiness."""
+
+        if board is None:
+            board = await _application_get(self.db, "board", refinement.board_id)
+        board_settings = getattr(board, "settings", None) or {}
+        configuration = resolve_ambiguity_gate_configuration(
+            "refinement",
+            board_settings,
+        )
+        if not configuration.required or bool(
+            getattr(refinement, "skip_ambiguity_gate", False)
+        ):
+            return
+        await self._ambiguity_gate_service_factory(self.db).evaluate(
+            board_id=refinement.board_id,
+            subject_type="refinement",
+            subject=refinement,
+            board_settings=board_settings,
+            qa_items=list(getattr(refinement, "qa_items", None) or ()),
+            skipped=bool(getattr(refinement, "skip_ambiguity_gate", False)),
         )
 
     _STATUS_ORDER = {
@@ -12462,7 +13139,14 @@ class RefinementService:
             )
 
         update_data = data.model_dump(exclude_unset=True)
-        content_fields = {"description", "scope", "analysis", "decisions"}
+        content_fields = {
+            "title",
+            "description",
+            "in_scope",
+            "out_of_scope",
+            "analysis",
+            "decisions",
+        }
         # Spec eaf78891 (Ideação #2): refinement_semantic_fields cover all
         # update_data keys that affect KG extraction. Refinements have a much
         # smaller surface than specs, so any update is treated as semantic.
@@ -12548,6 +13232,82 @@ class RefinementService:
             )
         return refinement
 
+    async def set_ambiguity_gate_skip(
+        self,
+        refinement_id: str,
+        user_id: str,
+        skip: bool,
+        *,
+        reason: str,
+        expected_refinement_version: int,
+        source: str,
+        actor_name: str | None = None,
+    ) -> RefinementAmbiguityGateSkipResult | None:
+        """Apply/remove the human-only Refinement ambiguity skip.
+
+        The override is governance metadata, not semantic content: it is
+        version-fenced but does not bump the Refinement version or stale an
+        otherwise current assessment.  It bypasses only the ambiguity
+        predicate; Resource and Cognitive gates still execute.
+        """
+
+        if source not in {"rest", "ui"}:
+            raise ValueError("human_actor_required")
+        if not isinstance(skip, bool):
+            raise ValueError("skip_ambiguity_gate_invalid")
+        normalized_reason = reason.strip() if isinstance(reason, str) else ""
+        if not normalized_reason:
+            raise ValueError("ambiguity_gate_skip_reason_required")
+        if (
+            not isinstance(expected_refinement_version, int)
+            or isinstance(expected_refinement_version, bool)
+            or expected_refinement_version < 1
+        ):
+            raise ValueError("expected_refinement_version_invalid")
+
+        refinement = await self.get_refinement(refinement_id)
+        if refinement is None:
+            return None
+        if bool(getattr(refinement, "archived", False)):
+            raise ValueError("refinement_archived")
+        if refinement.status != RefinementStatus.APPROVED:
+            raise ValueError("refinement_ambiguity_skip_status_conflict")
+        if refinement.version != expected_refinement_version:
+            raise ValueError("version_conflict")
+
+        old_value = bool(getattr(refinement, "skip_ambiguity_gate", False))
+        refinement.skip_ambiguity_gate = skip
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db,
+            user_id,
+            refinement.board_id,
+        )
+        activity = _new_application_record(
+            "activity_log",
+            board_id=refinement.board_id,
+            action="refinement.ambiguity_gate_skip_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            details={
+                "refinement_id": refinement.id,
+                "source": source,
+                "reason": normalized_reason,
+                "old_value": old_value,
+                "new_value": skip,
+                "state_changed": old_value != skip,
+                "expected_refinement_version": expected_refinement_version,
+                "refinement_version": refinement.version,
+            },
+        )
+        await _application_add(self.db, activity)
+        return RefinementAmbiguityGateSkipResult(
+            refinement=refinement,
+            activity_id=activity.id,
+            skipped=skip,
+            version=refinement.version,
+        )
+
     # Allowed refinement transitions:
     # Draft → Review, Cancelled
     # Review → Draft, Approved, Cancelled
@@ -12621,22 +13381,19 @@ class RefinementService:
             actor_name=resolved_name,
         )
 
-        # Fail-closed cognitive closeout gate. This MUST run BEFORE
-        # ResourceGateService, snapshot creation, activity logging, or status
-        # mutation. A blocked response preserves the refinement in its current
-        # status with no snapshot/history/activity changes.
+        # One ordered completion predicate across preview and mutation:
+        # Ambiguity -> Resource -> Cognitive.  Every gate runs before snapshot,
+        # history, activity, event or status mutation.
         if data.status == RefinementStatus.DONE:
             board = await _application_get(self.db, "board", refinement.board_id)
-            await self._validate_cognitive_done(refinement, board)
-
-        # Snapshot on done
-        if data.status == RefinementStatus.DONE:
+            await self._enforce_ambiguity_gate(refinement, board)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 refinement.board_id,
                 "refinement",
                 refinement.id,
                 phase="refinement_done",
             )
+            await self._validate_cognitive_done(refinement, board)
             await self._create_snapshot(refinement, user_id)
 
         # Reopening a terminal refinement starts a fresh editable iteration.
@@ -12658,6 +13415,36 @@ class RefinementService:
         )
 
         refinement.status = data.status
+        lifecycle_action = (
+            "cancel"
+            if data.status == RefinementStatus.CANCELLED
+            else "reopen"
+            if (
+                data.status == RefinementStatus.DRAFT
+                and old_status
+                in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
+            )
+            else None
+        )
+        if lifecycle_action is not None:
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=refinement.board_id,
+                subject_type="refinement",
+                subject_id=refinement.id,
+                before_version=(
+                    refinement.version - 1
+                    if lifecycle_action == "reopen"
+                    else refinement.version
+                ),
+                before_status=old_status.value,
+                before_archived=False,
+                after_version=refinement.version,
+                after_status=refinement.status.value,
+                after_archived=False,
+                action=lifecycle_action,
+                actor_id=user_id,
+            )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import (
             RefinementMoved,
@@ -12817,6 +13604,12 @@ class RefinementService:
             ),
             descendant_deletions=tuple(descendant_deletions),
         )
+        await _purge_quality_assessment_subject(
+            self.db,
+            board_id=board_id,
+            subject_type="refinement",
+            subject_id=refinement_id,
+        )
         await _application_delete(self.db, refinement)
 
         await self._log_activity(
@@ -12951,6 +13744,7 @@ class RefinementService:
             query_scope=query_scope,
             target_id=target_id,
             knowledge_propagation_v2=knowledge_propagation_v2,
+            requirement_lint_writer=RequirementLintWriter.DERIVE_REFINEMENT,
         )
         if spec:
             # Propagate artifacts using pre-flush snapshots
@@ -13055,6 +13849,14 @@ class RefinementQAService:
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=refinement,
+            subject_type="refinement",
+            qa_id=getattr(qa, "id", None),
+            operation="created",
+            actor_id=user_id,
+        )
         return qa
 
     async def answer_question(
@@ -13109,6 +13911,17 @@ class RefinementQAService:
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
+        if refinement is None:
+            raise RuntimeError("quality_clarification_subject_missing")
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=refinement,
+            subject_type="refinement",
+            qa_id=qa.id,
+            operation="answered",
+            actor_id=user_id,
+            actor_type=actor_type,
+        )
         return qa
 
     async def list_qa(self, refinement_id: str) -> list[RefinementQAItem]:
@@ -13125,7 +13938,22 @@ class RefinementQAService:
         qa = await _application_get(self.db, "refinement_qa_item", qa_id)
         if not qa:
             return False
+        refinement = await _application_get(
+            self.db,
+            "refinement",
+            qa.refinement_id,
+        )
+        if refinement is None:
+            raise RuntimeError("quality_clarification_subject_missing")
         await _application_delete(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=refinement,
+            subject_type="refinement",
+            qa_id=qa_id,
+            operation="deleted",
+            actor_id=None,
+        )
         return True
 
 
@@ -13772,39 +14600,81 @@ class ArchiveService:
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
+        quality_lifecycle_changes: list[
+            tuple[str, Any, int, str, bool]
+        ] = []
 
         for ideation in tree["ideations"]:
             if not ideation.archived:
-                ideation.pre_archive_status = (
+                before_status = (
                     ideation.status.value
                     if hasattr(ideation.status, "value")
                     else str(ideation.status)
                 )
+                before_version = int(ideation.version)
+                ideation.pre_archive_status = (
+                    before_status
+                )
                 ideation.archived = True
                 counts["ideations"] += 1
                 changed_artifacts.append(("ideation", ideation))
+                quality_lifecycle_changes.append(
+                    (
+                        "ideation",
+                        ideation,
+                        before_version,
+                        before_status,
+                        False,
+                    )
+                )
 
         for refinement in tree["refinements"]:
             if not refinement.archived:
-                refinement.pre_archive_status = (
+                before_status = (
                     refinement.status.value
                     if hasattr(refinement.status, "value")
                     else str(refinement.status)
                 )
+                before_version = int(refinement.version)
+                refinement.pre_archive_status = (
+                    before_status
+                )
                 refinement.archived = True
                 counts["refinements"] += 1
                 changed_artifacts.append(("refinement", refinement))
+                quality_lifecycle_changes.append(
+                    (
+                        "refinement",
+                        refinement,
+                        before_version,
+                        before_status,
+                        False,
+                    )
+                )
 
         for spec in tree["specs"]:
             if not spec.archived:
-                spec.pre_archive_status = (
+                before_status = (
                     spec.status.value
                     if hasattr(spec.status, "value")
                     else str(spec.status)
                 )
+                before_version = int(spec.version)
+                spec.pre_archive_status = (
+                    before_status
+                )
                 spec.archived = True
                 counts["specs"] += 1
                 changed_artifacts.append(("spec", spec))
+                quality_lifecycle_changes.append(
+                    (
+                        "spec",
+                        spec,
+                        before_version,
+                        before_status,
+                        False,
+                    )
+                )
 
         for sprint in tree["sprints"]:
             if not sprint.archived:
@@ -13855,6 +14725,32 @@ class ArchiveService:
                 ops,
                 records=card_records[affected_board_id],
             )
+        for (
+            artifact_type,
+            artifact,
+            before_version,
+            before_status,
+            before_archived,
+        ) in quality_lifecycle_changes:
+            status = (
+                artifact.status.value
+                if hasattr(artifact.status, "value")
+                else str(artifact.status)
+            )
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=artifact.board_id,
+                subject_type=artifact_type,
+                subject_id=artifact.id,
+                before_version=before_version,
+                before_status=before_status,
+                before_archived=before_archived,
+                after_version=int(artifact.version),
+                after_status=status,
+                after_archived=True,
+                action="archive",
+                actor_id="system:archive-tree",
+            )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import ArtifactArchiveChanged
 
@@ -13890,9 +14786,18 @@ class ArchiveService:
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
+        quality_lifecycle_changes: list[
+            tuple[str, Any, int, str, bool]
+        ] = []
 
         for ideation in tree["ideations"]:
             if ideation.archived:
+                before_status = (
+                    ideation.status.value
+                    if hasattr(ideation.status, "value")
+                    else str(ideation.status)
+                )
+                before_version = int(ideation.version)
                 if ideation.pre_archive_status:
                     try:
                         ideation.status = IdeationStatus(ideation.pre_archive_status)
@@ -13902,9 +14807,24 @@ class ArchiveService:
                 ideation.pre_archive_status = None
                 counts["ideations"] += 1
                 changed_artifacts.append(("ideation", ideation))
+                quality_lifecycle_changes.append(
+                    (
+                        "ideation",
+                        ideation,
+                        before_version,
+                        before_status,
+                        True,
+                    )
+                )
 
         for refinement in tree["refinements"]:
             if refinement.archived:
+                before_status = (
+                    refinement.status.value
+                    if hasattr(refinement.status, "value")
+                    else str(refinement.status)
+                )
+                before_version = int(refinement.version)
                 if refinement.pre_archive_status:
                     try:
                         refinement.status = RefinementStatus(
@@ -13916,9 +14836,24 @@ class ArchiveService:
                 refinement.pre_archive_status = None
                 counts["refinements"] += 1
                 changed_artifacts.append(("refinement", refinement))
+                quality_lifecycle_changes.append(
+                    (
+                        "refinement",
+                        refinement,
+                        before_version,
+                        before_status,
+                        True,
+                    )
+                )
 
         for spec in tree["specs"]:
             if spec.archived:
+                before_status = (
+                    spec.status.value
+                    if hasattr(spec.status, "value")
+                    else str(spec.status)
+                )
+                before_version = int(spec.version)
                 if spec.pre_archive_status:
                     try:
                         spec.status = SpecStatus(spec.pre_archive_status)
@@ -13928,6 +14863,15 @@ class ArchiveService:
                 spec.pre_archive_status = None
                 counts["specs"] += 1
                 changed_artifacts.append(("spec", spec))
+                quality_lifecycle_changes.append(
+                    (
+                        "spec",
+                        spec,
+                        before_version,
+                        before_status,
+                        True,
+                    )
+                )
 
         for sprint in tree["sprints"]:
             if sprint.archived:
@@ -13982,6 +14926,32 @@ class ArchiveService:
                 affected_board_id,
                 ops,
                 records=card_records[affected_board_id],
+            )
+        for (
+            artifact_type,
+            artifact,
+            before_version,
+            before_status,
+            before_archived,
+        ) in quality_lifecycle_changes:
+            status = (
+                artifact.status.value
+                if hasattr(artifact.status, "value")
+                else str(artifact.status)
+            )
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=artifact.board_id,
+                subject_type=artifact_type,
+                subject_id=artifact.id,
+                before_version=before_version,
+                before_status=before_status,
+                before_archived=before_archived,
+                after_version=int(artifact.version),
+                after_status=status,
+                after_archived=False,
+                action="restore",
+                actor_id="system:restore-tree",
             )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import ArtifactArchiveChanged

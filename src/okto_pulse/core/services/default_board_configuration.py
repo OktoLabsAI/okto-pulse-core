@@ -35,6 +35,10 @@ from okto_pulse.core.domain.configuration_presence import (
     CONFIGURATION_ABSENT,
     classify_configuration_presence,
 )
+from okto_pulse.core.domain.checklist import (
+    SPECIFY_CHECKLIST_TEMPLATE_VERSION,
+    ChecklistMode,
+)
 from okto_pulse.core.models.schemas import BoardSettings
 from okto_pulse.core.ports.default_board_configuration import (
     DefaultBoardTemplateAudit,
@@ -73,6 +77,7 @@ BOARD_EVENT_FALLBACK = "board_created_without_default_config"
 
 _DEFAULT_SCOPE = "global"
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
+DEFAULT_SPEC_CHECKLIST_MODE = ChecklistMode.ADVISORY.value
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +219,15 @@ class DefaultBoardConfigurationService:
         # (no parallel store / no rich entity — TR7).
         if template.design_system_default_ref:
             snapshot_meta["design_system"] = template.design_system_default_ref
+        # The curated checklist is materialized as its own versioned binding by
+        # CreateBoardUseCase.  Snapshot the selected default here so the binding
+        # and the template version that produced it stay auditable and atomic.
+        snapshot_meta["spec_checklist"] = {
+            "mode": self._validate_spec_checklist_mode(
+                template.spec_checklist_mode
+            ),
+            "template_version_id": SPECIFY_CHECKLIST_TEMPLATE_VERSION,
+        }
         return effective, snapshot_meta
 
     @staticmethod
@@ -527,6 +541,7 @@ class DefaultBoardConfigurationService:
         scope: str = _DEFAULT_SCOPE,
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
+        spec_checklist_mode: str | None = None,
         activate: bool = False,
         query_scope: QueryScope | None = None,
     ) -> DefaultBoardTemplateRecord:
@@ -551,6 +566,11 @@ class DefaultBoardConfigurationService:
             query_scope=query_scope,
         )
         active = await self.resolve_active(scope)
+        resolved_checklist_mode = self._validate_spec_checklist_mode(
+            spec_checklist_mode
+            if spec_checklist_mode is not None
+            else getattr(active, "spec_checklist_mode", None)
+        )
         if isinstance(settings_payload, dict) and active is not None:
             active_payload = active.settings_payload or {}
             for key in LEGACY_ABSENT_SETTING_KEYS:
@@ -573,6 +593,7 @@ class DefaultBoardConfigurationService:
             guideline_default_refs=list(guideline_default_refs) if guideline_default_refs else None,
             design_system_default_ref=design_system_default_ref,
             created_by=actor,
+            spec_checklist_mode=resolved_checklist_mode,
             created_at=now,
             updated_at=now,
         )
@@ -605,6 +626,7 @@ class DefaultBoardConfigurationService:
         )
         # FR6: the Design System default ref (if any) must satisfy the minimal contract.
         await self._validate_design_system_default_ref(template.design_system_default_ref)
+        self._validate_spec_checklist_mode(template.spec_checklist_mode)
         store = get_default_board_configuration_store()
         others = await store.list_active_others(
             self.db,
@@ -697,6 +719,7 @@ class DefaultBoardConfigurationService:
                 scope=template.scope,
                 guideline_default_refs=normalized,
                 design_system_default_ref=template.design_system_default_ref,
+                spec_checklist_mode=template.spec_checklist_mode,
                 activate=True,
                 query_scope=query_scope,
             )
@@ -848,6 +871,7 @@ class DefaultBoardConfigurationService:
                 scope=template.scope,
                 guideline_default_refs=template.guideline_default_refs,
                 design_system_default_ref=ref,
+                spec_checklist_mode=template.spec_checklist_mode,
                 activate=True,
             )
             self._audit(
@@ -886,6 +910,26 @@ class DefaultBoardConfigurationService:
                 "settings_payload is not a valid BoardSettings.",
                 422,
                 {"errors": exc.errors(include_url=False)},
+            ) from exc
+
+    @staticmethod
+    def _validate_spec_checklist_mode(value: str | None) -> str:
+        """Return the effective curated-checklist default.
+
+        Historical template rows have no value and preserve the pre-existing
+        new-board behavior (Advisory). New writes are closed to the three
+        canonical modes.
+        """
+        if value is None:
+            return DEFAULT_SPEC_CHECKLIST_MODE
+        try:
+            return ChecklistMode(value).value
+        except (TypeError, ValueError) as exc:
+            raise DefaultBoardConfigurationError(
+                "invalid_spec_checklist_mode",
+                "spec_checklist_mode must be one of: off, advisory, blocking.",
+                422,
+                {"value": value},
             ) from exc
 
     async def _validate_guideline_default_refs(
@@ -1030,6 +1074,7 @@ class DefaultBoardConfigurationService:
 
 
 __all__ = [
+    "DEFAULT_SPEC_CHECKLIST_MODE",
     "DefaultBoardConfigurationService",
     "DefaultBoardConfigurationError",
     "EVENT_CREATED",

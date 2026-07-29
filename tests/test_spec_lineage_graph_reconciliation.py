@@ -882,15 +882,18 @@ async def test_commit_restore_failure_aborts_generic_cleanup_and_keeps_new_paren
         registry.graph_transaction = failing_transaction
         audit.fail_staging = True
 
-        with pytest.raises(
-            RuntimeError,
-            match="injected audit/UOW staging failure",
-        ):
+        with pytest.raises(primitives.KGPrimitiveError) as excinfo:
             await _commit_lineage_candidates(
                 board_id=board_id,
                 parent_kind="refinement",
                 parent_id=REFINEMENT_ID,
             )
+        assert excinfo.value.code == "graph_compensation_failed"
+        assert excinfo.value.details == {
+            "failure_stage": "audit_outbox_stage",
+            "staging_failure_type": "RuntimeError",
+            "compensation_failure_type": "CompensationError",
+        }
 
         assert failing_transaction.begin_calls == 2
         # The old edge was already deleted by the successful graph phase.

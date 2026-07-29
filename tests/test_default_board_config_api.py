@@ -107,6 +107,7 @@ async def test_ts_dc86816b_admin_surface_active_history_and_diff():
         assert active["active"]["id"] == v2.id
         assert active["active"]["version"] == v2.version
         assert active["active"]["status"] == "active"
+        assert active["active"]["spec_checklist_mode"] == "advisory"
 
         versions = await api.list_versions()
         assert versions["active_id"] == v2.id
@@ -140,6 +141,30 @@ async def test_get_active_none_when_no_template():
             "comparable": False,
             "active": None,
         }
+
+
+async def test_get_active_rejects_corrupt_persisted_checklist_mode():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        db.add(
+            DefaultBoardConfiguration(
+                id=str(uuid.uuid4()),
+                version=1,
+                status="active",
+                is_active=True,
+                scope="global",
+                settings_payload={},
+                spec_checklist_mode="unsupported",
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+
+        with pytest.raises(DefaultBoardConfigurationError) as exc:
+            await DefaultBoardConfigApiService(db).get_active()
+
+        assert exc.value.code == "invalid_spec_checklist_mode"
 
 
 async def test_diff_legacy_board_reports_no_snapshot():

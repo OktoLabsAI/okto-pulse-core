@@ -11,6 +11,19 @@ version: "1.0"
 - **Relational operational tables**: `consolidation_queue`, `consolidation_audit`, node back-references for undo, `global_update_outbox`
 - **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent.
 
+### SK-A relational authority and graph projection
+
+Quality receipts, findings, checklist executions/items, and checklist receipts
+remain relational source-of-truth records. The graph never creates a
+`QualityFinding` or checklist node. Entity roots may carry only the current
+Quality summary identity. A resolved Research Decision Ledger head projects
+through the existing `Decision`/`Alternative` vocabulary; demoting it to
+`open`, `investigating`, or `deferred` removes/tombstones those derived
+projections. Incremental reconciliation and rebuild must produce the same
+active set. Archive/cancel/demotion must not leave a stale child projection.
+Use `okto-pulse://reference/quality-assessments` for Quality currentness and
+`okto-pulse://workflows/refinements` for the RDL authoring lifecycle.
+
 When KG Health reports `digest_vs_board_layer_mismatch` after all operational
 queues are idle, inspect the rows with
 `okto_pulse_kg_digest_layer_mismatch_list`. An authorized KG administrator may

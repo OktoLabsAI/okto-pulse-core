@@ -172,7 +172,7 @@ def _gate_for(entity_type: str, from_status: Enum, to_status: Enum) -> str:
     if entity_type == "ideation" and from_value == "evaluating" and to_value == "done":
         return "ambiguity_resource_cognitive"
     if entity_type == "refinement" and to_value == "done":
-        return "resource_cognitive"
+        return "ambiguity_resource_cognitive"
     return "none"
 
 
@@ -352,15 +352,21 @@ class ListAllowedTransitionsUseCase:
                         "in_scope item before moving to review."
                     )
                 if transition.to_status == "done":
-                    await services.refinements._validate_cognitive_done(
+                    board = await services.boards.get_board(entity.board_id)
+                    await services.refinements._enforce_ambiguity_gate(
                         entity,
-                        read_only_preview=True,
+                        board,
                     )
                     await services.resource_gate.validate_or_raise_entity_completion(
                         entity.board_id,
                         "refinement",
                         entity.id,
                         phase="refinement_done",
+                    )
+                    await services.refinements._validate_cognitive_done(
+                        entity,
+                        board,
+                        read_only_preview=True,
                     )
             elif entity_type == "spec":
                 return await self._spec_blocked_reason(
@@ -414,6 +420,18 @@ class ListAllowedTransitionsUseCase:
                 return (
                     "spec_validation_required: submit the Spec Validation Gate; "
                     "direct approved→validated moves are not admitted."
+                )
+            from okto_pulse.core.services.checklist import ChecklistService
+
+            checklist_gate = await ChecklistService().evaluate_spec_gate(
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                persistence=services.checklists,
+            )
+            if not checklist_gate.allowed:
+                return (
+                    "spec_checklist_gate_required: "
+                    f"{checklist_gate.reason}"
                 )
             try:
                 await services.resource_gate.validate_or_raise_spec_architecture_validation_resource(

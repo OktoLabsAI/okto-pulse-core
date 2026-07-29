@@ -41,6 +41,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.models.schemas import RefinementMove
 from okto_pulse.core.services.main import RefinementService
+from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
 USER_ID = "refinement-cog-guard-agent"
@@ -102,6 +103,21 @@ async def seeded_refinement() -> tuple[str, str, str]:
                 created_by=USER_ID,
             )
         )
+        await db.flush()
+        resource_gate = ResourceGateService(db)
+        for resource_type in ("architecture", "mockup", "knowledge_base"):
+            await resource_gate.mark_not_applicable(
+                board_id,
+                "refinement",
+                refinement_id,
+                resource_type,
+                USER_ID,
+                justification=(
+                    f"{resource_type} is not applicable to this cognitive "
+                    "completion integration test."
+                ),
+                source_channel="ui",
+            )
         await db.commit()
     return board_id, ideation_id, refinement_id
 

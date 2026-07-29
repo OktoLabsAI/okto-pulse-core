@@ -20,8 +20,12 @@ from okto_pulse.core.application.use_cases.permission_presets import (
     ListPermissionPresetsUseCase,
 )
 from okto_pulse.core.ports.relational_application import (
+    RelationalApplicationAdapter,
     register_relational_application_adapter,
     reset_relational_application_adapter_for_tests,
+)
+from okto_pulse.core.ports.quality_assessment import (
+    QualityAssessmentAdapterMissing,
 )
 from okto_pulse.core.services.application_agents import (
     agent_has_board_access,
@@ -47,6 +51,13 @@ class _OpaqueSaaSUow:
 
     async def commit(self) -> None:
         self.commit_calls += 1
+
+
+def test_s01_saas_adapter_exposes_quality_assessment_seam_fail_closed() -> None:
+    adapter = FakeSaaSRelationalApplicationAdapter()
+    assert isinstance(adapter, RelationalApplicationAdapter)
+    with pytest.raises(QualityAssessmentAdapterMissing):
+        adapter.quality_assessments(object())
 
 
 @pytest.mark.asyncio

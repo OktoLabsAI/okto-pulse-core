@@ -62,6 +62,7 @@ class DefaultBoardConfigApiService:
             template.settings_payload,
             template.guideline_default_refs,
             template.design_system_default_ref,
+            template.spec_checklist_mode,
         )
         if all(component is None for component in raw_components):
             raw_configuration: Any = None
@@ -72,6 +73,7 @@ class DefaultBoardConfigApiService:
                 "settings_payload": template.settings_payload,
                 "guideline_default_refs": template.guideline_default_refs,
                 "design_system_default_ref": template.design_system_default_ref,
+                "spec_checklist_mode": template.spec_checklist_mode,
             }
         projection = project_configuration_presence(raw_configuration)
         serialized = self._serialize(template)
@@ -97,14 +99,56 @@ class DefaultBoardConfigApiService:
         # (R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
         # import. No owner/permission predicate here (access is enforced at the REST
         # layer); the ``board is None`` → 404 mapping is preserved exactly.
-        board = await resolve_unit_of_work_factory().wrap(self._db).boards.get(board_id)
+        uow = resolve_unit_of_work_factory().wrap(self._db)
+        board = await uow.boards.get(board_id)
         if board is None:
             raise DefaultBoardConfigurationError(
                 "board_not_found",
                 f"Board '{board_id}' was not found or is not accessible.",
                 404,
             )
-        return await self._svc.diff_board_config(board)
+        data = await self._svc.diff_board_config(board)
+
+        # Checklist governance is persisted in its own versioned binding, not in
+        # Board.settings. Enrich the canonical diff here so REST, MCP and future
+        # adapters all report a local mode override identically.
+        snapshot = getattr(board, "default_config_snapshot", None)
+        checklist_snapshot = (
+            snapshot.get("spec_checklist")
+            if isinstance(snapshot, dict)
+            else None
+        )
+        applied_mode = (
+            checklist_snapshot.get("mode")
+            if isinstance(checklist_snapshot, dict)
+            else None
+        )
+        if isinstance(applied_mode, str):
+            from okto_pulse.core.services.checklist import (
+                ChecklistNotFoundError,
+                ChecklistService,
+            )
+
+            try:
+                binding = await ChecklistService().get_binding(
+                    board_id=board_id,
+                    persistence=uow.services.checklists,
+                )
+                current_mode = binding.mode.value
+            except ChecklistNotFoundError:
+                current_mode = "off"
+            if current_mode != applied_mode:
+                fields = list(data.get("fields") or [])
+                fields.append(
+                    {
+                        "field": "spec_checklist_mode",
+                        "template_value": applied_mode,
+                        "current_value": current_mode,
+                        "state": "overridden",
+                    }
+                )
+                data["fields"] = fields
+        return data
 
     # -- writes (admin) ----------------------------------------------------
 
@@ -116,6 +160,7 @@ class DefaultBoardConfigApiService:
         scope: str = "global",
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
+        spec_checklist_mode: str | None = None,
         activate: bool = False,
         query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
@@ -125,6 +170,7 @@ class DefaultBoardConfigApiService:
             scope=scope,
             guideline_default_refs=guideline_default_refs,
             design_system_default_ref=design_system_default_ref,
+            spec_checklist_mode=spec_checklist_mode,
             activate=activate,
             query_scope=query_scope,
         )
@@ -229,6 +275,11 @@ class DefaultBoardConfigApiService:
             "settings_comparable": settings_projection.comparable,
             "guideline_default_refs": list(template.guideline_default_refs or []),
             "design_system_default_ref": template.design_system_default_ref,
+            "spec_checklist_mode": (
+                DefaultBoardConfigurationService._validate_spec_checklist_mode(
+                    template.spec_checklist_mode
+                )
+            ),
             "created_by": template.created_by,
             "created_at": _iso(getattr(template, "created_at", None)),
             "updated_at": _iso(getattr(template, "updated_at", None)),

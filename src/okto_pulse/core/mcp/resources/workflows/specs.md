@@ -54,6 +54,44 @@ FR/TR/BR/AC, decisions, contracts, architecture, or test scenarios.
 6. **Re-read and re-score.** Repeat until all three dimensions clear your bar.
 7. **Only then promote.**
 
+### Spec Quality — Canonical Agent Flow
+
+Use this section for **status-to-action routing**. Receipt mechanics live in
+`okto-pulse://reference/quality-assessments`, signatures in
+`okto-pulse://reference/tool-docs/quality`, and validation rules in
+`okto-pulse://reference/spec_gates`.
+
+#### Surface responsibilities
+
+- **Quality is read-only for Specs.** From `draft`, semantic Spec writers issue
+  `requirement_lint` automatically. Any `spec_validation` receipt is migrated
+  audit evidence; the live validation action does not write it through Quality.
+- **Validation is actionable at `approved`.** It owns the configured checklist
+  and `okto_pulse_submit_spec_validation`.
+- Never call `okto_pulse_record_ambiguity_assessment` or create a Spec receipt
+  manually. Lint is advisory: its score is the finding count over evaluated
+  rules (lower is better); zero is not permission to advance.
+
+#### Agent flow by Spec status
+
+| Status | Required behavior |
+|---|---|
+| `draft` | Author with semantic Spec tools, then read current `requirement_lint`. No head means **no evidence**, not zero findings. Diagnose through findings and fix stable anchors through the owning writer. Never require a native `spec_validation` receipt. |
+| `review` | Refresh full context and lint. Resolve material findings or record why they are acceptable. Lint informs saturation but does not block approval. |
+| `approved` | Correct missing, stale, or material lint before validating. Otherwise follow **The Spec Validation Gate** below; its live result and current Spec status are authoritative. |
+| `validated`, `in_progress`, `done` | Read Quality only for a decision or audit. Stale, superseded, or historical receipts never authorize transitions. Reopened content reruns authoring and validation. |
+| `cancelled` or archived | Audit only. After restore or reopen, follow the row for the resulting status and require current evidence. |
+
+#### Token-efficient read sequence
+
+1. Read the mandatory full Spec context.
+2. Call `okto_pulse_get_current_quality_assessment` for
+   `subject_type="spec"` and `assessment_kind="requirement_lint"`.
+3. If a head exists, inspect `currentness.current`; call
+   `okto_pulse_list_quality_findings` only to diagnose an issue.
+4. Read `spec_validation` receipts/history only for audit. For readiness, use
+   live Validation and the current Spec context.
+
 ### The Spec Validation Gate
 
 When the board has `require_spec_validation=true`, advancing a spec from `approved` to `validated` is gated by `okto_pulse_submit_spec_validation`.
@@ -63,7 +101,26 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 1. Populate the spec in `draft` → move through `review` → `approved`.
 2. **With the spec in `approved`, create the test cards** (`okto_pulse_create_card(card_type="test", test_scenario_ids=...)` — the server rejects test card creation before `approved`) and **link each scenario** to a test card via `okto_pulse_link_task(target_type="scenario", ...)` until `scenario_task_linkage_pct = 100`. The validation gate fails on any scenario without a linked `card_type="test"` card.
 3. Iterate until ALL deterministic gates are green — the complete gate enumeration is the one in `okto-pulse://reference/spec_gates` (single source; it includes more gates than just AC/FR coverage).
-4. Only then call `okto_pulse_submit_spec_validation`.
+4. Read the configured binding with
+   `okto_pulse_get_checklist_binding(board_id)`. When mode is `advisory` or
+   `blocking`, combine its identity with the current Spec version from the
+   required full Spec context, then call `okto_pulse_start_checklist_execution`.
+   Submit all ten ordered `/specify/v1` results with concrete anchors via
+   `okto_pulse_submit_checklist_execution`, and read the issued receipt with
+   `okto_pulse_get_checklist_receipt`. Re-run the full Spec context or
+   `okto_pulse_get_allowed_transitions` before validation; that canonical
+   readiness check detects stale or failing receipts.
+5. Only then call `okto_pulse_submit_spec_validation`.
+
+Checklist mode/template governance is human-owned in Board Config. Agents may
+read the binding and receipts and execute the configured immutable template,
+but must not attempt to mutate its binding or author checklist items. Any Spec
+content/input identity change or executable binding identity change can make an
+earlier receipt stale. The executable identity is the binding digest/template
+pin presented at execution start; mode/version-only governance changes stay in
+the audit history and preserve currentness when that executable identity is
+unchanged. Use the ordered `stale_reasons` rather than guessing which fence
+changed.
 
 **Thresholds** (default 80/80/30): `completeness` and `assertiveness` higher-is-better minimums; `ambiguity` LOWER-is-better maximum. All scores are 0-100 integers, not 1-5 — a value like `5` is read literally as 5/100 and will usually fail the gate.
 

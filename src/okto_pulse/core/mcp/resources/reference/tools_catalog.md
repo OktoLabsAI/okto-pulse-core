@@ -156,6 +156,13 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_update_story` — docs: `okto-pulse://reference/tool-docs/story`
 - `okto_pulse_update_topic` — docs: `okto-pulse://reference/tool-docs/topic`
 
+## Quality Assessments
+- `okto_pulse_get_current_quality_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_get_quality_assessment_receipt` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_list_quality_assessments` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_list_quality_findings` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_record_ambiguity_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
+
 ## Ideations
 - `okto_pulse_add_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_answer_ideation_question` — docs: `okto-pulse://reference/tool-docs/ideation`
@@ -179,6 +186,7 @@ Required filters for the consolidated `list_*` tools:
 ## Refinements
 - `okto_pulse_add_refinement_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_answer_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
+- `okto_pulse_append_research_decision` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_ask_refinement_choice_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_ask_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_create_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
@@ -190,6 +198,7 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_get_refinement_context` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_get_refinement_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_get_refinement_snapshot` — docs: `okto-pulse://reference/tool-docs/refinement`
+- `okto_pulse_list_research_decisions` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_move_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_update_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 
@@ -199,6 +208,8 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_delete_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_get_checklist_binding` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_get_checklist_receipt` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_context` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
@@ -208,6 +219,8 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_migrate_spec_decisions` — docs: `okto-pulse://reference/tool-docs/decision`
 - `okto_pulse_move_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_remove_spec_entity` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_start_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_submit_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_submit_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_submit_spec_validation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_update_spec` — docs: `okto-pulse://reference/tool-docs/spec`

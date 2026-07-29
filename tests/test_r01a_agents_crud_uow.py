@@ -144,6 +144,31 @@ async def test_list_agents_for_board_owned_200() -> None:
     assert isinstance(resp.json(), list)
 
 
+@pytest.mark.asyncio
+async def test_list_agents_for_board_projects_direct_delta_and_raw_ceiling_separately() -> None:
+    agent_id = await _seed_agent()
+    board_id = await _seed_board()
+    client = _client()
+    grant = client.post(f"/api/v1/agents/{agent_id}/boards/{board_id}")
+    assert grant.status_code == 201, grant.text
+
+    ceiling = {
+        "board": {"read": False},
+        "spec": {"quality": {"read": True}},
+    }
+    updated = client.patch(
+        f"/api/v1/agents/{agent_id}/boards/{board_id}",
+        json={"permission_overrides": ceiling},
+    )
+    assert updated.status_code == 200, updated.text
+
+    response = client.get(f"/api/v1/agents/board/{board_id}")
+    assert response.status_code == 200, response.text
+    projected = next(item for item in response.json() if item["id"] == agent_id)
+    assert projected["permission_flags"] is None
+    assert projected["permission_overrides"] == ceiling
+
+
 # --- regenerate-key / delete (write) ----------------------------------------
 
 

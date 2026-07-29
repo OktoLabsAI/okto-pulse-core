@@ -129,6 +129,52 @@ async def test_create_board_applies_active_template_and_persists_snapshot():
         assert BOARD_EVENT_APPLIED in await _activity_actions(db, board.id)
 
 
+async def test_spec_checklist_default_is_versioned_snapshotted_and_inherited():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        svc = DefaultBoardConfigurationService(db)
+        first = await svc.create_version(
+            settings_payload=BoardSettings(max_scenarios_per_card=4),
+            actor=USER_ID,
+            spec_checklist_mode="blocking",
+            activate=True,
+        )
+        second = await svc.create_version(
+            settings_payload=BoardSettings(max_scenarios_per_card=6),
+            actor=USER_ID,
+            # Omission must preserve the human-selected component while another
+            # default facet creates a copy-on-write version.
+            activate=True,
+        )
+
+        assert first.spec_checklist_mode == "blocking"
+        assert second.spec_checklist_mode == "blocking"
+
+        board = await BoardService(db).create_board(
+            USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
+        )
+        assert board.default_config_snapshot["template_id"] == second.id
+        assert board.default_config_snapshot["spec_checklist"] == {
+            "mode": "blocking",
+            "template_version_id": "/specify/v1",
+        }
+        assert "spec_checklist_mode" not in board.settings
+
+
+async def test_spec_checklist_default_rejects_unknown_modes():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        with pytest.raises(DefaultBoardConfigurationError) as exc:
+            await DefaultBoardConfigurationService(db).create_version(
+                settings_payload=BoardSettings(),
+                actor=USER_ID,
+                spec_checklist_mode="unsupported",
+            )
+        assert exc.value.code == "invalid_spec_checklist_mode"
+
+
 # ---------------------------------------------------------------------------
 # AC2 / TR3 — partial override wins over the template; override_summary records it.
 # ---------------------------------------------------------------------------

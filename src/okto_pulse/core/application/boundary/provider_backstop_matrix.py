@@ -20,6 +20,7 @@ from typing import Iterable, Literal, Sequence
 
 from .conformance_matrix import TESTING_PROVIDER_PREFIX
 from .report import GateReport
+from .repository_checkout import resolve_repository_checkout
 
 ProviderBackstopPolicy = Literal[
     "sanctioned_test_only",
@@ -523,16 +524,18 @@ class _ProviderBackstopVisitor(ast.NodeVisitor):
 
 
 def _community_src_root() -> Path | None:
-    # Workspace checkout takes precedence during cross-repository validation.
+    # A configured/current workspace checkout takes precedence during
+    # cross-repository validation. Legacy checkout names are a last resort.
     # A normal installed package has no ``src`` ancestor, so returning
     # ``package.parents[1]`` there would scan the entire site-packages tree.
-    local_checkout = (
-        Path(__file__).resolve().parents[5].parent
-        / "okto_labs_pulse_community"
-        / "src"
+    core_repo = Path(__file__).resolve().parents[5]
+    checkout = resolve_repository_checkout(
+        "community",
+        anchor_repo=core_repo,
+        required=False,
     )
-    if (local_checkout / "okto_pulse" / "community").is_dir():
-        return local_checkout.resolve()
+    if checkout is not None:
+        return checkout.source_root
 
     spec = importlib_util.find_spec("okto_pulse.community")
     if spec is None or spec.submodule_search_locations is None:

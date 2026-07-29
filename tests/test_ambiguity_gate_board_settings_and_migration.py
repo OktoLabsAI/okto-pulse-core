@@ -38,18 +38,28 @@ def test_board_settings_defaults_gate_off_threshold_three():
     s = BoardSettings()
     assert s.require_ideation_ambiguity_gate is False
     assert s.max_ideation_ambiguity == 3
+    assert s.require_refinement_ambiguity_gate is False
+    assert s.max_refinement_ambiguity == 3
 
 
 @pytest.mark.parametrize("value", [1, 2, 3, 4, 5])
 def test_board_settings_accepts_threshold_in_range(value):
-    s = BoardSettings(require_ideation_ambiguity_gate=True, max_ideation_ambiguity=value)
+    s = BoardSettings(
+        require_ideation_ambiguity_gate=True,
+        max_ideation_ambiguity=value,
+        require_refinement_ambiguity_gate=True,
+        max_refinement_ambiguity=value,
+    )
     assert s.max_ideation_ambiguity == value
+    assert s.max_refinement_ambiguity == value
 
 
 @pytest.mark.parametrize("value", [0, 6, -1, 99])
 def test_board_settings_rejects_threshold_out_of_range(value):
     with pytest.raises(ValidationError):
         BoardSettings(max_ideation_ambiguity=value)
+    with pytest.raises(ValidationError):
+        BoardSettings(max_refinement_ambiguity=value)
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +118,41 @@ async def test_legacy_migration_adds_column_idempotent_reads_false(tmp_path):
         await eng.dispose()
 
 
+@pytest.mark.asyncio
+async def test_refinement_legacy_migration_adds_column_idempotent_reads_false(
+    tmp_path,
+):
+    steps = pytest.importorskip("okto_pulse.community.adapters.relational_schema_steps")
+
+    db_path = tmp_path / "legacy-refinement.db"
+    eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    try:
+        async with eng.begin() as conn:
+            await conn.execute(
+                text("CREATE TABLE refinements (id TEXT PRIMARY KEY, title TEXT)")
+            )
+            await conn.execute(
+                text("INSERT INTO refinements (id, title) VALUES ('r1', 'legacy')")
+            )
+
+        with patch.object(steps, "get_engine", lambda: eng):
+            await steps._migrate_add_refinement_skip_ambiguity_gate()
+            await steps._migrate_add_refinement_skip_ambiguity_gate()
+
+        async with eng.begin() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT id, skip_ambiguity_gate "
+                        "FROM refinements"
+                    )
+                )
+            ).fetchall()
+        assert rows == [("r1", 0)]
+    finally:
+        await eng.dispose()
+
+
 # ---------------------------------------------------------------------------
 # REST round-trip — persist + reload, reject invalid payload (AC2/AC3)
 # ---------------------------------------------------------------------------
@@ -146,12 +191,21 @@ def test_rest_persists_gate_settings_and_reloads(_board_client):
     client, board_id = _board_client
     resp = client.patch(
         f"/api/v1/boards/{board_id}",
-        json={"settings": {"require_ideation_ambiguity_gate": True, "max_ideation_ambiguity": 4}},
+        json={
+            "settings": {
+                "require_ideation_ambiguity_gate": True,
+                "max_ideation_ambiguity": 4,
+                "require_refinement_ambiguity_gate": True,
+                "max_refinement_ambiguity": 2,
+            }
+        },
     )
     assert resp.status_code == 200
     settings = resp.json()["settings"]
     assert settings["require_ideation_ambiguity_gate"] is True
     assert settings["max_ideation_ambiguity"] == 4
+    assert settings["require_refinement_ambiguity_gate"] is True
+    assert settings["max_refinement_ambiguity"] == 2
 
 
 def test_rest_rejects_out_of_range_threshold(_board_client):
@@ -159,5 +213,16 @@ def test_rest_rejects_out_of_range_threshold(_board_client):
     resp = client.patch(
         f"/api/v1/boards/{board_id}",
         json={"settings": {"require_ideation_ambiguity_gate": True, "max_ideation_ambiguity": 9}},
+    )
+    assert resp.status_code == 422
+
+    resp = client.patch(
+        f"/api/v1/boards/{board_id}",
+        json={
+            "settings": {
+                "require_refinement_ambiguity_gate": True,
+                "max_refinement_ambiguity": 9,
+            }
+        },
     )
     assert resp.status_code == 422

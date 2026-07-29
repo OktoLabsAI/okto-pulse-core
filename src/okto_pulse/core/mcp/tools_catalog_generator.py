@@ -78,15 +78,22 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     # --- SDLC entities ------------------------------------------------------
     ("Stories & Topics", "story",
      r"(story$|stories|topic)"),
+    ("Quality Assessments", "quality",
+     r"^okto_pulse_(record_ambiguity_assessment|"
+     r"get_current_quality_assessment|get_quality_assessment_receipt|"
+     r"list_quality_assessments|list_quality_findings)$"),
     ("Ideations", "ideation",
      r"ideation"),
     ("Refinements", "refinement",
-     r"refinement"),
+     r"refinement|research_decision"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
      r"get_spec_context|get_spec_history|derive_spec_from_ideation|"
      r"submit_spec_validation|list_spec_validations|submit_spec_evaluation|"
      r"get_spec_evaluation|list_spec_evaluations|delete_spec_evaluation|"
+     r"get_checklist_binding|"
+     r"start_checklist_execution|submit_checklist_execution|"
+     r"get_checklist_receipt|"
      r"migrate_spec_decisions|update_spec_entity|remove_spec_entity|"
      r"update_spec_api_contract|get_spec_knowledge|add_spec_knowledge|"
      r"delete_spec_knowledge|get_spec_snapshot)"),

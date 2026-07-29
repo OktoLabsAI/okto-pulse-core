@@ -34,7 +34,33 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # ---------------------------------------------------------------------------
 
 _CORE_SRC = (Path(__file__).parent / ".." / "src").resolve()
-sys.path.insert(0, str(_CORE_SRC))
+_WORKSPACE_ROOT = _CORE_SRC.parent.parent
+
+# Bootstrap the current Core tree before importing the shared checkout resolver.
+# The resolver then owns paired-edition precedence and removes stale okto_labs
+# roots from both sys.path and PYTHONPATH, so multiprocessing spawn children
+# inherit the same authoritative source trees.
+_core_source_text = str(_CORE_SRC)
+while _core_source_text in sys.path:
+    sys.path.remove(_core_source_text)
+sys.path.insert(0, _core_source_text)
+
+from okto_pulse.core.application.boundary.repository_checkout import (  # noqa: E402
+    activate_repository_checkout_paths,
+)
+
+_REPOSITORY_PATHS = activate_repository_checkout_paths(
+    anchor_repo=_CORE_SRC.parent,
+    required=False,
+)
+_COMMUNITY_SRC = next(
+    (
+        checkout.source_root
+        for checkout in _REPOSITORY_PATHS.checkouts
+        if checkout.edition == "community"
+    ),
+    None,
+)
 
 # ---------------------------------------------------------------------------
 # Test logging infrastructure (must be imported early)
@@ -69,13 +95,35 @@ os.environ["KG_EMBEDDING_MODE"] = "stub"
 # Application imports
 # ---------------------------------------------------------------------------
 
+from okto_pulse.core.infra import config as _core_config_module  # noqa: E402
 from okto_pulse.core.infra.config import CoreSettings, configure_settings  # noqa: E402
 
+
+def _require_source_origin(module, source_root: Path, *, edition: str) -> None:
+    origin = Path(module.__file__).resolve()
+    if not origin.is_relative_to(source_root):
+        raise RuntimeError(
+            f"{edition} test module resolved outside its local source tree: "
+            f"{origin} (expected under {source_root})"
+        )
+
+
+_require_source_origin(_core_config_module, _CORE_SRC, edition="Core")
+
 try:
+    from okto_pulse.community import config as _community_config_module  # noqa: E402
     from okto_pulse.community.config import CommunitySettings  # noqa: E402
 except ModuleNotFoundError:
+    if _COMMUNITY_SRC is not None:
+        raise
     _initial_settings = CoreSettings()
 else:
+    if _COMMUNITY_SRC is not None:
+        _require_source_origin(
+            _community_config_module,
+            _COMMUNITY_SRC,
+            edition="Community",
+        )
     # Real Community adapters require their edition-owned operational fields.
     # Pure-Core runs without the Community package keep the policy-only model.
     _initial_settings = CommunitySettings()
@@ -759,6 +807,106 @@ class _CoreTestRelationalApplicationAdapter:
 
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
+
+    def quality_assessments(self, session):
+        _ = session
+        from okto_pulse.core.ports.quality_assessment import (
+            QualityAssessmentAdapterMissing,
+        )
+
+        raise QualityAssessmentAdapterMissing(
+            "The Core test adapter has no quality-assessment persistence."
+        )
+
+    def quality_assessment_lifecycle(self, session):
+        _ = session
+
+        class _QualityAssessmentLifecycleStub:
+            async def load_lifecycle_state(self, **_kwargs):
+                return (), ()
+
+            async def apply_lifecycle_plan(self, _plan):
+                return None
+
+            async def apply_purge_plan(self, plan):
+                from datetime import datetime, timezone
+
+                from okto_pulse.core.domain.quality_assessment_lifecycle import (
+                    AssessmentPurgePostcondition,
+                    AssessmentPurgeResidual,
+                )
+
+                return AssessmentPurgePostcondition(
+                    target=plan.target,
+                    residuals=tuple(
+                        AssessmentPurgeResidual(resource=resource, count=0)
+                        for resource in plan.deletion_order
+                    ),
+                    zero_orphans=True,
+                    projections_reconciled=True,
+                    outbox_reconciled=True,
+                    epoch_consistency_preserved=True,
+                    verified_at=datetime.now(timezone.utc),
+                )
+
+        return _QualityAssessmentLifecycleStub()
+
+    def research_decisions(self, session):
+        """Empty RDL port for Core scenarios that do not seed ledger entries."""
+
+        _ = session
+
+        class _ResearchDecisionLedgerStub:
+            async def get_snapshot_for_version(self, **_kwargs):
+                return None
+
+            async def list_current_entries_with_heads(self, **_kwargs):
+                return ()
+
+            async def save_snapshot(self, snapshot):
+                return snapshot
+
+            async def save_derivation(self, derivation):
+                return derivation
+
+        return _ResearchDecisionLedgerStub()
+
+    def checklists(self, session):
+        class _CreateBoardChecklistStub:
+            async def apply_binding_cas(
+                self,
+                binding,
+                *,
+                expected_version,
+                expected_digest,
+            ):
+                assert expected_version == 0
+                assert expected_digest is None
+                return binding
+
+            async def get_spec_snapshot(self, *, board_id, spec_id):
+                from okto_pulse.core.domain.checklist import ChecklistSpecSnapshot
+
+                spec = await session.get(Spec, spec_id)
+                if spec is None or spec.board_id != board_id:
+                    return None
+                return ChecklistSpecSnapshot(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    spec_version=spec.version,
+                    content_digest="0" * 64,
+                    input_digest="1" * 64,
+                    status=spec.status.value,
+                    archived=bool(spec.archived),
+                )
+
+            async def get_binding(self, **_kwargs):
+                return None
+
+            async def get_current(self, **_kwargs):
+                return None
+
+        return _CreateBoardChecklistStub()
 
     def amendment_revision_backend(self, session):
         return _CoreTestAmendmentRevisionApiBackend(session)
@@ -2057,6 +2205,32 @@ def _structured_spec_test_store():
     register_structured_spec_store(TestSqlAlchemyStructuredSpecStore())
     yield
     reset_structured_spec_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _requirement_lint_writer_hook():
+    from okto_pulse.core.ports.requirement_lint import (
+        RequirementLintWriteResult,
+        register_requirement_lint_writer_hook,
+        reset_requirement_lint_writer_hook_for_tests,
+    )
+
+    class _ContractTestRequirementLintHook:
+        async def stage_requirement_lint(self, context, command):  # noqa: ANN001
+            del context
+            return RequirementLintWriteResult(
+                receipt_id=(
+                    f"qar_test_{command.spec_id}_{command.spec_version}_"
+                    f"{command.writer.value}"
+                ),
+                head_revision=command.spec_version,
+                evaluated_rule_count=1,
+                finding_count=0,
+            )
+
+    register_requirement_lint_writer_hook(_ContractTestRequirementLintHook())
+    yield
+    reset_requirement_lint_writer_hook_for_tests()
 
 
 @pytest.fixture(autouse=True)

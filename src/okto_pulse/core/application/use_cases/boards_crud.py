@@ -336,16 +336,23 @@ class DeleteBoardUseCase:
                     if getattr(current_job, "actor_id", None) != actor.actor_id:
                         raise EntityNotFoundError("board", command.board_id)
                 else:
+                    # Install the transaction-local board-erasure permit and
+                    # complete every governed relational purge before the
+                    # Board is marked for deletion.  ``delete_board`` schedules
+                    # ORM cascades and any later SELECT/flush may execute them;
+                    # protected C7 epoch/history rows therefore cannot be left
+                    # for the source cascade to discover without a permit.
+                    await uow.services.kg.stage_board_relational_erasure(
+                        command.board_id,
+                        actor_id=actor.actor_id,
+                    )
+                    erasure.ensure_owned()
                     deleted = await uow.services.boards.delete_board(
                         command.board_id, actor.actor_id
                     )
                     if not deleted:
                         raise EntityNotFoundError("board", command.board_id)
                     await uow.synchronize()
-                    await uow.services.kg.stage_board_relational_erasure(
-                        command.board_id,
-                        actor_id=actor.actor_id,
-                    )
                     erasure.ensure_owned()
                     # Source deletion, relational KG cleanup and the durable
                     # continuation are atomic.

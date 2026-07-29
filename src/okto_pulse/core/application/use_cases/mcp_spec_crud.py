@@ -18,14 +18,18 @@ cases must NOT add a UoW commit there).
 
 from __future__ import annotations
 
-from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
-
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
+)
+from okto_pulse.core.domain.test_scenarios import ScenarioType
+from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+from okto_pulse.core.services.application_schemas import (
+    PersistedTestScenarioSpecUpdate,
 )
 
 
@@ -268,6 +272,16 @@ class McpDeriveSpecUseCase:
         )
         if not spec:
             raise EntityNotFoundError(command.source, command.source_id)
+        if command.source == "refinement":
+            from okto_pulse.core.application.use_cases.research_decision_ledger import (
+                bind_research_decisions_to_spec,
+            )
+
+            await bind_research_decisions_to_spec(
+                refinement=parent,
+                spec=spec,
+                uow=uow,
+            )
         await commit(uow)
         return McpDeriveSpecResult(spec)
 
@@ -1731,7 +1745,7 @@ class McpAddTestScenarioCommand:
         when: str,
         then: str,
         *,
-        scenario_type: str,
+        scenario_type: ScenarioType,
         linked_criteria_tokens: list | None,
         notes: str | None,
     ) -> None:
@@ -1779,7 +1793,6 @@ class McpAddTestScenarioUseCase:
     async def execute(
         self, command: McpAddTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddTestScenarioResult:
-        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_criteria_to_ids,
@@ -1826,7 +1839,10 @@ class McpAddTestScenarioUseCase:
         scenarios = list(spec.test_scenarios or [])
         scenarios.append(scenario)
         await service.update_spec(
-            command.spec_id, actor.actor_id, SpecUpdate(test_scenarios=scenarios)
+            command.spec_id,
+            actor.actor_id,
+            PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
+            requirement_lint_writer=RequirementLintWriter.STRUCTURED_CRUD,
         )
         await commit(uow)
         return McpAddTestScenarioResult(
@@ -1881,7 +1897,7 @@ class McpUpdateTestScenarioCommand:
         given: str,
         when: str,
         then: str,
-        scenario_type: str,
+        scenario_type: ScenarioType | None,
         linked_criteria_tokens: list | None,
         notes: str,
         clear_fields: list | None,
@@ -1924,7 +1940,7 @@ class McpUpdateTestScenarioUseCase:
             given=command.given or None,
             when=command.when or None,
             then=command.then or None,
-            scenario_type=command.scenario_type or None,
+            scenario_type=command.scenario_type,
             linked_criteria=command.linked_criteria_tokens,
             notes=command.notes or None,
             clear=command.clear_fields,

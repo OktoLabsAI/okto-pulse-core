@@ -33,6 +33,14 @@ mode — positive `success` is intentionally omitted there. `success: true` and
 An unsupported profile returns a structured error `unsupported_projection`
 with the allowed list under `supported_profiles`.
 
+Entity REST lists preserve their legacy array shape unless the caller opts into
+offset/limit PageEnvelope pagination. Only that envelope may add the
+permission-gated `quality_summaries` field, whose closed row allowlist is
+`receipt_id`, `subject_version`, `currentness`, `score`, `scale`, and
+`head_revision`. Dedicated Quality MCP list tools use keyset cursors and are
+not projection-profile aliases; see
+`okto-pulse://reference/quality-assessments`.
+
 **Per-family variance:** the `copy_*_to_card` family supports a 3-value
 profile set — `summary`/`full`/`legacy`, **no `detail`**. Passing `detail`
 to a copy tool that exposes `profile` (e.g. `copy_architecture_to_card`)

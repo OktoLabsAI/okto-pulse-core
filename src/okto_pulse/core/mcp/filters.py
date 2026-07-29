@@ -27,8 +27,9 @@ unless the service signature changes.
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, Optional, TypeAlias, TypedDict
+from typing import Any, Literal, Optional, TypeAlias
 
+from typing_extensions import TypedDict
 
 BoardEntityType: TypeAlias = Literal[
     "spec", "ideation", "refinement", "sprint", "story", "topic"

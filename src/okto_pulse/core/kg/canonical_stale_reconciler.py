@@ -44,6 +44,9 @@ from okto_pulse.core.kg.canonical_learning_partition import (
 )
 from okto_pulse.core.kg.connectivity_guard import WriterClass, classify_writer_path
 from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.relational_projection import (
+    is_relational_projection_node,
+)
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.source_maturity import (
     DEFAULT_WORKING_TTL_DAYS,
@@ -766,7 +769,19 @@ async def _scan_and_demote(
                         if target_identities is not None:
                             result.target_already_converged_count += 1
                         continue
-                    if _is_cognitive(ntype, writer):
+                    # ``Alternative`` is normally durable cognitive knowledge,
+                    # but SK-A RDL alternatives are relationally-owned,
+                    # rebuildable projections.  Establish that exception from
+                    # the closed source-ref grammar plus system provenance
+                    # before applying the cognitive carve-out.  A broad
+                    # ``refinement:{id}:rdl:`` prefix would let unrelated
+                    # cognitive nodes be erased by a source deletion.
+                    relational_projection = is_relational_projection_node(
+                        node_type=ntype,
+                        source_artifact_ref=ref,
+                        created_by_agent=writer,
+                    )
+                    if not relational_projection and _is_cognitive(ntype, writer):
                         intent = _classify_cognitive(
                             board_id,
                             ntype,

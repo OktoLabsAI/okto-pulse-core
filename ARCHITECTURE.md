@@ -37,7 +37,7 @@ sources changes:
   `core/kg/schemas.py`.
 - Community adapter source map: the sibling Community README must describe the
   local-first adapters scanned from
-  `../okto_labs_pulse_community/src/okto_pulse/community/adapters/`.
+  `../okto-pulse/src/okto_pulse/community/adapters/`.
 
 Do not rewrite old release notes to satisfy current counters. Historical
 sections stay anchored as historical evidence; only live overview sections are
@@ -330,4 +330,4 @@ core and should remain visible during the next refactor cycle:
 - `src/okto_pulse/core/composition.py`
 - `src/okto_pulse/core/application/boundary/adapter_readiness_inventory.py`
 - `src/okto_pulse/core/application/boundary/`
-- `../okto_labs_pulse_community/src/okto_pulse/community/adapters/`
+- `../okto-pulse/src/okto_pulse/community/adapters/`

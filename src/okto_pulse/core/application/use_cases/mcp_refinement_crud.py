@@ -29,6 +29,7 @@ from okto_pulse.core.application.history_pagination import (
     validate_history_window,
     validate_snapshot_version,
 )
+from okto_pulse.core.domain.enums import RefinementStatus
 
 
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
@@ -207,6 +208,15 @@ class McpMoveRefinementUseCase:
         )
         if not refinement:
             raise EntityNotFoundError("refinement", command.refinement_id)
+        if refinement.status == RefinementStatus.DONE:
+            from okto_pulse.core.application.use_cases.research_decision_ledger import (
+                ensure_research_decision_snapshot,
+            )
+
+            await ensure_research_decision_snapshot(
+                refinement=refinement,
+                uow=uow,
+            )
         await commit(uow)
         return McpMoveRefinementResult(refinement, old_status)
 

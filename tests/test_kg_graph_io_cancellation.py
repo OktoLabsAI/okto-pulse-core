@@ -11,6 +11,7 @@ import pytest
 
 from okto_pulse.core.kg import primitives
 from okto_pulse.core.kg.interfaces.graph_transaction import (
+    GraphNodePropertyBeforeImage,
     SpecLineageParentIntent,
 )
 from okto_pulse.core.kg.primitives import (
@@ -21,6 +22,7 @@ from okto_pulse.core.kg.schemas import (
     CommitConsolidationRequest,
     SessionStatus,
 )
+from okto_pulse.core.kg.transaction import GraphWriteRecord
 
 
 @pytest.mark.asyncio
@@ -342,10 +344,12 @@ async def test_audit_staging_failure_requests_graph_compensation_and_keeps_sessi
     assert session.committed_graph_node_refs == []
 
 
-def test_compensation_clears_only_dangling_fresh_supersede_metadata(
+def test_compensation_restores_exact_supersede_before_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    statements: list[tuple[str, dict | None]] = []
+    restored: list[GraphNodePropertyBeforeImage] = []
+    deleted_edges: list[str] = []
+    deleted_nodes: list[tuple[str, tuple[str, ...]]] = []
 
     class Scope:
         async def __aenter__(self):
@@ -354,9 +358,25 @@ def test_compensation_clears_only_dangling_fresh_supersede_metadata(
         async def __aexit__(self, *_args):
             return None
 
-        def execute(self, statement: str, params: dict | None = None):
-            statements.append((statement, params))
-            return SimpleNamespace()
+        def create_node(self, *_args, **_kwargs):
+            raise AssertionError("compensation must not create a node")
+
+        def restore_node_properties(
+            self,
+            before_image: GraphNodePropertyBeforeImage,
+        ) -> None:
+            restored.append(before_image)
+
+        def delete_edges_by_session(self, session_id: str) -> None:
+            deleted_edges.append(session_id)
+
+        def delete_nodes_by_session(
+            self,
+            session_id: str,
+            node_types: tuple[str, ...],
+        ) -> tuple[str, ...]:
+            deleted_nodes.append((session_id, node_types))
+            return ()
 
     class GraphTransaction:
         async def begin(self, board_id: str):
@@ -370,17 +390,31 @@ def test_compensation_clears_only_dangling_fresh_supersede_metadata(
     )
 
     records = [
-        SimpleNamespace(
+        GraphWriteRecord(
             kind="node",
             entity_type="Decision",
             entity_id="decision-successor",
         ),
-        SimpleNamespace(
+        GraphWriteRecord(
             kind="edge",
             entity_type="supersedes",
             entity_id="decision-successor->decision-predecessor",
             from_id="decision-successor",
             to_id="decision-predecessor",
+        ),
+        GraphWriteRecord(
+            kind="property",
+            entity_type="Decision",
+            entity_id="decision-predecessor",
+            property_before_image=GraphNodePropertyBeforeImage(
+                node_type="Decision",
+                node_id="decision-predecessor",
+                attrs={
+                    "superseded_by": None,
+                    "superseded_at": None,
+                    "revocation_reason": "manual",
+                },
+            ),
         ),
     ]
 
@@ -390,18 +424,21 @@ def test_compensation_clears_only_dangling_fresh_supersede_metadata(
         records,
     )
 
-    clear_statements = [
-        (statement, params)
-        for statement, params in statements
-        if "SET n.superseded_by = NULL" in statement
+    assert restored == [
+        GraphNodePropertyBeforeImage(
+            node_type="Decision",
+            node_id="decision-predecessor",
+            attrs={
+                "superseded_by": None,
+                "superseded_at": None,
+                "revocation_reason": "manual",
+            },
+        ),
     ]
-    assert len(clear_statements) == 1
-    statement, params = clear_statements[0]
-    assert "n.superseded_by = $successor_id" in statement
-    assert params == {
-        "predecessor_id": "decision-predecessor",
-        "successor_id": "decision-successor",
-    }
+    assert deleted_edges == ["session-supersede-compensation"]
+    assert deleted_nodes == [
+        ("session-supersede-compensation", ("Decision",)),
+    ]
 
 
 @pytest.mark.asyncio

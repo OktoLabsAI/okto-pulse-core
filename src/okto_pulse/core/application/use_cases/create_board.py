@@ -17,8 +17,14 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.domain.checklist import (
+    SPECIFY_CHECKLIST_TEMPLATE_VERSION,
+    ChecklistContractError,
+    ChecklistMode,
+)
 from okto_pulse.core.models import BoardCreate
 from okto_pulse.core.services.board_governance import BoardGovernanceService
+from okto_pulse.core.services.checklist import ChecklistService
 
 
 class CreateBoardCommand:
@@ -43,12 +49,71 @@ class CreateBoardResult:
 class CreateBoardUseCase:
     """Create a board without any transport dependency."""
 
+    @staticmethod
+    def _checklist_mode_from_snapshot(board: Any) -> ChecklistMode:
+        snapshot = getattr(board, "default_config_snapshot", None)
+        if snapshot is None:
+            return ChecklistMode.ADVISORY
+        if not isinstance(snapshot, dict):
+            raise ChecklistContractError(
+                "invalid_default_checklist_snapshot",
+                "The applied default configuration snapshot must be an object.",
+            )
+        if "spec_checklist" not in snapshot:
+            # No active template and historical snapshots both preserve the
+            # established forward default without retroactive mutation.
+            return ChecklistMode.ADVISORY
+
+        checklist = snapshot["spec_checklist"]
+        if not isinstance(checklist, dict):
+            raise ChecklistContractError(
+                "invalid_default_checklist_snapshot",
+                "The applied default checklist snapshot must be an object.",
+            )
+        try:
+            mode = ChecklistMode(checklist.get("mode"))
+        except (TypeError, ValueError) as exc:
+            raise ChecklistContractError(
+                "invalid_default_checklist_snapshot",
+                "The applied default checklist snapshot has an invalid mode.",
+            ) from exc
+        if (
+            checklist.get("template_version_id")
+            != SPECIFY_CHECKLIST_TEMPLATE_VERSION
+        ):
+            raise ChecklistContractError(
+                "invalid_default_checklist_snapshot",
+                "The applied default checklist snapshot has an unsupported template version.",
+            )
+        return mode
+
     async def execute(
         self, command: CreateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateBoardResult:
         service = uow.services.boards
         board = await service.create_board(
             actor.actor_id, command.data, realm_id=actor.realm_id
+        )
+        # TR10: only boards created after A3 activation receive a snapshotted
+        # advisory /specify/v1 binding. Legacy boards deliberately remain
+        # binding-less and resolve to effective OFF without retropropagation.
+        checklist_service = ChecklistService()
+        checklist_binding = checklist_service.prepare_binding(
+            board_id=board.id,
+            mode=self._checklist_mode_from_snapshot(board),
+            current_binding=None,
+        )
+        await checklist_service.apply_binding(
+            checklist_binding,
+            previous_binding=None,
+            persistence=uow.services.checklists,
+        )
+        await service.record_checklist_binding_change(
+            board_id=board.id,
+            actor_id=actor.actor_id,
+            binding=checklist_binding,
+            previous_binding=None,
+            change_source="board_bootstrap",
         )
         await commit(uow)
         # Re-fetch with relationships loaded (mirrors api/boards.py:create_board).

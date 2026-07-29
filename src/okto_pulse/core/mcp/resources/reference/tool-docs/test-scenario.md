@@ -4,6 +4,9 @@ version: "2.0"
 
 # Tool docs — `test-scenario`
 
+Card-type and test-governance rules:
+`okto-pulse://reference/card_types`.
+
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
 ## `okto_pulse_add_test_scenario`
@@ -20,11 +23,14 @@ Args:
     then: Expected result (e.g. "Returns 200 with board list")
     scenario_type: unit | integration | e2e | manual | negative (default: integration).
         Use ``negative`` for expected denial, validation failure, error-path, or
-        abuse-case behavior. STRICT contract: an unsupported value (e.g.
-        ``regression``) is rejected
-        with a structured ``invalid_scenario_type`` error naming the allowed
-        values and NO scenario is appended — it is NEVER silently normalized to
-        ``integration``.
+        abuse-case behavior. STRICT contract: the FastMCP host rejects an
+        unsupported value (e.g. ``regression``) as ``validation_failed`` at its
+        closed argument schema, before agent context, permissions, or UoW
+        resolution. No scenario is appended and the value is NEVER silently
+        normalized to ``integration``. ``invalid_scenario_type`` is the
+        defense-in-depth application envelope for a direct handler/use-case
+        invocation that bypasses FastMCP validation; it is not the normal
+        FastMCP transport response.
     linked_criteria: Multi-value (formats: okto-pulse://reference/multivalue)
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
@@ -40,7 +46,8 @@ Args:
 
 Returns:
     JSON with the created scenario; ``linked_criteria`` is always a list of
-    canonical ac_id strings (never a dict).
+    canonical ac_id strings (never a dict). Invalid FastMCP arguments do not
+    enter this return contract; the host returns ``validation_failed``.
 
 ## `okto_pulse_delete_test_scenario`
 
@@ -67,7 +74,11 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
-    scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual, negative
+    scenario_type: Optional exact-match filter over the raw persisted value.
+        Canonical values are unit, integration, e2e, manual, and negative.
+        Historical values such as regression may also be supplied here so
+        legacy rows remain discoverable. This is a read-only compatibility
+        filter and does not make a historical value valid on any write.
     linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
     offset: Skip first N scenarios (default 0)
     limit: Max scenarios to return (default 50, max 200)
@@ -81,10 +92,14 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
     linked_criteria/notes). Does NOT accept status — status stays exclusive to
     okto_pulse_update_test_scenario_status so no second NC-9 bypass is created.
 
-    Empty-string params mean "leave unchanged". To intentionally CLEAR a field,
-    list it in `clear` (pipe-separated); only `notes` and `linked_criteria` are
-    clearable. `linked_criteria` is a pipe-separated list of AC index/id/text,
-    resolved to AC ids (fail-closed on unresolved tokens).
+    Omitted params mean "leave unchanged". In particular, omit
+    `scenario_type` to preserve the current type; an empty string is not part
+    of the closed enum and is rejected by FastMCP as ``validation_failed``
+    before agent context, permissions, or UoW resolution. To
+    intentionally CLEAR a field, list it in `clear` (pipe-separated); only
+    `notes` and `linked_criteria` are clearable. `linked_criteria` is a
+    pipe-separated list of AC index/id/text, resolved to AC ids (fail-closed on
+    unresolved tokens).
 
     Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
     scenario that holds evidence invalidates it: status resets to `ready` and the
@@ -95,17 +110,21 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
         board_id: Board ID.
         spec_id: Spec ID.
         scenario_id: Test scenario ID (e.g. "ts_abc123").
-        title/given/when/then/scenario_type/notes: New value, or "" to leave as-is.
-            scenario_type follows the same STRICT contract as add — valid values
-            are unit, integration, e2e, manual, negative. An
-            unsupported value is rejected (``invalid_scenario_type``) before any
-            mutation, never normalized.
+        title/given/when/then/notes: New value; omit to leave as-is.
+        scenario_type: Optional replacement. Omit the argument to preserve the
+            current type. Valid values are unit, integration, e2e, manual, and
+            negative. Empty string and every unsupported value are rejected by
+            the closed FastMCP schema as ``validation_failed`` before context or
+            UoW resolution, never normalized.
         linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
         clear: Pipe-separated field names to empty (notes, linked_criteria).
 
     Returns:
         JSON {success, scenario_id, updated_fields, evidence_invalidated} or
-        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_scenario_type|invalid_update}.
+        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_update}.
+        ``invalid_scenario_type`` is retained only as a defense-in-depth
+        handler/use-case envelope when FastMCP validation is bypassed; normal
+        invalid FastMCP input returns ``validation_failed`` before this handler.
 
 ## `okto_pulse_execute_test_scenario_evidence`
 

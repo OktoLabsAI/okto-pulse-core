@@ -713,6 +713,7 @@ class ExportBoardConfigUseCase:
                 "settings_payload": dict(version.get("settings_payload") or {}),
                 "guideline_default_refs": list(version.get("guideline_default_refs") or []),
                 "design_system_default_ref": version.get("design_system_default_ref"),
+                "spec_checklist_mode": version.get("spec_checklist_mode"),
                 "is_active": bool(version.get("is_active")),
             }
             for version in versions
@@ -764,6 +765,7 @@ class ImportBoardConfigUseCase:
                     scope=item.get("scope") or "global",
                     guideline_default_refs=item.get("guideline_default_refs") or None,
                     design_system_default_ref=item.get("design_system_default_ref"),
+                    spec_checklist_mode=item.get("spec_checklist_mode"),
                     activate=bool(item.get("activate")),
                     query_scope=query_scope,
                 )

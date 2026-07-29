@@ -5,16 +5,12 @@ from pathlib import Path
 from okto_pulse.core.application.boundary.relational_residue_gate import (
     run_relational_residue_gate,
 )
+from repository_checkout_testing import community_source_for
 
 
-CORE_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
-COMMUNITY_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "okto_labs_pulse_community"
-    / "src"
-    / "okto_pulse"
-    / "community"
-)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CORE_ROOT = REPO_ROOT / "src" / "okto_pulse" / "core"
+COMMUNITY_ROOT = community_source_for(REPO_ROOT)
 
 
 def _write(root: Path, rel: str, source: str) -> None:

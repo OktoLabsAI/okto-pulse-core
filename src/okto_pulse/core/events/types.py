@@ -206,6 +206,81 @@ class RefinementMoved(DomainEvent):
     to_status: str
 
 
+class QualityAssessmentRecorded(DomainEvent):
+    """Version-bearing SK-A event staged with the relational assessment UoW."""
+
+    event_type: ClassVar[str] = "quality.assessment_recorded.v1"
+    event_schema_version: Literal[1] = 1
+    subject_type: Literal["ideation", "refinement", "spec"]
+    subject_id: str
+    subject_version: int = Field(..., ge=1)
+    assessment_kind: Literal[
+        "ambiguity",
+        "spec_validation",
+        "requirement_lint",
+    ]
+    receipt_id: str
+    input_digest: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    request_fingerprint: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    authority_digest: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    head_revision: int = Field(..., ge=1)
+
+
+class QualityClarificationChanged(DomainEvent):
+    """A subject Q&A mutation that may change assessment currentness."""
+
+    event_type: ClassVar[str] = "quality.clarification_changed.v1"
+    event_schema_version: Literal[1] = 1
+    subject_type: Literal["ideation", "refinement", "spec"]
+    subject_id: str
+    subject_version: int = Field(..., ge=1)
+    qa_id: str | None = None
+    operation: Literal["created", "answered", "deleted"]
+
+
+class ResearchDecisionChanged(DomainEvent):
+    """Common v1 payload for an append-only research-decision head change."""
+
+    event_schema_version: Literal[1] = 1
+    contract_version: Literal["research-decision-ledger/v1"] = (
+        "research-decision-ledger/v1"
+    )
+    refinement_id: str
+    refinement_version: int = Field(..., ge=1)
+    ledger_id: str
+    entry_id: str
+    head_revision: int = Field(..., ge=1)
+    status: Literal["open", "investigating", "resolved", "deferred"]
+
+
+class ResearchDecisionAppended(ResearchDecisionChanged):
+    """A new relational RDL head was appended for a Refinement."""
+
+    event_type: ClassVar[str] = "research_decision.appended"
+
+
+class ResearchDecisionSuperseded(ResearchDecisionChanged):
+    """An existing relational RDL head advanced to an immutable successor."""
+
+    event_type: ClassVar[str] = "research_decision.superseded"
+
+
+class ChecklistBindingChanged(DomainEvent):
+    """Append-only A3 governance audit staged with the binding transaction."""
+
+    event_type: ClassVar[str] = "checklist.binding_changed.v1"
+    event_schema_version: Literal[1] = 1
+    target_type: Literal["spec"] = "spec"
+    phase: Literal["spec_validation"] = "spec_validation"
+    template_version: Literal["/specify/v1"] = "/specify/v1"
+    mode: Literal["off", "advisory", "blocking"]
+    binding_version: int = Field(..., ge=1)
+    binding_digest: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    previous_mode: Literal["off", "advisory", "blocking"] | None = None
+    previous_binding_version: int | None = Field(default=None, ge=1)
+    change_source: Literal["board_bootstrap", "board_governance"]
+
+
 class CardLinkedToSpec(DomainEvent):
     """Fired when a card is linked to a spec via link_card_to_spec.
 
@@ -442,6 +517,11 @@ EVENT_TYPES: list[str] = [
     StructuredSpecEntityRevoked.event_type,
     RefinementSemanticChanged.event_type,
     RefinementMoved.event_type,
+    QualityAssessmentRecorded.event_type,
+    QualityClarificationChanged.event_type,
+    ResearchDecisionAppended.event_type,
+    ResearchDecisionSuperseded.event_type,
+    ChecklistBindingChanged.event_type,
     SprintCreated.event_type,
     SprintMoved.event_type,
     SprintClosed.event_type,
@@ -480,6 +560,11 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     StructuredSpecEntityRevoked.event_type: StructuredSpecEntityRevoked,
     RefinementSemanticChanged.event_type: RefinementSemanticChanged,
     RefinementMoved.event_type: RefinementMoved,
+    QualityAssessmentRecorded.event_type: QualityAssessmentRecorded,
+    QualityClarificationChanged.event_type: QualityClarificationChanged,
+    ResearchDecisionAppended.event_type: ResearchDecisionAppended,
+    ResearchDecisionSuperseded.event_type: ResearchDecisionSuperseded,
+    ChecklistBindingChanged.event_type: ChecklistBindingChanged,
     SprintCreated.event_type: SprintCreated,
     SprintMoved.event_type: SprintMoved,
     SprintClosed.event_type: SprintClosed,

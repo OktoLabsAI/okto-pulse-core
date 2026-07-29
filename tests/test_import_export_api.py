@@ -574,7 +574,11 @@ def test_board_config_roundtrip_versions_and_active():
     marker = {"max_scenarios_per_card": 7, "min_confidence": 71}
     created = client.post(
         f"{PREFIX}/default-board-config/versions",
-        json={"settings_payload": marker, "activate": True},
+        json={
+            "settings_payload": marker,
+            "spec_checklist_mode": "blocking",
+            "activate": True,
+        },
     )
     assert created.status_code == 200, created.text
 
@@ -587,13 +591,20 @@ def test_board_config_roundtrip_versions_and_active():
     active_items = [i for i in items if i["is_active"]]
     assert len(active_items) == 1  # the active version is marked
     assert active_items[0]["settings_payload"]["max_scenarios_per_card"] == 7
+    assert active_items[0]["spec_checklist_mode"] == "blocking"
     for item in items:
         assert set(item) == {
             "scope",
             "settings_payload",
             "guideline_default_refs",
             "design_system_default_ref",
+            "spec_checklist_mode",
             "is_active",
+        }
+        assert item["spec_checklist_mode"] in {
+            "off",
+            "advisory",
+            "blocking",
         }
 
     before = client.get(f"{PREFIX}/default-board-config/versions").json()
@@ -611,6 +622,7 @@ def test_board_config_roundtrip_versions_and_active():
     assert active is not None
     assert active["settings_payload"]["max_scenarios_per_card"] == 7
     assert active["settings_payload"]["min_confidence"] == 71
+    assert active["spec_checklist_mode"] == "blocking"
 
 
 def test_board_config_import_dry_run_and_invalid_item():

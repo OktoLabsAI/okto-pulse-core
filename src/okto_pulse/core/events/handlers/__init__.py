@@ -15,6 +15,9 @@ from okto_pulse.core.events.handlers.cancellation_decay import (  # noqa: F401
 from okto_pulse.core.events.handlers.cognitive_extraction import (  # noqa: F401
     CognitiveExtractionHandler,
 )
+from okto_pulse.core.events.handlers.checklist_binding_audit import (  # noqa: F401
+    ChecklistBindingAuditHandler,
+)
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (  # noqa: F401
     ConsolidationEnqueuer,
 )
@@ -39,6 +42,7 @@ __all__ = [
     "SourceArchiveLifecycleHandler",
     "SourceCancellationLifecycleHandler",
     "CognitiveExtractionHandler",
+    "ChecklistBindingAuditHandler",
     "ConsolidationEnqueuer",
     "DiscoverySelectorCacheInvalidationHandler",
     "KGHitRecomputeHandler",

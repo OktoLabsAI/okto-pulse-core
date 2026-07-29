@@ -52,7 +52,9 @@ all migrations are done and the pre-flip audit (FR7) is recorded.
 from __future__ import annotations
 
 import json
-from typing import NotRequired, TypedDict
+from typing import NotRequired
+
+from typing_extensions import TypedDict
 
 
 class ChoiceOptionInput(TypedDict):

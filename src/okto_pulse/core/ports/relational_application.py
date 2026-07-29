@@ -11,9 +11,17 @@ from okto_pulse.core.runtime_context import register_runtime_value, reset_runtim
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from .mcp_auth import AgentAuthSession
+
+if TYPE_CHECKING:
+    from .checklist import ChecklistPersistencePort
+    from .quality_assessment import QualityAssessmentPersistencePort
+    from .quality_assessment_lifecycle import (
+        QualityAssessmentLifecyclePersistencePort,
+    )
+    from .research_decision_ledger import ResearchDecisionLedgerPersistencePort
 
 
 class RelationalApplicationAdapterMissing(RuntimeError):
@@ -27,6 +35,8 @@ class EffectivePermissions:
     board_id: str
     preset_name: str | None
     flags: dict[str, Any]
+    owner_review_required: bool = False
+    review_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,8 @@ class PermissionPresetView:
     is_builtin: bool
     base_preset_id: str | None
     flags: dict[str, Any] | None
+    owner_review_required: bool = False
+    review_reason: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -117,6 +129,31 @@ class RelationalApplicationAdapter(Protocol):
     """Factory bundle scoped to one edition-owned persistence session."""
 
     def permission_presets(self, session: Any) -> PermissionPresetGateway: ...
+
+    def quality_assessments(
+        self,
+        session: Any,
+    ) -> "QualityAssessmentPersistencePort":
+        """Return the transaction-bound SK-A assessment persistence port."""
+        ...
+
+    def quality_assessment_lifecycle(
+        self,
+        session: Any,
+    ) -> "QualityAssessmentLifecyclePersistencePort":
+        """Return the transaction-bound SK-A lifecycle and purge port."""
+        ...
+
+    def checklists(self, session: Any) -> "ChecklistPersistencePort":
+        """Return the transaction-bound A3 checklist persistence port."""
+        ...
+
+    def research_decisions(
+        self,
+        session: Any,
+    ) -> "ResearchDecisionLedgerPersistencePort":
+        """Return the transaction-bound SK-A RDL persistence port."""
+        ...
 
     def amendment_revision_backend(self, session: Any) -> Any: ...
 

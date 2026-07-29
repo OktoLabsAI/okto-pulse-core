@@ -18,6 +18,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.graph_transaction import (
+    GraphNodePropertyBeforeImage,
+    ProjectionActiveSetIntent,
+    ProjectionActiveSetReceipt,
+    ProjectionActiveSetReconciliationError,
     SpecLineageEdgeSnapshot,
     SpecLineageReconciliationError,
     SpecLineageReconciliationReceipt,
@@ -51,6 +55,40 @@ class _StoreBackedGraphScope:
 
     def update_node(self, node_type, node_id, attrs):
         self._store.update_node(self._board_id, node_type, node_id, attrs)
+
+    def snapshot_node_properties(self, node_type, node_id, property_names):
+        if any(
+            not str(name).replace("_", "").isalnum()
+            for name in property_names
+        ):
+            raise ValueError("invalid graph property name")
+        projection = ", ".join(f"n.{name}" for name in property_names)
+        result = self.execute(
+            f"MATCH (n:{node_type} {{id: $node_id}}) "
+            f"RETURN {projection} LIMIT 1",
+            {"node_id": node_id},
+        )
+        rows = getattr(result, "rows", None)
+        if rows is None:
+            rows = tuple(tuple(row) for row in result)
+        if not rows:
+            return None
+        return GraphNodePropertyBeforeImage(
+            node_type=str(node_type),
+            node_id=str(node_id),
+            attrs={
+                str(name): rows[0][index]
+                for index, name in enumerate(property_names)
+            },
+        )
+
+    def restore_node_properties(self, before_image):
+        self._store.update_node(
+            self._board_id,
+            before_image.node_type,
+            before_image.node_id,
+            dict(before_image.attrs),
+        )
 
     def mark_superseded(self, node_type, node_id, **values):
         self._store.mark_superseded(
@@ -99,6 +137,22 @@ class _StoreBackedGraphScope:
             "The compatibility graph-store scope cannot clear exclusive Spec "
             "lineage; install a GraphTransaction adapter with the bounded "
             "Spec-lineage capability.",
+        )
+
+    def reconcile_projection_active_set(self, intent):
+        del intent
+        raise ProjectionActiveSetReconciliationError(
+            "projection_active_set_capability_unavailable",
+            "The compatibility graph-store scope cannot reconcile a relational "
+            "projection active set.",
+        )
+
+    def compensate_projection_active_set(self, receipt):
+        del receipt
+        raise ProjectionActiveSetReconciliationError(
+            "projection_active_set_compensation_capability_unavailable",
+            "The compatibility graph-store scope cannot compensate a relational "
+            "projection active set.",
         )
 
     def compensate_spec_lineage_parent(self, receipt):
@@ -159,13 +213,15 @@ def _result_has_row(result: Any) -> bool:
 class GraphWriteRecord:
     """One mutation applied to the graph adapter, used for compensating delete."""
 
-    kind: str  # "node" | "edge"
+    kind: str  # "node" | "edge" | "property" | "projection"
     entity_type: str  # "Decision", "supersedes", etc.
     entity_id: str  # For nodes: the id. For edges: synthetic session-scoped key.
     # Edge-only: anchors for MATCH DELETE pattern.
     from_id: str | None = None
     to_id: str | None = None
     lineage_receipt: SpecLineageReconciliationReceipt | None = None
+    property_before_image: GraphNodePropertyBeforeImage | None = None
+    projection_receipt: ProjectionActiveSetReceipt | None = None
 
 
 @dataclass
@@ -256,19 +312,30 @@ class TransactionOrchestrator:
         those are injected here so the caller can't forget them.
         """
         self._guard_fresh()
+        record = GraphWriteRecord(
+            kind="node",
+            entity_type=node_type,
+            entity_id=node_id,
+        )
+        # Record before invoking the adapter: an embedded driver can apply a
+        # statement and still raise while materializing/closing its result.
+        self.records.append(record)
         self.graph_scope.create_node(
             node_type,
             node_id,
             dict(attrs),
             source_session_id=self.session_id,
         )
-
-        self.records.append(
-            GraphWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
-        )
         self.counters.nodes_added += 1
 
-    def update_node(self, node_type: str, node_id: str, attrs: dict[str, Any]) -> None:
+    def update_node(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        count_candidate: bool = True,
+    ) -> None:
         """Overwrite a node's mutable attrs in place and count it as an UPDATE.
 
         Spec eca49df9 (TR6) wires this as the production call site for
@@ -278,15 +345,95 @@ class TransactionOrchestrator:
         Only the caller-supplied content attrs are SET (callers pass the
         _NODE_UPDATEABLE_ATTRS subset, never ``embedding`` which is HNSW-locked).
 
-        Not reverted by compensate — updates are lossy and there's nothing to
-        compensate to (compensating rollback only protects partial ADD writes,
-        not UPDATE overwrites; documented in the spec)."""
+        Every changed property is snapshotted first so an adapter that
+        auto-commits (or applies and then raises) remains compensable.
+
+        ``count_candidate=False`` is reserved for property patches that are
+        part of an NC-8 merge. The candidate is then counted exactly once as
+        ``nodes_merged`` by the caller while this method still provides the
+        same before-image and compensation guarantees."""
         self._guard_fresh()
         values = {key: value for key, value in attrs.items() if key != "id"}
         if not values:
             return
+        self.protect_node_properties(
+            node_type,
+            node_id,
+            tuple(sorted(values)),
+        )
         self.graph_scope.update_node(node_type, node_id, values)
-        self.counters.nodes_updated += 1
+        if count_candidate:
+            self.counters.nodes_updated += 1
+
+    def protect_node_properties(
+        self,
+        node_type: str,
+        node_id: str,
+        property_names: tuple[str, ...],
+    ) -> GraphNodePropertyBeforeImage:
+        """Record a before-image for a bounded mutation performed by a helper."""
+
+        self._guard_fresh()
+        before_image = self._snapshot_node_properties(
+            node_type,
+            node_id,
+            tuple(sorted(set(property_names))),
+        )
+        self.records.append(
+            GraphWriteRecord(
+                kind="property",
+                entity_type=node_type,
+                entity_id=node_id,
+                property_before_image=before_image,
+            )
+        )
+        return before_image
+
+    def mark_superseded(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        superseded_by: str,
+        superseded_at: str,
+        revocation_reason: str,
+    ) -> None:
+        """Mark an existing node with an exact, compensable before-image."""
+
+        self._guard_fresh()
+        self.protect_node_properties(
+            node_type,
+            node_id,
+            ("revocation_reason", "superseded_at", "superseded_by"),
+        )
+        self.graph_scope.mark_superseded(
+            node_type,
+            node_id,
+            superseded_by=superseded_by,
+            superseded_at=superseded_at,
+            revocation_reason=revocation_reason,
+        )
+
+    def increment_attestation(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        attested_at: str,
+    ) -> None:
+        """Increment attestation metadata while retaining its before-image."""
+
+        self._guard_fresh()
+        self.protect_node_properties(
+            node_type,
+            node_id,
+            ("attestation_count", "last_attested_at"),
+        )
+        self.graph_scope.increment_attestation(
+            node_type,
+            node_id,
+            attested_at=attested_at,
+        )
 
     def supersede_node(
         self,
@@ -308,7 +455,7 @@ class TransactionOrchestrator:
         self.counters.nodes_superseded += 1
 
         # 2. Mark the old node as superseded
-        self.graph_scope.mark_superseded(
+        self.mark_superseded(
             node_type,
             superseded_node_id,
             superseded_by=new_node_id,
@@ -449,6 +596,15 @@ class TransactionOrchestrator:
             )
             return
 
+        record = GraphWriteRecord(
+            kind="edge",
+            entity_type=edge_type,
+            entity_id=f"{from_id}->{to_id}",
+            from_id=from_id,
+            to_id=to_id,
+        )
+        # As with nodes, retain a provisional record across apply-then-raise.
+        self.records.append(record)
         created = self.graph_scope.create_edge(
             edge_type,
             from_type,
@@ -458,6 +614,9 @@ class TransactionOrchestrator:
             edge_attrs,
         )
         if not created:
+            # A materialized false result proves no relationship was applied;
+            # only exceptions remain ambiguous apply-then-raise outcomes.
+            self.records.remove(record)
             actual_from = self._find_node_types(from_id)
             actual_to = self._find_node_types(to_id)
             raise ValueError(
@@ -468,16 +627,48 @@ class TransactionOrchestrator:
                 f"to={actual_to or ['not_found']}"
             )
 
-        self.records.append(
-            GraphWriteRecord(
-                kind="edge",
-                entity_type=edge_type,
-                entity_id=f"{from_id}->{to_id}",
-                from_id=from_id,
-                to_id=to_id,
-            )
-        )
         self.counters.edges_added += 1
+
+    def reconcile_projection_active_set(
+        self,
+        intent: ProjectionActiveSetIntent,
+    ) -> None:
+        """Apply an exact relational projection active-set replacement."""
+
+        self._guard_fresh()
+        reconcile = getattr(
+            self.graph_scope,
+            "reconcile_projection_active_set",
+            None,
+        )
+        if not callable(reconcile):
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_capability_unavailable",
+                "The configured GraphTransaction scope does not expose the "
+                "bounded relational projection active-set capability.",
+            )
+        try:
+            receipt = reconcile(intent)
+        except ProjectionActiveSetReconciliationError as exc:
+            if exc.receipt is not None and exc.receipt.before_images:
+                self.records.append(
+                    GraphWriteRecord(
+                        kind="projection",
+                        entity_type=intent.namespace,
+                        entity_id=f"{intent.owner_type}:{intent.owner_id}",
+                        projection_receipt=exc.receipt,
+                    )
+                )
+            raise
+        if receipt.before_images:
+            self.records.append(
+                GraphWriteRecord(
+                    kind="projection",
+                    entity_type=intent.namespace,
+                    entity_id=f"{intent.owner_type}:{intent.owner_id}",
+                    projection_receipt=receipt,
+                )
+            )
 
     def clear_spec_lineage_parent(self, source_id: str) -> None:
         """Apply an explicit deterministic parent unlink with a before-image."""
@@ -561,6 +752,24 @@ class TransactionOrchestrator:
         """Best-effort lookup used only to make failed edge errors actionable."""
         return list(self.graph_scope.find_node_types(node_id))
 
+    def _snapshot_node_properties(
+        self,
+        node_type: str,
+        node_id: str,
+        property_names: tuple[str, ...],
+    ) -> GraphNodePropertyBeforeImage:
+        snapshot = getattr(self.graph_scope, "snapshot_node_properties", None)
+        if not callable(snapshot):
+            raise CompensationError(
+                "graph property before-image capability unavailable"
+            )
+        before_image = snapshot(node_type, node_id, property_names)
+        if before_image is None:
+            raise LookupError(
+                f"graph node not found before mutation: {node_type}({node_id})"
+            )
+        return before_image
+
     async def compensate(self) -> None:
         """Reverse every graph write recorded so far.
 
@@ -576,6 +785,34 @@ class TransactionOrchestrator:
             return
 
         failed: list[GraphWriteRecord] = []
+
+        projection_receipts = [
+            record.projection_receipt
+            for record in reversed(self.records)
+            if record.projection_receipt is not None
+        ]
+        for receipt in projection_receipts:
+            try:
+                self.graph_scope.compensate_projection_active_set(receipt)
+            except Exception as exc:
+                logger.error(
+                    "kg.compensate.projection_restore_failed "
+                    "session=%s owner=%s:%s namespace=%s err=%s",
+                    self.session_id,
+                    receipt.intent.owner_type,
+                    receipt.intent.owner_id,
+                    receipt.intent.namespace,
+                    exc,
+                )
+                raise CompensationError(
+                    "relational projection active-set compensation failed",
+                    original_exc=exc,
+                    failed_records=[
+                        record
+                        for record in self.records
+                        if record.projection_receipt is receipt
+                    ],
+                ) from exc
 
         lineage_receipts = [
             record.lineage_receipt
@@ -607,6 +844,31 @@ class TransactionOrchestrator:
                 ) from exc
             preserved_edges.extend(receipt.removed_edges)
 
+        property_records = [
+            record
+            for record in reversed(self.records)
+            if record.property_before_image is not None
+        ]
+        for record in property_records:
+            try:
+                self.graph_scope.restore_node_properties(
+                    record.property_before_image
+                )
+            except Exception as exc:
+                logger.error(
+                    "kg.compensate.property_restore_failed "
+                    "session=%s type=%s node=%s err=%s",
+                    self.session_id,
+                    record.entity_type,
+                    record.entity_id,
+                    exc,
+                )
+                raise CompensationError(
+                    "graph property before-image compensation failed",
+                    original_exc=exc,
+                    failed_records=[record],
+                ) from exc
+
         try:
             if preserved_edges:
                 delete_preserving = getattr(
@@ -629,12 +891,11 @@ class TransactionOrchestrator:
                 self.session_id,
                 exc,
             )
-            if lineage_receipts:
-                raise CompensationError(
-                    "compensating edge delete failed",
-                    original_exc=exc,
-                    failed_records=list(self.records),
-                ) from exc
+            raise CompensationError(
+                "compensating edge delete failed",
+                original_exc=exc,
+                failed_records=list(self.records),
+            ) from exc
 
         # 2. Delete nodes created by this session (group by type for efficiency)
         node_types = {

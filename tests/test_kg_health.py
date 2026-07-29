@@ -38,6 +38,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.ports.scheduler import SchedulerJobSnapshot
 import okto_pulse.core.services.kg_health_service as kg_health_service
+from repository_checkout_testing import community_repo_for
 from okto_pulse.core.services.kg_health_service import (
     BoardNotFoundError,
     DEFAULT_SCORE_BAND_HIGH,
@@ -1182,7 +1183,7 @@ def test_cypher_templates_order_by_relevance_score_unchanged():
     cypher_templates = (
         repo_root / "src" / "okto_pulse" / "core" / "kg" / "cypher_templates.py"
     ).read_text(encoding="utf-8")
-    community_repo = repo_root.parent / "okto_labs_pulse_community"
+    community_repo = community_repo_for(repo_root)
     kuzu_store = (
         community_repo
         / "src"

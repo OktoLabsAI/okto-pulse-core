@@ -142,9 +142,9 @@ def test_callable_names_and_schema_keys_stable():
     # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
     # al. +6). Set-level drift is now ALSO guarded by
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
-    # 2026-07-23: the reviewed surface is additive at 281 tools after the
-    # selective Knowledge propagation v2 endpoints landed.
-    assert len(tools) == 281
+    # 2026-07-27: reviewed SK-A surface is 292 tools. The five additive Quality
+    # assessment commands expose record/current/receipt/history/findings.
+    assert len(tools) == 292
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

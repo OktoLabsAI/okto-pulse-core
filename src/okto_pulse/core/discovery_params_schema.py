@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
+from typing_extensions import TypedDict
 
 DiscoveryParamType = Literal["text", "entity_selector", "spec_child_selector"]
 

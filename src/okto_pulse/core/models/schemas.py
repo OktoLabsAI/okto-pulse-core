@@ -35,6 +35,20 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.domain.knowledge_governance import (
     project_knowledge_governance,
 )
+from okto_pulse.core.domain.permissions import (
+    PermissionContractViolation,
+    validate_strict_permission_flags,
+)
+from okto_pulse.core.domain.quality_assessment import (
+    AssessmentKind,
+    AssessmentScaleKind,
+    ScoreDirection,
+)
+from okto_pulse.core.domain.test_scenarios import (
+    DEFAULT_SCENARIO_TYPE,
+    SCENARIO_TYPE_DESCRIPTION,
+    ScenarioType,
+)
 from okto_pulse.core.models.knowledge_propagation import (
     CardCreateKnowledgeMutationResponse,
     DeriveSpecKnowledgeMutationResponse,
@@ -85,6 +99,17 @@ class AgentCreate(BaseModel):
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
 
+    @field_validator("permission_flags")
+    @classmethod
+    def validate_permission_flags(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        try:
+            validate_strict_permission_flags(value)
+        except PermissionContractViolation as exc:
+            raise ValueError(str(exc)) from exc
+        return value
+
 
 class AgentUpdate(BaseModel):
     """Schema for updating an agent."""
@@ -96,6 +121,17 @@ class AgentUpdate(BaseModel):
     permissions: list[str] | None = None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
+
+    @field_validator("permission_flags")
+    @classmethod
+    def validate_permission_flags(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        try:
+            validate_strict_permission_flags(value)
+        except PermissionContractViolation as exc:
+            raise ValueError(str(exc)) from exc
+        return value
 
 
 class AgentSelfUpdate(BaseModel):
@@ -131,6 +167,10 @@ class AgentSummary(BaseSchema):
     is_active: bool
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
+    # Raw board ceiling, kept distinct from the agent's direct delta above.
+    # This is an owner-facing projection used to edit the actual effective
+    # permissions without materializing the delta as a new base snapshot.
+    permission_overrides: dict[str, Any] | None = None
     created_at: datetime
     last_used_at: datetime | None
 
@@ -158,6 +198,17 @@ class AgentBoardOverridesUpdate(BaseModel):
     """Schema for updating board-level permission overrides."""
 
     permission_overrides: dict[str, Any] | None = None
+
+    @field_validator("permission_overrides")
+    @classmethod
+    def validate_permission_overrides(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        try:
+            validate_strict_permission_flags(value)
+        except PermissionContractViolation as exc:
+            raise ValueError(str(exc)) from exc
+        return value
 
 
 # ============================================================================
@@ -373,12 +424,18 @@ class TestScenarioEvidence(BaseModel):
 
 
 class TestScenario(BaseModel):
-    """A test scenario linked to acceptance criteria and optionally to tasks."""
+    """Read-tolerant test scenario projection.
+
+    ``scenario_type`` intentionally remains ``str`` here so persisted values
+    from older releases can still be returned explicitly. Write requests use
+    :class:`TestScenarioWrite`, whose JSON schema is the closed five-value
+    taxonomy.
+    """
 
     id: str
     title: str
     linked_criteria: list[str] | None = None  # indices or text of acceptance criteria
-    scenario_type: str = "integration"  # unit | integration | e2e | manual | negative
+    scenario_type: str = DEFAULT_SCENARIO_TYPE
     given: str = ""  # precondition
     when: str = ""  # action
     then: str = ""  # expected result
@@ -387,6 +444,22 @@ class TestScenario(BaseModel):
     linked_task_ids: list[str] | None = None  # card IDs that implement/automate this test
     evidence: TestScenarioEvidence | None = None
     latest_evidence: TestScenarioEvidence | None = None
+
+
+class TestScenarioWrite(TestScenario):
+    """Write-facing scenario with a closed scenario-type interface.
+
+    The default remains visible to API schema consumers, while Pydantic tracks
+    whether it was omitted through ``model_fields_set``. Whole-list updates use
+    that distinction to default new scenarios and preserve existing scenarios.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    scenario_type: ScenarioType = Field(
+        DEFAULT_SCENARIO_TYPE,
+        description=SCENARIO_TYPE_DESCRIPTION,
+    )
 
 
 # ============================================================================
@@ -619,6 +692,29 @@ class StoryPageItem(BaseSchema):
     screen_mockups_count: int = 0
 
 
+class QualityScaleSummary(BaseSchema):
+    """Closed scale projection embedded in paginated entity summaries."""
+
+    kind: AssessmentScaleKind
+    min: float
+    max: float
+    direction: ScoreDirection
+
+
+class QualityAssessmentSummary(BaseSchema):
+    """Permission-gated current assessment projected on an entity row."""
+
+    receipt_id: str
+    subject_version: int
+    currentness: Literal["current", "stale"]
+    score: float
+    scale: QualityScaleSummary
+    head_revision: int
+
+
+QualitySummaryMap: TypeAlias = dict[AssessmentKind, QualityAssessmentSummary]
+
+
 class IdeationPageItem(BaseSchema):
     """Lean Ideation projection for paginated lists (FR4).
 
@@ -642,6 +738,10 @@ class IdeationPageItem(BaseSchema):
     labels: list[str] | None = None
     archived: bool = False
     scope_assessment: dict | None = None
+    quality_summaries: QualitySummaryMap | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class RefinementPageItem(BaseSchema):
@@ -660,6 +760,10 @@ class RefinementPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    quality_summaries: QualitySummaryMap | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class BoardRefinementPageItem(RefinementPageItem):
@@ -685,6 +789,10 @@ class SpecPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    quality_summaries: QualitySummaryMap | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class SprintPageItem(BaseSchema):
@@ -1568,6 +1676,30 @@ class RefinementMove(BaseModel):
     )
 
 
+class RefinementAmbiguityGateSkipUpdate(BaseModel):
+    """Human-only, version-fenced Refinement ambiguity override."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skip_ambiguity_gate: bool
+    reason: str = Field(..., min_length=1, max_length=2000)
+    expected_refinement_version: int = Field(..., ge=1)
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("reason must not be blank")
+        return normalized
+
+
+class RefinementAmbiguityGateSkipResponse(BaseModel):
+    skipped: bool
+    activity_id: str
+    version: int
+
+
 class RefinementSummary(BaseSchema):
     """Schema for refinement summary."""
 
@@ -1590,6 +1722,7 @@ class RefinementSummary(BaseSchema):
     labels: list[str] | None
     archived: bool = False
     pre_archive_status: str | None = None
+    skip_ambiguity_gate: bool = False
 
 
 # ============================================================================
@@ -1805,7 +1938,7 @@ class SpecCreate(BaseModel):
     functional_requirements: list[str | dict] | None = Field(None, description="Lista de requisitos funcionais (FRs) em texto livre ou objetos estruturados {id, text, ...}.")
     technical_requirements: list[str | dict] | None = Field(None, description="Requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.")
     acceptance_criteria: list[str | dict] | None = Field(None, description="Criterios de aceite em texto livre ou objetos estruturados {id, text, ...}.")
-    test_scenarios: list[TestScenario] | None = Field(None, description="Cenarios de teste vinculados a spec.")
+    test_scenarios: list[TestScenarioWrite] | None = Field(None, description="Cenarios de teste vinculados a spec.")
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela associados a spec.")
     business_rules: list[BusinessRule] | None = Field(None, description="Regras de negocio que governam o comportamento do sistema.")
     api_contracts: list[ApiContract] | None = Field(None, description="Contratos de API (endpoints, metodos, schemas).")
@@ -1828,7 +1961,7 @@ class SpecUpdate(BaseModel):
     functional_requirements: list[str | dict] | None = Field(None, description="Nova lista de requisitos funcionais (substitui a existente).")
     technical_requirements: list[str | dict] | None = Field(None, description="Novos requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.")
     acceptance_criteria: list[str | dict] | None = Field(None, description="Novos criterios de aceite (substitui a lista existente).")
-    test_scenarios: list[TestScenario] | None = Field(None, description="Novos cenarios de teste vinculados a spec.")
+    test_scenarios: list[TestScenarioWrite] | None = Field(None, description="Novos cenarios de teste vinculados a spec.")
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela associados a spec.")
     business_rules: list[BusinessRule] | None = Field(None, description="Novas regras de negocio (substitui a lista existente).")
     api_contracts: list[ApiContract] | None = Field(None, description="Novos contratos de API (substitui a lista existente).")
@@ -1938,6 +2071,7 @@ class RefinementResponse(BaseSchema):
     labels: list[str] | None
     archived: bool = False
     pre_archive_status: str | None = None
+    skip_ambiguity_gate: bool = False
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
@@ -2839,6 +2973,10 @@ class BoardSettings(BaseModel):
     # configured threshold. Default disabled; threshold validated to 1-5.
     require_ideation_ambiguity_gate: bool = False
     max_ideation_ambiguity: int = 3  # max allowed ideation ambiguity (1-5)
+    # Receipt-backed ambiguity gate for Refinement approved -> done.  Legacy
+    # boards remain disabled with threshold 3; new board templates may opt in.
+    require_refinement_ambiguity_gate: bool = False
+    max_refinement_ambiguity: int = 3  # max allowed ambiguity (1-5)
     # Resource Gate - Level 2 spec resource-to-task coverage.
     require_spec_resource_task_coverage: bool = True
     # Spec resource automation — when enabled, selected resources are copied
@@ -2895,6 +3033,13 @@ class BoardSettings(BaseModel):
         """Reject ideation ambiguity thresholds outside 1-5 (spec 2485780b TR2)."""
         if not 1 <= value <= 5:
             raise ValueError("max_ideation_ambiguity must be between 1 and 5")
+        return value
+
+    @field_validator("max_refinement_ambiguity")
+    @classmethod
+    def _validate_max_refinement_ambiguity(cls, value: int) -> int:
+        if not 1 <= value <= 5:
+            raise ValueError("max_refinement_ambiguity must be between 1 and 5")
         return value
 
 

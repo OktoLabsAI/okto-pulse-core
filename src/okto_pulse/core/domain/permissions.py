@@ -33,6 +33,147 @@ class PermissionContractViolation(PermissionPolicyError):
 
 
 @dataclass(frozen=True)
+class PermissionIntroductionManifest:
+    """Versioned, fail-closed introduction contract for permission leaves.
+
+    A permission added through this contract is deliberately different from
+    the historical registry additions: an absent introduced leaf is denied
+    until a built-in preset, a valid custom-preset lineage, or an explicit
+    direct override grants it.
+    """
+
+    version: str
+    leaves: tuple[str, ...]
+    preset_grants: tuple[tuple[str, tuple[str, ...]], ...]
+    historical_authorities: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        if not self.version.strip():
+            raise PermissionContractViolation(
+                "permission introduction version must not be empty"
+            )
+        if not self.leaves or len(set(self.leaves)) != len(self.leaves):
+            raise PermissionContractViolation(
+                "permission introduction leaves must be non-empty and unique"
+            )
+        known = set(self.leaves)
+        names: set[str] = set()
+        for preset_name, grants in self.preset_grants:
+            if not preset_name.strip() or preset_name in names:
+                raise PermissionContractViolation(
+                    "permission introduction preset names must be unique"
+                )
+            names.add(preset_name)
+            if len(set(grants)) != len(grants) or not set(grants) <= known:
+                raise PermissionContractViolation(
+                    f"invalid permission introduction grants for {preset_name!r}"
+                )
+        authority_leaves = tuple(
+            leaf for leaf, _authority in self.historical_authorities
+        )
+        if (
+            len(set(authority_leaves)) != len(authority_leaves)
+            or set(authority_leaves) != known
+            or any(not authority.strip() for _, authority in self.historical_authorities)
+        ):
+            raise PermissionContractViolation(
+                "every introduced leaf requires one historical authority"
+            )
+
+    def grants_for(self, preset_name: str) -> tuple[str, ...]:
+        for name, grants in self.preset_grants:
+            if name == preset_name:
+                return grants
+        return ()
+
+    def historical_authority_for(self, permission: str) -> str | None:
+        for leaf, authority in self.historical_authorities:
+            if leaf == permission:
+                return authority
+        return None
+
+
+_SKA_PERMISSION_LEAVES: tuple[str, ...] = (
+    "ideation.quality.read",
+    "ideation.quality.assess",
+    "refinement.quality.read",
+    "refinement.quality.assess",
+    "spec.quality.read",
+    "spec.quality.assess",
+    "refinement.research_decisions.read",
+    "refinement.research_decisions.append",
+    "spec.checklist.read",
+    "spec.checklist.execute",
+)
+
+_SKA_CONTEXT_READ_LEAVES: tuple[str, ...] = (
+    "ideation.quality.read",
+    "refinement.quality.read",
+    "spec.quality.read",
+    "refinement.research_decisions.read",
+    "spec.checklist.read",
+)
+
+
+SKA_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="SK-A/v1",
+    leaves=_SKA_PERMISSION_LEAVES,
+    preset_grants=(
+        ("Full Control", _SKA_PERMISSION_LEAVES),
+        (
+            "Spec",
+            (
+                *_SKA_CONTEXT_READ_LEAVES,
+                "ideation.quality.assess",
+                "refinement.quality.assess",
+                "refinement.research_decisions.append",
+                "spec.checklist.execute",
+            ),
+        ),
+        (
+            "Validator",
+            (
+                *_SKA_CONTEXT_READ_LEAVES,
+                "spec.quality.assess",
+            ),
+        ),
+        ("QA", _SKA_CONTEXT_READ_LEAVES),
+        ("Reporter", _SKA_CONTEXT_READ_LEAVES),
+        ("Sprint Manager", _SKA_CONTEXT_READ_LEAVES),
+        (
+            "Executor",
+            (
+                "spec.quality.read",
+                "spec.checklist.read",
+            ),
+        ),
+    ),
+    historical_authorities=(
+        ("ideation.quality.read", "ideation.entity.read"),
+        ("ideation.quality.assess", "spec.entity.edit_fields"),
+        ("refinement.quality.read", "refinement.entity.read"),
+        ("refinement.quality.assess", "spec.entity.edit_fields"),
+        ("spec.quality.read", "spec.entity.read"),
+        ("spec.quality.assess", "spec.validation.submit"),
+        (
+            "refinement.research_decisions.read",
+            "refinement.entity.read",
+        ),
+        (
+            "refinement.research_decisions.append",
+            "spec.entity.edit_fields",
+        ),
+        ("spec.checklist.read", "spec.entity.read"),
+        ("spec.checklist.execute", "spec.entity.edit_fields"),
+    ),
+)
+
+_FAIL_CLOSED_INTRODUCED_FLAGS = frozenset(
+    SKA_PERMISSION_INTRODUCTION_V1.leaves
+)
+
+
+@dataclass(frozen=True)
 class PermissionContext:
     """Edition-neutral input to a permission decision.
 
@@ -267,6 +408,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "read": True, "create": True, "edit": True,
             "delete": True, "import": True, "render": True,
         },
+        "quality": {"read": True, "assess": True},
         "specs_derive": True,
         "versions_read": True,
         "history_read": True,
@@ -293,6 +435,8 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "read": True, "create": True, "edit": True,
             "delete": True, "import": True, "render": True,
         },
+        "quality": {"read": True, "assess": True},
+        "research_decisions": {"read": True, "append": True},
         "knowledge": {"read": True, "create": True, "delete": True},
         "specs_derive": True,
         "versions_read": True,
@@ -336,6 +480,8 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "read": True, "create": True, "edit": True,
             "delete": True, "import": True, "render": True,
         },
+        "quality": {"read": True, "assess": True},
+        "checklist": {"read": True, "execute": True},
         "knowledge": {"read": True, "create": True, "delete": True},
         "evaluations": {"read": True, "submit": True, "delete": True},
         # Spec Validation Gate — dedicated flags mirroring card.validation.
@@ -500,25 +646,70 @@ class PermissionSet:
     Provides typed methods for checking permissions with state awareness.
     """
 
-    def __init__(self, flags: dict[str, Any], preset_name: str | None = None):
+    def __init__(
+        self,
+        flags: dict[str, Any],
+        preset_name: str | None = None,
+        *,
+        owner_review_required: bool = False,
+        review_reason: str | None = None,
+    ):
         self.flags = flags
         self.preset_name = preset_name
+        self.owner_review_required = owner_review_required
+        self.review_reason = review_reason
 
     def has(self, flag: str) -> bool:
         """Check if a specific flag is active.
 
-        Flags absent from the dict default to True (backward compat for
-        existing agents that predate new flags).
+        Historical flags absent from the dict still default to True for
+        backward compatibility.  Leaves introduced by a versioned manifest
+        are fail-closed and therefore default to False.
         """
-        value = _get_nested(self.flags, flag)
-        if value is None:
-            return True  # absent flag = allowed (backward compat)
-        return bool(value)
+        # A malformed persisted permission layer is an explicit governance
+        # stop, not another backward-compatibility case.  Deny even unknown
+        # extension paths while the owner-review signal is active.
+        if self.owner_review_required:
+            return False
+        present, value = _permission_value_presence(self.flags, flag)
+        if not present:
+            enabled = flag not in _FAIL_CLOSED_INTRODUCED_FLAGS
+        else:
+            # Permission values are booleans, not merely truthy values.
+            # Persisted data predating strict transport validation must deny
+            # when a malformed scalar reaches the policy.
+            enabled = value is True
+        if not enabled:
+            return False
+        historical_authority = (
+            SKA_PERMISSION_INTRODUCTION_V1.historical_authority_for(flag)
+        )
+        if historical_authority is not None:
+            # The historical half of an introduced capability must also be
+            # explicit.  It must not inherit the old absent=True behavior.
+            return _get_nested(self.flags, historical_authority) is True
+        return True
 
     def check(self, flag: str) -> str | None:
         """Check permission flag. Returns None if allowed, error dict as JSON if denied."""
         if self.has(flag):
             return None
+        historical_authority = (
+            SKA_PERMISSION_INTRODUCTION_V1.historical_authority_for(flag)
+        )
+        if (
+            historical_authority is not None
+            and _get_nested(self.flags, flag) is True
+            and _get_nested(self.flags, historical_authority) is not True
+        ):
+            return _perm_error_detailed(
+                reason="historical_authority_missing",
+                required_permission=historical_authority,
+                detail=(
+                    f"The introduced permission '{flag}' also requires "
+                    f"historical authority '{historical_authority}'."
+                ),
+            )
         return _perm_error_detailed(
             reason="permission_missing",
             required_permission=flag,
@@ -564,6 +755,9 @@ def resolve_permissions(
     agent_flags: dict[str, Any] | None,
     preset_flags: dict[str, Any] | None,
     board_overrides: dict[str, Any] | None,
+    *,
+    owner_review_required: bool = False,
+    review_reason: str | None = None,
 ) -> PermissionSet:
     """Resolve effective permissions: preset → agent customization → board override.
 
@@ -571,28 +765,79 @@ def resolve_permissions(
     """
     import copy
 
-    # Start from preset or full registry (all True)
-    if preset_flags:
+    # A valid preset lineage is already resolved by the persistence adapter.
+    # Complete historical missing flags as allowed, but keep introduced flags
+    # denied.  Direct granular data without a preset follows the same
+    # fail-closed introduction rule.  No data at all retains trusted/local
+    # Full Control compatibility.
+    malformed_reason: str | None = None
+    agent_layer_valid = agent_flags is None or (
+        isinstance(agent_flags, Mapping)
+        and _canonical_permission_shape_is_valid(agent_flags)
+        and _permission_document_has_boolean_leaves(agent_flags)
+    )
+    preset_layer_valid = preset_flags is None or (
+        isinstance(preset_flags, Mapping)
+        and _canonical_permission_shape_is_complete(preset_flags)
+        and _permission_document_has_boolean_leaves(preset_flags)
+    )
+
+    if not agent_layer_valid:
+        base = _fail_closed_permission_flags()
+        malformed_reason = "invalid_agent_flags"
+    elif not preset_layer_valid:
+        base = _fail_closed_permission_flags()
+        malformed_reason = "invalid_preset_flags"
+    elif preset_flags is not None:
         base = copy.deepcopy(preset_flags)
+    elif agent_flags is not None:
+        base = _historical_compatibility_permission_flags()
     else:
         base = copy.deepcopy(PERMISSION_REGISTRY)
 
     # Apply agent-level customizations (override preset values)
-    if agent_flags:
-        for flag_path in _flatten_registry(agent_flags):
-            value = _get_nested(agent_flags, flag_path)
-            if value is not None:
-                _set_nested(base, flag_path, value)
+    if malformed_reason is None and isinstance(agent_flags, Mapping):
+        _apply_direct_permission_layer(base, agent_flags)
 
     # Apply board overrides (AND — can only restrict)
-    if board_overrides:
-        for flag_path in _flatten_registry(board_overrides):
-            override_value = _get_nested(board_overrides, flag_path)
-            if override_value is False:
-                _set_nested(base, flag_path, False)
-            # True in override does NOT expand — ceiling model
+    if board_overrides is not None:
+        board_overrides_valid = (
+            isinstance(board_overrides, Mapping)
+            and _canonical_permission_shape_is_valid(board_overrides)
+        )
+        if board_overrides_valid:
+            try:
+                validate_strict_permission_flags(board_overrides)
+            except PermissionContractViolation:
+                board_overrides_valid = False
 
-    return PermissionSet(base)
+        if not board_overrides_valid:
+            malformed_reason = malformed_reason or "invalid_board_overrides"
+        else:
+            for flag_path in _flatten_registry(board_overrides):
+                override_value = _get_nested(board_overrides, flag_path)
+                if override_value is False:
+                    _set_nested(base, flag_path, False)
+                # True in override does NOT expand — ceiling model
+
+            # A materialized board ceiling must explicitly admit every introduced
+            # permission.  An absent leaf is a denial, while a True ceiling still
+            # cannot expand an already-denied agent/preset permission.
+            for flag_path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+                if _get_nested(board_overrides, flag_path) is not True:
+                    _set_nested(base, flag_path, False)
+
+    if malformed_reason is not None:
+        owner_review_required = True
+        review_reason = malformed_reason
+    if owner_review_required:
+        _set_all_flags(base, False)
+
+    return PermissionSet(
+        base,
+        owner_review_required=owner_review_required,
+        review_reason=review_reason,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +982,25 @@ def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
         for flag_path in new_flags:
             _set_nested(flags, flag_path, True)
 
+    # The SK-A introduction has one deliberately bounded legacy bridge (RA2).
+    # First erase any grant produced by broad compatibility, then re-apply
+    # exactly the five context reads and the mutations backed by the two
+    # historical authorities.  No skip/template/binding authority is created.
+    for flag_path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+        _set_nested(flags, flag_path, False)
+    for flag_path in _SKA_CONTEXT_READ_LEAVES:
+        _set_nested(flags, flag_path, True)
+    if "specs:update" in old_permissions:
+        for flag_path in (
+            "ideation.quality.assess",
+            "refinement.quality.assess",
+            "refinement.research_decisions.append",
+            "spec.checklist.execute",
+        ):
+            _set_nested(flags, flag_path, True)
+    if "specs:evaluate" in old_permissions:
+        _set_nested(flags, "spec.quality.assess", True)
+
     return flags
 
 
@@ -750,10 +1014,20 @@ def _set_all_flags(d: dict[str, Any], value: bool) -> dict[str, Any]:
     return d
 
 
-def merge_missing_flags(stored: dict, registry: dict) -> tuple[dict, int]:
-    """Deep-merge missing permission keys while preserving existing values."""
+def merge_missing_flags(
+    stored: dict,
+    registry: dict,
+    *,
+    _prefix: str = "",
+) -> tuple[dict, int]:
+    """Deep-merge missing permission keys while preserving existing values.
+
+    Historical registry leaves retain the legacy default of True.  Leaves in
+    a versioned introduction manifest are inserted as False.
+    """
     added = 0
     for key, reg_val in registry.items():
+        path = f"{_prefix}.{key}" if _prefix else key
         if key not in stored:
             if isinstance(reg_val, dict):
                 import copy as _copy
@@ -761,12 +1035,21 @@ def merge_missing_flags(stored: dict, registry: dict) -> tuple[dict, int]:
                 subtree = _copy.deepcopy(reg_val)
                 _set_all_leaves(subtree, True)
                 stored[key] = subtree
+                for flag_path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+                    prefix = f"{path}."
+                    if flag_path.startswith(prefix):
+                        relative_path = flag_path[len(prefix):]
+                        _set_nested(stored[key], relative_path, False)
                 added += _count_leaves(subtree)
             else:
-                stored[key] = True
+                stored[key] = path not in _FAIL_CLOSED_INTRODUCED_FLAGS
                 added += 1
         elif isinstance(reg_val, dict) and isinstance(stored[key], dict):
-            _, sub_added = merge_missing_flags(stored[key], reg_val)
+            _, sub_added = merge_missing_flags(
+                stored[key],
+                reg_val,
+                _prefix=path,
+            )
             added += sub_added
     return stored, added
 
@@ -787,6 +1070,387 @@ def _count_leaves(d: dict) -> int:
         else:
             n += 1
     return n
+
+
+@dataclass(frozen=True)
+class PermissionPresetLineageNode:
+    """Persistence-neutral preset node used by the canonical lineage resolver."""
+
+    id: str
+    flags: Any
+    base_preset_id: str | None = None
+
+    def __post_init__(self) -> None:
+        import copy
+
+        if not self.id.strip():
+            raise PermissionContractViolation("preset lineage id must not be empty")
+        object.__setattr__(self, "flags", copy.deepcopy(self.flags))
+
+
+@dataclass(frozen=True)
+class PermissionPresetLineageResolution:
+    """Resolved flags plus an explicit governance signal for invalid lineage."""
+
+    flags: PermissionFlags
+    owner_review_required: bool
+    review_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        import copy
+
+        object.__setattr__(self, "flags", copy.deepcopy(self.flags))
+        if self.owner_review_required and not self.review_reason:
+            raise PermissionContractViolation(
+                "owner review resolution requires a review reason"
+            )
+        if not self.owner_review_required and self.review_reason is not None:
+            raise PermissionContractViolation(
+                "valid lineage resolution cannot carry a review reason"
+            )
+
+
+def _canonical_permission_shape_is_valid(
+    document: Any,
+    canonical: Mapping[str, Any] = PERMISSION_REGISTRY,
+) -> bool:
+    if not isinstance(document, Mapping):
+        return False
+    for key, canonical_value in canonical.items():
+        if key not in document:
+            continue
+        value = document[key]
+        if isinstance(canonical_value, Mapping):
+            if not isinstance(value, Mapping):
+                return False
+            if not _canonical_permission_shape_is_valid(value, canonical_value):
+                return False
+        elif not isinstance(value, bool):
+            return False
+    return True
+
+
+def _canonical_permission_shape_is_complete(
+    document: Any,
+) -> bool:
+    """Return whether every canonical leaf is explicitly materialized.
+
+    ``preset_flags`` entering ``resolve_permissions`` must already be the
+    output of the lineage resolver.  Treating a sparse preset delta as that
+    output would resurrect the historical absent=True fallback and escalate a
+    clone to Full Control.
+    """
+
+    if not _canonical_permission_shape_is_valid(document):
+        return False
+    return all(
+        _permission_value_presence(document, path)[0]
+        for path in _flatten_registry(PERMISSION_REGISTRY)
+    )
+
+
+def _permission_document_has_boolean_leaves(document: Mapping[str, Any]) -> bool:
+    try:
+        validate_strict_permission_flags(document)
+    except PermissionContractViolation:
+        return False
+    return True
+
+
+def _overlay_permission_flags(
+    base: PermissionFlags,
+    overrides: Mapping[str, Any],
+) -> None:
+    import copy
+
+    for key, value in overrides.items():
+        if isinstance(value, Mapping):
+            existing = base.get(key)
+            if not isinstance(existing, dict):
+                existing = {}
+                base[key] = existing
+            _overlay_permission_flags(existing, value)
+        else:
+            base[key] = copy.deepcopy(value)
+
+
+def _fail_closed_permission_flags() -> PermissionFlags:
+    import copy
+
+    return _set_all_flags(copy.deepcopy(PERMISSION_REGISTRY), False)
+
+
+def _historical_compatibility_permission_flags() -> PermissionFlags:
+    """Return historical absent=True with introduced leaves denied."""
+
+    import copy
+
+    flags = copy.deepcopy(PERMISSION_REGISTRY)
+    for flag_path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+        _set_nested(flags, flag_path, False)
+    return flags
+
+
+def _apply_direct_permission_layer(
+    base: PermissionFlags,
+    overrides: Mapping[str, Any],
+    canonical: Mapping[str, Any] = PERMISSION_REGISTRY,
+) -> None:
+    """Overlay direct flags while denying malformed canonical values."""
+
+    import copy
+
+    for key, value in overrides.items():
+        canonical_value = canonical.get(key)
+        if isinstance(canonical_value, Mapping):
+            if not isinstance(value, Mapping):
+                denied = copy.deepcopy(dict(canonical_value))
+                _set_all_leaves(denied, False)
+                base[key] = denied
+                continue
+            existing = base.get(key)
+            if not isinstance(existing, dict):
+                existing = {}
+                base[key] = existing
+            _apply_direct_permission_layer(existing, value, canonical_value)
+            continue
+        if canonical_value is not None:
+            base[key] = value if type(value) is bool else False
+            continue
+        # Extension flags remain round-trippable, but PermissionSet.has still
+        # requires the exact boolean True before they can grant anything.
+        base[key] = copy.deepcopy(value)
+
+
+def resolve_permission_preset_lineage(
+    preset_id: str,
+    presets: list[PermissionPresetLineageNode]
+    | tuple[PermissionPresetLineageNode, ...],
+) -> PermissionPresetLineageResolution:
+    """Resolve base-preset inheritance or return an all-denied review state.
+
+    A valid child inherits every absent leaf from its base and then applies
+    its own direct values, including explicit False values.  Unknown targets,
+    dangling bases, cycles, duplicate identities and malformed canonical
+    shapes deny the complete registry and require an owner review.
+    """
+
+    nodes_by_id: dict[str, PermissionPresetLineageNode] = {}
+    for node in presets:
+        if node.id in nodes_by_id:
+            return PermissionPresetLineageResolution(
+                flags=_fail_closed_permission_flags(),
+                owner_review_required=True,
+                review_reason="duplicate_preset_id",
+            )
+        nodes_by_id[node.id] = node
+
+    chain: list[PermissionPresetLineageNode] = []
+    seen: set[str] = set()
+    current_id = preset_id
+    first = True
+    while True:
+        if current_id in seen:
+            return PermissionPresetLineageResolution(
+                flags=_fail_closed_permission_flags(),
+                owner_review_required=True,
+                review_reason="preset_lineage_cycle",
+            )
+        seen.add(current_id)
+        node = nodes_by_id.get(current_id)
+        if node is None:
+            return PermissionPresetLineageResolution(
+                flags=_fail_closed_permission_flags(),
+                owner_review_required=True,
+                review_reason=(
+                    "unknown_preset" if first else "dangling_base_preset"
+                ),
+            )
+        if not _canonical_permission_shape_is_valid(node.flags):
+            return PermissionPresetLineageResolution(
+                flags=_fail_closed_permission_flags(),
+                owner_review_required=True,
+                review_reason="invalid_preset_flags",
+            )
+        chain.append(node)
+        if node.base_preset_id is None:
+            break
+        current_id = node.base_preset_id
+        first = False
+
+    resolved = _historical_compatibility_permission_flags()
+    for node in reversed(chain):
+        _overlay_permission_flags(resolved, node.flags)
+    return PermissionPresetLineageResolution(
+        flags=resolved,
+        owner_review_required=False,
+    )
+
+
+def permission_flag_overrides(
+    base: Mapping[str, Any],
+    desired: Mapping[str, Any],
+) -> PermissionFlags:
+    """Return the minimal explicit override tree for a desired effective tree."""
+
+    import copy
+
+    result: PermissionFlags = {}
+    for key, desired_value in desired.items():
+        base_value = base.get(key)
+        if isinstance(desired_value, Mapping):
+            nested_base = base_value if isinstance(base_value, Mapping) else {}
+            nested = permission_flag_overrides(nested_base, desired_value)
+            if nested:
+                result[key] = nested
+        elif desired_value != base_value:
+            result[key] = copy.deepcopy(desired_value)
+    return result
+
+
+def validate_strict_permission_flags(
+    document: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """Require exact booleans at every permission-document leaf.
+
+    Unknown branches remain supported for extensions, but values such as
+    ``1``, ``"true"`` and ``None`` are never coerced into permissions.
+    """
+
+    if document is None:
+        return None
+    if not isinstance(document, Mapping):
+        raise PermissionContractViolation(
+            "permission flags must be an object of boolean leaves"
+        )
+
+    def walk(value: Mapping[str, Any], path: str = "") -> None:
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            if isinstance(child, Mapping):
+                walk(child, child_path)
+            elif type(child) is not bool:
+                raise PermissionContractViolation(
+                    f"permission flag {child_path!r} must be boolean"
+                )
+
+    walk(document)
+    return document
+
+
+def _permission_value_presence(
+    document: Mapping[str, Any],
+    path: str,
+) -> tuple[bool, Any]:
+    current: Any = document
+    parts = path.split(".")
+    for part in parts:
+        if not isinstance(current, Mapping) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
+
+
+def _delete_permission_value(document: PermissionFlags, path: str) -> None:
+    parts = path.split(".")
+    current: Any = document
+    parents: list[tuple[dict[str, Any], str]] = []
+    for part in parts[:-1]:
+        if not isinstance(current, dict):
+            return
+        child = current.get(part)
+        if not isinstance(child, dict):
+            return
+        parents.append((current, part))
+        current = child
+    if not isinstance(current, dict):
+        return
+    current.pop(parts[-1], None)
+    for parent, key in reversed(parents):
+        child = parent.get(key)
+        if isinstance(child, dict) and not child:
+            parent.pop(key, None)
+        else:
+            break
+
+
+def normalize_agent_permission_overrides(
+    agent_flags: Mapping[str, Any],
+    preset_flags: Mapping[str, Any] | None = None,
+) -> PermissionFlags | None:
+    """Normalize historical materialized agent snapshots into direct deltas.
+
+    Before preset lineage existed, assigning a preset copied its complete flag
+    tree into the agent row.  A previous introduction backfill could then add
+    generic False values for every SK-A leaf, unintentionally shadowing the
+    newly reconciled preset.  Materialized snapshots are reduced relative to
+    their actual base; sparse documents are retained verbatim so explicit
+    overrides remain explicit.
+
+    Historical all-True snapshots without a preset represent Full Control and
+    normalize to ``None``.  That trusted sentinel lets future manifest grants
+    propagate without materializing another snapshot.
+    """
+
+    import copy
+
+    working = copy.deepcopy(dict(agent_flags))
+    historical_paths = tuple(
+        path
+        for path in _flatten_registry(PERMISSION_REGISTRY)
+        if path not in _FAIL_CLOSED_INTRODUCED_FLAGS
+    )
+    historical_values = tuple(
+        _permission_value_presence(working, path)
+        for path in historical_paths
+    )
+    materialized = all(
+        present and type(value) is bool
+        for present, value in historical_values
+    )
+    if not materialized:
+        return working
+
+    introduced_values = tuple(
+        _permission_value_presence(working, path)
+        for path in SKA_PERMISSION_INTRODUCTION_V1.leaves
+    )
+    introduced_true_count = sum(
+        1 for present, value in introduced_values if present and value is True
+    )
+    generic_introduction_defaults = introduced_true_count == 0
+
+    if (
+        preset_flags is None
+        and all(value is True for _present, value in historical_values)
+        and (
+            generic_introduction_defaults
+            or introduced_true_count == len(SKA_PERMISSION_INTRODUCTION_V1.leaves)
+        )
+    ):
+        normalized_full_control = copy.deepcopy(working)
+        if generic_introduction_defaults:
+            for path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+                _delete_permission_value(normalized_full_control, path)
+        # ``None`` is safe only for an exact historical Full Control snapshot.
+        # Unknown extension leaves (and any other explicit difference) remain
+        # a sparse direct delta instead of being silently discarded.
+        explicit_delta = permission_flag_overrides(
+            PERMISSION_REGISTRY,
+            normalized_full_control,
+        )
+        return explicit_delta or None
+
+    if generic_introduction_defaults:
+        for path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+            _delete_permission_value(working, path)
+
+    base = (
+        preset_flags
+        if preset_flags is not None
+        else _historical_compatibility_permission_flags()
+    )
+    return permission_flag_overrides(base, working)
 
 
 # ---------------------------------------------------------------------------
@@ -811,7 +1475,7 @@ def _build_preset_flags(enabled_flags: list[str]) -> dict[str, Any]:
 
 
 def get_builtin_presets() -> list[dict[str, Any]]:
-    """Return the 5 built-in preset definitions with clean role separation.
+    """Return the 7 built-in preset definitions with clean role separation.
 
     Role boundaries (see docstring for each preset):
     - Full Control: unrestricted
@@ -1355,7 +2019,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "kg.admin.settings_read",
     ])
 
-    return [
+    definitions = [
         {"name": "Full Control", "description": "All permissions active — unrestricted access.", "flags": full_control},
         {"name": "Executor", "description": "Implement normal cards. Moves not_started→validation. Cannot submit gates or promote validation→done.", "flags": executor},
         {"name": "Validator", "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations. On cards, only touches validation status.", "flags": validator},
@@ -1364,6 +2028,15 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         {"name": "Sprint Manager", "description": "Dono do ciclo de sprint (create → active → review → closed + evaluation). Lê contexto de spec/refinement/ideation e orquestra assign de cards. Não cria cards nem submete gates técnicos. Coexiste com Validator.", "flags": sprint_manager},
         {"name": "Spec", "description": "Defines the spec (ideation→refinement→spec content, sprint plan, card breakdown). No gate submissions, no card execution.", "flags": spec_writer},
     ]
+    # Keep the introduction matrix centralized and exact.  Every introduced
+    # leaf is written explicitly even though the preset builder starts false.
+    for definition in definitions:
+        grants = set(
+            SKA_PERMISSION_INTRODUCTION_V1.grants_for(definition["name"])
+        )
+        for flag_path in SKA_PERMISSION_INTRODUCTION_V1.leaves:
+            _set_nested(definition["flags"], flag_path, flag_path in grants)
+    return definitions
 
 
 # ---------------------------------------------------------------------------
@@ -1557,19 +2230,25 @@ def evaluate_permission(context: PermissionContext) -> PermissionDecision:
         raise InvalidPermissionContext("operation must be a non-empty flag path")
 
     permissions = context.permissions
-    if isinstance(permissions, PermissionSet):
-        if context.entity and context.state:
-            reason = permissions.check_with_state(
-                operation,
-                context.entity,
-                context.state,
-            )
-        else:
-            reason = permissions.check(operation)
-    else:
-        reason = check_permission(permissions, operation)
-        if reason and context.legacy_operation:
-            reason = check_permission(permissions, context.legacy_operation)
+
+    def _reason_for(required: str, *, state_aware: bool) -> str | None:
+        if isinstance(permissions, PermissionSet):
+            if state_aware and context.entity and context.state:
+                return permissions.check_with_state(
+                    required,
+                    context.entity,
+                    context.state,
+                )
+            return permissions.check(required)
+        return check_permission(permissions, required)
+
+    reason = _reason_for(operation, state_aware=True)
+    if operation not in _FAIL_CLOSED_INTRODUCED_FLAGS and reason and context.legacy_operation:
+        # Existing permissions retain the pre-SK-A compatibility fallback.
+        reason = _reason_for(
+            context.legacy_operation,
+            state_aware=False,
+        )
 
     if reason is None:
         return PermissionDecision.allow(operation)
@@ -1584,8 +2263,17 @@ class DefaultPermissionPolicy:
         agent_flags: PermissionFlags | None,
         preset_flags: PermissionFlags | None,
         board_overrides: PermissionFlags | None,
+        *,
+        owner_review_required: bool = False,
+        review_reason: str | None = None,
     ) -> PermissionSet:
-        return resolve_permissions(agent_flags, preset_flags, board_overrides)
+        return resolve_permissions(
+            agent_flags,
+            preset_flags,
+            board_overrides,
+            owner_review_required=owner_review_required,
+            review_reason=review_reason,
+        )
 
     def evaluate(self, context: PermissionContext) -> PermissionDecision:
         return evaluate_permission(context)
@@ -1601,9 +2289,13 @@ __all__ = [
     "PermissionContractViolation",
     "PermissionDecision",
     "PermissionFlags",
+    "PermissionIntroductionManifest",
     "PermissionPolicyError",
+    "PermissionPresetLineageNode",
+    "PermissionPresetLineageResolution",
     "PermissionSet",
     "Permissions",
+    "SKA_PERMISSION_INTRODUCTION_V1",
     "STRUCTURED_SPEC_ENTITY_OPERATIONS",
     "STRUCTURED_SPEC_ENTITY_TYPES",
     "check_permission",
@@ -1613,7 +2305,11 @@ __all__ = [
     "has_permission",
     "map_legacy_permissions",
     "merge_missing_flags",
+    "normalize_agent_permission_overrides",
+    "permission_flag_overrides",
+    "resolve_permission_preset_lineage",
     "resolve_permissions",
     "structured_spec_entity_permission_flags",
+    "validate_strict_permission_flags",
     "validate_registry_vs_tools",
 ]

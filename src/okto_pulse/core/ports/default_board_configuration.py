@@ -23,6 +23,10 @@ class DefaultBoardTemplateRecord:
     guideline_default_refs: list[Any] | None
     design_system_default_ref: dict[str, Any] | None
     created_by: str
+    # Human-owned default for the separate per-board checklist binding.  It is
+    # deliberately outside settings_payload so Board.settings can never drift
+    # from the binding that actually enforces Spec validation.
+    spec_checklist_mode: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.3.0"
+version = "0.3.1"
 description = "Okto Pulse Core - transport-neutral domain and application engine"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -20,10 +20,13 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "pydantic>=2.5.0,<2.14",
+    "pydantic>=2.12.0,<2.14",
     # Imported directly for transport-safe custom validation errors. Pydantic
     # itself pins the exact compatible engine release within this range.
     "pydantic-core>=2.14.1,<3.0.0",
+    # Python 3.11 requires the backported TypedDict implementation for
+    # Pydantic-compatible runtime schema materialization.
+    "typing-extensions>=4.14.1,<5.0.0",
     "PyYAML>=6.0.0,<7.0.0",
 ]
 

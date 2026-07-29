@@ -52,12 +52,20 @@ async def _seed(db_factory, scenarios) -> tuple[str, str]:
     return board_id, spec_id
 
 
-async def _list(db_factory, board_id, spec_id):
+async def _list(db_factory, board_id, spec_id, *, scenario_type=None):
     register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool("okto_pulse_list_test_scenarios")
-        return json.loads(await tool.fn(board_id=board_id, spec_id=spec_id))
+        arguments = {
+            "board_id": board_id,
+            "spec_id": spec_id,
+        }
+        if scenario_type is not None:
+            arguments["scenario_type"] = scenario_type
+        return json.loads(
+            await tool.fn(**arguments)
+        )
 
 
 async def test_list_summary_reports_unsupported_historical_types(db_factory):
@@ -84,7 +92,7 @@ async def test_list_summary_no_unsupported_when_all_valid(db_factory):
     assert summary["by_type"] == {"e2e": 1, "manual": 1}
 
 
-async def test_list_does_not_reject_on_invalid_historical_type(db_factory):
+async def test_list_omitted_filter_returns_raw_historical_type(db_factory):
     # read-tolerant: a spec full of invalid types still lists without error.
     board_id, spec_id = await _seed(db_factory, [
         {"id": "ts_a", "title": "a", "scenario_type": "regression", "status": "draft"},
@@ -92,4 +100,22 @@ async def test_list_does_not_reject_on_invalid_historical_type(db_factory):
     listed = await _list(db_factory, board_id, spec_id)
     assert "error" not in listed
     assert listed["total_scenarios"] == 1
+    assert listed["filtered_count"] == 1
+    assert listed["scenarios"][0]["scenario_type"] == "regression"
     assert listed["summary"]["unsupported_types"] == {"regression": 1}
+
+
+async def test_list_exact_raw_filter_can_enumerate_legacy_type(db_factory):
+    board_id, spec_id = await _seed(db_factory, [
+        {"id": "ts_a", "title": "a", "scenario_type": "negative", "status": "draft"},
+        {"id": "ts_b", "title": "b", "scenario_type": "regression", "status": "draft"},
+    ])
+    listed = await _list(
+        db_factory,
+        board_id,
+        spec_id,
+        scenario_type="regression",
+    )
+    assert listed["filtered_count"] == 1
+    assert [item["id"] for item in listed["scenarios"]] == ["ts_b"]
+    assert listed["scenarios"][0]["scenario_type"] == "regression"

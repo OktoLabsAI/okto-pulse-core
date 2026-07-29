@@ -153,7 +153,11 @@ async def test_legacy_string_ac_regression(db_factory):
         db_factory, board_id, spec_id, linked_criteria="AC1 legacy behavior"
     )
     assert by_text.get("success") is True, by_text
-    assert by_text["scenario"]["linked_criteria"] == ["AC1 legacy behavior"]
+    # The first governed semantic write lazily materializes the legacy AC
+    # collection. Subsequent text input remains accepted, but is persisted as
+    # the now-authoritative stable AC id.
+    assert len(by_text["scenario"]["linked_criteria"]) == 1
+    assert by_text["scenario"]["linked_criteria"][0].startswith("ac_")
 
 
 # --- TC-3: fail-closed / atomic -------------------------------------------

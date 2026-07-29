@@ -419,6 +419,21 @@ async def test_refinement_done_preview_uses_canonical_cognitive_gate(
     )
 
     async with db_factory() as db:
+        resource_gate = ResourceGateService(db)
+        for resource_type in ("architecture", "mockup", "knowledge_base"):
+            await resource_gate.mark_not_applicable(
+                board_id,
+                "refinement",
+                refinement_id,
+                resource_type,
+                USER_ID,
+                justification=(
+                    f"{resource_type} is not applicable to this cognitive "
+                    "preview regression."
+                ),
+                source_channel="ui",
+            )
+        await db.commit()
         done = await _preview_transition(
             db,
             board_id=board_id,

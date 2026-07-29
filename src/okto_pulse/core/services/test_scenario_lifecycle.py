@@ -21,6 +21,11 @@ import json
 import re
 from typing import Any, Mapping
 
+from okto_pulse.core.domain.test_scenarios import (
+    DEFAULT_SCENARIO_TYPE,
+    VALID_SCENARIO_TYPES,
+)
+
 # --------------------------------------------------------------------------
 # Status vocabulary
 # --------------------------------------------------------------------------
@@ -61,32 +66,16 @@ COSMETIC_FIELDS: tuple[str, ...] = ("title", "notes")
 # Scenario-type vocabulary (spec ac16b3c9 — fail-closed scenario_type)
 # --------------------------------------------------------------------------
 
-#: The one authoritative scenario_type taxonomy for this initiative. Every write
-#: surface (MCP add/update tools, the REST/spec update path and the service
-#: create/update paths) validates against THIS tuple — there is no second
-#: allowlist. Adding a new type is a deliberate taxonomy change, never a silent
-#: fallback.
-VALID_SCENARIO_TYPES: tuple[str, ...] = (
-    "unit",
-    "integration",
-    "e2e",
-    "manual",
-    "negative",
-)
-
-#: The default applied when a caller OMITS scenario_type entirely. This is a
-#: true default, NOT a normalization of an invalid value — an invalid value
-#: fails closed (see :func:`validate_scenario_type`).
-DEFAULT_SCENARIO_TYPE: str = "integration"
-
-
 class InvalidScenarioTypeError(ValueError):
     """Raised when a write supplies a scenario_type outside
     :data:`VALID_SCENARIO_TYPES`.
 
     Fail-closed: the value is NEVER normalized to another valid type, because
     silent normalization hides caller intent. The message names the allowed
-    values so agents and UI clients can correct the request.
+    values so callers can correct the request. This is the application/domain
+    defense for direct or constructed-model calls that bypass closed transport
+    schemas. FastMCP reports ``validation_failed`` and REST reports HTTP 422 at
+    their request-validation boundaries before this exception is needed.
     """
 
     def __init__(self, value: object) -> None:
@@ -136,6 +125,47 @@ def validate_scenario_types_for_write(
         prev = old_by_id.get(s.get("id"))
         if prev is None or prev.get("scenario_type") != new_type:
             validate_scenario_type(new_type)
+
+
+def resolve_scenario_types_for_whole_list_write(
+    new_scenarios: object,
+    old_scenarios: object,
+) -> list[object]:
+    """Materialize the scenario type for a whole-list replacement.
+
+    ``SpecUpdate`` deliberately leaves a nested default out of
+    ``model_dump(exclude_unset=True)``.  Before replacing the persisted JSON
+    list we therefore resolve omission by identity:
+
+    * existing item -> preserve its exact stored value, including an unknown
+      historical value;
+    * new item -> use the canonical ``integration`` default;
+    * explicit item -> preserve it for fail-closed validation.
+
+    The input objects are copied and never mutated. Non-dict legacy values are
+    returned unchanged so the surrounding write validation can retain its
+    existing compatibility behavior.
+    """
+
+    old_by_id: dict[Any, dict[str, Any]] = {
+        item.get("id"): item
+        for item in (old_scenarios or [])
+        if isinstance(item, dict)
+    }
+    resolved: list[object] = []
+    for item in new_scenarios or []:
+        if not isinstance(item, dict):
+            resolved.append(item)
+            continue
+        candidate = dict(item)
+        if "scenario_type" not in candidate:
+            previous = old_by_id.get(candidate.get("id"))
+            if previous is None:
+                candidate["scenario_type"] = DEFAULT_SCENARIO_TYPE
+            elif "scenario_type" in previous:
+                candidate["scenario_type"] = previous["scenario_type"]
+        resolved.append(candidate)
+    return resolved
 
 
 #: Required evidence keys per gated status. Each rule group is AND; a group with

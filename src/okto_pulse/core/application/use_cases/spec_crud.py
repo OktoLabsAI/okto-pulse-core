@@ -931,21 +931,18 @@ class UnlinkTaskFromScenarioUseCase:
         card_service = uow.services.cards
         card = await _require_spec_board_card(uow.services, command.card_id, spec)
 
-        scenarios = [dict(item) for item in (spec.test_scenarios or [])]
-        found = False
-        for scenario in scenarios:
-            if scenario.get("id") == command.scenario_id:
-                task_ids = list(scenario.get("linked_task_ids") or [])
-                if command.card_id in task_ids:
-                    task_ids.remove(command.card_id)
-                scenario["linked_task_ids"] = task_ids
-                found = True
-                break
-        if not found:
+        if not any(
+            isinstance(scenario, dict)
+            and scenario.get("id") == command.scenario_id
+            for scenario in (spec.test_scenarios or [])
+        ):
             raise EntityNotFoundError("scenario", command.scenario_id)
 
-        await spec_service.update_spec(
-            command.spec_id, actor.actor_id, SpecUpdate(test_scenarios=scenarios)
+        await spec_service.remove_scenario_traceability_task_link(
+            command.spec_id,
+            actor.actor_id,
+            scenario_id=command.scenario_id,
+            card_id=command.card_id,
         )
 
         existing = list(card.test_scenario_ids or [])

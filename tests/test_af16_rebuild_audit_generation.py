@@ -18,6 +18,7 @@ from okto_pulse.core.kg.rebuild_generation import (
 )
 from sqlalchemy_test_models import Board
 from okto_pulse.core.services.kg_health_service import get_kg_health
+from repository_checkout_testing import community_source_for
 
 
 class _UnavailableRebuildAuditStore:
@@ -181,13 +182,7 @@ def test_af16_kg_health_current_generation_does_not_recreate_tempdir() -> None:
 def test_af16_rest_mcp_health_wire_generation_through_artifact_store() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     core_root = repo_root / "src" / "okto_pulse" / "core"
-    community_root = (
-        repo_root.parent
-        / "okto_labs_pulse_community"
-        / "src"
-        / "okto_pulse"
-        / "community"
-    )
+    community_root = community_source_for(repo_root)
     migrated_sources = [
         community_root / "api" / "kg_rebuild.py",
         core_root / "mcp" / "server.py",

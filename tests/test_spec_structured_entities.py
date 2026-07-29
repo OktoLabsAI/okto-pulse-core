@@ -45,6 +45,9 @@ from okto_pulse.core.services.spec_structured_entities import (
     StructuredSpecEntityService,
     filter_active_spec_children,
 )
+from okto_pulse.core.services.spec_entity_canonicalization import (
+    canonicalize_spec_children,
+)
 
 
 @pytest_asyncio.fixture
@@ -264,8 +267,23 @@ async def _seed_spec(db, *, board_id: str, spec_id: str, actor_id: str) -> None:
             title="Structured Spec",
             status=SpecStatus.DRAFT,
             created_by=actor_id,
-            functional_requirements=["Existing FR"],
-            acceptance_criteria=["Existing AC"],
+            # Generic structured-writer tests start from the canonical
+            # post-SK-A shape. Dedicated legacy-materialization tests below
+            # explicitly replace the collection they exercise with strings.
+            functional_requirements=[
+                {
+                    "id": "fr_existing",
+                    "text": "Existing FR",
+                    "status": "active",
+                }
+            ],
+            acceptance_criteria=[
+                {
+                    "id": "ac_existing",
+                    "text": "Existing AC",
+                    "status": "active",
+                }
+            ],
             technical_requirements=[],
             business_rules=[],
             api_contracts=[],
@@ -479,8 +497,20 @@ async def test_structured_update_mutates_only_target_collection_and_records_metr
         assert result.success is True
         spec = await db.get(Spec, spec_id)
         assert spec.business_rules[0]["then"] == "Only the selected business rule is changed"
-        assert spec.functional_requirements == ["Existing FR"]
-        assert spec.acceptance_criteria == ["Existing AC"]
+        assert spec.functional_requirements == [
+            {
+                "id": "fr_existing",
+                "text": "Existing FR",
+                "status": "active",
+            }
+        ]
+        assert spec.acceptance_criteria == [
+            {
+                "id": "ac_existing",
+                "text": "Existing AC",
+                "status": "active",
+            }
+        ]
         assert spec.version == 2
         assert sink.events[-1].labels["outcome"] == "success"
         assert sink.events[-1].labels["entity_type"] == "business_rule"
@@ -1219,6 +1249,7 @@ async def test_legacy_fr_update_materializes_ids_and_migrates_requirement_refs(d
     async with db_factory() as db:
         await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id=actor_id)
         spec = await db.get(Spec, spec_id)
+        spec.functional_requirements = ["Existing FR"]
         spec.business_rules = [
             {
                 "id": "br_by_index",
@@ -1275,6 +1306,7 @@ async def test_legacy_ac_update_materializes_ids_and_preserves_scenario_coverage
     async with db_factory() as db:
         await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id=actor_id)
         spec = await db.get(Spec, spec_id)
+        spec.acceptance_criteria = ["Existing AC"]
         spec.test_scenarios = [
             {
                 "id": "ts_by_index",
@@ -1615,6 +1647,12 @@ async def test_update_legacy_technical_requirement_materializes_and_preserves_id
         spec.technical_requirements = ["Legacy TR"]
         await db.flush()
         service = StructuredSpecEntityService(db)
+        canonical = canonicalize_spec_children(
+            "technical_requirement",
+            ["Legacy TR"],
+        )
+        assert canonical is not None
+        stable_id = canonical[0]["id"]
 
         result = await service.mutate(
             StructuredSpecEntityCommand(
@@ -1622,7 +1660,7 @@ async def test_update_legacy_technical_requirement_materializes_and_preserves_id
                 spec_id=spec_id,
                 actor_id=actor_id,
                 entity_type="technical_requirement",
-                entity_id="tr_legacy_0",
+                entity_id=stable_id,
                 operation="update",
                 payload={"text": "Edited legacy TR"},
                 expected_spec_version=1,
@@ -1634,10 +1672,9 @@ async def test_update_legacy_technical_requirement_materializes_and_preserves_id
         assert result.success is True
         assert spec.technical_requirements == [
             {
-                "id": "tr_legacy_0",
+                "id": stable_id,
                 "text": "Edited legacy TR",
                 "status": "active",
-                "linked_task_ids": None,
             }
         ]
 

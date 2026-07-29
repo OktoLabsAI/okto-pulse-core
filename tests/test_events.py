@@ -202,7 +202,7 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_thirty_four_events():
+def test_registry_has_thirty_nine_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -213,7 +213,10 @@ def test_registry_has_thirty_four_events():
     + 4 Story lifecycle events for working-graph ingestion + 1 durable
     delivery-redrive continuation + 1 dedicated fail-closed full-rebuild tick
     intent + ideation/refinement lifecycle move events + one generic
-    archive/restore event = 34.
+    archive/restore event + the SK-A quality-assessment recorded event + the
+    A3 checklist-binding governance audit event = 36.
+    SK-A research-decision append/supersede events = 38. The closed
+    clarification-currentness signal brings the registry to 39.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -222,20 +225,21 @@ def test_registry_has_thirty_four_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 34
-    operational_kg_events = {
+    assert len(EVENT_TYPES) == 39
+    non_consolidation_events = {
         "kg.hit_flushed",
         "card.priority_changed",
         "card.severity_changed",
         "kg.tick.daily",
         "kg.tick.full_rebuild",
         "kg.tick.delivery_redrive",
+        "checklist.binding_changed.v1",
     }
     for et in EVENT_TYPES:
         assert et in EventBus._registry, f"{et} not registered"
-        if et in operational_kg_events:
-            # Operational events: handled by dedicated KG-scoring handlers,
-            # not the consolidation enqueuer (different concern).
+        if et in non_consolidation_events:
+            # Operational/audit events have dedicated handlers and do not
+            # enqueue artifact consolidation.
             continue
         assert ConsolidationEnqueuer in EventBus._registry[et]
 
@@ -265,6 +269,82 @@ def test_ideation_moved_reenqueues_ideation_projection():
 
     assert ConsolidationEnqueuer()._map_targets(event) == [
         ("ideation", "ideation-cancelled")
+    ]
+
+
+def test_quality_assessment_recorded_reenqueues_subject_projection():
+    from okto_pulse.core.events.types import QualityAssessmentRecorded
+
+    event = QualityAssessmentRecorded(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        subject_type="refinement",
+        subject_id="refinement-1",
+        subject_version=3,
+        assessment_kind="ambiguity",
+        receipt_id="receipt-1",
+        input_digest="a" * 64,
+        request_fingerprint="b" * 64,
+        authority_digest="c" * 64,
+        head_revision=2,
+    )
+
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        ("refinement", "refinement-1")
+    ]
+
+
+@pytest.mark.parametrize("subject_type", ["ideation", "refinement", "spec"])
+def test_quality_clarification_changed_reenqueues_subject_projection(
+    subject_type,
+):
+    from okto_pulse.core.events.types import QualityClarificationChanged
+
+    event = QualityClarificationChanged(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        subject_type=subject_type,
+        subject_id=f"{subject_type}-1",
+        subject_version=3,
+        qa_id="qa-1",
+        operation="answered",
+    )
+
+    assert event.payload_for_storage()["event_schema_version"] == 1
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        (subject_type, f"{subject_type}-1")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("event_type", "event_class_name"),
+    [
+        ("research_decision.appended", "ResearchDecisionAppended"),
+        ("research_decision.superseded", "ResearchDecisionSuperseded"),
+    ],
+)
+def test_research_decision_events_reenqueue_refinement_projection(
+    event_type,
+    event_class_name,
+):
+    from okto_pulse.core.events import types
+
+    event_class = getattr(types, event_class_name)
+    event = event_class(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        refinement_id="refinement-rdl",
+        refinement_version=3,
+        ledger_id="ledger-1",
+        entry_id="entry-2",
+        head_revision=2,
+        status="resolved",
+    )
+
+    assert event.event_type == event_type
+    assert event.payload_for_storage()["event_schema_version"] == 1
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        ("refinement", "refinement-rdl")
     ]
 
 
