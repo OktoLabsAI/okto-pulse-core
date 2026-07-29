@@ -3985,7 +3985,10 @@ class CardService:
     ) -> dict:
         """Resolve validation gate config from hierarchy: sprint → spec → board.
 
-        Returns dict with: required (bool), min_confidence, min_completeness, max_drift, resolved_from.
+        Returns the effective values plus both the legacy ``resolved_from``
+        value (the source of ``required``) and per-field ``resolved_sources``.
+        Threshold overrides are independent, so a single provenance label
+        cannot accurately describe a mixed sprint/spec/board configuration.
         """
         # Defaults from board settings
         board_required = board_settings.get("require_task_validation", True)
@@ -4017,32 +4020,56 @@ class CardService:
             getattr(sprint, "validation_max_drift", None) if sprint else None
         )
 
-        # Resolve with null-coalescing: sprint ?? spec ?? board
-        def _coalesce(*vals, default):
-            for v in vals:
-                if v is not None:
-                    return v
-            return default
+        # Resolve with null-coalescing: sprint ?? spec ?? board, retaining the
+        # source for every independently overridable value.
+        def _resolve_with_source(sprint_value, spec_value, board_value, *, default):
+            if sprint_value is not None:
+                return sprint_value, "sprint"
+            if spec_value is not None:
+                return spec_value, "spec"
+            if board_value is not None:
+                return board_value, "board"
+            return default, "default"
 
-        required = _coalesce(spr_required, spec_required, board_required, default=False)
-        resolved_from = "board"
-        if spr_required is not None:
-            resolved_from = "sprint"
-        elif spec_required is not None:
-            resolved_from = "spec"
+        required, required_source = _resolve_with_source(
+            spr_required,
+            spec_required,
+            board_required,
+            default=False,
+        )
+        min_confidence, min_confidence_source = _resolve_with_source(
+            spr_min_conf,
+            spec_min_conf,
+            board_min_conf,
+            default=70,
+        )
+        min_completeness, min_completeness_source = _resolve_with_source(
+            spr_min_comp,
+            spec_min_comp,
+            board_min_comp,
+            default=80,
+        )
+        max_drift, max_drift_source = _resolve_with_source(
+            spr_max_drift,
+            spec_max_drift,
+            board_max_drift,
+            default=50,
+        )
 
         return {
             "required": bool(required),
-            "min_confidence": _coalesce(
-                spr_min_conf, spec_min_conf, board_min_conf, default=70
-            ),
-            "min_completeness": _coalesce(
-                spr_min_comp, spec_min_comp, board_min_comp, default=80
-            ),
-            "max_drift": _coalesce(
-                spr_max_drift, spec_max_drift, board_max_drift, default=50
-            ),
-            "resolved_from": resolved_from,
+            "min_confidence": min_confidence,
+            "min_completeness": min_completeness,
+            "max_drift": max_drift,
+            # Backwards-compatible aggregate: historically this represented
+            # the layer that supplied require_task_validation.
+            "resolved_from": required_source,
+            "resolved_sources": {
+                "required": required_source,
+                "min_confidence": min_confidence_source,
+                "min_completeness": min_completeness_source,
+                "max_drift": max_drift_source,
+            },
         }
 
     async def submit_task_validation(
@@ -4199,6 +4226,10 @@ class CardService:
             "outcome": outcome,
             "verdict": "pass" if outcome == "success" else "fail",
             "threshold_violations": violations,
+            # Persist the effective threshold snapshot with the append-only
+            # record. Historical UI must not reinterpret an old validation
+            # against board/spec/sprint settings changed later.
+            "resolved_thresholds": dict(config),
             "reviewer_separation": reviewer_separation.to_dict(),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
