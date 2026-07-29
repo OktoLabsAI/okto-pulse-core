@@ -115,6 +115,9 @@ class Spec:
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
     status: SpecStatus = SpecStatus.DRAFT
+    # Human-facing lifecycle counter. Unlike ``version`` (the technical
+    # revision/CAS token), this only advances when a Spec re-enters draft.
+    edition: int = 1
     version: int = 1
     assignee_id: str | None = None
     created_at: datetime | None = None

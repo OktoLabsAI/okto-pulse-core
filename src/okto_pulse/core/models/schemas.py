@@ -782,7 +782,15 @@ class SpecPageItem(BaseSchema):
     title: str
     description: str | None = None
     status: SpecStatus
-    version: int
+    edition: int = Field(
+        1,
+        ge=1,
+        description="Human-facing Spec edition; advances only when re-entering draft.",
+    )
+    version: int = Field(
+        ...,
+        description="Technical revision used for concurrency and currentness.",
+    )
     assignee_id: str | None = None
     created_by: str
     created_at: datetime
@@ -2001,7 +2009,15 @@ class SpecSummary(BaseSchema):
     title: str
     description: str | None
     status: SpecStatus
-    version: int
+    edition: int = Field(
+        1,
+        ge=1,
+        description="Human-facing Spec edition; advances only when re-entering draft.",
+    )
+    version: int = Field(
+        ...,
+        description="Technical revision used for concurrency and currentness.",
+    )
     assignee_id: str | None
     created_by: str
     created_at: datetime
@@ -2289,7 +2305,15 @@ class SpecResponse(BaseSchema):
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
     status: SpecStatus
-    version: int
+    edition: int = Field(
+        1,
+        ge=1,
+        description="Human-facing Spec edition; advances only when re-entering draft.",
+    )
+    version: int = Field(
+        ...,
+        description="Technical revision used for concurrency and currentness.",
+    )
     assignee_id: str | None
     created_by: str
     created_at: datetime

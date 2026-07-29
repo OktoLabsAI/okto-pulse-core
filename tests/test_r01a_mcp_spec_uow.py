@@ -213,6 +213,7 @@ async def _seed():
             board_id=BOARD_ID,
             title="MCP Spec Strangler",
             status=SpecStatus.DRAFT,
+            edition=4,
             created_by=USER_ID,
             functional_requirements=["the system logs in"],
             technical_requirements=[
@@ -379,6 +380,7 @@ async def _spec_mutation_state(spec_id: str) -> dict:
             "title": spec.title,
             "description": spec.description,
             "context": spec.context,
+            "edition": spec.edition,
             "version": spec.version,
             "updated_at": spec.updated_at,
             "functional_requirements": deepcopy(spec.functional_requirements),
@@ -464,6 +466,8 @@ async def test_get_spec_exposes_structured_families_and_archive_state(_seed):
     )
     assert payload["archived"] is True
     assert payload["pre_archive_status"] == "draft"
+    assert payload["edition"] == 4
+    assert payload["version"] == 1
 
 
 @pytest.mark.asyncio
@@ -1035,6 +1039,8 @@ async def test_migrate_decisions_preserves_prose_after_contiguous_bullets(_seed)
         ),
     )
     assert updated["success"] is True
+    assert updated["spec"]["edition"] == 4
+    assert updated["spec"]["version"] == 2
 
     migrated = await _call(
         "okto_pulse_migrate_spec_decisions", board_id=BOARD_ID, spec_id=_seed

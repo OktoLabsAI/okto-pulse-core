@@ -359,6 +359,7 @@ async def test_create_spec_valid_parent_matrix_persists(lineage_graph, case):
     result = await _create_spec(board_id, **parent_args)
 
     assert result.spec is not None
+    assert result.spec.edition == 1
     assert result.spec.ideation_id == parent_args.get("ideation_id")
     assert result.spec.refinement_id == parent_args.get("refinement_id")
     assert await _spec_count(board_id) == before + 1

@@ -887,6 +887,7 @@ class Spec(Base):
     status: Mapped[SpecStatus] = mapped_column(
         SpecStatusType(), default=SpecStatus.DRAFT, nullable=False
     )
+    edition: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)

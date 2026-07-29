@@ -8,6 +8,22 @@ version: "1.0"
 
 Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed — see `okto-pulse://workflows/sprints`).
 
+### Spec edition versus technical revision
+
+Spec projections expose both counters:
+
+- `edition` is the human-facing lifecycle counter shown as `vN`. Creation
+  starts at `1`; it advances only when a successful lifecycle move enters
+  `draft` from a non-draft status.
+- `version` is the technical revision used for optimistic concurrency,
+  receipts, checklist currentness, and KG source revision. Content and
+  structured-entity writes may advance it without changing `edition`.
+
+Always pass `version`, never `edition`, to fields such as
+`expected_spec_version` or `spec_version`. Reopening a terminal Spec may
+advance both counters independently. Restoring an archived Spec is not a new
+edition.
+
 ## Spec Validation Gate — `okto_pulse_submit_spec_validation`
 
 When the board has `require_spec_validation=true`, advancing from `approved` to `validated` is gated.

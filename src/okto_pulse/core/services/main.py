@@ -7650,6 +7650,7 @@ class SpecService:
             if data.decisions
             else None,
             status=data.status,
+            edition=1,
             assignee_id=data.assignee_id,
             created_by=user_id,
             labels=data.labels,
@@ -7714,7 +7715,12 @@ class SpecService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"title": data.title, "spec_id": spec.id},
+            details={
+                "title": data.title,
+                "spec_id": spec.id,
+                "edition": 1,
+                "technical_revision": 1,
+            },
         )
         await self._record_history(
             spec_id=spec.id,
@@ -8825,7 +8831,9 @@ class SpecService:
             actor_name=actor_name,
             details={
                 "spec_id": spec_id,
+                "edition": int(getattr(spec, "edition", 1) or 1),
                 "version": spec.version,
+                "technical_revision": spec.version,
                 "fields": list(update_data.keys()),
             },
         )
@@ -9471,7 +9479,14 @@ class SpecService:
             )
 
         old_status = spec.status
+        old_edition = int(getattr(spec, "edition", 1) or 1)
         old_version = spec.version
+
+        # ``edition`` is the human-facing lifecycle counter. It advances only
+        # when a Spec enters draft from a non-draft state; content mutations
+        # continue to advance the independent technical ``version`` token.
+        if data.status == SpecStatus.DRAFT and old_status != SpecStatus.DRAFT:
+            spec.edition = old_edition + 1
 
         # Reopening a terminal Spec starts a fresh editable iteration, matching
         # the lifecycle registry contract and the ideation/refinement behavior.
@@ -9571,16 +9586,27 @@ class SpecService:
                 "spec_id": spec_id,
                 "from_status": old_status.value,
                 "to_status": data.status.value,
+                "edition": int(getattr(spec, "edition", old_edition)),
+                "technical_revision": spec.version,
             },
         )
+        history_changes = [
+            {"field": "status", "old": old_status.value, "new": data.status.value}
+        ]
+        if int(getattr(spec, "edition", old_edition)) != old_edition:
+            history_changes.append(
+                {
+                    "field": "edition",
+                    "old": old_edition,
+                    "new": int(spec.edition),
+                }
+            )
         await self._record_history(
             spec_id=spec_id,
             action="status_changed",
             actor_id=user_id,
             actor_name=resolved_name,
-            changes=[
-                {"field": "status", "old": old_status.value, "new": data.status.value}
-            ],
+            changes=history_changes,
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=spec.version,
         )

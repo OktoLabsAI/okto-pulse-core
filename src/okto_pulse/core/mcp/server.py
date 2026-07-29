@@ -2263,6 +2263,7 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
                     "id": s.id,
                     "title": s.title,
                     "status": s.status.value,
+                    "edition": int(getattr(s, "edition", 1) or 1),
                     "version": s.version,
                     "labels": s.labels,
                 }
@@ -3496,6 +3497,8 @@ async def okto_pulse_get_task_context(
                     "description": spec.description,
                     "context": spec.context,
                     "status": spec.status.value,
+                    "edition": int(getattr(spec, "edition", 1) or 1),
+                    "version": spec.version,
                     "functional_requirements": spec.functional_requirements or [],
                     "technical_requirements": spec.technical_requirements or [],
                     "acceptance_criteria": spec.acceptance_criteria or [],
@@ -5956,6 +5959,8 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
                         "id": s.id,
                         "title": s.title,
                         "status": s.status.value,
+                        "edition": int(getattr(s, "edition", 1) or 1),
+                        "version": s.version,
                     }
                     for s in ideation.specs
                 ],
@@ -6065,7 +6070,13 @@ async def okto_pulse_get_ideation_context(
                 for r in ideation.refinements
             ],
             "specs": [
-                {"id": s.id, "title": s.title, "status": s.status.value}
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "status": s.status.value,
+                    "edition": int(getattr(s, "edition", 1) or 1),
+                    "version": s.version,
+                }
                 for s in (ideation.specs if hasattr(ideation, "specs") else [])
             ],
         }
@@ -6505,6 +6516,7 @@ async def okto_pulse_derive_spec_from_ideation(
                         "id": spec.id,
                         "title": spec.title,
                         "status": spec.status.value,
+                        "edition": int(getattr(spec, "edition", 1) or 1),
                         "version": spec.version,
                     },
                     "resource_propagation": _result.resource_propagation,
@@ -7178,6 +7190,8 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
                         "id": s.id,
                         "title": s.title,
                         "status": s.status.value,
+                        "edition": int(getattr(s, "edition", 1) or 1),
+                        "version": s.version,
                     }
                     for s in refinement.specs
                 ],
@@ -7276,7 +7290,13 @@ async def okto_pulse_get_refinement_context(
             else None,
             "labels": refinement.labels or [],
             "specs": [
-                {"id": s.id, "title": s.title, "status": s.status.value}
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "status": s.status.value,
+                    "edition": int(getattr(s, "edition", 1) or 1),
+                    "version": s.version,
+                }
                 for s in (refinement.specs if hasattr(refinement, "specs") else [])
             ],
         }
@@ -7656,6 +7676,7 @@ async def okto_pulse_derive_spec_from_refinement(
                         "id": spec.id,
                         "title": spec.title,
                         "status": spec.status.value,
+                        "edition": int(getattr(spec, "edition", 1) or 1),
                         "version": spec.version,
                     },
                     "resource_propagation": _result.resource_propagation,
@@ -9166,6 +9187,7 @@ async def okto_pulse_create_spec(
                 "id": spec.id,
                 "title": spec.title,
                 "status": spec.status.value,
+                "edition": int(getattr(spec, "edition", 1) or 1),
                 "version": spec.version,
                 "functional_requirements": spec.functional_requirements,
                 "technical_requirements": spec.technical_requirements,
@@ -9247,6 +9269,7 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             "skip_or_coverage": bool(getattr(spec, "skip_or_coverage", False)),
             "status": spec.status.value,
             **project_cancellation(spec),
+            "edition": int(getattr(spec, "edition", 1) or 1),
             "version": spec.version,
             "assignee_id": spec.assignee_id,
             "created_by": spec.created_by,
@@ -9396,6 +9419,7 @@ async def okto_pulse_get_spec_context(
             "context": spec.context,
             "status": spec.status.value,
             **project_cancellation(spec),
+            "edition": int(getattr(spec, "edition", 1) or 1),
             "version": spec.version,
             "assignee_id": spec.assignee_id,
             "created_by": spec.created_by,
@@ -9709,6 +9733,7 @@ async def okto_pulse_update_spec(
                         "id": spec.id,
                         "title": spec.title,
                         "status": spec.status.value,
+                        "edition": int(getattr(spec, "edition", 1) or 1),
                         "version": spec.version,
                         "functional_requirements": spec.functional_requirements,
                         "technical_requirements": spec.technical_requirements,
@@ -9786,6 +9811,8 @@ async def okto_pulse_move_spec(
                     "spec_id": _r.spec.id,
                     "from_status": _r.old_status,
                     "to_status": status,
+                    "edition": int(getattr(_r.spec, "edition", 1) or 1),
+                    "version": _r.spec.version,
                 },
                 default=str,
             )
@@ -21997,6 +22024,7 @@ async def okto_pulse_list_by_board(
                             "title": s.title,
                             "description": s.description,
                             "status": s.status.value,
+                            "edition": int(getattr(s, "edition", 1) or 1),
                             "version": s.version,
                             "assignee_id": s.assignee_id,
                             "labels": s.labels,

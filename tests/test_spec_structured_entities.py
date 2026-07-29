@@ -206,6 +206,7 @@ def _updated_value_for(entity_type: str) -> tuple[str, str]:
 async def _spec_json_snapshot(db, spec_id: str) -> str:
     spec = await db.get(Spec, spec_id)
     payload = {
+        "edition": spec.edition,
         "version": spec.version,
         **{field_name: copy.deepcopy(getattr(spec, field_name)) for field_name in SPEC_CHILD_FIELDS},
     }
@@ -266,6 +267,7 @@ async def _seed_spec(db, *, board_id: str, spec_id: str, actor_id: str) -> None:
             board_id=board_id,
             title="Structured Spec",
             status=SpecStatus.DRAFT,
+            edition=6,
             created_by=actor_id,
             # Generic structured-writer tests start from the canonical
             # post-SK-A shape. Dedicated legacy-materialization tests below
@@ -350,6 +352,7 @@ async def test_structured_create_supports_all_spec_entity_types(
             assert isinstance(values[-1], dict)
             assert values[-1]["id"] == result.entity_id
         assert spec.version == 2
+        assert spec.edition == 6
 
 
 @pytest.mark.asyncio
