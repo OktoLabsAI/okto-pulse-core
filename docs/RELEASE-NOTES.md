@@ -15,7 +15,9 @@ resource/tool manifests.
   ideation, including a human-only audited skip.
 - Test-scenario types are closed across domain and MCP; `negative` is a supported
   first-class type.
-- The installed MCP contract is frozen at 292 tools (284 canonical and 8 aliases).
+- Versioned guideline policy adds 20 closed MCP commands for immutable
+  revisions, impact evidence, compliance receipts and governed waivers.
+- The installed MCP contract is frozen at 312 tools (304 canonical and 8 aliases).
 
 
 ### 0.3.0

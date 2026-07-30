@@ -53,6 +53,7 @@ from okto_pulse.core.domain.sdlc_registry import (
     is_transition_allowed,
     transition_contracts,
     transition_map,
+    transition_requires_policy_compliance,
 )
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.ports.application_persistence import (
@@ -222,8 +223,10 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     compute_test_scenario_semantic_sha256,
     evidence_invalidated_by_semantic_edit,
     reexecutable_evidence_reference,
+    require_test_scenario_status_transition,
     require_test_scenario_status_mutable,
     resolve_scenario_types_for_whole_list_write,
+    scenario_has_authenticated_required_evidence,
     scenario_has_required_evidence,
     validate_scenario_type,
     validate_scenario_types_for_write,
@@ -256,10 +259,8 @@ async def _purge_quality_assessment_subject(
         subject_type=AssessmentSubjectType(subject_type),
         subject_id=subject_id,
     )
-    persistence = (
-        require_relational_application_adapter().quality_assessment_lifecycle(
-            db
-        )
+    persistence = require_relational_application_adapter().quality_assessment_lifecycle(
+        db
     )
     postcondition = await persistence.apply_purge_plan(plan)
     service.validate_purge_postcondition(
@@ -306,10 +307,8 @@ async def _apply_quality_assessment_lifecycle_transition(
     )
 
     resolved_subject_type = AssessmentSubjectType(subject_type)
-    persistence = (
-        require_relational_application_adapter().quality_assessment_lifecycle(
-            db
-        )
+    persistence = require_relational_application_adapter().quality_assessment_lifecycle(
+        db
     )
     heads, receipts = await persistence.load_lifecycle_state(
         board_id=board_id,
@@ -441,55 +440,6 @@ def _require_trusted_test_evidence_v2_write(
     )
     if not verification.verified:
         raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))
-
-
-def scenario_has_authenticated_required_evidence(
-    *,
-    board_id: str,
-    spec_id: str,
-    scenario: dict[str, Any],
-    acceptance_criteria: list[object],
-) -> bool:
-    """Consumer-side evidence gate with edition authentication for V2.
-
-    Non-V2 evidence keeps the established structural rules. Any Evidence V2
-    claim must additionally resolve to a receipt in the registered concrete
-    ledger and must bind the scenario's current semantic digest. There is no
-    actor match here: downstream card/sprint reviewers may consume proof issued
-    by another actor; actor equality is enforced when evidence itself is written.
-    """
-
-    if not scenario_has_required_evidence(scenario):
-        return False
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
-    if not _claims_test_evidence_v2(evidence):
-        return True
-    from okto_pulse.core.ports.test_evidence import (
-        resolve_test_evidence_write_verifier,
-    )
-
-    verifier = resolve_test_evidence_write_verifier()
-    if verifier is None or not isinstance(evidence, dict):
-        return False
-    try:
-        scenario_sha256 = compute_test_scenario_semantic_sha256(
-            board_id=board_id,
-            spec_id=spec_id,
-            scenario=scenario,
-            acceptance_criteria=acceptance_criteria,
-        )
-        verification = verifier.verify(
-            board_id=board_id,
-            spec_id=spec_id,
-            scenario_id=str(scenario.get("id") or ""),
-            scenario_sha256=scenario_sha256,
-            status=str(scenario.get("status") or ""),
-            actor_id=None,
-            evidence=evidence,
-        )
-    except (TypeError, ValueError):
-        return False
-    return verification.verified
 
 
 # Preserve the service API's aggregate names without coupling annotations to
@@ -2479,7 +2429,11 @@ class BoardService:
         # adapter failure raises default_materialization_failed so the whole
         # create_board reverts (no partial board/link/snapshot); no active
         # template -> no-op.
-        await _config_service.apply_default_config_to_board(board.id, actor=user_id)
+        await _config_service.apply_default_config_to_board(
+            board.id,
+            actor=user_id,
+            template_snapshot=snapshot_meta,
+        )
         # Eagerly bootstrap the per-board graph backend graph. This keeps board
         # creation on the slow path (~1-2s) so subsequent consolidation /
         # MCP query paths stay on the hot path.
@@ -4190,6 +4144,13 @@ class CardService:
 
         if outcome == "success":
             await self._validate_cognitive_done(card, board)
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=card.board_id,
+                entity_type="card",
+                subject_id=card.id,
+                from_status=old_status.value,
+                to_status=CardStatus.DONE.value,
+            )
 
         # Build validation entry.
         # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
@@ -4439,9 +4400,7 @@ class CardService:
                         "validation_id": validation_id,
                         "card_status": card.status.value,
                         "successful_validations": successful_validations,
-                        "validation_required_from": validation_config[
-                            "resolved_from"
-                        ],
+                        "validation_required_from": validation_config["resolved_from"],
                     },
                 )
 
@@ -5522,16 +5481,16 @@ class CardService:
                             }
                         )
                         continue
-                    if (
-                        scenario.get("status") in ("draft", "ready")
-                        or not scenario_has_authenticated_required_evidence(
-                            board_id=card.board_id,
-                            spec_id=card.spec_id,
-                            scenario=scenario,
-                            acceptance_criteria=list(
-                                spec_for_test_scenarios.acceptance_criteria or []
-                            ),
-                        )
+                    if scenario.get("status") in (
+                        "draft",
+                        "ready",
+                    ) or not scenario_has_authenticated_required_evidence(
+                        board_id=card.board_id,
+                        spec_id=card.spec_id,
+                        scenario=scenario,
+                        acceptance_criteria=list(
+                            spec_for_test_scenarios.acceptance_criteria or []
+                        ),
                     ):
                         stale.append(
                             {
@@ -5658,11 +5617,8 @@ class CardService:
                 eligible_scenarios_count = (
                     len(eligibility.eligible_scenarios) if eligibility else 0
                 )
-                workflow_remediation = (
-                    BugWorkflowRemediationMessageBuilder()
-                    .build_missing_regression_test_task(
-                        eligible_scenarios_count=eligible_scenarios_count,
-                    )
+                workflow_remediation = BugWorkflowRemediationMessageBuilder().build_missing_regression_test_task(
+                    eligible_scenarios_count=eligible_scenarios_count,
                 )
                 if eligible_scenarios_count:
                     message = (
@@ -6008,6 +5964,19 @@ class CardService:
 
         if data.status == CardStatus.DONE:
             await self._validate_cognitive_done(card, board)
+
+        # Policy Compliance is a forward aggregate gate.  Recompute it in this
+        # mutation UoW before appending the execution report, publishing its
+        # event, or resequencing the card.  Free recovery/cancellation edges
+        # short-circuit inside the service without touching the resolver.
+        if old_status != data.status:
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=card.board_id,
+                entity_type="card",
+                subject_id=card.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            )
 
         report_target = None
         if data.status == CardStatus.DONE:
@@ -7314,6 +7283,66 @@ class SpecService:
             _build_default_cognitive_readiness_service
         )
 
+    async def _validate_test_scenario_subject_identities(
+        self,
+        *,
+        board_id: str,
+        scenarios: list[dict[str, Any]],
+        current_spec_id: str | None = None,
+    ) -> None:
+        """Enforce the board-scoped identity used by Policy Compliance.
+
+        A test scenario is a first-class policy subject, so its public id must
+        identify exactly one scenario inside a board.  Keep this invariant at
+        the aggregate write boundary (including import/create and whole-list
+        updates) instead of letting the transition resolver pick an arbitrary
+        duplicate later.
+        """
+
+        candidate_ids = [
+            str(item.get("id")).strip()
+            for item in scenarios
+            if isinstance(item, dict)
+            and item.get("id") is not None
+            and str(item.get("id")).strip()
+        ]
+        duplicate_ids = sorted(
+            {
+                scenario_id
+                for scenario_id in candidate_ids
+                if candidate_ids.count(scenario_id) > 1
+            }
+        )
+        if duplicate_ids:
+            raise ValueError(
+                "test_scenario_identity_conflict: duplicate scenario id(s) "
+                f"inside the spec: {', '.join(duplicate_ids)}"
+            )
+        if not candidate_ids:
+            return
+
+        candidate_set = set(candidate_ids)
+        board_specs = await _application_list(
+            self.db,
+            "spec",
+            filters=(_apf("board_id", "eq", board_id),),
+        )
+        conflicts: set[str] = set()
+        for existing_spec in board_specs:
+            if current_spec_id is not None and existing_spec.id == current_spec_id:
+                continue
+            for existing in existing_spec.test_scenarios or ():
+                if not isinstance(existing, dict):
+                    continue
+                existing_id = existing.get("id")
+                if existing_id is not None and str(existing_id) in candidate_set:
+                    conflicts.add(str(existing_id))
+        if conflicts:
+            raise ValueError(
+                "test_scenario_identity_conflict: scenario id(s) already exist "
+                f"in this board: {', '.join(sorted(conflicts))}"
+            )
+
     async def _validate_lineage(
         self,
         board_id: str,
@@ -7401,10 +7430,7 @@ class SpecService:
                 if ideation is None:
                     raise SpecLineagePreflightError(
                         "spec_ideation_not_found",
-                        (
-                            "The requested refinement's parent ideation does "
-                            "not exist."
-                        ),
+                        ("The requested refinement's parent ideation does not exist."),
                         facts={
                             "board_id": board_id,
                             "ideation_id": ancestor_ideation_id,
@@ -7632,8 +7658,24 @@ class SpecService:
         # is a new write — reject an unsupported type before insert/flush, never
         # normalize.
         if data.test_scenarios:
+            initial_scenarios = [s.model_dump() for s in data.test_scenarios]
             validate_scenario_types_for_write(
-                [s.model_dump() for s in data.test_scenarios], None
+                initial_scenarios,
+                None,
+            )
+            for scenario in initial_scenarios:
+                initial_status = str(scenario.get("status") or "draft")
+                if initial_status in GATED_STATUSES:
+                    raise ValueError(
+                        "test_scenario_status_requires_scoped_update: "
+                        f"new scenario {scenario.get('id') or '(new)'} cannot "
+                        f"be created as '{initial_status}' with its parent spec; "
+                        "create it as draft/ready, then use "
+                        "set_test_scenario_status."
+                    )
+            await self._validate_test_scenario_subject_identities(
+                board_id=board_id,
+                scenarios=initial_scenarios,
             )
 
         canonical_requirements = canonicalize_spec_requirement_fields(
@@ -7650,12 +7692,8 @@ class SpecService:
             title=data.title,
             description=data.description,
             context=data.context,
-            functional_requirements=canonical_requirements[
-                "functional_requirements"
-            ],
-            technical_requirements=canonical_requirements[
-                "technical_requirements"
-            ],
+            functional_requirements=canonical_requirements["functional_requirements"],
+            technical_requirements=canonical_requirements["technical_requirements"],
             acceptance_criteria=canonical_requirements["acceptance_criteria"],
             test_scenarios=[s.model_dump() for s in data.test_scenarios]
             if data.test_scenarios
@@ -7990,9 +8028,7 @@ class SpecService:
             spec_id,
             user_id,
             PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
-            requirement_lint_writer=(
-                RequirementLintWriter.SCENARIO_BODY_UPDATE
-            ),
+            requirement_lint_writer=(RequirementLintWriter.SCENARIO_BODY_UPDATE),
         )
         new_target = next(
             (
@@ -8169,6 +8205,8 @@ class SpecService:
         )
         if target_scenario is None:
             raise ValueError(f"scenario_not_found: {scenario_id}")
+        existing_status = str(target_scenario.get("status") or "draft")
+        require_test_scenario_status_transition(existing_status, status)
         scenario_sha256 = compute_test_scenario_semantic_sha256(
             board_id=spec.board_id,
             spec_id=spec_id,
@@ -8224,6 +8262,30 @@ class SpecService:
                 raise ValueError(f"evidence_required: {', '.join(missing)}")
             if status in GATED_STATUSES:
                 evidence_verification_status = "verified"
+
+        # Exact operational replay is a semantic no-op.  Avoid marking the
+        # JSON column dirty so the internal test-scenario policy epoch remains
+        # stable and existing evidence is not needlessly rewritten.
+        existing_evidence = target_scenario.get("evidence")
+        if existing_status == status and (
+            evidence is None or existing_evidence == evidence
+        ):
+            return {
+                "scenario_id": scenario_id,
+                "old_status": existing_status,
+                "new_status": status,
+                "evidence_provided": evidence is not None,
+                "evidence_gate_skipped": skip,
+                "evidence_verification_status": (evidence_verification_status),
+            }
+
+        await GuidelineService(self.db).enforce_policy_transition(
+            board_id=spec.board_id,
+            entity_type="test_scenario",
+            subject_id=scenario_id,
+            from_status=existing_status,
+            to_status=status,
+        )
 
         old_status = None
         found = False
@@ -8618,11 +8680,57 @@ class SpecService:
                 ]
 
         if update_data.get("test_scenarios") is not None:
-            update_data["test_scenarios"] = (
-                resolve_scenario_types_for_whole_list_write(
-                    update_data["test_scenarios"],
-                    spec.test_scenarios,
-                )
+            update_data["test_scenarios"] = resolve_scenario_types_for_whole_list_write(
+                update_data["test_scenarios"],
+                spec.test_scenarios,
+            )
+            # B10 policy-transition fence: a public whole-list replacement is
+            # a content API, never an alternate scenario lifecycle writer.
+            # Existing status changes and newly-imported terminal/execution
+            # states must use ``set_test_scenario_status`` so transition
+            # legality, evidence and Policy Compliance are evaluated against
+            # exactly one board-scoped subject under the same transaction.
+            #
+            # The narrow internal carrier remains available to trusted
+            # read-modify-write workflows (for example semantic edits that
+            # invalidate evidence and regress one scenario to ``ready``).
+            if isinstance(data, SpecUpdate):
+                old_scenarios_by_id = {
+                    str(item.get("id")): item
+                    for item in (spec.test_scenarios or ())
+                    if isinstance(item, dict) and item.get("id") is not None
+                }
+                for scenario in update_data["test_scenarios"]:
+                    if not isinstance(scenario, dict):
+                        continue
+                    scenario_id = scenario.get("id")
+                    next_status = str(scenario.get("status") or "draft")
+                    previous = (
+                        old_scenarios_by_id.get(str(scenario_id))
+                        if scenario_id is not None
+                        else None
+                    )
+                    if previous is not None:
+                        previous_status = str(previous.get("status") or "draft")
+                        if next_status != previous_status:
+                            raise ValueError(
+                                "test_scenario_status_requires_scoped_update: "
+                                f"scenario {scenario_id} cannot move from "
+                                f"'{previous_status}' to '{next_status}' through "
+                                "update_spec; use set_test_scenario_status."
+                            )
+                    elif next_status in GATED_STATUSES:
+                        raise ValueError(
+                            "test_scenario_status_requires_scoped_update: "
+                            f"new scenario {scenario_id or '(new)'} cannot be "
+                            f"created as '{next_status}' through update_spec; "
+                            "create it as draft/ready, then use "
+                            "set_test_scenario_status."
+                        )
+            await self._validate_test_scenario_subject_identities(
+                board_id=spec.board_id,
+                scenarios=update_data["test_scenarios"],
+                current_spec_id=spec.id,
             )
 
         # Canonicalize the complete final FR/TR/AC namespace with stable IDs.
@@ -8650,13 +8758,10 @@ class SpecService:
                 _final_requirement_fields,
                 existing_fields=_existing_requirement_fields,
             )
-            for _field_name, _canonical_value in (
-                _canonical_requirement_fields.items()
-            ):
+            for _field_name, _canonical_value in _canonical_requirement_fields.items():
                 if (
                     _field_name in update_data
-                    or _canonical_value
-                    != _existing_requirement_fields[_field_name]
+                    or _canonical_value != _existing_requirement_fields[_field_name]
                 ):
                     update_data[_field_name] = _canonical_value
 
@@ -8892,9 +8997,7 @@ class SpecService:
                 spec,
                 actor_id=user_id,
                 writer=requirement_lint_writer,
-                changed_fields=tuple(
-                    sorted(content_fields & update_data.keys())
-                ),
+                changed_fields=tuple(sorted(content_fields & update_data.keys())),
             )
         return spec
 
@@ -9509,6 +9612,14 @@ class SpecService:
                 phase="spec_done",
             )
 
+        await GuidelineService(self.db).enforce_policy_transition(
+            board_id=spec.board_id,
+            entity_type="spec",
+            subject_id=spec.id,
+            from_status=spec.status.value,
+            to_status=data.status.value,
+        )
+
         old_status = spec.status
         old_edition = int(getattr(spec, "edition", 1) or 1)
         old_version = spec.version
@@ -9521,9 +9632,9 @@ class SpecService:
 
         # Reopening a terminal Spec starts a fresh editable iteration, matching
         # the lifecycle registry contract and the ideation/refinement behavior.
-        if (
-            data.status == SpecStatus.DRAFT
-            and old_status in (SpecStatus.DONE, SpecStatus.CANCELLED)
+        if data.status == SpecStatus.DRAFT and old_status in (
+            SpecStatus.DONE,
+            SpecStatus.CANCELLED,
         ):
             spec.version += 1
 
@@ -9986,6 +10097,15 @@ class SpecService:
             outcome = "failed"
         else:
             outcome = "success"
+
+        if outcome == "success":
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=spec.board_id,
+                entity_type="spec",
+                subject_id=spec.id,
+                from_status=spec.status.value,
+                to_status=SpecStatus.VALIDATED.value,
+            )
 
         # Build validation record (id <= 32 chars: "val_" + 8 hex = 12 chars)
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
@@ -11645,9 +11765,9 @@ class IdeationService:
 
     def __init__(self, db: Any):
         self.db = db
-        self._ambiguity_gate_service_factory: Callable[
-            [Any], AmbiguityGateService
-        ] = _build_default_ambiguity_gate_service
+        self._ambiguity_gate_service_factory: Callable[[Any], AmbiguityGateService] = (
+            _build_default_ambiguity_gate_service
+        )
 
     _STATUS_ORDER = {
         IdeationStatus.DRAFT: 0,
@@ -12145,6 +12265,13 @@ class IdeationService:
                 ideation.id,
                 phase="ideation_done",
             )
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=ideation.board_id,
+                entity_type="ideation",
+                subject_id=ideation.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            )
             await self._create_snapshot(ideation, user_id)
 
         # Reopening a terminal ideation starts a fresh editable iteration.
@@ -12175,8 +12302,7 @@ class IdeationService:
             else "reopen"
             if (
                 data.status == IdeationStatus.DRAFT
-                and old_status
-                in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
+                and old_status in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
             )
             else None
         )
@@ -12234,9 +12360,9 @@ class IdeationService:
         summary = f"Status: {old_status.value} → {data.status.value}"
         if data.status == IdeationStatus.DONE:
             summary += f" (snapshot v{ideation.version} created)"
-        elif (
-            data.status == IdeationStatus.DRAFT
-            and old_status in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
+        elif data.status == IdeationStatus.DRAFT and old_status in (
+            IdeationStatus.DONE,
+            IdeationStatus.CANCELLED,
         ):
             summary += f" (new iteration v{ideation.version})"
 
@@ -12798,9 +12924,9 @@ class RefinementService:
 
     def __init__(self, db: Any):
         self.db = db
-        self._ambiguity_gate_service_factory: Callable[
-            [Any], AmbiguityGateService
-        ] = _build_default_ambiguity_gate_service
+        self._ambiguity_gate_service_factory: Callable[[Any], AmbiguityGateService] = (
+            _build_default_ambiguity_gate_service
+        )
         # Cognitive closeout must run BEFORE snapshot/status mutation.
         # Keep the historical attribute name so existing tests and callers
         # that inject a fake guard continue to work.
@@ -13451,12 +13577,19 @@ class RefinementService:
                 phase="refinement_done",
             )
             await self._validate_cognitive_done(refinement, board)
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=refinement.board_id,
+                entity_type="refinement",
+                subject_id=refinement.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            )
             await self._create_snapshot(refinement, user_id)
 
         # Reopening a terminal refinement starts a fresh editable iteration.
-        if (
-            data.status == RefinementStatus.DRAFT
-            and old_status in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
+        if data.status == RefinementStatus.DRAFT and old_status in (
+            RefinementStatus.DONE,
+            RefinementStatus.CANCELLED,
         ):
             refinement.version += 1
 
@@ -13478,8 +13611,7 @@ class RefinementService:
             else "reopen"
             if (
                 data.status == RefinementStatus.DRAFT
-                and old_status
-                in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
+                and old_status in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
             )
             else None
         )
@@ -14096,6 +14228,187 @@ class GuidelineService:
     def __init__(self, db: Any):
         self.db = db
 
+    def policy_persistence(self):
+        """Expose the transaction-bound immutable policy authority to use cases.
+
+        Import/export, REST and MCP must share the same persistence contract.
+        Keeping this resolver on the Core-owned service catalog lets those
+        transport-free use cases obtain the edition adapter without extracting
+        or depending on the concrete relational session.
+        """
+
+        return self._policy()
+
+    def _policy(self):
+        """Resolve the edition-owned immutable guideline authority."""
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().guideline_policy(self.db)
+
+    async def preview_policy_transition(
+        self,
+        *,
+        board_id: str,
+        entity_type: str,
+        subject_id: str,
+        from_status: str,
+        to_status: str,
+    ) -> Any | None:
+        """Evaluate one frozen Policy Compliance edge without mutating status.
+
+        Lifecycle legality remains owned by the canonical SDLC registry.  Free
+        recovery/cancellation/regression edges return before the persistence
+        adapter is even resolved, so an unavailable evaluator can never strand
+        a subject outside a forward enforcement point.
+        """
+
+        normalized_entity_type = str(entity_type).strip().lower()
+        normalized_from_status = str(from_status).strip()
+        normalized_to_status = str(to_status).strip()
+        if not transition_requires_policy_compliance(
+            normalized_entity_type,
+            normalized_from_status,
+            normalized_to_status,
+        ):
+            return None
+
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.guideline_policy_transition import (
+            evaluate_policy_transition,
+        )
+
+        policy = self._policy()
+        snapshot = await policy.resolve_transition_snapshot(
+            board_id=board_id,
+            entity_type=PolicyEntityType(normalized_entity_type),
+            subject_id=subject_id,
+            expected_from_status=normalized_from_status,
+        )
+        return evaluate_policy_transition(snapshot, normalized_to_status)
+
+    async def enforce_policy_transition(
+        self,
+        *,
+        board_id: str,
+        entity_type: str,
+        subject_id: str,
+        from_status: str,
+        to_status: str,
+    ) -> Any | None:
+        """Recompute and enforce the canonical gate in the mutation UoW."""
+
+        decision = await self.preview_policy_transition(
+            board_id=board_id,
+            entity_type=entity_type,
+            subject_id=subject_id,
+            from_status=from_status,
+            to_status=to_status,
+        )
+        if decision is None:
+            return None
+
+        from okto_pulse.core.domain.guideline_policy_transition import (
+            raise_for_policy_transition,
+        )
+
+        raise_for_policy_transition(decision)
+        return decision
+
+    @staticmethod
+    def _guideline_projection(
+        identity: Any,
+        revision: Any,
+        *,
+        updated_at: datetime,
+    ) -> ApplicationRecord:
+        """Project the authoritative immutable snapshot on the legacy shape."""
+
+        return _new_application_record(
+            "guideline",
+            id=identity.guideline_id,
+            title=revision.title,
+            content=revision.content,
+            tags=list(revision.tags),
+            scope=identity.scope.value,
+            board_id=identity.board_id,
+            owner_id=identity.owner_id,
+            created_at=identity.created_at,
+            updated_at=updated_at,
+            version=revision.revision_number,
+            semantic_version=revision.semantic_version,
+            revision_id=revision.revision_id,
+            revision_digest=revision.content_digest,
+            context_scope=identity.context_scope.value,
+        )
+
+    @staticmethod
+    def _binding_projection(
+        binding: Any,
+        *,
+        template_id: str | None = None,
+        template_version: int | None = None,
+        guideline_version: int | None = None,
+    ) -> ApplicationRecord:
+        """Project an append-only binding revision on the legacy link shape."""
+
+        return _new_application_record(
+            "board_guideline",
+            id=binding.binding_id,
+            board_id=binding.board_id,
+            guideline_id=binding.guideline_id,
+            priority=binding.priority,
+            guideline_version=guideline_version,
+            template_id=template_id,
+            template_version=template_version,
+            binding_revision=binding.binding_revision,
+            revision_id=binding.revision_id,
+            semantic_version=binding.semantic_version,
+            revision_digest=binding.revision_digest,
+            state=binding.state.value,
+        )
+
+    async def _authoritative_snapshot(
+        self,
+        guideline_id: str,
+        *,
+        include_retired: bool = False,
+    ) -> tuple[Any, Any, Any, Any | None] | None:
+        """Load identity, head and exact revision, failing closed on drift."""
+
+        policy = self._policy()
+        identity = await policy.get_guideline(guideline_id=guideline_id)
+        if identity is None:
+            return None
+        retirement = await policy.get_retirement(guideline_id=guideline_id)
+        if retirement is not None and not include_retired:
+            return None
+        head = await policy.get_head(guideline_id=guideline_id)
+        if head is None:
+            raise RuntimeError("guideline_authority_head_missing")
+        revision = await policy.get_revision(
+            guideline_id=guideline_id,
+            revision_id=head.revision_id,
+        )
+        if (
+            revision is None
+            or revision.revision_number != head.revision_number
+            or revision.semantic_version != head.semantic_version
+        ):
+            raise RuntimeError("guideline_authority_revision_mismatch")
+        return identity, head, revision, retirement
+
+    @staticmethod
+    def _next_event_time(previous: datetime | None = None) -> datetime:
+        """Return a UTC event time strictly after an optional prior event."""
+
+        occurred_at = datetime.now(timezone.utc)
+        if previous is not None and occurred_at <= previous:
+            occurred_at = previous + timedelta(microseconds=1)
+        return occurred_at
+
     async def _board_visible(
         self,
         board_id: str,
@@ -14113,26 +14426,418 @@ class GuidelineService:
             return False
         return bool(await _application_run(self.db, query))
 
+    async def _build_guideline_impact_plan(
+        self,
+        *,
+        board_id: str,
+        guideline_id: str,
+        impact_receipt_id: str,
+        proposed_priority: int,
+        proposed_default_enforcement: Any,
+        requested_by: str,
+        requested_at: datetime,
+        idempotency_key: str,
+        to_revision_id: str | None = None,
+    ) -> Any:
+        """Resolve every server-owned fence used by a B08 impact preview."""
+
+        from okto_pulse.core.domain.guideline_impact import (
+            GuidelineImpactPreviewCommand,
+            plan_guideline_impact_preview,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineEnforcement,
+            GuidelineScope,
+        )
+
+        if not isinstance(
+            proposed_default_enforcement,
+            GuidelineEnforcement,
+        ):
+            raise ValueError("guideline_impact_enforcement_invalid")
+        policy = self._policy()
+        identity = await policy.get_guideline(guideline_id=guideline_id)
+        if (
+            identity is None
+            or identity.scope is not GuidelineScope.GLOBAL
+            or identity.board_id is not None
+        ):
+            raise ValueError("guideline_impact_global_guideline_required")
+        head = await policy.get_head(guideline_id=guideline_id)
+        if head is None:
+            raise RuntimeError("guideline_authority_head_missing")
+        target_id = to_revision_id or head.revision_id
+        target = await policy.get_revision(
+            guideline_id=guideline_id,
+            revision_id=target_id,
+        )
+        if target is None:
+            raise ValueError("guideline_impact_target_revision_not_found")
+        current = await policy.get_binding(
+            board_id=board_id,
+            guideline_id=guideline_id,
+        )
+        before = (
+            await policy.get_revision(
+                guideline_id=guideline_id,
+                revision_id=current.revision_id,
+            )
+            if current is not None
+            else None
+        )
+        if current is not None and before is None:
+            raise RuntimeError("guideline_binding_revision_mismatch")
+        active_bindings = await policy.list_bindings(board_id=board_id)
+        active_revisions = []
+        for binding in active_bindings:
+            revision = await policy.get_revision(
+                guideline_id=binding.guideline_id,
+                revision_id=binding.revision_id,
+            )
+            if revision is None:
+                raise RuntimeError("guideline_binding_revision_mismatch")
+            active_revisions.append(revision)
+        return plan_guideline_impact_preview(
+            GuidelineImpactPreviewCommand(
+                impact_receipt_id=impact_receipt_id,
+                board_id=board_id,
+                guideline_id=guideline_id,
+                head=head,
+                to_revision=target,
+                current_binding=current,
+                from_revision=before,
+                active_bindings=active_bindings,
+                active_revisions=tuple(active_revisions),
+                subjects=await policy.list_policy_subjects(board_id=board_id),
+                waivers=await policy.list_board_waivers(board_id=board_id),
+                proposed_priority=proposed_priority,
+                proposed_default_enforcement=(proposed_default_enforcement),
+                requested_by=requested_by,
+                created_at=requested_at,
+                idempotency_key=idempotency_key,
+                requested_to_revision_id=to_revision_id,
+            ),
+            retirement=await policy.get_retirement(guideline_id=guideline_id),
+        )
+
+    async def preview_guideline_revision_impact(
+        self,
+        *,
+        board_id: str,
+        guideline_id: str,
+        proposed_priority: int,
+        proposed_default_enforcement: Any,
+        requested_by: str,
+        idempotency_key: str,
+        to_revision_id: str | None = None,
+        requested_at: datetime | None = None,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> Any:
+        """Persist an effect-free, sealed and replayable impact receipt."""
+
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelineImpactPreviewReplay,
+            GuidelinePolicyIdempotencyConflict,
+        )
+        from okto_pulse.core.domain.guideline_impact import (
+            guideline_impact_preview_request_digest_v1,
+        )
+
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            raise ValueError("guideline_impact_board_not_visible")
+        policy = self._policy()
+        replay = await policy.get_impact_receipt_by_idempotency(
+            board_id=board_id,
+            idempotency_key=idempotency_key,
+        )
+        if replay is not None:
+            expected_request_digest = guideline_impact_preview_request_digest_v1(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                proposed_priority=proposed_priority,
+                proposed_default_enforcement=proposed_default_enforcement,
+                requested_by=requested_by,
+                requested_to_revision_id=to_revision_id,
+            )
+            if not isinstance(replay, GuidelineImpactPreviewReplay):
+                raise GuidelinePolicyIdempotencyConflict(
+                    "guideline_impact_idempotency_evidence_missing"
+                )
+            if replay.request_digest != expected_request_digest:
+                raise GuidelinePolicyIdempotencyConflict(
+                    "guideline_impact_idempotency_payload_mismatch"
+                )
+            return replay.receipt
+        impact_receipt_id = str(
+            uuid.uuid5(
+                uuid.UUID("ba53bf34-b3fe-5e18-a8fb-32eff21d454c"),
+                f"{board_id}:{idempotency_key}",
+            )
+        )
+        plan = await self._build_guideline_impact_plan(
+            board_id=board_id,
+            guideline_id=guideline_id,
+            impact_receipt_id=impact_receipt_id,
+            proposed_priority=proposed_priority,
+            proposed_default_enforcement=proposed_default_enforcement,
+            requested_by=requested_by,
+            requested_at=requested_at or self._next_event_time(),
+            idempotency_key=idempotency_key,
+            to_revision_id=to_revision_id,
+        )
+        return await policy.save_impact_preview(plan=plan)
+
+    async def adopt_guideline_revision(
+        self,
+        *,
+        board_id: str,
+        guideline_id: str,
+        impact_receipt_id: str,
+        impact_digest: str,
+        actor_id: str,
+        actor_type: str,
+        idempotency_key: str,
+        occurred_at: datetime | None = None,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> tuple[Any, Any]:
+        """Consume one current receipt into exactly one audited adoption."""
+
+        from okto_pulse.core.domain.guideline_impact import (
+            GuidelineImpactError,
+            impact_fence_from_receipt,
+            plan_guideline_adoption,
+        )
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyCasConflict,
+            GuidelinePolicyDigestConflict,
+            GuidelinePolicyIdempotencyConflict,
+        )
+
+        normalized_text: dict[str, str] = {}
+        for field_name, value in (
+            ("board_id", board_id),
+            ("guideline_id", guideline_id),
+            ("impact_receipt_id", impact_receipt_id),
+            ("actor_id", actor_id),
+            ("actor_type", actor_type),
+            ("idempotency_key", idempotency_key),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"guideline_adoption_{field_name}_required")
+            normalized_text[field_name] = value.strip()
+        board_id = normalized_text["board_id"]
+        guideline_id = normalized_text["guideline_id"]
+        impact_receipt_id = normalized_text["impact_receipt_id"]
+        actor_id = normalized_text["actor_id"]
+        actor_type = normalized_text["actor_type"]
+        idempotency_key = normalized_text["idempotency_key"]
+        if actor_type not in {"agent", "user", "system"}:
+            raise ValueError("guideline_adoption_actor_type_invalid")
+        if (
+            not isinstance(impact_digest, str)
+            or len(impact_digest.strip()) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in impact_digest.strip().lower()
+            )
+        ):
+            raise ValueError("guideline_impact_digest_invalid")
+        impact_digest = impact_digest.strip().lower()
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            raise ValueError("guideline_adoption_board_not_visible")
+        policy = self._policy()
+        replay = await policy.get_adoption_result_by_idempotency(
+            board_id=board_id,
+            idempotency_key=idempotency_key,
+        )
+        if replay is not None:
+            if (
+                replay.receipt.guideline_id != guideline_id
+                or replay.receipt.impact_receipt_id != impact_receipt_id
+                or replay.receipt.impact_digest != impact_digest
+                or replay.binding.adopted_by != actor_id
+                or replay.actor_type != actor_type
+            ):
+                raise GuidelinePolicyIdempotencyConflict(
+                    "guideline_adoption_idempotency_payload_mismatch"
+                )
+            return replay.binding, replay.receipt
+        receipt = await policy.get_impact_receipt(
+            board_id=board_id,
+            impact_receipt_id=impact_receipt_id,
+        )
+        if receipt is None or receipt.guideline_id != guideline_id:
+            raise ValueError("guideline_impact_receipt_not_found")
+        if receipt.impact_digest != impact_digest:
+            raise GuidelinePolicyDigestConflict("guideline_impact_digest_mismatch")
+        event_at = occurred_at or self._next_event_time()
+        event_id = str(
+            uuid.uuid5(
+                uuid.UUID("6a16175a-35b5-545e-aecc-73fecaf970b3"),
+                f"{board_id}:{idempotency_key}",
+            )
+        )
+        try:
+            current_plan = await self._build_guideline_impact_plan(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                impact_receipt_id=impact_receipt_id,
+                proposed_priority=receipt.proposed_priority,
+                proposed_default_enforcement=(
+                    receipt.proposed_default_enforcement
+                ),
+                requested_by=receipt.requested_by,
+                requested_at=event_at,
+                idempotency_key=f"currentness:{idempotency_key}",
+                to_revision_id=receipt.to_revision_id,
+            )
+            current_binding = await policy.get_binding(
+                board_id=board_id,
+                guideline_id=guideline_id,
+            )
+            mutation = plan_guideline_adoption(
+                receipt=receipt,
+                current_snapshot=impact_fence_from_receipt(current_plan.receipt),
+                current_binding=current_binding,
+                retirement=await policy.get_retirement(guideline_id=guideline_id),
+                actor_id=actor_id,
+                actor_type=actor_type,
+                occurred_at=event_at,
+                event_id=event_id,
+                idempotency_key=idempotency_key,
+            )
+        except GuidelineImpactError as exc:
+            details = (
+                (
+                    (
+                        "stale_reasons",
+                        ",".join(
+                            reason.value for reason in exc.currentness_reasons
+                        ),
+                    ),
+                )
+                if exc.currentness_reasons
+                else ()
+            )
+            raise GuidelinePolicyCasConflict(
+                exc.code,
+                details=details,
+            ) from exc
+        return await policy.adopt_revision_cas(mutation=mutation)
+
     async def create_guideline(
         self,
         owner_id: str,
         data: GuidelineCreate,
         *,
         query_scope: QueryScope | None = None,
+        actor_type: str = "user",
     ) -> Guideline:
-        """Create a new guideline."""
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = _new_application_record(
-            "guideline",
-            title=data.title,
-            content=data.content,
-            tags=data.tags,
-            scope=data.scope,
-            board_id=data.board_id,
-            owner_id=scoped_owner_id,
+        """Create identity, ``1.0.0`` revision and head atomically.
+
+        Inline guidelines additionally receive a real exact-revision binding
+        in the same caller-owned transaction.  The legacy mutable tables are
+        never a second writer after the identity row is established.
+        """
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelineBindingTransitionCommand,
+            GuidelineCreateCommand,
+            GuidelineBindingApplied,
+            plan_guideline_binding_transition,
+            plan_guideline_creation,
         )
-        await _application_add(self.db, guideline)
-        return guideline
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineBindingState,
+            GuidelineEnforcement,
+            GuidelineScope,
+        )
+
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        try:
+            scope = GuidelineScope(str(data.scope))
+        except ValueError as exc:
+            raise ValueError("guideline_scope_invalid") from exc
+        if scope is GuidelineScope.INLINE and (
+            not data.board_id
+            or not await self._board_visible(
+                data.board_id,
+                scoped_owner_id,
+                query_scope,
+            )
+        ):
+            raise ValueError("inline_guideline_board_not_visible")
+
+        guideline_id = str(uuid.uuid4())
+        revision_id = str(uuid.uuid4())
+        occurred_at = self._next_event_time()
+        create = plan_guideline_creation(
+            GuidelineCreateCommand(
+                guideline_id=guideline_id,
+                revision_id=revision_id,
+                owner_id=scoped_owner_id,
+                scope=scope,
+                board_id=data.board_id,
+                title=data.title,
+                content=data.content,
+                tags=tuple(data.tags or ()),
+                rules=(),
+                created_by=scoped_owner_id,
+                created_at=occurred_at,
+                idempotency_key=f"legacy:create:{guideline_id}",
+            )
+        )
+        policy = self._policy()
+        identity, revision, head = await policy.create_guideline(
+            guideline=create.guideline,
+            initial_revision=create.revision,
+            initial_head=create.head,
+            idempotency_key=create.idempotency_key,
+            request_digest=create.request_digest,
+        )
+
+        if scope is GuidelineScope.INLINE:
+            binding_plan = plan_guideline_binding_transition(
+                GuidelineBindingTransitionCommand(
+                    binding_id=str(uuid.uuid4()),
+                    board_id=identity.board_id,
+                    guideline_id=identity.guideline_id,
+                    state=GuidelineBindingState.ACTIVE,
+                    revision_id=revision.revision_id,
+                    semantic_version=revision.semantic_version,
+                    revision_digest=revision.content_digest,
+                    priority=int(getattr(data, "priority", 0) or 0),
+                    default_enforcement=GuidelineEnforcement.ADVISORY,
+                    actor_id=scoped_owner_id,
+                    occurred_at=occurred_at,
+                    idempotency_key=(f"legacy:inline-binding:{identity.guideline_id}"),
+                    expected_binding_revision=None,
+                ),
+                current=None,
+            )
+            if not isinstance(binding_plan, GuidelineBindingApplied):
+                raise RuntimeError("inline_guideline_binding_not_applied")
+            await policy.append_binding_cas(
+                binding=binding_plan.binding,
+                expected_binding_revision=None,
+                idempotency_key=binding_plan.idempotency_key,
+                request_digest=binding_plan.request_digest,
+                actor_type=actor_type,
+            )
+        return self._guideline_projection(
+            identity,
+            revision,
+            updated_at=head.updated_at,
+        )
 
     async def get_guideline(
         self,
@@ -14147,18 +14852,17 @@ class GuidelineService:
         internal lookups only; inbound adapters must pass an explicit scope.
         """
         scoped_owner_id = _scope_actor_id(owner_id, query_scope)
-        if scoped_owner_id is None:
-            return await _application_get(self.db, "guideline", guideline_id)
-        rows = await _application_list(
-            self.db,
-            "guideline",
-            filters=(
-                _apf("id", "eq", guideline_id),
-                _apf("owner_id", "eq", scoped_owner_id),
-            ),
-            limit=1,
+        snapshot = await self._authoritative_snapshot(guideline_id)
+        if snapshot is None:
+            return None
+        identity, head, revision, _retirement = snapshot
+        if scoped_owner_id is not None and identity.owner_id != scoped_owner_id:
+            return None
+        return self._guideline_projection(
+            identity,
+            revision,
+            updated_at=head.updated_at,
         )
-        return rows[0] if rows else None
 
     async def list_guidelines(
         self,
@@ -14169,22 +14873,44 @@ class GuidelineService:
         *,
         query_scope: QueryScope | None = None,
     ) -> list[Guideline]:
-        """List global guidelines for an owner, optionally filtered by tag."""
+        """List authoritative global heads, optionally filtered by current tag."""
         scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        filters = [
-            _apf("owner_id", "eq", scoped_owner_id),
-            _apf("scope", "eq", "global"),
-        ]
-        if tag:
-            filters.append(_apf("tags", "json_member", tag))
-        return await _application_list(
+        identities = await _application_list(
             self.db,
             "guideline",
-            filters=tuple(filters),
+            filters=(
+                _apf("owner_id", "eq", scoped_owner_id),
+                _apf("scope", "eq", "global"),
+            ),
             order_by=(("created_at", True),),
-            offset=offset,
-            limit=limit,
+            limit=None,
         )
+        policy = self._policy()
+        projected: list[Guideline] = []
+        for legacy_identity in identities:
+            retirement = await policy.get_retirement(guideline_id=legacy_identity.id)
+            if retirement is not None:
+                continue
+            head = await policy.get_head(guideline_id=legacy_identity.id)
+            identity = await policy.get_guideline(guideline_id=legacy_identity.id)
+            if head is None or identity is None:
+                raise RuntimeError("guideline_authority_head_missing")
+            revision = await policy.get_revision(
+                guideline_id=identity.guideline_id,
+                revision_id=head.revision_id,
+            )
+            if revision is None:
+                raise RuntimeError("guideline_authority_revision_mismatch")
+            if tag is not None and tag not in revision.tags:
+                continue
+            projected.append(
+                self._guideline_projection(
+                    identity,
+                    revision,
+                    updated_at=head.updated_at,
+                )
+            )
+        return projected[offset : offset + limit]
 
     async def update_guideline(
         self,
@@ -14194,48 +14920,108 @@ class GuidelineService:
         *,
         query_scope: QueryScope | None = None,
     ) -> Guideline | None:
-        """Update a guideline."""
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = await self.get_guideline(
-            guideline_id,
-            owner_id=scoped_owner_id,
-            query_scope=query_scope,
+        """Append a canonical immutable revision and advance the head by CAS."""
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelinePatchApplied,
+            GuidelinePatchCommand,
+            GuidelinePatchNoop,
+            GuidelineRevisionPatch,
+            execute_guideline_patch,
         )
-        if not guideline:
+
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        snapshot = await self._authoritative_snapshot(guideline_id)
+        if snapshot is None:
             return None
-        changed = False
-        if data.title is not None and data.title != guideline.title:
-            guideline.title = data.title
-            changed = True
-        if data.content is not None and data.content != guideline.content:
-            guideline.content = data.content
-            changed = True
-        if data.tags is not None:
-            guideline.tags = data.tags
-            guideline.mark_dirty("tags")
-            changed = True
-        if changed and guideline.scope == "global":
-            guideline.version = (guideline.version or 1) + 1
-        await _application_flush(self.db)
-        return guideline
+        identity, head, current, retirement = snapshot
+        if identity.owner_id != scoped_owner_id:
+            return None
+        patch_id = str(uuid.uuid4())
+        result = execute_guideline_patch(
+            GuidelinePatchCommand(
+                current_revision=current,
+                current_head=head,
+                patch=GuidelineRevisionPatch(
+                    title=data.title,
+                    content=data.content,
+                    tags=(tuple(data.tags) if data.tags is not None else None),
+                ),
+                next_revision_id=patch_id,
+                actor_id=scoped_owner_id,
+                occurred_at=self._next_event_time(head.updated_at),
+                idempotency_key=f"legacy:patch:{patch_id}",
+            ),
+            retirement=retirement,
+        )
+        if isinstance(result, GuidelinePatchNoop):
+            return self._guideline_projection(
+                identity,
+                current,
+                updated_at=head.updated_at,
+            )
+        if not isinstance(result, GuidelinePatchApplied):
+            raise ValueError(result.code)
+        revision, next_head = await self._policy().append_revision_cas(
+            revision=result.revision,
+            next_head=result.head,
+            expected_head_revision=result.expected_head_revision,
+            idempotency_key=result.idempotency_key,
+            request_digest=result.request_digest,
+        )
+        return self._guideline_projection(
+            identity,
+            revision,
+            updated_at=next_head.updated_at,
+        )
 
     async def delete_guideline(
         self,
         guideline_id: str,
         owner_id: str,
         *,
+        actor_type: str = "user",
         query_scope: QueryScope | None = None,
     ) -> bool:
-        """Delete a guideline."""
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = await self.get_guideline(
-            guideline_id,
-            owner_id=scoped_owner_id,
-            query_scope=query_scope,
+        """Logically retire a guideline while retaining its complete history."""
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelineRetirementCommand,
+            plan_guideline_retirement,
         )
-        if not guideline:
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineLifecycleStatus,
+        )
+
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        snapshot = await self._authoritative_snapshot(
+            guideline_id,
+            include_retired=True,
+        )
+        if snapshot is None:
             return False
-        await _application_delete(self.db, guideline)
+        identity, head, revision, retirement = snapshot
+        if identity.owner_id != scoped_owner_id or retirement is not None:
+            return False
+        retirement_id = str(uuid.uuid4())
+        plan = plan_guideline_retirement(
+            GuidelineRetirementCommand(
+                current_revision=revision,
+                current_head=head,
+                retirement_id=retirement_id,
+                status=GuidelineLifecycleStatus.RETIRED,
+                reason="Retired through the legacy guideline façade.",
+                actor_id=scoped_owner_id,
+                occurred_at=self._next_event_time(head.updated_at),
+                idempotency_key=f"legacy:retire:{retirement_id}",
+            ),
+            current_retirement=None,
+        )
+        await self._policy().retire_guideline_cas(
+            retirement=plan.retirement,
+            expected_head_revision=plan.expected_head_revision,
+            idempotency_key=plan.idempotency_key,
+            request_digest=plan.request_digest,
+            actor_type=actor_type,
+        )
         return True
 
     async def get_board_guidelines(
@@ -14246,94 +15032,60 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> list[dict]:
-        """Get all guidelines for a board — linked globals + inline, sorted by priority."""
+        """Project active exact-revision bindings for a board."""
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return []
-        links = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(_apf("board_id", "eq", board_id),),
-        )
-        linked_ids = [link.guideline_id for link in links]
-        linked_guidelines = (
-            await _application_list(
-                self.db,
-                "guideline",
-                filters=(_apf("id", "in", linked_ids),),
-            )
-            if linked_ids
-            else []
-        )
-        guidelines_by_id = {item.id: item for item in linked_guidelines}
-
-        # Inline (board-scoped) guidelines
-        inline_rows = await _application_list(
-            self.db,
-            "guideline",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("scope", "eq", "inline"),
-            ),
-            order_by=(("created_at", False),),
-        )
-
+        policy = self._policy()
+        bindings = await policy.list_bindings(board_id=board_id)
         items: list[dict] = []
-        for link in links:
-            guideline = guidelines_by_id.get(link.guideline_id)
-            if guideline is None:
-                continue
-            items.append(
-                {
-                    "id": guideline.id,
-                    "guideline": {
-                        "id": guideline.id,
-                        "title": guideline.title,
-                        "content": guideline.content,
-                        "tags": guideline.tags,
-                        "scope": guideline.scope,
-                        "board_id": guideline.board_id,
-                        "owner_id": guideline.owner_id,
-                        "created_at": guideline.created_at.isoformat()
-                        if guideline.created_at
-                        else None,
-                        "version": guideline.version or 1,
-                        "updated_at": guideline.updated_at.isoformat()
-                        if guideline.updated_at
-                        else None,
-                    },
-                    "priority": link.priority,
-                    "scope": guideline.scope,
-                }
+        for binding in bindings:
+            identity = await policy.get_guideline(guideline_id=binding.guideline_id)
+            retirement = await policy.get_retirement(guideline_id=binding.guideline_id)
+            revision = await policy.get_revision(
+                guideline_id=binding.guideline_id,
+                revision_id=binding.revision_id,
             )
-        for guideline in inline_rows:
+            if identity is None or retirement is not None:
+                continue
+            if (
+                revision is None
+                or revision.semantic_version != binding.semantic_version
+                or revision.content_digest != binding.revision_digest
+            ):
+                raise RuntimeError("guideline_binding_revision_mismatch")
             items.append(
                 {
-                    "id": guideline.id,
+                    "id": identity.guideline_id,
                     "guideline": {
-                        "id": guideline.id,
-                        "title": guideline.title,
-                        "content": guideline.content,
-                        "tags": guideline.tags,
-                        "scope": guideline.scope,
-                        "board_id": guideline.board_id,
-                        "owner_id": guideline.owner_id,
-                        "created_at": guideline.created_at.isoformat()
-                        if guideline.created_at
-                        else None,
-                        "updated_at": guideline.updated_at.isoformat()
-                        if guideline.updated_at
-                        else None,
+                        "id": identity.guideline_id,
+                        "title": revision.title,
+                        "content": revision.content,
+                        "tags": list(revision.tags),
+                        "scope": identity.scope.value,
+                        "board_id": identity.board_id,
+                        "owner_id": identity.owner_id,
+                        "created_at": identity.created_at.isoformat(),
+                        "version": revision.revision_number,
+                        "semantic_version": revision.semantic_version,
+                        "revision_id": revision.revision_id,
+                        "revision_digest": revision.content_digest,
+                        "updated_at": revision.created_at.isoformat(),
                     },
-                    "priority": 0,
-                    "scope": "inline",
+                    "priority": binding.priority,
+                    "scope": identity.scope.value,
+                    "binding_id": binding.binding_id,
+                    "binding_revision": binding.binding_revision,
+                    "default_enforcement": binding.default_enforcement.value,
+                    "binding_state": binding.state.value,
+                    "source_kind": binding.source_kind.value,
                 }
             )
 
-        items.sort(key=lambda x: x["priority"])
+        items.sort(key=lambda item: (item["priority"], item["id"]))
         if not items:
             details = build_board_missing_context_warning_details(
                 board_id=board_id,
@@ -14352,50 +15104,102 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> BoardGuideline | None:
-        """Link a global guideline to a board."""
+        """Fail closed: global links require preview then explicit adoption."""
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyBindingConflict,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return None
-        link = _new_application_record(
-            "board_guideline",
-            board_id=board_id,
-            guideline_id=guideline_id,
-            priority=priority,
+        snapshot = await self._authoritative_snapshot(guideline_id)
+        if snapshot is None:
+            return None
+        del priority
+        raise GuidelinePolicyBindingConflict(
+            "guideline_impact_preview_required",
+            details=(
+                ("board_id", board_id),
+                ("guideline_id", guideline_id),
+                ("remediation", "preview_then_adopt"),
+            ),
         )
-        await _application_add(self.db, link)
-        return link
 
     async def unlink_guideline_from_board(
         self,
         board_id: str,
         guideline_id: str,
         *,
+        actor_type: str = "user",
+        idempotency_key: str | None = None,
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> bool:
-        """Unlink a guideline from a board."""
+        """Append one audited UNLINKED revision without deleting history."""
+        from okto_pulse.core.domain.guideline_impact import (
+            plan_guideline_unlink,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineBindingState,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return False
-        rows = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("guideline_id", "eq", guideline_id),
-            ),
-            limit=1,
+        policy = self._policy()
+        current = await policy.get_binding(
+            board_id=board_id,
+            guideline_id=guideline_id,
         )
-        link = rows[0] if rows else None
-        if not link:
+        if current is None or current.state is not GuidelineBindingState.ACTIVE:
             return False
-        await _application_delete(self.db, link)
+        retirement = await policy.get_retirement(guideline_id=guideline_id)
+        current_revision = await policy.get_revision(
+            guideline_id=guideline_id,
+            revision_id=current.revision_id,
+        )
+        if current_revision is None:
+            raise RuntimeError("guideline_binding_revision_mismatch")
+        active_bindings = await policy.list_bindings(board_id=board_id)
+        active_revisions = []
+        for active_binding in active_bindings:
+            active_revision = await policy.get_revision(
+                guideline_id=active_binding.guideline_id,
+                revision_id=active_binding.revision_id,
+            )
+            if active_revision is None:
+                raise RuntimeError("guideline_binding_revision_mismatch")
+            active_revisions.append(active_revision)
+        resolved_key = (
+            idempotency_key.strip()
+            if isinstance(idempotency_key, str) and idempotency_key.strip()
+            else f"legacy:unlink:{uuid.uuid4()}"
+        )
+        event_id = str(
+            uuid.uuid5(
+                uuid.UUID("18c3f17c-b1a5-5f2a-bdd4-3c84390fd347"),
+                f"{board_id}:{resolved_key}",
+            )
+        )
+        mutation = plan_guideline_unlink(
+            current_binding=current,
+            current_revision=current_revision,
+            active_bindings=active_bindings,
+            active_revisions=tuple(active_revisions),
+            retirement=retirement,
+            actor_id=owner_id or current.adopted_by,
+            actor_type=actor_type,
+            occurred_at=self._next_event_time(current.adopted_at),
+            event_id=event_id,
+            idempotency_key=resolved_key,
+        )
+        await policy.unlink_binding_cas(mutation=mutation)
         return True
 
     async def update_priority(
@@ -14407,28 +15211,26 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> bool:
-        """Update the priority of a linked guideline."""
+        """Fail closed: priority changes alter policy and require a preview."""
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyBindingConflict,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return False
-        rows = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("guideline_id", "eq", guideline_id),
+        del priority
+        raise GuidelinePolicyBindingConflict(
+            "guideline_impact_preview_required",
+            details=(
+                ("board_id", board_id),
+                ("guideline_id", guideline_id),
+                ("remediation", "preview_then_adopt"),
             ),
-            limit=1,
         )
-        link = rows[0] if rows else None
-        if not link:
-            return False
-        link.priority = priority
-        await _application_flush(self.db)
-        return True
 
     async def apply_default_guidelines(
         self,
@@ -14441,47 +15243,204 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> list[BoardGuideline]:
-        """Materialize a new board's default guideline links from the active default
-        template's resolved refs (spec 8a2fad91 / card 2803c136 / FR3). Each created
-        link records the priority + the template provenance (template_id,
-        template_version) + the guideline_version captured in the ref. Runs in the
-        CALLER's transaction (TR3 — no commit here), so any failure aborts the whole
-        ``create_board`` with no partial board / orphan links. Idempotent per
-        ``uq_board_guideline``: an existing board/guideline link is preserved untouched;
-        intra-batch duplicate guideline_ids are de-duped first-wins, so the resulting
-        priority/provenance is deterministic and never duplicated (TR4). The umbrella
-        owns resolution + fail-closed validation; this is purely the writer (it is the
-        single materialization point and the ts_a48e70ee failure-injection target)."""
+        """Materialize exact immutable pins from a default template.
+
+        The caller owns the transaction. Existing binding lineages are left
+        untouched and intra-template duplicates remain first-wins.
+        """
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelineBindingApplied,
+            GuidelineBindingTransitionCommand,
+            plan_guideline_binding_transition,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineBindingProvenance,
+            GuidelineBindingState,
+            GuidelineEnforcement,
+            GuidelineScope,
+        )
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelineDefaultMaterializationProof,
+        )
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelineRevisionListQuery,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return []
-        existing = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(_apf("board_id", "eq", board_id),),
-        )
-        already_linked = {link.guideline_id for link in existing}
+        policy = self._policy()
         created: list[BoardGuideline] = []
         seen: set[str] = set()
         for ref in refs or []:
             guideline_id = ref["guideline_id"]
-            if guideline_id in seen or guideline_id in already_linked:
-                continue  # uq_board_guideline + intra-template de-dup (first wins)
+            priority = ref.get("priority", 0)
+            if type(priority) is not int or priority < 0:
+                raise ValueError("default_guideline_priority_invalid")
+            if guideline_id in seen:
+                continue
             seen.add(guideline_id)
-            link = _new_application_record(
-                "board_guideline",
+            current = await policy.get_binding(
                 board_id=board_id,
                 guideline_id=guideline_id,
-                priority=int(ref.get("priority", 0) or 0),
-                template_id=template_id,
-                template_version=template_version,
-                guideline_version=ref.get("guideline_version"),
             )
-            await _application_add(self.db, link)
-            created.append(link)
+            if current is not None:
+                continue
+            identity = await policy.get_guideline(guideline_id=guideline_id)
+            retirement = await policy.get_retirement(guideline_id=guideline_id)
+            if identity is None:
+                raise ValueError("default_guideline_not_found")
+            if retirement is not None:
+                raise ValueError("default_guideline_retired")
+            if (
+                identity.scope is not GuidelineScope.GLOBAL
+                or identity.board_id is not None
+            ):
+                raise ValueError("default_guideline_not_global")
+            revision_id = ref.get("revision_id")
+            requested_number = ref.get("revision_number")
+            if requested_number is None and revision_id is None:
+                requested_number = ref.get("guideline_version")
+            if revision_id:
+                revision = await policy.get_revision(
+                    guideline_id=guideline_id,
+                    revision_id=revision_id,
+                )
+            else:
+                revision = None
+                cursor = None
+                if requested_number is not None:
+                    if type(requested_number) is not int:
+                        raise ValueError("default_guideline_revision_invalid")
+                    if requested_number < 1:
+                        raise ValueError("default_guideline_revision_invalid")
+                while requested_number is not None:
+                    page = await policy.list_revisions(
+                        GuidelineRevisionListQuery(
+                            guideline_id=guideline_id,
+                            limit=200,
+                            cursor=cursor,
+                        )
+                    )
+                    revision = next(
+                        (
+                            candidate
+                            for candidate in page.items
+                            if candidate.revision_number == int(requested_number)
+                        ),
+                        None,
+                    )
+                    if revision is not None or not page.has_more:
+                        break
+                    cursor = page.next_cursor
+                if revision is None and requested_number is None:
+                    head = await policy.get_head(guideline_id=guideline_id)
+                    revision = (
+                        await policy.get_revision(
+                            guideline_id=guideline_id,
+                            revision_id=head.revision_id,
+                        )
+                        if head is not None
+                        else None
+                    )
+            if revision is None:
+                raise ValueError("default_guideline_revision_not_found")
+            declared_semver = ref.get("semantic_version")
+            declared_digest = ref.get("revision_digest")
+            declared_number = ref.get("revision_number")
+            legacy_number = ref.get("guideline_version")
+            legacy_unresolvable = ref.get("legacy_version_unresolvable", False)
+            if not isinstance(legacy_unresolvable, bool):
+                raise ValueError("default_guideline_revision_invalid")
+            if (
+                isinstance(declared_number, bool)
+                or isinstance(legacy_number, bool)
+                or (declared_number is not None and type(declared_number) is not int)
+                or (legacy_number is not None and type(legacy_number) is not int)
+            ):
+                raise ValueError("default_guideline_revision_invalid")
+            normalized_declared_number = declared_number
+            normalized_legacy_number = legacy_number
+            complete_legacy_pin = bool(
+                legacy_unresolvable
+                and revision_id
+                and declared_semver
+                and declared_digest
+                and legacy_number is not None
+                and ref.get("legacy_version") is not None
+            )
+            legacy_number_exempt = bool(
+                complete_legacy_pin and ref.get("legacy_version") == legacy_number
+            )
+            if (
+                (
+                    declared_semver is not None
+                    and declared_semver != revision.semantic_version
+                )
+                or (
+                    declared_digest is not None
+                    and declared_digest != revision.content_digest
+                )
+                or (
+                    normalized_declared_number is not None
+                    and normalized_declared_number != revision.revision_number
+                )
+                or (
+                    normalized_legacy_number is not None
+                    and normalized_legacy_number != revision.revision_number
+                    and not legacy_number_exempt
+                )
+                or (legacy_unresolvable and not complete_legacy_pin)
+            ):
+                raise ValueError("default_guideline_pin_mismatch")
+            event_id = str(uuid.uuid4())
+            plan = plan_guideline_binding_transition(
+                GuidelineBindingTransitionCommand(
+                    binding_id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    guideline_id=guideline_id,
+                    state=GuidelineBindingState.ACTIVE,
+                    revision_id=revision.revision_id,
+                    semantic_version=revision.semantic_version,
+                    revision_digest=revision.content_digest,
+                    priority=priority,
+                    default_enforcement=GuidelineEnforcement.ADVISORY,
+                    source_kind=(GuidelineBindingProvenance.DEFAULT_MATERIALIZATION),
+                    actor_id=actor,
+                    occurred_at=self._next_event_time(),
+                    idempotency_key=f"default-binding:{event_id}",
+                    expected_binding_revision=None,
+                ),
+                current=None,
+                retirement=retirement,
+            )
+            if not isinstance(plan, GuidelineBindingApplied):
+                raise RuntimeError("default_guideline_binding_not_applied")
+            binding = await policy.append_binding_cas(
+                binding=plan.binding,
+                expected_binding_revision=None,
+                idempotency_key=plan.idempotency_key,
+                request_digest=plan.request_digest,
+                materialization_proof=(
+                    GuidelineDefaultMaterializationProof(
+                        template_id=template_id,
+                        template_version=template_version,
+                        guideline_revision_number=(revision.revision_number),
+                    )
+                ),
+                actor_type="system",
+            )
+            created.append(
+                self._binding_projection(
+                    binding,
+                    template_id=template_id,
+                    template_version=template_version,
+                    guideline_version=revision.revision_number,
+                )
+            )
         return created
 
 
@@ -14657,9 +15616,7 @@ class ArchiveService:
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
-        quality_lifecycle_changes: list[
-            tuple[str, Any, int, str, bool]
-        ] = []
+        quality_lifecycle_changes: list[tuple[str, Any, int, str, bool]] = []
 
         for ideation in tree["ideations"]:
             if not ideation.archived:
@@ -14669,9 +15626,7 @@ class ArchiveService:
                     else str(ideation.status)
                 )
                 before_version = int(ideation.version)
-                ideation.pre_archive_status = (
-                    before_status
-                )
+                ideation.pre_archive_status = before_status
                 ideation.archived = True
                 counts["ideations"] += 1
                 changed_artifacts.append(("ideation", ideation))
@@ -14693,9 +15648,7 @@ class ArchiveService:
                     else str(refinement.status)
                 )
                 before_version = int(refinement.version)
-                refinement.pre_archive_status = (
-                    before_status
-                )
+                refinement.pre_archive_status = before_status
                 refinement.archived = True
                 counts["refinements"] += 1
                 changed_artifacts.append(("refinement", refinement))
@@ -14717,9 +15670,7 @@ class ArchiveService:
                     else str(spec.status)
                 )
                 before_version = int(spec.version)
-                spec.pre_archive_status = (
-                    before_status
-                )
+                spec.pre_archive_status = before_status
                 spec.archived = True
                 counts["specs"] += 1
                 changed_artifacts.append(("spec", spec))
@@ -14843,9 +15794,7 @@ class ArchiveService:
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
-        quality_lifecycle_changes: list[
-            tuple[str, Any, int, str, bool]
-        ] = []
+        quality_lifecycle_changes: list[tuple[str, Any, int, str, bool]] = []
 
         for ideation in tree["ideations"]:
             if ideation.archived:
@@ -16028,6 +16977,14 @@ class SprintService:
                             "threshold": threshold,
                         },
                     )
+
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=sprint.board_id,
+                entity_type="sprint",
+                subject_id=sprint.id,
+                from_status=sprint.status.value,
+                to_status=data.status.value,
+            )
 
         old_status = sprint.status
 

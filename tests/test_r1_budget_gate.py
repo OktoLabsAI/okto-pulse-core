@@ -46,7 +46,7 @@ def test_r1_uses_shared_scanner_tool_descriptions_profile_and_live_passes():
     # Formalised in the shared profile contract (not just a test):
     assert profile.name == "tool_descriptions"
     assert profile.per_tool_description_chars == 900
-    assert profile.aggregate_tool_description_chars == 70000
+    assert profile.aggregate_tool_description_chars == 73000
     # Owner-authorised renegotiation (R1.1 card): instructions budget 8000 -> 10000.
     assert profile.always_loaded_instruction_chars == 10000
 
@@ -59,7 +59,7 @@ def test_r1_uses_shared_scanner_tool_descriptions_profile_and_live_passes():
     assert report.passed is True, report.to_dict()["violations"]
     assert report.unit == "chars"
     assert report.budget_profile == "tool_descriptions"
-    assert report.measurements["aggregate_tool_description_chars"] <= 70000
+    assert report.measurements["aggregate_tool_description_chars"] <= 73000
     assert report.measurements["tool_count"] >= 200
 
 
@@ -142,9 +142,9 @@ def test_callable_names_and_schema_keys_stable():
     # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
     # al. +6). Set-level drift is now ALSO guarded by
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
-    # 2026-07-27: reviewed SK-A surface is 292 tools. The five additive Quality
-    # assessment commands expose record/current/receipt/history/findings.
-    assert len(tools) == 292
+    # 2026-07-29: reviewed SK-B surface is 312 tools. Twenty additive policy
+    # governance commands expose revisions, impact, compliance and waivers.
+    assert len(tools) == 312
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

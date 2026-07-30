@@ -898,6 +898,13 @@ class Spec(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Currentness token for embedded test-scenario policy subjects.
+    test_scenario_policy_epoch: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="specs")
@@ -1210,6 +1217,13 @@ class Card(Base):
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Test scenario IDs from the linked spec that this card addresses
     test_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Currentness token for card policy facts, including relational dependencies.
+    policy_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
     # Conclusions: [{text, author_id, created_at}] — required when moving to Done
     conclusions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Screen mockups: [{id, title, description, screen_type, html_content, annotations, order}]
@@ -2817,6 +2831,16 @@ class QualityAssessmentReceiptFixture(Base):
     """Test-only schema parity for the immutable SK-A quality receipts."""
 
     __tablename__ = "quality_assessment_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "board_id",
+            "subject_type",
+            "subject_id",
+            "assessment_kind",
+            "id",
+            name="uq_quality_receipt_subject_identity",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     board_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

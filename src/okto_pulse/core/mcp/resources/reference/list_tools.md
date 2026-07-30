@@ -12,6 +12,8 @@ This consolidation does not absorb the bounded SK-A histories.
 `okto_pulse_list_research_decisions` retain their own typed filters and opaque
 keyset cursors. Do not route them through `list_by_board`; their contracts are
 in `okto-pulse://reference/quality-assessments` and the relevant tool docs.
+Versioned guideline/compliance lists likewise retain their own signed keyset
+contract in `okto-pulse://reference/policy-compliance`.
 
 | New tool | Replaces |
 |---|---|

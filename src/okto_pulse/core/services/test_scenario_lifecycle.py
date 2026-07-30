@@ -21,6 +21,8 @@ import json
 import re
 from typing import Any, Mapping
 
+from okto_pulse.core.domain.enums import TestScenarioStatus
+from okto_pulse.core.domain.sdlc_registry import is_transition_allowed
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     VALID_SCENARIO_TYPES,
@@ -34,12 +36,8 @@ from okto_pulse.core.domain.test_scenarios import (
 GATED_STATUSES: frozenset[str] = frozenset({"automated", "passed", "failed"})
 
 #: Every valid operational status of a test scenario.
-VALID_SCENARIO_STATUSES: tuple[str, ...] = (
-    "draft",
-    "ready",
-    "automated",
-    "passed",
-    "failed",
+VALID_SCENARIO_STATUSES: tuple[str, ...] = tuple(
+    status.value for status in TestScenarioStatus
 )
 
 #: Spec statuses in which a scenario's operational status may NOT change by
@@ -62,9 +60,55 @@ SEMANTIC_FIELDS: tuple[str, ...] = (
 #: Editing only these fields preserves status and evidence.
 COSMETIC_FIELDS: tuple[str, ...] = ("title", "notes")
 
+
+class InvalidScenarioStatusTransitionError(ValueError):
+    """A write attempted an edge outside the canonical scenario lifecycle."""
+
+    code = "status_transition_not_allowed"
+
+    def __init__(self, current_status: object, target_status: object) -> None:
+        self.current_status = current_status
+        self.target_status = target_status
+        super().__init__(
+            f"{self.code}: cannot move test scenario from "
+            f"{current_status!r} to {target_status!r}"
+        )
+
+
+def is_test_scenario_status_transition_allowed(
+    current_status: object,
+    target_status: object,
+) -> bool:
+    """Return admission from ``SDLC_REGISTRY``; identical status is a no-op."""
+
+    if (
+        not isinstance(current_status, str)
+        or current_status not in VALID_SCENARIO_STATUSES
+        or not isinstance(target_status, str)
+        or target_status not in VALID_SCENARIO_STATUSES
+    ):
+        return False
+    return current_status == target_status or is_transition_allowed(
+        "test_scenario",
+        current_status,
+        target_status,
+    )
+
+
+def require_test_scenario_status_transition(
+    current_status: object,
+    target_status: object,
+) -> None:
+    """Fail closed unless the canonical lifecycle accepts the requested edge."""
+
+    if not is_test_scenario_status_transition_allowed(current_status, target_status):
+        raise InvalidScenarioStatusTransitionError(current_status, target_status)
+
+
 # --------------------------------------------------------------------------
 # Scenario-type vocabulary (spec ac16b3c9 — fail-closed scenario_type)
 # --------------------------------------------------------------------------
+
 
 class InvalidScenarioTypeError(ValueError):
     """Raised when a write supplies a scenario_type outside
@@ -148,9 +192,7 @@ def resolve_scenario_types_for_whole_list_write(
     """
 
     old_by_id: dict[Any, dict[str, Any]] = {
-        item.get("id"): item
-        for item in (old_scenarios or [])
-        if isinstance(item, dict)
+        item.get("id"): item for item in (old_scenarios or []) if isinstance(item, dict)
     }
     resolved: list[object] = []
     for item in new_scenarios or []:
@@ -350,9 +392,7 @@ _ATTESTATION_V2_KEYS = frozenset(
         "attestation_sha256",
     }
 )
-_ASSERTION_V2_KEYS = frozenset(
-    {"name", "expected", "observed", "status", "message"}
-)
+_ASSERTION_V2_KEYS = frozenset({"name", "expected", "observed", "status", "message"})
 _PROVENANCE_V2_KEYS = frozenset(
     {"producer", "producer_version", "adapter", "environment"}
 )
@@ -402,7 +442,9 @@ def compute_execution_attestation_sha256(
     plain = _as_plain_mapping(attestation)
     if plain is None:
         raise TypeError("attestation must be a mapping or Pydantic model")
-    unsigned = {key: value for key, value in plain.items() if key != "attestation_sha256"}
+    unsigned = {
+        key: value for key, value in plain.items() if key != "attestation_sha256"
+    }
     # Pydantic materializes the optional assertion message as ``None`` while a
     # raw JSON producer may omit it. Canonicalize that one optional field so a
     # typed request round-trip cannot invalidate an otherwise identical proof.
@@ -485,8 +527,7 @@ def compute_test_scenario_semantic_sha256(
             "linked_criteria": linked_values,
         },
         "acceptance_criteria": [
-            _semantic_acceptance_criterion(item)
-            for item in (acceptance_criteria or ())
+            _semantic_acceptance_criterion(item) for item in (acceptance_criteria or ())
         ],
     }
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
@@ -565,7 +606,10 @@ def verify_mcp_replay_evidence_v2(
     if not _non_empty_string(execution_receipt):
         reasons.append("evidence_v2.execution_receipt_required")
     if has_legacy:
-        if not isinstance(legacy_value, str) or legacy_value.strip() != manifest_ref.strip():
+        if (
+            not isinstance(legacy_value, str)
+            or legacy_value.strip() != manifest_ref.strip()
+        ):
             reasons.append("evidence_v2.ambiguous_legacy_manifest")
 
     unexpected = sorted(set(attestation) - _ATTESTATION_V2_KEYS)
@@ -589,10 +633,7 @@ def verify_mcp_replay_evidence_v2(
         attested_scenario_sha256
     ):
         reasons.append("evidence_v2.scenario_sha256_invalid")
-    elif (
-        scenario_sha256 is not None
-        and attested_scenario_sha256 != scenario_sha256
-    ):
+    elif scenario_sha256 is not None and attested_scenario_sha256 != scenario_sha256:
         reasons.append("evidence_v2.scenario_semantic_binding_mismatch")
     if attestation.get("product_runtime_exercised") is not True:
         reasons.append("evidence_v2.product_runtime_not_exercised")
@@ -839,7 +880,9 @@ def validate_test_scenario_evidence(
         return verdict.verified, list(verdict.reason_codes)
 
     if explicit_class is not None:
-        if explicit_class in _RUN_LOG_CLASSES and replayable_evidence_required(evidence):
+        if explicit_class in _RUN_LOG_CLASSES and replayable_evidence_required(
+            evidence
+        ):
             # fr_958f0c9c / br_078725cc: a run-log / non-replayable class is NOT
             # acceptable when a deterministic replay should exist or is cheap/
             # existing — demand a replayable class rather than a weak log.
@@ -878,6 +921,63 @@ def scenario_has_required_evidence(
         scenario_id=str(scenario.get("id")) if scenario.get("id") is not None else None,
     )
     return ok
+
+
+def scenario_has_authenticated_required_evidence(
+    *,
+    board_id: str,
+    spec_id: str,
+    scenario: dict[str, Any],
+    acceptance_criteria: list[object],
+) -> bool:
+    """Authenticate Evidence V2 while preserving structural legacy evidence.
+
+    Evidence V2 must resolve through the registered edition verifier and bind
+    the scenario's current semantic digest.  The verifier deliberately receives
+    no actor constraint because downstream reviewers may consume proof issued
+    by another actor; actor equality is enforced when evidence is written.
+    """
+
+    if not scenario_has_required_evidence(scenario):
+        return False
+    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    claims_v2 = bool(
+        isinstance(evidence, dict)
+        and (
+            evidence.get("manifest_ref") is not None
+            or evidence.get("execution_attestation") is not None
+            or evidence.get("execution_receipt") is not None
+        )
+    )
+    if not claims_v2:
+        return True
+
+    from okto_pulse.core.ports.test_evidence import (
+        resolve_test_evidence_write_verifier,
+    )
+
+    verifier = resolve_test_evidence_write_verifier()
+    if verifier is None or not isinstance(evidence, dict):
+        return False
+    try:
+        scenario_sha256 = compute_test_scenario_semantic_sha256(
+            board_id=board_id,
+            spec_id=spec_id,
+            scenario=scenario,
+            acceptance_criteria=acceptance_criteria,
+        )
+        verification = verifier.verify(
+            board_id=board_id,
+            spec_id=spec_id,
+            scenario_id=str(scenario.get("id") or ""),
+            scenario_sha256=scenario_sha256,
+            status=str(scenario.get("status") or ""),
+            actor_id=None,
+            evidence=evidence,
+        )
+    except (TypeError, ValueError):
+        return False
+    return verification.verified
 
 
 def reexecutable_evidence_reference(scenario: dict[str, Any]) -> str:

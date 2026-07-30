@@ -4,6 +4,9 @@ version: "1.1"
 
 # Cards Workflow — Implementation, Bug & Test Execution
 
+Executable guideline evaluation follows
+`okto-pulse://reference/policy-compliance`.
+
 ## 2.7b Architecture Design — Structural Artifacts (Summary)
 
 Architecture Design is the first-class place for system structure. See the full reference in `okto-pulse://reference/tool-docs/architecture`. Use `okto_pulse_copy_architecture_to_card` before starting execution (`started`, then `in_progress` for normal cards).

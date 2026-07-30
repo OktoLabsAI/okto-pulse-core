@@ -31,6 +31,7 @@ from okto_pulse.core.domain.enums import (
     SprintLaneType,
     SprintStatus,
     StoryStatus,
+    TestScenarioStatus,
 )
 from okto_pulse.core.domain.knowledge_governance import (
     project_knowledge_governance,
@@ -289,7 +290,7 @@ class ChoiceResponse(BaseModel):
 
     responder_id: str
     responder_name: str
-    selected: list[str] = []   # IDs of selected options
+    selected: list[str] = []  # IDs of selected options
     free_text: str | None = None
 
 
@@ -336,7 +337,7 @@ class CommentResponse(BaseSchema):
 class TestEvidenceAssertionV2(BaseModel):
     """One machine-checkable assertion observed during a product execution."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
     name: str = Field(..., min_length=1)
     expected: Any
@@ -441,7 +442,9 @@ class TestScenario(BaseModel):
     then: str = ""  # expected result
     notes: str | None = None
     status: str = "draft"  # draft | ready | automated | passed | failed
-    linked_task_ids: list[str] | None = None  # card IDs that implement/automate this test
+    linked_task_ids: list[str] | None = (
+        None  # card IDs that implement/automate this test
+    )
     evidence: TestScenarioEvidence | None = None
     latest_evidence: TestScenarioEvidence | None = None
 
@@ -459,6 +462,10 @@ class TestScenarioWrite(TestScenario):
     scenario_type: ScenarioType = Field(
         DEFAULT_SCENARIO_TYPE,
         description=SCENARIO_TYPE_DESCRIPTION,
+    )
+    status: TestScenarioStatus = Field(
+        TestScenarioStatus.DRAFT,
+        validate_default=True,
     )
 
 
@@ -908,7 +915,9 @@ class ApiContract(BaseModel):
 
     id: str
     contract_type: Literal["http", "in_process", "grpc", "event"] = "http"
-    method: str | None = None  # HTTP verb when contract_type=="http"; optional otherwise
+    method: str | None = (
+        None  # HTTP verb when contract_type=="http"; optional otherwise
+    )
     path: str | None = None  # required for http; optional for non-http
     description: str = ""
     request_body: dict[str, Any] | None = None  # OBJECT
@@ -969,7 +978,9 @@ class ApiContract(BaseModel):
         return self
 
 
-IntegrationRequirementStatus = Literal["active", "superseded", "revoked", "not_applicable"]
+IntegrationRequirementStatus = Literal[
+    "active", "superseded", "revoked", "not_applicable"
+]
 IntegrationRequirementType = Literal[
     "api",
     "queue",
@@ -1011,7 +1022,9 @@ class IntegrationRequirement(BaseModel):
         return self
 
 
-ObservabilityRequirementStatus = Literal["active", "superseded", "revoked", "not_applicable"]
+ObservabilityRequirementStatus = Literal[
+    "active", "superseded", "revoked", "not_applicable"
+]
 ObservabilitySignalType = Literal[
     "metric",
     "log",
@@ -1036,7 +1049,9 @@ class ObservabilityRequirement(BaseModel):
     severity: str | None = None
     owner: str | None = None
     linked_requirements: list[str] | None = None  # canonical FR/TR ids
-    linked_integration_requirements: list[str] | None = None  # IntegrationRequirement IDs
+    linked_integration_requirements: list[str] | None = (
+        None  # IntegrationRequirement IDs
+    )
     linked_task_ids: list[str] | None = None  # Card IDs linked to this OR
     status: ObservabilityRequirementStatus = "active"
     notes: str | None = None
@@ -1196,7 +1211,9 @@ class ArchitectureWarningAcknowledgementRequest(BaseModel):
 class ArchitectureDesignCreate(ArchitectureDesignBase):
     """Request body for creating an Architecture Design on a parent."""
 
-    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
+    architecture_warning_acknowledgement: (
+        ArchitectureWarningAcknowledgementRequest | None
+    ) = None
 
 
 class ArchitectureDesignUpdate(BaseModel):
@@ -1214,7 +1231,9 @@ class ArchitectureDesignUpdate(BaseModel):
     source_version: int | None = None
     source_design_id: str | None = None
     change_summary: str | None = None
-    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
+    architecture_warning_acknowledgement: (
+        ArchitectureWarningAcknowledgementRequest | None
+    ) = None
 
     @field_validator("global_description")
     @classmethod
@@ -1306,15 +1325,36 @@ def _validate_ideation_complexity(value: str | None) -> str | None:
 class IdeationCreate(BaseModel):
     """Schema for creating an ideation."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo da ideacao (1-500 chars).")
-    description: str | None = Field(None, description="Descricao geral da ideia ou oportunidade.")
-    problem_statement: str | None = Field(None, description="Enunciado do problema que a ideacao pretende resolver.")
-    proposed_approach: str | None = Field(None, description="Abordagem proposta para solucionar o problema.")
-    scope_assessment: dict | None = Field(None, description="Avaliacao do escopo em formato livre (impacto, esforco, etc).")
-    complexity: str | None = Field(None, description="Complexidade estimada: small, medium, large (enum IdeationComplexity).")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Titulo da ideacao (1-500 chars).",
+    )
+    description: str | None = Field(
+        None, description="Descricao geral da ideia ou oportunidade."
+    )
+    problem_statement: str | None = Field(
+        None, description="Enunciado do problema que a ideacao pretende resolver."
+    )
+    proposed_approach: str | None = Field(
+        None, description="Abordagem proposta para solucionar o problema."
+    )
+    scope_assessment: dict | None = Field(
+        None,
+        description="Avaliacao do escopo em formato livre (impacto, esforco, etc).",
+    )
+    complexity: str | None = Field(
+        None,
+        description="Complexidade estimada: small, medium, large (enum IdeationComplexity).",
+    )
     assignee_id: str | None = Field(None, description="ID do responsavel pela ideacao.")
-    labels: list[str] | None = Field(None, description="Labels de categorizacao da ideacao.")
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela associados a ideacao.")
+    labels: list[str] | None = Field(
+        None, description="Labels de categorizacao da ideacao."
+    )
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Mockups de tela associados a ideacao."
+    )
 
     @field_validator("complexity")
     @classmethod
@@ -1325,15 +1365,37 @@ class IdeationCreate(BaseModel):
 class IdeationUpdate(BaseModel):
     """Schema for updating an ideation."""
 
-    title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo da ideacao (opcional).")
-    description: str | None = Field(None, description="Nova descricao geral da ideia (opcional).")
-    problem_statement: str | None = Field(None, description="Novo enunciado do problema (opcional).")
-    proposed_approach: str | None = Field(None, description="Nova abordagem proposta (opcional).")
-    scope_assessment: dict | None = Field(None, description="Nova avaliacao de escopo em formato livre (opcional).")
-    complexity: str | None = Field(None, description="Nova complexidade estimada: small, medium, large (enum IdeationComplexity, opcional).")
-    assignee_id: str | None = Field(None, description="Novo ID do responsavel pela ideacao (opcional).")
-    labels: list[str] | None = Field(None, description="Novas labels de categorizacao (opcional).")
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela (opcional).")
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo da ideacao (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao geral da ideia (opcional)."
+    )
+    problem_statement: str | None = Field(
+        None, description="Novo enunciado do problema (opcional)."
+    )
+    proposed_approach: str | None = Field(
+        None, description="Nova abordagem proposta (opcional)."
+    )
+    scope_assessment: dict | None = Field(
+        None, description="Nova avaliacao de escopo em formato livre (opcional)."
+    )
+    complexity: str | None = Field(
+        None,
+        description="Nova complexidade estimada: small, medium, large (enum IdeationComplexity, opcional).",
+    )
+    assignee_id: str | None = Field(
+        None, description="Novo ID do responsavel pela ideacao (opcional)."
+    )
+    labels: list[str] | None = Field(
+        None, description="Novas labels de categorizacao (opcional)."
+    )
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Novos mockups de tela (opcional)."
+    )
 
     @field_validator("complexity")
     @classmethod
@@ -1517,10 +1579,22 @@ class IdeationQAResponse(BaseSchema):
 class IdeationKnowledgeCreate(BaseModel):
     """Schema for creating an ideation knowledge base item."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo do KB item da ideacao (1-500 chars).")
-    description: str | None = Field(None, description="Descricao resumida do KB item da ideacao.")
-    content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
-    mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Titulo do KB item da ideacao (1-500 chars).",
+    )
+    description: str | None = Field(
+        None, description="Descricao resumida do KB item da ideacao."
+    )
+    content: str = Field(
+        ..., min_length=1, description="Conteudo do KB item (markdown por padrao)."
+    )
+    mime_type: str = Field(
+        "text/markdown",
+        description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.",
+    )
     governance_metadata: Any | None = Field(
         None,
         description=(
@@ -1533,10 +1607,21 @@ class IdeationKnowledgeCreate(BaseModel):
 class IdeationKnowledgeUpdate(BaseModel):
     """Schema for updating an ideation knowledge base item."""
 
-    title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo do KB item da ideacao (opcional).")
-    description: str | None = Field(None, description="Nova descricao resumida (opcional).")
-    content: str | None = Field(None, min_length=1, description="Novo conteudo do KB item (opcional).")
-    mime_type: str | None = Field(None, description="Novo MIME type do conteudo (opcional).")
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo do KB item da ideacao (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao resumida (opcional)."
+    )
+    content: str | None = Field(
+        None, min_length=1, description="Novo conteudo do KB item (opcional)."
+    )
+    mime_type: str | None = Field(
+        None, description="Novo MIME type do conteudo (opcional)."
+    )
     governance_metadata: Any | None = Field(
         None,
         description=(
@@ -1615,20 +1700,51 @@ def _require_nonempty_in_scope(value: list[str] | None) -> list[str] | None:
 class RefinementCreate(BaseModel):
     """Schema for creating a refinement."""
 
-    ideation_id: str = Field(..., description="ID da ideacao pai a qual este refinement pertence.")
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo do refinement (1-500 chars).")
+    ideation_id: str = Field(
+        ..., description="ID da ideacao pai a qual este refinement pertence."
+    )
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Titulo do refinement (1-500 chars).",
+    )
     description: str | None = Field(None, description="Descricao geral do refinement.")
-    in_scope: list[str] | None = Field(None, description="Itens dentro do escopo deste refinement (pelo menos 1 se fornecido).")
-    out_of_scope: list[str] | None = Field(None, description="Itens explicitamente fora do escopo deste refinement.")
-    analysis: str | None = Field(None, description="Analise tecnica e de negocio do refinement.")
-    decisions: list[str] | None = Field(None, description="Decisoes registradas durante o refinamento.")
-    assignee_id: str | None = Field(None, description="ID do responsavel pelo refinement.")
-    labels: list[str] | None = Field(None, description="Labels de categorizacao do refinement.")
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela associados ao refinement.")
+    in_scope: list[str] | None = Field(
+        None,
+        description="Itens dentro do escopo deste refinement (pelo menos 1 se fornecido).",
+    )
+    out_of_scope: list[str] | None = Field(
+        None, description="Itens explicitamente fora do escopo deste refinement."
+    )
+    analysis: str | None = Field(
+        None, description="Analise tecnica e de negocio do refinement."
+    )
+    decisions: list[str] | None = Field(
+        None, description="Decisoes registradas durante o refinamento."
+    )
+    assignee_id: str | None = Field(
+        None, description="ID do responsavel pelo refinement."
+    )
+    labels: list[str] | None = Field(
+        None, description="Labels de categorizacao do refinement."
+    )
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Mockups de tela associados ao refinement."
+    )
     # Artifact propagation filters (optional — None = propagate all from parent)
-    mockup_ids: list[str] | None = Field(None, description="IDs dos mockups a propagar da ideacao (None = propagar todos).")
-    kb_ids: list[str] | None = Field(None, description="IDs dos KB items a propagar da ideacao (None = propagar todos).")
-    architecture_design_ids: list[str] | None = Field(None, description="IDs dos architecture designs a propagar (None = propagar todos).")
+    mockup_ids: list[str] | None = Field(
+        None,
+        description="IDs dos mockups a propagar da ideacao (None = propagar todos).",
+    )
+    kb_ids: list[str] | None = Field(
+        None,
+        description="IDs dos KB items a propagar da ideacao (None = propagar todos).",
+    )
+    architecture_design_ids: list[str] | None = Field(
+        None,
+        description="IDs dos architecture designs a propagar (None = propagar todos).",
+    )
     architecture_propagation_mode: str = Field(
         "copy",
         description=(
@@ -1654,15 +1770,37 @@ class RefinementCreate(BaseModel):
 class RefinementUpdate(BaseModel):
     """Schema for updating a refinement."""
 
-    title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo do refinement (opcional).")
-    description: str | None = Field(None, description="Nova descricao geral do refinement (opcional).")
-    in_scope: list[str] | None = Field(None, description="Nova lista de itens em escopo (None = sem mudanca; lista vazia = erro).")
-    out_of_scope: list[str] | None = Field(None, description="Nova lista de itens fora de escopo (opcional).")
-    analysis: str | None = Field(None, description="Nova analise tecnica e de negocio (opcional).")
-    decisions: list[str] | None = Field(None, description="Novas decisoes do refinamento (opcional).")
-    assignee_id: str | None = Field(None, description="Novo ID do responsavel pelo refinement (opcional).")
-    labels: list[str] | None = Field(None, description="Novas labels de categorizacao (opcional).")
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela (opcional).")
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo do refinement (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao geral do refinement (opcional)."
+    )
+    in_scope: list[str] | None = Field(
+        None,
+        description="Nova lista de itens em escopo (None = sem mudanca; lista vazia = erro).",
+    )
+    out_of_scope: list[str] | None = Field(
+        None, description="Nova lista de itens fora de escopo (opcional)."
+    )
+    analysis: str | None = Field(
+        None, description="Nova analise tecnica e de negocio (opcional)."
+    )
+    decisions: list[str] | None = Field(
+        None, description="Novas decisoes do refinamento (opcional)."
+    )
+    assignee_id: str | None = Field(
+        None, description="Novo ID do responsavel pelo refinement (opcional)."
+    )
+    labels: list[str] | None = Field(
+        None, description="Novas labels de categorizacao (opcional)."
+    )
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Novos mockups de tela (opcional)."
+    )
 
     @field_validator("in_scope")
     @classmethod
@@ -1849,10 +1987,22 @@ class RefinementSnapshotSummary(BaseSchema):
 class RefinementKnowledgeCreate(BaseModel):
     """Schema for creating a refinement knowledge base item."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo do KB item do refinement (1-500 chars).")
-    description: str | None = Field(None, description="Descricao resumida do KB item do refinement.")
-    content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
-    mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Titulo do KB item do refinement (1-500 chars).",
+    )
+    description: str | None = Field(
+        None, description="Descricao resumida do KB item do refinement."
+    )
+    content: str = Field(
+        ..., min_length=1, description="Conteudo do KB item (markdown por padrao)."
+    )
+    mime_type: str = Field(
+        "text/markdown",
+        description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.",
+    )
     governance_metadata: Any | None = Field(
         None,
         description=(
@@ -1940,53 +2090,146 @@ class RefinementKnowledgeSummary(KnowledgeGovernanceResponseSchema):
 class SpecCreate(BaseModel):
     """Schema for creating a spec."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo da spec (1-500 chars).")
-    description: str | None = Field(None, description="Descricao resumida do que a spec cobre.")
-    context: str | None = Field(None, description="Contexto de negocio e tecnico para a spec.")
-    functional_requirements: list[str | dict] | None = Field(None, description="Lista de requisitos funcionais (FRs) em texto livre ou objetos estruturados {id, text, ...}.")
-    technical_requirements: list[str | dict] | None = Field(None, description="Requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.")
-    acceptance_criteria: list[str | dict] | None = Field(None, description="Criterios de aceite em texto livre ou objetos estruturados {id, text, ...}.")
-    test_scenarios: list[TestScenarioWrite] | None = Field(None, description="Cenarios de teste vinculados a spec.")
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela associados a spec.")
-    business_rules: list[BusinessRule] | None = Field(None, description="Regras de negocio que governam o comportamento do sistema.")
-    api_contracts: list[ApiContract] | None = Field(None, description="Contratos de API (endpoints, metodos, schemas).")
-    integration_requirements: list[IntegrationRequirement] | None = Field(None, description="Requisitos de integracao com sistemas externos.")
-    observability_requirements: list[ObservabilityRequirement] | None = Field(None, description="Requisitos de observabilidade (metricas, logs, alertas).")
-    decisions: list[Decision] | None = Field(None, description="Decisoes de design formalizadas nesta spec.")
+    title: str = Field(
+        ..., min_length=1, max_length=500, description="Titulo da spec (1-500 chars)."
+    )
+    description: str | None = Field(
+        None, description="Descricao resumida do que a spec cobre."
+    )
+    context: str | None = Field(
+        None, description="Contexto de negocio e tecnico para a spec."
+    )
+    functional_requirements: list[str | dict] | None = Field(
+        None,
+        description="Lista de requisitos funcionais (FRs) em texto livre ou objetos estruturados {id, text, ...}.",
+    )
+    technical_requirements: list[str | dict] | None = Field(
+        None,
+        description="Requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.",
+    )
+    acceptance_criteria: list[str | dict] | None = Field(
+        None,
+        description="Criterios de aceite em texto livre ou objetos estruturados {id, text, ...}.",
+    )
+    test_scenarios: list[TestScenarioWrite] | None = Field(
+        None, description="Cenarios de teste vinculados a spec."
+    )
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Mockups de tela associados a spec."
+    )
+    business_rules: list[BusinessRule] | None = Field(
+        None, description="Regras de negocio que governam o comportamento do sistema."
+    )
+    api_contracts: list[ApiContract] | None = Field(
+        None, description="Contratos de API (endpoints, metodos, schemas)."
+    )
+    integration_requirements: list[IntegrationRequirement] | None = Field(
+        None, description="Requisitos de integracao com sistemas externos."
+    )
+    observability_requirements: list[ObservabilityRequirement] | None = Field(
+        None, description="Requisitos de observabilidade (metricas, logs, alertas)."
+    )
+    decisions: list[Decision] | None = Field(
+        None, description="Decisoes de design formalizadas nesta spec."
+    )
     status: SpecStatus = Field(SpecStatus.DRAFT, description="Status inicial da spec.")
     assignee_id: str | None = Field(None, description="ID do responsavel pela spec.")
-    labels: list[str] | None = Field(None, description="Labels de categorizacao da spec.")
-    ideation_id: str | None = Field(None, description="ID da ideacao de origem desta spec.")
-    refinement_id: str | None = Field(None, description="ID do refinement de origem desta spec.")
+    labels: list[str] | None = Field(
+        None, description="Labels de categorizacao da spec."
+    )
+    ideation_id: str | None = Field(
+        None, description="ID da ideacao de origem desta spec."
+    )
+    refinement_id: str | None = Field(
+        None, description="ID do refinement de origem desta spec."
+    )
 
 
 class SpecUpdate(BaseModel):
     """Schema for updating a spec."""
 
-    title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo da spec (opcional).")
-    description: str | None = Field(None, description="Nova descricao resumida da spec (opcional).")
-    context: str | None = Field(None, description="Novo contexto de negocio e tecnico da spec (opcional).")
-    functional_requirements: list[str | dict] | None = Field(None, description="Nova lista de requisitos funcionais (substitui a existente).")
-    technical_requirements: list[str | dict] | None = Field(None, description="Novos requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.")
-    acceptance_criteria: list[str | dict] | None = Field(None, description="Novos criterios de aceite (substitui a lista existente).")
-    test_scenarios: list[TestScenarioWrite] | None = Field(None, description="Novos cenarios de teste vinculados a spec.")
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela associados a spec.")
-    business_rules: list[BusinessRule] | None = Field(None, description="Novas regras de negocio (substitui a lista existente).")
-    api_contracts: list[ApiContract] | None = Field(None, description="Novos contratos de API (substitui a lista existente).")
-    integration_requirements: list[IntegrationRequirement] | None = Field(None, description="Novos requisitos de integracao (substitui a lista existente).")
-    observability_requirements: list[ObservabilityRequirement] | None = Field(None, description="Novos requisitos de observabilidade (substitui a lista existente).")
-    decisions: list[Decision] | None = Field(None, description="Novas decisoes de design formalizadas (substitui a lista existente).")
-    skip_test_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de test scenarios e ignorado.")
-    skip_rules_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de business rules e ignorado.")
-    skip_trs_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de technical requirements e ignorado.")
-    skip_contract_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de API contracts e ignorado.")
-    skip_ir_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de integration requirements e ignorado.")
-    skip_or_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de observability requirements e ignorado.")
-    skip_decisions_coverage: bool | None = Field(None, description="Se True, o gate de cobertura de decisions e ignorado.")
-    assignee_id: str | None = Field(None, description="Novo ID do responsavel pela spec.")
-    labels: list[str] | None = Field(None, description="Novas labels de categorizacao da spec.")
-    ideation_id: str | None = Field(None, description="Novo ID da ideacao de origem desta spec.")
-    refinement_id: str | None = Field(None, description="Novo ID do refinement de origem desta spec.")
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo da spec (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao resumida da spec (opcional)."
+    )
+    context: str | None = Field(
+        None, description="Novo contexto de negocio e tecnico da spec (opcional)."
+    )
+    functional_requirements: list[str | dict] | None = Field(
+        None, description="Nova lista de requisitos funcionais (substitui a existente)."
+    )
+    technical_requirements: list[str | dict] | None = Field(
+        None,
+        description="Novos requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.",
+    )
+    acceptance_criteria: list[str | dict] | None = Field(
+        None, description="Novos criterios de aceite (substitui a lista existente)."
+    )
+    test_scenarios: list[TestScenarioWrite] | None = Field(
+        None, description="Novos cenarios de teste vinculados a spec."
+    )
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Novos mockups de tela associados a spec."
+    )
+    business_rules: list[BusinessRule] | None = Field(
+        None, description="Novas regras de negocio (substitui a lista existente)."
+    )
+    api_contracts: list[ApiContract] | None = Field(
+        None, description="Novos contratos de API (substitui a lista existente)."
+    )
+    integration_requirements: list[IntegrationRequirement] | None = Field(
+        None,
+        description="Novos requisitos de integracao (substitui a lista existente).",
+    )
+    observability_requirements: list[ObservabilityRequirement] | None = Field(
+        None,
+        description="Novos requisitos de observabilidade (substitui a lista existente).",
+    )
+    decisions: list[Decision] | None = Field(
+        None,
+        description="Novas decisoes de design formalizadas (substitui a lista existente).",
+    )
+    skip_test_coverage: bool | None = Field(
+        None, description="Se True, o gate de cobertura de test scenarios e ignorado."
+    )
+    skip_rules_coverage: bool | None = Field(
+        None, description="Se True, o gate de cobertura de business rules e ignorado."
+    )
+    skip_trs_coverage: bool | None = Field(
+        None,
+        description="Se True, o gate de cobertura de technical requirements e ignorado.",
+    )
+    skip_contract_coverage: bool | None = Field(
+        None, description="Se True, o gate de cobertura de API contracts e ignorado."
+    )
+    skip_ir_coverage: bool | None = Field(
+        None,
+        description="Se True, o gate de cobertura de integration requirements e ignorado.",
+    )
+    skip_or_coverage: bool | None = Field(
+        None,
+        description="Se True, o gate de cobertura de observability requirements e ignorado.",
+    )
+    skip_decisions_coverage: bool | None = Field(
+        None, description="Se True, o gate de cobertura de decisions e ignorado."
+    )
+    assignee_id: str | None = Field(
+        None, description="Novo ID do responsavel pela spec."
+    )
+    labels: list[str] | None = Field(
+        None, description="Novas labels de categorizacao da spec."
+    )
+    ideation_id: str | None = Field(
+        None, description="Novo ID da ideacao de origem desta spec."
+    )
+    refinement_id: str | None = Field(
+        None, description="Novo ID do refinement de origem desta spec."
+    )
 
 
 class SpecMove(BaseModel):
@@ -2189,10 +2432,22 @@ class SpecQAResponse(BaseSchema):
 class SpecKnowledgeCreate(BaseModel):
     """Schema for creating a knowledge base item."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo do item de knowledge base (1-500 chars).")
-    description: str | None = Field(None, description="Descricao resumida do conteudo do KB item.")
-    content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
-    mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Titulo do item de knowledge base (1-500 chars).",
+    )
+    description: str | None = Field(
+        None, description="Descricao resumida do conteudo do KB item."
+    )
+    content: str = Field(
+        ..., min_length=1, description="Conteudo do KB item (markdown por padrao)."
+    )
+    mime_type: str = Field(
+        "text/markdown",
+        description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.",
+    )
     governance_metadata: Any | None = Field(
         None,
         description=(
@@ -2205,10 +2460,21 @@ class SpecKnowledgeCreate(BaseModel):
 class SpecKnowledgeUpdate(BaseModel):
     """Schema for updating a knowledge base item."""
 
-    title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo do KB item (opcional).")
-    description: str | None = Field(None, description="Nova descricao resumida (opcional).")
-    content: str | None = Field(None, description="Novo conteudo do KB item (opcional).")
-    mime_type: str | None = Field(None, description="Novo MIME type do conteudo (opcional).")
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo do KB item (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao resumida (opcional)."
+    )
+    content: str | None = Field(
+        None, description="Novo conteudo do KB item (opcional)."
+    )
+    mime_type: str | None = Field(
+        None, description="Novo MIME type do conteudo (opcional)."
+    )
     governance_metadata: Any | None = Field(
         None,
         description=(
@@ -2282,7 +2548,9 @@ class SpecResponse(BaseSchema):
     description: str | None
     context: str | None
     functional_requirements: list[str | dict] | None
-    technical_requirements: list[str | dict] | None  # str (legacy) or {id, text, linked_task_ids}
+    technical_requirements: (
+        list[str | dict] | None
+    )  # str (legacy) or {id, text, linked_task_ids}
     acceptance_criteria: list[str | dict] | None
     test_scenarios: list[TestScenario] | None = None
     screen_mockups: list[ScreenMockup] | None = None
@@ -2340,9 +2608,18 @@ DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationRespon
 class CardCreate(BaseModel):
     """Schema for creating a card."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Titulo conciso do card (1-500 chars).")
-    description: str | None = Field(None, description="Resumo do objetivo ou contexto do card.")
-    details: str | None = Field(None, description="Descricao tecnica detalhada, markdown suportado.")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Titulo conciso do card (1-500 chars).",
+    )
+    description: str | None = Field(
+        None, description="Resumo do objetivo ou contexto do card."
+    )
+    details: str | None = Field(
+        None, description="Descricao tecnica detalhada, markdown suportado."
+    )
     status: CardStatus = Field(
         CardStatus.NOT_STARTED,
         description=(
@@ -2350,12 +2627,25 @@ class CardCreate(BaseModel):
             "Use move_card para avancar o ciclo de vida."
         ),
     )
-    priority: CardPriority = Field(CardPriority.NONE, description="Prioridade do card: none, low, medium, high, very_high, critical.")
-    assignee_id: str | None = Field(None, description="ID do agente ou usuario responsavel pelo card.")
-    due_date: datetime | None = Field(None, description="Data limite para conclusao do card (ISO 8601).")
-    labels: list[str] | None = Field(None, description="Tags de categorizacao para filtragem e busca.")
-    spec_id: str | None = Field(None, description="ID da spec a qual este card esta vinculado.")
-    sprint_id: str | None = Field(None, description="ID do sprint ao qual este card pertence.")
+    priority: CardPriority = Field(
+        CardPriority.NONE,
+        description="Prioridade do card: none, low, medium, high, very_high, critical.",
+    )
+    assignee_id: str | None = Field(
+        None, description="ID do agente ou usuario responsavel pelo card."
+    )
+    due_date: datetime | None = Field(
+        None, description="Data limite para conclusao do card (ISO 8601)."
+    )
+    labels: list[str] | None = Field(
+        None, description="Tags de categorizacao para filtragem e busca."
+    )
+    spec_id: str | None = Field(
+        None, description="ID da spec a qual este card esta vinculado."
+    )
+    sprint_id: str | None = Field(
+        None, description="ID do sprint ao qual este card pertence."
+    )
     test_scenario_ids: list[str] | None = Field(
         None,
         description=(
@@ -2372,15 +2662,33 @@ class CardCreate(BaseModel):
         None,
         description="Business-rule IDs to backlink atomically during card creation.",
     )
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela vinculados ao card.")
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Mockups de tela vinculados ao card."
+    )
     # Card type: "normal", "test", or "bug".
-    card_type: str = Field("normal", description="Tipo do card: 'normal', 'test' ou 'bug'.")
-    origin_task_id: str | None = Field(None, description="ID do card de origem (para cards de bug derivados de outro card).")
-    severity: str | None = Field(None, description="Severidade do bug: 'critical', 'major' ou 'minor' (apenas bug cards).")
-    expected_behavior: str | None = Field(None, description="Comportamento esperado antes do bug (apenas bug cards).")
-    observed_behavior: str | None = Field(None, description="Comportamento observado/incorreto (apenas bug cards).")
-    steps_to_reproduce: str | None = Field(None, description="Passos para reproduzir o bug (apenas bug cards).")
-    action_plan: str | None = Field(None, description="Plano de acao para correcao do bug (apenas bug cards).")
+    card_type: str = Field(
+        "normal", description="Tipo do card: 'normal', 'test' ou 'bug'."
+    )
+    origin_task_id: str | None = Field(
+        None,
+        description="ID do card de origem (para cards de bug derivados de outro card).",
+    )
+    severity: str | None = Field(
+        None,
+        description="Severidade do bug: 'critical', 'major' ou 'minor' (apenas bug cards).",
+    )
+    expected_behavior: str | None = Field(
+        None, description="Comportamento esperado antes do bug (apenas bug cards)."
+    )
+    observed_behavior: str | None = Field(
+        None, description="Comportamento observado/incorreto (apenas bug cards)."
+    )
+    steps_to_reproduce: str | None = Field(
+        None, description="Passos para reproduzir o bug (apenas bug cards)."
+    )
+    action_plan: str | None = Field(
+        None, description="Plano de acao para correcao do bug (apenas bug cards)."
+    )
     knowledge_propagation: KnowledgePropagationEnvelopeV2 | None = Field(
         None,
         description=(
@@ -2390,12 +2698,22 @@ class CardCreate(BaseModel):
         ),
     )
 
+
 class CardUpdate(BaseModel):
     """Schema for updating a card."""
 
-    title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo do card (opcional, vazio = sem mudanca).")
-    description: str | None = Field(None, description="Nova descricao do card (opcional).")
-    details: str | None = Field(None, description="Novos detalhes tecnicos do card (opcional).")
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo do card (opcional, vazio = sem mudanca).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao do card (opcional)."
+    )
+    details: str | None = Field(
+        None, description="Novos detalhes tecnicos do card (opcional)."
+    )
     status: CardStatus | None = Field(
         None,
         description=(
@@ -2403,13 +2721,26 @@ class CardUpdate(BaseModel):
             "alteracoes de status. Use move_card para toda transicao."
         ),
     )
-    priority: CardPriority | None = Field(None, description="Nova prioridade: none, low, medium, high, very_high, critical.")
-    position: int | None = Field(None, description="Nova posicao do card dentro da coluna (zero-indexed).")
-    assignee_id: str | None = Field(None, description="Novo ID do responsavel pelo card.")
-    due_date: datetime | None = Field(None, description="Nova data limite do card (ISO 8601).")
-    labels: list[str] | None = Field(None, description="Novas tags de categorizacao do card.")
+    priority: CardPriority | None = Field(
+        None,
+        description="Nova prioridade: none, low, medium, high, very_high, critical.",
+    )
+    position: int | None = Field(
+        None, description="Nova posicao do card dentro da coluna (zero-indexed)."
+    )
+    assignee_id: str | None = Field(
+        None, description="Novo ID do responsavel pelo card."
+    )
+    due_date: datetime | None = Field(
+        None, description="Nova data limite do card (ISO 8601)."
+    )
+    labels: list[str] | None = Field(
+        None, description="Novas tags de categorizacao do card."
+    )
     spec_id: str | None = Field(None, description="Novo ID da spec vinculada ao card.")
-    sprint_id: str | None = Field(None, description="Novo ID do sprint ao qual o card pertence.")
+    sprint_id: str | None = Field(
+        None, description="Novo ID do sprint ao qual o card pertence."
+    )
     test_scenario_ids: list[str] | None = Field(
         None,
         description=(
@@ -2417,15 +2748,34 @@ class CardUpdate(BaseModel):
             "board.settings.max_scenarios_per_card."
         ),
     )
-    screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela vinculados ao card.")
-    knowledge_bases: list[dict] | None = Field(None, description="Base de conhecimento vinculada ao card (lista de dicts).")
+    screen_mockups: list[ScreenMockup] | None = Field(
+        None, description="Novos mockups de tela vinculados ao card."
+    )
+    knowledge_bases: list[dict] | None = Field(
+        None, description="Base de conhecimento vinculada ao card (lista de dicts)."
+    )
     # Bug card fields (only updatable, not card_type or origin_task_id)
-    severity: str | None = Field(None, description="Nova severidade do bug: 'critical', 'major' ou 'minor' (apenas bug cards).")
-    expected_behavior: str | None = Field(None, description="Comportamento esperado atualizado (apenas bug cards).")
-    observed_behavior: str | None = Field(None, description="Comportamento observado atualizado (apenas bug cards).")
-    steps_to_reproduce: str | None = Field(None, description="Passos para reproducao atualizados (apenas bug cards).")
-    action_plan: str | None = Field(None, description="Plano de acao atualizado para correcao do bug (apenas bug cards).")
-    linked_test_task_ids: list[str] | None = Field(None, description="IDs dos cards de teste vinculados a este bug (apenas bug cards).")
+    severity: str | None = Field(
+        None,
+        description="Nova severidade do bug: 'critical', 'major' ou 'minor' (apenas bug cards).",
+    )
+    expected_behavior: str | None = Field(
+        None, description="Comportamento esperado atualizado (apenas bug cards)."
+    )
+    observed_behavior: str | None = Field(
+        None, description="Comportamento observado atualizado (apenas bug cards)."
+    )
+    steps_to_reproduce: str | None = Field(
+        None, description="Passos para reproducao atualizados (apenas bug cards)."
+    )
+    action_plan: str | None = Field(
+        None,
+        description="Plano de acao atualizado para correcao do bug (apenas bug cards).",
+    )
+    linked_test_task_ids: list[str] | None = Field(
+        None,
+        description="IDs dos cards de teste vinculados a este bug (apenas bug cards).",
+    )
     skip_task_requirement_link_gate: bool | None = Field(
         None,
         description=(
@@ -2565,8 +2915,14 @@ class CardMove(BaseModel):
         }
     )
 
-    status: CardStatus = Field(..., description="Novo status do card: not_started, started, in_progress, validation, on_hold, done, cancelled.")
-    position: int | None = Field(None, description="Nova posicao na coluna de destino (-1 ou None = fim da coluna; < -1 = 422). bool/str sao rejeitados sem coercao; floats matematicamente integrais (1.0/-1.0/-0.0) normalizam para int — exatamente o conjunto que o schema draft 2020-12 aceita como 'integer'.")
+    status: CardStatus = Field(
+        ...,
+        description="Novo status do card: not_started, started, in_progress, validation, on_hold, done, cancelled.",
+    )
+    position: int | None = Field(
+        None,
+        description="Nova posicao na coluna de destino (-1 ou None = fim da coluna; < -1 = 422). bool/str sao rejeitados sem coercao; floats matematicamente integrais (1.0/-1.0/-0.0) normalizam para int — exatamente o conjunto que o schema draft 2020-12 aceita como 'integer'.",
+    )
 
     @field_validator("position", mode="before")
     @classmethod
@@ -2586,9 +2942,19 @@ class CardMove(BaseModel):
             "position must be an integer (bool/str rejected; integral floats "
             "normalize; fractional floats invalid)"
         )
-    before_id: str | None = Field(None, description="Ancora relativa: insere IMEDIATAMENTE ANTES deste card ativo da coluna destino. Exclui after_id/position/placement.")
-    after_id: str | None = Field(None, description="Ancora relativa: insere IMEDIATAMENTE DEPOIS deste card ativo da coluna destino. Exclui before_id/position/placement.")
-    placement: str | None = Field(None, description="Posicionamento global na coluna destino: 'start' ou 'end'. Exclui position/anchors.")
+
+    before_id: str | None = Field(
+        None,
+        description="Ancora relativa: insere IMEDIATAMENTE ANTES deste card ativo da coluna destino. Exclui after_id/position/placement.",
+    )
+    after_id: str | None = Field(
+        None,
+        description="Ancora relativa: insere IMEDIATAMENTE DEPOIS deste card ativo da coluna destino. Exclui before_id/position/placement.",
+    )
+    placement: str | None = Field(
+        None,
+        description="Posicionamento global na coluna destino: 'start' ou 'end'. Exclui position/anchors.",
+    )
 
     @model_validator(mode="after")
     def _validate_placement_selectors(self) -> "CardMove":
@@ -2630,12 +2996,31 @@ class CardMove(BaseModel):
             if value is not None and not value.strip():
                 raise ValueError(f"card_move_empty_anchor: {name} must be non-blank")
         return self
-    conclusion: str | None = Field(None, description="Resumo obrigatorio ao mover para 'validation' ou 'done': o que foi feito, arquivos, decisoes e testes.")
-    completeness: int | None = Field(None, description="0-100: quanto do trabalho planejado foi implementado (obrigatorio em validation/done).")
-    completeness_justification: str | None = Field(None, description="Justificativa para o score de completeness (obrigatorio em validation/done).")
-    drift: int | None = Field(None, description="0-100: o quanto a implementacao desviou do plano (0=exato, 100=completamente diferente).")
-    drift_justification: str | None = Field(None, description="Justificativa para o score de drift — explica desvios do plano original.")
-    cancellation_reason: str | None = Field(None, description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.")
+
+    conclusion: str | None = Field(
+        None,
+        description="Resumo obrigatorio ao mover para 'validation' ou 'done': o que foi feito, arquivos, decisoes e testes.",
+    )
+    completeness: int | None = Field(
+        None,
+        description="0-100: quanto do trabalho planejado foi implementado (obrigatorio em validation/done).",
+    )
+    completeness_justification: str | None = Field(
+        None,
+        description="Justificativa para o score de completeness (obrigatorio em validation/done).",
+    )
+    drift: int | None = Field(
+        None,
+        description="0-100: o quanto a implementacao desviou do plano (0=exato, 100=completamente diferente).",
+    )
+    drift_justification: str | None = Field(
+        None,
+        description="Justificativa para o score de drift — explica desvios do plano original.",
+    )
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class CardResponse(BaseSchema):
@@ -2786,14 +3171,46 @@ class CardPageItem(BaseSchema):
 class TaskValidationSubmit(BaseModel):
     """Request body for submitting a task validation."""
 
-    confidence: int = Field(..., ge=0, le=100, description="Confianca do validador na avaliacao (0-100).")
-    confidence_justification: str = Field(..., min_length=10, description="Justificativa para o nivel de confianca (min 10 chars).")
-    estimated_completeness: int = Field(..., ge=0, le=100, description="Completeness estimado do trabalho entregue (0-100).")
-    completeness_justification: str = Field(..., min_length=10, description="Justificativa para o score de completeness (min 10 chars).")
-    estimated_drift: int = Field(..., ge=0, le=100, description="Drift estimado em relacao ao plano original (0-100).")
-    drift_justification: str = Field(..., min_length=10, description="Justificativa para o score de drift (min 10 chars).")
-    general_justification: str = Field(..., min_length=20, description="Justificativa geral da decisao de validacao (min 20 chars).")
-    recommendation: str = Field(..., pattern="^(approve|reject)$", description="Recomendacao do validador: 'approve' ou 'reject'.")
+    confidence: int = Field(
+        ..., ge=0, le=100, description="Confianca do validador na avaliacao (0-100)."
+    )
+    confidence_justification: str = Field(
+        ...,
+        min_length=10,
+        description="Justificativa para o nivel de confianca (min 10 chars).",
+    )
+    estimated_completeness: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Completeness estimado do trabalho entregue (0-100).",
+    )
+    completeness_justification: str = Field(
+        ...,
+        min_length=10,
+        description="Justificativa para o score de completeness (min 10 chars).",
+    )
+    estimated_drift: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Drift estimado em relacao ao plano original (0-100).",
+    )
+    drift_justification: str = Field(
+        ...,
+        min_length=10,
+        description="Justificativa para o score de drift (min 10 chars).",
+    )
+    general_justification: str = Field(
+        ...,
+        min_length=20,
+        description="Justificativa geral da decisao de validacao (min 20 chars).",
+    )
+    recommendation: str = Field(
+        ...,
+        pattern="^(approve|reject)$",
+        description="Recomendacao do validador: 'approve' ou 'reject'.",
+    )
 
 
 class TaskValidationResponse(BaseModel):
@@ -2877,6 +3294,7 @@ class GuidelineCreate(BaseModel):
     tags: list[str] | None = None
     scope: str = "global"
     board_id: str | None = None
+    priority: int = Field(default=0, ge=0)
 
 
 class GuidelineUpdate(BaseModel):
@@ -2958,17 +3376,37 @@ class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
 
     max_scenarios_per_card: int = 3  # max test scenarios a single card can be linked to
-    skip_test_coverage_global: bool = False  # if True, all specs bypass test coverage checks
-    skip_rules_coverage_global: bool = False  # if True, all specs bypass FR→BR coverage checks
-    skip_trs_coverage_global: bool = False  # if True, all specs bypass TR→Task coverage checks
-    skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
-    skip_ir_coverage_global: bool = False  # if True, all specs bypass IR→Task coverage checks
-    skip_or_coverage_global: bool = False  # if True, all specs bypass OR→Task coverage checks
-    skip_task_requirement_link_gate_global: bool = False  # if True, task cards may start without direct FR/TR/BR/IR/OR links
+    skip_test_coverage_global: bool = (
+        False  # if True, all specs bypass test coverage checks
+    )
+    skip_rules_coverage_global: bool = (
+        False  # if True, all specs bypass FR→BR coverage checks
+    )
+    skip_trs_coverage_global: bool = (
+        False  # if True, all specs bypass TR→Task coverage checks
+    )
+    skip_contract_coverage_global: bool = (
+        False  # if True, all specs bypass API contract coverage checks
+    )
+    skip_ir_coverage_global: bool = (
+        False  # if True, all specs bypass IR→Task coverage checks
+    )
+    skip_or_coverage_global: bool = (
+        False  # if True, all specs bypass OR→Task coverage checks
+    )
+    skip_task_requirement_link_gate_global: bool = (
+        False  # if True, task cards may start without direct FR/TR/BR/IR/OR links
+    )
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
-    skip_cognitive_consolidation: bool = False  # if True, done closeout bypasses active cognitive pending blockers
-    allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers
-    require_full_context_for_critical_actions: bool = True  # if True, critical mutations must resolve full entity context
+    skip_cognitive_consolidation: bool = (
+        False  # if True, done closeout bypasses active cognitive pending blockers
+    )
+    allow_agent_self_answering: bool = (
+        False  # explicit opt-in that permits same-principal Q&A answers
+    )
+    require_full_context_for_critical_actions: bool = (
+        True  # if True, critical mutations must resolve full entity context
+    )
     qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
     # Task-validation and sprint reviewer/executor separation. Missing on legacy
     # persisted boards is resolved explicitly as ``off``; new boards and new
@@ -2982,12 +3420,16 @@ class BoardSettings(BaseModel):
     # boards with no field validate as 'off' (TR4 — never breaks an existing board).
     design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
-    require_task_validation: bool = True  # if True, cards must pass validation before moving to done
+    require_task_validation: bool = (
+        True  # if True, cards must pass validation before moving to done
+    )
     min_confidence: int = 70  # min reviewer confidence score
     min_completeness: int = 80  # min reviewer completeness score
     max_drift: int = 50  # max reviewer drift score
     # Spec Validation Gate — board-level defaults
-    require_spec_validation: bool = True  # if True, approved→validated requires Spec Validation Gate submission
+    require_spec_validation: bool = (
+        True  # if True, approved→validated requires Spec Validation Gate submission
+    )
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
@@ -3006,7 +3448,9 @@ class BoardSettings(BaseModel):
     # Spec resource automation — when enabled, selected resources are copied
     # from a linked Spec to newly-created or newly-linked cards.
     auto_derive_spec_resources_enabled: bool = False
-    auto_derive_spec_resource_types: list[SpecResourceType] = Field(default_factory=list)
+    auto_derive_spec_resource_types: list[SpecResourceType] = Field(
+        default_factory=list
+    )
     # Bug Card Gate — NC-6 fix.
     # require_test_task_for_bug: when False, bug cards can advance to in_progress
     #   without a freshly-created linked test task. Default True (gate ATIVO).
@@ -3044,7 +3488,9 @@ class BoardSettings(BaseModel):
     @model_validator(mode="after")
     def _validate_auto_derive_resource_selection(self) -> "BoardSettings":
         resource_types = self.auto_derive_spec_resource_types or []
-        if self.auto_derive_spec_resources_enabled and not (1 <= len(resource_types) <= 3):
+        if self.auto_derive_spec_resources_enabled and not (
+            1 <= len(resource_types) <= 3
+        ):
             raise ValueError(
                 "auto_derive_spec_resource_types must include between 1 and 3 resource types "
                 "when auto_derive_spec_resources_enabled is true"

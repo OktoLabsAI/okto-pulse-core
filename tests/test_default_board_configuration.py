@@ -13,6 +13,7 @@ Reproduce:
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -21,12 +22,16 @@ from sqlalchemy import delete, select
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
-    BoardGuideline,
     DefaultBoardConfiguration,
     DefaultBoardConfigurationAudit,
     Guideline,
 )
-from okto_pulse.core.models.schemas import BoardCreate, BoardResponse, BoardSettings
+from okto_pulse.core.models.schemas import (
+    BoardCreate,
+    BoardResponse,
+    BoardSettings,
+    GuidelineCreate,
+)
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 from okto_pulse.core.services.default_board_configuration import (
     BOARD_EVENT_APPLIED,
@@ -37,7 +42,7 @@ from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationError,
     DefaultBoardConfigurationService,
 )
-from okto_pulse.core.services.main import BoardService
+from okto_pulse.core.services.main import BoardService, GuidelineService
 
 pytestmark = pytest.mark.asyncio
 
@@ -108,8 +113,11 @@ async def test_create_board_applies_active_template_and_persists_snapshot():
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
         template = await svc.create_version(
-            settings_payload=BoardSettings(max_scenarios_per_card=5, skip_test_coverage_global=True),
-            actor=USER_ID, activate=True,
+            settings_payload=BoardSettings(
+                max_scenarios_per_card=5, skip_test_coverage_global=True
+            ),
+            actor=USER_ID,
+            activate=True,
         )
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
@@ -186,18 +194,26 @@ async def test_partial_override_wins_and_records_override_summary():
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
         await svc.create_version(
-            settings_payload=BoardSettings(max_scenarios_per_card=5, skip_test_coverage_global=True),
-            actor=USER_ID, activate=True,
+            settings_payload=BoardSettings(
+                max_scenarios_per_card=5, skip_test_coverage_global=True
+            ),
+            actor=USER_ID,
+            activate=True,
         )
         # Partial override: ONLY max_scenarios_per_card is explicitly set.
         board = await BoardService(db).create_board(
             USER_ID,
-            BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}", settings=BoardSettings(max_scenarios_per_card=9)),
+            BoardCreate(
+                name=f"b-{uuid.uuid4().hex[:8]}",
+                settings=BoardSettings(max_scenarios_per_card=9),
+            ),
         )
         # Override wins on its field; template value survives elsewhere.
         assert board.settings["max_scenarios_per_card"] == 9
         assert board.settings["skip_test_coverage_global"] is True
-        assert board.default_config_snapshot["override_summary"] == {"max_scenarios_per_card": 9}
+        assert board.default_config_snapshot["override_summary"] == {
+            "max_scenarios_per_card": 9
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +228,8 @@ async def test_template_change_after_creation_does_not_mutate_existing_board():
         svc = DefaultBoardConfigurationService(db)
         await svc.create_version(
             settings_payload=BoardSettings(max_scenarios_per_card=4),
-            actor=USER_ID, activate=True,
+            actor=USER_ID,
+            activate=True,
         )
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
@@ -223,7 +240,8 @@ async def test_template_change_after_creation_does_not_mutate_existing_board():
         # A new active version with different settings.
         await svc.create_version(
             settings_payload=BoardSettings(max_scenarios_per_card=12),
-            actor=USER_ID, activate=True,
+            actor=USER_ID,
+            activate=True,
         )
         board = await BoardService(db).get_board(board.id)
         assert board.settings == before_settings
@@ -240,8 +258,12 @@ async def test_single_active_per_scope_enforced():
 
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
-        a = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
-        b = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
+        a = await svc.create_version(
+            settings_payload=BoardSettings(), actor=USER_ID, activate=True
+        )
+        b = await svc.create_version(
+            settings_payload=BoardSettings(), actor=USER_ID, activate=True
+        )
 
         versions = {template.id: template for template in await svc.list_versions()}
         a = versions[a.id]
@@ -271,7 +293,9 @@ async def test_global_audit_events_reconstituible_by_query():
 
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
-        template = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID)
+        template = await svc.create_version(
+            settings_payload=BoardSettings(), actor=USER_ID
+        )
         assert await _audit_events(db, template.id) == [EVENT_CREATED]
 
         await svc.activate_version(template.id, USER_ID)
@@ -291,8 +315,12 @@ async def test_activate_second_template_audits_supersede_of_first():
 
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
-        a = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
-        await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
+        a = await svc.create_version(
+            settings_payload=BoardSettings(), actor=USER_ID, activate=True
+        )
+        await svc.create_version(
+            settings_payload=BoardSettings(), actor=USER_ID, activate=True
+        )
         # First template got a deactivated audit event when superseded.
         assert EVENT_DEACTIVATED in await _audit_events(db, a.id)
 
@@ -309,7 +337,9 @@ async def test_snapshot_outside_board_settings_and_not_masked_by_boardsettings()
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
         await svc.create_version(
-            settings_payload=BoardSettings(max_scenarios_per_card=6), actor=USER_ID, activate=True
+            settings_payload=BoardSettings(max_scenarios_per_card=6),
+            actor=USER_ID,
+            activate=True,
         )
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
@@ -366,7 +396,9 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
     async with get_session_factory()() as db:
         svc = DefaultBoardConfigurationService(db)
         v1 = await svc.create_version(
-            settings_payload=BoardSettings(max_scenarios_per_card=3), actor=USER_ID, activate=True
+            settings_payload=BoardSettings(max_scenarios_per_card=3),
+            actor=USER_ID,
+            activate=True,
         )
         # Board A: created with the active template (gets an applied snapshot).
         board_a = await BoardService(db).create_board(
@@ -374,8 +406,10 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
         )
         # Board B: a pre-existing legacy board with NO snapshot metadata.
         board_b = Board(
-            name=f"b-{uuid.uuid4().hex[:8]}", owner_id=USER_ID,
-            settings=BoardSettings().model_dump(mode="json"), default_config_snapshot=None,
+            name=f"b-{uuid.uuid4().hex[:8]}",
+            owner_id=USER_ID,
+            settings=BoardSettings().model_dump(mode="json"),
+            default_config_snapshot=None,
         )
         db.add(board_b)
         await db.flush()
@@ -386,7 +420,9 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
 
         # Activate a NEW template version with different settings.
         await svc.create_version(
-            settings_payload=BoardSettings(max_scenarios_per_card=11), actor=USER_ID, activate=True
+            settings_payload=BoardSettings(max_scenarios_per_card=11),
+            actor=USER_ID,
+            activate=True,
         )
         board_a = await BoardService(db).get_board(board_a.id)
         await db.refresh(board_b)
@@ -443,7 +479,9 @@ async def test_tr11_board_response_contract_exposes_default_config_snapshot():
     async with get_session_factory()() as db:
         bs = BoardService(db)
         # Fallback board -> response exposes default_config_snapshot = None.
-        fb = await bs.create_board(USER_ID, BoardCreate(name=f"fb-{uuid.uuid4().hex[:8]}"))
+        fb = await bs.create_board(
+            USER_ID, BoardCreate(name=f"fb-{uuid.uuid4().hex[:8]}")
+        )
         fetched = await bs.get_board(fb.id)
         fetched.attach("agents", [])
         fb_resp = BoardResponse.model_validate(fetched)
@@ -454,7 +492,9 @@ async def test_tr11_board_response_contract_exposes_default_config_snapshot():
         await DefaultBoardConfigurationService(db).create_version(
             settings_payload=BoardSettings(), actor=USER_ID, activate=True
         )
-        tb = await bs.create_board(USER_ID, BoardCreate(name=f"tb-{uuid.uuid4().hex[:8]}"))
+        tb = await bs.create_board(
+            USER_ID, BoardCreate(name=f"tb-{uuid.uuid4().hex[:8]}")
+        )
         fetched_tb = await bs.get_board(tb.id)
         fetched_tb.attach("agents", [])
         tb_resp = BoardResponse.model_validate(fetched_tb)
@@ -468,10 +508,38 @@ async def test_tr11_board_response_contract_exposes_default_config_snapshot():
 
 
 async def _make_global_guideline(db, title: str = "G") -> Guideline:
-    g = Guideline(title=title, content="c", owner_id=USER_ID, scope="global")
-    db.add(g)
-    await db.flush()
-    return g
+    return await GuidelineService(db).create_guideline(
+        USER_ID,
+        GuidelineCreate(
+            title=title,
+            content="c",
+            scope="global",
+            board_id=None,
+        ),
+    )
+
+
+def _default_ref(guideline: Guideline, *, priority: int = 0) -> dict:
+    return {
+        "guideline_id": guideline.id,
+        "priority": priority,
+        "revision_id": guideline.revision_id,
+        "revision_number": guideline.version,
+        "semantic_version": guideline.semantic_version,
+        "revision_digest": guideline.revision_digest,
+    }
+
+
+async def _authoritative_bindings(db, board_id: str):
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+
+    return (
+        await require_relational_application_adapter()
+        .guideline_policy(db)
+        .list_bindings(board_id=board_id)
+    )
 
 
 async def test_ts_cdb70cc0_inline_guideline_default_blocks_activation():
@@ -484,9 +552,11 @@ async def test_ts_cdb70cc0_inline_guideline_default_blocks_activation():
         g = await _make_global_guideline(db)
         with pytest.raises(DefaultBoardConfigurationError) as exc:
             await svc.create_version(
-                settings_payload=BoardSettings(), actor=USER_ID, activate=True,
+                settings_payload=BoardSettings(),
+                actor=USER_ID,
+                activate=True,
                 guideline_default_refs=[
-                    {"guideline_id": g.id, "priority": 1},
+                    _default_ref(g, priority=1),
                     {"title": "inline", "content": "x"},  # inline, no guideline_id
                 ],
             )
@@ -502,13 +572,21 @@ async def test_default_guideline_non_global_blocks_activation():
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        bg = Guideline(title="bg", content="c", owner_id=USER_ID, scope="board", board_id=board.id)
-        db.add(bg)
-        await db.flush()
+        bg = await GuidelineService(db).create_guideline(
+            USER_ID,
+            GuidelineCreate(
+                title="bg",
+                content="c",
+                scope="inline",
+                board_id=board.id,
+            ),
+        )
         with pytest.raises(DefaultBoardConfigurationError) as exc:
             await svc.create_version(
-                settings_payload=BoardSettings(), actor=USER_ID, activate=True,
-                guideline_default_refs=[{"guideline_id": bg.id}],
+                settings_payload=BoardSettings(),
+                actor=USER_ID,
+                activate=True,
+                guideline_default_refs=[_default_ref(bg)],
             )
         assert exc.value.code == "default_guideline_not_global"
 
@@ -520,16 +598,25 @@ async def test_default_guideline_not_found_blocks_activation():
         svc = DefaultBoardConfigurationService(db)
         with pytest.raises(DefaultBoardConfigurationError) as exc:
             await svc.create_version(
-                settings_payload=BoardSettings(), actor=USER_ID, activate=True,
-                guideline_default_refs=[{"guideline_id": "does-not-exist"}],
+                settings_payload=BoardSettings(),
+                actor=USER_ID,
+                activate=True,
+                guideline_default_refs=[
+                    {
+                        "guideline_id": "does-not-exist",
+                        "priority": 0,
+                        "revision_id": str(uuid.uuid4()),
+                        "revision_number": 1,
+                        "semantic_version": "1.0.0",
+                        "revision_digest": "0" * 64,
+                    }
+                ],
             )
         assert exc.value.code == "default_guideline_not_found"
 
 
 async def test_ts_cdb70cc0_valid_template_materializes_global_board_guidelines():
-    """ts_cdb70cc0 (part 2): an active valid template materializes BoardGuideline
-    links ONLY for global guidelines, with the template priority and board/guideline
-    uniqueness preserved."""
+    """An active template materializes exact authoritative global bindings."""
     from okto_pulse.core.infra.database import get_session_factory
 
     async with get_session_factory()() as db:
@@ -537,19 +624,21 @@ async def test_ts_cdb70cc0_valid_template_materializes_global_board_guidelines()
         g1 = await _make_global_guideline(db, "G1")
         g2 = await _make_global_guideline(db, "G2")
         await svc.create_version(
-            settings_payload=BoardSettings(), actor=USER_ID, activate=True,
+            settings_payload=BoardSettings(),
+            actor=USER_ID,
+            activate=True,
             guideline_default_refs=[
-                {"guideline_id": g1.id, "priority": 5},
-                {"guideline_id": g2.id, "priority": 2},
+                _default_ref(g1, priority=5),
+                _default_ref(g2, priority=2),
             ],
         )
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        result = await db.execute(
-            select(BoardGuideline).where(BoardGuideline.board_id == board.id)
-        )
-        links = {link.guideline_id: link.priority for link in result.scalars()}
+        links = {
+            link.guideline_id: link.priority
+            for link in await _authoritative_bindings(db, board.id)
+        }
         assert links == {g1.id: 5, g2.id: 2}
 
 
@@ -560,8 +649,10 @@ async def test_materialize_default_guidelines_is_idempotent_and_unique():
         svc = DefaultBoardConfigurationService(db)
         g = await _make_global_guideline(db)
         await svc.create_version(
-            settings_payload=BoardSettings(), actor=USER_ID, activate=True,
-            guideline_default_refs=[{"guideline_id": g.id, "priority": 1}],
+            settings_payload=BoardSettings(),
+            actor=USER_ID,
+            activate=True,
+            guideline_default_refs=[_default_ref(g, priority=1)],
         )
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
@@ -569,10 +660,7 @@ async def test_materialize_default_guidelines_is_idempotent_and_unique():
         # re-running the adapter must NOT create a duplicate (board/guideline unique).
         again = await svc.materialize_default_guidelines(board.id, actor=USER_ID)
         assert again == []
-        result = await db.execute(
-            select(BoardGuideline).where(BoardGuideline.board_id == board.id)
-        )
-        assert len(list(result.scalars())) == 1
+        assert len(await _authoritative_bindings(db, board.id)) == 1
 
 
 async def test_no_active_template_materializes_no_guidelines():
@@ -584,10 +672,7 @@ async def test_no_active_template_materializes_no_guidelines():
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
         assert await svc.materialize_default_guidelines(board.id, actor=USER_ID) == []
-        result = await db.execute(
-            select(BoardGuideline).where(BoardGuideline.board_id == board.id)
-        )
-        assert list(result.scalars()) == []
+        assert await _authoritative_bindings(db, board.id) == ()
 
 
 # ---------------------------------------------------------------------------
@@ -603,24 +688,27 @@ async def test_ts_d3363274_adapter_failure_rolls_back_board_creation():
 
     factory = get_session_factory()
     board_name = f"rb-{uuid.uuid4().hex[:8]}"
-    async with factory() as baseline_db:
-        existing_link_ids = set(
-            (await baseline_db.execute(select(BoardGuideline.id))).scalars()
-        )
     async with factory() as db:
         svc = DefaultBoardConfigurationService(db)
         g = await _make_global_guideline(db)
         await svc.create_version(
-            settings_payload=BoardSettings(), actor=USER_ID, activate=True,
-            guideline_default_refs=[{"guideline_id": g.id, "priority": 1}],
+            settings_payload=BoardSettings(),
+            actor=USER_ID,
+            activate=True,
+            guideline_default_refs=[_default_ref(g, priority=1)],
         )
-        # Force a REAL materialization failure: the guideline is removed AFTER the
-        # template was activated, so the adapter re-validation fails at create time.
-        await db.delete(g)
-        await db.flush()
-        with pytest.raises(DefaultBoardConfigurationError) as exc:
-            await BoardService(db).create_board(USER_ID, BoardCreate(name=board_name))
+        with patch.object(
+            GuidelineService,
+            "apply_default_guidelines",
+            side_effect=RuntimeError("forced adapter failure"),
+        ):
+            with pytest.raises(DefaultBoardConfigurationError) as exc:
+                await BoardService(db).create_board(
+                    USER_ID,
+                    BoardCreate(name=board_name),
+                )
         assert exc.value.code == "default_materialization_failed"
+        board_id = exc.value.details["board_id"]
         await db.rollback()
 
     # Fresh session: neither the board nor any additional link is observable.
@@ -629,8 +717,7 @@ async def test_ts_d3363274_adapter_failure_rolls_back_board_creation():
             await db2.execute(select(Board).where(Board.name == board_name))
         ).scalar_one_or_none()
         assert board is None
-        link_ids = set((await db2.execute(select(BoardGuideline.id))).scalars())
-        assert link_ids == existing_link_ids
+        assert await _authoritative_bindings(db2, board_id) == ()
 
 
 async def test_ts_d45c1602_umbrella_applies_both_defaults_without_parallel_store():
@@ -650,22 +737,22 @@ async def test_ts_d45c1602_umbrella_applies_both_defaults_without_parallel_store
             USER_ID, title="DS", scope="global", payload={"tokens": {}}
         )
         await svc.create_version(
-            settings_payload=BoardSettings(), actor=USER_ID, activate=True,
-            guideline_default_refs=[{"guideline_id": g.id, "priority": 3}],
+            settings_payload=BoardSettings(),
+            actor=USER_ID,
+            activate=True,
+            guideline_default_refs=[_default_ref(g, priority=3)],
             design_system_default_ref={
-                "design_system_id": ds_entity.id, "version": ds_entity.version,
-                "gate_mode": "advisory", "snapshot": {"tokens": {}},
+                "design_system_id": ds_entity.id,
+                "version": ds_entity.version,
+                "gate_mode": "advisory",
+                "snapshot": {"tokens": {}},
             },
         )
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        # Guideline default -> BoardGuideline link via the umbrella adapter.
-        links = (
-            await db.execute(
-                select(BoardGuideline).where(BoardGuideline.board_id == board.id)
-            )
-        ).scalars().all()
+        # Guideline default -> authoritative binding via the umbrella adapter.
+        links = await _authoritative_bindings(db, board.id)
         assert {link.guideline_id for link in links} == {g.id}
         # Design System default -> recorded INSIDE default_config_snapshot (no
         # parallel store, no separate entity/table).
@@ -681,8 +768,13 @@ async def test_design_system_default_invalid_gate_mode_blocks_activation():
         svc = DefaultBoardConfigurationService(db)
         with pytest.raises(DefaultBoardConfigurationError) as exc:
             await svc.create_version(
-                settings_payload=BoardSettings(), actor=USER_ID, activate=True,
-                design_system_default_ref={"design_system_id": "ds-1", "gate_mode": "loud"},
+                settings_payload=BoardSettings(),
+                actor=USER_ID,
+                activate=True,
+                design_system_default_ref={
+                    "design_system_id": "ds-1",
+                    "gate_mode": "loud",
+                },
             )
         assert exc.value.code == "design_system_default_invalid"
         assert await svc.resolve_active() is None

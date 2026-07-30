@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "9bf5bb10070aedafa343a29d5ce8c0355bb108f8096a65b00a700baae5ea6413",
+    "content_sha256": "e0d14915ae1e80ef8a96ba91d195e90b1aa7f2b698bf1ba0f2029a3fe57d27c8",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/destructive_ops",
@@ -13,6 +13,7 @@
       "okto-pulse://reference/knowledge-governance",
       "okto-pulse://reference/list_tools",
       "okto-pulse://reference/multivalue",
+      "okto-pulse://reference/policy-compliance",
       "okto-pulse://reference/projection-profiles",
       "okto-pulse://reference/quality-assessments",
       "okto-pulse://reference/spec_gates",
@@ -31,6 +32,7 @@
       "okto-pulse://workflows/stories"
     ],
     "required_cross_links": [
+      "okto-pulse://reference/policy-compliance",
       "okto-pulse://reference/quality-assessments"
     ],
     "required_headings": [
@@ -40,13 +42,14 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "871d635b383bf4b25d76dee1834f69486f9fd5c71b184ce94c0d563c63933ac2",
-  "manifest_version": "SK-A/v1",
-  "resource_count": 18,
+  "manifest_sha256": "0d8825832872dc0c2bed587356cdfd82cdd1388cd8a1d158de6e9b7651310fb7",
+  "manifest_version": "agent-resources/v2",
+  "resource_count": 21,
   "resources": [
     {
-      "content_sha256": "6abdcc81fd945f076c2b2d616acecbd4c0e62b8e4d079e88f81afed409ea607a",
+      "content_sha256": "898394c15bd59e89809817239040ce5902d8e3b76fab4413f88e88a77e8b6b72",
       "cross_links": [
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/tool-families/spec_entity_remove"
       ],
@@ -59,12 +62,13 @@
       "uri": "okto-pulse://reference/destructive_ops"
     },
     {
-      "content_sha256": "276c59b2851834a1656d57bff2707fa8a6eaaa948383be9bfdeef0edca65204c",
+      "content_sha256": "156f7811f0d092d45d6ddf96afd289c931334921c1026c69839ce13158f4a4f5",
       "cross_links": [
         "okto-pulse://reference/kg-health",
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/multivalue",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://workflows/kg"
@@ -78,8 +82,9 @@
       "uri": "okto-pulse://reference/errors"
     },
     {
-      "content_sha256": "25b5a8ce54c9ffafc692093cbe9459601ceb511e3ad605c38c5d7e6d24b15ef8",
+      "content_sha256": "c72e284626817466700f728836ceb63298aad4accbd11311ee69f0510084d194",
       "cross_links": [
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments"
       ],
       "required_cross_links": [
@@ -91,8 +96,35 @@
       "uri": "okto-pulse://reference/list_tools"
     },
     {
-      "content_sha256": "296814eb4d3f4784ea4027bff296314123cdeaaea0caa470c83e615f7378749f",
+      "content_sha256": "385abd6e2cd1e932dcabc0e3b14ac3ed126699fbc0e605951ee04acbd639cb56",
       "cross_links": [
+        "okto-pulse://reference/errors",
+        "okto-pulse://reference/transitions",
+        "okto-pulse://workflows/kg"
+      ],
+      "required_cross_links": [
+        "okto-pulse://reference/errors",
+        "okto-pulse://reference/transitions",
+        "okto-pulse://workflows/kg"
+      ],
+      "required_headings": [
+        "# Versioned guidelines and policy compliance",
+        "## Authority and pre-flight",
+        "## Revision lifecycle",
+        "## Impact, adoption, and unlink",
+        "## Compliance evaluation and currentness",
+        "## Waiver lifecycle and separation",
+        "## Projections and keyset pagination",
+        "## MCP outcome and errors",
+        "## Capabilities",
+        "## KG projection and recovery"
+      ],
+      "uri": "okto-pulse://reference/policy-compliance"
+    },
+    {
+      "content_sha256": "5dee95cd206b7ae9026f27468644338c2ca0ba5735382666732df14ad053b3d7",
+      "cross_links": [
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments"
       ],
       "required_cross_links": [
@@ -104,9 +136,10 @@
       "uri": "okto-pulse://reference/projection-profiles"
     },
     {
-      "content_sha256": "4e388c6c505785f16df7cb3d211b17de8dca714a6eabafb6f9119f2f2cfebb5d",
+      "content_sha256": "2060e93a698ddee85186f1259e79524869efba2141c75b31143f3142f758f7bd",
       "cross_links": [
         "okto-pulse://reference/errors",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/spec_gates",
         "okto-pulse://reference/tool-docs/quality",
@@ -135,7 +168,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "b74b1a02a9d4cc9ee4f0bc318cd873b886321b1555332cd2c229e4b3dadfe2ac",
+      "content_sha256": "0a315864c2eb97128fd5b1ebf6bcaa80a230e1383c6bd80de3046a553bcc4a8d",
       "cross_links": [
         "okto-pulse://reference/tool-docs/spec",
         "okto-pulse://reference/transitions",
@@ -149,6 +182,20 @@
         "## Curated Spec Checklist Gate — `/specify/v1`"
       ],
       "uri": "okto-pulse://reference/spec_gates"
+    },
+    {
+      "content_sha256": "dd0ed3e2a73b37bafb294f3f1b59d119aedb77036032d45e708c394d52ac9bab",
+      "cross_links": [
+        "okto-pulse://reference/policy-compliance"
+      ],
+      "required_cross_links": [
+        "okto-pulse://reference/policy-compliance"
+      ],
+      "required_headings": [
+        "# Tool docs — `guideline`",
+        "## Governed policy tool conventions"
+      ],
+      "uri": "okto-pulse://reference/tool-docs/guideline"
     },
     {
       "content_sha256": "148b4ebb54f2305d65be038e37e87088af7fdcf6e256877b4019e15c7d44cb4f",
@@ -202,10 +249,11 @@
       "uri": "okto-pulse://reference/tool-docs/spec"
     },
     {
-      "content_sha256": "091f5d581bf75c4d959fafb0e1a2801892ea3cd2642d9d224b91af3c6a8ec82a",
+      "content_sha256": "e5c5bb641d04b2411ae7bb5ff82735367be6ec7a501e19c4010fcdd587405b6c",
       "cross_links": [
         "okto-pulse://reference/card_types",
-        "okto-pulse://reference/multivalue"
+        "okto-pulse://reference/multivalue",
+        "okto-pulse://reference/policy-compliance"
       ],
       "required_cross_links": [
         "okto-pulse://reference/card_types"
@@ -221,9 +269,10 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "907c14f058010ea942512b7c6375444563213da96692dee5a93fcc34b3a0431d",
+      "content_sha256": "b38745167d967921320d420c6d0ada77d68cd46f1ded488fad6a72f58b402062",
       "cross_links": [
         "okto-pulse://reference/list_tools",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/tool-docs/activity",
         "okto-pulse://reference/tool-docs/agent",
         "okto-pulse://reference/tool-docs/analytics",
@@ -267,9 +316,10 @@
       "uri": "okto-pulse://reference/tools_catalog"
     },
     {
-      "content_sha256": "f850447536a2f5207f00fc1beb338a9e0de75cc9221a35c3c2085d5bfac6fe29",
+      "content_sha256": "73eef9d3a4453dc60679e764c367e1072d218ae4e8b32cd078044cc4774857e9",
       "cross_links": [
         "okto-pulse://reference/card_types",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/spec_gates",
         "okto-pulse://workflows/ideations",
         "okto-pulse://workflows/refinements",
@@ -284,15 +334,17 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "cde753916e31579ca79286580f76e02c9582147acabf0d3fa64efc1c41851836",
+      "content_sha256": "d82b4a0a0bc66ded14059261d61be69df962da8240cccbdb5d7e32be76d3886e",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/knowledge-governance",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/tool-docs/architecture"
       ],
       "required_cross_links": [
-        "okto-pulse://reference/quality-assessments"
+        "okto-pulse://reference/quality-assessments",
+        "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
         "### Quality evidence while executing a card"
@@ -300,14 +352,16 @@
       "uri": "okto-pulse://workflows/cards"
     },
     {
-      "content_sha256": "d068c68d796015d7908aa0ade866d7f88e72477bd24a6b81b43bd76760baeb67",
+      "content_sha256": "66ad938c32d5f99900b486373a623ff61f6f5ce529866772a81da18a11b94859",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/list_tools",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/tool-docs/quality"
       ],
       "required_cross_links": [
-        "okto-pulse://reference/tool-docs/quality"
+        "okto-pulse://reference/tool-docs/quality",
+        "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
         "## 2.1a Receipt-Backed Ambiguity and Pinpointing"
@@ -315,14 +369,16 @@
       "uri": "okto-pulse://workflows/ideations"
     },
     {
-      "content_sha256": "a0f8a154a37ef751ad0e27bf85e261733de5aea19fa562b1510b5dde5faaa20a",
+      "content_sha256": "1cf6425ed059b0bb03083401ed13c2e549f9d283b3031907f40750129cdca021",
       "cross_links": [
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/tool-docs/kg",
         "okto-pulse://workflows/refinements"
       ],
       "required_cross_links": [
         "okto-pulse://reference/quality-assessments",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://workflows/refinements"
       ],
       "required_headings": [
@@ -331,14 +387,16 @@
       "uri": "okto-pulse://workflows/kg"
     },
     {
-      "content_sha256": "2074749edd7b4fef6bbd6d41a885336aabaf9248d908edf920f3168beb7ac7c9",
+      "content_sha256": "6494af1f3b412d25f7ba054a35cbd7b1ed9ddf200d797dbd063a90354437d819",
       "cross_links": [
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://workflows/cards"
       ],
       "required_cross_links": [
-        "okto-pulse://reference/quality-assessments"
+        "okto-pulse://reference/quality-assessments",
+        "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
         "### Quality Assessment pre-flight — before record/read/gate use"
@@ -346,14 +404,16 @@
       "uri": "okto-pulse://workflows/preflight"
     },
     {
-      "content_sha256": "edc016372b26315ad1c05baf18ff51bfc1bc7127905ca3e2a7f1e50396263f63",
+      "content_sha256": "658785f2ded88319357c5c4787edf585d8a4522347e00e64dfb3ff829f5a576c",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/list_tools",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/tool-docs/quality"
       ],
       "required_cross_links": [
-        "okto-pulse://reference/tool-docs/quality"
+        "okto-pulse://reference/tool-docs/quality",
+        "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
         "## Receipt-Backed Ambiguity and Pinpointing",
@@ -362,9 +422,10 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "c5355e5d5b37b9e63ac1a56b71efe79874db7a9941b58f215e532cf812226c79",
+      "content_sha256": "6733c4a1969d7cb048680f67d26bb58bfd98b9ef8bdd9249fa3a1d64984d9c26",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/spec_gates",
         "okto-pulse://reference/tool-docs/quality",
@@ -372,7 +433,8 @@
       ],
       "required_cross_links": [
         "okto-pulse://reference/spec_gates",
-        "okto-pulse://reference/tool-docs/quality"
+        "okto-pulse://reference/tool-docs/quality",
+        "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
         "### Spec Quality — Canonical Agent Flow",
@@ -382,6 +444,19 @@
         "### The Spec Validation Gate"
       ],
       "uri": "okto-pulse://workflows/specs"
+    },
+    {
+      "content_sha256": "1a3dde9fa5879e68906a626280c5049e01f33f96d5080df87e2ab940e42bbac1",
+      "cross_links": [
+        "okto-pulse://reference/policy-compliance"
+      ],
+      "required_cross_links": [
+        "okto-pulse://reference/policy-compliance"
+      ],
+      "required_headings": [
+        "# Sprints Workflow — Lifecycle & Evaluation"
+      ],
+      "uri": "okto-pulse://workflows/sprints"
     }
   ]
 }

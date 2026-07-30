@@ -19,6 +19,10 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.application.use_cases.policy_governance import (
+    ADOPTION_MANAGE,
+    require_policy_governance_capabilities,
+)
 from okto_pulse.core.services.analytics_contract import parse_analytics_datetime
 
 
@@ -152,7 +156,7 @@ class McpUpdateDefaultGuidelineRefsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
-
+        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
         data = await uow.services.default_board_config.update_template_guidelines(
             template_id=command.template_id,
             guideline_default_refs=command.guideline_default_refs,

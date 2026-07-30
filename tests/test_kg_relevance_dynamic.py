@@ -723,7 +723,7 @@ def test_kg_hit_flushed_event_class_registered():
     # additive events are quality.assessment_recorded.v1, the A3
     # checklist.binding_changed.v1 governance audit, the two RDL events, and
     # quality.clarification_changed.v1 for parent-consolidation invalidation.
-    assert len(EVENT_TYPES) == 39
+    assert len(EVENT_TYPES) == 42
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1381,7 +1381,7 @@ def test_impl_d_kg_daily_tick_event_class_registered():
     assert "kg.tick.daily" in EVENT_TYPES
     # Registry ratchet also includes the two research-decision events and
     # quality.clarification_changed.v1.
-    assert len(EVENT_TYPES) == 39
+    assert len(EVENT_TYPES) == 42
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

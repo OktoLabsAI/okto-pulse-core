@@ -4,6 +4,9 @@ version: "1.0"
 
 # Sprints Workflow — Lifecycle & Evaluation
 
+Executable guideline evaluation follows
+`okto-pulse://reference/policy-compliance`.
+
 ## 2.10 Sprints — Incremental Delivery Slices
 
 Sprints break large specs into incremental deliverables with scoped gates and evaluations.

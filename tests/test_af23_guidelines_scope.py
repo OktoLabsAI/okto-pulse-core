@@ -20,7 +20,9 @@ from fastapi.testclient import TestClient
 
 from okto_pulse.community.api import default_board_config as default_board_config_api
 from okto_pulse.community.api import guidelines as guidelines_api
-from okto_pulse.community.api.default_board_config import router as default_board_config_router
+from okto_pulse.community.api.default_board_config import (
+    router as default_board_config_router,
+)
 from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.community.api.auth_deps import (
@@ -30,7 +32,7 @@ from okto_pulse.community.api.auth_deps import (
 )
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.schemas import GuidelineUpdate
+from okto_pulse.core.models.schemas import GuidelineCreate, GuidelineUpdate
 from okto_pulse.core.ports.authentication import Principal
 
 USER = "af23-guidelines-user"
@@ -40,10 +42,18 @@ CORE_SRC_PATH = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "co
 MCP_SERVER_PATH = CORE_SRC_PATH / "mcp" / "server.py"
 GUIDELINE_SERVICE_PATH = CORE_SRC_PATH / "services" / "main.py"
 GUIDELINES_REST_PATH = Path(guidelines_api.__file__)
-GUIDELINES_USE_CASE_PATH = CORE_SRC_PATH / "application" / "use_cases" / "guidelines_crud.py"
-MCP_BOARD_USE_CASE_PATH = CORE_SRC_PATH / "application" / "use_cases" / "mcp_board_crud.py"
-DEFAULT_CONFIG_SERVICE_PATH = CORE_SRC_PATH / "services" / "default_board_configuration.py"
-DEFAULT_CONFIG_API_SERVICE_PATH = CORE_SRC_PATH / "services" / "default_board_config_api.py"
+GUIDELINES_USE_CASE_PATH = (
+    CORE_SRC_PATH / "application" / "use_cases" / "guidelines_crud.py"
+)
+MCP_BOARD_USE_CASE_PATH = (
+    CORE_SRC_PATH / "application" / "use_cases" / "mcp_board_crud.py"
+)
+DEFAULT_CONFIG_SERVICE_PATH = (
+    CORE_SRC_PATH / "services" / "default_board_configuration.py"
+)
+DEFAULT_CONFIG_API_SERVICE_PATH = (
+    CORE_SRC_PATH / "services" / "default_board_config_api.py"
+)
 DEFAULT_CONFIG_REST_PATH = Path(default_board_config_api.__file__)
 
 
@@ -63,7 +73,7 @@ def client() -> TestClient:
     app.dependency_overrides[require_principal] = lambda: Principal(
         subject=USER,
         realm_id=LOCAL_REALM_ID,
-        claims={"roles": ["admin"]},
+        claims={"roles": ["admin"], "permissions": ["*"]},
     )
     app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
@@ -93,36 +103,68 @@ async def _seed_guideline(
     board_id: str | None = None,
     tags: list[str] | None = None,
 ) -> str:
-    from sqlalchemy_test_models import Guideline
+    from okto_pulse.core.services.main import GuidelineService
 
-    guideline_id = f"af23-guideline-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(
-            Guideline(
-                id=guideline_id,
+        guideline = await GuidelineService(db).create_guideline(
+            owner,
+            GuidelineCreate(
                 title="foreign guideline",
                 content="must stay scoped",
                 tags=["af23"] if tags is None else tags,
                 scope=scope,
                 board_id=board_id,
-                owner_id=owner,
-            )
+            ),
         )
         await db.commit()
-    return guideline_id
+    return guideline.id
+
+
+async def _native_default_ref(guideline_id: str, *, priority: int = 0) -> dict:
+    from okto_pulse.core.services.main import GuidelineService
+
+    async with get_session_factory()() as db:
+        guideline = await GuidelineService(db).get_guideline(
+            guideline_id,
+            owner_id=None,
+        )
+        assert guideline is not None
+        return {
+            "guideline_id": guideline.id,
+            "priority": priority,
+            "revision_id": guideline.revision_id,
+            "revision_number": guideline.version,
+            "semantic_version": guideline.semantic_version,
+            "revision_digest": guideline.revision_digest,
+        }
 
 
 async def _link_guideline(board_id: str, guideline_id: str, priority: int = 1) -> None:
-    from sqlalchemy_test_models import BoardGuideline
+    from okto_pulse.core.domain.guideline_policy import GuidelineEnforcement
+    from okto_pulse.core.services.main import GuidelineService
 
     async with get_session_factory()() as db:
-        db.add(
-            BoardGuideline(
-                board_id=board_id,
-                guideline_id=guideline_id,
-                priority=priority,
-            )
+        service = GuidelineService(db)
+        seed_nonce = uuid.uuid4().hex
+        receipt = await service.preview_guideline_revision_impact(
+            board_id=board_id,
+            guideline_id=guideline_id,
+            proposed_priority=priority,
+            proposed_default_enforcement=GuidelineEnforcement.ADVISORY,
+            requested_by="af23-authoritative-seed",
+            idempotency_key=f"af23-preview:{seed_nonce}",
         )
+        linked, consumed_receipt = await service.adopt_guideline_revision(
+            board_id=board_id,
+            guideline_id=guideline_id,
+            impact_receipt_id=receipt.impact_receipt_id,
+            impact_digest=receipt.impact_digest,
+            actor_id="af23-authoritative-seed",
+            actor_type="system",
+            idempotency_key=f"af23-adopt:{seed_nonce}",
+        )
+        assert linked is not None
+        assert consumed_receipt.impact_receipt_id == receipt.impact_receipt_id
         await db.commit()
 
 
@@ -143,7 +185,9 @@ async def _share_board(board_id: str, *, permission: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ts1_foreign_global_guideline_get_is_fail_closed(client: TestClient) -> None:
+async def test_ts1_foreign_global_guideline_get_is_fail_closed(
+    client: TestClient,
+) -> None:
     guideline_id = await _seed_guideline(OTHER)
 
     response = client.get(f"{PREFIX}/guidelines/{guideline_id}")
@@ -153,7 +197,9 @@ async def test_ts1_foreign_global_guideline_get_is_fail_closed(client: TestClien
 
 
 @pytest.mark.asyncio
-async def test_ts1_foreign_board_unlink_and_priority_are_fail_closed(client: TestClient) -> None:
+async def test_ts1_foreign_board_unlink_and_priority_are_fail_closed(
+    client: TestClient,
+) -> None:
     board_id = await _seed_board(OTHER)
     guideline_id = await _seed_guideline(OTHER)
     await _link_guideline(board_id, guideline_id)
@@ -171,10 +217,12 @@ async def test_ts1_foreign_board_unlink_and_priority_are_fail_closed(client: Tes
 
 
 @pytest.mark.asyncio
-async def test_shared_viewer_reads_guidelines_but_cannot_mutate(client: TestClient) -> None:
-    from sqlalchemy import select
-
-    from sqlalchemy_test_models import BoardGuideline
+async def test_shared_viewer_reads_guidelines_but_cannot_mutate(
+    client: TestClient,
+) -> None:
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     board_id = await _seed_board(OTHER)
     guideline_id = await _seed_guideline(OTHER)
@@ -193,18 +241,22 @@ async def test_shared_viewer_reads_guidelines_but_cannot_mutate(client: TestClie
     assert mutation.json()["detail"] == "Board not found"
     async with get_session_factory()() as db:
         persisted = (
-            await db.execute(
-                select(BoardGuideline).where(
-                    BoardGuideline.board_id == board_id,
-                    BoardGuideline.guideline_id == guideline_id,
-                )
-            )
-        ).scalar_one()
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .get_binding(board_id=board_id, guideline_id=guideline_id)
+        )
+        assert persisted is not None
         assert persisted.priority == 1
 
 
 @pytest.mark.asyncio
-async def test_shared_editor_can_update_guideline_priority(client: TestClient) -> None:
+async def test_shared_editor_reaches_b08_preview_gate_for_priority(
+    client: TestClient,
+) -> None:
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+
     board_id = await _seed_board(OTHER)
     guideline_id = await _seed_guideline(OTHER)
     await _link_guideline(board_id, guideline_id, priority=1)
@@ -214,9 +266,21 @@ async def test_shared_editor_can_update_guideline_priority(client: TestClient) -
         f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}",
         json={"priority": 7},
     )
+    assert response.status_code == 409
+    assert (
+        response.json()["detail"]["error_code"]
+        == "guideline_impact_preview_required"
+    )
+    assert response.json()["detail"]["next_action"] == "preview_then_adopt"
 
-    assert response.status_code == 200, response.text
-    assert response.json()["priority"] == 7
+    async with get_session_factory()() as db:
+        persisted = (
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .get_binding(board_id=board_id, guideline_id=guideline_id)
+        )
+        assert persisted is not None
+        assert persisted.priority == 1
 
 
 @pytest.mark.asyncio
@@ -246,9 +310,7 @@ async def test_ts2_query_scope_actor_is_authoritative_when_present() -> None:
 
     owner_guideline = await _seed_guideline(USER)
     other_guideline = await _seed_guideline(OTHER)
-    query_scope = QueryScope(
-        actor_id=USER, source="test", realm_id=LOCAL_REALM_ID
-    )
+    query_scope = QueryScope(actor_id=USER, source="test", realm_id=LOCAL_REALM_ID)
 
     async with get_session_factory()() as db:
         service = GuidelineService(db)
@@ -310,12 +372,21 @@ def _class_source(path: Path, class_name: str) -> str:
 
 async def _call_mcp_tool(tool_name: str, **kwargs) -> dict:
     from okto_pulse.core.mcp import server as mcp_server
+    from okto_pulse.core.domain.permissions import (
+        PermissionSet,
+        get_builtin_presets,
+    )
 
+    full_control = next(
+        preset["flags"]
+        for preset in get_builtin_presets()
+        if preset["name"] == "Full Control"
+    )
     ctx = mcp_server.AgentContext(
         agent_id=USER,
         agent_name="AF23 scoped actor",
         board_id=kwargs.get("board_id", ""),
-        permissions=None,
+        permissions=PermissionSet(full_control),
         realm_id=LOCAL_REALM_ID,
     )
     register_mcp_test_runtime(get_session_factory())
@@ -369,16 +440,21 @@ def test_ts3_mcp_guideline_tools_use_scoped_use_cases_not_board_owner() -> None:
         "okto_pulse_update_board_guideline_priority",
     ]
 
-    combined = "\n\n".join(_async_function_source(MCP_SERVER_PATH, name) for name in tool_names)
+    combined = "\n\n".join(
+        _async_function_source(MCP_SERVER_PATH, name) for name in tool_names
+    )
 
     assert "board.owner_id" not in combined
     assert "db.get(Board" not in combined
-    assert combined.count("MCPAdapterContract.actor") == len(tool_names)
+    assert combined.count("MCPAdapterContract.actor") == 2
+    assert combined.count("_authorize_legacy_guideline_mcp") == 6
     assert combined.count("get_unit_of_work_factory_for_mcp") == len(tool_names)
 
 
 @pytest.mark.asyncio
-async def test_ts4_default_candidates_are_scoped_and_global_only(client: TestClient) -> None:
+async def test_ts4_default_candidates_are_scoped_and_global_only(
+    client: TestClient,
+) -> None:
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationService,
     )
@@ -388,15 +464,14 @@ async def test_ts4_default_candidates_are_scoped_and_global_only(client: TestCli
     board_id = await _seed_board(USER)
     inline_guideline = await _seed_guideline(USER, scope="inline", board_id=board_id)
     template_scope = f"af23-scope-{uuid.uuid4().hex[:8]}"
+    visible_ref = await _native_default_ref(visible_guideline, priority=3)
 
     async with get_session_factory()() as db:
         await DefaultBoardConfigurationService(db).create_version(
             settings_payload=None,
             actor=USER,
             scope=template_scope,
-            guideline_default_refs=[
-                {"guideline_id": visible_guideline, "priority": 3}
-            ],
+            guideline_default_refs=[visible_ref],
             activate=True,
         )
         await db.commit()
@@ -429,6 +504,9 @@ async def test_ts4_default_guideline_refs_reject_inline_missing_and_foreign(
     board_id = await _seed_board(USER)
     inline_guideline = await _seed_guideline(USER, scope="inline", board_id=board_id)
     template_scope = f"af23-scope-{uuid.uuid4().hex[:8]}"
+    visible_ref = await _native_default_ref(visible_guideline)
+    foreign_ref = await _native_default_ref(foreign_guideline)
+    inline_ref = await _native_default_ref(inline_guideline)
 
     async with get_session_factory()() as db:
         template = await DefaultBoardConfigurationService(db).create_version(
@@ -441,16 +519,26 @@ async def test_ts4_default_guideline_refs_reject_inline_missing_and_foreign(
 
     ok = client.post(
         f"{PREFIX}/default-board-configurations/{template_id}/guidelines",
-        json={"guideline_default_refs": [{"guideline_id": visible_guideline}]},
+        json={"guideline_default_refs": [visible_ref]},
     )
 
     assert ok.status_code == 200
     assert ok.json()["guideline_default_refs"][0]["guideline_id"] == visible_guideline
 
     invalid_cases = [
-        ({"guideline_id": foreign_guideline}, "default_guideline_not_found"),
-        ({"guideline_id": inline_guideline}, "default_guideline_not_global"),
-        ({"guideline_id": "missing-guideline"}, "default_guideline_not_found"),
+        (foreign_ref, "default_guideline_not_found"),
+        (inline_ref, "default_guideline_not_global"),
+        (
+            {
+                "guideline_id": "missing-guideline",
+                "priority": 0,
+                "revision_id": str(uuid.uuid4()),
+                "revision_number": 1,
+                "semantic_version": "1.0.0",
+                "revision_digest": "0" * 64,
+            },
+            "default_guideline_not_found",
+        ),
         ({"title": "inline default"}, "default_guideline_inline_not_allowed"),
     ]
     for ref, expected_code in invalid_cases:
@@ -468,18 +556,22 @@ def test_ts4_mcp_default_guideline_tools_pass_query_scope() -> None:
         "okto_pulse_update_default_guideline_refs",
     ]
 
-    combined = "\n\n".join(_async_function_source(MCP_SERVER_PATH, name) for name in tool_names)
+    combined = "\n\n".join(
+        _async_function_source(MCP_SERVER_PATH, name) for name in tool_names
+    )
 
     assert combined.count("MCPAdapterContract.actor") == len(tool_names)
-    assert combined.count("ActorScope.from_context(actor).query_scope") == len(tool_names)
+    assert combined.count("ActorScope.from_context(actor).query_scope") == len(
+        tool_names
+    )
     assert combined.count("query_scope=query_scope") == len(tool_names)
 
 
 @pytest.mark.asyncio
 async def test_ts5_mcp_priority_update_without_board_grant_is_denied() -> None:
-    from sqlalchemy import select
-
-    from sqlalchemy_test_models import BoardGuideline
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     board_id = await _seed_board(OTHER)
     guideline_id = await _seed_guideline(OTHER)
@@ -500,35 +592,42 @@ async def test_ts5_mcp_priority_update_without_board_grant_is_denied() -> None:
     assert response == {"error": "Authentication failed or board access denied"}
     async with get_session_factory()() as db:
         persisted = (
-            await db.execute(
-                select(BoardGuideline).where(
-                    BoardGuideline.board_id == board_id,
-                    BoardGuideline.guideline_id == guideline_id,
-                )
-            )
-        ).scalar_one()
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .get_binding(board_id=board_id, guideline_id=guideline_id)
+        )
         assert persisted is not None
         assert persisted.priority == 1
 
 
 @pytest.mark.asyncio
-async def test_ts5_mcp_same_scope_priority_update_and_unlink_succeed() -> None:
-    from sqlalchemy import select
-
-    from sqlalchemy_test_models import BoardGuideline
+async def test_ts5_mcp_same_scope_reaches_b08_gate_then_unlinks() -> None:
+    from okto_pulse.core.domain.guideline_policy import GuidelineBindingState
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     board_id = await _seed_board(USER)
     guideline_id = await _seed_guideline(USER)
     await _link_guideline(board_id, guideline_id, priority=1)
 
-    updated = await _call_mcp_tool(
+    response = await _call_mcp_tool(
         "okto_pulse_update_board_guideline_priority",
         board_id=board_id,
         guideline_id=guideline_id,
         priority="9",
     )
-    assert updated["success"] is True
-    assert updated["priority"] == 9
+    assert response["error_code"] == "guideline_impact_preview_required"
+    assert response["next_action"] == "preview_then_adopt"
+
+    async with get_session_factory()() as db:
+        active = (
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .get_binding(board_id=board_id, guideline_id=guideline_id)
+        )
+        assert active is not None
+        assert active.priority == 1
 
     unlinked = await _call_mcp_tool(
         "okto_pulse_unlink_guideline_from_board",
@@ -538,15 +637,14 @@ async def test_ts5_mcp_same_scope_priority_update_and_unlink_succeed() -> None:
     assert unlinked == {"success": True}
 
     async with get_session_factory()() as db:
-        persisted = (
-            await db.execute(
-                select(BoardGuideline).where(
-                    BoardGuideline.board_id == board_id,
-                    BoardGuideline.guideline_id == guideline_id,
-                )
-            )
-        ).scalar_one_or_none()
-        assert persisted is None
+        policy = require_relational_application_adapter().guideline_policy(db)
+        persisted = await policy.get_binding(
+            board_id=board_id,
+            guideline_id=guideline_id,
+        )
+        assert persisted is not None
+        assert persisted.state is GuidelineBindingState.UNLINKED
+        assert await policy.list_bindings(board_id=board_id) == ()
 
 
 def test_ts5_guidelines_scope_gate_blocks_raw_owner_auth_and_boardshare_drift() -> None:

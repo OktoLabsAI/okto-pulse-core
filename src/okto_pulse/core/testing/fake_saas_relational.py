@@ -109,7 +109,11 @@ class _FakePermissionPresetGateway:
         self, *, user_id: str, board_id: str
     ) -> EffectivePermissions:
         agent = self._adapter._agents.get(user_id)
-        agent_flags = agent.permissions if isinstance(getattr(agent, "permissions", None), dict) else None
+        agent_flags = (
+            agent.permissions
+            if isinstance(getattr(agent, "permissions", None), dict)
+            else None
+        )
         preset = None
         preset_flags = None
         owner_review_required = False
@@ -320,7 +324,9 @@ class _FakeAgentAuthenticationGateway:
 
     async def agent_has_board_access(self, agent_id: str, board_id: str) -> bool:
         agent = self._adapter._agents.get(agent_id)
-        return bool(agent is not None and agent.is_active and board_id in agent.board_ids)
+        return bool(
+            agent is not None and agent.is_active and board_id in agent.board_ids
+        )
 
     async def resolve_agent_permission_context(
         self, agent_id: str, *, board_id: str | None = None
@@ -425,6 +431,16 @@ class FakeSaaSRelationalApplicationAdapter:
 
         raise ChecklistAdapterMissing(
             "The SaaS fake does not model checklist persistence."
+        )
+
+    def guideline_policy(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyAdapterMissing,
+        )
+
+        raise GuidelinePolicyAdapterMissing(
+            "The SaaS fake does not model guideline-policy persistence."
         )
 
     def amendment_revision_backend(self, session: Any) -> Any:

@@ -23,6 +23,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Understand card type rules (test/bug/normal) | `okto-pulse://reference/card_types` |
 | Navigate spec validation/evaluation gates | `okto-pulse://reference/spec_gates` |
 | Record/read Quality assessments or pinpoint findings | `okto-pulse://reference/quality-assessments` |
+| Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
 | Move a card / sprint / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |

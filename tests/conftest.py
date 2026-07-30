@@ -350,6 +350,15 @@ class _CoreTestSchemaLifecycle:
     async def initialize_schema(self) -> None:
         async with _database_mod.get_engine().begin() as conn:
             await conn.run_sync(_models.Base.metadata.create_all)
+            if _COMMUNITY_SRC is not None:
+                from okto_pulse.community.adapters.sqlalchemy_base import (
+                    Base as CommunityBase,
+                )
+
+                # SK-B's immutable policy authority is an edition extension.
+                # Cross-repo integration runs compose it explicitly while
+                # pure-Core runs remain independent of Community.
+                await conn.run_sync(CommunityBase.metadata.create_all)
 
 
 class _CoreTestRelationalEffects(RelationalEffectsPort):
@@ -521,6 +530,10 @@ class _CoreTestPermissionPresetGateway:
             map_legacy_permissions,
             resolve_permissions,
         )
+        from okto_pulse.core.ports.permission_policy import (
+            PermissionPresetLineageNode,
+            resolve_preset_lineage,
+        )
 
         result = await self._session.execute(
             select(Agent).where(Agent.created_by == user_id).limit(1)
@@ -529,21 +542,60 @@ class _CoreTestPermissionPresetGateway:
         agent_flags = None
         preset_flags = None
         preset_name = None
+        owner_review_required = False
+        review_reason = None
         if agent is not None:
             if isinstance(agent.permission_flags, dict) and agent.permission_flags:
                 agent_flags = agent.permission_flags
             elif isinstance(agent.permissions, list) and agent.permissions:
                 agent_flags = map_legacy_permissions(agent.permissions)
             if agent.preset_id:
-                preset = await self._session.get(PermissionPreset, agent.preset_id)
-                if preset is not None and preset.flags:
-                    preset_flags = preset.flags
+                preset_rows = list(
+                    (
+                        await self._session.execute(
+                            select(PermissionPreset).order_by(PermissionPreset.id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                lineage = resolve_preset_lineage(
+                    agent.preset_id,
+                    tuple(
+                        PermissionPresetLineageNode(
+                            id=preset.id,
+                            base_preset_id=preset.base_preset_id,
+                            flags=copy.deepcopy(preset.flags),
+                        )
+                        for preset in preset_rows
+                    ),
+                )
+                preset_flags = lineage.flags
+                owner_review_required = lineage.owner_review_required
+                review_reason = lineage.review_reason
+                preset = next(
+                    (
+                        candidate
+                        for candidate in preset_rows
+                        if candidate.id == agent.preset_id
+                    ),
+                    None,
+                )
+                if preset is not None:
                     preset_name = preset.name
-        effective = resolve_permissions(agent_flags, preset_flags, None)
+        effective = resolve_permissions(
+            agent_flags,
+            preset_flags,
+            None,
+            owner_review_required=owner_review_required,
+            review_reason=review_reason,
+        )
         return EffectivePermissions(
             board_id=board_id,
             preset_name=preset_name or _match_builtin_preset_name(effective.flags),
             flags=effective.flags,
+            owner_review_required=effective.owner_review_required,
+            review_reason=effective.review_reason,
         )
 
     async def list_presets(self, *, user_id):
@@ -907,6 +959,23 @@ class _CoreTestRelationalApplicationAdapter:
                 return None
 
         return _CreateBoardChecklistStub()
+
+    def guideline_policy(self, session):
+        """Use the real Community authority for SK-B integration scenarios."""
+
+        from okto_pulse.community.adapters.sqlalchemy_guideline_policy import (
+            CommunitySqlAlchemyGuidelinePolicy,
+        )
+        from okto_pulse.community.adapters.sqlalchemy_policy_subject_snapshot import (
+            CommunitySqlAlchemyPolicySubjectSnapshotResolver,
+        )
+
+        return CommunitySqlAlchemyGuidelinePolicy(
+            session,
+            current_snapshot_resolver=(
+                CommunitySqlAlchemyPolicySubjectSnapshotResolver(session)
+            ),
+        )
 
     def amendment_revision_backend(self, session):
         return _CoreTestAmendmentRevisionApiBackend(session)

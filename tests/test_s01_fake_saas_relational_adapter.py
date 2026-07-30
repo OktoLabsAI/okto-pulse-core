@@ -27,6 +27,9 @@ from okto_pulse.core.ports.relational_application import (
 from okto_pulse.core.ports.quality_assessment import (
     QualityAssessmentAdapterMissing,
 )
+from okto_pulse.core.ports.guideline_policy import (
+    GuidelinePolicyAdapterMissing,
+)
 from okto_pulse.core.services.application_agents import (
     agent_has_board_access,
     authenticate_agent_by_api_key,
@@ -58,6 +61,8 @@ def test_s01_saas_adapter_exposes_quality_assessment_seam_fail_closed() -> None:
     assert isinstance(adapter, RelationalApplicationAdapter)
     with pytest.raises(QualityAssessmentAdapterMissing):
         adapter.quality_assessments(object())
+    with pytest.raises(GuidelinePolicyAdapterMissing):
+        adapter.guideline_policy(object())
 
 
 @pytest.mark.asyncio
@@ -120,7 +125,10 @@ async def test_s01_core_use_cases_run_unchanged_against_a_saas_adapter() -> None
 
     assert created.preset.owner_id == "saas-agent"
     assert cloned.preset.base_preset_id == created.preset.id
-    assert {preset.id for preset in listed.presets} >= {created.preset.id, cloned.preset.id}
+    assert {preset.id for preset in listed.presets} >= {
+        created.preset.id,
+        cloned.preset.id,
+    }
     assert effective.permissions.board_id == "tenant-board"
     assert uow.commit_calls == 2
     assert authenticated is not None and authenticated.agent_id == "saas-agent"
@@ -146,9 +154,7 @@ def test_s01_saas_fake_has_no_local_first_or_orm_dependency() -> None:
         for alias in node.names
     }
     modules.update(
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+        node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     )
 
     assert not any(module.startswith("sqlalchemy") for module in modules)

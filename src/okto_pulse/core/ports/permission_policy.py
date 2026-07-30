@@ -23,8 +23,10 @@ from okto_pulse.core.domain.permissions import (
     PermissionPresetLineageNode,
     PermissionPresetLineageResolution,
     PermissionSet,
+    PERMISSION_INTRODUCTION_MANIFESTS,
     PERMISSION_REGISTRY,
     SKA_PERMISSION_INTRODUCTION_V1,
+    SKB_PERMISSION_INTRODUCTION_V1,
     _flatten_registry,
     _get_nested,
     _match_builtin_preset_name,
@@ -133,6 +135,18 @@ def ska_permission_introduction_v1() -> PermissionIntroductionManifest:
     return SKA_PERMISSION_INTRODUCTION_V1
 
 
+def skb_permission_introduction_v1() -> PermissionIntroductionManifest:
+    """Return the immutable SK-B/v1 permission-introduction manifest."""
+
+    return SKB_PERMISSION_INTRODUCTION_V1
+
+
+def permission_introduction_manifests() -> tuple[PermissionIntroductionManifest, ...]:
+    """Return all permission introductions in deterministic upgrade order."""
+
+    return PERMISSION_INTRODUCTION_MANIFESTS
+
+
 def resolve_preset_lineage(
     preset_id: str,
     presets: list[PermissionPresetLineageNode]
@@ -191,7 +205,9 @@ __all__ = [
     "PermissionPresetLineageNode",
     "PermissionPresetLineageResolution",
     "PermissionSet",
+    "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
+    "SKB_PERMISSION_INTRODUCTION_V1",
     "builtin_permission_presets",
     "builtin_preset_name",
     "evaluate_permission",
@@ -201,10 +217,12 @@ __all__ = [
     "legacy_permissions_to_flags",
     "merge_permission_registry_defaults",
     "normalize_agent_permission_layer",
+    "permission_introduction_manifests",
     "registered_permission_flags",
     "resolve_effective_permissions",
     "resolve_preset_lineage",
     "set_permission_flag",
     "ska_permission_introduction_v1",
+    "skb_permission_introduction_v1",
     "validate_permission_flag_values",
 ]

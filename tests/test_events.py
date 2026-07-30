@@ -202,7 +202,7 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_thirty_nine_events():
+def test_registry_has_forty_two_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -216,7 +216,8 @@ def test_registry_has_thirty_nine_events():
     archive/restore event + the SK-A quality-assessment recorded event + the
     A3 checklist-binding governance audit event = 36.
     SK-A research-decision append/supersede events = 38. The closed
-    clarification-currentness signal brings the registry to 39.
+        clarification-currentness signal brings the registry to 39. Three
+        closed SK-B policy-constraint companions bring the registry to 42.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -225,16 +226,19 @@ def test_registry_has_thirty_nine_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 39
+    assert len(EVENT_TYPES) == 42
     non_consolidation_events = {
         "kg.hit_flushed",
         "card.priority_changed",
         "card.severity_changed",
         "kg.tick.daily",
         "kg.tick.full_rebuild",
-        "kg.tick.delivery_redrive",
-        "checklist.binding_changed.v1",
-    }
+            "kg.tick.delivery_redrive",
+            "checklist.binding_changed.v1",
+            "board.policy_adoption_changed.v1",
+            "board.policy_binding_materialized.v1",
+            "board.policy_retirement_changed.v1",
+        }
     for et in EVENT_TYPES:
         assert et in EventBus._registry, f"{et} not registered"
         if et in non_consolidation_events:

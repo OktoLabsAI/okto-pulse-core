@@ -40,6 +40,7 @@ def test_registry_covers_every_sdlc_entity_and_exposes_transition_contracts() ->
         "spec",
         "card",
         "sprint",
+        "test_scenario",
     }
     for definition in SDLC_REGISTRY.values():
         assert set(definition.transitions) == {
@@ -279,6 +280,13 @@ async def test_real_scenario_status_writer_refreshes_scope_both_directions(
         assert passed.items["test_scenarios"][0]["status"] == "passed"
         assert completion_blockers(passed) == ()
 
+        recovery = await service.set_test_scenario_status(
+            spec_id,
+            actor_id,
+            scenario_id,
+            "ready",
+        )
+        assert recovery["new_status"] == "ready"
         result = await service.set_test_scenario_status(
             spec_id,
             actor_id,

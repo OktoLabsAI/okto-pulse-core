@@ -20,6 +20,7 @@ from okto_pulse.core.domain.enums import (
     SpecStatus,
     SprintStatus,
     StoryStatus,
+    TestScenarioStatus,
 )
 
 
@@ -35,6 +36,7 @@ class TransitionContract:
     effects: tuple[str, ...] = ("status_changed", "activity_logged")
     reason_codes: tuple[str, ...] = ("transition_not_allowed",)
     card_types: tuple[str, ...] = ()
+    policy_compliance: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,7 @@ def _edge(
     effects: Sequence[str] = ("status_changed", "activity_logged"),
     reason_codes: Sequence[str] = ("transition_not_allowed",),
     card_types: Sequence[str] = (),
+    policy_compliance: bool = False,
 ) -> TransitionContract:
     return TransitionContract(
         to_status=to_status,
@@ -67,6 +70,7 @@ def _edge(
         effects=tuple(effects),
         reason_codes=tuple(reason_codes),
         card_types=tuple(card_types),
+        policy_compliance=policy_compliance,
     )
 
 
@@ -90,6 +94,19 @@ _CANCEL = dict(
     capabilities=("cancel",),
     effects=("status_changed", "cancellation_recorded", "activity_logged"),
     reason_codes=("cancellation_reason_required", "transition_not_allowed"),
+)
+_TEST_SCENARIO_PROGRESSION = dict(
+    gate="test_scenario_progression",
+    preconditions=("authenticated_test_evidence",),
+    reason_codes=(
+        "evidence_required",
+        "policy_compliance_receipt_missing",
+        "policy_compliance_receipt_stale",
+        "policy_compliance_blocked",
+        "policy_evaluation_unavailable",
+        "transition_not_allowed",
+    ),
+    policy_compliance=True,
 )
 
 SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
@@ -139,6 +156,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "resource_gate_blocked",
                             "transition_not_allowed",
                         ),
+                        policy_compliance=True,
                     ),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -205,6 +223,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "cognitive_gate_blocked",
                             "transition_not_allowed",
                         ),
+                        policy_compliance=True,
                     ),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -253,6 +272,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "spec_checklist_gate_required",
                             "transition_not_allowed",
                         ),
+                        policy_compliance=True,
                     ),
                     _edge("draft", gate="unlock_content", capabilities=("reopen",)),
                     _edge("cancelled", **_CANCEL),
@@ -361,6 +381,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "cognitive_gate_blocked",
                             "transition_not_allowed",
                         ),
+                        policy_compliance=True,
                     ),
                     _edge("on_hold", capabilities=("pause",)),
                     _edge("cancelled", **_CANCEL),
@@ -382,6 +403,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "cognitive_gate_blocked",
                             "transition_not_allowed",
                         ),
+                        policy_compliance=True,
                     ),
                     _edge("on_hold", capabilities=("pause",)),
                     _edge("cancelled", **_CANCEL),
@@ -449,6 +471,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "reviewer_separation_required",
                             "transition_not_allowed",
                         ),
+                        policy_compliance=True,
                     ),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -473,6 +496,33 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         ),
                     )
                 ],
+            },
+        ),
+        "test_scenario": _entity(
+            "test_scenario",
+            TestScenarioStatus,
+            {
+                "draft": [
+                    _edge("ready"),
+                    _edge("automated", **_TEST_SCENARIO_PROGRESSION),
+                    _edge("passed", **_TEST_SCENARIO_PROGRESSION),
+                    _edge("failed", **_TEST_SCENARIO_PROGRESSION),
+                ],
+                "ready": [
+                    _edge("draft"),
+                    _edge("automated", **_TEST_SCENARIO_PROGRESSION),
+                    _edge("passed", **_TEST_SCENARIO_PROGRESSION),
+                    _edge("failed", **_TEST_SCENARIO_PROGRESSION),
+                ],
+                "automated": [
+                    _edge("ready"),
+                    _edge("passed", **_TEST_SCENARIO_PROGRESSION),
+                ],
+                "failed": [
+                    _edge("ready"),
+                    _edge("passed", **_TEST_SCENARIO_PROGRESSION),
+                ],
+                "passed": [_edge("ready")],
             },
         ),
     }
@@ -530,6 +580,23 @@ def is_transition_allowed(
     )
 
 
+def transition_requires_policy_compliance(
+    entity_type: str,
+    current_status: str,
+    target_status: str,
+    *,
+    card_type: str | None = None,
+) -> bool:
+    """Whether one legal edge carries the frozen policy-compliance gate."""
+
+    return any(
+        edge.to_status == target_status
+        and edge.policy_compliance
+        and (not edge.card_types or card_type in edge.card_types)
+        for edge in transition_contracts(entity_type, current_status)
+    )
+
+
 __all__ = [
     "LifecycleDefinition",
     "SDLC_REGISTRY",
@@ -538,4 +605,5 @@ __all__ = [
     "lifecycle_definition",
     "transition_contracts",
     "transition_map",
+    "transition_requires_policy_compliance",
 ]

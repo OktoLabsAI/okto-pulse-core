@@ -27,7 +27,14 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.policy_governance import (
+    ADOPTION_MANAGE,
+    require_policy_governance_capabilities,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.services.default_board_configuration import (
+    guideline_ref_diff_has_changes,
+)
 
 
 class DataResult:
@@ -372,10 +379,17 @@ class CreateDefaultBoardConfigVersionUseCase:
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         require_global_catalog_admin(actor)
+        payload = command.payload or {}
+        diff = await uow.services.default_board_config.preview_create_guideline_ref_diff(
+            scope=str(payload.get("scope") or command.scope or "global"),
+            guideline_default_refs=payload.get("guideline_default_refs"),
+        )
+        if guideline_ref_diff_has_changes(diff):
+            require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
         data = await uow.services.default_board_config.create_version(
             actor=actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
-            **(command.payload or {}),
+            **payload,
         )
         await commit(uow)
         return DataResult(data)
@@ -386,6 +400,11 @@ class ActivateDefaultBoardConfigVersionUseCase:
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         require_global_catalog_admin(actor)
+        diff = await uow.services.default_board_config.preview_activate_guideline_ref_diff(
+            template_id=command.template_id,
+        )
+        if guideline_ref_diff_has_changes(diff):
+            require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -400,6 +419,11 @@ class DeactivateDefaultBoardConfigVersionUseCase:
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         require_global_catalog_admin(actor)
+        diff = await uow.services.default_board_config.preview_deactivate_guideline_ref_diff(
+            template_id=command.template_id,
+        )
+        if guideline_ref_diff_has_changes(diff):
+            require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
         data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -451,6 +475,7 @@ class UpdateDefaultGuidelineRefsUseCase:
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         require_global_catalog_admin(actor)
+        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
         data = await uow.services.default_board_config.update_template_guidelines(
             template_id=command.template_id,
             guideline_default_refs=(command.payload or {}).get("guideline_default_refs"),

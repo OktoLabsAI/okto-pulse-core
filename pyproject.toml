@@ -68,6 +68,7 @@ packages = ["src/okto_pulse"]
 "src/okto_pulse/core/mcp/resources/reference/destructive_ops.md" = "okto_pulse/core/mcp/resources/reference/destructive_ops.md"
 "src/okto_pulse/core/mcp/resources/reference/card_types.md" = "okto_pulse/core/mcp/resources/reference/card_types.md"
 "src/okto_pulse/core/mcp/resources/reference/spec_gates.md" = "okto_pulse/core/mcp/resources/reference/spec_gates.md"
+"src/okto_pulse/core/mcp/resources/reference/policy-compliance.md" = "okto_pulse/core/mcp/resources/reference/policy-compliance.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

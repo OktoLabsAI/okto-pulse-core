@@ -8,6 +8,8 @@ High-volume Okto Pulse MCP responses can be wrapped by a shared **projection
 envelope** (`MCPProjectionEnvelopeHelper`) so agents fetch only as much payload
 as a step needs. This resource is the single source of truth for profile
 semantics; tool descriptions link here instead of repeating it inline.
+The governed policy lists intentionally support only `summary|detail`; see
+`okto-pulse://reference/policy-compliance`.
 
 ## Canonical success key: `outcome`
 

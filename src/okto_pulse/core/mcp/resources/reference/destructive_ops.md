@@ -5,6 +5,8 @@ version: "1.0"
 # Destructive Operations — Read Before Calling
 
 Some MCP tools are **irreversible** at the storage layer. Calling them by mistake is one of the most costly failure modes an agent can hit because there is no undo and no confirmation prompt.
+For versioned guidelines prefer retirement/unlink as defined in
+`okto-pulse://reference/policy-compliance`.
 
 ## Hard Delete — Row is Physically Removed, Cannot Be Recovered
 

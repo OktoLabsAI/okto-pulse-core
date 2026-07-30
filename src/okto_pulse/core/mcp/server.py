@@ -456,6 +456,11 @@ _CORE_RESOURCE_TABLE = [
         "reference/quality-assessments.md",
         "Quality assessments, pinpointed findings, currentness, and pagination.",
     ),
+    (
+        "okto-pulse://reference/policy-compliance",
+        "reference/policy-compliance.md",
+        "Versioned guideline, compliance, waiver, and policy-projection protocol.",
+    ),
     # R1.1 — lazy long-form tool docs (args/returns/examples) moved off the
     # compact tools/list surface; one resource per tool family (api_fd7c5878).
     (
@@ -868,6 +873,8 @@ _TOOL_DOCS_FAMILY_RULES = [
     ("checklist", "spec"),
     ("research_decision", "refinement"),
     ("decision", "decision"),
+    ("policy_compliance", "guideline"),
+    ("policy_waiver", "guideline"),
     ("guideline", "guideline"),
     ("sprint", "sprint"),
     ("spec", "spec"),
@@ -2306,8 +2313,12 @@ async def okto_pulse_get_allowed_transitions(
 ) -> str:
     """
     Return allowed lifecycle transitions for story, ideation, refinement, spec,
-    card, or sprint from the same Core SDLC registry used by mutations. Each
-    edge includes gates, preconditions, capabilities, effects and reason codes.
+    card, sprint, or test_scenario from the same Core SDLC registry used by
+    mutations. Each edge includes gates, preconditions, capabilities, effects,
+    reason codes, and additive Policy Compliance metadata. Pass entity_id for
+    an entity-scoped Policy Compliance decision. A current_status-only request
+    keeps lifecycle discovery safe by returning state=policy_subject_required
+    on gated edges instead of advertising an unscoped pass.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3991,6 +4002,9 @@ async def okto_pulse_move_card(
         McpMoveCardUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler: board-scope + state-machine move + commit move into
@@ -4036,6 +4050,8 @@ async def okto_pulse_move_card(
             return _resource_gate_error_response(e)
         except CancellationReasonRequiredError as e:
             return json.dumps({"error": e.code, **e.to_dict()})
+        except PolicyTransitionRejected as e:
+            return MCPAdapterContract.error(e)
         except ValueError as e:
             return json.dumps(
                 {"error": str(e), "blocked_by_dependencies": False}
@@ -6266,6 +6282,9 @@ async def okto_pulse_move_ideation(
         MoveIdeationCommand,
         MoveIdeationUseCase,
     )
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # Spec #04 (MCP strangler): obtain a PulseUnitOfWork from the MCP
@@ -6300,6 +6319,8 @@ async def okto_pulse_move_ideation(
             return json.dumps({"error": "Ideation not found"})
         except CancellationReasonRequiredError as e:
             return json.dumps({"error": e.code, **e.to_dict()})
+        except PolicyTransitionRejected as e:
+            return MCPAdapterContract.error(e)
         except ValueError as e:
             return MCPAdapterContract.error(e)
 
@@ -7509,6 +7530,9 @@ async def okto_pulse_move_refinement(
         McpMoveRefinementUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (refinement move, VARIANT board-scoped): McpMoveRefinementUseCase
@@ -7543,6 +7567,8 @@ async def okto_pulse_move_refinement(
         return json.dumps({"error": "Refinement not found"})
     except CancellationReasonRequiredError as e:
         return json.dumps({"error": e.code, **e.to_dict()})
+    except PolicyTransitionRejected as e:
+        return MCPAdapterContract.error(e)
     except ValueError as e:
         return MCPAdapterContract.error(e)
 
@@ -9784,6 +9810,9 @@ async def okto_pulse_move_spec(
         McpMoveSpecUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (spec VARIANT): board-scope + old_status capture + move move
@@ -9822,6 +9851,8 @@ async def okto_pulse_move_spec(
         return json.dumps(e.to_dict())
     except CancellationReasonRequiredError as e:
         return json.dumps({"error": e.code, **e.to_dict()})
+    except PolicyTransitionRejected as e:
+        return MCPAdapterContract.error(e)
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -10237,6 +10268,9 @@ async def okto_pulse_update_test_scenario_status(
         SetTestScenarioStatusCommand,
         SetTestScenarioStatusUseCase,
     )
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (spec REUSE): SetTestScenarioStatusUseCase calls the service
@@ -10262,6 +10296,8 @@ async def okto_pulse_update_test_scenario_status(
                 "message": str(exc),
             }
         )
+    except PolicyTransitionRejected as exc:
+        return MCPAdapterContract.error(exc)
     except ValueError as exc:
         msg = str(exc)
         if msg.startswith("evidence_required"):
@@ -14676,6 +14712,65 @@ async def okto_pulse_delete_screen_mockup(
 # ============================================================================
 
 
+def _authorize_legacy_guideline_mcp(
+    ctx: object,
+    *,
+    board_id: str,
+    operation: str,
+) -> tuple[object | None, str | None]:
+    """Fence legacy guideline tools with the canonical SK-B capability."""
+
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+    from okto_pulse.core.application.use_cases.policy_governance import (
+        ADOPTION_MANAGE,
+        REVISIONS_CREATE,
+        REVISIONS_RETIRE,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.mcp.policy_governance_tools import (
+        authorize_policy_governance_mcp,
+    )
+
+    capability_by_operation = {
+        "create_guideline": REVISIONS_CREATE,
+        "update_guideline": REVISIONS_CREATE,
+        "delete_guideline": REVISIONS_RETIRE,
+        "link_guideline": ADOPTION_MANAGE,
+        "unlink_guideline": ADOPTION_MANAGE,
+        "update_guideline_priority": ADOPTION_MANAGE,
+    }
+    capability = capability_by_operation[operation]
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        authorize_policy_governance_mcp(
+            actor,
+            operation=operation,
+            capabilities=(capability,),
+        )
+    except PermissionDeniedError as exc:
+        return None, _perm_error(str(exc))
+    return actor, None
+
+
+def _legacy_guideline_adoption_preview_required() -> str:
+    """Return the canonical migration response without opening a UoW."""
+
+    from okto_pulse.core.inbound.guideline_policy_error import (
+        project_guideline_policy_error,
+    )
+    from okto_pulse.core.ports.guideline_policy import (
+        GuidelinePolicyBindingConflict,
+    )
+
+    return json.dumps(
+        project_guideline_policy_error(
+            GuidelinePolicyBindingConflict(
+                "guideline_impact_preview_required"
+            )
+        )
+    )
+
+
 @mcp.tool()
 async def okto_pulse_get_board_guidelines(board_id: str) -> str:
     """
@@ -14784,14 +14879,14 @@ async def okto_pulse_create_guideline(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(
-        ctx.permissions,
-        Permissions.SPECS_UPDATE
-        if hasattr(Permissions, "BOARD_UPDATE")
-        else Permissions.BOARD_READ,
+    actor, permission_error = _authorize_legacy_guideline_mcp(
+        ctx,
+        board_id=board_id,
+        operation="create_guideline",
     )
-    if perm_err:
-        return _perm_error(perm_err)
+    if permission_error is not None:
+        return permission_error
+    assert actor is not None
 
     try:
         tag_list = coerce_to_list_str(tags) or None
@@ -14803,7 +14898,6 @@ async def okto_pulse_create_guideline(
         CreateGuidelineUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.models.schemas import GuidelineCreate
 
     data = GuidelineCreate(
@@ -14813,7 +14907,6 @@ async def okto_pulse_create_guideline(
         scope=scope,
         board_id=board_id if scope == "inline" else None,
     )
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await CreateGuidelineUseCase().execute(
@@ -14852,14 +14945,14 @@ async def okto_pulse_update_guideline(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(
-        ctx.permissions,
-        Permissions.SPECS_UPDATE
-        if hasattr(Permissions, "BOARD_UPDATE")
-        else Permissions.BOARD_READ,
+    actor, permission_error = _authorize_legacy_guideline_mcp(
+        ctx,
+        board_id=board_id,
+        operation="update_guideline",
     )
-    if perm_err:
-        return _perm_error(perm_err)
+    if permission_error is not None:
+        return permission_error
+    assert actor is not None
 
     if tags:
         try:
@@ -14874,7 +14967,6 @@ async def okto_pulse_update_guideline(
         UpdateGuidelineUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.models.schemas import GuidelineUpdate
 
     data = GuidelineUpdate(
@@ -14882,7 +14974,6 @@ async def okto_pulse_update_guideline(
         content=content or None,
         tags=tags_list,
     )
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await UpdateGuidelineUseCase().execute(
@@ -14908,30 +14999,28 @@ async def okto_pulse_update_guideline(
 
 @mcp.tool()
 async def okto_pulse_delete_guideline(board_id: str, guideline_id: str) -> str:
-    """Delete a guideline. Permanent, no undo — also removes all board links in
-    cascade. Docs: okto-pulse://reference/destructive_ops
+    """Retire a guideline through the legacy compatibility name.
+
+    Immutable revisions and binding history remain auditable.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(
-        ctx.permissions,
-        Permissions.SPECS_UPDATE
-        if hasattr(Permissions, "BOARD_UPDATE")
-        else Permissions.BOARD_READ,
+    actor, permission_error = _authorize_legacy_guideline_mcp(
+        ctx,
+        board_id=board_id,
+        operation="delete_guideline",
     )
-    if perm_err:
-        return _perm_error(perm_err)
+    if permission_error is not None:
+        return permission_error
+    assert actor is not None
 
     from okto_pulse.core.application.use_cases import (
         DeleteGuidelineCommand,
         DeleteGuidelineUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             await DeleteGuidelineUseCase().execute(
@@ -14952,47 +15041,52 @@ async def okto_pulse_link_guideline_to_board(
     priority: str = "0",
 ) -> str:
     """
-    Link a global guideline to a board so agents see it when loading board guidelines."""
+    Deprecated direct-adoption shim. Preview impact, then adopt the exact
+    revision with its receipt; this tool never mutates governed bindings."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(
-        ctx.permissions,
-        Permissions.SPECS_UPDATE
-        if hasattr(Permissions, "BOARD_UPDATE")
-        else Permissions.BOARD_READ,
+    actor, permission_error = _authorize_legacy_guideline_mcp(
+        ctx,
+        board_id=board_id,
+        operation="link_guideline",
     )
-    if perm_err:
-        return _perm_error(perm_err)
+    if permission_error is not None:
+        return permission_error
+    assert actor is not None
 
     from okto_pulse.core.application.use_cases import (
         McpLinkGuidelineToBoardCommand,
         McpLinkGuidelineToBoardUseCase,
     )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.guideline_policy import (
+        GuidelinePolicyBindingConflict,
+    )
 
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        priority_value = int(priority)
+    except (TypeError, ValueError):
+        return json.dumps(
+            {
+                "error": "invalid_priority",
+                "detail": "priority must be an integer",
+            }
+        )
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await McpLinkGuidelineToBoardUseCase().execute(
-                McpLinkGuidelineToBoardCommand(board_id, guideline_id, int(priority)),
+            await McpLinkGuidelineToBoardUseCase().execute(
+                McpLinkGuidelineToBoardCommand(
+                    board_id,
+                    guideline_id,
+                    priority_value,
+                ),
                 actor=actor,
                 uow=uow,
             )
-            link = result.data
-            return json.dumps(
-                {
-                    "success": True,
-                    "board_id": board_id,
-                    "guideline_id": guideline_id,
-                    "priority": link.priority,
-                },
-                default=str,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Guideline not found"})
+    except GuidelinePolicyBindingConflict:
+        return _legacy_guideline_adoption_preview_required()
+    raise AssertionError("legacy guideline link unexpectedly mutated state")
 
 
 @mcp.tool()
@@ -15005,23 +15099,20 @@ async def okto_pulse_unlink_guideline_from_board(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(
-        ctx.permissions,
-        Permissions.SPECS_UPDATE
-        if hasattr(Permissions, "BOARD_UPDATE")
-        else Permissions.BOARD_READ,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases import (
         McpUnlinkGuidelineFromBoardCommand,
         McpUnlinkGuidelineFromBoardUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    actor, permission_error = _authorize_legacy_guideline_mcp(
+        ctx,
+        board_id=board_id,
+        operation="unlink_guideline",
+    )
+    if permission_error is not None:
+        return permission_error
+    assert actor is not None
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             await McpUnlinkGuidelineFromBoardUseCase().execute(
@@ -15041,35 +15132,38 @@ async def okto_pulse_update_board_guideline_priority(
     priority: str,
 ) -> str:
     """
-    Update the priority of a guideline linked to a board."""
+    Deprecated direct-priority shim. Preview impact, then adopt the exact
+    revision with its receipt; this tool never mutates governed bindings."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(
-        ctx.permissions,
-        Permissions.SPECS_UPDATE
-        if hasattr(Permissions, "BOARD_UPDATE")
-        else Permissions.BOARD_READ,
+    actor, permission_error = _authorize_legacy_guideline_mcp(
+        ctx,
+        board_id=board_id,
+        operation="update_guideline_priority",
     )
-    if perm_err:
-        return _perm_error(perm_err)
+    if permission_error is not None:
+        return permission_error
+    assert actor is not None
 
     from okto_pulse.core.application.use_cases import (
         McpUpdateBoardGuidelinePriorityCommand,
         McpUpdateBoardGuidelinePriorityUseCase,
     )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.guideline_policy import (
+        GuidelinePolicyBindingConflict,
+    )
 
     try:
         priority_value = int(priority)
     except (TypeError, ValueError):
         return json.dumps(
-            {"error": "invalid_priority", "detail": "priority must be an integer"}
+            {
+                "error": "invalid_priority",
+                "detail": "priority must be an integer",
+            }
         )
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             await McpUpdateBoardGuidelinePriorityUseCase().execute(
@@ -15081,15 +15175,10 @@ async def okto_pulse_update_board_guideline_priority(
                 actor=actor,
                 uow=uow,
             )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Link not found"})
-    return json.dumps(
-        {
-            "success": True,
-            "board_id": board_id,
-            "guideline_id": guideline_id,
-            "priority": priority_value,
-        }
+    except GuidelinePolicyBindingConflict:
+        return _legacy_guideline_adoption_preview_required()
+    raise AssertionError(
+        "legacy guideline priority update unexpectedly mutated state"
     )
 
 
@@ -16501,6 +16590,9 @@ async def okto_pulse_move_sprint(
         MoveSprintUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (sprint move, REUSE:MoveSprintUseCase — the service self-commits,
@@ -16545,6 +16637,8 @@ async def okto_pulse_move_sprint(
         return json.dumps({"error": e.code, **e.to_dict()})
     except SprintOperationError as e:
         return json.dumps({"error": e.code, **e.to_dict()})
+    except PolicyTransitionRejected as e:
+        return MCPAdapterContract.error(e)
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -17244,6 +17338,9 @@ async def okto_pulse_submit_task_validation(
         SubmitTaskValidationCommand,
         SubmitTaskValidationUseCase,
     )
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -17265,6 +17362,8 @@ async def okto_pulse_submit_task_validation(
         return json.dumps(e.to_dict())
     except ResourceGateError as e:
         return _resource_gate_error_response(e)
+    except PolicyTransitionRejected as e:
+        return MCPAdapterContract.error(e)
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -17767,8 +17866,14 @@ async def okto_pulse_create_default_board_config_version(
 ) -> str:
     """Create a new default board-configuration template version (admin write).
     REST twin: POST /default-board-config/versions. Validated as BoardSettings;
-    guideline defaults must be global; design_system gate_mode must be valid.
-    activate=True activates it (single-active enforced). Perm: SPECS_UPDATE."""
+    guideline defaults must be global and each native ref must include the exact
+    revision_id, revision_number, semantic_version, and revision_digest (priority
+    defaults to zero). This native tool rejects guideline_version/legacy_*; those
+    aliases are reserved for versioned import/migration, not head selection.
+    design_system gate_mode must be valid.
+    activate=True activates it (single-active enforced). Requires SPECS_UPDATE;
+    a change from the active exact guideline pins additionally requires
+    guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17789,6 +17894,7 @@ async def okto_pulse_create_default_board_config_version(
         McpCreateDefaultBoardConfigVersionCommand,
         McpCreateDefaultBoardConfigVersionUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
@@ -17809,6 +17915,8 @@ async def okto_pulse_create_default_board_config_version(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
 
@@ -17819,7 +17927,9 @@ async def okto_pulse_activate_default_board_config_version(
 ) -> str:
     """Activate a default board-configuration template version (admin write);
     deactivates every other active version in the scope. REST twin: POST
-    /default-board-config/versions/{template_id}/activate. Perm: SPECS_UPDATE."""
+    /default-board-config/versions/{template_id}/activate. Requires SPECS_UPDATE;
+    changing the active exact guideline pins also requires
+    guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17830,6 +17940,7 @@ async def okto_pulse_activate_default_board_config_version(
         McpActivateDefaultBoardConfigVersionCommand,
         McpActivateDefaultBoardConfigVersionUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
@@ -17854,6 +17965,8 @@ async def okto_pulse_activate_default_board_config_version(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
 
@@ -17864,7 +17977,8 @@ async def okto_pulse_deactivate_default_board_config_version(
 ) -> str:
     """Deactivate a default board-configuration template version (admin write).
     REST twin: POST /default-board-config/versions/{template_id}/deactivate.
-    Perm: SPECS_UPDATE."""
+    Requires SPECS_UPDATE; removing effective guideline pins also requires
+    guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17875,6 +17989,7 @@ async def okto_pulse_deactivate_default_board_config_version(
         McpDeactivateDefaultBoardConfigVersionCommand,
         McpDeactivateDefaultBoardConfigVersionUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
@@ -17899,6 +18014,8 @@ async def okto_pulse_deactivate_default_board_config_version(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
 
@@ -17910,7 +18027,10 @@ async def okto_pulse_list_default_guideline_candidates(
     """List GLOBAL catalog guidelines with derived eligibility + current default
     status from the umbrella template (spec 8a2fad91 / FR1, admin read). REST twin:
     GET /guidelines/default-candidates. Uses the active template by default;
-    template_id inspects a specific version. Perm: BOARD_READ."""
+    template_id inspects a specific version. head_revision is the current catalog
+    revision; default_revision is the immutable revision pinned by that template.
+    retired/eligible/eligibility_reason explain selection eligibility. Perm:
+    BOARD_READ."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17955,8 +18075,12 @@ async def okto_pulse_update_default_guideline_refs(
     /default-board-configurations/{template_id}/guidelines. Inline/missing/non-global
     refs are rejected fail-closed (structured error). An ACTIVE template is
     copy-on-write (a new version is created + activated); a draft mutates in-place.
-    Each ref is ``{"guideline_id": "...", "priority": 0}``. Returns the
-    EFFECTIVE template. Perm: SPECS_UPDATE."""
+    Native refs use the closed shape ``{guideline_id, priority, revision_id,
+    revision_number, semantic_version, revision_digest}``; priority may be omitted
+    and defaults to zero, while all four revision fields are required. The
+    native tool rejects guideline_version/legacy_*; those aliases are reserved
+    for versioned import/migration. Returns the EFFECTIVE template. Requires
+    SPECS_UPDATE and guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17967,12 +18091,21 @@ async def okto_pulse_update_default_guideline_refs(
         McpUpdateDefaultGuidelineRefsCommand,
         McpUpdateDefaultGuidelineRefsUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+    from okto_pulse.core.application.use_cases.policy_governance import (
+        ADOPTION_MANAGE,
+        require_policy_governance_capabilities,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
     )
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     # AF23 scope marker: ActorScope.from_context(actor).query_scope; query_scope=query_scope.
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -17986,6 +18119,8 @@ async def okto_pulse_update_default_guideline_refs(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
 
@@ -18508,6 +18643,9 @@ async def okto_pulse_submit_spec_validation(
         SubmitSpecValidationCommand,
         SubmitSpecValidationUseCase,
     )
+    from okto_pulse.core.domain.guideline_policy_transition import (
+        PolicyTransitionRejected,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -18525,6 +18663,8 @@ async def okto_pulse_submit_spec_validation(
         return json.dumps(result.payload, default=str)
     except EntityNotFoundError:
         return json.dumps({"error": "Spec not found"})
+    except PolicyTransitionRejected as e:
+        return MCPAdapterContract.error(e)
     except ValueError as e:
         return MCPAdapterContract.error(e)
 
@@ -18613,6 +18753,17 @@ _register_kg_export_tools(
     mcp,
     get_agent=_get_authenticated_agent,
     get_board_agent=_get_agent_ctx,
+)
+
+from okto_pulse.core.mcp.policy_governance_tools import (  # noqa: E402
+    register_policy_governance_tools as _register_policy_governance_tools,
+)
+
+_register_policy_governance_tools(
+    mcp,
+    get_board_agent=_get_agent_ctx,
+    get_uow=get_unit_of_work_factory_for_mcp,
+    get_settings=get_settings,
 )
 
 

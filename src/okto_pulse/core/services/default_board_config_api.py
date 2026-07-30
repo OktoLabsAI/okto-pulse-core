@@ -94,6 +94,37 @@ class DefaultBoardConfigApiService:
             "versions": [self._serialize(t) for t in versions],
         }
 
+    async def preview_create_guideline_ref_diff(
+        self,
+        *,
+        scope: str,
+        guideline_default_refs: list[Any] | None,
+        compatibility_import: bool = False,
+    ) -> dict[str, list[str]]:
+        return await self._svc.preview_create_guideline_ref_diff(
+            scope=scope,
+            guideline_default_refs=guideline_default_refs,
+            compatibility_import=compatibility_import,
+        )
+
+    async def preview_activate_guideline_ref_diff(
+        self,
+        *,
+        template_id: str,
+    ) -> dict[str, list[str]]:
+        return await self._svc.preview_activate_guideline_ref_diff(
+            template_id=template_id,
+        )
+
+    async def preview_deactivate_guideline_ref_diff(
+        self,
+        *,
+        template_id: str,
+    ) -> dict[str, list[str]]:
+        return await self._svc.preview_deactivate_guideline_ref_diff(
+            template_id=template_id,
+        )
+
     async def get_board_diff(self, *, board_id: str) -> dict[str, Any]:
         # R01C IMP3 drain: existence get-by-id via the edition-owned repository port
         # (R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
@@ -163,6 +194,7 @@ class DefaultBoardConfigApiService:
         spec_checklist_mode: str | None = None,
         activate: bool = False,
         query_scope: QueryScope | None = None,
+        compatibility_import: bool = False,
     ) -> dict[str, Any]:
         template = await self._svc.create_version(
             settings_payload=settings_payload,
@@ -173,6 +205,7 @@ class DefaultBoardConfigApiService:
             spec_checklist_mode=spec_checklist_mode,
             activate=activate,
             query_scope=query_scope,
+            compatibility_import=compatibility_import,
         )
         return self._serialize(template)
 

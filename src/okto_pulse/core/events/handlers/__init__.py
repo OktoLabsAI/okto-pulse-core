@@ -27,6 +27,9 @@ from okto_pulse.core.events.handlers.discovery_selector_cache import (  # noqa: 
 from okto_pulse.core.events.handlers.kg_hit_recompute import (  # noqa: F401
     KGHitRecomputeHandler,
 )
+from okto_pulse.core.events.handlers.policy_constraint_projection import (  # noqa: F401
+    PolicyConstraintProjectionHandler,
+)
 from okto_pulse.core.events.handlers.card_boost_recompute import (  # noqa: F401
     CardPriorityChangedHandler,
     CardSeverityChangedHandler,
@@ -46,6 +49,7 @@ __all__ = [
     "ConsolidationEnqueuer",
     "DiscoverySelectorCacheInvalidationHandler",
     "KGHitRecomputeHandler",
+    "PolicyConstraintProjectionHandler",
     "CardPriorityChangedHandler",
     "CardSeverityChangedHandler",
     "KGDailyTickHandler",

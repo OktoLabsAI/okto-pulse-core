@@ -42,6 +42,7 @@ _REQUIRED_FILES = [
     "reference/card_types.md",
     "reference/spec_gates.md",
     "reference/projection_profiles.md",
+    "reference/policy-compliance.md",
 ]
 
 # 2026-07-12 (auditoria MCP, achado #34): the gate now discovers EVERY
@@ -73,6 +74,7 @@ EXPECTED_URIS = [
     "okto-pulse://reference/card_types",
     "okto-pulse://reference/spec_gates",
     "okto-pulse://reference/projection-profiles",
+    "okto-pulse://reference/policy-compliance",
 ]
 
 
@@ -353,6 +355,35 @@ def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter()
     assert "read-only compatibility filter" in normalized_list
 
 
+def test_guideline_resources_match_governed_lifecycle_and_priority_semantics() -> None:
+    """Guard semantic guidance that checksums alone cannot validate."""
+    from okto_pulse.core.mcp import server as _srv
+
+    guideline = _srv._load_resource_file("reference/tool-docs/guideline.md")
+    board = _srv._load_resource_file("reference/tool-docs/board.md")
+    normalized_guideline = " ".join(guideline.split())
+    normalized_board = " ".join(board.split())
+
+    assert "Compatibility name for retiring a guideline" in normalized_guideline
+    assert normalized_guideline.count("Deprecated direct-adoption shim") == 2
+    assert "guideline_impact_preview_required" in normalized_guideline
+    assert "ascending priority (lower values first)" in normalized_guideline
+    assert "higher = more important" not in guideline
+    assert "highest first" not in guideline
+
+    assert "guidelines.adoption.manage" in normalized_board
+    assert "equivalent pins does not require that additional capability" in (
+        normalized_board
+    )
+    for field in (
+        "revision_id",
+        "revision_number",
+        "semantic_version",
+        "revision_digest",
+    ):
+        assert field in board
+
+
 def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -> None:
     """Spec workflow owns status routing; Quality keeps shared mechanics."""
     from okto_pulse.core.mcp import server as _srv
@@ -431,8 +462,9 @@ def test_initial_footprint_under_budget() -> None:
 
     Budget rationale (post-P0.A + post-P0.B, pre-P1 lazy-loading):
       - instructions ≤ 10K tokens — P0.A goal (was ~71K pre-rewrite).
-      - tools metadata ≤ 45K tokens — current ceiling for ~226 tools; P1
-        lazy-loading by role will reduce this drastically per session.
+      - tools metadata ≤ 47K tokens — reviewed ceiling for 312 tools, including
+        the 20 closed policy-governance schemas; P1 lazy-loading by role will
+        reduce this drastically per session.
       - combined ≤ 50K tokens — overall regression guard.
 
     A failure in any of the three asserts pinpoints which subsystem regressed.
@@ -456,8 +488,8 @@ def test_initial_footprint_under_budget() -> None:
         schema = json.dumps(getattr(tool, "parameters", {}), separators=(",", ":"))
         parts.append(f"{tool_name}\n{desc}\n{schema}")
     tools_tokens = len(enc.encode("\n".join(parts)))
-    assert tools_tokens <= 45_000, (
-        f"tools/list metadata {tools_tokens} tokens exceeds 45K guard — "
+    assert tools_tokens <= 47_000, (
+        f"tools/list metadata {tools_tokens} tokens exceeds 47K guard — "
         f"P1 lazy-loading by role will reduce this per session."
     )
 

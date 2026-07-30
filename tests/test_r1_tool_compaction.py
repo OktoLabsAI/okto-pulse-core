@@ -11,7 +11,7 @@ R1.1:
 - ``ts_84db6226`` — the tool-registration contract test uses compact-doc
   expectations.
 
-BUDGET NOTE: tool descriptions hit the reviewed live-surface budget (aggregate ≤ 70000,
+BUDGET NOTE: tool descriptions hit the reviewed live-surface budget (aggregate ≤ 73000,
 per-tool ≤ 900). ``agent_instructions.md`` is kept richer than the spec's 8000
 target by an explicit, owner-authorised decision (see the R1.1 card comment) —
 all operational/safety DIRECTIVES stay inline; only deep REFERENCE moved to lazy
@@ -36,7 +36,7 @@ from okto_pulse.core.mcp.payload_budget import (
 # Renegotiated always-loaded instruction budget (owner-authorised, R1.1 card).
 R1_INSTRUCTION_BUDGET = 10000
 PER_TOOL_BUDGET = 900
-AGGREGATE_TOOL_BUDGET = 70000
+AGGREGATE_TOOL_BUDGET = 73000
 
 CONTRACT_TEST = (
     Path(__file__).parent / "test_mcp_tool_registration_contract.py"
@@ -76,9 +76,9 @@ def test_tool_names_stable_after_compaction():
     # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
     # tools entraram); o delta exato agora é nomeado por
     # test_mcp_tools_catalog_drift.py.
-    # 2026-07-27: reviewed SK-A surface is 292 tools. The five additive Quality
-    # assessment commands expose record/current/receipt/history/findings.
-    assert len(names) == 292
+    # 2026-07-29: reviewed SK-B surface is 312 tools. Twenty additive policy
+    # governance commands expose revisions, impact, compliance and waivers.
+    assert len(names) == 312
     assert all(n.startswith("okto_pulse_") for n in names)
 
 

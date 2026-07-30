@@ -3,6 +3,9 @@ version: "1.0"
 ---
 # Status Transitions — Mandatory Gates
 
+Executable guideline gate/currentness rules are defined in
+`okto-pulse://reference/policy-compliance`.
+
 **When unsure, call `okto_pulse_get_allowed_transitions`** — it returns the valid next statuses (and blocking gates) for the entity's current state. It is always correct, even when a board overrides defaults.
 
 ## Normal cards (`card_type = "normal"`)

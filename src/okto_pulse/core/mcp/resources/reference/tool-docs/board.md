@@ -76,7 +76,10 @@ Returns:
 ## `okto_pulse_create_default_board_config_version`
 
 Create a new default board-configuration template version (admin write).
-REST twin: POST /default-board-config/versions. Perm: SPECS_UPDATE.
+REST twin: POST /default-board-config/versions. Requires `SPECS_UPDATE`;
+when the exact guideline pins differ from the active baseline, it additionally
+requires `guidelines.adoption.manage`. A settings-only version with equivalent
+pins does not require that additional capability.
 
 Use this to define the gate/settings defaults that future boards should
 inherit. Creating a version does not activate it unless `activate=true`
@@ -94,8 +97,10 @@ Args:
     board_id: Board ID used for authentication.
     settings_payload: Settings dict — validated as BoardSettings.
     scope: Template scope (default `global`).
-    guideline_default_refs: Optional list of default guideline refs — must
-        reference GLOBAL catalog guidelines.
+    guideline_default_refs: Optional ordered list of GLOBAL guideline pins.
+        Each native ref contains `guideline_id`, `revision_id`,
+        `revision_number`, `semantic_version`, `revision_digest`, and optional
+        non-negative `priority`.
     design_system_default_ref: Optional default Design System ref dict — its
         gate_mode must be valid.
     activate: When true, activates the new version (default false).
@@ -107,7 +112,9 @@ Returns:
 
 Activate a default board-configuration template version (admin write);
 deactivates every other active version in the scope. REST twin:
-POST /default-board-config/versions/{template_id}/activate. Perm: SPECS_UPDATE.
+POST /default-board-config/versions/{template_id}/activate. Requires
+`SPECS_UPDATE`; if the target changes the active exact guideline pins, it also
+requires `guidelines.adoption.manage`.
 
 Args:
     board_id: Board ID used for authentication.
@@ -124,7 +131,9 @@ Menu → Board → Global Default.
 
 Deactivate a default board-configuration template version (admin write).
 REST twin: POST /default-board-config/versions/{template_id}/deactivate.
-Perm: SPECS_UPDATE.
+Requires `SPECS_UPDATE`; removing effective guideline pins also requires
+`guidelines.adoption.manage`. Deactivating an already inactive version or an
+active version without guideline pins does not require the additional leaf.
 
 Args:
     board_id: Board ID used for authentication.

@@ -98,6 +98,16 @@ class CardStatus(str, PyEnum):
     CANCELLED = "cancelled"
 
 
+class TestScenarioStatus(str, PyEnum):
+    """Operational lifecycle status of one executable test scenario."""
+
+    DRAFT = "draft"
+    READY = "ready"
+    AUTOMATED = "automated"
+    PASSED = "passed"
+    FAILED = "failed"
+
+
 class CardPriority(str, PyEnum):
     """Card priority levels."""
 
@@ -142,6 +152,7 @@ __all__ = [
     "SprintLaneType",
     "SpecStatus",
     "CardStatus",
+    "TestScenarioStatus",
     "CardPriority",
     "CardType",
     "BugSeverity",

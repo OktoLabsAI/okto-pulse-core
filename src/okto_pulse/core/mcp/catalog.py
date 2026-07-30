@@ -130,6 +130,12 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
         properties[parameter.name] = schema
 
     result: dict[str, Any] = {"type": "object", "properties": properties}
+    if getattr(fn, "__mcp_closed_schema__", False):
+        # New governed surfaces opt in to an explicitly closed root object.
+        # Python would reject an unknown keyword at invocation time anyway,
+        # but publishing ``additionalProperties: false`` makes that contract
+        # discoverable before a client sends a request.
+        result["additionalProperties"] = False
     if required:
         result["required"] = required
     return result

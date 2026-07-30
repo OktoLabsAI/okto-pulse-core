@@ -24,6 +24,9 @@ from okto_pulse.core.domain.sdlc_registry import (
     lifecycle_definition,
     transition_contracts,
 )
+from okto_pulse.core.domain.guideline_policy_transition import (
+    PolicyTransitionDecision,
+)
 from okto_pulse.core.domain.card_transition import (
     CardTransitionFacts,
     PendingScenario,
@@ -36,11 +39,105 @@ from okto_pulse.core.domain.enums import (
     SpecStatus,
     SprintLaneType,
     SprintStatus,
+    TestScenarioStatus,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 ALLOWED_TRANSITIONS_SOURCE = "core_sdlc_registry_v1"
 ALLOWED_TRANSITIONS_DRIFT_METRIC = "allowed_transitions_contract_drift_total"
+POLICY_SUBJECT_REQUIRED = "policy_subject_required"
+
+
+@dataclass(frozen=True)
+class AllowedTransitionPolicyComplianceDecision:
+    """Stable read projection of the shared preview/mutation decision.
+
+    ``state`` is the primary (first) machine-readable reason code.  The
+    current-status-only projection uses the structural
+    ``policy_subject_required`` state instead of fabricating an evaluation.
+    """
+
+    state: str
+    allowed: bool | None
+    policy_compliance_required: bool
+    reason_codes: tuple[str, ...]
+    decision_digest: str | None = None
+    fence_digest: str | None = None
+    receipt_id: str | None = None
+    currentness: str | None = None
+    currentness_reasons: tuple[str, ...] = ()
+    applicable_rule_count: int | None = None
+    applicable_blocking_rule_count: int | None = None
+    blocking_rule_count: int | None = None
+    waived_rule_count: int | None = None
+    advisory_issue_count: int | None = None
+
+    @classmethod
+    def subject_required(
+        cls,
+    ) -> "AllowedTransitionPolicyComplianceDecision":
+        """Represent an intentionally unscoped lifecycle-only projection."""
+
+        return cls(
+            state=POLICY_SUBJECT_REQUIRED,
+            allowed=None,
+            policy_compliance_required=True,
+            reason_codes=(POLICY_SUBJECT_REQUIRED,),
+        )
+
+    @classmethod
+    def from_decision(
+        cls,
+        decision: PolicyTransitionDecision,
+    ) -> "AllowedTransitionPolicyComplianceDecision":
+        """Project the exact decision returned by ``GuidelineService``."""
+
+        if not isinstance(decision, PolicyTransitionDecision):
+            raise TypeError("policy_transition_decision_invalid")
+        return cls(
+            state=decision.reason_code.value,
+            allowed=decision.allowed,
+            policy_compliance_required=decision.policy_compliance_required,
+            reason_codes=tuple(reason.value for reason in decision.reason_codes),
+            decision_digest=decision.decision_digest,
+            fence_digest=decision.fence_digest,
+            receipt_id=decision.receipt_id,
+            currentness=(
+                decision.currentness.value
+                if decision.currentness is not None
+                else None
+            ),
+            currentness_reasons=tuple(
+                reason.value for reason in decision.currentness_reasons
+            ),
+            applicable_rule_count=decision.applicable_rule_count,
+            applicable_blocking_rule_count=(
+                decision.applicable_blocking_rule_count
+            ),
+            blocking_rule_count=decision.blocking_rule_count,
+            waived_rule_count=decision.waived_rule_count,
+            advisory_issue_count=decision.advisory_issue_count,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "allowed": self.allowed,
+            "policy_compliance_required": self.policy_compliance_required,
+            "reason_codes": list(self.reason_codes),
+            "decision_digest": self.decision_digest,
+            "fence_digest": self.fence_digest,
+            "receipt_id": self.receipt_id,
+            "currentness": self.currentness,
+            "currentness_reasons": list(self.currentness_reasons),
+            "applicable_rule_count": self.applicable_rule_count,
+            "applicable_blocking_rule_count": (
+                self.applicable_blocking_rule_count
+            ),
+            "blocking_rule_count": self.blocking_rule_count,
+            "waived_rule_count": self.waived_rule_count,
+            "advisory_issue_count": self.advisory_issue_count,
+        }
 
 
 @dataclass(frozen=True)
@@ -53,6 +150,10 @@ class AllowedTransition:
     capabilities: tuple[str, ...] = ()
     effects: tuple[str, ...] = ()
     reason_codes: tuple[str, ...] = ()
+    policy_compliance: bool = False
+    policy_compliance_decision: (
+        AllowedTransitionPolicyComplianceDecision | None
+    ) = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -64,6 +165,12 @@ class AllowedTransition:
             "capabilities": list(self.capabilities),
             "effects": list(self.effects),
             "reason_codes": list(self.reason_codes),
+            "policy_compliance": self.policy_compliance,
+            "policy_compliance_decision": (
+                self.policy_compliance_decision.to_dict()
+                if self.policy_compliance_decision is not None
+                else None
+            ),
         }
 
 
@@ -101,6 +208,17 @@ class AllowedTransitionDriftReport:
             "missing_edges": list(self.missing_edges),
             "extra_edges": list(self.extra_edges),
         }
+
+
+@dataclass(frozen=True)
+class _TestScenarioTransitionEntity:
+    """Board-scoped scenario projection used by the lifecycle preview."""
+
+    id: str
+    board_id: str
+    spec_id: str
+    status: TestScenarioStatus
+    archived: bool = False
 
 
 class ListAllowedTransitionsCommand:
@@ -195,6 +313,7 @@ def allowed_transitions_for_status(
             capabilities=edge.capabilities,
             effects=edge.effects,
             reason_codes=edge.reason_codes,
+            policy_compliance=edge.policy_compliance,
         )
         for edge in transition_contracts(normalized, current_status)
         if not edge.card_types or card_type in edge.card_types
@@ -266,7 +385,12 @@ class ListAllowedTransitionsUseCase:
         entity_id = (command.entity_id or "").strip() or None
         card_type: str | None = None
         if entity_id:
-            entity = await self._load_entity(uow.services, entity_type, entity_id)
+            entity = await self._load_entity(
+                uow.services,
+                entity_type,
+                entity_id,
+                board_id=command.board_id,
+            )
             if not entity or getattr(entity, "board_id", None) != command.board_id:
                 raise EntityNotFoundError(entity_type, entity_id)
             current_status = str(entity.status.value)
@@ -286,14 +410,29 @@ class ListAllowedTransitionsUseCase:
         )
         if entity_id:
             transitions = [
-                replace(
+                await self._preview_entity_transition(
+                    uow.services,
+                    entity_type,
+                    entity,
                     transition,
-                    blocked_reason=await self._blocked_reason(
-                        uow.services,
-                        entity_type,
-                        entity,
+                )
+                for transition in transitions
+            ]
+        else:
+            transitions = [
+                (
+                    replace(
                         transition,
-                    ),
+                        blocked_reason=(
+                            f"{POLICY_SUBJECT_REQUIRED}: entity_id is required "
+                            "to evaluate Policy Compliance."
+                        ),
+                        policy_compliance_decision=(
+                            AllowedTransitionPolicyComplianceDecision.subject_required()
+                        ),
+                    )
+                    if transition.policy_compliance
+                    else transition
                 )
                 for transition in transitions
             ]
@@ -380,9 +519,100 @@ class ListAllowedTransitionsUseCase:
                 return await self._card_blocked_reason(
                     services, entity, transition.to_status
                 )
+            elif entity_type == "test_scenario":
+                return await self._test_scenario_blocked_reason(
+                    services,
+                    entity,
+                )
         except ValueError as exc:
             return self._exception_reason(exc)
         return None
+
+    async def _test_scenario_blocked_reason(
+        self,
+        services: ApplicationServiceCatalog,
+        scenario: _TestScenarioTransitionEntity,
+    ) -> str | None:
+        """Mirror the scoped status writer's parent-spec lock admission.
+
+        Evidence is request-local and remains a transition precondition. The
+        parent spec lock, however, is already-known subject state and must be
+        projected as a blocker unless the exact scenario is linked to an
+        executable test card, matching ``SpecService.set_test_scenario_status``.
+        """
+
+        from okto_pulse.core.services.test_scenario_lifecycle import (
+            StatusNotMutableError,
+            require_test_scenario_status_mutable,
+        )
+
+        spec = await services.specs.get_spec(scenario.spec_id)
+        if (
+            spec is None
+            or getattr(spec, "board_id", None) != scenario.board_id
+        ):
+            return (
+                "test_scenario_parent_spec_not_found: refresh the scenario "
+                "subject before changing status."
+            )
+        try:
+            require_test_scenario_status_mutable(getattr(spec, "status", None))
+        except StatusNotMutableError as exc:
+            if await services.specs._has_executable_test_card_for_scenario(
+                spec,
+                scenario.id,
+            ):
+                return None
+            return self._exception_reason(exc)
+        return None
+
+    async def _preview_entity_transition(
+        self,
+        services: ApplicationServiceCatalog,
+        entity_type: str,
+        entity: Any,
+        transition: AllowedTransition,
+    ) -> AllowedTransition:
+        """Aggregate existing gates with the canonical Policy preview."""
+
+        blocked_reason = await self._blocked_reason(
+            services,
+            entity_type,
+            entity,
+            transition,
+        )
+        if not transition.policy_compliance:
+            return replace(transition, blocked_reason=blocked_reason)
+
+        decision = await services.guidelines.preview_policy_transition(
+            board_id=entity.board_id,
+            entity_type=entity_type,
+            subject_id=entity.id,
+            from_status=str(entity.status.value),
+            to_status=transition.to_status,
+        )
+        if decision is None:
+            raise RuntimeError(
+                "policy_transition_preview_missing_for_gated_edge"
+            )
+        projected = AllowedTransitionPolicyComplianceDecision.from_decision(
+            decision
+        )
+        if not decision.allowed:
+            policy_reason = (
+                f"{decision.reason_code.value}: Policy Compliance blocks "
+                "this transition."
+            )
+            blocked_reason = (
+                f"{blocked_reason}; {policy_reason}"
+                if blocked_reason
+                else policy_reason
+            )
+        return replace(
+            transition,
+            blocked_reason=blocked_reason,
+            policy_compliance_decision=projected,
+        )
 
     async def _spec_blocked_reason(
         self,
@@ -1203,6 +1433,8 @@ class ListAllowedTransitionsUseCase:
         services: ApplicationServiceCatalog,
         entity_type: str,
         entity_id: str,
+        *,
+        board_id: str,
     ) -> Any:
         if entity_type == "ideation":
             return await services.ideations.get_ideation(entity_id)
@@ -1216,4 +1448,40 @@ class ListAllowedTransitionsUseCase:
             return await services.cards.get_card(entity_id)
         if entity_type == "sprint":
             return await services.sprints.get_sprint(entity_id)
+        if entity_type == "test_scenario":
+            matches: list[_TestScenarioTransitionEntity] = []
+            specs = await services.specs.list_specs(
+                board_id,
+                include_archived=True,
+            )
+            for spec in specs:
+                for scenario in getattr(spec, "test_scenarios", None) or ():
+                    if (
+                        not isinstance(scenario, dict)
+                        or str(scenario.get("id") or "") != entity_id
+                    ):
+                        continue
+                    try:
+                        scenario_status = TestScenarioStatus(
+                            str(scenario.get("status") or "draft")
+                        )
+                    except ValueError as exc:
+                        raise CommandValidationError(
+                            "test_scenario_status_invalid"
+                        ) from exc
+                    matches.append(
+                        _TestScenarioTransitionEntity(
+                            id=entity_id,
+                            board_id=board_id,
+                            spec_id=spec.id,
+                            status=scenario_status,
+                            archived=bool(getattr(spec, "archived", False)),
+                        )
+                    )
+            if len(matches) > 1:
+                raise CommandValidationError(
+                    "test_scenario_identity_conflict: scenario ids must be "
+                    "unique within one board"
+                )
+            return matches[0] if matches else None
         raise CommandValidationError(f"Invalid entity_type: {entity_type}")

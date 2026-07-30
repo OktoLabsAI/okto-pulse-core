@@ -13,6 +13,10 @@ queries are intentionally permissive — stubs return the full graph so the
 server stays operational while the scoring pipeline lands.
 """
 
+from okto_pulse.core.ports.policy_constraint_projection import (
+    POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS,
+)
+
 # Default filter clause injected into every read query.
 # The service layer replaces $min_confidence, $min_relevance, and $max_rows
 # at call time. v0.3.0 R3 adds the relevance threshold — default 0.3 (below
@@ -26,11 +30,14 @@ _DEFAULT_FILTERS = (
 # intentionally independent from ``include_superseded``: that opt-in exposes
 # historical versions, not nodes whose governed source disappeared or whose
 # projection was removed.
-ACTIVE_READ_TOMBSTONE_REASONS = frozenset(
-    {
-        "source_deleted",
-        "source_projection_removed",
-    }
+ACTIVE_READ_TOMBSTONE_REASONS = (
+    frozenset(
+        {
+            "source_deleted",
+            "source_projection_removed",
+        }
+    )
+    | POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS
 )
 
 

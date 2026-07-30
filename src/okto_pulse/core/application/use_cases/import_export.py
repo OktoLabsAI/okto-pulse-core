@@ -58,6 +58,14 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.policy_governance import (
+    ADOPTION_MANAGE,
+    REVISIONS_CREATE,
+    require_policy_governance_capabilities,
+)
+from okto_pulse.core.services.default_board_configuration import (
+    guideline_ref_diff_has_changes,
+)
 
 ENVELOPE_SCHEMA_VERSION = "1"
 
@@ -65,6 +73,16 @@ KIND_GUIDELINES = "guidelines"
 KIND_DESIGN_SYSTEMS = "design_systems"
 KIND_PRESETS = "presets"
 KIND_BOARD_CONFIG = "board_config"
+
+
+def _actor_type(actor: ActorContext) -> str:
+    return (
+        "agent"
+        if actor.source == "mcp"
+        else "system"
+        if actor.source == "system"
+        else "user"
+    )
 
 # Export reads are unpaginated by design (admin backup surface); the ceiling
 # only guards against a pathological catalog.
@@ -299,6 +317,10 @@ class ImportGuidelinesUseCase:
     ) -> ImportResult:
         from okto_pulse.core.services.application_schemas import GuidelineCreate
 
+        # The compatibility importer creates immutable guideline revisions.
+        # Repeat the inbound authorization at the application boundary so
+        # every adapter fails closed before any catalog or board read.
+        require_policy_governance_capabilities(actor, REVISIONS_CREATE)
         service = uow.services.guidelines
         result = ImportResult()
 
@@ -377,6 +399,7 @@ class ImportGuidelinesUseCase:
                         board_id=None,
                     ),
                     query_scope=global_scope,
+                    actor_type=_actor_type(actor),
                 )
                 existing_globals.add(title_key)
                 result.created += 1
@@ -411,6 +434,7 @@ class ImportGuidelinesUseCase:
                         board_id=target_board,
                     ),
                     query_scope=inline_scopes[target_board],
+                    actor_type=_actor_type(actor),
                 )
                 titles.add(title_key)
                 result.created += 1
@@ -757,6 +781,18 @@ class ImportBoardConfigUseCase:
         service = uow.services.default_board_config
         result = ImportResult()
         query_scope = _query_scope_for_actor(actor)
+        # The envelope is atomic. Preflight every item's ref delta before the
+        # first staged create so a later governed item cannot leave earlier
+        # versions pending in adapters that expose eager writes.
+        for item in command.items:
+            diff = await service.preview_create_guideline_ref_diff(
+                scope=str(item.get("scope") or "global"),
+                guideline_default_refs=item.get("guideline_default_refs") or None,
+                compatibility_import=True,
+            )
+            if guideline_ref_diff_has_changes(diff):
+                require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+                break
         for index, item in enumerate(command.items):
             try:
                 await service.create_version(
@@ -768,6 +804,7 @@ class ImportBoardConfigUseCase:
                     spec_checklist_mode=item.get("spec_checklist_mode"),
                     activate=bool(item.get("activate")),
                     query_scope=query_scope,
+                    compatibility_import=True,
                 )
             except DefaultBoardConfigurationError as exc:
                 raise ImportItemError(index, exc.to_dict()) from exc

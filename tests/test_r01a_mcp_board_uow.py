@@ -415,11 +415,12 @@ async def test_get_board_design_system_read(_seed):
 @pytest.mark.asyncio
 async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board():
     from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.domain.guideline_policy import GuidelineEnforcement
+    from okto_pulse.core.models.schemas import GuidelineCreate
+    from okto_pulse.core.services.main import GuidelineService
 
     owner_id = "r01a-human-board-owner"
-    board_id = f"r01a-mcp-guidelines-{uuid.uuid4().hex[:8]}"
-    linked_id = f"r01a-linked-guideline-{uuid.uuid4().hex[:8]}"
-    inline_id = f"r01a-inline-guideline-{uuid.uuid4().hex[:8]}"
+    board_id = f"r01a-mcp-context-{uuid.uuid4().hex[:8]}"
 
     factory = get_session_factory()
     async with factory() as db:
@@ -431,48 +432,56 @@ async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board()
                 realm_id=LOCAL_REALM_ID,
             )
         )
-        db.add_all(
-            [
-                Guideline(
-                    id=linked_id,
-                    title="Linked global rule",
-                    content="Global board guidance must be visible to board agents.",
-                    tags=["r01a"],
-                    scope="global",
-                    owner_id=owner_id,
-                ),
-                Guideline(
-                    id=inline_id,
-                    title="Inline board rule",
-                    content="Inline board guidance must be visible to board agents.",
-                    tags=["r01a"],
-                    scope="inline",
-                    board_id=board_id,
-                    owner_id=owner_id,
-                ),
-            ]
-        )
         await db.flush()
-        db.add(BoardGuideline(board_id=board_id, guideline_id=linked_id, priority=5))
+        service = GuidelineService(db)
+        linked = await service.create_guideline(
+            owner_id,
+            GuidelineCreate(
+                title="Linked global rule",
+                content="Global board guidance must be visible to board agents.",
+                tags=["r01a"],
+                scope="global",
+            ),
+        )
+        await service.create_guideline(
+            owner_id,
+            GuidelineCreate(
+                title="Inline board rule",
+                content="Inline board guidance must be visible to board agents.",
+                tags=["r01a"],
+                scope="inline",
+                board_id=board_id,
+            ),
+        )
+        receipt = await service.preview_guideline_revision_impact(
+            board_id=board_id,
+            guideline_id=linked.id,
+            proposed_priority=5,
+            proposed_default_enforcement=GuidelineEnforcement.ADVISORY,
+            requested_by=owner_id,
+            idempotency_key=f"preview:{linked.id}",
+        )
+        await service.adopt_guideline_revision(
+            board_id=board_id,
+            guideline_id=linked.id,
+            impact_receipt_id=receipt.impact_receipt_id,
+            impact_digest=receipt.impact_digest,
+            actor_id=owner_id,
+            actor_type="user",
+            idempotency_key=f"adopt:{linked.id}",
+        )
         await db.commit()
 
-    try:
-        payload = await _call("okto_pulse_get_board_guidelines", board_id=board_id)
-        titles = {item["guideline"]["title"] for item in payload["guidelines"]}
+    payload = await _call("okto_pulse_get_board_guidelines", board_id=board_id)
+    titles = {item["guideline"]["title"] for item in payload["guidelines"]}
 
-        assert payload["board_id"] == board_id
-        assert payload["count"] == 2
-        assert titles == {"Linked global rule", "Inline board rule"}
-    finally:
-        async with factory() as db:
-            await db.execute(delete(BoardGuideline).where(BoardGuideline.board_id == board_id))
-            await db.execute(delete(Guideline).where(Guideline.id.in_([linked_id, inline_id])))
-            await db.execute(delete(Board).where(Board.id == board_id))
-            await db.commit()
+    assert payload["board_id"] == board_id
+    assert payload["count"] == 2
+    assert titles == {"Linked global rule", "Inline board rule"}
 
 
 @pytest.mark.asyncio
-async def test_update_board_guideline_priority_honors_non_owner_mcp_board_grant():
+async def test_update_board_guideline_priority_requires_preview_without_mutation():
     from okto_pulse.core.infra.database import get_session_factory
     from sqlalchemy import select
 
@@ -512,12 +521,9 @@ async def test_update_board_guideline_priority_honors_non_owner_mcp_board_grant(
             priority="30",
         )
 
-        assert payload == {
-            "success": True,
-            "board_id": board_id,
-            "guideline_id": guideline_id,
-            "priority": 30,
-        }
+        assert payload["error_code"] == "guideline_impact_preview_required"
+        assert payload["next_action"] == "preview_then_adopt"
+        assert payload["retryable"] is False
         async with factory() as db:
             link = (
                 await db.execute(
@@ -528,7 +534,7 @@ async def test_update_board_guideline_priority_honors_non_owner_mcp_board_grant(
                 )
             ).scalar_one_or_none()
             assert link is not None
-            assert link.priority == 30
+            assert link.priority == 5
     finally:
         async with factory() as db:
             await db.execute(delete(BoardGuideline).where(BoardGuideline.board_id == board_id))

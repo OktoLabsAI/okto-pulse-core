@@ -5,6 +5,8 @@ version: "1.0"
 Knowledge Base placement and promotion are governed by
 `okto-pulse://reference/knowledge-governance`. Put consequential findings in
 the appropriate first-class artifact and retain only supporting evidence in KB.
+Executable guideline evaluation follows
+`okto-pulse://reference/policy-compliance`.
 
 # Refinements Workflow — Deep Investigation
 

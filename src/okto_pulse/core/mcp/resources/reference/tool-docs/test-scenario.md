@@ -6,6 +6,8 @@ version: "2.0"
 
 Card-type and test-governance rules:
 `okto-pulse://reference/card_types`.
+Executable guideline evaluation of `test_scenario` follows
+`okto-pulse://reference/policy-compliance`.
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 

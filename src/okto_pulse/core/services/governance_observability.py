@@ -19,6 +19,9 @@ METRIC_CRITICAL_CONTEXT_GUARD_DECISION = "critical_context_guard_decision_total"
 METRIC_CRITICAL_CONTEXT_RESOLUTION_FAILURE = "critical_context_resolution_failure_total"
 METRIC_CRITICAL_CONTEXT_RESOLUTION_LATENCY_MS = "critical_context_resolution_latency_ms"
 METRIC_BOARD_MISSING_CONTEXT_WARNING = "board_missing_context_warning_total"
+METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION = (
+    "policy_governance_authorization_decision_total"
+)
 METRIC_GOVERNANCE_AUDIT_SAFE_LABEL_VIOLATION = (
     "governance_audit_safe_label_violation_total"
 )
@@ -31,6 +34,7 @@ GOVERNANCE_METRIC_NAMES = frozenset(
         METRIC_CRITICAL_CONTEXT_RESOLUTION_FAILURE,
         METRIC_CRITICAL_CONTEXT_RESOLUTION_LATENCY_MS,
         METRIC_BOARD_MISSING_CONTEXT_WARNING,
+        METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION,
         METRIC_GOVERNANCE_AUDIT_SAFE_LABEL_VIOLATION,
     }
 )
@@ -96,6 +100,14 @@ _METRIC_LABEL_KEYS: dict[str, frozenset[str]] = {
             "board_id",
             "warning_code",
             "surface",
+            "outcome",
+        }
+    ),
+    METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION: frozenset(
+        {
+            "surface",
+            "operation",
+            "capability",
             "outcome",
         }
     ),
@@ -518,6 +530,16 @@ def _safe_label_value(key: str, value: Any, *, audit_key: bool = False) -> Any:
         raise GovernanceAuditPayloadError(
             f"unsafe_governance_label_value_type: key={key} type={type(value).__name__}"
         )
+    # Policy operation/capability labels are closed identifiers at their
+    # caller and legitimately contain the reserved word "guideline". Keep
+    # their value grammar token-only while retaining the general body-leak
+    # guard for every prose-capable label.
+    if key in {"operation", "capability"}:
+        if not _SAFE_LABEL_VALUE_RE.match(value):
+            raise GovernanceAuditPayloadError(
+                f"unsafe_governance_label_value: key={key}"
+            )
+        return value
     lowered = value.lower()
     if any(fragment in lowered for fragment in _FORBIDDEN_VALUE_FRAGMENTS):
         raise GovernanceAuditPayloadError(f"unsafe_governance_label_value: key={key}")

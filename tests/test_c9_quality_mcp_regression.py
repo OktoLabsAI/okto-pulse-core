@@ -171,10 +171,10 @@ def _current_view() -> CurrentAssessmentView:
 
 
 @pytest.mark.asyncio
-async def test_quality_mcp_inventory_is_exactly_five_additive_tools_at_292() -> None:
+async def test_quality_mcp_inventory_remains_five_tools_at_312() -> None:
     tools = await server.mcp.get_tools()
 
-    assert len(tools) == 292
+    assert len(tools) == 312
     assert QUALITY_TOOLS <= tools.keys()
     assert len(QUALITY_TOOLS) == 5
 
@@ -486,8 +486,10 @@ def test_checked_in_ska_resource_manifest_is_current_and_drift_fails(
     expected = build_ska_resource_manifest()
     actual = json.loads(checked.read_text(encoding="utf-8"))
     assert actual == expected
+    assert actual["manifest_version"] == "agent-resources/v2"
     assert actual["resource_count"] == len(actual["resources"])
     assert {
+        "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/tool-docs/quality",
         "okto-pulse://reference/tools_catalog",
@@ -505,7 +507,7 @@ def test_checked_in_ska_resource_manifest_is_current_and_drift_fails(
         checked.read_text(encoding="utf-8") + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="SK-A resource manifest drift"):
+    with pytest.raises(ValueError, match="agent resource manifest drift"):
         verify_checked_in_manifest(drifted)
 
 

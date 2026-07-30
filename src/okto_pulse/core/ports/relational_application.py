@@ -7,7 +7,11 @@ time. This keeps application services from reaching into a concrete adapter.
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,6 +21,7 @@ from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
     from .checklist import ChecklistPersistencePort
+    from .guideline_policy import GuidelinePolicyPersistencePort
     from .quality_assessment import QualityAssessmentPersistencePort
     from .quality_assessment_lifecycle import (
         QualityAssessmentLifecyclePersistencePort,
@@ -155,6 +160,14 @@ class RelationalApplicationAdapter(Protocol):
         """Return the transaction-bound SK-A RDL persistence port."""
         ...
 
+    def guideline_policy(
+        self,
+        session: Any,
+    ) -> "GuidelinePolicyPersistencePort":
+        """Return the transaction-bound SK-B guideline policy authority."""
+
+        ...
+
     def amendment_revision_backend(self, session: Any) -> Any: ...
 
     def agent_authentication(self, session: Any) -> AgentAuthenticationGateway: ...
@@ -163,7 +176,9 @@ class RelationalApplicationAdapter(Protocol):
 _RUNTIME_KEY = "ports.relational_application.adapter"
 
 
-def register_relational_application_adapter(adapter: RelationalApplicationAdapter) -> None:
+def register_relational_application_adapter(
+    adapter: RelationalApplicationAdapter,
+) -> None:
     """Register the relational adapter bundle selected by the edition."""
 
     register_runtime_value(_RUNTIME_KEY, adapter)

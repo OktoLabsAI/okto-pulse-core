@@ -1,11 +1,11 @@
-"""Deterministic checked-in manifest for the SK-A agent-facing resources.
+"""Deterministic checked-in manifest for governed agent-facing resources.
 
 The general MCP resource manifest proves the effective runtime projection.  This
-feature manifest adds the review contract needed by SK-A: the affected resource
-URIs, canonical content digests, required Markdown headings, and verified
-cross-links.  It is generated from the live Core resource catalog so a resource
-override, missing registration, stale document, or broken navigation link cannot
-silently pass review.
+backward-compatible manifest entry point adds the review contracts introduced
+by SK-A and SK-B: affected resource URIs, canonical content digests, required
+Markdown headings, and verified cross-links.  It is generated from the live
+Core resource catalog so a resource override, missing registration, stale
+document, or broken navigation link cannot silently pass review.
 
 Regenerate after changing an affected resource or the live tools catalog::
 
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 
-MANIFEST_VERSION = "SK-A/v1"
+MANIFEST_VERSION = "agent-resources/v2"
 MANIFEST_CANONICALIZATION = "json-utf8-lf-sort-keys-v1"
 MANIFEST_RELATIVE_PATH = "resources/ska_resource_manifest.json"
 
@@ -76,6 +76,26 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         ),
     ),
     _ResourceContract(
+        uri="okto-pulse://reference/policy-compliance",
+        required_headings=(
+            "# Versioned guidelines and policy compliance",
+            "## Authority and pre-flight",
+            "## Revision lifecycle",
+            "## Impact, adoption, and unlink",
+            "## Compliance evaluation and currentness",
+            "## Waiver lifecycle and separation",
+            "## Projections and keyset pagination",
+            "## MCP outcome and errors",
+            "## Capabilities",
+            "## KG projection and recovery",
+        ),
+        required_cross_links=(
+            "okto-pulse://reference/errors",
+            "okto-pulse://reference/transitions",
+            "okto-pulse://workflows/kg",
+        ),
+    ),
+    _ResourceContract(
         uri="okto-pulse://reference/quality-assessments",
         required_headings=(
             "# Quality assessments, pinpointing, and currentness",
@@ -103,6 +123,16 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         required_cross_links=(
             "okto-pulse://reference/tool-docs/spec",
             "okto-pulse://reference/transitions",
+        ),
+    ),
+    _ResourceContract(
+        uri="okto-pulse://reference/tool-docs/guideline",
+        required_headings=(
+            "# Tool docs — `guideline`",
+            "## Governed policy tool conventions",
+        ),
+        required_cross_links=(
+            "okto-pulse://reference/policy-compliance",
         ),
     ),
     _ResourceContract(
@@ -179,6 +209,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         required_headings=("### Quality evidence while executing a card",),
         required_cross_links=(
             "okto-pulse://reference/quality-assessments",
+            "okto-pulse://reference/policy-compliance",
         ),
     ),
     _ResourceContract(
@@ -188,6 +219,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         ),
         required_cross_links=(
             "okto-pulse://reference/tool-docs/quality",
+            "okto-pulse://reference/policy-compliance",
         ),
     ),
     _ResourceContract(
@@ -197,6 +229,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         ),
         required_cross_links=(
             "okto-pulse://reference/quality-assessments",
+            "okto-pulse://reference/policy-compliance",
             "okto-pulse://workflows/refinements",
         ),
     ),
@@ -207,6 +240,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         ),
         required_cross_links=(
             "okto-pulse://reference/quality-assessments",
+            "okto-pulse://reference/policy-compliance",
         ),
     ),
     _ResourceContract(
@@ -217,6 +251,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         ),
         required_cross_links=(
             "okto-pulse://reference/tool-docs/quality",
+            "okto-pulse://reference/policy-compliance",
         ),
     ),
     _ResourceContract(
@@ -231,6 +266,16 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         required_cross_links=(
             "okto-pulse://reference/spec_gates",
             "okto-pulse://reference/tool-docs/quality",
+            "okto-pulse://reference/policy-compliance",
+        ),
+    ),
+    _ResourceContract(
+        uri="okto-pulse://workflows/sprints",
+        required_headings=(
+            "# Sprints Workflow — Lifecycle & Evaluation",
+        ),
+        required_cross_links=(
+            "okto-pulse://reference/policy-compliance",
         ),
     ),
 )
@@ -241,6 +286,7 @@ _INSTRUCTION_REQUIRED_HEADINGS = (
     "## Available Tools — Critical Categories",
 )
 _INSTRUCTION_REQUIRED_CROSS_LINKS = (
+    "okto-pulse://reference/policy-compliance",
     "okto-pulse://reference/quality-assessments",
 )
 _INSTRUCTION_ALLOWED_TEMPLATE_LINKS = frozenset(
@@ -324,7 +370,7 @@ def _canonical_bytes(payload: dict[str, Any]) -> bytes:
 
 
 def build_ska_resource_manifest() -> dict[str, Any]:
-    """Build and validate the SK-A resource-review manifest."""
+    """Build and validate the governed resource-review manifest."""
 
     specs_by_uri = _effective_specs_by_uri()
     known_uris = frozenset(specs_by_uri)
@@ -335,7 +381,8 @@ def build_ska_resource_manifest() -> dict[str, Any]:
     )
     if missing_resources:
         raise ValueError(
-            "SK-A resources are not registered: " + ", ".join(missing_resources)
+            "Governed resources are not registered: "
+            + ", ".join(missing_resources)
         )
 
     resources: list[dict[str, Any]] = []
@@ -421,10 +468,12 @@ def verify_checked_in_manifest(path: Path | None = None) -> Path:
     try:
         actual = target.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise ValueError(f"SK-A resource manifest is missing: {target}") from exc
+        raise ValueError(
+            f"agent resource manifest is missing: {target}"
+        ) from exc
     if actual != expected:
         raise ValueError(
-            "SK-A resource manifest drift: regenerate with "
+            "agent resource manifest drift: regenerate with "
             "`python -m okto_pulse.core.mcp.ska_resource_manifest`"
         )
     return target

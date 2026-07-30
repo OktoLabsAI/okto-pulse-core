@@ -38,7 +38,7 @@ def _client(
     user_id: str,
     *,
     roles: tuple[str, ...] = ("admin",),
-    permissions: dict | None = None,
+    permissions: object | None = None,
 ) -> TestClient:
     app = FastAPI()
     # Same registration order as api/router.py: default_board_config BEFORE
@@ -63,8 +63,14 @@ def _client(
     app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[require_user] = lambda: user_id
     claims: dict = {"roles": list(roles)}
+    # Existing roundtrip cases represent an unrestricted local administrator.
+    # Explicit permission documents below still exercise capability-only
+    # access.  The wildcard keeps the compatibility guideline endpoints
+    # authorized after SK-B closes their previously implicit write access.
     if permissions is not None:
         claims["permissions"] = permissions
+    elif "admin" in roles:
+        claims["permissions"] = ("*",)
     app.dependency_overrides[require_principal] = lambda: Principal(
         subject=user_id,
         realm_id="local",
@@ -153,7 +159,9 @@ async def test_guidelines_roundtrip_export_import_clean_board():
     match = [g for g in globals_b if g["title"] == global_title]
     assert len(match) == 1
     assert match[0]["content"] == "Review API contracts."
-    assert match[0]["tags"] == ["review", "api"]
+    # B04 canonicalizes tags into deterministic lexical order at the
+    # revision boundary; import/export preserves that canonical meaning.
+    assert match[0]["tags"] == ["api", "review"]
     assert match[0]["scope"] == "global"
 
     board_b_items = client_b.get(f"{PREFIX}/boards/{board_b}/guidelines").json()

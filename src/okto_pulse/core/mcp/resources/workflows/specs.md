@@ -5,6 +5,8 @@ version: "1.0"
 Knowledge Base placement, authority, and safe promotion are governed by
 `okto-pulse://reference/knowledge-governance`. KB content cannot substitute for
 FR/TR/BR/AC, decisions, contracts, architecture, or test scenarios.
+Executable guideline evaluation follows
+`okto-pulse://reference/policy-compliance`.
 
 # Specs Workflow — Saturation, Gate, Evaluation & Coverage Progress
 

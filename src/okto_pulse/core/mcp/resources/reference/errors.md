@@ -5,6 +5,8 @@ version: "1.0"
 # Common Errors and How to Fix Them
 
 This table is the **single source of truth** for MCP-level errors. Before any ad hoc retry or workaround, consult this section and apply the canonical fix.
+Guideline-policy error semantics and retry actions are governed by
+`okto-pulse://reference/policy-compliance`.
 
 ## Resource Gate
 

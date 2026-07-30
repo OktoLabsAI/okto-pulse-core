@@ -38,6 +38,8 @@ HEADER = (
     "exact resource containing that tool's args, returns and examples.\n"
     "Required filters for the consolidated `list_*` tools:\n"
     "`okto-pulse://reference/list_tools`.\n"
+    "Governed policy protocol:\n"
+    "`okto-pulse://reference/policy-compliance`.\n"
 )
 
 # Ordered (section, tool-doc family or None, matcher) rules — FIRST match wins.
@@ -73,6 +75,10 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"^okto_pulse_.*default_board_config|^okto_pulse_get_board_default_config_diff$"),
     ("Design Systems", "board",
      r"design_system"),
+    ("Policy Compliance & Waivers", "guideline",
+     r"^okto_pulse_(evaluate_policy_compliance|"
+     r"(list|get)(_current)?_policy_compliance|"
+     r"(list|get|request|review|revoke|revalidate)_policy_waiver)"),
     ("Guidelines", "guideline",
      r"guideline"),
     # --- SDLC entities ------------------------------------------------------

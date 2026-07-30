@@ -12,6 +12,8 @@ For the canonical Spec status-to-action sequence and the boundary between the
 read-only Quality surface and actionable Validation surface, use
 `okto-pulse://workflows/specs` under **Spec Quality — Canonical Agent Flow**.
 This resource intentionally does not repeat those lifecycle steps.
+Executable guideline findings are a separate evidence family governed by
+`okto-pulse://reference/policy-compliance`.
 
 ## Subject and assessment matrix
 

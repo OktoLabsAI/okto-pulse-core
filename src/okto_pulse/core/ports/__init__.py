@@ -523,9 +523,37 @@ __all__ = [
     "sanitize_message",
     "set_permission_flag",
     "HISTORICAL_PROGRESS_SETTINGS_KEY",
+    "POLICY_CONSTRAINT_GUIDELINE_RETIRED_REASON",
+    "POLICY_CONSTRAINT_GUIDELINE_SUPERSEDED_REASON",
+    "POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS",
+    "POLICY_CONSTRAINT_REBUILD_NOT_ADOPTED_REASON",
+    "POLICY_CONSTRAINT_RULE_REMOVED_REASON",
+    "POLICY_CONSTRAINT_UNLINKED_REASON",
+    "PolicyConstraintProjectionOperation",
+    "PolicyConstraintProjectionPort",
+    "PolicyConstraintProjectionResult",
+    "get_policy_constraint_projection_port",
+    "register_policy_constraint_projection_port",
+    "reset_policy_constraint_projection_port_for_tests",
 ]
 
-_LAZY_EXPORTS = {}
+_LAZY_EXPORTS = {
+    name: "okto_pulse.core.ports.policy_constraint_projection"
+    for name in (
+        "POLICY_CONSTRAINT_GUIDELINE_RETIRED_REASON",
+        "POLICY_CONSTRAINT_GUIDELINE_SUPERSEDED_REASON",
+        "POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS",
+        "POLICY_CONSTRAINT_REBUILD_NOT_ADOPTED_REASON",
+        "POLICY_CONSTRAINT_RULE_REMOVED_REASON",
+        "POLICY_CONSTRAINT_UNLINKED_REASON",
+        "PolicyConstraintProjectionOperation",
+        "PolicyConstraintProjectionPort",
+        "PolicyConstraintProjectionResult",
+        "get_policy_constraint_projection_port",
+        "register_policy_constraint_projection_port",
+        "reset_policy_constraint_projection_port_for_tests",
+    )
+}
 
 
 def __getattr__(name: str):
