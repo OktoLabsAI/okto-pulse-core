@@ -13,6 +13,7 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.application.use_cases.policy_governance import (
     GuidelineRevisionUnderBump,
 )
+from okto_pulse.core.domain.guideline_impact import GuidelineImpactError
 from okto_pulse.core.domain.guideline_lifecycle import GuidelineVersionBump
 from okto_pulse.core.domain.guideline_import_export import (
     GuidelineImportExportError,
@@ -134,6 +135,21 @@ def test_domain_invalid_cursor_is_projected_identically() -> None:
     assert projected["code"] == "invalid_cursor"
     assert projected["http_status"] == 400
     assert projected["details"] == {"reason_code": "invalid_cursor"}
+
+
+def test_unchanged_impact_has_specific_non_retryable_projection() -> None:
+    projected = project_guideline_policy_error(
+        GuidelineImpactError("guideline_impact_no_changes")
+    )
+
+    assert projected["code"] == "guideline_impact_no_changes"
+    assert projected["http_status"] == 400
+    assert projected["status_category"] == "invalid_argument"
+    assert projected["retryable"] is False
+    assert projected["next_action"] == "no_action_required"
+    assert projected["details"] == {
+        "reason_code": "guideline_impact_no_changes"
+    }
 
 
 def test_permission_error_maps_to_403_without_leaking_raw_message() -> None:

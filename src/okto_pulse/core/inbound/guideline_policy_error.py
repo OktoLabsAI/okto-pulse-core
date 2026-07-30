@@ -140,6 +140,14 @@ def project_guideline_policy_error(error: Exception) -> dict[str, Any]:
         )
         retryable = False
         next_action = "preview_then_adopt"
+    elif reason_code == "guideline_impact_no_changes":
+        code = "guideline_impact_no_changes"
+        message = (
+            "This guideline is already configured with the requested revision "
+            "and board settings."
+        )
+        retryable = False
+        next_action = "no_action_required"
     details: dict[str, str] = {}
     if reason_code is not None:
         details["reason_code"] = reason_code

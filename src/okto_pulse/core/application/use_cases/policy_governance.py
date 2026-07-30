@@ -361,12 +361,16 @@ async def _require_guideline_mutation_scope(
     board_id: str,
     guideline_id: str,
 ) -> Guideline:
-    """Prove the board path without requiring a now-terminal binding to be active.
+    """Prove guideline ownership without widening the board authority path.
 
-    An idempotent retirement replay necessarily runs after its binding was
-    unlinked.  Stable identity ownership plus an existing board binding proves
-    the historical path without granting a new mutation on an inactive link.
-    The normal planner path still reloads the stricter ACTIVE authority below.
+    A global guideline is authored independently from any board binding, so its
+    exact owner may create revisions or retire it before the first adoption (or
+    after every board has unlinked it).  The caller still has to pass the board
+    access preflight and the operation capability before reaching this helper.
+
+    A board binding never grants global-authoring authority to a non-owner.
+    The normal planner path reloads the stricter authority below before
+    applying a mutation.
     """
 
     identity = await port.get_guideline(guideline_id=guideline_id)
@@ -376,13 +380,9 @@ async def _require_guideline_mutation_scope(
         if identity.board_id != board_id:
             raise EntityNotFoundError("guideline", guideline_id)
         return identity
-    binding = await port.get_binding(
-        board_id=board_id,
-        guideline_id=guideline_id,
-    )
-    if binding is None or identity.owner_id != actor.actor_id:
-        raise EntityNotFoundError("guideline", guideline_id)
-    return identity
+    if identity.owner_id == actor.actor_id:
+        return identity
+    raise EntityNotFoundError("guideline", guideline_id)
 
 
 async def _load_guideline_authority(
@@ -402,19 +402,21 @@ async def _load_guideline_authority(
         if identity.board_id != board_id:
             raise EntityNotFoundError("guideline", guideline_id)
     else:
-        binding = await port.get_binding(
-            board_id=board_id,
-            guideline_id=guideline_id,
-        )
-        if (
-            binding is None
-            or (
-                binding.state is not GuidelineBindingState.ACTIVE
-                and not (include_retired and retirement is not None)
+        is_owner = identity.owner_id == actor.actor_id
+        if not is_owner:
+            binding = await port.get_binding(
+                board_id=board_id,
+                guideline_id=guideline_id,
             )
-            or (require_owner and identity.owner_id != actor.actor_id)
-        ):
-            raise EntityNotFoundError("guideline", guideline_id)
+            if (
+                binding is None
+                or (
+                    binding.state is not GuidelineBindingState.ACTIVE
+                    and not (include_retired and retirement is not None)
+                )
+                or require_owner
+            ):
+                raise EntityNotFoundError("guideline", guideline_id)
     if retirement is not None and not include_retired:
         raise EntityNotFoundError("guideline", guideline_id)
     head = await port.get_head(guideline_id=guideline_id)

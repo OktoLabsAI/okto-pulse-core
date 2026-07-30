@@ -742,7 +742,7 @@ def _active_binding() -> BoardGuidelineBinding:
 
 
 @pytest.mark.asyncio
-async def test_board_scoped_global_revision_read_requires_exact_active_binding() -> None:
+async def test_non_owner_global_revision_read_requires_exact_active_binding() -> None:
     actor = ActorContext(
         "agent-1",
         "mcp",
@@ -780,6 +780,61 @@ async def test_board_scoped_global_revision_read_requires_exact_active_binding()
             actor=actor,
             uow=_GovernanceUow(_PolicyPort(binding=None)),
         )
+
+
+@pytest.mark.asyncio
+async def test_global_owner_reads_revision_history_without_board_binding() -> None:
+    actor = ActorContext(
+        "owner-2",
+        "mcp",
+        board_id="board-1",
+        permissions=(REVISIONS_READ, "guidelines.read"),
+    )
+    port = _PolicyPort(binding=None)
+    uow = _GovernanceUow(port)
+
+    listed = await ListGuidelineRevisionsUseCase().execute(
+        ListGuidelineRevisionsCommand(
+            "board-1",
+            "guideline-1",
+            projection=PolicyProjection.DETAIL,
+        ),
+        actor=actor,
+        uow=uow,
+    )
+    fetched = await GetGuidelineRevisionUseCase().execute(
+        GetGuidelineRevisionCommand(
+            "board-1",
+            "guideline-1",
+            "revision-1",
+        ),
+        actor=actor,
+        uow=uow,
+    )
+
+    assert listed.page.items[0].revision_id == port.revision.revision_id
+    assert listed.page.items[0].content == port.revision.content
+    assert fetched.guideline.owner_id == actor.actor_id
+    assert fetched.revision == port.revision
+
+
+@pytest.mark.asyncio
+async def test_global_owner_cannot_use_a_different_board_authority_path() -> None:
+    actor = ActorContext(
+        "owner-2",
+        "mcp",
+        board_id="board-1",
+        permissions=(REVISIONS_READ, "guidelines.read"),
+    )
+
+    with pytest.raises(EntityNotFoundError) as captured:
+        await ListGuidelineRevisionsUseCase().execute(
+            ListGuidelineRevisionsCommand("board-2", "guideline-1"),
+            actor=actor,
+            uow=_GovernanceUow(_PolicyPort(binding=None)),
+        )
+
+    assert captured.value.entity_type == "board"
 
 
 @pytest.mark.asyncio
@@ -951,6 +1006,28 @@ class _ReplayPolicyPort(_PolicyPort):
         return retirement
 
 
+class _UnboundGlobalPolicyPort(_ReplayPolicyPort):
+    def __init__(self) -> None:
+        super().__init__()
+        self.binding = None
+
+    async def retire_guideline_cas(
+        self,
+        *,
+        retirement,
+        idempotency_key: str,
+        request_digest: str,
+        **_kwargs,
+    ):
+        self.retire_count += 1
+        self.retirement = retirement
+        self.retirement_replays[idempotency_key] = GuidelineRetirementReplay(
+            retirement=retirement,
+            request_digest=request_digest,
+        )
+        return retirement
+
+
 def _owner_actor(*capabilities: str) -> ActorContext:
     return ActorContext(
         "owner-2",
@@ -958,6 +1035,101 @@ def _owner_actor(*capabilities: str) -> ActorContext:
         board_id="board-1",
         permissions=capabilities + HISTORICAL_AUTHORITIES,
     )
+
+
+@pytest.mark.asyncio
+async def test_global_owner_creates_revision_without_board_binding() -> None:
+    port = _UnboundGlobalPolicyPort()
+    uow = _GovernanceUow(port)
+
+    result = await CreateGuidelineRevisionUseCase().execute(
+        CreateGuidelineRevisionCommand(
+            "board-1",
+            "guideline-1",
+            GuidelineRevisionPatch(title="Policy v2"),
+            "unbound-owner-revision-key",
+            occurred_at=NOW + timedelta(seconds=1),
+        ),
+        actor=_owner_actor(REVISIONS_CREATE),
+        uow=uow,
+    )
+
+    assert result.status == "applied"
+    assert result.revision is not None
+    assert result.revision.revision_number == 2
+    assert port.append_count == 1
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_global_owner_retires_guideline_without_board_binding() -> None:
+    port = _UnboundGlobalPolicyPort()
+    uow = _GovernanceUow(port)
+
+    result = await RetireGuidelineUseCase().execute(
+        RetireGuidelineCommand(
+            "board-1",
+            "guideline-1",
+            "unbound-retirement-1",
+            GuidelineLifecycleStatus.RETIRED,
+            "Global policy withdrawn",
+            "unbound-owner-retirement-key",
+            occurred_at=NOW + timedelta(seconds=1),
+        ),
+        actor=_owner_actor(REVISIONS_RETIRE),
+        uow=uow,
+    )
+
+    assert result.retirement == port.retirement
+    assert result.retirement.retired_by == "owner-2"
+    assert port.retire_count == 1
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_non_owner_cannot_mutate_unbound_global_guideline() -> None:
+    actor = ActorContext(
+        "owner-other",
+        "mcp",
+        board_id="board-1",
+        permissions=(
+            REVISIONS_CREATE,
+            REVISIONS_RETIRE,
+            "spec.entity.edit_fields",
+            "guidelines.delete",
+        ),
+    )
+    port = _UnboundGlobalPolicyPort()
+    uow = _GovernanceUow(port)
+
+    with pytest.raises(EntityNotFoundError):
+        await CreateGuidelineRevisionUseCase().execute(
+            CreateGuidelineRevisionCommand(
+                "board-1",
+                "guideline-1",
+                GuidelineRevisionPatch(title="Forbidden"),
+                "unbound-cross-owner-revision-key",
+            ),
+            actor=actor,
+            uow=uow,
+        )
+    with pytest.raises(EntityNotFoundError):
+        await RetireGuidelineUseCase().execute(
+            RetireGuidelineCommand(
+                "board-1",
+                "guideline-1",
+                "forbidden-retirement",
+                GuidelineLifecycleStatus.RETIRED,
+                "Forbidden",
+                "unbound-cross-owner-retirement-key",
+            ),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert port.append_count == 0
+    assert port.retire_count == 0
+    assert uow.commit_count == 0
 
 
 @pytest.mark.asyncio

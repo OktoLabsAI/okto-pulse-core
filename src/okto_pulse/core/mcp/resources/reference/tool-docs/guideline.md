@@ -238,7 +238,9 @@ Args:
     board_id: Authenticated board scope.
     guideline_id: Guideline to evaluate.
     proposed_priority: Non-negative proposed priority.
-    proposed_default_enforcement: `advisory` or `blocking`.
+    proposed_default_enforcement: Reserved compatibility value. Pass
+        `advisory` for a new binding and preserve the current value for an
+        existing binding; rule-level enforcement remains authoritative.
     idempotency_key: Retry-stable client key.
     to_revision_id: Optional exact target revision.
 

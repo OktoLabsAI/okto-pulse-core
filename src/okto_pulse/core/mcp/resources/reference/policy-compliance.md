@@ -56,12 +56,33 @@ inside an idempotent replay.
 Do not use legacy hard deletion to model lifecycle. Retirement preserves
 history and unlink preserves the board binding lineage.
 
+## Rule authoring
+
+A revision with `rules=[]` is valid context-only guidance. Do not invent an
+executable rule merely to make a guideline adoptable. Add `policy/v1` rules
+only when the requirement can be checked deterministically.
+
+For each rule, keep `rule_id` stable across revisions and use `code` as its
+readable audit key. Set explicit target entity types before choosing
+predicates, because the closed fact catalog is target-aware. Presence
+operators (`exists`, `not_exists`) take no value. Every other operator must
+use the typed parameter shape documented by the guideline tools.
+
+Use `policy_class="standard"` for ordinary rules. The protected classes
+`coverage`, `permissions`, `reviewer_separation`, and `lineage` are
+non-waivable. Enforcement belongs to each rule: `advisory` records a finding
+without blocking, while `blocking` participates in supported transition
+gates.
+
 ## Impact, adoption, and unlink
 
 Always preview before adoption:
 
-1. Call `okto_pulse_preview_guideline_impact` with priority, default
-   enforcement and optional exact target revision.
+1. Call `okto_pulse_preview_guideline_impact` with priority, the reserved
+   compatibility field `proposed_default_enforcement`, and an optional exact
+   target revision. For a new binding pass `advisory`; for an existing binding
+   preserve its current value. This field does not override rule-level
+   enforcement.
 2. Inspect the receipt and page
    `okto_pulse_list_guideline_impact_items` when any affected count is nonzero.
 3. If the impact is acceptable, call `okto_pulse_adopt_guideline_revision`
@@ -146,6 +167,9 @@ Common actions:
 - `invalid_cursor`: restart pagination without a cursor.
 - `conflict`: refresh the exact authority/precondition and reconsider.
 - `under_bump`: increase the declared semantic version.
+- `guideline_impact_no_changes`: the exact revision and board configuration
+  are already active; do not retry unless the intended revision or priority
+  changes.
 - `service_unavailable`: report or retry without changing the intent.
 
 ## Capabilities

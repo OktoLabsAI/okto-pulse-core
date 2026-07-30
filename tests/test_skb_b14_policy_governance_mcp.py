@@ -527,6 +527,15 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
     )
     assert all_resources.count("policy-compliance-resource/v1") == 1
     assert "The five policy list tools" not in all_resources
+    policy_resource = (
+        resource_root / "reference" / "policy-compliance.md"
+    ).read_text(encoding="utf-8")
+    assert "A revision with `rules=[]` is valid context-only guidance." in (
+        policy_resource
+    )
+    assert "Enforcement belongs to each rule" in policy_resource
+    assert "For a new binding pass `advisory`" in policy_resource
+    assert "`guideline_impact_no_changes`" in policy_resource
 
     pointer = "okto-pulse://reference/policy-compliance"
     pointer_files = (
