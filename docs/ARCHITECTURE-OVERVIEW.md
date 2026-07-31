@@ -184,3 +184,8 @@ files itself — tracing only happens when an edition injects a sink.
 
 [← Back to README](../README.md)
 
+---
+
+## Glossary
+
+For a complete list of domain terms and definitions, refer to the [Glossary](./GLOSSARY.md).
