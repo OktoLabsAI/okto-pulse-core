@@ -152,7 +152,10 @@ async def test_status_and_whole_spec_paths_reject_same_runtime_false(db_factory)
 
     async with db_factory() as db:
         service = SpecService(db)
-        with pytest.raises(ValueError, match="evidence_required"):
+        with pytest.raises(
+            ValueError,
+            match="test_scenario_status_requires_scoped_update",
+        ):
             await service.update_spec(
                 spec_id,
                 ACTOR,

@@ -6,15 +6,15 @@ version: "1.0"
 Cada arquivo `.md` neste diretório é exposto via
 `@mcp.resource(uri="okto-pulse://reference/<nome>")` e contém material de
 referência consultado sob demanda (errors, knowledge governance, multi-value
-formats, destructive ops, card types, spec gates, Quality e Policy
-Compliance).
+formats, destructive ops, card types, spec gates, Quality e avaliações
+semânticas de guidelines).
 
 Entradas operacionais canônicas:
 
 - Quality assessments/pinpointing:
   `okto-pulse://reference/quality-assessments`, com contratos completos em
   `okto-pulse://reference/tool-docs/quality`.
-- Guidelines versionadas, adoção, Policy Compliance e waivers:
+- Guidelines versionadas, adoção, métricas e avaliações semânticas:
   `okto-pulse://reference/policy-compliance`, com assinaturas das ferramentas
   em `okto-pulse://reference/tool-docs/guideline`.
 

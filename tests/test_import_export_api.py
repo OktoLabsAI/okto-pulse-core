@@ -1,7 +1,8 @@
-"""ITEM 19 — JSON import/export for Guidelines, Design Systems, Presets and
-Default Board Configs (schema_version-1 envelope, REST → use case → UoW).
+"""ITEM 19 — JSON import/export for admin catalogs (REST → use case → UoW).
 
-Per family: ROUNDTRIP (create via the normal API → export → import into a
+Generic catalogs use schema v1. Guidelines use the governed lossless V3
+codec, while still accepting explicitly bounded legacy envelopes. Per family:
+ROUNDTRIP (create via the normal API → export → import into a
 clean tenant/board → equivalent objects re-created through the normal creation
 path), dry-run mutates nothing, and an invalid item → 400 with NO mutation
 (all-or-nothing per request).
@@ -104,15 +105,14 @@ def _uid(prefix: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_guidelines_roundtrip_export_import_clean_board():
-    user_a = _uid("impexp-guide-a")
-    user_b = _uid("impexp-guide-b")
-    client_a = _client(user_a)
-    board_a = await _seed_board(user_a)
+async def test_guidelines_generic_export_delegates_to_lossless_v3():
+    user = _uid("impexp-guide-v3")
+    client = _client(user)
+    board = await _seed_board(user)
 
     global_title = _uid("Global rule")
     inline_title = _uid("Inline rule")
-    created_global = client_a.post(
+    created_global = client.post(
         f"{PREFIX}/guidelines",
         json={
             "title": global_title,
@@ -122,90 +122,51 @@ async def test_guidelines_roundtrip_export_import_clean_board():
         },
     )
     assert created_global.status_code == 201, created_global.text
-    created_inline = client_a.post(
-        f"{PREFIX}/boards/{board_a}/guidelines",
+    created_inline = client.post(
+        f"{PREFIX}/boards/{board}/guidelines",
         json={"title": inline_title, "content": "Board-only rule.", "tags": ["board"]},
     )
     assert created_inline.status_code == 201, created_inline.text
 
-    exported = client_a.get(f"{PREFIX}/guidelines/export", params={"board_id": board_a})
+    exported = client.get(f"{PREFIX}/guidelines/export", params={"board_id": board})
     assert exported.status_code == 200, exported.text
     envelope = exported.json()
-    assert envelope["schema_version"] == "1"
+    assert envelope["contract_version"] == "guideline-export/v3"
+    assert envelope["schema_version"] == "3"
     assert envelope["kind"] == "guidelines"
     assert envelope["exported_at"]
-    items = envelope["items"]
-    assert {(i["title"], i["scope"]) for i in items} == {
+    assert "items" not in envelope
+    aggregates = envelope["guidelines"]
+    assert {
+        (item["revisions"][-1]["title"], item["identity"]["scope"])
+        for item in aggregates
+    } == {
         (global_title, "global"),
         (inline_title, "inline"),
     }
-    # Server-generated fields must NOT leak into the export.
-    for item in items:
-        assert set(item) == {"title", "content", "tags", "scope", "board_id"}
-
-    # Import into a CLEAN tenant (different user) and a CLEAN board.
-    client_b = _client(user_b)
-    board_b = await _seed_board(user_b)
-    imported = client_b.post(
-        f"{PREFIX}/guidelines/import",
-        params={"board_id": board_b},
-        json=envelope,
-    )
-    assert imported.status_code == 200, imported.text
-    body = imported.json()
-    assert body == {"created": 2, "skipped": [], "errors": [], "dry_run": False}
-
-    globals_b = client_b.get(f"{PREFIX}/guidelines").json()
-    match = [g for g in globals_b if g["title"] == global_title]
-    assert len(match) == 1
-    assert match[0]["content"] == "Review API contracts."
-    # B04 canonicalizes tags into deterministic lexical order at the
-    # revision boundary; import/export preserves that canonical meaning.
-    assert match[0]["tags"] == ["api", "review"]
-    assert match[0]["scope"] == "global"
-
-    board_b_items = client_b.get(f"{PREFIX}/boards/{board_b}/guidelines").json()
-    inline_match = [e for e in board_b_items if e["guideline"]["title"] == inline_title]
-    assert len(inline_match) == 1
-    assert inline_match[0]["guideline"]["scope"] == "inline"
-    assert inline_match[0]["guideline"]["board_id"] == board_b
-
-    # Re-import: natural key (title within partition) → skipped duplicates.
-    again = client_b.post(
-        f"{PREFIX}/guidelines/import", params={"board_id": board_b}, json=envelope
-    )
-    assert again.status_code == 200, again.text
-    body = again.json()
-    assert body["created"] == 0
-    assert {s["reason"] for s in body["skipped"]} == {
-        "duplicate_global_title",
-        "duplicate_inline_title",
-    }
+    for aggregate in aggregates:
+        revision = aggregate["revisions"][-1]
+        assert "metrics" in revision
+        assert "revision_digest" in revision
 
 
 @pytest.mark.asyncio
-async def test_guidelines_import_dry_run_does_not_mutate():
+async def test_guidelines_legacy_v1_import_is_context_only_and_dry_run():
     user = _uid("impexp-guide-dry")
     client = _client(user)
     board = await _seed_board(user)
     envelope = {
         "schema_version": "1",
         "kind": "guidelines",
-        "exported_at": "2026-07-10T00:00:00+00:00",
+        "exported_at": "2026-07-10T00:00:00Z",
         "items": [
             {
                 "title": "Dry global",
                 "content": "c",
-                "tags": None,
+                "tags": ["legacy"],
                 "scope": "global",
-                "board_id": None,
-            },
-            {
-                "title": "Dry inline",
-                "content": "c",
-                "tags": None,
-                "scope": "inline",
-                "board_id": None,
+                "blocking": True,
+                "rules": [{"enforcement": "blocking", "code": "old.rule"}],
             },
         ],
     }
@@ -215,13 +176,18 @@ async def test_guidelines_import_dry_run_does_not_mutate():
         json=envelope,
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"created": 2, "skipped": [], "errors": [], "dry_run": True}
+    body = resp.json()
+    assert body["transaction_status"] == "dry_run"
+    assert body["created_count"] == 0
+    assert body["conflict_count"] == 0
+    assert body["overwritten_row_count"] == 0
+    assert body["dry_run"] is True
 
     assert client.get(f"{PREFIX}/guidelines").json() == []
     assert client.get(f"{PREFIX}/boards/{board}/guidelines").json() == []
 
 
-def test_guidelines_import_invalid_item_400_without_mutation():
+def test_guidelines_invalid_legacy_import_is_atomic_and_structured():
     user = _uid("impexp-guide-bad")
     client = _client(user)
 
@@ -236,24 +202,24 @@ def test_guidelines_import_invalid_item_400_without_mutation():
     resp = client.post(f"{PREFIX}/guidelines/import", json=envelope)
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
-    assert detail["created"] == 0
-    assert detail["errors"] and detail["errors"][0]["index"] == 1
+    assert detail["code"] == "validation_failed"
+    assert detail["next_action"] == "fix_input"
     # All-or-nothing: the valid item was NOT created either.
     assert client.get(f"{PREFIX}/guidelines").json() == []
 
-    # Envelope guards: wrong kind and wrong schema_version are rejected.
+    # Envelope guards remain closed and use the governed error contract.
     wrong_kind = client.post(
         f"{PREFIX}/guidelines/import",
         json={"schema_version": "1", "kind": "presets", "items": []},
     )
     assert wrong_kind.status_code == 400
-    assert wrong_kind.json()["detail"]["error"] == "invalid_envelope"
+    assert wrong_kind.json()["detail"]["code"] == "validation_failed"
     wrong_version = client.post(
         f"{PREFIX}/guidelines/import",
-        json={"schema_version": "2", "kind": "guidelines", "items": []},
+        json={"schema_version": "99", "kind": "guidelines", "items": []},
     )
     assert wrong_version.status_code == 400
-    assert wrong_version.json()["detail"]["error"] == "invalid_envelope"
+    assert wrong_version.json()["detail"]["code"] == "validation_failed"
 
 
 # ===========================================================================

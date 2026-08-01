@@ -1,4 +1,4 @@
-"""Public persistence boundary for ``guideline-domain/v1``.
+"""Public persistence boundaries for ``guideline-domain/v2``.
 
 Adapters implement this Protocol inside the caller-owned transaction.  The
 port never commits, rolls back, closes a transaction, opens a unit of work, or
@@ -20,16 +20,14 @@ from okto_pulse.core.domain.guideline_compliance import (
     POLICY_RECEIPT_ORDERING,
     POLICY_WAIVER_ORDERING,
     PolicyComplianceCurrentSnapshot,
-    PolicyComplianceFindingPage,
-    PolicyComplianceReceiptPage,
     PolicyFindingPageCursor,
     PolicyImpactPageCursor,
     PolicyProjection,
     PolicyReceiptPageCursor,
-    PolicyWaiverPage,
     PolicyWaiverPageCursor,
 )
 from okto_pulse.core.domain.guideline_policy import (
+    GUIDELINE_BINDING_ID_MAX_LENGTH,
     GUIDELINE_PAGE_LIMIT_MAX,
     GUIDELINE_ID_MAX_LENGTH,
     GUIDELINE_REVISION_ID_MAX_LENGTH,
@@ -37,6 +35,7 @@ from okto_pulse.core.domain.guideline_policy import (
     POLICY_ENTITY_TYPE_MAX_LENGTH,
     POLICY_FINDING_ID_MAX_LENGTH,
     POLICY_IMPACT_RECEIPT_ID_MAX_LENGTH,
+    POLICY_METRIC_ID_MAX_LENGTH,
     BoardGuidelineBinding,
     Guideline,
     GuidelineHead,
@@ -46,16 +45,11 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRevision,
     GuidelineRevisionPage,
     GuidelineRevisionPageCursor,
-    PolicyComplianceReceipt,
     PolicyCurrentness,
     PolicyEntityType,
     PolicyEvaluationOutcome,
-    PolicyEvaluationResult,
     PolicySubjectRef,
     PolicySubjectSnapshot,
-    PolicyWaiver,
-    PolicyWaiverAuthorization,
-    PolicyWaiverEvent,
     PolicyWaiverStatus,
     POLICY_RECEIPT_ID_MAX_LENGTH,
     POLICY_RULE_ID_MAX_LENGTH,
@@ -75,9 +69,40 @@ from okto_pulse.core.domain.guideline_import_export import (
 from okto_pulse.core.domain.guideline_policy_transition import (
     PolicyTransitionSnapshot,
 )
-from okto_pulse.core.domain.guideline_waiver_lifecycle import (
-    PolicyWaiverMutation,
-    PolicyWaiverSource,
+from okto_pulse.core.domain.guideline_semantic_assessment import (
+    SemanticAssessmentState,
+    SemanticGuidelineAssessmentReceipt,
+    SemanticGuidelineAssessmentResult,
+    SemanticMetricOutcome,
+    SemanticMetricResult,
+)
+from okto_pulse.core.domain.guideline_semantic_currentness import (
+    SemanticAssessmentCurrentSnapshot,
+)
+from okto_pulse.core.domain.guideline_semantic_exceptions import (
+    SemanticMetricWaiver,
+    SemanticMetricWaiverEvent,
+    SemanticMetricWaiverMutation,
+    SemanticMetricWaiverStatus,
+    SemanticPolicySkip,
+    SemanticPolicySkipEvent,
+    SemanticPolicySkipMutation,
+    SemanticPolicySkipStatus,
+)
+from okto_pulse.core.domain.guideline_semantic_findings import (
+    SemanticMetricFinding,
+)
+from okto_pulse.core.domain.guideline_semantic_projection import (
+    SEMANTIC_ASSESSMENT_ORDERING,
+    SEMANTIC_FINDING_ORDERING,
+    SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION,
+    SEMANTIC_SKIP_ORDERING,
+    SEMANTIC_WAIVER_ORDERING,
+    SemanticAssessmentPageCursor,
+    SemanticFindingPageCursor,
+    SemanticGuidelineProjection,
+    SemanticSkipPageCursor,
+    SemanticWaiverPageCursor,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 
@@ -799,6 +824,457 @@ class PolicyWaiverListQuery:
                 )
 
 
+def _semantic_query_digests(
+    *,
+    kind: str,
+    projection: SemanticGuidelineProjection,
+    filters: dict[str, object],
+) -> tuple[str, str]:
+    return (
+        canonical_sha256(
+            {
+                "contract": SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION,
+                "kind": kind,
+                **filters,
+            }
+        ),
+        canonical_sha256(
+            {
+                "contract": SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION,
+                "kind": kind,
+                "projection": projection.value,
+            }
+        ),
+    )
+
+
+def _semantic_projection(value: object, code: str) -> SemanticGuidelineProjection:
+    if not isinstance(value, SemanticGuidelineProjection):
+        raise ValueError(code)
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticAssessmentListQuery:
+    board_id: str
+    limit: int = 50
+    cursor: SemanticAssessmentPageCursor | None = None
+    entity_type: PolicyEntityType | None = None
+    subject_id: str | None = None
+    guideline_id: str | None = None
+    binding_id: str | None = None
+    outcome: SemanticAssessmentState | None = None
+    currentness: PolicyCurrentness | None = None
+    projection: SemanticGuidelineProjection = (
+        SemanticGuidelineProjection.SUMMARY
+    )
+    filter_digest: str = field(init=False)
+    projection_digest: str = field(init=False)
+
+    ordering = SEMANTIC_ASSESSMENT_ORDERING
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "board_id",
+            _bounded_text(
+                self.board_id,
+                POLICY_BOARD_ID_MAX_LENGTH,
+                "semantic_assessment_board_id_required",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "subject_id",
+            _bounded_optional_text(
+                self.subject_id,
+                POLICY_SUBJECT_ID_MAX_LENGTH,
+                "semantic_assessment_subject_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "binding_id",
+            _bounded_optional_text(
+                self.binding_id,
+                GUIDELINE_BINDING_ID_MAX_LENGTH,
+                "semantic_assessment_binding_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "guideline_id",
+            _bounded_optional_text(
+                self.guideline_id,
+                GUIDELINE_ID_MAX_LENGTH,
+                "semantic_assessment_guideline_id_invalid",
+            ),
+        )
+        object.__setattr__(self, "limit", _limit(self.limit))
+        if self.entity_type is not None and not isinstance(
+            self.entity_type,
+            PolicyEntityType,
+        ):
+            raise ValueError("semantic_assessment_entity_type_invalid")
+        if self.currentness is not None and not isinstance(
+            self.currentness,
+            PolicyCurrentness,
+        ):
+            raise ValueError("semantic_assessment_currentness_invalid")
+        if self.outcome is not None and not isinstance(
+            self.outcome,
+            SemanticAssessmentState,
+        ):
+            raise ValueError("semantic_assessment_outcome_invalid")
+        projection = _semantic_projection(
+            self.projection,
+            "semantic_assessment_projection_invalid",
+        )
+        filter_digest, projection_digest = _semantic_query_digests(
+            kind="semantic_assessment",
+            projection=projection,
+            filters={
+                "board_id": self.board_id,
+                "entity_type": (
+                    self.entity_type.value
+                    if self.entity_type is not None
+                    else None
+                ),
+                "subject_id": self.subject_id,
+                "guideline_id": self.guideline_id,
+                "binding_id": self.binding_id,
+                "outcome": (
+                    self.outcome.value if self.outcome is not None else None
+                ),
+                "currentness": (
+                    self.currentness.value
+                    if self.currentness is not None
+                    else None
+                ),
+            },
+        )
+        object.__setattr__(self, "filter_digest", filter_digest)
+        object.__setattr__(self, "projection_digest", projection_digest)
+        if self.cursor is not None:
+            if not isinstance(self.cursor, SemanticAssessmentPageCursor):
+                raise ValueError("semantic_assessment_cursor_invalid")
+            if (
+                self.cursor.filter_digest != filter_digest
+                or self.cursor.projection_digest != projection_digest
+            ):
+                raise GuidelinePolicyInvalidCursor(
+                    "semantic_assessment_cursor_context_mismatch"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticFindingListQuery:
+    board_id: str
+    limit: int = 50
+    cursor: SemanticFindingPageCursor | None = None
+    entity_type: PolicyEntityType | None = None
+    subject_id: str | None = None
+    receipt_id: str | None = None
+    guideline_id: str | None = None
+    binding_id: str | None = None
+    metric_id: str | None = None
+    outcome: SemanticMetricOutcome | None = None
+    projection: SemanticGuidelineProjection = (
+        SemanticGuidelineProjection.SUMMARY
+    )
+    filter_digest: str = field(init=False)
+    projection_digest: str = field(init=False)
+
+    ordering = SEMANTIC_FINDING_ORDERING
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "board_id",
+            _bounded_text(
+                self.board_id,
+                POLICY_BOARD_ID_MAX_LENGTH,
+                "semantic_finding_board_id_required",
+            ),
+        )
+        for field_name, max_length in (
+            ("subject_id", POLICY_SUBJECT_ID_MAX_LENGTH),
+            ("receipt_id", POLICY_RECEIPT_ID_MAX_LENGTH),
+            ("guideline_id", GUIDELINE_ID_MAX_LENGTH),
+            ("binding_id", GUIDELINE_BINDING_ID_MAX_LENGTH),
+            ("metric_id", POLICY_METRIC_ID_MAX_LENGTH),
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _bounded_optional_text(
+                    getattr(self, field_name),
+                    max_length,
+                    f"semantic_finding_{field_name}_invalid",
+                ),
+            )
+        object.__setattr__(self, "limit", _limit(self.limit))
+        if self.entity_type is not None and not isinstance(
+            self.entity_type,
+            PolicyEntityType,
+        ):
+            raise ValueError("semantic_finding_entity_type_invalid")
+        if self.outcome is not None and not isinstance(
+            self.outcome,
+            SemanticMetricOutcome,
+        ):
+            raise ValueError("semantic_finding_outcome_invalid")
+        projection = _semantic_projection(
+            self.projection,
+            "semantic_finding_projection_invalid",
+        )
+        filter_digest, projection_digest = _semantic_query_digests(
+            kind="semantic_finding",
+            projection=projection,
+            filters={
+                "board_id": self.board_id,
+                "entity_type": (
+                    self.entity_type.value
+                    if self.entity_type is not None
+                    else None
+                ),
+                "subject_id": self.subject_id,
+                "receipt_id": self.receipt_id,
+                "guideline_id": self.guideline_id,
+                "binding_id": self.binding_id,
+                "metric_id": self.metric_id,
+                "outcome": (
+                    self.outcome.value if self.outcome is not None else None
+                ),
+            },
+        )
+        object.__setattr__(self, "filter_digest", filter_digest)
+        object.__setattr__(self, "projection_digest", projection_digest)
+        if self.cursor is not None:
+            if not isinstance(self.cursor, SemanticFindingPageCursor):
+                raise ValueError("semantic_finding_cursor_invalid")
+            if (
+                self.cursor.filter_digest != filter_digest
+                or self.cursor.projection_digest != projection_digest
+            ):
+                raise GuidelinePolicyInvalidCursor(
+                    "semantic_finding_cursor_context_mismatch"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticWaiverListQuery:
+    board_id: str
+    evaluated_at: datetime
+    limit: int = 50
+    cursor: SemanticWaiverPageCursor | None = None
+    finding_id: str | None = None
+    metric_result_id: str | None = None
+    receipt_id: str | None = None
+    guideline_id: str | None = None
+    binding_id: str | None = None
+    metric_id: str | None = None
+    entity_type: PolicyEntityType | None = None
+    subject_id: str | None = None
+    status: SemanticMetricWaiverStatus | None = None
+    projection: SemanticGuidelineProjection = (
+        SemanticGuidelineProjection.SUMMARY
+    )
+    filter_digest: str = field(init=False)
+    projection_digest: str = field(init=False)
+
+    ordering = SEMANTIC_WAIVER_ORDERING
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "board_id",
+            _bounded_text(
+                self.board_id,
+                POLICY_BOARD_ID_MAX_LENGTH,
+                "semantic_waiver_board_id_required",
+            ),
+        )
+        if (
+            not isinstance(self.evaluated_at, datetime)
+            or self.evaluated_at.tzinfo is None
+            or self.evaluated_at.utcoffset() is None
+        ):
+            raise ValueError("semantic_waiver_evaluated_at_invalid")
+        object.__setattr__(
+            self,
+            "evaluated_at",
+            self.evaluated_at.astimezone(timezone.utc),
+        )
+        for field_name, max_length in (
+            ("finding_id", POLICY_FINDING_ID_MAX_LENGTH),
+            ("metric_result_id", POLICY_RECEIPT_ID_MAX_LENGTH),
+            ("receipt_id", POLICY_RECEIPT_ID_MAX_LENGTH),
+            ("guideline_id", GUIDELINE_ID_MAX_LENGTH),
+            ("binding_id", GUIDELINE_BINDING_ID_MAX_LENGTH),
+            ("metric_id", POLICY_METRIC_ID_MAX_LENGTH),
+            ("subject_id", POLICY_SUBJECT_ID_MAX_LENGTH),
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _bounded_optional_text(
+                    getattr(self, field_name),
+                    max_length,
+                    f"semantic_waiver_{field_name}_invalid",
+                ),
+            )
+        object.__setattr__(self, "limit", _limit(self.limit))
+        if self.entity_type is not None and not isinstance(
+            self.entity_type,
+            PolicyEntityType,
+        ):
+            raise ValueError("semantic_waiver_entity_type_invalid")
+        if self.status is not None and not isinstance(
+            self.status,
+            SemanticMetricWaiverStatus,
+        ):
+            raise ValueError("semantic_waiver_status_invalid")
+        projection = _semantic_projection(
+            self.projection,
+            "semantic_waiver_projection_invalid",
+        )
+        filter_digest, projection_digest = _semantic_query_digests(
+            kind="semantic_waiver",
+            projection=projection,
+            filters={
+                "board_id": self.board_id,
+                "evaluated_at": self.evaluated_at.isoformat(
+                    timespec="microseconds"
+                ).replace("+00:00", "Z"),
+                "finding_id": self.finding_id,
+                "metric_result_id": self.metric_result_id,
+                "receipt_id": self.receipt_id,
+                "guideline_id": self.guideline_id,
+                "binding_id": self.binding_id,
+                "metric_id": self.metric_id,
+                "entity_type": (
+                    self.entity_type.value
+                    if self.entity_type is not None
+                    else None
+                ),
+                "subject_id": self.subject_id,
+                "status": (
+                    self.status.value if self.status is not None else None
+                ),
+            },
+        )
+        object.__setattr__(self, "filter_digest", filter_digest)
+        object.__setattr__(self, "projection_digest", projection_digest)
+        if self.cursor is not None:
+            if not isinstance(self.cursor, SemanticWaiverPageCursor):
+                raise ValueError("semantic_waiver_cursor_invalid")
+            if (
+                self.cursor.filter_digest != filter_digest
+                or self.cursor.projection_digest != projection_digest
+            ):
+                raise GuidelinePolicyInvalidCursor(
+                    "semantic_waiver_cursor_context_mismatch"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticSkipListQuery:
+    board_id: str
+    limit: int = 50
+    cursor: SemanticSkipPageCursor | None = None
+    entity_type: PolicyEntityType | None = None
+    subject_id: str | None = None
+    binding_id: str | None = None
+    status: SemanticPolicySkipStatus | None = None
+    currentness: PolicyCurrentness | None = None
+    projection: SemanticGuidelineProjection = (
+        SemanticGuidelineProjection.SUMMARY
+    )
+    filter_digest: str = field(init=False)
+    projection_digest: str = field(init=False)
+
+    ordering = SEMANTIC_SKIP_ORDERING
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "board_id",
+            _bounded_text(
+                self.board_id,
+                POLICY_BOARD_ID_MAX_LENGTH,
+                "semantic_skip_board_id_required",
+            ),
+        )
+        for field_name, max_length in (
+            ("subject_id", POLICY_SUBJECT_ID_MAX_LENGTH),
+            ("binding_id", GUIDELINE_BINDING_ID_MAX_LENGTH),
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _bounded_optional_text(
+                    getattr(self, field_name),
+                    max_length,
+                    f"semantic_skip_{field_name}_invalid",
+                ),
+            )
+        object.__setattr__(self, "limit", _limit(self.limit))
+        if self.entity_type is not None and not isinstance(
+            self.entity_type,
+            PolicyEntityType,
+        ):
+            raise ValueError("semantic_skip_entity_type_invalid")
+        if self.status is not None and not isinstance(
+            self.status,
+            SemanticPolicySkipStatus,
+        ):
+            raise ValueError("semantic_skip_status_invalid")
+        if self.currentness is not None and not isinstance(
+            self.currentness,
+            PolicyCurrentness,
+        ):
+            raise ValueError("semantic_skip_currentness_invalid")
+        projection = _semantic_projection(
+            self.projection,
+            "semantic_skip_projection_invalid",
+        )
+        filter_digest, projection_digest = _semantic_query_digests(
+            kind="semantic_skip",
+            projection=projection,
+            filters={
+                "board_id": self.board_id,
+                "entity_type": (
+                    self.entity_type.value
+                    if self.entity_type is not None
+                    else None
+                ),
+                "subject_id": self.subject_id,
+                "binding_id": self.binding_id,
+                "status": (
+                    self.status.value if self.status is not None else None
+                ),
+                "currentness": (
+                    self.currentness.value
+                    if self.currentness is not None
+                    else None
+                ),
+            },
+        )
+        object.__setattr__(self, "filter_digest", filter_digest)
+        object.__setattr__(self, "projection_digest", projection_digest)
+        if self.cursor is not None:
+            if not isinstance(self.cursor, SemanticSkipPageCursor):
+                raise ValueError("semantic_skip_cursor_invalid")
+            if (
+                self.cursor.filter_digest != filter_digest
+                or self.cursor.projection_digest != projection_digest
+            ):
+                raise GuidelinePolicyInvalidCursor(
+                    "semantic_skip_cursor_context_mismatch"
+                )
+
+
 @runtime_checkable
 class PolicyComplianceCurrentSnapshotResolver(Protocol):
     """Server-owned live-fence resolver used for honest read projections."""
@@ -829,6 +1305,241 @@ class PolicyTransitionSnapshotResolver(Protocol):
         subject_id: str,
         expected_from_status: str,
     ) -> PolicyTransitionSnapshot: ...
+
+
+@runtime_checkable
+class SemanticGuidelineAssessmentPersistencePort(Protocol):
+    """Append-only authority for the semantic assessment vertical.
+
+    Adapters execute inside the caller-owned transaction.  ``save`` must write
+    the receipt and every metric result atomically after rechecking the exact
+    subject, binding-revision, guideline-revision, and digest fences carried by
+    the result.  No partial receipt/result rows may become visible.
+    """
+
+    async def resolve_policy_subject_snapshot(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType,
+        subject_id: str,
+        lock: bool = False,
+    ) -> PolicySubjectSnapshot | None: ...
+
+    async def resolve_semantic_assessment_current_snapshot(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType,
+        subject_id: str,
+        binding_id: str,
+        lock: bool = False,
+    ) -> SemanticAssessmentCurrentSnapshot | None: ...
+
+    async def get_semantic_assessment_result_by_idempotency(
+        self,
+        *,
+        board_id: str,
+        binding_id: str,
+        idempotency_key: str,
+    ) -> SemanticGuidelineAssessmentResult | None: ...
+
+    async def save_semantic_assessment_result(
+        self,
+        *,
+        result: SemanticGuidelineAssessmentResult,
+        request_digest: str,
+    ) -> SemanticGuidelineAssessmentResult: ...
+
+    async def get_semantic_assessment_receipt(
+        self,
+        *,
+        board_id: str,
+        receipt_id: str,
+    ) -> SemanticGuidelineAssessmentReceipt | None: ...
+
+    async def get_current_semantic_assessment_receipt(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType,
+        subject_id: str,
+        binding_id: str,
+    ) -> SemanticGuidelineAssessmentReceipt | None: ...
+
+    async def list_semantic_assessment_receipts(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        outcome: SemanticAssessmentState | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[
+        tuple[SemanticGuidelineAssessmentReceipt, ...],
+        tuple[datetime, str] | None,
+    ]: ...
+
+    async def get_semantic_metric_result(
+        self,
+        *,
+        board_id: str,
+        metric_result_id: str,
+    ) -> SemanticMetricResult | None: ...
+
+    async def get_semantic_guideline_finding(
+        self,
+        *,
+        board_id: str,
+        finding_id: str,
+    ) -> SemanticMetricFinding | None: ...
+
+    async def list_semantic_guideline_findings(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        receipt_id: str | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        metric_id: str | None = None,
+        outcome: SemanticMetricOutcome | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[
+        tuple[SemanticMetricFinding, ...],
+        tuple[datetime, str] | None,
+    ]: ...
+
+    async def get_semantic_waiver_by_idempotency(
+        self,
+        *,
+        board_id: str,
+        idempotency_key: str,
+    ) -> SemanticMetricWaiverMutation | None: ...
+
+    async def get_semantic_waiver_event(
+        self,
+        *,
+        board_id: str,
+        event_id: str,
+    ) -> SemanticMetricWaiverEvent | None: ...
+
+    async def list_semantic_waiver_events(
+        self,
+        *,
+        board_id: str,
+        waiver_id: str | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[
+        tuple[SemanticMetricWaiverEvent, ...],
+        tuple[datetime, str] | None,
+    ]: ...
+
+    async def get_semantic_waiver(
+        self,
+        *,
+        board_id: str,
+        waiver_id: str,
+    ) -> SemanticMetricWaiver | None: ...
+
+    async def list_board_semantic_waivers(
+        self,
+        *,
+        board_id: str,
+        evaluated_at: datetime,
+        finding_id: str | None = None,
+        metric_result_id: str | None = None,
+        receipt_id: str | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        metric_id: str | None = None,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        status: SemanticMetricWaiverStatus | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[
+        tuple[SemanticMetricWaiver, ...],
+        tuple[datetime, str] | None,
+    ]:
+        """Page immutable semantic-waiver heads in deterministic order."""
+
+        ...
+
+    async def save_semantic_metric_waiver_mutation(
+        self,
+        *,
+        mutation: SemanticMetricWaiverMutation,
+    ) -> SemanticMetricWaiverMutation: ...
+
+    async def get_active_semantic_skip(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType,
+        subject_id: str,
+        subject_version: int,
+        subject_content_digest: str,
+        binding_id: str,
+        binding_revision: int,
+        configuration_digest: str,
+        guideline_id: str,
+        revision_id: str,
+        revision_digest: str,
+    ) -> SemanticPolicySkip | None: ...
+
+    async def get_semantic_skip(
+        self,
+        *,
+        board_id: str,
+        skip_id: str,
+    ) -> SemanticPolicySkip | None: ...
+
+    async def list_semantic_policy_skips(
+        self,
+        *,
+        board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        binding_id: str | None = None,
+        status: SemanticPolicySkipStatus | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[
+        tuple[SemanticPolicySkip, ...],
+        tuple[datetime, str] | None,
+    ]: ...
+
+    async def list_semantic_skip_events(
+        self,
+        *,
+        board_id: str,
+        skip_id: str | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[
+        tuple[SemanticPolicySkipEvent, ...],
+        tuple[datetime, str] | None,
+    ]: ...
+
+    async def get_semantic_skip_event_by_idempotency(
+        self,
+        *,
+        board_id: str,
+        idempotency_key: str,
+    ) -> SemanticPolicySkipMutation | None: ...
+
+    async def save_semantic_policy_skip_mutation(
+        self,
+        *,
+        mutation: SemanticPolicySkipMutation,
+    ) -> SemanticPolicySkipMutation: ...
 
 
 @runtime_checkable
@@ -1024,131 +1735,6 @@ class GuidelinePolicyPersistencePort(
         board_id: str,
     ) -> tuple[PolicySubjectRef, ...]: ...
 
-    async def resolve_policy_subject_snapshot(
-        self,
-        *,
-        board_id: str,
-        entity_type: PolicyEntityType,
-        subject_id: str,
-        lock: bool = False,
-    ) -> PolicySubjectSnapshot | None:
-        """Resolve one server-owned subject snapshot for policy evaluation."""
-
-        ...
-
-    async def list_board_waivers(
-        self,
-        *,
-        board_id: str,
-    ) -> tuple[PolicyWaiver, ...]: ...
-
-    async def save_evaluation_result(
-        self,
-        *,
-        result: PolicyEvaluationResult,
-        current_snapshot: PolicyComplianceCurrentSnapshot,
-        idempotency_key: str,
-        request_digest: str,
-    ) -> PolicyEvaluationResult: ...
-
-    async def get_compliance_receipt(
-        self,
-        *,
-        board_id: str,
-        receipt_id: str,
-    ) -> PolicyComplianceReceipt | None: ...
-
-    async def get_current_compliance_receipt(
-        self,
-        *,
-        board_id: str,
-        entity_type: PolicyEntityType,
-        subject_id: str,
-    ) -> PolicyComplianceReceipt | None: ...
-
-    async def list_compliance_receipts(
-        self,
-        query: PolicyComplianceReceiptListQuery,
-    ) -> PolicyComplianceReceiptPage: ...
-
-    async def list_compliance_findings(
-        self,
-        query: PolicyComplianceFindingListQuery,
-    ) -> PolicyComplianceFindingPage: ...
-
-    async def get_waiver(
-        self,
-        *,
-        board_id: str,
-        waiver_id: str,
-    ) -> PolicyWaiver | None: ...
-
-    async def list_waivers(
-        self,
-        query: PolicyWaiverListQuery,
-    ) -> PolicyWaiverPage: ...
-
-    async def list_waiver_events(
-        self,
-        *,
-        board_id: str,
-        waiver_id: str,
-    ) -> tuple[PolicyWaiverEvent, ...]: ...
-
-    async def resolve_policy_waiver_source(
-        self,
-        *,
-        board_id: str,
-        finding_id: str,
-        require_current: bool = True,
-        lock: bool = False,
-    ) -> PolicyWaiverSource | None:
-        """Resolve immutable waiver evidence plus its live-fence assessment."""
-
-        ...
-
-    async def create_waiver(
-        self,
-        *,
-        mutation: PolicyWaiverMutation,
-        idempotency_key: str,
-        request_digest: str,
-    ) -> tuple[PolicyWaiver, PolicyWaiverEvent]: ...
-
-    async def transition_waiver_cas(
-        self,
-        *,
-        mutation: PolicyWaiverMutation,
-        expected_waiver_revision: int,
-        idempotency_key: str,
-        request_digest: str,
-    ) -> tuple[PolicyWaiver, PolicyWaiverEvent]: ...
-
-    async def resolve_effective_waiver(
-        self,
-        *,
-        board_id: str,
-        guideline_id: str,
-        revision_id: str,
-        rule_id: str,
-        entity_type: PolicyEntityType,
-        subject_id: str,
-        subject_version: int,
-        evaluated_at: datetime,
-    ) -> PolicyWaiverAuthorization | None: ...
-
-    async def resolve_idempotent_result(
-        self,
-        *,
-        operation: str,
-        scope_id: str,
-        idempotency_key: str,
-        request_digest: str,
-    ) -> object | None:
-        """Return the exact original result or fail on key/digest drift."""
-
-        ...
-
     async def export_guideline_snapshot(
         self,
         *,
@@ -1210,9 +1796,11 @@ __all__ = [
     "GuidelineRevisionNoopReplay",
     "GuidelineRevisionReplay",
     "GuidelineRevisionListQuery",
-    "PolicyComplianceFindingListQuery",
-    "PolicyComplianceCurrentSnapshotResolver",
-    "PolicyComplianceReceiptListQuery",
     "PolicyTransitionSnapshotResolver",
     "PolicyWaiverListQuery",
+    "SemanticAssessmentListQuery",
+    "SemanticFindingListQuery",
+    "SemanticGuidelineAssessmentPersistencePort",
+    "SemanticSkipListQuery",
+    "SemanticWaiverListQuery",
 ]

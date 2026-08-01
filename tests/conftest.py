@@ -97,6 +97,11 @@ os.environ["KG_EMBEDDING_MODE"] = "stub"
 
 from okto_pulse.core.infra import config as _core_config_module  # noqa: E402
 from okto_pulse.core.infra.config import CoreSettings, configure_settings  # noqa: E402
+from okto_pulse.core.infra.auth import configure_auth  # noqa: E402
+from okto_pulse.core.ports.authentication import (  # noqa: E402
+    Credential,
+    Principal,
+)
 
 
 def _require_source_origin(module, source_root: Path, *, edition: str) -> None:
@@ -129,6 +134,21 @@ else:
     _initial_settings = CommunitySettings()
 
 configure_settings(_initial_settings)
+
+
+class _CoreTestAuthentication:
+    """Local human principal for Community REST adapters exercised by Core tests."""
+
+    async def authenticate(self, credential: Credential | None) -> Principal:
+        return Principal(
+            subject="core-test-user",
+            realm_id="local",
+            claims={"roles": ["admin"], "permissions": ("*",)},
+            actor_kind="human",
+        )
+
+
+configure_auth(_CoreTestAuthentication())
 
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db  # noqa: E402
 from okto_pulse.core.infra import database as _database_mod  # noqa: E402
@@ -966,16 +986,25 @@ class _CoreTestRelationalApplicationAdapter:
         from okto_pulse.community.adapters.sqlalchemy_guideline_policy import (
             CommunitySqlAlchemyGuidelinePolicy,
         )
-        from okto_pulse.community.adapters.sqlalchemy_policy_subject_snapshot import (
-            CommunitySqlAlchemyPolicySubjectSnapshotResolver,
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
         )
 
         return CommunitySqlAlchemyGuidelinePolicy(
             session,
-            current_snapshot_resolver=(
-                CommunitySqlAlchemyPolicySubjectSnapshotResolver(session)
+            transition_snapshot_resolver=(
+                CommunitySqlAlchemySemanticGuidelineAssessment(session)
             ),
         )
+
+    def semantic_guideline_assessments(self, session):
+        """Use the real Community SK-B3 evidence authority."""
+
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+
+        return CommunitySqlAlchemySemanticGuidelineAssessment(session)
 
     def amendment_revision_backend(self, session):
         return _CoreTestAmendmentRevisionApiBackend(session)
@@ -2821,11 +2850,18 @@ async def _register_test_kg_events_reader_port():
     """Compose the test-only KG event reader and drain pollers between tests."""
 
     from okto_pulse.core.application.kg_events_hub import (
+        _RUNTIME_KEY as _KG_HUB_RUNTIME_KEY,
         configure_kg_events_hub,
         shutdown_kg_events_hub,
     )
+    from okto_pulse.core.runtime_context import reset_runtime_values
 
     await shutdown_kg_events_hub()
+    # Drop the hub binding entirely: configure_kg_events_hub reuses a live
+    # (non-closed) hub, and a hub built under a previous test's loop can hold
+    # streams whose tasks belong to that dead loop. A fresh hub per test keeps
+    # every poller on the current loop.
+    reset_runtime_values(_KG_HUB_RUNTIME_KEY)
     reset_kg_events_reader_port_for_tests()
     reader = _CoreTestKGEventsReader(get_session_factory())
     register_kg_events_reader_port(reader)

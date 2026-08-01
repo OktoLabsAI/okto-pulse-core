@@ -1,4 +1,4 @@
-"""SK-B/B12 pure ``guideline-export/v2`` codec and import-plan contracts."""
+"""SK-B3 pure ``guideline-export/v3`` codec and import-plan contracts."""
 
 from __future__ import annotations
 
@@ -24,15 +24,13 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineImportResult,
     GuidelineImportRevisionDisposition,
     GuidelineImportTransactionStatus,
-    build_guideline_export_v2,
+    build_guideline_export_v3,
     canonical_guideline_json_bytes,
+    canonical_guideline_sha256,
     guideline_export_json_bytes,
     guideline_export_payload,
     parse_guideline_export,
     plan_guideline_import,
-)
-from okto_pulse.core.domain.guideline_lifecycle import (
-    guideline_revision_content_digest_v1,
 )
 from okto_pulse.core.domain.guideline_policy import (
     BoardGuidelineBinding,
@@ -42,11 +40,10 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineEnforcement,
     GuidelineHead,
     GuidelineLifecycleStatus,
-    GuidelinePredicate,
+    GuidelineMetric,
+    GuidelineMetricDirection,
     GuidelineRetirement,
     GuidelineRevision,
-    GuidelineRule,
-    GuidelineRuleOperator,
     GuidelineScope,
     POLICY_SQL_INTEGER_MAX,
     PolicyEntityType,
@@ -56,23 +53,16 @@ from okto_pulse.core.domain.guideline_policy import (
 NOW = datetime(2026, 7, 29, 18, tzinfo=timezone.utc)
 
 
-def _rule(*, blocking: bool = False) -> GuidelineRule:
-    return GuidelineRule(
-        rule_id="rule-1",
+def _metric() -> GuidelineMetric:
+    return GuidelineMetric(
+        metric_id="metric-1",
         code="quality.require_review",
         title="Require review",
         description="The artifact must carry review evidence.",
+        evaluation_rubric="Score review evidence completeness from 0 to 100.",
         target_entity_types=(PolicyEntityType.SPEC,),
-        predicates=(
-            GuidelinePredicate(
-                "exists",
-                (("fact", "review_evidence"),),
-            ),
-        ),
-        enforcement=(
-            GuidelineEnforcement.BLOCKING if blocking else GuidelineEnforcement.ADVISORY
-        ),
-        operator=GuidelineRuleOperator.ALL,
+        direction=GuidelineMetricDirection.MINIMUM,
+        default_threshold=80,
     )
 
 
@@ -83,12 +73,11 @@ def _revision(
     revision_number: int = 1,
     semantic_version: str = "1.0.0",
     parent_revision_id: str | None = None,
-    blocking: bool = False,
     content: str | None = None,
 ) -> GuidelineRevision:
     title = f"Guideline {revision_number}"
     resolved_content = content or f"Content {revision_number}"
-    rules = (_rule(blocking=blocking),)
+    metrics = (_metric(),)
     tags = ("quality",)
     return GuidelineRevision(
         revision_id=revision_id,
@@ -97,13 +86,7 @@ def _revision(
         semantic_version=semantic_version,
         title=title,
         content=resolved_content,
-        content_digest=guideline_revision_content_digest_v1(
-            title=title,
-            content=resolved_content,
-            rules=rules,
-            tags=tags,
-        ),
-        rules=rules,
+        metrics=metrics,
         tags=tags,
         created_by="actor-1",
         created_at=NOW + timedelta(minutes=revision_number),
@@ -140,12 +123,14 @@ def _exported_binding(
             guideline_id=revision.guideline_id,
             revision_id=revision.revision_id,
             semantic_version=revision.semantic_version,
-            revision_digest=revision.content_digest,
+            revision_digest=revision.revision_digest,
             priority=10,
             binding_revision=binding_revision,
             adopted_by="actor-1",
             adopted_at=NOW + timedelta(minutes=10 + binding_revision),
-            default_enforcement=GuidelineEnforcement.ADVISORY,
+            enforcement=GuidelineEnforcement.BLOCKING,
+            minimum_confidence=75,
+            metric_threshold_overrides={"quality.require_review": 90},
             state=state,
             source_kind=GuidelineBindingProvenance.NATIVE,
         ),
@@ -179,7 +164,7 @@ def _aggregate(
             retired_revision_id=latest.revision_id,
             retired_revision_number=latest.revision_number,
             retired_semantic_version=latest.semantic_version,
-            retired_revision_digest=latest.content_digest,
+            retired_revision_digest=latest.revision_digest,
             retired_head_revision=latest.revision_number,
             reason="No longer used.",
             retired_by="actor-1",
@@ -215,7 +200,7 @@ def _envelope(
     *,
     source_board_id: str | None = None,
 ):
-    return build_guideline_export_v2(
+    return build_guideline_export_v3(
         GuidelineExportSnapshot(
             aggregates=(aggregate,),
             source_board_id=source_board_id,
@@ -224,14 +209,62 @@ def _envelope(
     )
 
 
-def test_v2_round_trip_is_closed_complete_and_canonical() -> None:
-    first = _revision(blocking=True)
+def _legacy_v2_payload(
+    aggregate: GuidelineExportAggregate,
+    *,
+    rules: tuple[dict[str, object], ...] = (),
+) -> dict[str, object]:
+    payload = guideline_export_payload(_envelope(aggregate))
+    payload["contract_version"] = "guideline-export/v2"
+    payload["schema_version"] = "2"
+    for raw_aggregate in payload["guidelines"]:
+        legacy_digests: dict[str, str] = {}
+        for revision in raw_aggregate["revisions"]:
+            digest = canonical_guideline_sha256(
+                {
+                    "contract": "guideline-revision-digest/v1",
+                    "title": revision["title"],
+                    "content": revision["content"],
+                    "tags": tuple(sorted(revision["tags"])),
+                    "rules": rules,
+                }
+            )
+            legacy_digests[revision["revision_id"]] = digest
+            revision["content_digest"] = digest
+            revision["rules"] = list(rules)
+            del revision["revision_digest"]
+            del revision["metrics"]
+        if raw_aggregate["retirement"] is not None:
+            raw_aggregate["retirement"]["retired_revision_digest"] = legacy_digests[
+                raw_aggregate["retirement"]["retired_revision_id"]
+            ]
+        for exported_binding in raw_aggregate["bindings"]:
+            binding = exported_binding["binding"]
+            binding["revision_digest"] = legacy_digests[binding["revision_id"]]
+            binding["default_enforcement"] = binding.pop("enforcement")
+            del binding["minimum_confidence"]
+            del binding["metric_threshold_overrides"]
+            del binding["configuration_digest"]
+            exported_binding["binding_digest"] = "a" * 64
+    payload["content_digest"] = canonical_guideline_sha256(
+        {
+            "contract_version": payload["contract_version"],
+            "schema_version": payload["schema_version"],
+            "kind": payload["kind"],
+            "source_board_id": payload["source_board_id"],
+            "guidelines": payload["guidelines"],
+        }
+    )
+    return payload
+
+
+def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
+    first = _revision()
     second = _revision(
         revision_id="revision-2",
         revision_number=2,
         semantic_version="2.0.0",
         parent_revision_id=first.revision_id,
-        blocking=True,
     )
     binding_1 = _exported_binding(first)
     binding_2 = _exported_binding(
@@ -259,12 +292,71 @@ def test_v2_round_trip_is_closed_complete_and_canonical() -> None:
         "guideline_board_bindings"
     )
     assert parsed.guidelines[0].revisions[1].published_head_revision == 2
+    parsed_revision = parsed.guidelines[0].revisions[1].revision
+    parsed_binding = parsed.guidelines[0].bindings[1].binding
+    assert parsed_revision.metrics == second.metrics
+    assert parsed_revision.revision_digest == second.revision_digest
+    assert parsed_binding.enforcement is GuidelineEnforcement.BLOCKING
+    assert parsed_binding.minimum_confidence == 75
+    assert parsed_binding.metric_threshold_overrides == {
+        "quality.require_review": 90
+    }
+    assert parsed_binding.configuration_digest == (
+        binding_2.binding.configuration_digest
+    )
     assert guideline_export_json_bytes(parsed) == canonical_guideline_json_bytes(
         payload
     )
     assert b'"kind":"guidelines"' in guideline_export_json_bytes(parsed)
     assert b'": "' not in guideline_export_json_bytes(parsed)
     assert b'", "' not in guideline_export_json_bytes(parsed)
+
+
+def test_legacy_v2_rule_empty_import_is_context_only_and_drops_bindings() -> None:
+    parsed = parse_guideline_export(_legacy_v2_payload(_aggregate()))
+    aggregate = parsed.guidelines[0]
+
+    assert parsed.contract_version == GUIDELINE_EXPORT_CONTRACT_VERSION
+    assert parsed.schema_version == "3"
+    assert parsed.source_schema_version == "2"
+    assert all(
+        exported_revision.revision.metrics == ()
+        for exported_revision in aggregate.revisions
+    )
+    assert aggregate.bindings == ()
+    assert "legacy_v2_contextual_only" in aggregate.migration_notes
+    assert (
+        "legacy_v2_bindings_dropped_contextual_only"
+        in aggregate.migration_notes
+    )
+    plan = plan_guideline_import(
+        parsed,
+        target_owner_id="actor-target",
+    )
+    assert plan.entries[0].binding_disposition is (
+        GuidelineImportBindingDisposition.NO_BINDINGS
+    )
+
+
+def test_legacy_v2_executable_rules_fail_with_actionable_remediation() -> None:
+    payload = _legacy_v2_payload(
+        _aggregate(),
+        rules=(
+            {
+                "rule_id": "legacy-rule",
+                "code": "legacy.rule",
+            },
+        ),
+    )
+
+    with pytest.raises(GuidelineImportExportError) as raised:
+        parse_guideline_export(payload)
+
+    assert raised.value.code == "legacy_executable_rules_unsupported"
+    assert raised.value.path == "$.guidelines[0].revisions[0].rules"
+    assert "re-author" in raised.value.message
+    assert "semantic metrics" in raised.value.message
+    assert "schema v3" in raised.value.message
 
 
 def test_digest_and_bytes_ignore_object_key_order_but_reject_unknown_fields() -> None:
@@ -410,6 +502,143 @@ def test_publication_provenance_rejects_history_and_head_time_tampering() -> Non
         )
 
 
+def test_v3_history_rejects_semver_downgrade_and_prerelease_underbump() -> None:
+    first = _revision(semantic_version="1.0.0")
+    downgraded = _revision(
+        revision_id="revision-2",
+        revision_number=2,
+        semantic_version="0.9.0",
+        parent_revision_id=first.revision_id,
+    )
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_semantic_version_below_minimum",
+    ):
+        _aggregate(revisions=(first, downgraded))
+
+    stable = _revision(semantic_version="1.0.0")
+    prerelease = _revision(
+        revision_id="revision-2",
+        revision_number=2,
+        semantic_version="1.0.1-alpha.1",
+        parent_revision_id=stable.revision_id,
+    )
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_semantic_version_below_minimum",
+    ):
+        _aggregate(revisions=(stable, prerelease))
+
+
+def test_v3_rejects_invalid_genesis_and_cross_aggregate_chronology() -> None:
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_initial_semantic_version_invalid",
+    ):
+        _aggregate(revisions=(_revision(semantic_version="2.0.0"),))
+
+    aggregate = _aggregate()
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_identity_time_after_initial_revision",
+    ):
+        replace(
+            aggregate,
+            identity=replace(
+                aggregate.identity,
+                created_at=aggregate.revisions[0].revision.created_at
+                + timedelta(seconds=1),
+            ),
+        )
+
+    retired = _aggregate(retired=True)
+    assert retired.retirement is not None
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_retirement_time_not_monotonic",
+    ):
+        replace(
+            retired,
+            retirement=replace(
+                retired.retirement,
+                retired_at=retired.head.updated_at,
+            ),
+        )
+
+    binding = aggregate.bindings[0]
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_binding_time_before_revision",
+    ):
+        replace(
+            aggregate,
+            bindings=(
+                replace(
+                    binding,
+                    binding=replace(
+                        binding.binding,
+                        adopted_at=aggregate.revisions[0].revision.created_at
+                        - timedelta(seconds=1),
+                    ),
+                    binding_digest=None,
+                ),
+            ),
+        )
+
+
+def test_v3_history_rejects_non_monotonic_revision_time() -> None:
+    first = _revision()
+    second = _revision(
+        revision_id="revision-2",
+        revision_number=2,
+        semantic_version="1.0.1",
+        parent_revision_id=first.revision_id,
+    )
+    second = replace(
+        second,
+        created_at=first.created_at - timedelta(minutes=1),
+    )
+
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_revision_time_not_monotonic",
+    ):
+        _aggregate(revisions=(first, second))
+
+
+def test_v3_binding_rejects_unknown_metric_override_and_unstable_identity() -> None:
+    revision = _revision()
+    exported = _exported_binding(revision)
+    invalid_override = replace(
+        exported,
+        binding=replace(
+            exported.binding,
+            metric_threshold_overrides={"unknown.metric": 90},
+            configuration_digest=None,
+        ),
+        binding_digest=None,
+    )
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_binding_metric_override_unknown",
+    ):
+        _aggregate(bindings=(invalid_override,))
+
+    with pytest.raises(
+        GuidelineImportExportError,
+        match="guideline_export_binding_identity_not_stable",
+    ):
+        _aggregate(
+            bindings=(
+                exported,
+                _exported_binding(
+                    revision,
+                    binding_id="binding-other",
+                ),
+            )
+        )
+
+
 def test_legacy_v1_becomes_contextual_baseline_and_drops_blocking_rules() -> None:
     envelope = parse_guideline_export(
         {
@@ -442,7 +671,7 @@ def test_legacy_v1_becomes_contextual_baseline_and_drops_blocking_rules() -> Non
     assert aggregate.history_status is GuidelineHistoryStatus.BASELINE_ONLY
     assert aggregate.bindings == ()
     assert revision.semantic_version == GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION
-    assert revision.revision.rules == ()
+    assert revision.revision.metrics == ()
     assert revision.legacy_version == "17"
     assert revision.legacy_version_as_int == 17
     assert revision.legacy_version_unresolvable is True
@@ -510,6 +739,9 @@ def test_fresh_binding_import_is_inert_and_pending_native_adoption() -> None:
     assert entry.aggregate.bindings[0].materialization is (
         GuidelineBindingMaterialization.CANDIDATE
     )
+    assert entry.aggregate.bindings[0].configuration_digest != (
+        aggregate.bindings[0].configuration_digest
+    )
     assert "source_active_binding_pending_explicit_preview_and_adoption" in (
         entry.diagnostics
     )
@@ -528,12 +760,24 @@ def test_fresh_binding_import_is_inert_and_pending_native_adoption() -> None:
 
 def test_retired_or_unlinked_binding_history_is_stored_inert() -> None:
     revision = _revision()
-    unlinked = _exported_binding(
-        revision,
-        state=GuidelineBindingState.UNLINKED,
+    active = _exported_binding(revision)
+    unlinked = replace(
+        active,
+        binding=replace(
+            active.binding,
+            binding_revision=2,
+            adopted_at=active.binding.adopted_at + timedelta(minutes=1),
+            state=GuidelineBindingState.UNLINKED,
+            configuration_digest=None,
+        ),
+        evidence_refs=(
+            ("impact_receipt_id", "impact-unlink"),
+            ("request_digest", "b" * 64),
+        ),
+        binding_digest=None,
     )
     for aggregate in (
-        _aggregate(bindings=(unlinked,)),
+        _aggregate(bindings=(active, unlinked)),
         _aggregate(bindings=(_exported_binding(revision),), retired=True),
     ):
         plan = plan_guideline_import(
@@ -649,7 +893,7 @@ def test_same_identity_semver_and_digest_aliases_revision_id() -> None:
         guideline_id=source.guideline_id,
         revision_id="existing-revision-id",
         semantic_version=source_revision.semantic_version,
-        revision_digest=source_revision.content_digest,
+        revision_digest=source_revision.revision_digest,
     )
     plan = plan_guideline_import(
         _envelope(source),

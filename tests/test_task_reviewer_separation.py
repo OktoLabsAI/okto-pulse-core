@@ -328,3 +328,8 @@ def test_mcp_resources_describe_task_reviewer_separation_contract() -> None:
     for text in (cards, errors, gates):
         assert "reviewer_separation_required" in text
         assert "legacy_absent_compat" in text
+    assert "ready for validation only after the move succeeds" in cards
+    assert "the implementor has not completed the handoff" in cards
+    for coupling in ("notify", "notification", "nexus", "messaging"):
+        assert coupling not in cards.lower()
+    assert "\"Card is not in 'validation' status\"" in errors

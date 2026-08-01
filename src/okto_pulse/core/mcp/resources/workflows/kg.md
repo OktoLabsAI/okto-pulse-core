@@ -23,8 +23,8 @@ projections. Incremental reconciliation and rebuild must produce the same
 active set. Archive/cancel/demotion must not leave a stale child projection.
 Use `okto-pulse://reference/quality-assessments` for Quality currentness and
 `okto-pulse://workflows/refinements` for the RDL authoring lifecycle.
-For adopted guideline constraints, Policy Compliance receipts, governed
-waivers, projection identity and rebuild behavior, read the single canonical
+For adopted semantic guidelines, assessment receipts, governed exceptions,
+projection identity and rebuild behavior, read the single canonical
 protocol at `okto-pulse://reference/policy-compliance`.
 
 When KG Health reports `digest_vs_board_layer_mismatch` after all operational

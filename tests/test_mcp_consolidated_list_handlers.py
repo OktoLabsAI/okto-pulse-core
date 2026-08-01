@@ -24,6 +24,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from sqlalchemy_test_models import (
     Agent,
@@ -142,7 +143,7 @@ def db_factory():
     return get_session_factory()
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def seeded_board(db_factory):
     """Create a minimal board with one of every entity type we need.
 

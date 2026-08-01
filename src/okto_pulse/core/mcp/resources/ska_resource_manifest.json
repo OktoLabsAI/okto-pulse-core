@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "0d8825832872dc0c2bed587356cdfd82cdd1388cd8a1d158de6e9b7651310fb7",
+  "manifest_sha256": "bde71c3e6f714e44218c618ada009c20a3310a24e946acaf2bcfc7d14371e6da",
   "manifest_version": "agent-resources/v2",
   "resource_count": 21,
   "resources": [
@@ -62,7 +62,7 @@
       "uri": "okto-pulse://reference/destructive_ops"
     },
     {
-      "content_sha256": "156f7811f0d092d45d6ddf96afd289c931334921c1026c69839ce13158f4a4f5",
+      "content_sha256": "edc0505c0365b2e43d67f3de4c672e571279b514ef757d9528ba968086aee39e",
       "cross_links": [
         "okto-pulse://reference/kg-health",
         "okto-pulse://reference/knowledge-governance",
@@ -96,9 +96,10 @@
       "uri": "okto-pulse://reference/list_tools"
     },
     {
-      "content_sha256": "385abd6e2cd1e932dcabc0e3b14ac3ed126699fbc0e605951ee04acbd639cb56",
+      "content_sha256": "3c6b693689b9f2d45c54e14f3761f63f24c2dca5d9a7956c555c97de92931c0c",
       "cross_links": [
         "okto-pulse://reference/errors",
+        "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/transitions",
         "okto-pulse://workflows/kg"
       ],
@@ -108,16 +109,12 @@
         "okto-pulse://workflows/kg"
       ],
       "required_headings": [
-        "# Versioned guidelines and policy compliance",
-        "## Authority and pre-flight",
-        "## Revision lifecycle",
-        "## Impact, adoption, and unlink",
-        "## Compliance evaluation and currentness",
-        "## Waiver lifecycle and separation",
-        "## Projections and keyset pagination",
-        "## MCP outcome and errors",
-        "## Capabilities",
-        "## KG projection and recovery"
+        "# Semantic guideline protocol",
+        "## Revision and adoption",
+        "## Recording an assessment",
+        "## Gate and currentness",
+        "## Lists, pagination and errors",
+        "## Capabilities and KG"
       ],
       "uri": "okto-pulse://reference/policy-compliance"
     },
@@ -136,7 +133,7 @@
       "uri": "okto-pulse://reference/projection-profiles"
     },
     {
-      "content_sha256": "2060e93a698ddee85186f1259e79524869efba2141c75b31143f3142f758f7bd",
+      "content_sha256": "76e1dbc4cafdd8546487b5ea9b36907c963b15c14d22a35fefb4a6712c326665",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/policy-compliance",
@@ -184,7 +181,7 @@
       "uri": "okto-pulse://reference/spec_gates"
     },
     {
-      "content_sha256": "dd0ed3e2a73b37bafb294f3f1b59d119aedb77036032d45e708c394d52ac9bab",
+      "content_sha256": "985e1cd480086329e4251834da92eeda27f67f0e66f44db5b68f13c577f53ce5",
       "cross_links": [
         "okto-pulse://reference/policy-compliance"
       ],
@@ -269,7 +266,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "b38745167d967921320d420c6d0ada77d68cd46f1ded488fad6a72f58b402062",
+      "content_sha256": "4eb9a7c047e286606881126ae30a5a90259cf1a8a98a9c5baecb8c5e9c098065",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",
@@ -334,7 +331,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "d82b4a0a0bc66ded14059261d61be69df962da8240cccbdb5d7e32be76d3886e",
+      "content_sha256": "8e2583e42c45ef6d3b09c0a0507619a262664ef1cbaccf05b079be804d7504e0",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/knowledge-governance",
@@ -352,7 +349,7 @@
       "uri": "okto-pulse://workflows/cards"
     },
     {
-      "content_sha256": "66ad938c32d5f99900b486373a623ff61f6f5ce529866772a81da18a11b94859",
+      "content_sha256": "e27b842d7ef7c2ee09e4f19806903a89f3d36548bd0a69dff57f049d4854e135",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/list_tools",
@@ -369,7 +366,7 @@
       "uri": "okto-pulse://workflows/ideations"
     },
     {
-      "content_sha256": "1cf6425ed059b0bb03083401ed13c2e549f9d283b3031907f40750129cdca021",
+      "content_sha256": "ddcdd190f64a2d2c28d3c6e6e60551a60bd5c0549452671a2dbd392556002898",
       "cross_links": [
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",
@@ -387,7 +384,7 @@
       "uri": "okto-pulse://workflows/kg"
     },
     {
-      "content_sha256": "6494af1f3b412d25f7ba054a35cbd7b1ed9ddf200d797dbd063a90354437d819",
+      "content_sha256": "fb30a30725df73fa0a8733744beb170c20280450c648aae1b2d556ed3d40a497",
       "cross_links": [
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/projection-profiles",
@@ -404,7 +401,7 @@
       "uri": "okto-pulse://workflows/preflight"
     },
     {
-      "content_sha256": "658785f2ded88319357c5c4787edf585d8a4522347e00e64dfb3ff829f5a576c",
+      "content_sha256": "04409b3e709bea9e7864a82b8986e9d2fdfa14c4b6a3a483e69f8a5d37284292",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/list_tools",
@@ -422,7 +419,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "6733c4a1969d7cb048680f67d26bb58bfd98b9ef8bdd9249fa3a1d64984d9c26",
+      "content_sha256": "d3f10863008d5099978bf4d333b73fdeec928e11b8197904512084a3d7d26255",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/policy-compliance",
@@ -446,7 +443,7 @@
       "uri": "okto-pulse://workflows/specs"
     },
     {
-      "content_sha256": "1a3dde9fa5879e68906a626280c5049e01f33f96d5080df87e2ab940e42bbac1",
+      "content_sha256": "4c6b9ff79226cc2a3d6d407b864419e8cc5a088c91621c84ee5b5790d0eb2b13",
       "cross_links": [
         "okto-pulse://reference/policy-compliance"
       ],

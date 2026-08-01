@@ -1,11 +1,17 @@
-"""Pure ``guideline-domain/v1`` contracts.
+"""Pure ``guideline-domain/v2`` contracts.
 
 This module is the transport- and persistence-free source of truth for
-versioned guidelines, executable policy rules, board bindings, compliance
-receipts, and governed waivers.  It intentionally does not import the legacy
-ORM ``Guideline`` model: the homonymous value object below is a domain identity
-whose mutable content lives exclusively in immutable :class:`GuidelineRevision`
-instances.
+versioned semantic guidelines, board bindings, assessment evidence, and
+governed exceptions.  It intentionally does not import the legacy ORM
+``Guideline`` model: the homonymous value object below is a domain identity
+whose mutable content lives exclusively in immutable
+:class:`GuidelineRevision` instances.
+
+The unreleased executable policy/v1 values remain temporarily defined in this
+module so dependent migration streams can still import while they are moved to
+the semantic contract.  They are not part of the active revision or binding
+surface: :class:`GuidelineRevision` contains only ``metrics`` and
+:class:`BoardGuidelineBinding` contains only semantic configuration.
 """
 
 from __future__ import annotations
@@ -15,13 +21,18 @@ import re
 import hashlib
 import json
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import ClassVar, Generic, TypeAlias, TypeVar
+from types import MappingProxyType
+from typing import ClassVar, Generic, Mapping, TypeAlias, TypeVar
 
-GUIDELINE_DOMAIN_CONTRACT_VERSION = "guideline-domain/v1"
-GUIDELINE_IMPACT_CONTRACT_VERSION = "guideline-impact/v1"
+GUIDELINE_DOMAIN_CONTRACT_VERSION = "guideline-domain/v2"
+GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION = "guideline-revision-digest/v2"
+GUIDELINE_BINDING_CONFIGURATION_CONTRACT_VERSION = (
+    "guideline-binding-configuration/v1"
+)
+GUIDELINE_IMPACT_CONTRACT_VERSION = "guideline-impact/v2"
 GUIDELINE_PAGE_LIMIT_MAX = 200
 GUIDELINE_REST_PAGE_LIMITS = (10, 25, 50, 100)
 GUIDELINE_ID_MAX_LENGTH = 36
@@ -50,6 +61,8 @@ POLICY_WAIVER_ID_MAX_LENGTH = 64
 POLICY_WAIVER_EVENT_ID_MAX_LENGTH = 64
 POLICY_SUBJECT_ID_MAX_LENGTH = POLICY_ENTITY_ID_MAX_LENGTH
 POLICY_RULE_ID_MAX_LENGTH = 64
+POLICY_METRIC_ID_MAX_LENGTH = 64
+POLICY_METRIC_CODE_MAX_LENGTH = 128
 POLICY_ENTITY_TYPE_MAX_LENGTH = 40
 POLICY_VERSION_MAX_LENGTH = 128
 POLICY_SQL_INTEGER_MAX = 2_147_483_647
@@ -75,6 +88,7 @@ _SEMVER_RE = re.compile(
     r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
 _RULE_CODE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]*$")
+RESERVED_CONFIDENCE_FIELD = "confidence"
 
 PolicyScalar: TypeAlias = str | int | float | bool | None
 PolicyScalarCollection: TypeAlias = tuple[PolicyScalar, ...]
@@ -198,6 +212,18 @@ def _strict_non_negative_int(value: object, code: str) -> int:
     return value
 
 
+def _strict_score(value: object, code: str) -> int:
+    """Return one closed integer score/threshold in the inclusive 0..100 range."""
+
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 0 <= value <= 100
+    ):
+        raise GuidelinePolicyContractError(code)
+    return value
+
+
 def _aware_utc(value: object, code: str) -> datetime:
     if (
         not isinstance(value, datetime)
@@ -289,6 +315,33 @@ def _text_tuple(
     return resolved
 
 
+def _metric_threshold_overrides(
+    value: object,
+    code: str,
+) -> Mapping[str, int]:
+    """Deep-freeze the wire-level ``metric_code -> threshold`` map."""
+
+    if not isinstance(value, Mapping):
+        raise GuidelinePolicyContractError(code)
+    normalized: dict[str, int] = {}
+    seen_casefolded: set[str] = set()
+    for raw_metric_code, raw_threshold in value.items():
+        metric_code = normalize_policy_bounded_text(
+            raw_metric_code,
+            max_length=POLICY_METRIC_CODE_MAX_LENGTH,
+            code=code,
+        )
+        if (
+            not _RULE_CODE_RE.fullmatch(metric_code)
+            or metric_code.casefold() == RESERVED_CONFIDENCE_FIELD
+            or metric_code.casefold() in seen_casefolded
+        ):
+            raise GuidelinePolicyContractError(code)
+        seen_casefolded.add(metric_code.casefold())
+        normalized[metric_code] = _strict_score(raw_threshold, code)
+    return MappingProxyType(dict(sorted(normalized.items())))
+
+
 def _parameters(
     value: object,
     code: str,
@@ -350,7 +403,7 @@ class GuidelineContextScope(str, Enum):
 
 
 class PolicyEntityType(str, Enum):
-    """Closed set of policy targets supported by guideline-domain/v1."""
+    """Closed set of semantic targets supported by guideline-domain/v2."""
 
     IDEATION = "ideation"
     REFINEMENT = "refinement"
@@ -363,6 +416,13 @@ class PolicyEntityType(str, Enum):
 class GuidelineEnforcement(str, Enum):
     ADVISORY = "advisory"
     BLOCKING = "blocking"
+
+
+class GuidelineMetricDirection(str, Enum):
+    """How a bounded semantic score is compared with its effective threshold."""
+
+    MINIMUM = "minimum"
+    MAXIMUM = "maximum"
 
 
 class GuidelineBindingState(str, Enum):
@@ -471,7 +531,7 @@ class PolicyComplianceReasonCode(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class Guideline:
-    """Stable identity; title, content, and rules live in immutable revisions."""
+    """Stable identity; title, content, and metrics live in immutable revisions."""
 
     guideline_id: str
     owner_id: str
@@ -528,6 +588,163 @@ class Guideline:
         return self.guideline_id
 
 
+@dataclass(frozen=True, slots=True)
+class GuidelineMetric:
+    """One author-owned semantic rubric with deterministic score boundaries."""
+
+    metric_id: str
+    code: str
+    title: str
+    description: str
+    evaluation_rubric: str
+    target_entity_types: tuple[PolicyEntityType, ...]
+    direction: GuidelineMetricDirection
+    default_threshold: int
+
+    def __post_init__(self) -> None:
+        _enum(
+            self.direction,
+            GuidelineMetricDirection,
+            "guideline_metric_direction_invalid",
+        )
+        metric_id = normalize_policy_bounded_text(
+            self.metric_id,
+            max_length=POLICY_METRIC_ID_MAX_LENGTH,
+            code="guideline_metric_id_required",
+        )
+        if metric_id.casefold() == RESERVED_CONFIDENCE_FIELD:
+            raise GuidelinePolicyContractError(
+                "guideline_metric_confidence_reserved"
+            )
+        object.__setattr__(
+            self,
+            "metric_id",
+            metric_id,
+        )
+        code = normalize_policy_bounded_text(
+            self.code,
+            max_length=POLICY_METRIC_CODE_MAX_LENGTH,
+            code="guideline_metric_code_required",
+        )
+        if not _RULE_CODE_RE.fullmatch(code):
+            raise GuidelinePolicyContractError("guideline_metric_code_invalid")
+        if code.casefold() == RESERVED_CONFIDENCE_FIELD:
+            raise GuidelinePolicyContractError(
+                "guideline_metric_confidence_reserved"
+            )
+        object.__setattr__(self, "code", code)
+        title = normalize_policy_bounded_text(
+            self.title,
+            max_length=GUIDELINE_TITLE_MAX_LENGTH,
+            code="guideline_metric_title_required",
+        )
+        if title.casefold() == RESERVED_CONFIDENCE_FIELD:
+            raise GuidelinePolicyContractError(
+                "guideline_metric_confidence_reserved"
+            )
+        object.__setattr__(
+            self,
+            "title",
+            title,
+        )
+        for field_name in ("description", "evaluation_rubric"):
+            object.__setattr__(
+                self,
+                field_name,
+                _required_text(
+                    getattr(self, field_name),
+                    f"guideline_metric_{field_name}_required",
+                ),
+            )
+        target_entity_types = _typed_tuple(
+            self.target_entity_types,
+            PolicyEntityType,
+            "guideline_metric_target_entity_types_invalid",
+        )
+        if not target_entity_types:
+            raise GuidelinePolicyContractError(
+                "guideline_metric_target_entity_types_required"
+            )
+        if len(set(target_entity_types)) != len(target_entity_types):
+            raise GuidelinePolicyContractError(
+                "guideline_metric_target_entity_types_duplicate"
+            )
+        object.__setattr__(
+            self,
+            "target_entity_types",
+            tuple(sorted(target_entity_types, key=lambda item: item.value)),
+        )
+        object.__setattr__(
+            self,
+            "default_threshold",
+            _strict_score(
+                self.default_threshold,
+                "guideline_metric_default_threshold_invalid",
+            ),
+        )
+
+    def applies_to(self, entity_type: PolicyEntityType) -> bool:
+        _enum(entity_type, PolicyEntityType, "policy_entity_type_invalid")
+        return entity_type in self.target_entity_types
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "metric_id": self.metric_id,
+            "code": self.code,
+            "title": self.title,
+            "description": self.description,
+            "evaluation_rubric": self.evaluation_rubric,
+            "target_entity_types": [
+                entity_type.value for entity_type in self.target_entity_types
+            ],
+            "direction": self.direction.value,
+            "default_threshold": self.default_threshold,
+        }
+
+
+def guideline_revision_digest_v2(
+    *,
+    semantic_version: str,
+    title: str,
+    content: str,
+    metrics: tuple[GuidelineMetric, ...] | list[GuidelineMetric],
+    tags: tuple[str, ...] | list[str] = (),
+) -> str:
+    """Digest only normative semantic content, never server-owned identities."""
+
+    semantic_version = _semantic_version(
+        semantic_version,
+        "guideline_revision_semantic_version_invalid",
+    )
+    title = normalize_policy_bounded_text(
+        title,
+        max_length=GUIDELINE_TITLE_MAX_LENGTH,
+        code="guideline_revision_title_required",
+    )
+    content = _required_text(content, "guideline_revision_content_required")
+    metric_values = _typed_tuple(
+        metrics,
+        GuidelineMetric,
+        "guideline_revision_metrics_invalid",
+    )
+    tag_values = tuple(
+        sorted(_text_tuple(tags, "guideline_revision_tags_invalid"))
+    )
+    return _impact_sha256(
+        {
+            "contract": GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION,
+            "semantic_version": semantic_version,
+            "title": title,
+            "content": content,
+            "metrics": [
+                metric.digest_payload() for metric in metric_values
+            ],
+            "tags": list(tag_values),
+        }
+    )
+
+
+# Deprecated policy/v1 value objects retained only for migration-stream imports.
 @dataclass(frozen=True, slots=True)
 class GuidelinePredicate:
     """Catalog-resolved predicate invocation.
@@ -663,24 +880,32 @@ class GuidelineRevision:
     semantic_version: str
     title: str
     content: str
-    content_digest: str
-    rules: tuple[GuidelineRule, ...]
+    metrics: tuple[GuidelineMetric, ...]
     created_by: str
     created_at: datetime
+    revision_digest: str | None = None
     parent_revision_id: str | None = None
     tags: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        for field_name in ("revision_id", "guideline_id"):
-            object.__setattr__(
-                self,
-                field_name,
-                normalize_policy_bounded_text(
-                    getattr(self, field_name),
-                    max_length=GUIDELINE_REVISION_ID_MAX_LENGTH,
-                    code=f"guideline_revision_{field_name}_required",
-                ),
-            )
+        object.__setattr__(
+            self,
+            "revision_id",
+            normalize_policy_bounded_text(
+                self.revision_id,
+                max_length=GUIDELINE_REVISION_ID_MAX_LENGTH,
+                code="guideline_revision_revision_id_required",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "guideline_id",
+            normalize_policy_bounded_text(
+                self.guideline_id,
+                max_length=GUIDELINE_ID_MAX_LENGTH,
+                code="guideline_revision_guideline_id_required",
+            ),
+        )
         object.__setattr__(
             self,
             "title",
@@ -699,15 +924,14 @@ class GuidelineRevision:
                 code="guideline_revision_created_by_required",
             ),
         )
-        for field_name in ("content",):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_text(
-                    getattr(self, field_name),
-                    f"guideline_revision_{field_name}_required",
-                ),
-            )
+        object.__setattr__(
+            self,
+            "content",
+            _required_text(
+                self.content,
+                "guideline_revision_content_required",
+            ),
+        )
         object.__setattr__(
             self,
             "revision_number",
@@ -724,28 +948,22 @@ class GuidelineRevision:
                 "guideline_revision_semantic_version_invalid",
             ),
         )
-        object.__setattr__(
-            self,
-            "content_digest",
-            _sha256(
-                self.content_digest,
-                "guideline_revision_content_digest_invalid",
-            ),
+        metrics = _typed_tuple(
+            self.metrics,
+            GuidelineMetric,
+            "guideline_revision_metrics_invalid",
         )
-        rules = _typed_tuple(
-            self.rules,
-            GuidelineRule,
-            "guideline_revision_rules_invalid",
-        )
-        if len({rule.rule_id for rule in rules}) != len(rules):
-            raise GuidelinePolicyContractError("guideline_revision_duplicate_rule_id")
-        if len({rule.code for rule in rules}) != len(rules):
-            raise GuidelinePolicyContractError("guideline_revision_duplicate_rule_code")
-        object.__setattr__(
-            self,
-            "rules",
-            tuple(sorted(rules, key=lambda rule: rule.code)),
-        )
+        if len({metric.metric_id for metric in metrics}) != len(metrics):
+            raise GuidelinePolicyContractError(
+                "guideline_revision_duplicate_metric_id"
+            )
+        if len({metric.code.casefold() for metric in metrics}) != len(metrics):
+            raise GuidelinePolicyContractError(
+                "guideline_revision_duplicate_metric_code"
+            )
+        # Metric order is authorial/normative and therefore intentionally
+        # preserved rather than sorted.
+        object.__setattr__(self, "metrics", metrics)
         object.__setattr__(
             self,
             "created_at",
@@ -778,10 +996,31 @@ class GuidelineRevision:
         if self.revision_number > 1 and parent is None:
             raise GuidelinePolicyContractError("guideline_revision_parent_required")
         object.__setattr__(self, "parent_revision_id", parent)
+        expected_digest = guideline_revision_digest_v2(
+            semantic_version=self.semantic_version,
+            title=self.title,
+            content=self.content,
+            metrics=self.metrics,
+            tags=self.tags,
+        )
+        if self.revision_digest is not None:
+            supplied_digest = _sha256(
+                self.revision_digest,
+                "guideline_revision_digest_invalid",
+            )
+            if supplied_digest != expected_digest:
+                raise GuidelinePolicyContractError(
+                    "guideline_revision_digest_mismatch"
+                )
+        object.__setattr__(self, "revision_digest", expected_digest)
 
     @property
     def id(self) -> str:
         return self.revision_id
+
+    @property
+    def context_only(self) -> bool:
+        return not self.metrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -946,6 +1185,70 @@ class GuidelineRetirement:
         return self.retirement_id
 
 
+def guideline_binding_configuration_digest_v1(
+    *,
+    binding_id: str,
+    board_id: str,
+    guideline_id: str,
+    revision_id: str,
+    revision_digest: str,
+    priority: int,
+    enforcement: GuidelineEnforcement,
+    minimum_confidence: int,
+    metric_threshold_overrides: Mapping[str, int],
+) -> str:
+    """Seal the exact board-effective semantic configuration."""
+
+    _enum(
+        enforcement,
+        GuidelineEnforcement,
+        "guideline_binding_enforcement_invalid",
+    )
+    normalized_overrides = _metric_threshold_overrides(
+        metric_threshold_overrides,
+        "guideline_binding_metric_threshold_overrides_invalid",
+    )
+    return _impact_sha256(
+        {
+            "contract": GUIDELINE_BINDING_CONFIGURATION_CONTRACT_VERSION,
+            "binding_id": normalize_policy_bounded_text(
+                binding_id,
+                max_length=GUIDELINE_BINDING_ID_MAX_LENGTH,
+                code="guideline_binding_binding_id_required",
+            ),
+            "board_id": normalize_policy_bounded_text(
+                board_id,
+                max_length=POLICY_BOARD_ID_MAX_LENGTH,
+                code="guideline_binding_board_id_required",
+            ),
+            "guideline_id": normalize_policy_bounded_text(
+                guideline_id,
+                max_length=GUIDELINE_ID_MAX_LENGTH,
+                code="guideline_binding_guideline_id_required",
+            ),
+            "revision_id": normalize_policy_bounded_text(
+                revision_id,
+                max_length=GUIDELINE_REVISION_ID_MAX_LENGTH,
+                code="guideline_binding_revision_id_required",
+            ),
+            "revision_digest": _sha256(
+                revision_digest,
+                "guideline_binding_revision_digest_invalid",
+            ),
+            "priority": _strict_non_negative_int(
+                priority,
+                "guideline_binding_priority_invalid",
+            ),
+            "enforcement": enforcement.value,
+            "minimum_confidence": _strict_score(
+                minimum_confidence,
+                "guideline_binding_minimum_confidence_invalid",
+            ),
+            "metric_threshold_overrides": dict(normalized_overrides),
+        }
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BoardGuidelineBinding:
     """Exact board-to-revision adoption; sync never mutates it implicitly."""
@@ -960,13 +1263,16 @@ class BoardGuidelineBinding:
     binding_revision: int
     adopted_by: str
     adopted_at: datetime
-    default_enforcement: GuidelineEnforcement = GuidelineEnforcement.ADVISORY
+    enforcement: GuidelineEnforcement = GuidelineEnforcement.ADVISORY
+    minimum_confidence: int = 0
+    metric_threshold_overrides: Mapping[str, int] = field(default_factory=dict)
+    configuration_digest: str | None = None
     state: GuidelineBindingState = GuidelineBindingState.ACTIVE
     source_kind: GuidelineBindingProvenance = GuidelineBindingProvenance.NATIVE
 
     def __post_init__(self) -> None:
         _enum(
-            self.default_enforcement,
+            self.enforcement,
             GuidelineEnforcement,
             "guideline_binding_enforcement_invalid",
         )
@@ -1044,6 +1350,48 @@ class BoardGuidelineBinding:
                 "guideline_binding_adopted_at_invalid",
             ),
         )
+        object.__setattr__(
+            self,
+            "minimum_confidence",
+            _strict_score(
+                self.minimum_confidence,
+                "guideline_binding_minimum_confidence_invalid",
+            ),
+        )
+        overrides = _metric_threshold_overrides(
+            self.metric_threshold_overrides,
+            "guideline_binding_metric_threshold_overrides_invalid",
+        )
+        object.__setattr__(
+            self,
+            "metric_threshold_overrides",
+            overrides,
+        )
+        expected_configuration_digest = guideline_binding_configuration_digest_v1(
+            binding_id=self.binding_id,
+            board_id=self.board_id,
+            guideline_id=self.guideline_id,
+            revision_id=self.revision_id,
+            revision_digest=self.revision_digest,
+            priority=self.priority,
+            enforcement=self.enforcement,
+            minimum_confidence=self.minimum_confidence,
+            metric_threshold_overrides=overrides,
+        )
+        if self.configuration_digest is not None:
+            supplied_digest = _sha256(
+                self.configuration_digest,
+                "guideline_binding_configuration_digest_invalid",
+            )
+            if supplied_digest != expected_configuration_digest:
+                raise GuidelinePolicyContractError(
+                    "guideline_binding_configuration_digest_mismatch"
+                )
+        object.__setattr__(
+            self,
+            "configuration_digest",
+            expected_configuration_digest,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1117,8 +1465,8 @@ class GuidelineImpactItem:
     """One immutable, lightweight effect in an adoption preview.
 
     ``entity_type`` is deliberately broader than ``PolicyEntityType`` because
-    the preview also contains the board binding itself.  Executable rule
-    targets remain closed by ``PolicyEntityType`` on the receipt.
+    the preview also contains the board binding itself. Semantic metric targets
+    remain closed by ``PolicyEntityType`` on the receipt.
     """
 
     impact_item_id: str
@@ -1237,14 +1585,19 @@ def guideline_binding_snapshot_digest(
             "semantic_version": binding.semantic_version,
             "revision_digest": binding.revision_digest,
             "priority": binding.priority,
-            "default_enforcement": binding.default_enforcement.value,
+            "enforcement": binding.enforcement.value,
+            "minimum_confidence": binding.minimum_confidence,
+            "metric_threshold_overrides": dict(
+                binding.metric_threshold_overrides
+            ),
+            "configuration_digest": binding.configuration_digest,
             "state": binding.state.value,
             "source_kind": binding.source_kind.value,
         }
     return _impact_sha256(payload)
 
 
-def guideline_impact_digest_v1(
+def guideline_impact_digest_v2(
     *,
     board_id: str,
     guideline_id: str,
@@ -1267,12 +1620,14 @@ def guideline_impact_digest_v1(
     artifact_snapshot_digest: str,
     waiver_snapshot_digest: str,
     proposed_priority: int,
-    proposed_default_enforcement: GuidelineEnforcement,
+    proposed_enforcement: GuidelineEnforcement,
+    proposed_minimum_confidence: int,
+    proposed_metric_threshold_overrides: Mapping[str, int],
     affected_entity_types: tuple[PolicyEntityType, ...],
     items: tuple[GuidelineImpactItem, ...],
-    added_rule_ids: tuple[str, ...],
-    changed_rule_ids: tuple[str, ...],
-    removed_rule_ids: tuple[str, ...],
+    added_metric_ids: tuple[str, ...],
+    changed_metric_ids: tuple[str, ...],
+    removed_metric_ids: tuple[str, ...],
     requires_explicit_adoption: bool = True,
 ) -> str:
     """Seal one impact snapshot without request/time/receipt identity."""
@@ -1305,7 +1660,11 @@ def guideline_impact_digest_v1(
             "artifact_snapshot_digest": artifact_snapshot_digest,
             "waiver_snapshot_digest": waiver_snapshot_digest,
             "proposed_priority": proposed_priority,
-            "proposed_default_enforcement": proposed_default_enforcement.value,
+            "proposed_enforcement": proposed_enforcement.value,
+            "proposed_minimum_confidence": proposed_minimum_confidence,
+            "proposed_metric_threshold_overrides": dict(
+                sorted(proposed_metric_threshold_overrides.items())
+            ),
             "affected_entity_types": [
                 item.value
                 for item in sorted(
@@ -1317,9 +1676,9 @@ def guideline_impact_digest_v1(
                 item.digest_payload()
                 for item in sorted(items, key=lambda candidate: candidate.sort_key)
             ],
-            "added_rule_ids": list(sorted(added_rule_ids)),
-            "changed_rule_ids": list(sorted(changed_rule_ids)),
-            "removed_rule_ids": list(sorted(removed_rule_ids)),
+            "added_metric_ids": list(sorted(added_metric_ids)),
+            "changed_metric_ids": list(sorted(changed_metric_ids)),
+            "removed_metric_ids": list(sorted(removed_metric_ids)),
             "requires_explicit_adoption": requires_explicit_adoption,
         }
     )
@@ -1348,12 +1707,14 @@ class GuidelineImpactReceipt:
     artifact_snapshot_digest: str
     waiver_snapshot_digest: str
     proposed_priority: int
-    proposed_default_enforcement: GuidelineEnforcement
+    proposed_enforcement: GuidelineEnforcement
+    proposed_minimum_confidence: int
+    proposed_metric_threshold_overrides: Mapping[str, int]
     affected_entity_types: tuple[PolicyEntityType, ...]
     items: tuple[GuidelineImpactItem, ...]
-    added_rule_ids: tuple[str, ...]
-    changed_rule_ids: tuple[str, ...]
-    removed_rule_ids: tuple[str, ...]
+    added_metric_ids: tuple[str, ...]
+    changed_metric_ids: tuple[str, ...]
+    removed_metric_ids: tuple[str, ...]
     requested_by: str
     created_at: datetime
     impact_digest: str
@@ -1364,7 +1725,7 @@ class GuidelineImpactReceipt:
 
     def __post_init__(self) -> None:
         _enum(
-            self.proposed_default_enforcement,
+            self.proposed_enforcement,
             GuidelineEnforcement,
             "guideline_impact_proposed_enforcement_invalid",
         )
@@ -1457,6 +1818,22 @@ class GuidelineImpactReceipt:
                 "guideline_impact_proposed_priority_invalid",
             ),
         )
+        object.__setattr__(
+            self,
+            "proposed_minimum_confidence",
+            _strict_score(
+                self.proposed_minimum_confidence,
+                "guideline_impact_proposed_minimum_confidence_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "proposed_metric_threshold_overrides",
+            _metric_threshold_overrides(
+                self.proposed_metric_threshold_overrides,
+                "guideline_impact_proposed_metric_threshold_overrides_invalid",
+            ),
+        )
         from_revision = _bounded_optional_text(
             self.from_revision_id,
             max_length=GUIDELINE_REVISION_ID_MAX_LENGTH,
@@ -1542,11 +1919,11 @@ class GuidelineImpactReceipt:
             tuple(sorted(items, key=lambda item: item.sort_key)),
         )
         for field_name in (
-            "added_rule_ids",
-            "changed_rule_ids",
-            "removed_rule_ids",
+            "added_metric_ids",
+            "changed_metric_ids",
+            "removed_metric_ids",
         ):
-            normalized_rule_ids = _text_tuple(
+            normalized_metric_ids = _text_tuple(
                 getattr(self, field_name),
                 f"guideline_impact_{field_name}_invalid",
             )
@@ -1556,18 +1933,18 @@ class GuidelineImpactReceipt:
                 tuple(
                     sorted(
                         normalize_policy_bounded_text(
-                            rule_id,
-                            max_length=POLICY_RULE_ID_MAX_LENGTH,
+                            metric_id,
+                            max_length=POLICY_METRIC_ID_MAX_LENGTH,
                             code=f"guideline_impact_{field_name}_invalid",
                         )
-                        for rule_id in normalized_rule_ids
+                        for metric_id in normalized_metric_ids
                     )
                 ),
             )
         changed_sets = (
-            set(self.added_rule_ids),
-            set(self.changed_rule_ids),
-            set(self.removed_rule_ids),
+            set(self.added_metric_ids),
+            set(self.changed_metric_ids),
+            set(self.removed_metric_ids),
         )
         if any(
             left & right
@@ -1575,7 +1952,7 @@ class GuidelineImpactReceipt:
             for right in changed_sets
             if left is not right
         ):
-            raise GuidelinePolicyContractError("guideline_impact_rule_sets_overlap")
+            raise GuidelinePolicyContractError("guideline_impact_metric_sets_overlap")
         if self.requires_explicit_adoption is not True:
             raise GuidelinePolicyContractError("guideline_impact_adoption_flag_invalid")
         object.__setattr__(
@@ -1610,7 +1987,7 @@ def guideline_impact_receipt_digest(
 
     if not isinstance(receipt, GuidelineImpactReceipt):
         raise GuidelinePolicyContractError("guideline_impact_receipt_invalid")
-    return guideline_impact_digest_v1(
+    return guideline_impact_digest_v2(
         board_id=receipt.board_id,
         guideline_id=receipt.guideline_id,
         binding_id=receipt.binding_id,
@@ -1632,14 +2009,23 @@ def guideline_impact_receipt_digest(
         artifact_snapshot_digest=receipt.artifact_snapshot_digest,
         waiver_snapshot_digest=receipt.waiver_snapshot_digest,
         proposed_priority=receipt.proposed_priority,
-        proposed_default_enforcement=receipt.proposed_default_enforcement,
+        proposed_enforcement=receipt.proposed_enforcement,
+        proposed_minimum_confidence=receipt.proposed_minimum_confidence,
+        proposed_metric_threshold_overrides=(
+            receipt.proposed_metric_threshold_overrides
+        ),
         affected_entity_types=receipt.affected_entity_types,
         items=receipt.items,
-        added_rule_ids=receipt.added_rule_ids,
-        changed_rule_ids=receipt.changed_rule_ids,
-        removed_rule_ids=receipt.removed_rule_ids,
+        added_metric_ids=receipt.added_metric_ids,
+        changed_metric_ids=receipt.changed_metric_ids,
+        removed_metric_ids=receipt.removed_metric_ids,
         requires_explicit_adoption=receipt.requires_explicit_adoption,
     )
+
+
+# Transitional import alias while Community migrates to the v2 impact surface.
+# It is byte-identical delegation, not a second evaluator or contract path.
+guideline_impact_digest_v1 = guideline_impact_digest_v2
 
 
 @dataclass(frozen=True, slots=True)
@@ -1687,8 +2073,8 @@ class PolicySubjectRef:
 class PolicySubjectSnapshot:
     subject: PolicySubjectRef
     content_digest: str
+    last_semantic_editor_id: str
     captured_at: datetime
-    attributes: tuple[PolicyParameter, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.subject, PolicySubjectRef):
@@ -1703,18 +2089,19 @@ class PolicySubjectSnapshot:
         )
         object.__setattr__(
             self,
-            "captured_at",
-            _aware_utc(
-                self.captured_at,
-                "policy_subject_captured_at_invalid",
+            "last_semantic_editor_id",
+            normalize_policy_bounded_text(
+                self.last_semantic_editor_id,
+                max_length=POLICY_ACTOR_ID_MAX_LENGTH,
+                code="policy_subject_last_semantic_editor_id_required",
             ),
         )
         object.__setattr__(
             self,
-            "attributes",
-            _parameters(
-                self.attributes,
-                "policy_subject_attributes_invalid",
+            "captured_at",
+            _aware_utc(
+                self.captured_at,
+                "policy_subject_captured_at_invalid",
             ),
         )
 
@@ -3010,6 +3397,7 @@ class GuidelineOffsetPage(Generic[_PageItemT]):
 
 __all__ = [
     "GUIDELINE_BINDING_ID_MAX_LENGTH",
+    "GUIDELINE_BINDING_CONFIGURATION_CONTRACT_VERSION",
     "GUIDELINE_BINDING_ORIGIN_MAX_LENGTH",
     "GUIDELINE_BINDING_SOURCE_KIND_MAX_LENGTH",
     "GUIDELINE_DOMAIN_CONTRACT_VERSION",
@@ -3018,13 +3406,13 @@ __all__ = [
     "GUIDELINE_IMPACT_CONTRACT_VERSION",
     "GUIDELINE_PAGE_LIMIT_MAX",
     "GUIDELINE_REST_PAGE_LIMITS",
+    "GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION",
     "GUIDELINE_RETIREMENT_ID_MAX_LENGTH",
     "GUIDELINE_REVISION_ID_MAX_LENGTH",
     "GUIDELINE_REVISION_ORDERING",
     "GUIDELINE_SEMANTIC_VERSION_MAX_LENGTH",
     "GUIDELINE_SEMVER_MAX_NUMERIC_DIGITS",
     "GUIDELINE_TITLE_MAX_LENGTH",
-    "NON_WAIVABLE_POLICY_CLASSES",
     "POLICY_ACTOR_ID_MAX_LENGTH",
     "POLICY_BOARD_ID_MAX_LENGTH",
     "POLICY_ENTITY_ID_MAX_LENGTH",
@@ -3035,14 +3423,14 @@ __all__ = [
     "POLICY_IMPACT_ITEM_ID_MAX_LENGTH",
     "POLICY_IMPACT_RECEIPT_ID_MAX_LENGTH",
     "POLICY_KEYSET_CONTRACT_VERSION",
+    "POLICY_METRIC_CODE_MAX_LENGTH",
+    "POLICY_METRIC_ID_MAX_LENGTH",
     "POLICY_RECEIPT_ID_MAX_LENGTH",
-    "POLICY_RULE_ID_MAX_LENGTH",
     "POLICY_SQL_INTEGER_MAX",
     "POLICY_SUBJECT_ID_MAX_LENGTH",
     "POLICY_WAIVER_EVENT_ID_MAX_LENGTH",
     "POLICY_WAIVER_ID_MAX_LENGTH",
     "POLICY_VERSION_MAX_LENGTH",
-    "AdoptedGuidelineRevisionRef",
     "BoardGuidelineBinding",
     "GuidelineBindingProvenance",
     "GuidelineBindingState",
@@ -3053,33 +3441,20 @@ __all__ = [
     "GuidelineImpactItemKind",
     "GuidelineImpactReceipt",
     "GuidelineLifecycleStatus",
+    "GuidelineMetric",
+    "GuidelineMetricDirection",
     "GuidelineContextScope",
     "GuidelineOffsetPage",
     "GuidelinePage",
     "GuidelinePageCursor",
     "GuidelinePolicyContractError",
-    "GuidelinePredicate",
     "GuidelineRevision",
     "GuidelineRevisionPage",
     "GuidelineRevisionPageCursor",
     "GuidelineRetirement",
-    "GuidelineRule",
-    "GuidelineRuleOperator",
     "GuidelineScope",
-    "PolicyComplianceFinding",
-    "PolicyComplianceReceipt",
-    "PolicyComplianceReasonCode",
-    "PolicyComplianceRuleResult",
-    "PolicyComplianceState",
     "PolicyCurrentness",
     "PolicyEntityType",
-    "PolicyEvaluationInput",
-    "PolicyEvaluationOutcome",
-    "PolicyEvaluationResult",
-    "PolicyParameter",
-    "PolicyParameterValue",
-    "PolicyScalar",
-    "PolicyScalarCollection",
     "PolicySubjectRef",
     "PolicySubjectSnapshot",
     "PolicyWaiver",
@@ -3088,9 +3463,12 @@ __all__ = [
     "PolicyWaiverEventType",
     "PolicyWaiverExpireReasonCode",
     "PolicyWaiverStatus",
+    "RESERVED_CONFIDENCE_FIELD",
+    "guideline_binding_configuration_digest_v1",
     "guideline_binding_snapshot_digest",
-    "guideline_impact_digest_v1",
+    "guideline_impact_digest_v2",
     "guideline_impact_receipt_digest",
+    "guideline_revision_digest_v2",
     "normalize_guideline_semantic_version",
     "normalize_guideline_sha256",
     "normalize_policy_bounded_text",

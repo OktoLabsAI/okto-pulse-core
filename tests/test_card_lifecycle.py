@@ -2015,7 +2015,11 @@ class TestActivityLog:
             )
             await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
-            await db.execute(DomainEventRow.__table__.delete())
+            await db.execute(
+                DomainEventRow.__table__.delete().where(
+                    DomainEventRow.board_id == BOARD_ID
+                )
+            )
             result = await svc.submit_task_validation(
                 card.id,
                 "reviewer-1",

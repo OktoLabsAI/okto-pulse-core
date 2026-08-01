@@ -1,6 +1,6 @@
-"""Pure lifecycle rules for immutable guideline policy aggregates.
+"""Pure lifecycle rules for immutable semantic guideline aggregates.
 
-The module owns the deterministic part of SK-B/B04: canonical partial patches,
+The module owns the deterministic part of SK-B3: canonical partial patches,
 minimum SemVer classification, immutable terminal tombstones, and append-only
 binding transitions.  It deliberately has no transport, database, clock, UUID,
 or framework dependency.
@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import IntEnum
 from functools import total_ordering
+from types import MappingProxyType
 from typing import TypeAlias
 
 from okto_pulse.core.domain.guideline_policy import (
@@ -28,20 +29,19 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineEnforcement,
     GuidelineHead,
     GuidelineLifecycleStatus,
+    GuidelineMetric,
+    GuidelineMetricDirection,
     GuidelinePolicyContractError,
     GuidelineRetirement,
     GuidelineRevision,
-    GuidelineRule,
     GuidelineScope,
-)
-from okto_pulse.core.domain.guideline_predicate_catalog import (
-    validate_guideline_rule,
+    guideline_revision_digest_v2,
 )
 
 
-GUIDELINE_LIFECYCLE_CONTRACT_VERSION = "guideline-lifecycle/v1"
-GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION = "guideline-revision-digest/v1"
-GUIDELINE_REQUEST_DIGEST_CONTRACT_VERSION = "guideline-request-digest/v1"
+GUIDELINE_LIFECYCLE_CONTRACT_VERSION = "guideline-lifecycle/v2"
+GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION = "guideline-revision-digest/v2"
+GUIDELINE_REQUEST_DIGEST_CONTRACT_VERSION = "guideline-request-digest/v2"
 
 _SEMVER_RE = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -241,7 +241,7 @@ class GuidelineRevisionPatch:
     title: str | None = None
     content: str | None = None
     tags: tuple[str, ...] | None = None
-    rules: tuple[GuidelineRule, ...] | None = None
+    metrics: tuple[GuidelineMetric, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.title is not None:
@@ -264,8 +264,12 @@ class GuidelineRevisionPatch:
             )
         if self.tags is not None:
             object.__setattr__(self, "tags", _canonical_tags(self.tags))
-        if self.rules is not None:
-            object.__setattr__(self, "rules", _canonical_rules(self.rules))
+        if self.metrics is not None:
+            object.__setattr__(
+                self,
+                "metrics",
+                _canonical_metrics(self.metrics),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,7 +279,7 @@ class GuidelinePatchPlan:
     title: str
     content: str
     tags: tuple[str, ...]
-    rules: tuple[GuidelineRule, ...]
+    metrics: tuple[GuidelineMetric, ...]
     minimum_bump: GuidelineVersionBump | None
     semantic_version: str
 
@@ -301,104 +305,86 @@ def _canonical_tags(values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(normalized))
 
 
-def _predicate_sort_key(rule_predicate: object) -> bytes:
-    return _canonical_json_bytes(
-        {
-            "predicate_code": rule_predicate.predicate_code,
-            "parameters": rule_predicate.parameters,
-        }
-    )
-
-
-def _canonical_rule(rule: GuidelineRule) -> GuidelineRule:
-    canonical = validate_guideline_rule(rule)
-    return replace(
-        canonical,
-        predicates=tuple(sorted(canonical.predicates, key=_predicate_sort_key)),
-    )
-
-
-def _canonical_rules(values: tuple[GuidelineRule, ...]) -> tuple[GuidelineRule, ...]:
+def _canonical_metrics(
+    values: tuple[GuidelineMetric, ...] | list[GuidelineMetric],
+) -> tuple[GuidelineMetric, ...]:
     if not isinstance(values, tuple | list) or any(
-        not isinstance(value, GuidelineRule) for value in values
+        not isinstance(value, GuidelineMetric) for value in values
     ):
-        raise GuidelineLifecycleError("guideline_patch_rules_invalid")
-    rules = tuple(_canonical_rule(value) for value in values)
-    if len({rule.rule_id for rule in rules}) != len(rules):
-        raise GuidelineLifecycleError("guideline_patch_duplicate_rule_id")
-    if len({rule.code for rule in rules}) != len(rules):
-        raise GuidelineLifecycleError("guideline_patch_duplicate_rule_code")
-    return tuple(sorted(rules, key=lambda rule: rule.code))
+        raise GuidelineLifecycleError("guideline_patch_metrics_invalid")
+    metrics = tuple(values)
+    if len({metric.metric_id for metric in metrics}) != len(metrics):
+        raise GuidelineLifecycleError("guideline_patch_duplicate_metric_id")
+    if len({metric.code.casefold() for metric in metrics}) != len(metrics):
+        raise GuidelineLifecycleError("guideline_patch_duplicate_metric_code")
+    # Order is part of the immutable authored revision and must not be sorted.
+    return metrics
 
 
-def _rule_manifest(rule: GuidelineRule) -> dict[str, object]:
-    return {
-        "rule_id": rule.rule_id,
-        "code": rule.code,
-        "title": rule.title,
-        "description": rule.description,
-        "target_entity_types": [
-            entity_type.value for entity_type in rule.target_entity_types
-        ],
-        "predicates": [
-            {
-                "predicate_code": predicate.predicate_code,
-                "parameters": [[key, value] for key, value in predicate.parameters],
-            }
-            for predicate in rule.predicates
-        ],
-        "enforcement": rule.enforcement.value,
-        "operator": rule.operator.value,
-        "waivable": rule.waivable,
-        "policy_class": rule.policy_class,
-    }
+def _metric_manifest(metric: GuidelineMetric) -> dict[str, object]:
+    return metric.digest_payload()
+
+
+def guideline_revision_content_digest_v2(
+    *,
+    semantic_version: str,
+    title: str,
+    content: str,
+    metrics: tuple[GuidelineMetric, ...] | list[GuidelineMetric] = (),
+    tags: tuple[str, ...] | list[str] = (),
+) -> str:
+    """Digest one canonical immutable guideline revision snapshot.
+
+    The helper delegates to the guideline-domain/v2 digest authority so
+    lifecycle, persistence and interchange cannot drift.
+    """
+
+    try:
+        return guideline_revision_digest_v2(
+            semantic_version=semantic_version,
+            title=title,
+            content=content,
+            metrics=_canonical_metrics(metrics),
+            tags=_canonical_tags(tags),
+        )
+    except GuidelinePolicyContractError as exc:
+        raise GuidelineLifecycleError(exc.code) from exc
 
 
 def guideline_revision_content_digest_v1(
     *,
     title: str,
     content: str,
-    rules: tuple[GuidelineRule, ...] | list[GuidelineRule] = (),
+    rules: tuple[object, ...] | list[object] = (),
     tags: tuple[str, ...] | list[str] = (),
+    semantic_version: str = "1.0.0",
 ) -> str:
-    """Digest one canonical immutable guideline revision snapshot.
+    """Transitional import seam for rule-empty legacy callers.
 
-    This is Core's single source of truth for the
-    ``guideline-revision-digest/v1`` contract.  Adapters must call this helper
-    instead of independently serializing revision payloads.
+    The executable policy/v1 digest is retired: non-empty rules fail with the
+    same actionable migration diagnostic used by interchange.  Keeping this
+    symbol temporarily lets concurrent migration streams import the module
+    while they move to :func:`guideline_revision_content_digest_v2`.
     """
 
-    # B03 established the v1 bytes before B04 introduced canonical command
-    # snapshots.  Preserve title/content bytes and predicate order here; B04
-    # planners canonicalize those inputs *before* they call this helper.
-    if not isinstance(title, str) or not title.strip():
-        raise GuidelineLifecycleError("guideline_revision_title_required")
-    if not isinstance(content, str) or not content.strip():
-        raise GuidelineLifecycleError("guideline_revision_content_required")
-    canonical_tags = _canonical_tags(tags)
-    if not isinstance(rules, tuple | list) or any(
-        not isinstance(rule, GuidelineRule) for rule in rules
-    ):
-        raise GuidelineLifecycleError("guideline_revision_rules_invalid")
-    canonical_rules = tuple(sorted(rules, key=lambda rule: rule.code))
-    return _canonical_sha256(
-        {
-            "contract": GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION,
-            "title": title,
-            "content": content,
-            "tags": canonical_tags,
-            "rules": tuple(_rule_manifest(rule) for rule in canonical_rules),
-        }
+    if rules:
+        raise GuidelineLifecycleError("legacy_executable_rules_unsupported")
+    return guideline_revision_content_digest_v2(
+        semantic_version=semantic_version,
+        title=title,
+        content=content,
+        metrics=(),
+        tags=tags,
     )
 
 
-# Compatibility-friendly name matching the original B03 adapter helper.
+# Removed at the coordinated final cut once all concurrent consumers use v2.
 guideline_revision_content_digest = guideline_revision_content_digest_v1
 
 
-def _rule_bump(
-    previous: GuidelineRule,
-    proposed: GuidelineRule,
+def _metric_bump(
+    previous: GuidelineMetric,
+    proposed: GuidelineMetric,
 ) -> GuidelineVersionBump | None:
     bump: GuidelineVersionBump | None = None
 
@@ -406,36 +392,23 @@ def _rule_bump(
         nonlocal bump
         bump = candidate if bump is None else max(bump, candidate)
 
-    if previous.code != proposed.code:
+    if previous.metric_id != proposed.metric_id or previous.code != proposed.code:
         record(GuidelineVersionBump.MAJOR)
-    if previous.predicates != proposed.predicates:
+    if previous.direction is not proposed.direction:
         record(GuidelineVersionBump.MAJOR)
-    if previous.operator is not proposed.operator:
+    if previous.target_entity_types != proposed.target_entity_types:
         record(GuidelineVersionBump.MAJOR)
-    if previous.policy_class != proposed.policy_class:
+    if previous.evaluation_rubric != proposed.evaluation_rubric:
         record(GuidelineVersionBump.MAJOR)
-
-    old_targets = set(previous.target_entity_types)
-    new_targets = set(proposed.target_entity_types)
-    if old_targets - new_targets:
-        record(GuidelineVersionBump.MAJOR)
-    if new_targets - old_targets:
-        record(
-            GuidelineVersionBump.MINOR
-            if proposed.enforcement is GuidelineEnforcement.ADVISORY
-            else GuidelineVersionBump.MAJOR
+    if previous.default_threshold != proposed.default_threshold:
+        tightened = (
+            proposed.default_threshold > previous.default_threshold
+            if proposed.direction is GuidelineMetricDirection.MINIMUM
+            else proposed.default_threshold < previous.default_threshold
         )
-
-    if previous.enforcement is not proposed.enforcement:
         record(
             GuidelineVersionBump.MAJOR
-            if proposed.enforcement is GuidelineEnforcement.BLOCKING
-            else GuidelineVersionBump.MINOR
-        )
-    if previous.waivable != proposed.waivable:
-        record(
-            GuidelineVersionBump.MAJOR
-            if not proposed.waivable
+            if tightened
             else GuidelineVersionBump.MINOR
         )
     if previous.title != proposed.title or previous.description != proposed.description:
@@ -449,7 +422,7 @@ def classify_guideline_change(
     title: str,
     content: str,
     tags: tuple[str, ...],
-    rules: tuple[GuidelineRule, ...],
+    metrics: tuple[GuidelineMetric, ...],
 ) -> GuidelineVersionBump | None:
     """Return the maximum required severity across a mixed change."""
 
@@ -459,7 +432,7 @@ def classify_guideline_change(
         code="guideline_patch_content_required",
     )
     tags = _canonical_tags(tags)
-    rules = _canonical_rules(rules)
+    metrics = _canonical_metrics(metrics)
     previous_title = _canonical_text(
         previous.title,
         code="guideline_revision_title_required",
@@ -469,7 +442,7 @@ def classify_guideline_change(
         code="guideline_revision_content_required",
     )
     previous_tags = _canonical_tags(previous.tags)
-    previous_rules = _canonical_rules(previous.rules)
+    previous_metrics = _canonical_metrics(previous.metrics)
 
     bump: GuidelineVersionBump | None = None
 
@@ -481,18 +454,20 @@ def classify_guideline_change(
     if previous_title != title or previous_content != content or previous_tags != tags:
         record(GuidelineVersionBump.PATCH)
 
-    old_by_id = {rule.rule_id: rule for rule in previous_rules}
-    new_by_id = {rule.rule_id: rule for rule in rules}
+    old_by_id = {metric.metric_id: metric for metric in previous_metrics}
+    new_by_id = {metric.metric_id: metric for metric in metrics}
     if set(old_by_id) - set(new_by_id):
         record(GuidelineVersionBump.MAJOR)
-    for rule_id in set(new_by_id) - set(old_by_id):
-        record(
-            GuidelineVersionBump.MAJOR
-            if new_by_id[rule_id].enforcement is GuidelineEnforcement.BLOCKING
-            else GuidelineVersionBump.MINOR
-        )
-    for rule_id in set(old_by_id) & set(new_by_id):
-        record(_rule_bump(old_by_id[rule_id], new_by_id[rule_id]))
+    if set(new_by_id) - set(old_by_id):
+        record(GuidelineVersionBump.MINOR)
+    for metric_id in set(old_by_id) & set(new_by_id):
+        record(_metric_bump(old_by_id[metric_id], new_by_id[metric_id]))
+    if (
+        tuple(metric.metric_id for metric in previous_metrics)
+        != tuple(metric.metric_id for metric in metrics)
+        and set(old_by_id) == set(new_by_id)
+    ):
+        record(GuidelineVersionBump.PATCH)
     return bump
 
 
@@ -536,24 +511,24 @@ def plan_guideline_patch(
         if patch.tags is None
         else _canonical_tags(patch.tags)
     )
-    rules = (
-        _canonical_rules(current.rules)
-        if patch.rules is None
-        else _canonical_rules(patch.rules)
+    metrics = (
+        _canonical_metrics(current.metrics)
+        if patch.metrics is None
+        else _canonical_metrics(patch.metrics)
     )
     minimum_bump = classify_guideline_change(
         current,
         title=title,
         content=content,
         tags=tags,
-        rules=rules,
+        metrics=metrics,
     )
     if minimum_bump is None:
         return GuidelinePatchPlan(
             title=title,
             content=content,
             tags=tags,
-            rules=rules,
+            metrics=metrics,
             minimum_bump=None,
             semantic_version=current.semantic_version,
         )
@@ -561,7 +536,7 @@ def plan_guideline_patch(
     current_semver = SemanticVersion.parse(current.semantic_version)
     minimum = current_semver.minimum_successor(minimum_bump)
     proposed = minimum if requested_version is None else requested_version
-    if proposed <= current_semver or proposed.core < minimum.core:
+    if proposed < minimum:
         raise GuidelineVersionUnderBump(
             current=current_semver,
             declared=proposed,
@@ -572,7 +547,7 @@ def plan_guideline_patch(
         title=title,
         content=content,
         tags=tags,
-        rules=rules,
+        metrics=metrics,
         minimum_bump=minimum_bump,
         semantic_version=str(proposed),
     )
@@ -612,6 +587,44 @@ def _non_negative_int(value: object, code: str) -> int:
     return value
 
 
+def _score(value: object, code: str) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value > 100
+    ):
+        raise GuidelineLifecycleError(code)
+    return value
+
+
+def _metric_threshold_overrides(
+    value: object,
+) -> Mapping[str, int]:
+    if not isinstance(value, Mapping):
+        raise GuidelineLifecycleError(
+            "guideline_binding_metric_threshold_overrides_invalid"
+        )
+    normalized: dict[str, int] = {}
+    seen: set[str] = set()
+    for raw_code, raw_threshold in value.items():
+        code = _required_text(
+            raw_code,
+            "guideline_binding_metric_threshold_overrides_invalid",
+        )
+        folded = code.casefold()
+        if folded in seen:
+            raise GuidelineLifecycleError(
+                "guideline_binding_metric_threshold_overrides_invalid"
+            )
+        seen.add(folded)
+        normalized[code] = _score(
+            raw_threshold,
+            "guideline_binding_metric_threshold_overrides_invalid",
+        )
+    return MappingProxyType(dict(sorted(normalized.items())))
+
+
 def _sha256(value: object, code: str) -> str:
     normalized = _required_text(value, code).lower()
     if not re.fullmatch(r"[0-9a-f]{64}", normalized):
@@ -619,8 +632,12 @@ def _sha256(value: object, code: str) -> str:
     return normalized
 
 
-def _rules_manifest(rules: tuple[GuidelineRule, ...]) -> tuple[dict[str, object], ...]:
-    return tuple(_rule_manifest(rule) for rule in _canonical_rules(rules))
+def _metrics_manifest(
+    metrics: tuple[GuidelineMetric, ...],
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        _metric_manifest(metric) for metric in _canonical_metrics(metrics)
+    )
 
 
 def guideline_request_digest_v1(
@@ -670,7 +687,7 @@ class GuidelineCreateCommand:
     board_id: str | None = None
     context_scope: GuidelineContextScope = GuidelineContextScope.ALL
     tags: tuple[str, ...] = ()
-    rules: tuple[GuidelineRule, ...] = ()
+    metrics: tuple[GuidelineMetric, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.scope, GuidelineScope):
@@ -726,7 +743,11 @@ class GuidelineCreateCommand:
             ),
         )
         object.__setattr__(self, "tags", _canonical_tags(self.tags))
-        object.__setattr__(self, "rules", _canonical_rules(self.rules))
+        object.__setattr__(
+            self,
+            "metrics",
+            _canonical_metrics(self.metrics),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -773,18 +794,19 @@ class GuidelineCreateResult:
             or self.revision.title != command.title
             or self.revision.content != command.content
             or self.revision.tags != command.tags
-            or self.revision.rules != command.rules
+            or self.revision.metrics != command.metrics
             or self.revision.created_by != command.created_by
             or self.revision.created_at != command.created_at
         ):
             raise GuidelineLifecycleError("guideline_create_result_mismatch")
-        expected_digest = guideline_revision_content_digest_v1(
+        expected_digest = guideline_revision_content_digest_v2(
+            semantic_version=self.revision.semantic_version,
             title=self.revision.title,
             content=self.revision.content,
             tags=self.revision.tags,
-            rules=self.revision.rules,
+            metrics=self.revision.metrics,
         )
-        if self.revision.content_digest != expected_digest:
+        if self.revision.revision_digest != expected_digest:
             raise GuidelineLifecycleError("guideline_create_revision_digest_mismatch")
         idempotency_key = _required_text(
             self.idempotency_key,
@@ -822,7 +844,7 @@ def guideline_create_request_digest_v1(
             "title": command.title,
             "content": command.content,
             "tags": command.tags,
-            "rules": _rules_manifest(command.rules),
+            "metrics": _metrics_manifest(command.metrics),
             "actor_id": command.created_by,
         },
     )
@@ -843,11 +865,12 @@ def plan_guideline_creation(
         context_scope=command.context_scope,
         created_at=command.created_at,
     )
-    digest = guideline_revision_content_digest_v1(
+    digest = guideline_revision_content_digest_v2(
+        semantic_version="1.0.0",
         title=command.title,
         content=command.content,
         tags=command.tags,
-        rules=command.rules,
+        metrics=command.metrics,
     )
     revision = GuidelineRevision(
         revision_id=command.revision_id,
@@ -856,8 +879,8 @@ def plan_guideline_creation(
         semantic_version="1.0.0",
         title=command.title,
         content=command.content,
-        content_digest=digest,
-        rules=command.rules,
+        revision_digest=digest,
+        metrics=command.metrics,
         tags=command.tags,
         created_by=command.created_by,
         created_at=command.created_at,
@@ -988,11 +1011,12 @@ class GuidelinePatchApplied:
         )
         revision = self.revision
         head = self.head
-        expected_digest = guideline_revision_content_digest_v1(
+        expected_digest = guideline_revision_content_digest_v2(
+            semantic_version=revision.semantic_version,
             title=revision.title,
             content=revision.content,
             tags=revision.tags,
-            rules=revision.rules,
+            metrics=revision.metrics,
         )
         current_version = SemanticVersion.parse(expected_semantic_version)
         proposed_version = SemanticVersion.parse(revision.semantic_version)
@@ -1000,7 +1024,7 @@ class GuidelinePatchApplied:
         if (
             revision.parent_revision_id != expected_revision_id
             or revision.revision_number != expected_revision_number + 1
-            or revision.content_digest != expected_digest
+            or revision.revision_digest != expected_digest
             or revision.guideline_id != head.guideline_id
             or revision.revision_id != head.revision_id
             or revision.revision_number != head.revision_number
@@ -1060,7 +1084,7 @@ class GuidelinePatchApplied:
             or revision.title != plan.title
             or revision.content != plan.content
             or revision.tags != plan.tags
-            or revision.rules != plan.rules
+            or revision.metrics != plan.metrics
             or revision.semantic_version != plan.semantic_version
             or revision.created_by != self.command.actor_id
             or revision.created_at != self.command.occurred_at
@@ -1069,7 +1093,8 @@ class GuidelinePatchApplied:
             or expected_revision_number != self.command.current_revision.revision_number
             or expected_semantic_version
             != self.command.current_revision.semantic_version
-            or expected_revision_digest != self.command.current_revision.content_digest
+            or expected_revision_digest
+            != self.command.current_revision.revision_digest
             or self.idempotency_key != self.command.idempotency_key
             or self.request_digest != guideline_patch_request_digest_v1(self.command)
         ):
@@ -1159,7 +1184,7 @@ class GuidelinePatchNoop:
             or self.expected_semantic_version
             != self.command.current_revision.semantic_version
             or self.expected_revision_digest
-            != self.command.current_revision.content_digest
+            != self.command.current_revision.revision_digest
             or self.idempotency_key != self.command.idempotency_key
             or self.request_digest != guideline_patch_request_digest_v1(self.command)
         ):
@@ -1208,9 +1233,10 @@ class GuidelinePatchRejected:
         expected_version = SemanticVersion.parse(self.expected_semantic_version)
         minimum_version = SemanticVersion.parse(self.minimum_semantic_version)
         declared_version = SemanticVersion.parse(self.declared_semantic_version)
-        if minimum_version != expected_version.minimum_successor(self.minimum_bump) or (
-            declared_version > expected_version
-            and declared_version.core >= minimum_version.core
+        if (
+            minimum_version
+            != expected_version.minimum_successor(self.minimum_bump)
+            or declared_version >= minimum_version
         ):
             raise GuidelineLifecycleError("guideline_patch_rejected_version_mismatch")
         object.__setattr__(
@@ -1283,7 +1309,7 @@ class GuidelinePatchRejected:
             or self.expected_semantic_version
             != self.command.current_revision.semantic_version
             or self.expected_revision_digest
-            != self.command.current_revision.content_digest
+            != self.command.current_revision.revision_digest
             or self.idempotency_key != self.command.idempotency_key
             or self.request_digest != guideline_patch_request_digest_v1(self.command)
         ):
@@ -1320,12 +1346,14 @@ def guideline_patch_request_digest_v1(
             "expected_revision_id": command.current_revision.revision_id,
             "expected_revision_number": (command.current_revision.revision_number),
             "expected_semantic_version": (command.current_revision.semantic_version),
-            "expected_revision_digest": (command.current_revision.content_digest),
+            "expected_revision_digest": (
+                command.current_revision.revision_digest
+            ),
             "declared_semantic_version": declared_version,
             "title": canonical.title,
             "content": canonical.content,
             "tags": canonical.tags,
-            "rules": _rules_manifest(canonical.rules),
+            "metrics": _metrics_manifest(canonical.metrics),
             "actor_id": command.actor_id,
         },
     )
@@ -1339,7 +1367,7 @@ def _patch_fence_values(
         "expected_revision_id": command.current_revision.revision_id,
         "expected_revision_number": (command.current_revision.revision_number),
         "expected_semantic_version": (command.current_revision.semantic_version),
-        "expected_revision_digest": command.current_revision.content_digest,
+        "expected_revision_digest": command.current_revision.revision_digest,
         "idempotency_key": command.idempotency_key,
         "request_digest": guideline_patch_request_digest_v1(command),
     }
@@ -1387,13 +1415,14 @@ def execute_guideline_patch(
         semantic_version=plan.semantic_version,
         title=plan.title,
         content=plan.content,
-        content_digest=guideline_revision_content_digest_v1(
+        revision_digest=guideline_revision_content_digest_v2(
+            semantic_version=plan.semantic_version,
             title=plan.title,
             content=plan.content,
             tags=plan.tags,
-            rules=plan.rules,
+            metrics=plan.metrics,
         ),
-        rules=plan.rules,
+        metrics=plan.metrics,
         tags=plan.tags,
         created_by=command.actor_id,
         created_at=command.occurred_at,
@@ -1590,7 +1619,8 @@ class GuidelineRetirementResult:
             or expected_revision_id != command.current_revision.revision_id
             or expected_revision_number != command.current_revision.revision_number
             or expected_semantic_version != command.current_revision.semantic_version
-            or expected_revision_digest != command.current_revision.content_digest
+            or expected_revision_digest
+            != command.current_revision.revision_digest
             or self.retirement.retirement_id != command.retirement_id
             or self.retirement.status is not command.status
             or self.retirement.reason != command.reason
@@ -1621,7 +1651,7 @@ def guideline_retirement_request_digest_v1(
             "retired_revision_id": current.revision_id,
             "retired_revision_number": current.revision_number,
             "retired_semantic_version": current.semantic_version,
-            "retired_revision_digest": current.content_digest,
+            "retired_revision_digest": current.revision_digest,
             "status": command.status.value,
             "reason": command.reason,
             "superseded_by_guideline_id": (command.superseded_by_guideline_id),
@@ -1649,7 +1679,7 @@ def plan_guideline_retirement(
         retired_revision_id=current.revision_id,
         retired_revision_number=current.revision_number,
         retired_semantic_version=current.semantic_version,
-        retired_revision_digest=current.content_digest,
+        retired_revision_digest=current.revision_digest,
         retired_head_revision=command.current_head.head_revision,
         reason=command.reason,
         retired_by=command.actor_id,
@@ -1664,7 +1694,7 @@ def plan_guideline_retirement(
         expected_revision_id=current.revision_id,
         expected_revision_number=current.revision_number,
         expected_semantic_version=current.semantic_version,
-        expected_revision_digest=current.content_digest,
+        expected_revision_digest=current.revision_digest,
         idempotency_key=command.idempotency_key,
         request_digest=guideline_retirement_request_digest_v1(command),
     )
@@ -1686,7 +1716,9 @@ class GuidelineBindingTransitionCommand:
     semantic_version: str | None = None
     revision_digest: str | None = None
     priority: int | None = None
-    default_enforcement: GuidelineEnforcement | None = None
+    enforcement: GuidelineEnforcement | None = None
+    minimum_confidence: int | None = None
+    metric_threshold_overrides: Mapping[str, int] | None = None
     source_kind: GuidelineBindingProvenance = GuidelineBindingProvenance.NATIVE
 
     def __post_init__(self) -> None:
@@ -1732,7 +1764,9 @@ class GuidelineBindingTransitionCommand:
             self.semantic_version,
             self.revision_digest,
             self.priority,
-            self.default_enforcement,
+            self.enforcement,
+            self.minimum_confidence,
+            self.metric_threshold_overrides,
         )
         if self.state is GuidelineBindingState.UNLINKED:
             if any(value is not None for value in snapshot):
@@ -1772,11 +1806,21 @@ class GuidelineBindingTransitionCommand:
                 "guideline_binding_priority_invalid",
             ),
         )
-        if not isinstance(
-            self.default_enforcement,
-            GuidelineEnforcement,
-        ):
+        if not isinstance(self.enforcement, GuidelineEnforcement):
             raise GuidelineLifecycleError("guideline_binding_enforcement_invalid")
+        object.__setattr__(
+            self,
+            "minimum_confidence",
+            _score(
+                self.minimum_confidence,
+                "guideline_binding_minimum_confidence_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "metric_threshold_overrides",
+            _metric_threshold_overrides(self.metric_threshold_overrides),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1839,7 +1883,10 @@ class GuidelineBindingApplied:
             or binding.semantic_version != command.semantic_version
             or binding.revision_digest != command.revision_digest
             or binding.priority != command.priority
-            or binding.default_enforcement is not command.default_enforcement
+            or binding.enforcement is not command.enforcement
+            or binding.minimum_confidence != command.minimum_confidence
+            or dict(binding.metric_threshold_overrides)
+            != dict(command.metric_threshold_overrides or {})
             or binding.source_kind
             is not (
                 previous.source_kind if previous is not None else command.source_kind
@@ -1909,7 +1956,10 @@ class GuidelineBindingNoop:
             and command.semantic_version == current.semantic_version
             and command.revision_digest == current.revision_digest
             and command.priority == current.priority
-            and command.default_enforcement is current.default_enforcement
+            and command.enforcement is current.enforcement
+            and command.minimum_confidence == current.minimum_confidence
+            and dict(command.metric_threshold_overrides or {})
+            == dict(current.metric_threshold_overrides)
         )
         unlink_noop = (
             command.state is GuidelineBindingState.UNLINKED
@@ -1953,10 +2003,14 @@ def guideline_binding_request_digest_v1(
             "semantic_version": command.semantic_version,
             "revision_digest": command.revision_digest,
             "priority": command.priority,
-            "default_enforcement": (
-                command.default_enforcement.value
-                if command.default_enforcement is not None
+            "enforcement": (
+                command.enforcement.value
+                if command.enforcement is not None
                 else None
+            ),
+            "minimum_confidence": command.minimum_confidence,
+            "metric_threshold_overrides": dict(
+                command.metric_threshold_overrides or {}
             ),
             "source_kind": command.source_kind.value,
             "actor_id": command.actor_id,
@@ -2000,7 +2054,11 @@ def plan_guideline_binding_transition(
             binding_revision=1,
             adopted_by=command.actor_id,
             adopted_at=command.occurred_at,
-            default_enforcement=command.default_enforcement,
+            enforcement=command.enforcement,
+            minimum_confidence=command.minimum_confidence,
+            metric_threshold_overrides=(
+                command.metric_threshold_overrides or {}
+            ),
             state=GuidelineBindingState.ACTIVE,
             source_kind=command.source_kind,
         )
@@ -2051,7 +2109,10 @@ def plan_guideline_binding_transition(
             and command.semantic_version == current.semantic_version
             and command.revision_digest == current.revision_digest
             and command.priority == current.priority
-            and command.default_enforcement is current.default_enforcement
+            and command.enforcement is current.enforcement
+            and command.minimum_confidence == current.minimum_confidence
+            and dict(command.metric_threshold_overrides or {})
+            == dict(current.metric_threshold_overrides)
         )
         if same_snapshot:
             return GuidelineBindingNoop(
@@ -2073,7 +2134,11 @@ def plan_guideline_binding_transition(
             binding_revision=current.binding_revision + 1,
             adopted_by=command.actor_id,
             adopted_at=command.occurred_at,
-            default_enforcement=command.default_enforcement,
+            enforcement=command.enforcement,
+            minimum_confidence=command.minimum_confidence,
+            metric_threshold_overrides=(
+                command.metric_threshold_overrides or {}
+            ),
             state=GuidelineBindingState.ACTIVE,
             source_kind=current.source_kind,
         )
@@ -2152,7 +2217,9 @@ def validate_binding_transition(
         "semantic_version",
         "revision_digest",
         "priority",
-        "default_enforcement",
+        "enforcement",
+        "minimum_confidence",
+        "metric_threshold_overrides",
     )
     snapshot_changed = any(
         getattr(proposed, field_name) != getattr(current, field_name)
@@ -2203,8 +2270,7 @@ __all__ = [
     "guideline_patch_request_digest_v1",
     "guideline_request_digest_v1",
     "guideline_retirement_request_digest_v1",
-    "guideline_revision_content_digest",
-    "guideline_revision_content_digest_v1",
+    "guideline_revision_content_digest_v2",
     "plan_guideline_binding_transition",
     "plan_guideline_creation",
     "plan_guideline_patch",

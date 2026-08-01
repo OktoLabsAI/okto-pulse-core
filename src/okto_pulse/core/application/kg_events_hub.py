@@ -244,7 +244,14 @@ class KgEventsHub:
         self._streams.clear()
         for stream in streams:
             if stream.task is not None and not stream.task.done():
-                stream.task.cancel()
+                try:
+                    stream.task.cancel()
+                except RuntimeError:
+                    # The task belongs to an already-closed loop (e.g. an
+                    # asyncio.run() that finished in a previous test); the
+                    # loop is gone along with its callbacks — nothing to
+                    # cancel, and raising here would poison teardown.
+                    continue
         for stream in streams:
             if stream.task is not None:
                 try:

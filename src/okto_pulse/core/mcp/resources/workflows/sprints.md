@@ -4,7 +4,7 @@ version: "1.0"
 
 # Sprints Workflow — Lifecycle & Evaluation
 
-Executable guideline evaluation follows
+Semantic guideline assessment follows
 `okto-pulse://reference/policy-compliance`.
 
 ## 2.10 Sprints — Incremental Delivery Slices

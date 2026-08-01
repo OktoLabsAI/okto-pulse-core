@@ -1,4 +1,4 @@
-"""SK-B B08 adversarial contracts for preview, adoption, and unlink lineage."""
+"""Semantic guideline impact, adoption, unlink and retirement contracts."""
 
 from __future__ import annotations
 
@@ -9,14 +9,15 @@ import pytest
 
 from okto_pulse.core.domain.guideline_impact import (
     GUIDELINE_ADOPTION_ACTIVITY_ACTION,
+    GUIDELINE_ADOPTION_EVENT_TYPE,
     GUIDELINE_RETIREMENT_ACTIVITY_ACTION,
     GUIDELINE_RETIREMENT_EVENT_TYPE,
     GUIDELINE_UNLINK_ACTIVITY_ACTION,
     GuidelineImpactCurrentnessReason,
     GuidelineImpactError,
     GuidelineImpactPreviewCommand,
-    guideline_impact_preview_request_digest_v1,
     assess_guideline_impact_currentness,
+    guideline_impact_preview_request_digest_v1,
     impact_fence_from_receipt,
     plan_guideline_adoption,
     plan_guideline_impact_preview,
@@ -24,58 +25,67 @@ from okto_pulse.core.domain.guideline_impact import (
     plan_guideline_unlink,
 )
 from okto_pulse.core.domain.guideline_policy import (
+    GUIDELINE_IMPACT_CONTRACT_VERSION,
     BoardGuidelineBinding,
     GuidelineBindingProvenance,
     GuidelineBindingState,
     GuidelineEnforcement,
     GuidelineHead,
-    GuidelineImpactItemKind,
     GuidelineLifecycleStatus,
-    GuidelinePolicyContractError,
-    GuidelinePredicate,
+    GuidelineMetric,
+    GuidelineMetricDirection,
     GuidelineRetirement,
     GuidelineRevision,
-    GuidelineRule,
     PolicyCurrentness,
     PolicyEntityType,
     PolicySubjectRef,
-    PolicyWaiver,
-    PolicyWaiverEventType,
-    PolicyWaiverStatus,
+    PolicySubjectSnapshot,
 )
-from okto_pulse.core.domain.guideline_policy_evaluator import (
-    policy_binding_head_digest_v1,
-    policy_set_digest_v1,
+from okto_pulse.core.domain.guideline_semantic_assessment import (
+    SemanticAssessmentAssessor,
+    SemanticGuidelineAssessmentContext,
+    SemanticGuidelineAssessmentSubmission,
+    SemanticMetricAssessment,
+    record_semantic_guideline_assessment,
 )
-from okto_pulse.core.ports.guideline_policy import (
-    GuidelineImpactPreviewReplay,
-    GuidelinePolicyCasConflict,
-    GuidelinePolicyIdempotencyConflict,
+from okto_pulse.core.domain.guideline_semantic_exceptions import (
+    SemanticMetricWaiver,
+    SemanticMetricWaiverAnchor,
+    request_semantic_metric_waiver,
 )
-from okto_pulse.core.services.main import GuidelineService
+from okto_pulse.core.domain.guideline_semantic_findings import (
+    project_semantic_metric_findings,
+)
+from okto_pulse.core.domain.quality_assessment import (
+    EvidenceRef,
+    FindingAnchorType,
+    UnboundFindingAnchor,
+)
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 
 
 NOW = datetime(2026, 7, 29, 12, tzinfo=timezone.utc)
 
 
-def _rule(
-    rule_id: str = "rule-1",
+def _metric(
+    metric_id: str = "metric-segregation",
     *,
-    title: str | None = None,
+    code: str = "segregation",
+    description: str = "Measures separation of technical and business concerns.",
+    rubric: str = "0 means mixed concerns; 100 means complete isolation.",
     targets: tuple[PolicyEntityType, ...] = (PolicyEntityType.SPEC,),
-) -> GuidelineRule:
-    return GuidelineRule(
-        rule_id=rule_id,
-        code=f"policy.{rule_id}",
-        title=title or rule_id,
-        description=f"Deterministic {rule_id}.",
+    direction: GuidelineMetricDirection = GuidelineMetricDirection.MINIMUM,
+    threshold: int = 80,
+) -> GuidelineMetric:
+    return GuidelineMetric(
+        metric_id=metric_id,
+        code=code,
+        title=code.replace("_", " ").title(),
+        description=description,
+        evaluation_rubric=rubric,
         target_entity_types=targets,
-        predicates=(
-            GuidelinePredicate(
-                "gte",
-                (("fact", "coverage_percent"), ("value", 100)),
-            ),
-        ),
+        direction=direction,
+        default_threshold=threshold,
     )
 
 
@@ -83,17 +93,16 @@ def _revision(
     number: int,
     *,
     guideline_id: str = "guideline-1",
-    rules: tuple[GuidelineRule, ...] | None = None,
+    metrics: tuple[GuidelineMetric, ...] | None = None,
 ) -> GuidelineRevision:
     return GuidelineRevision(
         revision_id=f"{guideline_id}-revision-{number}",
         guideline_id=guideline_id,
         revision_number=number,
-        semantic_version=f"1.{number - 1}.0",
-        title=f"Policy {guideline_id}",
-        content=f"Revision {number}.",
-        content_digest=f"{number:x}" * 64,
-        rules=rules if rules is not None else (_rule(),),
+        semantic_version=("1.0.0" if number == 1 else f"1.{number - 1}.0"),
+        title="Hexagonal architecture",
+        content=f"Semantic revision {number}.",
+        metrics=metrics if metrics is not None else (_metric(),),
         created_by="author-1",
         created_at=NOW + timedelta(minutes=number),
         parent_revision_id=(
@@ -116,117 +125,390 @@ def _head(revision: GuidelineRevision) -> GuidelineHead:
 def _binding(
     revision: GuidelineRevision,
     *,
-    binding_id: str = "binding-1",
-    board_id: str = "board-1",
-    priority: int = 10,
     binding_revision: int = 1,
-    source_kind: GuidelineBindingProvenance = GuidelineBindingProvenance.NATIVE,
+    priority: int = 10,
+    enforcement: GuidelineEnforcement = GuidelineEnforcement.ADVISORY,
+    minimum_confidence: int = 70,
+    overrides: dict[str, int] | None = None,
 ) -> BoardGuidelineBinding:
     return BoardGuidelineBinding(
-        binding_id=binding_id,
-        board_id=board_id,
+        binding_id="binding-1",
+        board_id="board-1",
         guideline_id=revision.guideline_id,
         revision_id=revision.revision_id,
         semantic_version=revision.semantic_version,
-        revision_digest=revision.content_digest,
+        revision_digest=revision.revision_digest,
         priority=priority,
         binding_revision=binding_revision,
         adopted_by="actor-before",
         adopted_at=NOW,
-        default_enforcement=GuidelineEnforcement.ADVISORY,
-        source_kind=source_kind,
+        enforcement=enforcement,
+        minimum_confidence=minimum_confidence,
+        metric_threshold_overrides=overrides or {},
+        source_kind=GuidelineBindingProvenance.NATIVE,
     )
 
 
 def _preview(
+    current: GuidelineRevision,
+    target: GuidelineRevision,
+    binding: BoardGuidelineBinding,
     *,
-    current_revision: GuidelineRevision,
-    target_revision: GuidelineRevision,
-    head_revision: GuidelineRevision,
-    current_binding: BoardGuidelineBinding,
-    subjects: tuple[PolicySubjectRef, ...] = (),
-    waivers: tuple[PolicyWaiver, ...] = (),
-    requested_to_revision_id: str | None = None,
+    priority: int = 20,
+    enforcement: GuidelineEnforcement = GuidelineEnforcement.BLOCKING,
+    minimum_confidence: int = 85,
+    overrides: dict[str, int] | None = None,
+    waivers: tuple[SemanticMetricWaiver, ...] = (),
 ) -> object:
     return plan_guideline_impact_preview(
         GuidelineImpactPreviewCommand(
             impact_receipt_id="impact-1",
-            board_id=current_binding.board_id,
-            guideline_id=current_binding.guideline_id,
-            head=_head(head_revision),
-            to_revision=target_revision,
-            current_binding=current_binding,
-            from_revision=current_revision,
-            active_bindings=(current_binding,),
-            active_revisions=(current_revision,),
-            subjects=subjects,
+            board_id=binding.board_id,
+            guideline_id=binding.guideline_id,
+            head=_head(target),
+            to_revision=target,
+            current_binding=binding,
+            from_revision=current,
+            active_bindings=(binding,),
+            active_revisions=(current,),
+            subjects=(
+                PolicySubjectRef(
+                    board_id=binding.board_id,
+                    entity_type=PolicyEntityType.SPEC,
+                    subject_id="spec-1",
+                    subject_version=3,
+                ),
+            ),
             waivers=waivers,
-            proposed_priority=current_binding.priority,
-            proposed_default_enforcement=current_binding.default_enforcement,
+            proposed_priority=priority,
+            proposed_enforcement=enforcement,
+            proposed_minimum_confidence=minimum_confidence,
+            proposed_metric_threshold_overrides=overrides or {},
             requested_by="agent-1",
             created_at=NOW + timedelta(minutes=10),
             idempotency_key="preview:1",
-            requested_to_revision_id=requested_to_revision_id,
+            requested_to_revision_id=target.revision_id,
         )
     )
 
 
-def _subject(
-    entity_type: PolicyEntityType,
-    subject_id: str,
-    *,
-    version: int = 1,
-) -> PolicySubjectRef:
-    return PolicySubjectRef(
-        board_id="board-1",
-        entity_type=entity_type,
-        subject_id=subject_id,
-        subject_version=version,
+def _requested_semantic_waiver(
+    revision: GuidelineRevision,
+    binding: BoardGuidelineBinding,
+) -> SemanticMetricWaiver:
+    subject = PolicySubjectRef(
+        board_id=binding.board_id,
+        entity_type=PolicyEntityType.SPEC,
+        subject_id="spec-1",
+        subject_version=3,
     )
-
-
-def _waiver(
-    waiver_id: str,
-    *,
-    guideline_id: str,
-    subject: PolicySubjectRef,
-    rule_id: str = "rule-1",
-) -> PolicyWaiver:
-    return PolicyWaiver(
-        waiver_id=waiver_id,
-        board_id=subject.board_id,
-        finding_id=f"finding-{waiver_id}",
-        receipt_id=f"receipt-{waiver_id}",
-        guideline_id=guideline_id,
-        revision_id=f"{guideline_id}-revision-1",
-        rule_id=rule_id,
-        subject=subject,
-        status=PolicyWaiverStatus.REQUESTED,
-        justification="Bounded migration exception.",
-        evidence_refs=(f"ticket://{waiver_id}",),
+    content_digest = "a" * 64
+    evidence = EvidenceRef(
+        source_type="spec",
+        source_id=subject.subject_id,
+        source_version=subject.subject_version,
+        content_hash=content_digest,
+    )
+    assessment = record_semantic_guideline_assessment(
+        SemanticGuidelineAssessmentSubmission(
+            subject=subject,
+            binding_id=binding.binding_id,
+            expected_binding_revision=binding.binding_revision,
+            guideline_revision_id=revision.revision_id,
+            idempotency_key="impact-waiver-assessment",
+            confidence=90,
+            assessor=SemanticAssessmentAssessor(
+                agent_id="reviewer-1",
+                model_id="model-a",
+            ),
+            metric_results=(
+                SemanticMetricAssessment(
+                    metric_id="metric-segregation",
+                    score=60,
+                    rationale="The current spec mixes domain and adapter concerns.",
+                    evidence_refs=(evidence,),
+                    pinpoints=(
+                        UnboundFindingAnchor(
+                            anchor_type=FindingAnchorType.STRUCTURED_CHILD,
+                            anchor_ref=(
+                                "technical_requirements.metric-segregation"
+                            ),
+                            excerpt_hash="b" * 64,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        SemanticGuidelineAssessmentContext(
+            subject_snapshot=PolicySubjectSnapshot(
+                subject=subject,
+                content_digest=content_digest,
+                last_semantic_editor_id="editor-1",
+                captured_at=NOW,
+            ),
+            binding=binding,
+            revision=revision,
+            policy_set_digest="c" * 64,
+            binding_head_digest="d" * 64,
+        ),
+        receipt_id="receipt-impact-waiver",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    findings = project_semantic_metric_findings(assessment.receipt)
+    assert len(findings) == 1
+    return request_semantic_metric_waiver(
+        waiver_id="waiver-impact-1",
+        event_id="waiver-impact-event-1",
+        anchor=SemanticMetricWaiverAnchor.from_finding(
+            findings[0],
+            assessment_assessor_id=assessment.receipt.assessor.agent_id,
+        ),
+        justification="Temporary migration exception pending adapter extraction.",
+        evidence_refs=(evidence,),
         requested_by="requester-1",
-        requested_at=NOW,
-        waiver_revision=1,
+        requested_at=NOW + timedelta(minutes=3),
         expires_at=NOW + timedelta(days=7),
-        last_event_id=f"event-{waiver_id}",
-        last_event_type=PolicyWaiverEventType.REQUEST,
-        last_event_at=NOW,
-    )
+        idempotency_key="impact-waiver-request",
+    ).waiver
 
 
-def _historical_adoption():
-    revision_1 = _revision(1)
-    revision_2 = _revision(2, rules=(_rule(), _rule("rule-2")))
-    revision_3 = _revision(
-        3,
-        rules=(_rule(title="Head changed"), _rule("rule-2")),
+def test_preview_seals_metric_deltas_and_exact_board_configuration() -> None:
+    current = _revision(1)
+    target = _revision(
+        2,
+        metrics=(
+            _metric(description="Revised semantic definition."),
+            _metric(
+                "metric-dependency",
+                code="dependency_direction",
+                description="Measures inward dependency direction.",
+            ),
+        ),
     )
-    binding = _binding(revision_1)
     preview = _preview(
-        current_revision=revision_1,
-        target_revision=revision_2,
-        head_revision=revision_3,
-        current_binding=binding,
+        current,
+        target,
+        _binding(current),
+        overrides={"segregation": 90},
+    )
+
+    assert GUIDELINE_IMPACT_CONTRACT_VERSION == "guideline-impact/v2"
+    assert preview.receipt.added_metric_ids == ("metric-dependency",)
+    assert preview.receipt.changed_metric_ids == ("metric-segregation",)
+    assert preview.receipt.removed_metric_ids == ()
+    assert preview.receipt.proposed_enforcement is GuidelineEnforcement.BLOCKING
+    assert preview.receipt.proposed_minimum_confidence == 85
+    assert dict(preview.receipt.proposed_metric_threshold_overrides) == {
+        "segregation": 90
+    }
+    assert preview.proposed_binding.enforcement is GuidelineEnforcement.BLOCKING
+    assert preview.proposed_binding.minimum_confidence == 85
+    assert dict(preview.proposed_binding.metric_threshold_overrides) == {
+        "segregation": 90
+    }
+    assert preview.receipt.items[0].item_kind.value == "binding"
+    assert {item.entity_id for item in preview.receipt.items} >= {
+        "board-1",
+        "spec",
+        "spec-1",
+    }
+    with pytest.raises(TypeError):
+        preview.proposed_binding.metric_threshold_overrides["segregation"] = 1
+
+
+def test_preview_seals_semantic_waiver_metric_lineage_without_rule_aliases() -> None:
+    current = _revision(1)
+    target = _revision(
+        2,
+        metrics=(_metric(description="Revised semantic definition."),),
+    )
+    binding = _binding(current)
+    waiver = _requested_semantic_waiver(current, binding)
+
+    preview = _preview(
+        current,
+        target,
+        binding,
+        waivers=(waiver,),
+    )
+    waiver_items = tuple(
+        item
+        for item in preview.receipt.items
+        if item.item_kind.value == "waiver"
+    )
+
+    assert len(waiver_items) == 1
+    assert waiver_items[0].related_id == waiver.waiver_id
+    anchor = waiver.anchor
+    expected_details = {
+        "waiver_id": waiver.waiver_id,
+        "waiver_revision": waiver.waiver_revision,
+        "status": waiver.status.value,
+        "scope_digest": waiver.scope_digest,
+        "head_digest": waiver.head_digest,
+        "receipt_id": anchor.receipt_id,
+        "receipt_digest": anchor.receipt_digest,
+        "finding_id": anchor.finding_id,
+        "finding_digest": anchor.finding_digest,
+        "guideline_id": anchor.guideline_id,
+        "revision_id": anchor.guideline_revision_id,
+        "revision_digest": anchor.guideline_revision_digest,
+        "binding_id": anchor.binding_id,
+        "binding_revision": anchor.binding_revision,
+        "binding_configuration_digest": anchor.binding_configuration_digest,
+        "metric_id": anchor.metric_id,
+        "metric_code": anchor.metric_code,
+        "metric_result_id": anchor.metric_result_id,
+        "metric_result_digest": anchor.metric_result_digest,
+        "subject_type": anchor.subject.entity_type.value,
+        "subject_id": anchor.subject.subject_id,
+        "subject_version": anchor.subject.subject_version,
+        "subject_content_digest": anchor.subject_content_digest,
+        "expires_at": waiver.expires_at.isoformat(),
+        "requires_revalidation": True,
+        "policy_set_digest_after": preview.receipt.policy_set_digest_after,
+    }
+    assert waiver_items[0].details_digest == canonical_sha256(
+        {
+            "contract": GUIDELINE_IMPACT_CONTRACT_VERSION,
+            "kind": "impact_item_details",
+            **expected_details,
+        }
+    )
+    assert "rule_id" not in expected_details
+
+
+def test_revision_only_change_surfaces_staled_subjects_and_waivers() -> None:
+    current = _revision(1)
+    target = _revision(2, metrics=current.metrics)
+    binding = _binding(current)
+    waiver = _requested_semantic_waiver(current, binding)
+
+    preview = _preview(
+        current,
+        target,
+        binding,
+        priority=binding.priority,
+        enforcement=binding.enforcement,
+        minimum_confidence=binding.minimum_confidence,
+        overrides=dict(binding.metric_threshold_overrides),
+        waivers=(waiver,),
+    )
+
+    assert preview.receipt.added_metric_ids == ()
+    assert preview.receipt.changed_metric_ids == ()
+    assert preview.receipt.removed_metric_ids == ()
+    assert {
+        (item.item_kind.value, item.entity_id)
+        for item in preview.receipt.items
+    } >= {
+        ("artifact", "spec-1"),
+        ("waiver", "spec-1"),
+    }
+
+
+def test_preview_rejects_unknown_override_and_exact_noop() -> None:
+    revision = _revision(1)
+    binding = _binding(
+        revision,
+        priority=10,
+        enforcement=GuidelineEnforcement.BLOCKING,
+        minimum_confidence=80,
+        overrides={"segregation": 90},
+    )
+    with pytest.raises(
+        GuidelineImpactError,
+        match="guideline_impact_threshold_override_unknown",
+    ):
+        _preview(revision, revision, binding, overrides={"unknown": 80})
+
+    with pytest.raises(
+        GuidelineImpactError,
+        match="guideline_impact_no_changes",
+    ):
+        _preview(
+            revision,
+            revision,
+            binding,
+            priority=10,
+            enforcement=GuidelineEnforcement.BLOCKING,
+            minimum_confidence=80,
+            overrides={"segregation": 90},
+        )
+
+
+def test_preview_request_digest_binds_all_semantic_configuration() -> None:
+    base = dict(
+        board_id="board-1",
+        guideline_id="guideline-1",
+        proposed_priority=10,
+        proposed_enforcement=GuidelineEnforcement.BLOCKING,
+        proposed_minimum_confidence=80,
+        proposed_metric_threshold_overrides={"segregation": 90},
+        requested_by="agent-1",
+        requested_to_revision_id="guideline-1-revision-2",
+    )
+    digest = guideline_impact_preview_request_digest_v1(**base)
+    assert digest != guideline_impact_preview_request_digest_v1(
+        **{**base, "proposed_minimum_confidence": 81}
+    )
+    assert digest != guideline_impact_preview_request_digest_v1(
+        **{
+            **base,
+            "proposed_metric_threshold_overrides": {"segregation": 91},
+        }
+    )
+
+
+def test_currentness_and_adoption_fail_closed_on_stale_fence() -> None:
+    current = _revision(1)
+    target = _revision(2)
+    binding = _binding(current)
+    preview = _preview(current, target, binding)
+    fence = impact_fence_from_receipt(preview.receipt)
+
+    assessment = assess_guideline_impact_currentness(preview.receipt, fence)
+    assert assessment.currentness is PolicyCurrentness.CURRENT
+    assert assessment.reasons == ()
+
+    stale = replace(fence, binding_digest="f" * 64)
+    assessment = assess_guideline_impact_currentness(preview.receipt, stale)
+    assert assessment.currentness is PolicyCurrentness.STALE
+    assert assessment.reasons == (
+        GuidelineImpactCurrentnessReason.BINDING_CHANGED,
+    )
+    with pytest.raises(
+        GuidelineImpactError,
+        match="guideline_impact_stale",
+    ):
+        plan_guideline_adoption(
+            receipt=preview.receipt,
+            current_snapshot=stale,
+            current_binding=binding,
+            retirement=None,
+            actor_id="agent-1",
+            actor_type="agent",
+            occurred_at=NOW + timedelta(minutes=11),
+            event_id="event-adopt-stale",
+            idempotency_key="adopt:stale",
+        )
+
+
+def test_adoption_materializes_exact_config_and_metric_lineage() -> None:
+    current = _revision(1)
+    target = _revision(
+        2,
+        metrics=(
+            _metric(description="Updated definition."),
+            _metric("metric-dependency", code="dependency_direction"),
+        ),
+    )
+    binding = _binding(current)
+    preview = _preview(
+        current,
+        target,
+        binding,
+        overrides={"segregation": 92},
     )
     mutation = plan_guideline_adoption(
         receipt=preview.receipt,
@@ -239,421 +521,37 @@ def _historical_adoption():
         event_id="event-adopt-1",
         idempotency_key="adopt:1",
     )
-    return revision_1, revision_2, revision_3, binding, preview, mutation
 
-
-@pytest.mark.asyncio
-async def test_preview_replay_treats_omitted_target_as_exact_not_wildcard(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    revision_1 = _revision(1)
-    revision_2 = _revision(2, rules=(_rule(), _rule("rule-2")))
-    live_head = _revision(3, rules=(_rule(), _rule("rule-2"), _rule("rule-3")))
-    binding = _binding(revision_1)
-    original = _preview(
-        current_revision=revision_1,
-        target_revision=revision_2,
-        head_revision=live_head,
-        current_binding=binding,
-        requested_to_revision_id=revision_2.revision_id,
-    )
-    replay = GuidelineImpactPreviewReplay(
-        receipt=original.receipt,
-        request_digest=original.request_digest,
-    )
-
-    class _ReplayPolicy:
-        async def get_impact_receipt_by_idempotency(self, **_kwargs):
-            return replay
-
-    service = GuidelineService(object())
-    monkeypatch.setattr(service, "_policy", lambda: _ReplayPolicy())
-
-    omitted_digest = guideline_impact_preview_request_digest_v1(
-        board_id="board-1",
-        guideline_id="guideline-1",
-        proposed_priority=binding.priority,
-        proposed_default_enforcement=binding.default_enforcement,
-        requested_by="agent-1",
-        requested_to_revision_id=None,
-    )
-    assert omitted_digest != replay.request_digest
-    with pytest.raises(
-        GuidelinePolicyIdempotencyConflict,
-        match="guideline_impact_idempotency_payload_mismatch",
-    ):
-        await service.preview_guideline_revision_impact(
-            board_id="board-1",
-            guideline_id="guideline-1",
-            proposed_priority=binding.priority,
-            proposed_default_enforcement=binding.default_enforcement,
-            requested_by="agent-1",
-            idempotency_key="preview:1",
-            to_revision_id=None,
-        )
-
-    exact = await service.preview_guideline_revision_impact(
-        board_id="board-1",
-        guideline_id="guideline-1",
-        proposed_priority=binding.priority,
-        proposed_default_enforcement=binding.default_enforcement,
-        requested_by="agent-1",
-        idempotency_key="preview:1",
-        to_revision_id=revision_2.revision_id,
-    )
-    assert exact == original.receipt
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "replan_error",
-    ("guideline_is_terminal", "guideline_impact_no_changes"),
-)
-async def test_adoption_replan_state_changes_are_closed_cas_conflicts(
-    monkeypatch: pytest.MonkeyPatch,
-    replan_error: str,
-) -> None:
-    revision_1 = _revision(1)
-    revision_2 = _revision(2, rules=(_rule(), _rule("rule-2")))
-    binding = _binding(revision_1)
-    receipt = _preview(
-        current_revision=revision_1,
-        target_revision=revision_2,
-        head_revision=revision_2,
-        current_binding=binding,
-    ).receipt
-
-    class _Policy:
-        async def get_adoption_result_by_idempotency(self, **_kwargs):
-            return None
-
-        async def get_impact_receipt(self, **_kwargs):
-            return receipt
-
-    async def _raise_replan_error(**_kwargs):
-        raise GuidelineImpactError(replan_error)
-
-    service = GuidelineService(object())
-    monkeypatch.setattr(service, "_policy", lambda: _Policy())
-    monkeypatch.setattr(
-        service,
-        "_build_guideline_impact_plan",
-        _raise_replan_error,
-    )
-
-    with pytest.raises(GuidelinePolicyCasConflict, match=replan_error):
-        await service.adopt_guideline_revision(
-            board_id=receipt.board_id,
-            guideline_id=receipt.guideline_id,
-            impact_receipt_id=receipt.impact_receipt_id,
-            impact_digest=receipt.impact_digest,
-            actor_id="agent-1",
-            actor_type="agent",
-            idempotency_key=f"adopt:{replan_error}",
-        )
-
-
-def test_preview_rejects_an_effect_free_noop() -> None:
-    revision = _revision(1)
-    binding = _binding(revision)
-
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_impact_no_changes",
-    ):
-        _preview(
-            current_revision=revision,
-            target_revision=revision,
-            head_revision=revision,
-            current_binding=binding,
-        )
-
-
-def test_preview_lists_and_fences_only_affected_artifacts_and_waivers() -> None:
-    current = _revision(1)
-    target = _revision(
-        2,
-        rules=(_rule(title="Changed executable requirement"),),
-    )
-    binding = _binding(current)
-    affected = _subject(PolicyEntityType.SPEC, "spec-1", version=3)
-    unaffected = _subject(PolicyEntityType.CARD, "card-1", version=7)
-    affected_waiver = _waiver(
-        "waiver-affected",
-        guideline_id=current.guideline_id,
-        subject=affected,
-    )
-    unrelated_guideline_waiver = _waiver(
-        "waiver-other-guideline",
-        guideline_id="guideline-2",
-        subject=affected,
-    )
-    unrelated_target_waiver = _waiver(
-        "waiver-other-target",
-        guideline_id=current.guideline_id,
-        subject=unaffected,
-    )
-    absent_subject_waiver = _waiver(
-        "waiver-absent-subject",
-        guideline_id=current.guideline_id,
-        subject=_subject(PolicyEntityType.SPEC, "spec-absent"),
-    )
-
-    receipt = _preview(
-        current_revision=current,
-        target_revision=target,
-        head_revision=target,
-        current_binding=binding,
-        subjects=(unaffected, affected),
-        waivers=(
-            unrelated_target_waiver,
-            absent_subject_waiver,
-            affected_waiver,
-            unrelated_guideline_waiver,
-        ),
-    ).receipt
-    shuffled = _preview(
-        current_revision=current,
-        target_revision=target,
-        head_revision=target,
-        current_binding=binding,
-        subjects=(affected, unaffected),
-        waivers=(
-            unrelated_guideline_waiver,
-            affected_waiver,
-            absent_subject_waiver,
-            unrelated_target_waiver,
-        ),
-    ).receipt
-
-    assert shuffled == receipt
-    assert tuple(
-        (item.entity_type, item.entity_id)
-        for item in receipt.items
-        if item.item_kind is GuidelineImpactItemKind.ARTIFACT
-    ) == (("spec", "spec-1"),)
-    assert tuple(
-        item.related_id
-        for item in receipt.items
-        if item.item_kind is GuidelineImpactItemKind.WAIVER
-    ) == ("waiver-affected",)
-
-    irrelevant_changes = _preview(
-        current_revision=current,
-        target_revision=target,
-        head_revision=target,
-        current_binding=binding,
-        subjects=(
-            affected,
-            replace(unaffected, subject_version=99),
-        ),
-        waivers=(affected_waiver,),
-    ).receipt
-    assert irrelevant_changes.artifact_snapshot_digest == (
-        receipt.artifact_snapshot_digest
-    )
-    assert irrelevant_changes.waiver_snapshot_digest == (receipt.waiver_snapshot_digest)
-
-    affected_change = _preview(
-        current_revision=current,
-        target_revision=target,
-        head_revision=target,
-        current_binding=binding,
-        subjects=(
-            replace(affected, subject_version=4),
-            unaffected,
-        ),
-        waivers=(affected_waiver,),
-    ).receipt
-    assessment = assess_guideline_impact_currentness(
-        receipt,
-        impact_fence_from_receipt(affected_change),
-    )
-    assert assessment.currentness is PolicyCurrentness.STALE
-    assert (
-        GuidelineImpactCurrentnessReason.ARTIFACT_SNAPSHOT_CHANGED in assessment.reasons
-    )
-
-
-def test_historical_pin_is_allowed_then_becomes_stale_when_head_advances() -> None:
-    _, revision_2, revision_3, binding, preview, mutation = _historical_adoption()
-
-    assert preview.receipt.to_revision_id == revision_2.revision_id
-    assert preview.receipt.expected_head_revision == revision_3.revision_number
-    assert mutation.binding.revision_id == revision_2.revision_id
+    assert mutation.activity_action == GUIDELINE_ADOPTION_ACTIVITY_ACTION
+    assert mutation.event.event_type == GUIDELINE_ADOPTION_EVENT_TYPE
+    assert mutation.event.added_metric_ids == ("metric-dependency",)
+    assert mutation.event.changed_metric_ids == ("metric-segregation",)
+    assert mutation.event.removed_metric_ids == ()
     assert mutation.binding.binding_revision == binding.binding_revision + 1
-
-    advanced_fence = replace(
-        impact_fence_from_receipt(preview.receipt),
-        head_revision=revision_3.revision_number + 1,
-    )
-    assessment = assess_guideline_impact_currentness(
-        preview.receipt,
-        advanced_fence,
-    )
-    assert assessment.currentness is PolicyCurrentness.STALE
-    assert assessment.reasons == (
-        GuidelineImpactCurrentnessReason.GUIDELINE_HEAD_CHANGED,
-    )
-
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_impact_stale",
-    ) as exc:
-        plan_guideline_adoption(
-            receipt=preview.receipt,
-            current_snapshot=advanced_fence,
-            current_binding=binding,
-            retirement=None,
-            actor_id="agent-1",
-            actor_type="agent",
-            occurred_at=NOW + timedelta(minutes=12),
-            event_id="event-adopt-stale",
-            idempotency_key="adopt:stale",
-        )
-    assert exc.value.currentness_reasons == (
-        GuidelineImpactCurrentnessReason.GUIDELINE_HEAD_CHANGED,
-    )
-
-
-@pytest.mark.parametrize("invalid_flag", (False, 1, "true"))
-def test_impact_receipt_requires_literal_true(
-    invalid_flag: object,
-) -> None:
-    *_, preview, _ = _historical_adoption()
-
-    with pytest.raises(
-        GuidelinePolicyContractError,
-        match="guideline_impact_adoption_flag_invalid",
-    ):
-        replace(
-            preview.receipt,
-            requires_explicit_adoption=invalid_flag,
-        )
-
-
-def test_adoption_event_rejects_malformed_shape_and_rule_sets() -> None:
-    *_, mutation = _historical_adoption()
-
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_adoption_event_actor_type_invalid",
-    ):
-        replace(mutation.event, actor_type="robot")
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_adoption_event_to_revision_invalid",
-    ):
-        replace(mutation.event, to_revision_digest=None)
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_adoption_event_rule_sets_overlap",
-    ):
-        replace(
-            mutation.event,
-            changed_rule_ids=mutation.event.added_rule_ids,
-        )
-
-
-def test_adoption_mutation_rejects_bundle_tampering() -> None:
-    *_, mutation = _historical_adoption()
-
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_adoption_mutation_payload_invalid",
-    ):
-        replace(mutation, activity_action="not-adoption")
-    event_tampering = (
-        {
-            "to_revision_id": "guideline-1-revision-99",
-            "to_semantic_version": "9.9.9",
-            "to_revision_digest": "9" * 64,
-        },
-        {"binding_digest_before": "8" * 64},
-        {"binding_head_digest_before": "7" * 64},
-        {"binding_head_digest_after": "6" * 64},
-        {"policy_set_digest_before": "5" * 64},
-        {"policy_set_digest_after": "4" * 64},
-        {"added_rule_ids": ("rule-99",)},
-        {"changed_rule_ids": ("rule-99",)},
-        {"removed_rule_ids": ("rule-99",)},
-    )
-    for changes in event_tampering:
-        with pytest.raises(
-            GuidelineImpactError,
-            match="guideline_adoption_mutation_payload_invalid",
-        ):
-            replace(
-                mutation,
-                event=replace(
-                    mutation.event,
-                    **changes,
-                ),
-            )
-
-
-def test_unlink_planner_seals_event_activity_lineage_and_idempotency() -> None:
-    current_revision = _revision(1, rules=(_rule(), _rule("rule-2")))
-    current_binding = _binding(
-        current_revision,
-        source_kind=GuidelineBindingProvenance.DEFAULT_MATERIALIZATION,
-    )
-    other_revision = _revision(1, guideline_id="guideline-2")
-    other_binding = _binding(
-        other_revision,
-        binding_id="binding-2",
-        priority=1,
-    )
-    arguments = {
-        "current_binding": current_binding,
-        "current_revision": current_revision,
-        "active_bindings": (current_binding, other_binding),
-        "active_revisions": (current_revision, other_revision),
-        "retirement": None,
-        "actor_id": "agent-1",
-        "actor_type": "agent",
-        "occurred_at": NOW + timedelta(minutes=20),
-        "event_id": "event-unlink-1",
-        "idempotency_key": "unlink:1",
+    assert mutation.binding.enforcement is GuidelineEnforcement.BLOCKING
+    assert mutation.binding.minimum_confidence == 85
+    assert dict(mutation.binding.metric_threshold_overrides) == {
+        "segregation": 92
     }
-
-    mutation = plan_guideline_unlink(**arguments)
-    replay = plan_guideline_unlink(**arguments)
-
-    assert replay == mutation
-    assert mutation.idempotency_key == "unlink:1"
-    assert mutation.binding.state is GuidelineBindingState.UNLINKED
-    assert mutation.binding.source_kind is current_binding.source_kind
-    assert mutation.binding.binding_revision == 2
-    assert mutation.binding.revision_id == current_binding.revision_id
-    assert mutation.activity_action == GUIDELINE_UNLINK_ACTIVITY_ACTION
-    assert mutation.activity_action != GUIDELINE_ADOPTION_ACTIVITY_ACTION
-    assert mutation.event.operation == "unlink"
-    assert mutation.event.from_revision_id == current_binding.revision_id
-    assert mutation.event.to_revision_id is None
-    assert mutation.event.removed_rule_ids == ("rule-1", "rule-2")
-    assert mutation.event.binding_head_digest_before == (
-        policy_binding_head_digest_v1((other_binding, current_binding))
-    )
-    assert mutation.event.binding_head_digest_after == (
-        policy_binding_head_digest_v1((other_binding,))
-    )
-    assert mutation.event.policy_set_digest_before == policy_set_digest_v1(
-        (other_binding, current_binding),
-        (other_revision, current_revision),
-    )
-    assert mutation.event.policy_set_digest_after == policy_set_digest_v1(
-        (other_binding,),
-        (other_revision,),
-    )
     payload = mutation.event.payload()
-    assert payload["policy_set_digest"] == payload["policy_set_digest_after"]
-    assert payload["binding_revision"] == 2
+    assert payload["added_metric_ids"] == ("metric-dependency",)
+    assert "added_rule_ids" not in payload
 
 
-def test_unlink_event_and_mutation_reject_lineage_tampering() -> None:
-    revision = _revision(1)
-    binding = _binding(revision)
+def test_unlink_preserves_config_on_tombstone_and_removes_metric_ids() -> None:
+    revision = _revision(
+        1,
+        metrics=(
+            _metric(),
+            _metric("metric-dependency", code="dependency_direction"),
+        ),
+    )
+    binding = _binding(
+        revision,
+        enforcement=GuidelineEnforcement.BLOCKING,
+        minimum_confidence=88,
+        overrides={"segregation": 91},
+    )
     mutation = plan_guideline_unlink(
         current_binding=binding,
         current_revision=revision,
@@ -663,175 +561,61 @@ def test_unlink_event_and_mutation_reject_lineage_tampering() -> None:
         actor_id="agent-1",
         actor_type="agent",
         occurred_at=NOW + timedelta(minutes=20),
-        event_id="event-unlink-tamper",
-        idempotency_key="unlink:tamper",
+        event_id="event-unlink-1",
+        idempotency_key="unlink:1",
     )
 
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_adoption_event_unlink_shape_invalid",
-    ):
-        replace(mutation.event, impact_digest="f" * 64)
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_unlink_mutation_payload_invalid",
-    ):
-        replace(
-            mutation,
-            event=replace(
-                mutation.event,
-                from_revision_id="guideline-1-revision-99",
-                from_semantic_version="9.9.9",
-                from_revision_digest="9" * 64,
-            ),
-        )
-    event_tampering = (
-        {"binding_digest_before": "8" * 64},
-        {"binding_head_digest_before": "7" * 64},
-        {"binding_head_digest_after": "6" * 64},
-        {"policy_set_digest_before": "5" * 64},
-        {"policy_set_digest_after": "4" * 64},
-        {"removed_rule_ids": ("rule-99",)},
+    assert mutation.activity_action == GUIDELINE_UNLINK_ACTIVITY_ACTION
+    assert mutation.binding.state is GuidelineBindingState.UNLINKED
+    assert mutation.binding.enforcement is GuidelineEnforcement.BLOCKING
+    assert mutation.binding.minimum_confidence == 88
+    assert dict(mutation.binding.metric_threshold_overrides) == {
+        "segregation": 91
+    }
+    assert mutation.removed_metric_ids == (
+        "metric-dependency",
+        "metric-segregation",
     )
-    for changes in event_tampering:
-        with pytest.raises(
-            GuidelineImpactError,
-            match="guideline_unlink_mutation_payload_invalid",
-        ):
-            replace(
-                mutation,
-                event=replace(mutation.event, **changes),
-            )
+    assert mutation.event.removed_metric_ids == mutation.removed_metric_ids
 
 
-def _retirement(
-    revision: GuidelineRevision,
-    *,
-    status: GuidelineLifecycleStatus = GuidelineLifecycleStatus.RETIRED,
-) -> GuidelineRetirement:
-    return GuidelineRetirement(
+def test_retirement_impact_uses_semantic_metric_lineage() -> None:
+    revision = _revision(
+        1,
+        metrics=(
+            _metric(),
+            _metric("metric-dependency", code="dependency_direction"),
+        ),
+    )
+    binding = _binding(revision)
+    retirement = GuidelineRetirement(
         retirement_id="retirement-1",
         guideline_id=revision.guideline_id,
-        status=status,
+        status=GuidelineLifecycleStatus.RETIRED,
         retired_revision_id=revision.revision_id,
         retired_revision_number=revision.revision_number,
         retired_semantic_version=revision.semantic_version,
-        retired_revision_digest=revision.content_digest,
+        retired_revision_digest=revision.revision_digest,
         retired_head_revision=revision.revision_number,
-        reason="Policy is no longer applicable.",
+        reason="Superseded operational guidance.",
         retired_by="agent-1",
         retired_at=NOW + timedelta(minutes=30),
-        superseded_by_guideline_id=(
-            "guideline-successor"
-            if status is GuidelineLifecycleStatus.SUPERSEDED
-            else None
-        ),
     )
-
-
-def test_retirement_planner_seals_one_board_tombstone_and_activity() -> None:
-    current_revision = _revision(1, rules=(_rule(), _rule("rule-2")))
-    current_binding = _binding(current_revision, priority=10)
-    other_revision = _revision(1, guideline_id="guideline-2")
-    other_binding = _binding(
-        other_revision,
-        binding_id="binding-2",
-        priority=1,
-    )
-    retirement = _retirement(current_revision)
-    arguments = {
-        "retirement": retirement,
-        "current_binding": current_binding,
-        "current_revision": current_revision,
-        "active_bindings": (current_binding, other_binding),
-        "active_revisions": (current_revision, other_revision),
-        "actor_type": "agent",
-        "request_digest": "a" * 64,
-    }
-
-    mutation = plan_guideline_retirement_impact(**arguments)
-    replay = plan_guideline_retirement_impact(**arguments)
-
-    assert replay == mutation
-    assert mutation.event.event_type == GUIDELINE_RETIREMENT_EVENT_TYPE
-    assert mutation.event.operation == "retire"
-    assert mutation.event.retirement_id == retirement.retirement_id
-    assert mutation.event.binding_id == current_binding.binding_id
-    assert mutation.event.removed_rule_ids == ("rule-1", "rule-2")
-    assert mutation.activity_action == GUIDELINE_RETIREMENT_ACTIVITY_ACTION
-    assert mutation.event.binding_head_digest_before == (
-        policy_binding_head_digest_v1((other_binding, current_binding))
-    )
-    assert mutation.event.binding_head_digest_after == (
-        policy_binding_head_digest_v1((other_binding,))
-    )
-    assert mutation.event.policy_set_digest_before == policy_set_digest_v1(
-        (other_binding, current_binding),
-        (other_revision, current_revision),
-    )
-    assert mutation.event.policy_set_digest_after == policy_set_digest_v1(
-        (other_binding,),
-        (other_revision,),
-    )
-    payload = mutation.event.payload()
-    assert payload["policy_set_digest"] == payload["policy_set_digest_after"]
-    assert payload["request_digest"] == "a" * 64
-
-
-def test_retirement_impact_preserves_a_board_historical_revision_pin() -> None:
-    pinned_revision = _revision(1)
-    terminal_head = _revision(2)
-    binding = _binding(pinned_revision)
-
     mutation = plan_guideline_retirement_impact(
-        retirement=_retirement(terminal_head),
-        current_binding=binding,
-        current_revision=pinned_revision,
-        active_bindings=(binding,),
-        active_revisions=(pinned_revision,),
-        actor_type="agent",
-        request_digest="c" * 64,
-    )
-
-    assert mutation.retirement.retired_revision_id == (terminal_head.revision_id)
-    assert mutation.event.revision_id == pinned_revision.revision_id
-    assert mutation.event.revision_number == pinned_revision.revision_number
-    assert mutation.event.revision_digest == pinned_revision.content_digest
-
-
-def test_retirement_mutation_rejects_lineage_tampering() -> None:
-    revision = _revision(1)
-    binding = _binding(revision)
-    mutation = plan_guideline_retirement_impact(
-        retirement=_retirement(revision),
+        retirement=retirement,
         current_binding=binding,
         current_revision=revision,
         active_bindings=(binding,),
         active_revisions=(revision,),
         actor_type="agent",
-        request_digest="b" * 64,
+        request_digest="c" * 64,
     )
 
-    with pytest.raises(
-        GuidelineImpactError,
-        match="guideline_retirement_impact_payload_invalid",
-    ):
-        replace(mutation, activity_action="guideline_deleted")
-    event_tampering = (
-        {"binding_digest_before": "8" * 64},
-        {"binding_head_digest_before": "7" * 64},
-        {"binding_head_digest_after": "6" * 64},
-        {"policy_set_digest_before": "5" * 64},
-        {"policy_set_digest_after": "4" * 64},
-        {"removed_rule_ids": ("rule-99",)},
-        {"revision_id": "guideline-1-revision-99"},
+    assert mutation.activity_action == GUIDELINE_RETIREMENT_ACTIVITY_ACTION
+    assert mutation.event.event_type == GUIDELINE_RETIREMENT_EVENT_TYPE
+    assert mutation.event.removed_metric_ids == (
+        "metric-dependency",
+        "metric-segregation",
     )
-    for changes in event_tampering:
-        with pytest.raises(
-            GuidelineImpactError,
-            match="guideline_retirement_impact_payload_invalid",
-        ):
-            replace(
-                mutation,
-                event=replace(mutation.event, **changes),
-            )
+    assert "removed_rule_ids" not in mutation.event.payload()
+    assert mutation.impact_digest

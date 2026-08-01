@@ -86,6 +86,82 @@ def test_semantic_manifests_exclude_status_scope_quality_and_mockups() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("subject_type", "payload", "semantic_field", "changed_value"),
+    (
+        (
+            "card",
+            {
+                "title": "Implement boundary",
+                "description": "Add the application seam.",
+                "details": "Keep adapters outside Core.",
+                "card_type": "normal",
+                "conclusions": [
+                    {
+                        "text": "The seam is complete.",
+                        "author_id": "agent-1",
+                        "created_at": "2026-07-30T18:00:00Z",
+                    }
+                ],
+            },
+            "details",
+            "Move persistence into Core.",
+        ),
+        (
+            "sprint",
+            {
+                "title": "Semantic guideline delivery",
+                "description": "Deliver the vertical.",
+                "objective": "Keep policy assessment cognitive.",
+                "expected_outcome": "Immutable receipts.",
+                "lane_type": "normal",
+                "test_scenario_ids": ["ts-1"],
+                "business_rule_ids": ["br-1"],
+            },
+            "objective",
+            "Execute policy predicates.",
+        ),
+        (
+            "test_scenario",
+            {
+                "title": "Reject low confidence",
+                "linked_criteria": ["ac-10"],
+                "scenario_type": "negative",
+                "given": "A blocking binding",
+                "when": "Confidence is below the minimum",
+                "then": "No receipt is created",
+                "notes": "Deterministic admission.",
+            },
+            "then",
+            "A receipt is created",
+        ),
+    ),
+)
+def test_semantic_content_digest_supports_all_policy_subject_families(
+    subject_type: str,
+    payload: dict,
+    semantic_field: str,
+    changed_value: object,
+) -> None:
+    baseline = semantic_content_digest_v1(subject_type, payload)
+    assert baseline != semantic_content_digest_v1(
+        subject_type,
+        {**payload, semantic_field: changed_value},
+    )
+    assert baseline == semantic_content_digest_v1(
+        subject_type,
+        {
+            **payload,
+            "status": "done",
+            "evidence": {"outcome": "failed"},
+            "latest_evidence": {"outcome": "passed"},
+            "created_by": "another-actor",
+            "updated_at": "2026-07-31T00:00:00Z",
+            "labels": ["metadata-only"],
+        },
+    )
+
+
 def test_spec_semantic_snapshot_excludes_volatile_nested_metadata() -> None:
     payload = {
         "title": "Spec",
@@ -385,4 +461,4 @@ def test_semantic_manifest_distinguishes_absent_from_empty() -> None:
 
 def test_semantic_manifest_rejects_unsupported_subject_type() -> None:
     with pytest.raises(CanonicalizationError, match="unsupported_subject_type"):
-        semantic_snapshot_v1("card", {})
+        semantic_snapshot_v1("board", {})

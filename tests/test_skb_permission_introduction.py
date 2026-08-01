@@ -1,14 +1,22 @@
-"""SK-B/v1 permission introduction and ordered-manifest regression coverage."""
+"""SK-B3/v1 permission introduction and ordered-manifest regression coverage."""
 
 from __future__ import annotations
 
 import copy
 
 from okto_pulse.core.domain.permissions import (
+    GUIDELINE_ADOPTION_MANAGE,
+    GUIDELINE_ASSESSMENTS_READ,
+    GUIDELINE_ASSESSMENTS_RECORD,
+    GUIDELINE_IMPACT_PREVIEW,
+    GUIDELINE_METRICS_AUTHOR,
+    GUIDELINE_REVISIONS_CREATE,
+    GUIDELINE_REVISIONS_READ,
+    GUIDELINE_REVISIONS_RETIRE,
     PERMISSION_INTRODUCTION_MANIFESTS,
     PermissionSet,
     SKA_PERMISSION_INTRODUCTION_V1,
-    SKB_PERMISSION_INTRODUCTION_V1,
+    SKB3_PERMISSION_INTRODUCTION_V1,
     _get_nested,
     get_builtin_presets,
     map_legacy_permissions,
@@ -19,19 +27,19 @@ from okto_pulse.core.domain.permissions import (
 from okto_pulse.core.ports.permission_policy import (
     permission_introduction_manifests,
     registered_permission_flags,
-    skb_permission_introduction_v1,
+    skb3_permission_introduction_v1,
 )
 
 
 LEAVES = {
-    "guidelines.revisions.read",
-    "guidelines.revisions.create",
-    "guidelines.revisions.retire",
-    "guidelines.rules.author_blocking",
-    "guidelines.impact.preview",
-    "guidelines.adoption.manage",
-    "guidelines.compliance.read",
-    "guidelines.compliance.evaluate",
+    GUIDELINE_REVISIONS_READ,
+    GUIDELINE_REVISIONS_CREATE,
+    GUIDELINE_REVISIONS_RETIRE,
+    GUIDELINE_METRICS_AUTHOR,
+    GUIDELINE_IMPACT_PREVIEW,
+    GUIDELINE_ADOPTION_MANAGE,
+    GUIDELINE_ASSESSMENTS_READ,
+    GUIDELINE_ASSESSMENTS_RECORD,
     "guidelines.waiver.read",
     "guidelines.waiver.request",
     "guidelines.waiver.review",
@@ -40,14 +48,14 @@ LEAVES = {
 }
 
 AUTHORITIES = {
-    "guidelines.revisions.read": "guidelines.read",
-    "guidelines.revisions.create": "spec.entity.edit_fields",
-    "guidelines.revisions.retire": "guidelines.delete",
-    "guidelines.rules.author_blocking": "spec.entity.edit_fields",
-    "guidelines.impact.preview": "guidelines.read",
-    "guidelines.adoption.manage": "spec.entity.edit_fields",
-    "guidelines.compliance.read": "guidelines.read",
-    "guidelines.compliance.evaluate": "guidelines.read",
+    GUIDELINE_REVISIONS_READ: "guidelines.read",
+    GUIDELINE_REVISIONS_CREATE: "spec.entity.edit_fields",
+    GUIDELINE_REVISIONS_RETIRE: "guidelines.delete",
+    GUIDELINE_METRICS_AUTHOR: "spec.entity.edit_fields",
+    GUIDELINE_IMPACT_PREVIEW: "guidelines.read",
+    GUIDELINE_ADOPTION_MANAGE: "spec.entity.edit_fields",
+    GUIDELINE_ASSESSMENTS_READ: "guidelines.read",
+    GUIDELINE_ASSESSMENTS_RECORD: "guidelines.read",
     "guidelines.waiver.read": "guidelines.read",
     "guidelines.waiver.request": "guidelines.read",
     "guidelines.waiver.review": "spec.validation.submit",
@@ -58,50 +66,49 @@ AUTHORITIES = {
 PRESET_GRANTS = {
     "Full Control": LEAVES,
     "Spec": {
-        "guidelines.revisions.read",
-        "guidelines.revisions.create",
-        "guidelines.rules.author_blocking",
-        "guidelines.impact.preview",
-        "guidelines.adoption.manage",
-        "guidelines.compliance.read",
-        "guidelines.compliance.evaluate",
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_REVISIONS_CREATE,
+        GUIDELINE_METRICS_AUTHOR,
+        GUIDELINE_IMPACT_PREVIEW,
+        GUIDELINE_ADOPTION_MANAGE,
+        GUIDELINE_ASSESSMENTS_READ,
+        GUIDELINE_ASSESSMENTS_RECORD,
         "guidelines.waiver.read",
         "guidelines.waiver.request",
     },
     "Validator": {
-        "guidelines.revisions.read",
-        "guidelines.impact.preview",
-        "guidelines.compliance.read",
-        "guidelines.compliance.evaluate",
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_IMPACT_PREVIEW,
+        GUIDELINE_ASSESSMENTS_READ,
+        GUIDELINE_ASSESSMENTS_RECORD,
         "guidelines.waiver.read",
         "guidelines.waiver.review",
         "guidelines.waiver.revalidate",
     },
     "QA": {
-        "guidelines.revisions.read",
-        "guidelines.compliance.read",
-        "guidelines.compliance.evaluate",
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_ASSESSMENTS_READ,
+        GUIDELINE_ASSESSMENTS_RECORD,
         "guidelines.waiver.read",
         "guidelines.waiver.request",
     },
     "Reporter": {
-        "guidelines.revisions.read",
-        "guidelines.impact.preview",
-        "guidelines.compliance.read",
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_ASSESSMENTS_READ,
         "guidelines.waiver.read",
     },
     "Sprint Manager": {
-        "guidelines.revisions.read",
-        "guidelines.impact.preview",
-        "guidelines.compliance.read",
-        "guidelines.compliance.evaluate",
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_IMPACT_PREVIEW,
+        GUIDELINE_ASSESSMENTS_READ,
+        GUIDELINE_ASSESSMENTS_RECORD,
         "guidelines.waiver.read",
         "guidelines.waiver.request",
     },
     "Executor": {
-        "guidelines.revisions.read",
-        "guidelines.compliance.read",
-        "guidelines.compliance.evaluate",
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_ASSESSMENTS_READ,
+        GUIDELINE_ASSESSMENTS_RECORD,
         "guidelines.waiver.read",
         "guidelines.waiver.request",
     },
@@ -121,15 +128,15 @@ def _set(flags: dict, path: str, value: bool) -> None:
 
 
 def test_public_manifest_tuple_is_ordered_unique_and_exact() -> None:
-    assert SKB_PERMISSION_INTRODUCTION_V1.version == "SK-B/v1"
-    assert set(SKB_PERMISSION_INTRODUCTION_V1.leaves) == LEAVES
-    assert len(SKB_PERMISSION_INTRODUCTION_V1.leaves) == 13
-    assert dict(SKB_PERMISSION_INTRODUCTION_V1.historical_authorities) == AUTHORITIES
-    assert skb_permission_introduction_v1() is SKB_PERMISSION_INTRODUCTION_V1
+    assert SKB3_PERMISSION_INTRODUCTION_V1.version == "SK-B3/v1"
+    assert set(SKB3_PERMISSION_INTRODUCTION_V1.leaves) == LEAVES
+    assert len(SKB3_PERMISSION_INTRODUCTION_V1.leaves) == 13
+    assert dict(SKB3_PERMISSION_INTRODUCTION_V1.historical_authorities) == AUTHORITIES
+    assert skb3_permission_introduction_v1() is SKB3_PERMISSION_INTRODUCTION_V1
     assert permission_introduction_manifests() is PERMISSION_INTRODUCTION_MANIFESTS
     assert PERMISSION_INTRODUCTION_MANIFESTS == (
         SKA_PERMISSION_INTRODUCTION_V1,
-        SKB_PERMISSION_INTRODUCTION_V1,
+        SKB3_PERMISSION_INTRODUCTION_V1,
     )
     flattened = [
         leaf
@@ -153,6 +160,27 @@ def test_builtin_preset_matrix_is_exact_and_full_control_propagates() -> None:
     assert _values(presets["Full Control"]) == {leaf: True for leaf in LEAVES}
     assert presets["Full Control"]["guidelines"]["read"] is True
     assert presets["Full Control"]["guidelines"]["edit"] is True
+    assert {
+        leaf
+        for leaf, enabled in _values(presets["Reporter"]).items()
+        if enabled
+    } == {
+        GUIDELINE_REVISIONS_READ,
+        GUIDELINE_ASSESSMENTS_READ,
+        "guidelines.waiver.read",
+    }
+
+
+def test_retired_policy_v1_and_human_skip_leaves_are_not_exposed() -> None:
+    registry = registered_permission_flags()
+    retired = (
+        "guidelines.rules.author_blocking",
+        "guidelines.compliance.read",
+        "guidelines.compliance.evaluate",
+    )
+    assert all(_get_nested(registry, leaf) is None for leaf in retired)
+    assert all(leaf not in LEAVES for leaf in retired)
+    assert all("skip" not in leaf for leaf in LEAVES)
 
 
 def test_introduced_leaves_fail_closed_and_require_historical_authority() -> None:
@@ -222,15 +250,15 @@ def test_ordered_normalization_upgrades_full_control_without_custom_elevation() 
     spec = presets["Spec"]
 
     # A materialized snapshot from the SK-A era has every historical/SK-A flag
-    # but no SK-B generation.  It normalizes to the trusted Full Control
+    # but no SK-B3 generation.  It normalizes to the trusted Full Control
     # sentinel so the new manifest propagates automatically.
     ska_era_full = copy.deepcopy(full)
     for branch in (
         "revisions",
-        "rules",
+        "metrics",
         "impact",
         "adoption",
-        "compliance",
+        "assessments",
         "waiver",
     ):
         del ska_era_full["guidelines"][branch]
@@ -239,10 +267,10 @@ def test_ordered_normalization_upgrades_full_control_without_custom_elevation() 
     ska_era_spec = copy.deepcopy(spec)
     for branch in (
         "revisions",
-        "rules",
+        "metrics",
         "impact",
         "adoption",
-        "compliance",
+        "assessments",
         "waiver",
     ):
         del ska_era_spec["guidelines"][branch]
@@ -251,16 +279,16 @@ def test_ordered_normalization_upgrades_full_control_without_custom_elevation() 
     # Sparse deltas are modern explicit choices, not migration fingerprints.
     custom_false = {
         "guidelines": {
-            "compliance": {"evaluate": False},
+            "assessments": {"record": False},
             "waiver": {"request": False},
         }
     }
     assert normalize_agent_permission_overrides(custom_false, spec) == custom_false
     resolved = resolve_permissions(custom_false, spec, None)
-    assert resolved.has("guidelines.compliance.evaluate") is False
+    assert resolved.has(GUIDELINE_ASSESSMENTS_RECORD) is False
     assert resolved.has("guidelines.waiver.request") is False
-    assert resolved.has("guidelines.revisions.create") is True
-    assert resolved.has("guidelines.impact.preview") is True
+    assert resolved.has(GUIDELINE_REVISIONS_CREATE) is True
+    assert resolved.has(GUIDELINE_IMPACT_PREVIEW) is True
 
     # A mixed materialized generation is explicit as a complete generation.
     # Keeping every value prevents a later preset reconciliation from turning
@@ -284,34 +312,34 @@ def test_ordered_normalization_upgrades_full_control_without_custom_elevation() 
     partial_normalized = normalize_agent_permission_overrides(partial_full)
     assert partial_normalized is not None
     assert _values(partial_normalized) == {
-        leaf: leaf == "guidelines.revisions.read" for leaf in LEAVES
+        leaf: leaf == GUIDELINE_REVISIONS_READ for leaf in LEAVES
     }
     partial_resolved = resolve_permissions(partial_normalized, None, None)
-    assert partial_resolved.has("guidelines.revisions.read") is True
+    assert partial_resolved.has(GUIDELINE_REVISIONS_READ) is True
     assert all(
         not partial_resolved.has(leaf)
-        for leaf in LEAVES - {"guidelines.revisions.read"}
+        for leaf in LEAVES - {GUIDELINE_REVISIONS_READ}
     )
 
     partial_spec = copy.deepcopy(ska_era_spec)
-    partial_spec["guidelines"]["compliance"] = {"evaluate": True}
+    partial_spec["guidelines"]["assessments"] = {"record": True}
     partial_spec_normalized = normalize_agent_permission_overrides(
         partial_spec,
         spec,
     )
     assert partial_spec_normalized is not None
     assert _values(partial_spec_normalized) == {
-        leaf: leaf == "guidelines.compliance.evaluate" for leaf in LEAVES
+        leaf: leaf == GUIDELINE_ASSESSMENTS_RECORD for leaf in LEAVES
     }
     partial_spec_resolved = resolve_permissions(
         partial_spec_normalized,
         spec,
         None,
     )
-    assert partial_spec_resolved.has("guidelines.compliance.evaluate") is True
+    assert partial_spec_resolved.has(GUIDELINE_ASSESSMENTS_RECORD) is True
     assert all(
         not partial_spec_resolved.has(leaf)
-        for leaf in LEAVES - {"guidelines.compliance.evaluate"}
+        for leaf in LEAVES - {GUIDELINE_ASSESSMENTS_RECORD}
     )
 
     all_false_full = copy.deepcopy(full)

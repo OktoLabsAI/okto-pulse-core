@@ -1,4 +1,4 @@
-"""Transport-free ``guideline-export/v2`` codec and atomic import planner.
+"""Transport-free ``guideline-export/v3`` codec and atomic import planner.
 
 The contract deliberately keeps persistence and transport concerns outside the
 domain.  It serializes the complete immutable guideline aggregate, validates
@@ -6,11 +6,10 @@ the complete envelope before exposing a plan, and never authorizes an
 overwrite.  A persistence adapter may apply a non-dry-run, conflict-free plan
 inside one unit of work.
 
-Legacy ``schema_version=1`` guideline envelopes are accepted only through the
-dispatcher.  Because v1 did not carry stable identities, immutable history, or
-executable rules, every item is converted into a deterministic contextual
-``1.0.0`` baseline with no bindings.  Blocking-like legacy flags are recorded
-as diagnostics but never become executable policy.
+Legacy ``schema_version=1`` and rule-empty ``schema_version=2`` envelopes are
+accepted only through the dispatcher and become context-only semantic
+guidelines with no bindings.  Executable v2 rules are rejected because no
+lossless rule-to-rubric conversion exists.
 """
 
 from __future__ import annotations
@@ -21,10 +20,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
-from okto_pulse.core.domain.guideline_lifecycle import (
-    GuidelineLifecycleError,
-    guideline_revision_content_digest_v1,
-)
 from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_BINDING_ID_MAX_LENGTH,
     GUIDELINE_BINDING_ORIGIN_MAX_LENGTH,
@@ -40,26 +35,34 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineEnforcement,
     GuidelineHead,
     GuidelineLifecycleStatus,
+    GuidelineMetric,
+    GuidelineMetricDirection,
     GuidelinePolicyContractError,
-    GuidelinePredicate,
     GuidelineRetirement,
     GuidelineRevision,
-    GuidelineRule,
-    GuidelineRuleOperator,
     GuidelineScope,
     POLICY_ACTOR_ID_MAX_LENGTH,
     POLICY_BOARD_ID_MAX_LENGTH,
     POLICY_SQL_INTEGER_MAX,
     PolicyEntityType,
+    guideline_revision_digest_v2,
     normalize_guideline_semantic_version,
     normalize_guideline_sha256,
+)
+from okto_pulse.core.domain.guideline_lifecycle import (
+    GuidelineLifecycleError,
+    SemanticVersion,
+    classify_guideline_change,
+    validate_binding_transition,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_json_bytes
 
 
-GUIDELINE_EXPORT_CONTRACT_VERSION = "guideline-export/v2"
-GUIDELINE_EXPORT_SCHEMA_VERSION = "2"
+GUIDELINE_EXPORT_CONTRACT_VERSION = "guideline-export/v3"
+GUIDELINE_EXPORT_SCHEMA_VERSION = "3"
 GUIDELINE_EXPORT_KIND = "guidelines"
+GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION = "guideline-export/v2"
+GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION = "2"
 GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION = "1"
 GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION = "1.0.0"
 GUIDELINE_EXPORT_LEGACY_OWNER = "legacy-import"
@@ -82,6 +85,11 @@ _LEGACY_ITEM_FIELDS = frozenset(
         "enforcement",
         "rules",
     }
+)
+_LEGACY_EXECUTABLE_RULES_MESSAGE = (
+    "schema v2 executable rules cannot be migrated safely; remove the rules "
+    "to import context-only, or re-author them as semantic metrics and export "
+    "a schema v3 document"
 )
 
 
@@ -402,7 +410,7 @@ class GuidelineExportRevision:
 
     @property
     def revision_digest(self) -> str:
-        return self.revision.content_digest
+        return self.revision.revision_digest
 
     @property
     def legacy_version_as_int(self) -> int | None:
@@ -604,22 +612,34 @@ class GuidelineExportAggregate:
             raise GuidelineImportExportError(
                 "guideline_export_duplicate_semantic_version"
             )
+        if revisions[0].semantic_version != "1.0.0":
+            raise GuidelineImportExportError(
+                "guideline_export_initial_semantic_version_invalid",
+                path="$.revisions[0].semantic_version",
+            )
+        if self.identity.created_at > revisions[0].revision.created_at:
+            raise GuidelineImportExportError(
+                "guideline_export_identity_time_after_initial_revision",
+                path="$.identity.created_at",
+            )
         previous_published_head_updated_at: datetime | None = None
+        previous_revision: GuidelineRevision | None = None
         for index, exported_revision in enumerate(revisions):
             revision = exported_revision.revision
             try:
-                digest = guideline_revision_content_digest_v1(
+                digest = guideline_revision_digest_v2(
+                    semantic_version=revision.semantic_version,
                     title=revision.title,
                     content=revision.content,
-                    rules=revision.rules,
+                    metrics=revision.metrics,
                     tags=revision.tags,
                 )
-            except GuidelineLifecycleError as exc:
+            except GuidelinePolicyContractError as exc:
                 raise _domain_error(exc, f"$.revisions[{index}]") from exc
-            if digest != revision.content_digest:
+            if digest != revision.revision_digest:
                 raise GuidelineImportExportError(
                     "guideline_export_revision_digest_mismatch",
-                    path=f"$.revisions[{index}].content_digest",
+                    path=f"$.revisions[{index}].revision_digest",
                 )
             expected_parent = None if index == 0 else revisions[index - 1].revision_id
             if revision.parent_revision_id != expected_parent:
@@ -627,6 +647,37 @@ class GuidelineExportAggregate:
                     "guideline_export_revision_parent_mismatch",
                     path=f"$.revisions[{index}].parent_revision_id",
                 )
+            if previous_revision is not None:
+                if revision.created_at <= previous_revision.created_at:
+                    raise GuidelineImportExportError(
+                        "guideline_export_revision_time_not_monotonic",
+                        path=f"$.revisions[{index}].created_at",
+                    )
+                minimum_bump = classify_guideline_change(
+                    previous_revision,
+                    title=revision.title,
+                    content=revision.content,
+                    tags=revision.tags,
+                    metrics=revision.metrics,
+                )
+                if minimum_bump is None:
+                    raise GuidelineImportExportError(
+                        "guideline_export_revision_noop",
+                        path=f"$.revisions[{index}]",
+                    )
+                previous_version = SemanticVersion.parse(
+                    previous_revision.semantic_version
+                )
+                proposed_version = SemanticVersion.parse(
+                    revision.semantic_version
+                )
+                if proposed_version < previous_version.minimum_successor(
+                    minimum_bump
+                ):
+                    raise GuidelineImportExportError(
+                        "guideline_export_semantic_version_below_minimum",
+                        path=f"$.revisions[{index}].semantic_version",
+                    )
             if (
                 previous_published_head_updated_at is not None
                 and exported_revision.published_head_updated_at
@@ -639,6 +690,7 @@ class GuidelineExportAggregate:
             previous_published_head_updated_at = (
                 exported_revision.published_head_updated_at
             )
+            previous_revision = revision
 
         latest = revisions[-1].revision
         if (
@@ -664,11 +716,16 @@ class GuidelineExportAggregate:
                 or retirement.retired_revision_id != latest.revision_id
                 or retirement.retired_revision_number != latest.revision_number
                 or retirement.retired_semantic_version != latest.semantic_version
-                or retirement.retired_revision_digest != latest.content_digest
+                or retirement.retired_revision_digest != latest.revision_digest
                 or retirement.retired_head_revision != self.head.head_revision
             ):
                 raise GuidelineImportExportError(
                     "guideline_export_retirement_head_mismatch"
+                )
+            if retirement.retired_at <= self.head.updated_at:
+                raise GuidelineImportExportError(
+                    "guideline_export_retirement_time_not_monotonic",
+                    path="$.retirement.retired_at",
                 )
 
         if not isinstance(self.bindings, tuple | list) or any(
@@ -686,9 +743,13 @@ class GuidelineExportAggregate:
             )
         )
         revisions_by_id = {item.revision_id: item.revision for item in revisions}
-        histories: dict[tuple[str, str], list[int]] = {}
+        histories: dict[
+            tuple[str, str],
+            list[BoardGuidelineBinding],
+        ] = {}
+        binding_id_by_board: dict[str, str] = {}
         binding_candidate_keys: set[tuple[str, str, int]] = set()
-        for exported_binding in bindings:
+        for index, exported_binding in enumerate(bindings):
             binding = exported_binding.binding
             if binding.guideline_id != identity_id:
                 raise GuidelineImportExportError(
@@ -698,10 +759,27 @@ class GuidelineExportAggregate:
             if (
                 revision is None
                 or revision.semantic_version != binding.semantic_version
-                or revision.content_digest != binding.revision_digest
+                or revision.revision_digest != binding.revision_digest
             ):
                 raise GuidelineImportExportError(
                     "guideline_export_binding_revision_mismatch"
+                )
+            if binding.adopted_at < revision.created_at:
+                raise GuidelineImportExportError(
+                    "guideline_export_binding_time_before_revision",
+                    path=f"$.bindings[{index}].binding.adopted_at",
+                )
+            unknown_override_codes = (
+                set(binding.metric_threshold_overrides)
+                - {metric.code for metric in revision.metrics}
+            )
+            if unknown_override_codes:
+                raise GuidelineImportExportError(
+                    "guideline_export_binding_metric_override_unknown",
+                    path=(
+                        f"$.bindings[{index}]"
+                        ".binding.metric_threshold_overrides"
+                    ),
                 )
             if (
                 self.identity.scope is GuidelineScope.INLINE
@@ -710,20 +788,40 @@ class GuidelineExportAggregate:
                 raise GuidelineImportExportError(
                     "guideline_export_inline_binding_board_mismatch"
                 )
+            stable_binding_id = binding_id_by_board.setdefault(
+                binding.board_id,
+                binding.binding_id,
+            )
+            if stable_binding_id != binding.binding_id:
+                raise GuidelineImportExportError(
+                    "guideline_export_binding_identity_not_stable",
+                    path=f"$.bindings[{index}].binding.binding_id",
+                )
             histories.setdefault(
                 (binding.board_id, binding.binding_id),
                 [],
-            ).append(binding.binding_revision)
+            ).append(binding)
             if exported_binding.candidate_key in binding_candidate_keys:
                 raise GuidelineImportExportError(
                     "guideline_export_duplicate_binding_revision"
                 )
             binding_candidate_keys.add(exported_binding.candidate_key)
-        for revisions_in_history in histories.values():
-            if revisions_in_history != list(range(1, len(revisions_in_history) + 1)):
+        for binding_history in histories.values():
+            if [item.binding_revision for item in binding_history] != list(
+                range(1, len(binding_history) + 1)
+            ):
                 raise GuidelineImportExportError(
                     "guideline_export_binding_history_incomplete"
                 )
+            previous_binding: BoardGuidelineBinding | None = None
+            for binding in binding_history:
+                try:
+                    validate_binding_transition(previous_binding, binding)
+                except GuidelineLifecycleError as exc:
+                    raise GuidelineImportExportError(
+                        "guideline_export_binding_history_invalid"
+                    ) from exc
+                previous_binding = binding
 
         if not isinstance(self.migration_notes, tuple | list) or any(
             not isinstance(item, str) or not item.strip()
@@ -736,7 +834,7 @@ class GuidelineExportAggregate:
                 raise GuidelineImportExportError(
                     "guideline_export_baseline_history_mismatch"
                 )
-            if revisions[0].revision.rules or bindings:
+            if revisions[0].revision.metrics or bindings:
                 raise GuidelineImportExportError(
                     "guideline_export_legacy_baseline_must_be_contextual"
                 )
@@ -755,17 +853,9 @@ class GuidelineExportAggregate:
 
     @property
     def contains_blocking_policy(self) -> bool:
-        revisions = {item.revision_id: item.revision for item in self.revisions}
         return any(
             exported_binding.binding.state is GuidelineBindingState.ACTIVE
-            and (
-                exported_binding.binding.default_enforcement
-                is GuidelineEnforcement.BLOCKING
-                or any(
-                    rule.enforcement is GuidelineEnforcement.BLOCKING
-                    for rule in revisions[exported_binding.binding.revision_id].rules
-                )
-            )
+            and exported_binding.binding.enforcement is GuidelineEnforcement.BLOCKING
             for exported_binding in self.bindings
         )
 
@@ -835,6 +925,7 @@ class GuidelineExportEnvelope:
             raise GuidelineImportExportError("guideline_export_kind_invalid")
         if self.source_schema_version not in {
             GUIDELINE_EXPORT_SCHEMA_VERSION,
+            GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION,
             GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION,
         }:
             raise GuidelineImportExportError(
@@ -925,7 +1016,7 @@ class ExistingGuidelineRevision:
             guideline_id=revision.guideline_id,
             revision_id=revision.revision_id,
             semantic_version=revision.semantic_version,
-            revision_digest=revision.content_digest,
+            revision_digest=revision.revision_digest,
         )
 
 
@@ -1432,33 +1523,18 @@ class GuidelineImportResult:
             raise GuidelineImportExportError("guideline_import_result_dry_run_invalid")
 
 
-def _predicate_payload(predicate: GuidelinePredicate) -> dict[str, object]:
+def _metric_payload(metric: GuidelineMetric) -> dict[str, object]:
     return {
-        "predicate_code": predicate.predicate_code,
-        "parameters": [
-            [
-                key,
-                list(value) if isinstance(value, tuple) else value,
-            ]
-            for key, value in predicate.parameters
-        ],
-    }
-
-
-def _rule_payload(rule: GuidelineRule) -> dict[str, object]:
-    return {
-        "rule_id": rule.rule_id,
-        "code": rule.code,
-        "title": rule.title,
-        "description": rule.description,
+        "metric_id": metric.metric_id,
+        "code": metric.code,
+        "title": metric.title,
+        "description": metric.description,
+        "evaluation_rubric": metric.evaluation_rubric,
         "target_entity_types": [
-            entity_type.value for entity_type in rule.target_entity_types
+            entity_type.value for entity_type in metric.target_entity_types
         ],
-        "predicates": [_predicate_payload(predicate) for predicate in rule.predicates],
-        "enforcement": rule.enforcement.value,
-        "operator": rule.operator.value,
-        "waivable": rule.waivable,
-        "policy_class": rule.policy_class,
+        "direction": metric.direction.value,
+        "default_threshold": metric.default_threshold,
     }
 
 
@@ -1471,8 +1547,8 @@ def _revision_payload(exported: GuidelineExportRevision) -> dict[str, object]:
         "semantic_version": revision.semantic_version,
         "title": revision.title,
         "content": revision.content,
-        "content_digest": revision.content_digest,
-        "rules": [_rule_payload(rule) for rule in revision.rules],
+        "revision_digest": revision.revision_digest,
+        "metrics": [_metric_payload(metric) for metric in revision.metrics],
         "created_by": revision.created_by,
         "created_at": _datetime_payload(revision.created_at),
         "parent_revision_id": revision.parent_revision_id,
@@ -1544,7 +1620,12 @@ def _binding_payload(binding: BoardGuidelineBinding) -> dict[str, object]:
         "binding_revision": binding.binding_revision,
         "adopted_by": binding.adopted_by,
         "adopted_at": _datetime_payload(binding.adopted_at),
-        "default_enforcement": binding.default_enforcement.value,
+        "enforcement": binding.enforcement.value,
+        "minimum_confidence": binding.minimum_confidence,
+        "metric_threshold_overrides": dict(
+            binding.metric_threshold_overrides
+        ),
+        "configuration_digest": binding.configuration_digest,
         "state": binding.state.value,
         "source_kind": binding.source_kind.value,
     }
@@ -1584,7 +1665,7 @@ def _content_digest(
     return canonical_guideline_sha256(_content_manifest(aggregates, source_board_id))
 
 
-def build_guideline_export_v2(
+def build_guideline_export_v3(
     snapshot: GuidelineExportSnapshot
     | tuple[GuidelineExportAggregate, ...]
     | list[GuidelineExportAggregate],
@@ -1592,7 +1673,7 @@ def build_guideline_export_v2(
     exported_at: datetime,
     source_board_id: str | None = None,
 ) -> GuidelineExportEnvelope:
-    """Build a canonical v2 envelope from one consistent snapshot."""
+    """Build a canonical v3 envelope from one consistent snapshot."""
 
     if isinstance(snapshot, GuidelineExportSnapshot):
         if source_board_id is not None and source_board_id != snapshot.source_board_id:
@@ -1619,10 +1700,27 @@ def build_guideline_export_v2(
     )
 
 
+def build_guideline_export_v2(
+    snapshot: GuidelineExportSnapshot
+    | tuple[GuidelineExportAggregate, ...]
+    | list[GuidelineExportAggregate],
+    *,
+    exported_at: datetime,
+    source_board_id: str | None = None,
+) -> GuidelineExportEnvelope:
+    """Deprecated import alias delegating to the semantic v3 builder."""
+
+    return build_guideline_export_v3(
+        snapshot,
+        exported_at=exported_at,
+        source_board_id=source_board_id,
+    )
+
+
 def guideline_export_payload(
     envelope: GuidelineExportEnvelope,
 ) -> dict[str, object]:
-    """Return the closed JSON-compatible v2 envelope."""
+    """Return the closed JSON-compatible v3 envelope."""
 
     if not isinstance(envelope, GuidelineExportEnvelope):
         raise GuidelineImportExportError("guideline_export_envelope_invalid")
@@ -1645,73 +1743,20 @@ def guideline_export_json_bytes(
     return canonical_guideline_json_bytes(guideline_export_payload(envelope))
 
 
-def _parse_predicate(raw: object, path: str) -> GuidelinePredicate:
-    value = _mapping(
-        raw,
-        "guideline_export_predicate_invalid",
-        path,
-    )
-    _closed(
-        value,
-        required=frozenset({"predicate_code", "parameters"}),
-        path=path,
-    )
-    parameters: list[tuple[str, object]] = []
-    for index, item in enumerate(
-        _sequence(
-            value["parameters"],
-            "guideline_export_predicate_parameters_invalid",
-            f"{path}.parameters",
-        )
-    ):
-        pair = _sequence(
-            item,
-            "guideline_export_predicate_parameter_invalid",
-            f"{path}.parameters[{index}]",
-        )
-        if len(pair) != 2:
-            raise GuidelineImportExportError(
-                "guideline_export_predicate_parameter_invalid",
-                path=f"{path}.parameters[{index}]",
-            )
-        parameter_value: object = pair[1]
-        if isinstance(parameter_value, list | tuple):
-            parameter_value = tuple(parameter_value)
-        parameters.append(
-            (
-                _required_text(
-                    pair[0],
-                    "guideline_export_predicate_parameter_key_invalid",
-                    f"{path}.parameters[{index}][0]",
-                ),
-                parameter_value,
-            )
-        )
-    try:
-        return GuidelinePredicate(
-            predicate_code=value["predicate_code"],
-            parameters=tuple(parameters),
-        )
-    except GuidelinePolicyContractError as exc:
-        raise _domain_error(exc, path) from exc
-
-
-def _parse_rule(raw: object, path: str) -> GuidelineRule:
-    value = _mapping(raw, "guideline_export_rule_invalid", path)
+def _parse_metric(raw: object, path: str) -> GuidelineMetric:
+    value = _mapping(raw, "guideline_export_metric_invalid", path)
     _closed(
         value,
         required=frozenset(
             {
-                "rule_id",
+                "metric_id",
                 "code",
                 "title",
                 "description",
+                "evaluation_rubric",
                 "target_entity_types",
-                "predicates",
-                "enforcement",
-                "operator",
-                "waivable",
-                "policy_class",
+                "direction",
+                "default_threshold",
             }
         ),
         path=path,
@@ -1720,53 +1765,36 @@ def _parse_rule(raw: object, path: str) -> GuidelineRule:
         _enum_value(
             item,
             PolicyEntityType,
-            "guideline_export_rule_target_invalid",
+            "guideline_export_metric_target_invalid",
             f"{path}.target_entity_types[{index}]",
         )
         for index, item in enumerate(
             _sequence(
                 value["target_entity_types"],
-                "guideline_export_rule_targets_invalid",
+                "guideline_export_metric_targets_invalid",
                 f"{path}.target_entity_types",
             )
         )
     )
-    predicates = tuple(
-        _parse_predicate(item, f"{path}.predicates[{index}]")
-        for index, item in enumerate(
-            _sequence(
-                value["predicates"],
-                "guideline_export_rule_predicates_invalid",
-                f"{path}.predicates",
-            )
-        )
-    )
     try:
-        return GuidelineRule(
-            rule_id=value["rule_id"],
+        return GuidelineMetric(
+            metric_id=value["metric_id"],
             code=value["code"],
             title=value["title"],
             description=value["description"],
+            evaluation_rubric=value["evaluation_rubric"],
             target_entity_types=target_entity_types,
-            predicates=predicates,
-            enforcement=_enum_value(
-                value["enforcement"],
-                GuidelineEnforcement,
-                "guideline_export_rule_enforcement_invalid",
-                f"{path}.enforcement",
+            direction=_enum_value(
+                value["direction"],
+                GuidelineMetricDirection,
+                "guideline_export_metric_direction_invalid",
+                f"{path}.direction",
             ),
-            operator=_enum_value(
-                value["operator"],
-                GuidelineRuleOperator,
-                "guideline_export_rule_operator_invalid",
-                f"{path}.operator",
+            default_threshold=_strict_int(
+                value["default_threshold"],
+                "guideline_export_metric_default_threshold_invalid",
+                f"{path}.default_threshold",
             ),
-            waivable=_strict_bool(
-                value["waivable"],
-                "guideline_export_rule_waivable_invalid",
-                f"{path}.waivable",
-            ),
-            policy_class=value["policy_class"],
         )
     except GuidelinePolicyContractError as exc:
         raise _domain_error(exc, path) from exc
@@ -1784,8 +1812,8 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
                 "semantic_version",
                 "title",
                 "content",
-                "content_digest",
-                "rules",
+                "revision_digest",
+                "metrics",
                 "created_by",
                 "created_at",
                 "parent_revision_id",
@@ -1799,13 +1827,13 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
         ),
         path=path,
     )
-    rules = tuple(
-        _parse_rule(item, f"{path}.rules[{index}]")
+    metrics = tuple(
+        _parse_metric(item, f"{path}.metrics[{index}]")
         for index, item in enumerate(
             _sequence(
-                value["rules"],
-                "guideline_export_revision_rules_invalid",
-                f"{path}.rules",
+                value["metrics"],
+                "guideline_export_revision_metrics_invalid",
+                f"{path}.metrics",
             )
         )
     )
@@ -1836,8 +1864,8 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
             semantic_version=value["semantic_version"],
             title=value["title"],
             content=value["content"],
-            content_digest=value["content_digest"],
-            rules=rules,
+            revision_digest=value["revision_digest"],
+            metrics=metrics,
             created_by=value["created_by"],
             created_at=_parse_datetime(
                 value["created_at"],
@@ -1852,6 +1880,11 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
             tags=tags,
         )
     except GuidelinePolicyContractError as exc:
+        if exc.code == "guideline_revision_digest_mismatch":
+            raise GuidelineImportExportError(
+                "guideline_export_revision_digest_mismatch",
+                path=f"{path}.revision_digest",
+            ) from exc
         raise _domain_error(exc, path) from exc
     return GuidelineExportRevision(
         revision=revision,
@@ -2075,7 +2108,10 @@ def _parse_logical_binding(
                 "binding_revision",
                 "adopted_by",
                 "adopted_at",
-                "default_enforcement",
+                "enforcement",
+                "minimum_confidence",
+                "metric_threshold_overrides",
+                "configuration_digest",
                 "state",
                 "source_kind",
             }
@@ -2107,11 +2143,37 @@ def _parse_logical_binding(
                 "guideline_export_binding_adopted_at_invalid",
                 f"{path}.adopted_at",
             ),
-            default_enforcement=_enum_value(
-                value["default_enforcement"],
+            enforcement=_enum_value(
+                value["enforcement"],
                 GuidelineEnforcement,
                 "guideline_export_binding_enforcement_invalid",
-                f"{path}.default_enforcement",
+                f"{path}.enforcement",
+            ),
+            minimum_confidence=_strict_int(
+                value["minimum_confidence"],
+                "guideline_export_binding_minimum_confidence_invalid",
+                f"{path}.minimum_confidence",
+            ),
+            metric_threshold_overrides={
+                _required_text(
+                    metric_id,
+                    "guideline_export_binding_metric_id_invalid",
+                    f"{path}.metric_threshold_overrides",
+                ): _strict_int(
+                    threshold,
+                    "guideline_export_binding_metric_threshold_invalid",
+                    f"{path}.metric_threshold_overrides.{metric_id}",
+                )
+                for metric_id, threshold in _mapping(
+                    value["metric_threshold_overrides"],
+                    "guideline_export_binding_metric_threshold_overrides_invalid",
+                    f"{path}.metric_threshold_overrides",
+                ).items()
+            },
+            configuration_digest=_required_text(
+                value["configuration_digest"],
+                "guideline_export_binding_configuration_digest_invalid",
+                f"{path}.configuration_digest",
             ),
             state=_enum_value(
                 value["state"],
@@ -2315,7 +2377,7 @@ def _validate_successor_graph(
             cursor = successor
 
 
-def _parse_v2(raw: Mapping[str, Any]) -> GuidelineExportEnvelope:
+def _parse_v3(raw: Mapping[str, Any]) -> GuidelineExportEnvelope:
     _closed(
         raw,
         required=frozenset(
@@ -2370,6 +2432,413 @@ def _parse_v2(raw: Mapping[str, Any]) -> GuidelineExportEnvelope:
             "$.content_digest",
         ),
         guidelines=aggregates,
+    )
+
+
+def _legacy_v2_revision_digest(
+    *,
+    title: str,
+    content: str,
+    tags: tuple[str, ...],
+) -> str:
+    """Reproduce the rule-empty ``guideline-revision-digest/v1`` bytes."""
+
+    return canonical_guideline_sha256(
+        {
+            "contract": "guideline-revision-digest/v1",
+            "title": title,
+            "content": content,
+            "tags": tuple(sorted(tags)),
+            "rules": (),
+        }
+    )
+
+
+def _parse_legacy_v2_revision(
+    raw: object,
+    path: str,
+) -> GuidelineExportRevision:
+    value = _mapping(raw, "guideline_export_revision_invalid", path)
+    _closed(
+        value,
+        required=frozenset(
+            {
+                "revision_id",
+                "guideline_id",
+                "revision_number",
+                "semantic_version",
+                "title",
+                "content",
+                "content_digest",
+                "rules",
+                "created_by",
+                "created_at",
+                "parent_revision_id",
+                "tags",
+                "published_head_revision",
+                "published_head_updated_at",
+                "legacy_version",
+                "legacy_version_unresolvable",
+                "legacy_tags",
+            }
+        ),
+        path=path,
+    )
+    rules = _sequence(
+        value["rules"],
+        "guideline_export_revision_rules_invalid",
+        f"{path}.rules",
+    )
+    if rules:
+        raise GuidelineImportExportError(
+            "legacy_executable_rules_unsupported",
+            path=f"{path}.rules",
+            message=_LEGACY_EXECUTABLE_RULES_MESSAGE,
+        )
+    tags = tuple(
+        _required_text(
+            item,
+            "guideline_export_revision_tag_invalid",
+            f"{path}.tags[{index}]",
+        )
+        for index, item in enumerate(
+            _sequence(
+                value["tags"],
+                "guideline_export_revision_tags_invalid",
+                f"{path}.tags",
+            )
+        )
+    )
+    title = _required_text(
+        value["title"],
+        "guideline_revision_title_required",
+        f"{path}.title",
+    )
+    content = _required_text(
+        value["content"],
+        "guideline_revision_content_required",
+        f"{path}.content",
+    )
+    try:
+        supplied_digest = normalize_guideline_sha256(
+            value["content_digest"],
+            "guideline_export_revision_digest_invalid",
+        )
+    except GuidelinePolicyContractError as exc:
+        raise _domain_error(exc, f"{path}.content_digest") from exc
+    if supplied_digest != _legacy_v2_revision_digest(
+        title=title,
+        content=content,
+        tags=tags,
+    ):
+        raise GuidelineImportExportError(
+            "guideline_export_revision_digest_mismatch",
+            path=f"{path}.content_digest",
+        )
+    try:
+        revision = GuidelineRevision(
+            revision_id=value["revision_id"],
+            guideline_id=value["guideline_id"],
+            revision_number=_strict_int(
+                value["revision_number"],
+                "guideline_export_revision_number_invalid",
+                f"{path}.revision_number",
+                minimum=1,
+            ),
+            semantic_version=value["semantic_version"],
+            title=title,
+            content=content,
+            metrics=(),
+            created_by=value["created_by"],
+            created_at=_parse_datetime(
+                value["created_at"],
+                "guideline_export_revision_created_at_invalid",
+                f"{path}.created_at",
+            ),
+            parent_revision_id=_optional_text(
+                value["parent_revision_id"],
+                "guideline_export_revision_parent_invalid",
+                f"{path}.parent_revision_id",
+            ),
+            tags=tags,
+        )
+    except GuidelinePolicyContractError as exc:
+        raise _domain_error(exc, path) from exc
+    return GuidelineExportRevision(
+        revision=revision,
+        published_head_revision=_strict_int(
+            value["published_head_revision"],
+            "guideline_export_published_head_revision_invalid",
+            f"{path}.published_head_revision",
+            minimum=1,
+        ),
+        published_head_updated_at=_parse_datetime(
+            value["published_head_updated_at"],
+            "guideline_export_published_head_updated_at_invalid",
+            f"{path}.published_head_updated_at",
+        ),
+        legacy_version=_optional_text(
+            value["legacy_version"],
+            "guideline_export_legacy_version_invalid",
+            f"{path}.legacy_version",
+        ),
+        legacy_version_unresolvable=_strict_bool(
+            value["legacy_version_unresolvable"],
+            "guideline_export_legacy_resolution_invalid",
+            f"{path}.legacy_version_unresolvable",
+        ),
+        legacy_tags=(
+            None
+            if value["legacy_tags"] is None
+            else tuple(
+                _required_text(
+                    item,
+                    "guideline_export_legacy_tag_invalid",
+                    f"{path}.legacy_tags[{index}]",
+                )
+                for index, item in enumerate(
+                    _sequence(
+                        value["legacy_tags"],
+                        "guideline_export_legacy_tags_invalid",
+                        f"{path}.legacy_tags",
+                    )
+                )
+            )
+        ),
+    )
+
+
+def _validate_legacy_v2_binding(raw: object, path: str) -> None:
+    """Validate the closed v2 shell before discarding executable policy state."""
+
+    value = _mapping(raw, "guideline_export_binding_snapshot_invalid", path)
+    _closed(
+        value,
+        required=frozenset(
+            {
+                "binding",
+                "physical_source_kind",
+                "binding_origin",
+                "materialization",
+                "legacy_source_id",
+                "legacy_guideline_version",
+                "legacy_template_id",
+                "legacy_template_version",
+                "legacy_version_unresolvable",
+                "evidence_refs",
+                "binding_digest",
+            }
+        ),
+        path=path,
+    )
+    logical = _mapping(
+        value["binding"],
+        "guideline_export_binding_invalid",
+        f"{path}.binding",
+    )
+    _closed(
+        logical,
+        required=frozenset(
+            {
+                "binding_id",
+                "board_id",
+                "guideline_id",
+                "revision_id",
+                "semantic_version",
+                "revision_digest",
+                "priority",
+                "binding_revision",
+                "adopted_by",
+                "adopted_at",
+                "default_enforcement",
+                "state",
+                "source_kind",
+            }
+        ),
+        path=f"{path}.binding",
+    )
+    _enum_value(
+        logical["default_enforcement"],
+        GuidelineEnforcement,
+        "guideline_export_binding_enforcement_invalid",
+        f"{path}.binding.default_enforcement",
+    )
+    _sequence(
+        value["evidence_refs"],
+        "guideline_export_binding_evidence_refs_invalid",
+        f"{path}.evidence_refs",
+    )
+    _required_text(
+        value["binding_digest"],
+        "guideline_export_binding_digest_invalid",
+        f"{path}.binding_digest",
+    )
+
+
+def _parse_legacy_v2(raw: Mapping[str, Any]) -> GuidelineExportEnvelope:
+    """Import rule-empty v2 history as context-only semantic v3 history."""
+
+    _closed(
+        raw,
+        required=frozenset(
+            {
+                "contract_version",
+                "schema_version",
+                "kind",
+                "exported_at",
+                "source_board_id",
+                "content_digest",
+                "guidelines",
+            }
+        ),
+        path="$",
+    )
+    if raw["contract_version"] != GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION:
+        raise GuidelineImportExportError(
+            "guideline_export_contract_version_unsupported",
+            path="$.contract_version",
+        )
+    if raw["kind"] != GUIDELINE_EXPORT_KIND:
+        raise GuidelineImportExportError(
+            "guideline_export_kind_invalid",
+            path="$.kind",
+        )
+    raw_guidelines = _sequence(
+        raw["guidelines"],
+        "guideline_export_guidelines_invalid",
+        "$.guidelines",
+    )
+    expected_legacy_digest = canonical_guideline_sha256(
+        {
+            "contract_version": GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION,
+            "schema_version": GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION,
+            "kind": GUIDELINE_EXPORT_KIND,
+            "source_board_id": raw["source_board_id"],
+            "guidelines": raw_guidelines,
+        }
+    )
+    aggregates: list[GuidelineExportAggregate] = []
+    for aggregate_index, raw_aggregate in enumerate(raw_guidelines):
+        path = f"$.guidelines[{aggregate_index}]"
+        value = _mapping(
+            raw_aggregate,
+            "guideline_export_aggregate_invalid",
+            path,
+        )
+        _closed(
+            value,
+            required=frozenset(
+                {
+                    "identity",
+                    "revisions",
+                    "head",
+                    "retirement",
+                    "bindings",
+                    "history_status",
+                    "migration_notes",
+                }
+            ),
+            path=path,
+        )
+        revisions = tuple(
+            _parse_legacy_v2_revision(
+                item,
+                f"{path}.revisions[{revision_index}]",
+            )
+            for revision_index, item in enumerate(
+                _sequence(
+                    value["revisions"],
+                    "guideline_export_revisions_invalid",
+                    f"{path}.revisions",
+                )
+            )
+        )
+        raw_bindings = _sequence(
+            value["bindings"],
+            "guideline_export_bindings_invalid",
+            f"{path}.bindings",
+        )
+        for binding_index, raw_binding in enumerate(raw_bindings):
+            _validate_legacy_v2_binding(
+                raw_binding,
+                f"{path}.bindings[{binding_index}]",
+            )
+        notes = [
+            _required_text(
+                item,
+                "guideline_export_migration_note_invalid",
+                f"{path}.migration_notes[{note_index}]",
+            )
+            for note_index, item in enumerate(
+                _sequence(
+                    value["migration_notes"],
+                    "guideline_export_migration_notes_invalid",
+                    f"{path}.migration_notes",
+                )
+            )
+        ]
+        notes.append("legacy_v2_contextual_only")
+        if raw_bindings:
+            notes.append("legacy_v2_bindings_dropped_contextual_only")
+        retirement = _parse_retirement(
+            value["retirement"],
+            f"{path}.retirement",
+        )
+        if retirement is not None:
+            retirement = replace(
+                retirement,
+                retired_revision_digest=revisions[-1].revision_digest,
+            )
+        aggregates.append(
+            GuidelineExportAggregate(
+                identity=_parse_identity(
+                    value["identity"],
+                    f"{path}.identity",
+                ),
+                revisions=revisions,
+                head=_parse_head(value["head"], f"{path}.head"),
+                retirement=retirement,
+                bindings=(),
+                history_status=_enum_value(
+                    value["history_status"],
+                    GuidelineHistoryStatus,
+                    "guideline_export_history_status_invalid",
+                    f"{path}.history_status",
+                ),
+                migration_notes=tuple(notes),
+            )
+        )
+    if raw["content_digest"] != expected_legacy_digest:
+        raise GuidelineImportExportError(
+            "guideline_export_content_digest_mismatch",
+            path="$.content_digest",
+        )
+    normalized = tuple(aggregates)
+    _validate_successor_graph(normalized)
+    snapshot = GuidelineExportSnapshot(
+        aggregates=normalized,
+        source_board_id=_optional_text(
+            raw["source_board_id"],
+            "guideline_export_source_board_id_invalid",
+            "$.source_board_id",
+        ),
+    )
+    return GuidelineExportEnvelope(
+        contract_version=GUIDELINE_EXPORT_CONTRACT_VERSION,
+        schema_version=GUIDELINE_EXPORT_SCHEMA_VERSION,
+        kind=GUIDELINE_EXPORT_KIND,
+        exported_at=_parse_datetime(
+            raw["exported_at"],
+            "guideline_export_exported_at_invalid",
+            "$.exported_at",
+        ),
+        source_board_id=snapshot.source_board_id,
+        content_digest=_content_digest(
+            snapshot.aggregates,
+            snapshot.source_board_id,
+        ),
+        guidelines=snapshot.aggregates,
+        source_schema_version=GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION,
     )
 
 
@@ -2572,13 +3041,7 @@ def _parse_legacy_v1(
                 semantic_version=GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION,
                 title=title,
                 content=content,
-                content_digest=guideline_revision_content_digest_v1(
-                    title=title,
-                    content=content,
-                    tags=tags,
-                    rules=(),
-                ),
-                rules=(),
+                metrics=(),
                 created_by=GUIDELINE_EXPORT_LEGACY_ACTOR,
                 created_at=exported_at,
                 parent_revision_id=None,
@@ -2592,7 +3055,7 @@ def _parse_legacy_v1(
                 head_revision=1,
                 updated_at=exported_at,
             )
-        except (GuidelinePolicyContractError, GuidelineLifecycleError) as exc:
+        except GuidelinePolicyContractError as exc:
             raise _domain_error(exc, path) from exc
         notes = [
             "legacy_history_unresolvable",
@@ -2644,7 +3107,7 @@ def parse_guideline_export(
     *,
     legacy_exported_at: datetime | None = None,
 ) -> GuidelineExportEnvelope:
-    """Dispatch and fully validate v2 or legacy v1 before planning."""
+    """Dispatch and fully validate v3 or a context-only legacy import."""
 
     envelope = _mapping(
         raw,
@@ -2653,7 +3116,9 @@ def parse_guideline_export(
     )
     schema_version = str(envelope.get("schema_version", "")).strip()
     if schema_version == GUIDELINE_EXPORT_SCHEMA_VERSION:
-        return _parse_v2(envelope)
+        return _parse_v3(envelope)
+    if schema_version == GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION:
+        return _parse_legacy_v2(envelope)
     if schema_version == GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION:
         return _parse_legacy_v1(
             envelope,
@@ -2703,7 +3168,11 @@ def _remap_aggregate(
         replace(
             exported_binding,
             binding=(
-                replace(exported_binding.binding, board_id=target)
+                replace(
+                    exported_binding.binding,
+                    board_id=target,
+                    configuration_digest=None,
+                )
                 if target is not None and exported_binding.binding.board_id != target
                 else exported_binding.binding
             ),
@@ -2892,7 +3361,7 @@ def plan_guideline_import(
             )
             if existing_revision is None:
                 disposition = GuidelineImportRevisionDisposition.CREATE
-            elif existing_revision.revision_digest == revision.content_digest:
+            elif existing_revision.revision_digest == revision.revision_digest:
                 disposition = GuidelineImportRevisionDisposition.SKIP_IDENTICAL
             else:
                 disposition = GuidelineImportRevisionDisposition.CONFLICT
@@ -2901,7 +3370,7 @@ def plan_guideline_import(
                     guideline_id=revision.guideline_id,
                     revision_id=revision.revision_id,
                     semantic_version=revision.semantic_version,
-                    revision_digest=revision.content_digest,
+                    revision_digest=revision.revision_digest,
                     disposition=disposition,
                     resolved_revision_id=(
                         existing_revision.revision_id
@@ -3082,6 +3551,8 @@ __all__ = [
     "GUIDELINE_EXPORT_KIND",
     "GUIDELINE_EXPORT_LEGACY_BASELINE_VERSION",
     "GUIDELINE_EXPORT_LEGACY_SCHEMA_VERSION",
+    "GUIDELINE_EXPORT_LEGACY_V2_CONTRACT_VERSION",
+    "GUIDELINE_EXPORT_LEGACY_V2_SCHEMA_VERSION",
     "GUIDELINE_EXPORT_SCHEMA_VERSION",
     "ExistingGuidelineRevision",
     "GuidelineBindingMaterialization",
@@ -3100,7 +3571,7 @@ __all__ = [
     "GuidelineImportRevisionAction",
     "GuidelineImportRevisionDisposition",
     "GuidelineImportTransactionStatus",
-    "build_guideline_export_v2",
+    "build_guideline_export_v3",
     "canonical_guideline_json_bytes",
     "canonical_guideline_sha256",
     "guideline_export_json_bytes",

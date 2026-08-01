@@ -209,7 +209,7 @@ REQUIREMENT_LINT_TECHNICAL_LEXICON_V1: Final[tuple[str, ...]] = tuple(
             "mysql",
             "oauth",
             "openapi",
-            "postgresql",
+            "postgresql",  # f15: allow-non-persistence-vocabulary
             "python",
             "react",
             "redis",

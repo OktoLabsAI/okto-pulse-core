@@ -12,10 +12,11 @@ import pytest
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
+    PermissionDeniedError,
 )
 from okto_pulse.core.application.use_cases.guideline_import_export import (
     ExportGuidelinePolicyCommand,
-    ExportGuidelinePolicyV2UseCase,
+    ExportGuidelinePolicyV3UseCase,
     ImportGuidelinePolicyCommand,
     ImportGuidelinePolicyUseCase,
 )
@@ -26,20 +27,20 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineExportRevision,
     GuidelineExportSnapshot,
     GuidelineImportTransactionStatus,
-    build_guideline_export_v2,
+    build_guideline_export_v3,
     canonical_guideline_sha256,
     guideline_export_payload,
-)
-from okto_pulse.core.domain.guideline_lifecycle import (
-    guideline_revision_content_digest_v1,
 )
 from okto_pulse.core.domain.guideline_policy import (
     BoardGuidelineBinding,
     Guideline,
     GuidelineEnforcement,
     GuidelineHead,
+    GuidelineMetric,
+    GuidelineMetricDirection,
     GuidelineRevision,
     GuidelineScope,
+    PolicyEntityType,
 )
 
 
@@ -51,8 +52,17 @@ ACTOR = ActorContext(
     permissions=(
         "guidelines.revisions.read",
         "guidelines.revisions.create",
-        "guidelines.rules.author_blocking",
+        "guidelines.metrics.author",
         "guidelines.read",
+        "spec.entity.edit_fields",
+    ),
+)
+REVISION_ONLY_ACTOR = ActorContext(
+    "revision-only-actor",
+    "rest",
+    realm_id="local",
+    permissions=(
+        "guidelines.revisions.create",
         "spec.entity.edit_fields",
     ),
 )
@@ -77,9 +87,15 @@ def _aggregate(
 ) -> GuidelineExportAggregate:
     scope = GuidelineScope.INLINE if board_id is not None else GuidelineScope.GLOBAL
     revision_id = f"{guideline_id}-revision-1"
-    digest = guideline_revision_content_digest_v1(
-        title="Policy",
-        content=content,
+    metric = GuidelineMetric(
+        metric_id="metric-1",
+        code="policy.clarity",
+        title="Policy clarity",
+        description="Assess clarity of the policy.",
+        evaluation_rubric="Score clarity from 0 to 100.",
+        target_entity_types=(PolicyEntityType.SPEC,),
+        direction=GuidelineMetricDirection.MINIMUM,
+        default_threshold=80,
     )
     revision = GuidelineRevision(
         revision_id=revision_id,
@@ -88,8 +104,7 @@ def _aggregate(
         semantic_version="1.0.0",
         title="Policy",
         content=content,
-        content_digest=digest,
-        rules=(),
+        metrics=(metric,),
         created_by="source-actor",
         created_at=NOW,
     )
@@ -102,12 +117,14 @@ def _aggregate(
                     guideline_id=guideline_id,
                     revision_id=revision_id,
                     semantic_version="1.0.0",
-                    revision_digest=digest,
+                    revision_digest=revision.revision_digest,
                     priority=0,
                     binding_revision=1,
                     adopted_by="source-actor",
                     adopted_at=NOW,
-                    default_enforcement=GuidelineEnforcement.ADVISORY,
+                    enforcement=GuidelineEnforcement.ADVISORY,
+                    minimum_confidence=70,
+                    metric_threshold_overrides={"policy.clarity": 85},
                 ),
                 physical_source_kind="guideline_policy_v1",
                 binding_origin="native",
@@ -139,7 +156,7 @@ def _aggregate(
 
 
 def _payload(*aggregates: GuidelineExportAggregate) -> dict[str, object]:
-    envelope = build_guideline_export_v2(
+    envelope = build_guideline_export_v3(
         GuidelineExportSnapshot(aggregates=aggregates),
         exported_at=NOW,
     )
@@ -252,7 +269,7 @@ async def test_export_authorizes_board_before_obtaining_policy_adapter() -> None
     )
 
     with pytest.raises(EntityNotFoundError):
-        await ExportGuidelinePolicyV2UseCase(clock=lambda: NOW).execute(
+        await ExportGuidelinePolicyV3UseCase(clock=lambda: NOW).execute(
             ExportGuidelinePolicyCommand(board_id="board-1"),
             actor=ACTOR,
             uow=uow,
@@ -274,7 +291,7 @@ async def test_export_scopes_snapshot_by_actor_and_board_without_commit() -> Non
     )
     uow = _Uow(port, boards={"board-1": _owned_board()})
 
-    output = await ExportGuidelinePolicyV2UseCase(clock=lambda: NOW).execute(
+    output = await ExportGuidelinePolicyV3UseCase(clock=lambda: NOW).execute(
         ExportGuidelinePolicyCommand(
             board_id="board-1",
             guideline_ids=("guideline-1",),
@@ -285,6 +302,9 @@ async def test_export_scopes_snapshot_by_actor_and_board_without_commit() -> Non
 
     assert output.envelope.guidelines == (aggregate,)
     assert output.envelope.exported_at == NOW
+    assert output.envelope.schema_version == "3"
+    exported_revision = output.envelope.guidelines[0].revisions[0].revision
+    assert exported_revision.metrics[0].metric_id == "metric-1"
     assert port.export_calls == [
         {
             "owner_id": ACTOR.actor_id,
@@ -298,13 +318,31 @@ async def test_export_scopes_snapshot_by_actor_and_board_without_commit() -> Non
 
 
 @pytest.mark.asyncio
+async def test_metric_import_requires_author_capability_before_adapter_access() -> None:
+    port = _Port(snapshot=GuidelineExportSnapshot(aggregates=()))
+    uow = _Uow(port)
+
+    with pytest.raises(PermissionDeniedError, match="guidelines.metrics.author"):
+        await ImportGuidelinePolicyUseCase(clock=lambda: NOW).execute(
+            ImportGuidelinePolicyCommand(envelope=_payload(_aggregate())),
+            actor=REVISION_ONLY_ACTOR,
+            uow=uow,
+        )
+
+    assert uow.boards.calls == []
+    assert uow.guidelines.policy_persistence_calls == 0
+    assert port.import_snapshot_calls == []
+    assert port.apply_calls == []
+
+
+@pytest.mark.asyncio
 async def test_default_export_selects_actor_catalog_instead_of_empty_selection() -> (
     None
 ):
     port = _Port(snapshot=GuidelineExportSnapshot(aggregates=()))
     uow = _Uow(port)
 
-    await ExportGuidelinePolicyV2UseCase(clock=lambda: NOW).execute(
+    await ExportGuidelinePolicyV3UseCase(clock=lambda: NOW).execute(
         ExportGuidelinePolicyCommand(),
         actor=ACTOR,
         uow=uow,
@@ -659,15 +697,15 @@ async def test_legacy_v1_dispatch_is_contextual_unadopted_and_dry_run() -> None:
 
     output = await ImportGuidelinePolicyUseCase(clock=lambda: NOW).execute(
         ImportGuidelinePolicyCommand(envelope=payload, dry_run=True),
-        actor=ACTOR,
+        actor=REVISION_ONLY_ACTOR,
         uow=uow,
     )
 
     aggregate = output.plan.entries[0].aggregate
-    assert aggregate.identity.owner_id == ACTOR.actor_id
+    assert aggregate.identity.owner_id == REVISION_ONLY_ACTOR.actor_id
     assert aggregate.revisions[0].semantic_version == "1.0.0"
     assert aggregate.revisions[0].legacy_version == "17"
-    assert aggregate.revisions[0].revision.rules == ()
+    assert aggregate.revisions[0].revision.metrics == ()
     assert aggregate.bindings == ()
     assert output.plan.live_binding_writes == ()
     assert "legacy_blocking_downgraded_to_advisory" in aggregate.migration_notes

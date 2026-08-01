@@ -1,208 +1,164 @@
 ---
-version: "1.0"
-contract: "policy-compliance-resource/v1"
+version: "2.0"
+contract: "semantic-guideline-protocol/v1"
 ---
 
-# Versioned guidelines and policy compliance
+# Semantic guideline protocol
 
-This is the canonical agent protocol for executable board guidelines,
-immutable guideline revisions, impact evidence, adoption/unlink, compliance
-receipts and governed waivers. Read it before changing a guideline revision,
-adopting policy, evaluating an SDLC entity, relying on a receipt at a
-transition, or operating a waiver.
+This is the single agent protocol for versioned guidelines, semantic metrics,
+board adoption, assessment evidence and transition gates. Workflow resources
+only route here; read this resource before authoring metrics, changing a
+revision, adopting a guideline, assessing an entity or relying on assessment
+evidence at a transition.
 
-Guideline prose remains useful context. Only structured `policy/v1` rules are
-executable. The relational policy authority is canonical; KG constraint nodes
-are a derived, rebuildable projection.
+Pulse never judges semantic adherence. The external agent produces the
+cognitive analysis; Pulse deterministically validates exact authority,
+completeness, score bounds, thresholds, independence and currentness, then
+seals immutable evidence.
 
-## Authority and pre-flight
+## Revision and adoption
 
-1. Resolve the exact board and read its guidelines.
-2. Read the target entity's current context before evaluation or transition.
-3. Use a caller-stable idempotency key for each mutation. Reuse it only for a
-   byte-equivalent retry.
-4. For a list, start with `profile="summary"` and no cursor. Follow the returned
-   cursor with identical filters and profile.
-5. Treat every receipt and impact preview as immutable evidence. Never edit,
-   synthesize, or reinterpret its digests.
+- Guideline prose is contextual. A metric makes one semantic criterion
+  assessable. Never convert a semantic guideline into predicates or facts.
+- Every metric requires a stable `metric_id`, readable `code`, title,
+  description, evaluation rubric, targets, direction (`minimum|maximum`) and a
+  default threshold in `0..100`. `confidence` is reserved and compulsory at
+  assessment level.
+- An empty metric set is valid context-only guidance and creates no gate.
+- Revision SemVer minimums are deterministic: adding a metric is minor;
+  removing one, changing identity/direction/targets/rubric, or tightening its
+  default threshold is major; relaxing a threshold is minor; editorial-only
+  changes are patch.
+- A partial revision patch preserves omitted fields. `metrics=[]` explicitly
+  removes all metrics. A no-op creates no revision.
+- Preview every board adoption with the proposed priority, enforcement,
+  minimum confidence and threshold overrides. Overrides use metric `code`,
+  never `metric_id`.
+- Inspect paginated impact items, then adopt only with the exact
+  server-returned receipt ID and digest. A stale preview must be recreated.
+- `guideline_impact_no_changes` means the proposed adoption configuration is
+  already authoritative; do not retry it as a mutation.
 
-The server owns revision/event/receipt/waiver IDs, timestamps, actor identity,
-head and binding revisions, authority digests, policy-set digests and
-currentness computation. The client may supply only two evidence
-preconditions:
+## Recording an assessment
 
-- `impact_receipt_id` plus its exact `impact_digest` when adopting;
-- `expected_waiver_revision` for waiver compare-and-swap.
+Before recording:
 
-These are optimistic preconditions, not client-authored authority. On conflict,
-refresh and reconsider; do not silently replace them with newly read values
-inside an idempotent replay.
+1. Read the entity's full current context and the exact adopted guideline
+   revision. Use the current subject version, binding revision and guideline
+   revision ID as explicit fences.
+2. Assess every metric targeting that entity type. Do not omit difficult or
+   failed metrics and do not submit non-applicable metrics.
+3. For each metric submit one integer score in `0..100`, a concrete rationale,
+   at least one immutable evidence reference and at least one stable pinpoint.
+   Follow the metric rubric when translating analysis into a score.
+4. Submit compulsory confidence in `0..100` plus the model identifier when
+   known. Confidence describes reliability of the whole assessment, not the
+   score of a particular metric.
+5. Use a caller-stable idempotency key only for byte-equivalent retries.
 
-## Revision lifecycle
+Pinpoints use `whole_artifact`, `field`, `structured_child` or `qa`. Whole
+artifact forbids `anchor_ref`; all other kinds require a stable semantic
+reference. Never use mutable list indexes. Evidence references require source
+type, source ID, positive source version and exact content hash.
 
-- `okto_pulse_list_guideline_revisions` returns immutable history with
-  `summary|detail` projections and keyset pagination.
-- `okto_pulse_get_guideline_revision` returns one revision with the current
-  guideline head and retirement context.
-- `okto_pulse_create_guideline_revision` applies a partial patch. Omitted fields
-  remain unchanged; empty `tags` or `rules` intentionally clears that
-  collection. A no-op consumes the idempotency key without manufacturing a
-  revision.
-- A semantic version below the deterministic minimum fails with `under_bump`;
-  use the returned minimum as guidance and submit a new intent.
-- `okto_pulse_retire_guideline` records a terminal tombstone. `superseded`
-  requires a different successor guideline; `retired` forbids one.
+Pulse rejects the assessment before persistence when a fence is stale, a
+metric is missing/unknown/non-applicable, confidence is below the board
+minimum, or an agent that last changed the subject attempts a blocking
+assessment. Receipt and all metric results are written atomically.
 
-Do not use legacy hard deletion to model lifecycle. Retirement preserves
-history and unlink preserves the board binding lineage.
+### Canonical agent journey
 
-## Rule authoring
+1. Load the entity with the full context tool named by its workflow and use its
+   policy-compliance bindings; do not reconstruct the subject from list output.
+2. Read each exact adopted revision with
+   `okto_pulse_get_guideline_revision(profile="detail")`.
+3. Analyze every applicable metric as described above, then call
+   `okto_pulse_record_semantic_guideline_assessment` with the context fences.
+4. Confirm the sealed result with
+   `okto_pulse_get_current_semantic_guideline_assessment(profile="full")`.
+5. If the current read is missing, or a listed/full receipt reports stale
+   currentness, reload context and revision, analyze the new content, and
+   record again with refreshed fences and a new stable idempotency key. Never
+   reuse or edit the stale receipt.
 
-A revision with `rules=[]` is valid context-only guidance. Do not invent an
-executable rule merely to make a guideline adoptable. Add `policy/v1` rules
-only when the requirement can be checked deterministically.
+## Gate and currentness
 
-For each rule, keep `rule_id` stable across revisions and use `code` as its
-readable audit key. Set explicit target entity types before choosing
-predicates, because the closed fact catalog is target-aware. Presence
-operators (`exists`, `not_exists`) take no value. Every other operator must
-use the typed parameter shape documented by the guideline tools.
+- Evidence presence is mandatory regardless of enforcement: every applicable
+  binding requires a current, admissible assessment receipt before a governed
+  transition. A missing, stale, unavailable or inadmissible assessment rejects
+  the transition even when the binding is advisory (an active human skip is
+  the only bypass).
+- Advisory bindings never block on metric SCORES: with a current receipt
+  recorded, failed advisory metrics stay visible evidence only.
+- Blocking bindings are conjunctive: every applicable metric must pass its
+  effective threshold and the compulsory confidence minimum must pass.
+- A board threshold override replaces only that metric's default for that
+  binding. `minimum` passes at score >= threshold; `maximum` passes at score <=
+  threshold.
+- Blocking assessment requires an assessor independent from the subject's last
+  semantic editor. Advisory evidence does not require separation.
+- A receipt is current only for the exact subject content/version, binding
+  configuration and revision, guideline revision, board binding head and
+  semantic policy set it sealed. Any relevant drift requires reassessment.
+- Native ambiguity, Resource, checklist, test, validation and evaluation gates
+  remain independent. Semantic guidelines do not duplicate or replace them.
+- Human skip is deliberately absent from MCP and agent permissions. Only the
+  explicit human UI authority may create a governed skip.
 
-Use `policy_class="standard"` for ordinary rules. The protected classes
-`coverage`, `permissions`, `reviewer_separation`, and `lineage` are
-non-waivable. Enforcement belongs to each rule: `advisory` records a finding
-without blocking, while `blocking` participates in supported transition
-gates.
+## Lists, pagination and errors
 
-## Impact, adoption, and unlink
+Revision and impact lists use `summary|detail`; semantic assessment, finding,
+waiver and skip lists use `summary|detail|full`. Use `full` when an agent must
+inspect sealed digests, authority fences or idempotency metadata. All lists
+use signed opaque keyset cursors. Preserve every filter, projection and
+`evaluated_at` across pages; never decode or edit a cursor.
+`next_cursor=null` with `has_more=false` ends traversal.
 
-Always preview before adoption:
+Use the semantic assessment reads to inspect immutable receipts and derived
+currentness; use the finding list to address one failed metric without
+reconstructing it from free text. Currentness filters apply only to assessment
+lists. Finding and waiver results expose currentness but deliberately do not
+accept a currentness filter.
 
-1. Call `okto_pulse_preview_guideline_impact` with priority, the reserved
-   compatibility field `proposed_default_enforcement`, and an optional exact
-   target revision. For a new binding pass `advisory`; for an existing binding
-   preserve its current value. This field does not override rule-level
-   enforcement.
-2. Inspect the receipt and page
-   `okto_pulse_list_guideline_impact_items` when any affected count is nonzero.
-3. If the impact is acceptable, call `okto_pulse_adopt_guideline_revision`
-   using the receipt ID and digest exactly as returned.
-4. If the preview is stale, create a new preview; never patch old evidence.
+Waiver collection and singular reads evaluate expiry as of their required
+`evaluated_at`. Reuse the exact collection snapshot when opening one result.
+An approved ledger head whose deadline has elapsed is returned as effective
+status `expired`, while its immutable head and event history remain unchanged.
+Revalidation appends an independent decision and never rebinds or reactivates
+an expired, stale or revoked waiver. A requester or the assessor who sealed the
+anchored receipt cannot review or revalidate that waiver.
 
-Use `okto_pulse_unlink_guideline_from_board` to stop applying one board
-guideline without deleting its identity or history. Adoption, unlink and
-retirement emit immutable policy-change events. Their derived KG projection
-ends superseded constraints instead of erasing provenance.
+On failure inspect the MCP outcome code, retryability, next action and bounded
+details. Refresh exact authority on conflict/staleness; increase SemVer on
+`under_bump`; restart without a cursor on `invalid_cursor`; request the named
+capability on permission denial. Never repair evidence or authority by editing
+digests, database rows or KG nodes.
 
-## Compliance evaluation and currentness
+## Capabilities and KG
 
-Executable targets are the closed set `ideation`, `refinement`, `spec`,
-`sprint`, `card`, and `test_scenario`.
+Dedicated leaves are:
 
-`okto_pulse_evaluate_policy_compliance` snapshots the current subject and
-current board policy, evaluates only applicable structured rules, and records
-one immutable receipt plus pinpoint findings. Use:
+- revisions: `guidelines.revisions.read|create|retire`;
+- metric authoring: `guidelines.metrics.author`;
+- impact/adoption: `guidelines.impact.preview`,
+  `guidelines.adoption.manage`;
+- assessments: `guidelines.assessments.read|record`;
+- governed exceptions: `guidelines.waiver.read|request|review|revoke|revalidate`.
 
-- `okto_pulse_get_current_policy_compliance_receipt` for the current receipt of
-  one exact subject;
-- `okto_pulse_get_policy_compliance_receipt` for historical evidence;
-- `okto_pulse_list_policy_compliance_receipts` for filtered history;
-- `okto_pulse_list_policy_compliance_findings` for rule-level diagnosis.
+Reporter is read-only. Full Control receives introduced non-human
+capabilities automatically; role presets receive only their documented
+defaults. Missing custom authority fails closed.
 
-Currentness is computed against subject version and policy identity. A newer
-head can still be stale. A stale receipt is audit evidence only and never
-authorizes a transition. Fix the subject or policy, then evaluate again.
+Relational revisions, bindings, assessments and exception events are
+canonical. After their transaction commits, durable idempotent events project
+board-local revision, metric, binding-configuration, assessment, metric-result,
+waiver and skip lineage. These are semantic `Entity` projections, never
+deterministic `Constraint` nodes and never gate authority. Unlink, retirement,
+supersedence and exception closure terminate the corresponding active
+projection with a tombstone; rebuild must converge to the same relational
+state and explicitly terminate legacy rule nodes. Diagnose KG health and use
+the normal rebuild workflow; never edit the graph directly.
 
-Blocking rules participate in the existing transition decision for their
-target entity. Advisory findings remain visible but do not block. The policy
-gate does not replace entity-specific ambiguity, Resource, checklist,
-validation, evaluation, test or cognitive gates; all applicable gates must
-pass.
-
-## Waiver lifecycle and separation
-
-A waiver is bound to one current, waivable finding:
-
-1. Request with `okto_pulse_request_policy_waiver`, a justification, evidence
-   references and an expiry.
-2. An independent authorized reviewer uses
-   `okto_pulse_review_policy_waiver` with `approve|reject`.
-3. Read the head and append-only events before a later mutation.
-4. Revoke with `okto_pulse_revoke_policy_waiver`, or revalidate against current
-   source evidence with `okto_pulse_revalidate_policy_waiver`.
-
-Approved is not synonymous with effective. A waiver is effective only while
-approved, unexpired and still bound to current subject/guideline/rule evidence.
-Source drift makes it ineffective and requires explicit revalidation.
-Revalidation is privilege-granting too: the actor must still be independent
-from the original requester. A requester cannot restore their own exception.
-Protected policy classes are never waivable.
-
-## Projections and keyset pagination
-
-Paginated policy list tools accept only `summary|detail`, default `summary`,
-with limits `1..200`. They use one shared signed opaque keyset cursor. There is
-no offset fallback. The append-only waiver event history is a bounded
-non-paginated read.
-
-- Never decode, edit, persist as authority, or reuse a cursor with different
-  filters/profile.
-- `next_cursor=null` and `has_more=false` end the traversal.
-- For waiver lists, repeat the same explicit `evaluated_at` on every page.
-- `summary` omits bodies, reasons and evidence; request `detail` only for the
-  bounded page that needs them.
-
-## MCP outcome and errors
-
-All governed tools return the native MCP outcome v2 envelope. Check `outcome`
-before reading `data`. On error use `error_code`, `retryable`, `next_action`
-and bounded `details`; do not parse prose.
-
-Common actions:
-
-- `permission_denied`: request the exact capability; retrying unchanged is not
-  recovery.
-- `policy_waiver_independent_reviewer_required`: assign an authorized actor
-  other than the requester for review or revalidation.
-- `invalid_cursor`: restart pagination without a cursor.
-- `conflict`: refresh the exact authority/precondition and reconsider.
-- `under_bump`: increase the declared semantic version.
-- `guideline_impact_no_changes`: the exact revision and board configuration
-  are already active; do not retry unless the intended revision or priority
-  changes.
-- `service_unavailable`: report or retry without changing the intent.
-
-## Capabilities
-
-Reads and mutations fail closed on their dedicated leaves:
-
-| Area | Capabilities |
-|---|---|
-| Revisions | `guidelines.revisions.read`, `.create`, `.retire` |
-| Blocking-rule authoring | `guidelines.rules.author_blocking` |
-| Impact and adoption | `guidelines.impact.preview`, `guidelines.adoption.manage` |
-| Compliance | `guidelines.compliance.read`, `.evaluate` |
-| Waivers | `guidelines.waiver.read`, `.request`, `.review`, `.revoke`, `.revalidate` |
-
-Capability denial occurs before the policy unit of work is entered. Presets and
-Full Control receive introduced leaves through the versioned permission
-manifest; absent or partial custom authority remains denied.
-
-## KG projection and recovery
-
-Policy-change delivery materializes deterministic active constraint nodes for
-the exact adopted revision. Adopt activates the new rule set and ends replaced
-constraints; unlink and retirement end the affected active set. Replays are
-idempotent. Relational receipts, findings, revisions and event evidence remain
-the source of truth. This projection lives only in the board graph and is not
-published to the Global Discovery index.
-
-If the graph projection is missing or inconsistent, diagnose KG health and use
-the normal board rebuild workflow. Rebuild inventories canonical relational
-policy state and must fail before reporting success if policy-constraint
-projection fails. Never repair a constraint by editing the graph directly.
-
-Related operational references:
-`okto-pulse://reference/transitions`,
-`okto-pulse://reference/errors`, and
-`okto-pulse://workflows/kg`.
+Related resources: `okto-pulse://reference/transitions`,
+`okto-pulse://reference/errors`, `okto-pulse://reference/projection-profiles`
+and `okto-pulse://workflows/kg`.

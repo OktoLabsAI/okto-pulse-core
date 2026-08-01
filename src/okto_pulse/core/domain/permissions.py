@@ -177,15 +177,25 @@ SKA_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
-_SKB_PERMISSION_LEAVES: tuple[str, ...] = (
-    "guidelines.revisions.read",
-    "guidelines.revisions.create",
-    "guidelines.revisions.retire",
-    "guidelines.rules.author_blocking",
-    "guidelines.impact.preview",
-    "guidelines.adoption.manage",
-    "guidelines.compliance.read",
-    "guidelines.compliance.evaluate",
+GUIDELINE_REVISIONS_READ = "guidelines.revisions.read"
+GUIDELINE_REVISIONS_CREATE = "guidelines.revisions.create"
+GUIDELINE_REVISIONS_RETIRE = "guidelines.revisions.retire"
+GUIDELINE_METRICS_AUTHOR = "guidelines.metrics.author"
+GUIDELINE_IMPACT_PREVIEW = "guidelines.impact.preview"
+GUIDELINE_ADOPTION_MANAGE = "guidelines.adoption.manage"
+GUIDELINE_ASSESSMENTS_READ = "guidelines.assessments.read"
+GUIDELINE_ASSESSMENTS_RECORD = "guidelines.assessments.record"
+
+
+_SKB3_PERMISSION_LEAVES: tuple[str, ...] = (
+    GUIDELINE_REVISIONS_READ,
+    GUIDELINE_REVISIONS_CREATE,
+    GUIDELINE_REVISIONS_RETIRE,
+    GUIDELINE_METRICS_AUTHOR,
+    GUIDELINE_IMPACT_PREVIEW,
+    GUIDELINE_ADOPTION_MANAGE,
+    GUIDELINE_ASSESSMENTS_READ,
+    GUIDELINE_ASSESSMENTS_RECORD,
     "guidelines.waiver.read",
     "guidelines.waiver.request",
     "guidelines.waiver.review",
@@ -195,17 +205,17 @@ _SKB_PERMISSION_LEAVES: tuple[str, ...] = (
 
 
 # This explicit bridge is intentionally conservative and auditable.  A new
-# SK-B capability never manufactures authority that the same actor did not
+# SK-B3 capability never manufactures authority that the same actor did not
 # already hold through the historical guidelines/SDLC surface.
-_SKB_HISTORICAL_AUTHORITIES: tuple[tuple[str, str], ...] = (
-    ("guidelines.revisions.read", "guidelines.read"),
-    ("guidelines.revisions.create", "spec.entity.edit_fields"),
-    ("guidelines.revisions.retire", "guidelines.delete"),
-    ("guidelines.rules.author_blocking", "spec.entity.edit_fields"),
-    ("guidelines.impact.preview", "guidelines.read"),
-    ("guidelines.adoption.manage", "spec.entity.edit_fields"),
-    ("guidelines.compliance.read", "guidelines.read"),
-    ("guidelines.compliance.evaluate", "guidelines.read"),
+_SKB3_HISTORICAL_AUTHORITIES: tuple[tuple[str, str], ...] = (
+    (GUIDELINE_REVISIONS_READ, "guidelines.read"),
+    (GUIDELINE_REVISIONS_CREATE, "spec.entity.edit_fields"),
+    (GUIDELINE_REVISIONS_RETIRE, "guidelines.delete"),
+    (GUIDELINE_METRICS_AUTHOR, "spec.entity.edit_fields"),
+    (GUIDELINE_IMPACT_PREVIEW, "guidelines.read"),
+    (GUIDELINE_ADOPTION_MANAGE, "spec.entity.edit_fields"),
+    (GUIDELINE_ASSESSMENTS_READ, "guidelines.read"),
+    (GUIDELINE_ASSESSMENTS_RECORD, "guidelines.read"),
     ("guidelines.waiver.read", "guidelines.read"),
     ("guidelines.waiver.request", "guidelines.read"),
     ("guidelines.waiver.review", "spec.validation.submit"),
@@ -214,21 +224,21 @@ _SKB_HISTORICAL_AUTHORITIES: tuple[tuple[str, str], ...] = (
 )
 
 
-SKB_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
-    version="SK-B/v1",
-    leaves=_SKB_PERMISSION_LEAVES,
+SKB3_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="SK-B3/v1",
+    leaves=_SKB3_PERMISSION_LEAVES,
     preset_grants=(
-        ("Full Control", _SKB_PERMISSION_LEAVES),
+        ("Full Control", _SKB3_PERMISSION_LEAVES),
         (
             "Spec",
             (
-                "guidelines.revisions.read",
-                "guidelines.revisions.create",
-                "guidelines.rules.author_blocking",
-                "guidelines.impact.preview",
-                "guidelines.adoption.manage",
-                "guidelines.compliance.read",
-                "guidelines.compliance.evaluate",
+                GUIDELINE_REVISIONS_READ,
+                GUIDELINE_REVISIONS_CREATE,
+                GUIDELINE_METRICS_AUTHOR,
+                GUIDELINE_IMPACT_PREVIEW,
+                GUIDELINE_ADOPTION_MANAGE,
+                GUIDELINE_ASSESSMENTS_READ,
+                GUIDELINE_ASSESSMENTS_RECORD,
                 "guidelines.waiver.read",
                 "guidelines.waiver.request",
             ),
@@ -236,10 +246,10 @@ SKB_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         (
             "Validator",
             (
-                "guidelines.revisions.read",
-                "guidelines.impact.preview",
-                "guidelines.compliance.read",
-                "guidelines.compliance.evaluate",
+                GUIDELINE_REVISIONS_READ,
+                GUIDELINE_IMPACT_PREVIEW,
+                GUIDELINE_ASSESSMENTS_READ,
+                GUIDELINE_ASSESSMENTS_RECORD,
                 "guidelines.waiver.read",
                 "guidelines.waiver.review",
                 "guidelines.waiver.revalidate",
@@ -248,9 +258,9 @@ SKB_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         (
             "QA",
             (
-                "guidelines.revisions.read",
-                "guidelines.compliance.read",
-                "guidelines.compliance.evaluate",
+                GUIDELINE_REVISIONS_READ,
+                GUIDELINE_ASSESSMENTS_READ,
+                GUIDELINE_ASSESSMENTS_RECORD,
                 "guidelines.waiver.read",
                 "guidelines.waiver.request",
             ),
@@ -258,19 +268,18 @@ SKB_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         (
             "Reporter",
             (
-                "guidelines.revisions.read",
-                "guidelines.impact.preview",
-                "guidelines.compliance.read",
+                GUIDELINE_REVISIONS_READ,
+                GUIDELINE_ASSESSMENTS_READ,
                 "guidelines.waiver.read",
             ),
         ),
         (
             "Sprint Manager",
             (
-                "guidelines.revisions.read",
-                "guidelines.impact.preview",
-                "guidelines.compliance.read",
-                "guidelines.compliance.evaluate",
+                GUIDELINE_REVISIONS_READ,
+                GUIDELINE_IMPACT_PREVIEW,
+                GUIDELINE_ASSESSMENTS_READ,
+                GUIDELINE_ASSESSMENTS_RECORD,
                 "guidelines.waiver.read",
                 "guidelines.waiver.request",
             ),
@@ -278,15 +287,15 @@ SKB_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         (
             "Executor",
             (
-                "guidelines.revisions.read",
-                "guidelines.compliance.read",
-                "guidelines.compliance.evaluate",
+                GUIDELINE_REVISIONS_READ,
+                GUIDELINE_ASSESSMENTS_READ,
+                GUIDELINE_ASSESSMENTS_RECORD,
                 "guidelines.waiver.read",
                 "guidelines.waiver.request",
             ),
         ),
     ),
-    historical_authorities=_SKB_HISTORICAL_AUTHORITIES,
+    historical_authorities=_SKB3_HISTORICAL_AUTHORITIES,
 )
 
 
@@ -294,7 +303,7 @@ SKB_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
     SKA_PERMISSION_INTRODUCTION_V1,
-    SKB_PERMISSION_INTRODUCTION_V1,
+    SKB3_PERMISSION_INTRODUCTION_V1,
 )
 
 
@@ -520,8 +529,8 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "create": True,
             "retire": True,
         },
-        "rules": {
-            "author_blocking": True,
+        "metrics": {
+            "author": True,
         },
         "impact": {
             "preview": True,
@@ -529,9 +538,9 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "adoption": {
             "manage": True,
         },
-        "compliance": {
+        "assessments": {
             "read": True,
-            "evaluate": True,
+            "record": True,
         },
         "waiver": {
             "read": True,
@@ -3076,6 +3085,14 @@ class DefaultPermissionPolicy:
 __all__ = [
     "ALL_FLAGS",
     "DefaultPermissionPolicy",
+    "GUIDELINE_ADOPTION_MANAGE",
+    "GUIDELINE_ASSESSMENTS_READ",
+    "GUIDELINE_ASSESSMENTS_RECORD",
+    "GUIDELINE_IMPACT_PREVIEW",
+    "GUIDELINE_METRICS_AUTHOR",
+    "GUIDELINE_REVISIONS_CREATE",
+    "GUIDELINE_REVISIONS_READ",
+    "GUIDELINE_REVISIONS_RETIRE",
     "InvalidPermissionContext",
     "LEGACY_PERMISSION_MAP",
     "PERMISSION_REGISTRY",
@@ -3091,7 +3108,7 @@ __all__ = [
     "Permissions",
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
-    "SKB_PERMISSION_INTRODUCTION_V1",
+    "SKB3_PERMISSION_INTRODUCTION_V1",
     "STRUCTURED_SPEC_ENTITY_OPERATIONS",
     "STRUCTURED_SPEC_ENTITY_TYPES",
     "check_permission",

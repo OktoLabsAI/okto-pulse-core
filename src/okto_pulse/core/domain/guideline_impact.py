@@ -8,9 +8,11 @@ generation, event dispatch, or KG write.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from types import MappingProxyType
 
 from okto_pulse.core.domain.guideline_lifecycle import (
     GuidelineBindingApplied,
@@ -39,25 +41,27 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicyCurrentness,
     PolicyEntityType,
     PolicySubjectRef,
-    PolicyWaiver,
-    PolicyWaiverStatus,
     guideline_binding_snapshot_digest,
-    guideline_impact_digest_v1,
+    guideline_impact_digest_v2,
     normalize_guideline_semantic_version,
     normalize_guideline_sha256,
     normalize_policy_bounded_text,
 )
-from okto_pulse.core.domain.guideline_policy_evaluator import (
-    policy_binding_head_digest_v1,
-    policy_set_digest_v1,
+from okto_pulse.core.domain.guideline_semantic_assessment import (
+    semantic_binding_head_digest_v1,
+    semantic_policy_set_digest_v1,
+)
+from okto_pulse.core.domain.guideline_semantic_exceptions import (
+    SemanticMetricWaiver,
+    SemanticMetricWaiverStatus,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 
 
-GUIDELINE_ADOPTION_EVENT_TYPE = "board.policy_adoption_changed.v1"
+GUIDELINE_ADOPTION_EVENT_TYPE = "board.semantic_guideline_adoption_changed.v2"
 GUIDELINE_ADOPTION_ACTIVITY_ACTION = "guideline_revision_adopted"
 GUIDELINE_UNLINK_ACTIVITY_ACTION = "guideline_unlinked"
-GUIDELINE_RETIREMENT_EVENT_TYPE = "board.policy_retirement_changed.v1"
+GUIDELINE_RETIREMENT_EVENT_TYPE = "board.semantic_guideline_retirement_changed.v2"
 GUIDELINE_RETIREMENT_ACTIVITY_ACTION = "guideline_retired"
 _INITIAL_BINDING_NAMESPACE = uuid.UUID("607df50c-3d89-5bca-bfab-6e445d329c46")
 _ACTIVITY_NAMESPACE = uuid.UUID("ec1be62a-87b6-55fd-89b9-10ff6071089d")
@@ -146,7 +150,7 @@ def _revision_evidence(
         raise GuidelineImpactError(code) from exc
 
 
-def _canonical_rule_ids(
+def _canonical_metric_ids(
     values: object,
     code: str,
 ) -> tuple[str, ...]:
@@ -158,6 +162,34 @@ def _canonical_rule_ids(
     if len(set(normalized)) != len(normalized):
         raise GuidelineImpactError(code)
     return tuple(sorted(normalized))
+
+
+def _canonical_threshold_overrides(
+    values: object,
+) -> Mapping[str, int]:
+    if not isinstance(values, Mapping):
+        raise GuidelineImpactError(
+            "guideline_impact_metric_threshold_overrides_invalid"
+        )
+    resolved: dict[str, int] = {}
+    seen: set[str] = set()
+    for raw_code, raw_threshold in values.items():
+        code = _required_text(
+            raw_code,
+            "guideline_impact_metric_threshold_overrides_invalid",
+        )
+        if (
+            code.casefold() in seen
+            or not isinstance(raw_threshold, int)
+            or isinstance(raw_threshold, bool)
+            or not 0 <= raw_threshold <= 100
+        ):
+            raise GuidelineImpactError(
+                "guideline_impact_metric_threshold_overrides_invalid"
+            )
+        seen.add(code.casefold())
+        resolved[code] = raw_threshold
+    return MappingProxyType(dict(sorted(resolved.items())))
 
 
 def _semantic_binding_id(*, board_id: str, guideline_id: str) -> str:
@@ -234,19 +266,19 @@ def _canonical_subjects(
 
 
 def _canonical_waivers(
-    waivers: tuple[PolicyWaiver, ...],
+    waivers: tuple[SemanticMetricWaiver, ...],
     *,
     board_id: str,
-) -> tuple[PolicyWaiver, ...]:
+) -> tuple[SemanticMetricWaiver, ...]:
     if not isinstance(waivers, tuple | list) or any(
-        not isinstance(waiver, PolicyWaiver) for waiver in waivers
+        not isinstance(waiver, SemanticMetricWaiver) for waiver in waivers
     ):
         raise GuidelineImpactError("guideline_impact_waivers_invalid")
     resolved = tuple(waivers)
     if len({waiver.waiver_id for waiver in resolved}) != len(resolved):
         raise GuidelineImpactError("guideline_impact_waivers_duplicate")
     if any(
-        waiver.board_id != board_id or waiver.subject.board_id != board_id
+        waiver.anchor.subject.board_id != board_id
         for waiver in resolved
     ):
         raise GuidelineImpactError("guideline_impact_waiver_board_mismatch")
@@ -277,7 +309,7 @@ def _revision_map(
     return mapping
 
 
-def _rule_deltas(
+def _metric_deltas(
     before: GuidelineRevision | None,
     after: GuidelineRevision,
 ) -> tuple[
@@ -287,28 +319,30 @@ def _rule_deltas(
     tuple[PolicyEntityType, ...],
 ]:
     before_by_id = (
-        {rule.rule_id: rule for rule in before.rules} if before is not None else {}
+        {metric.metric_id: metric for metric in before.metrics}
+        if before is not None
+        else {}
     )
-    after_by_id = {rule.rule_id: rule for rule in after.rules}
+    after_by_id = {metric.metric_id: metric for metric in after.metrics}
     added = tuple(sorted(set(after_by_id) - set(before_by_id)))
     removed = tuple(sorted(set(before_by_id) - set(after_by_id)))
     changed = tuple(
         sorted(
-            rule_id
-            for rule_id in set(before_by_id) & set(after_by_id)
-            if before_by_id[rule_id] != after_by_id[rule_id]
+            metric_id
+            for metric_id in set(before_by_id) & set(after_by_id)
+            if before_by_id[metric_id] != after_by_id[metric_id]
         )
     )
     affected_ids = set(added) | set(changed) | set(removed)
     targets = {
         target
-        for rule_id in affected_ids
-        for rule in (
-            before_by_id.get(rule_id),
-            after_by_id.get(rule_id),
+        for metric_id in affected_ids
+        for metric in (
+            before_by_id.get(metric_id),
+            after_by_id.get(metric_id),
         )
-        if rule is not None
-        for target in rule.target_entity_types
+        if metric is not None
+        for target in metric.target_entity_types
     }
     return (
         added,
@@ -323,34 +357,57 @@ def _revision_targets(
 ) -> tuple[PolicyEntityType, ...]:
     """Return every entity type whose effective policy can change.
 
-    A binding-only change (priority or default enforcement) does not alter any
-    rule identity, so it is intentionally absent from ``_rule_deltas``.  It
-    still changes how every rule in the adopted revision is evaluated and must
+    A binding-only change does not alter any metric identity, so it is
+    intentionally absent from ``_metric_deltas``. It still changes how every
+    metric in the adopted revision is assessed and must
     therefore declare those targets in the impact receipt.
     """
 
     return tuple(
         sorted(
-            {target for rule in revision.rules for target in rule.target_entity_types},
+            {
+                target
+                for metric in revision.metrics
+                for target in metric.target_entity_types
+            },
             key=lambda target: target.value,
         )
     )
 
 
-def _waiver_manifest(waiver: PolicyWaiver) -> dict[str, object]:
+def _waiver_manifest(waiver: SemanticMetricWaiver) -> dict[str, object]:
+    anchor = waiver.anchor
     return {
         "waiver_id": waiver.waiver_id,
         "waiver_revision": waiver.waiver_revision,
         "status": waiver.status.value,
-        "receipt_id": waiver.receipt_id,
-        "finding_id": waiver.finding_id,
-        "guideline_id": waiver.guideline_id,
-        "revision_id": waiver.revision_id,
-        "rule_id": waiver.rule_id,
-        "subject_type": waiver.subject.entity_type.value,
-        "subject_id": waiver.subject.subject_id,
-        "subject_version": waiver.subject.subject_version,
-        "expires_at": waiver.expires_at.isoformat(),
+        "scope_digest": waiver.scope_digest,
+        "head_digest": waiver.head_digest,
+        "receipt_id": anchor.receipt_id,
+        "receipt_digest": anchor.receipt_digest,
+        "finding_id": anchor.finding_id,
+        "finding_digest": anchor.finding_digest,
+        "guideline_id": anchor.guideline_id,
+        "revision_id": anchor.guideline_revision_id,
+        "revision_digest": anchor.guideline_revision_digest,
+        "binding_id": anchor.binding_id,
+        "binding_revision": anchor.binding_revision,
+        "binding_configuration_digest": (
+            anchor.binding_configuration_digest
+        ),
+        "metric_id": anchor.metric_id,
+        "metric_code": anchor.metric_code,
+        "metric_result_id": anchor.metric_result_id,
+        "metric_result_digest": anchor.metric_result_digest,
+        "subject_type": anchor.subject.entity_type.value,
+        "subject_id": anchor.subject.subject_id,
+        "subject_version": anchor.subject.subject_version,
+        "subject_content_digest": anchor.subject_content_digest,
+        "expires_at": (
+            waiver.expires_at.isoformat()
+            if waiver.expires_at is not None
+            else None
+        ),
     }
 
 
@@ -498,9 +555,11 @@ class GuidelineImpactPreviewCommand:
     active_bindings: tuple[BoardGuidelineBinding, ...]
     active_revisions: tuple[GuidelineRevision, ...]
     subjects: tuple[PolicySubjectRef, ...]
-    waivers: tuple[PolicyWaiver, ...]
+    waivers: tuple[SemanticMetricWaiver, ...]
     proposed_priority: int
-    proposed_default_enforcement: GuidelineEnforcement
+    proposed_enforcement: GuidelineEnforcement
+    proposed_minimum_confidence: int
+    proposed_metric_threshold_overrides: Mapping[str, int]
     requested_by: str
     created_at: datetime
     idempotency_key: str
@@ -534,7 +593,7 @@ class GuidelineImpactPreviewCommand:
             ("active_bindings", self.active_bindings, BoardGuidelineBinding),
             ("active_revisions", self.active_revisions, GuidelineRevision),
             ("subjects", self.subjects, PolicySubjectRef),
-            ("waivers", self.waivers, PolicyWaiver),
+            ("waivers", self.waivers, SemanticMetricWaiver),
         )
         for field_name, values, expected_type in typed_collections:
             if not isinstance(values, tuple | list) or any(
@@ -555,13 +614,24 @@ class GuidelineImpactPreviewCommand:
                 self.from_revision is not None
                 and not isinstance(self.from_revision, GuidelineRevision)
             )
-            or not isinstance(self.proposed_default_enforcement, GuidelineEnforcement)
+            or not isinstance(self.proposed_enforcement, GuidelineEnforcement)
+            or not isinstance(self.proposed_minimum_confidence, int)
+            or isinstance(self.proposed_minimum_confidence, bool)
+            or not 0 <= self.proposed_minimum_confidence <= 100
+            or not isinstance(self.proposed_metric_threshold_overrides, Mapping)
             or not isinstance(self.proposed_priority, int)
             or isinstance(self.proposed_priority, bool)
             or self.proposed_priority < 0
             or self.proposed_priority > POLICY_SQL_INTEGER_MAX
         ):
             raise GuidelineImpactError("guideline_impact_preview_input_invalid")
+        object.__setattr__(
+            self,
+            "proposed_metric_threshold_overrides",
+            _canonical_threshold_overrides(
+                self.proposed_metric_threshold_overrides
+            ),
+        )
         requested_to_revision_id = (
             None
             if self.requested_to_revision_id is None
@@ -600,7 +670,9 @@ def guideline_impact_preview_request_digest_v1(
     board_id: str,
     guideline_id: str,
     proposed_priority: int,
-    proposed_default_enforcement: GuidelineEnforcement,
+    proposed_enforcement: GuidelineEnforcement,
+    proposed_minimum_confidence: int,
+    proposed_metric_threshold_overrides: Mapping[str, int],
     requested_by: str,
     requested_to_revision_id: str | None,
 ) -> str:
@@ -625,7 +697,11 @@ def guideline_impact_preview_request_digest_v1(
         not isinstance(proposed_priority, int)
         or isinstance(proposed_priority, bool)
         or not 0 <= proposed_priority <= POLICY_SQL_INTEGER_MAX
-        or not isinstance(proposed_default_enforcement, GuidelineEnforcement)
+        or not isinstance(proposed_enforcement, GuidelineEnforcement)
+        or not isinstance(proposed_minimum_confidence, int)
+        or isinstance(proposed_minimum_confidence, bool)
+        or not 0 <= proposed_minimum_confidence <= 100
+        or not isinstance(proposed_metric_threshold_overrides, Mapping)
     ):
         raise GuidelineImpactError("guideline_impact_preview_input_invalid")
     requested_revision = (
@@ -639,12 +715,18 @@ def guideline_impact_preview_request_digest_v1(
     )
     return canonical_sha256(
         {
-            "contract": "guideline-impact-preview-request/v1",
+            "contract": "guideline-impact-preview-request/v2",
             "operation": "preview",
             "board_id": board_id,
             "guideline_id": guideline_id,
             "proposed_priority": proposed_priority,
-            "proposed_default_enforcement": proposed_default_enforcement.value,
+            "proposed_enforcement": proposed_enforcement.value,
+            "proposed_minimum_confidence": proposed_minimum_confidence,
+            "proposed_metric_threshold_overrides": dict(
+                _canonical_threshold_overrides(
+                    proposed_metric_threshold_overrides
+                )
+            ),
             "requested_by": requested_by,
             # ``None`` is an exact "resolve current head" intention, never a
             # wildcard for an earlier explicit historical target.
@@ -671,6 +753,14 @@ def plan_guideline_impact_preview(
         or target.guideline_id != command.guideline_id
     ):
         raise GuidelineImpactError("guideline_impact_target_scope_mismatch")
+    known_metric_codes = {metric.code for metric in target.metrics}
+    if (
+        set(command.proposed_metric_threshold_overrides)
+        - known_metric_codes
+    ):
+        raise GuidelineImpactError(
+            "guideline_impact_threshold_override_unknown"
+        )
     current = command.current_binding
     before = command.from_revision
     if current is None:
@@ -690,7 +780,7 @@ def plan_guideline_impact_preview(
             or before.guideline_id != current.guideline_id
             or before.revision_id != current.revision_id
             or before.semantic_version != current.semantic_version
-            or before.content_digest != current.revision_digest
+            or before.revision_digest != current.revision_digest
         ):
             raise GuidelineImpactError("guideline_impact_binding_source_mismatch")
         expected_binding_revision = current.binding_revision
@@ -700,9 +790,12 @@ def plan_guideline_impact_preview(
             current.state is GuidelineBindingState.ACTIVE
             and current.revision_id == target.revision_id
             and current.semantic_version == target.semantic_version
-            and current.revision_digest == target.content_digest
+            and current.revision_digest == target.revision_digest
             and current.priority == command.proposed_priority
-            and current.default_enforcement is command.proposed_default_enforcement
+            and current.enforcement is command.proposed_enforcement
+            and current.minimum_confidence == command.proposed_minimum_confidence
+            and dict(current.metric_threshold_overrides)
+            == command.proposed_metric_threshold_overrides
         ):
             raise GuidelineImpactError("guideline_impact_no_changes")
 
@@ -755,12 +848,14 @@ def plan_guideline_impact_preview(
         guideline_id=command.guideline_id,
         revision_id=target.revision_id,
         semantic_version=target.semantic_version,
-        revision_digest=target.content_digest,
+        revision_digest=target.revision_digest,
         priority=command.proposed_priority,
         binding_revision=(expected_binding_revision or 0) + 1,
         adopted_by=command.requested_by,
         adopted_at=command.created_at,
-        default_enforcement=command.proposed_default_enforcement,
+        enforcement=command.proposed_enforcement,
+        minimum_confidence=command.proposed_minimum_confidence,
+        metric_threshold_overrides=command.proposed_metric_threshold_overrides,
         state=GuidelineBindingState.ACTIVE,
         source_kind=(
             current.source_kind
@@ -803,22 +898,53 @@ def plan_guideline_impact_preview(
         else revision_by_identity[(binding.guideline_id, binding.revision_id)]
         for binding in after_bindings
     )
-    binding_head_before = policy_binding_head_digest_v1(before_bindings)
-    binding_head_after = policy_binding_head_digest_v1(after_bindings)
-    policy_set_before = policy_set_digest_v1(before_bindings, before_revisions)
-    policy_set_after = policy_set_digest_v1(after_bindings, after_revisions)
+    binding_head_before = semantic_binding_head_digest_v1(before_bindings)
+    binding_head_after = semantic_binding_head_digest_v1(after_bindings)
+    policy_set_before = semantic_policy_set_digest_v1(
+        before_bindings,
+        before_revisions,
+    )
+    policy_set_after = semantic_policy_set_digest_v1(
+        after_bindings,
+        after_revisions,
+    )
     delta_before = (
         before
         if current is not None and current.state is GuidelineBindingState.ACTIVE
         else None
     )
-    added, changed, removed, targets = _rule_deltas(delta_before, target)
+    added, changed, removed, targets = _metric_deltas(delta_before, target)
+    revision_changed = bool(
+        delta_before is not None
+        and (
+            delta_before.revision_id != target.revision_id
+            or delta_before.revision_digest != target.revision_digest
+        )
+    )
+    if revision_changed:
+        # Every assessment and exception is fenced to the exact semantic
+        # revision, not only to its metric definitions.  Prose, tags, metric
+        # order, or any other revision-level change therefore stales evidence
+        # even when the individual metric payloads compare equal.
+        targets = tuple(
+            sorted(
+                {
+                    *targets,
+                    *_revision_targets(delta_before),
+                    *_revision_targets(target),
+                },
+                key=lambda entity_type: entity_type.value,
+            )
+        )
     binding_configuration_changed = bool(
         current is not None
         and current.state is GuidelineBindingState.ACTIVE
         and (
             current.priority != command.proposed_priority
-            or current.default_enforcement is not command.proposed_default_enforcement
+            or current.enforcement is not command.proposed_enforcement
+            or current.minimum_confidence != command.proposed_minimum_confidence
+            or dict(current.metric_threshold_overrides)
+            != command.proposed_metric_threshold_overrides
         )
     )
     if binding_configuration_changed:
@@ -852,8 +978,12 @@ def plan_guideline_impact_preview(
                 "policy_set_digest_after": policy_set_after,
                 "to_revision_id": target.revision_id,
                 "proposed_priority": command.proposed_priority,
-                "proposed_default_enforcement": (
-                    command.proposed_default_enforcement.value
+                "proposed_enforcement": command.proposed_enforcement.value,
+                "proposed_minimum_confidence": (
+                    command.proposed_minimum_confidence
+                ),
+                "proposed_metric_threshold_overrides": (
+                    command.proposed_metric_threshold_overrides
                 ),
             },
         )
@@ -865,9 +995,9 @@ def plan_guideline_impact_preview(
             entity_id=target_type.value,
             details={
                 "target_entity_type": target_type.value,
-                "added_rule_ids": added,
-                "changed_rule_ids": changed,
-                "removed_rule_ids": removed,
+                "added_metric_ids": added,
+                "changed_metric_ids": changed,
+                "removed_metric_ids": removed,
             },
         )
         for target_type in targets
@@ -893,23 +1023,28 @@ def plan_guideline_impact_preview(
     live_waivers = tuple(
         waiver
         for waiver in waivers
-        if waiver.status in {PolicyWaiverStatus.REQUESTED, PolicyWaiverStatus.APPROVED}
+        if waiver.status
+        in {
+            SemanticMetricWaiverStatus.REQUESTED,
+            SemanticMetricWaiverStatus.APPROVED,
+        }
         and (
-            waiver.status is PolicyWaiverStatus.REQUESTED
-            or waiver.is_effective_at(command.created_at)
+            waiver.status is SemanticMetricWaiverStatus.REQUESTED
+            or waiver.expires_at is None
+            or command.created_at < waiver.expires_at
         )
-        and waiver.guideline_id == command.guideline_id
+        and waiver.anchor.guideline_id == command.guideline_id
         and (
-            waiver.subject.entity_type,
-            waiver.subject.subject_id,
+            waiver.anchor.subject.entity_type,
+            waiver.anchor.subject.subject_id,
         )
         in affected_subject_identities
     )
     waiver_items = tuple(
         _item(
             item_kind=GuidelineImpactItemKind.WAIVER,
-            entity_type=waiver.subject.entity_type.value,
-            entity_id=waiver.subject.subject_id,
+            entity_type=waiver.anchor.subject.entity_type.value,
+            entity_id=waiver.anchor.subject.subject_id,
             related_id=waiver.waiver_id,
             entity_version=waiver.waiver_revision,
             details={
@@ -951,11 +1086,13 @@ def plan_guideline_impact_preview(
         "from_semantic_version": (
             before.semantic_version if before is not None else None
         ),
-        "from_revision_digest": (before.content_digest if before is not None else None),
+        "from_revision_digest": (
+            before.revision_digest if before is not None else None
+        ),
         "to_revision_id": target.revision_id,
         "to_revision_number": target.revision_number,
         "to_semantic_version": target.semantic_version,
-        "to_revision_digest": target.content_digest,
+        "to_revision_digest": target.revision_digest,
         "expected_head_revision": head.head_revision,
         "expected_binding_revision": expected_binding_revision,
         "expected_binding_state": expected_binding_state,
@@ -967,14 +1104,18 @@ def plan_guideline_impact_preview(
         "artifact_snapshot_digest": artifact_snapshot_digest,
         "waiver_snapshot_digest": waiver_snapshot_digest,
         "proposed_priority": command.proposed_priority,
-        "proposed_default_enforcement": command.proposed_default_enforcement,
+        "proposed_enforcement": command.proposed_enforcement,
+        "proposed_minimum_confidence": command.proposed_minimum_confidence,
+        "proposed_metric_threshold_overrides": (
+            command.proposed_metric_threshold_overrides
+        ),
         "affected_entity_types": targets,
         "items": canonical_items,
-        "added_rule_ids": added,
-        "changed_rule_ids": changed,
-        "removed_rule_ids": removed,
+        "added_metric_ids": added,
+        "changed_metric_ids": changed,
+        "removed_metric_ids": removed,
     }
-    impact_digest = guideline_impact_digest_v1(**digest_arguments)
+    impact_digest = guideline_impact_digest_v2(**digest_arguments)
     receipt = GuidelineImpactReceipt(
         impact_receipt_id=command.impact_receipt_id,
         requested_by=command.requested_by,
@@ -986,7 +1127,11 @@ def plan_guideline_impact_preview(
         board_id=command.board_id,
         guideline_id=command.guideline_id,
         proposed_priority=command.proposed_priority,
-        proposed_default_enforcement=command.proposed_default_enforcement,
+        proposed_enforcement=command.proposed_enforcement,
+        proposed_minimum_confidence=command.proposed_minimum_confidence,
+        proposed_metric_threshold_overrides=(
+            command.proposed_metric_threshold_overrides
+        ),
         requested_by=command.requested_by,
         requested_to_revision_id=command.requested_to_revision_id,
     )
@@ -1023,9 +1168,9 @@ class GuidelineBindingChangeEvent:
     binding_head_digest_after: str
     policy_set_digest_before: str
     policy_set_digest_after: str
-    added_rule_ids: tuple[str, ...]
-    changed_rule_ids: tuple[str, ...]
-    removed_rule_ids: tuple[str, ...]
+    added_metric_ids: tuple[str, ...]
+    changed_metric_ids: tuple[str, ...]
+    removed_metric_ids: tuple[str, ...]
     actor_id: str
     actor_type: str
     occurred_at: datetime
@@ -1171,11 +1316,11 @@ class GuidelineBindingChangeEvent:
                     f"guideline_adoption_event_{field_name}_invalid"
                 ) from exc
             object.__setattr__(self, field_name, normalized_digest)
-        normalized_rule_sets: list[tuple[str, ...]] = []
+        normalized_metric_sets: list[tuple[str, ...]] = []
         for field_name in (
-            "added_rule_ids",
-            "changed_rule_ids",
-            "removed_rule_ids",
+            "added_metric_ids",
+            "changed_metric_ids",
+            "removed_metric_ids",
         ):
             values = getattr(self, field_name)
             if (
@@ -1193,17 +1338,19 @@ class GuidelineBindingChangeEvent:
                 field_name,
                 tuple(sorted(value.strip() for value in values)),
             )
-            normalized_rule_sets.append(getattr(self, field_name))
-        rule_sets = tuple(set(values) for values in normalized_rule_sets)
+            normalized_metric_sets.append(getattr(self, field_name))
+        metric_sets = tuple(set(values) for values in normalized_metric_sets)
         if any(
             left & right
-            for index, left in enumerate(rule_sets)
-            for right in rule_sets[index + 1 :]
+            for index, left in enumerate(metric_sets)
+            for right in metric_sets[index + 1 :]
         ):
-            raise GuidelineImpactError("guideline_adoption_event_rule_sets_overlap")
-        if operation == "unlink" and (self.added_rule_ids or self.changed_rule_ids):
+            raise GuidelineImpactError("guideline_adoption_event_metric_sets_overlap")
+        if operation == "unlink" and (
+            self.added_metric_ids or self.changed_metric_ids
+        ):
             raise GuidelineImpactError(
-                "guideline_adoption_event_unlink_rule_sets_invalid"
+                "guideline_adoption_event_unlink_metric_sets_invalid"
             )
 
     def payload(self) -> dict[str, object]:
@@ -1230,9 +1377,9 @@ class GuidelineBindingChangeEvent:
             "policy_set_digest_before": self.policy_set_digest_before,
             "policy_set_digest_after": self.policy_set_digest_after,
             "policy_set_digest": self.policy_set_digest_after,
-            "added_rule_ids": self.added_rule_ids,
-            "changed_rule_ids": self.changed_rule_ids,
-            "removed_rule_ids": self.removed_rule_ids,
+            "added_metric_ids": self.added_metric_ids,
+            "changed_metric_ids": self.changed_metric_ids,
+            "removed_metric_ids": self.removed_metric_ids,
             "actor_id": self.actor_id,
             "actor_type": self.actor_type,
             "occurred_at": self.occurred_at.isoformat(),
@@ -1345,9 +1492,9 @@ class GuidelineAdoptionMutation:
             != self.receipt.policy_set_digest_before
             or self.event.policy_set_digest_after
             != self.receipt.policy_set_digest_after
-            or self.event.added_rule_ids != self.receipt.added_rule_ids
-            or self.event.changed_rule_ids != self.receipt.changed_rule_ids
-            or self.event.removed_rule_ids != self.receipt.removed_rule_ids
+            or self.event.added_metric_ids != self.receipt.added_metric_ids
+            or self.event.changed_metric_ids != self.receipt.changed_metric_ids
+            or self.event.removed_metric_ids != self.receipt.removed_metric_ids
             or self.binding.board_id != self.receipt.board_id
             or self.binding.guideline_id != self.receipt.guideline_id
             or self.binding.revision_id != self.receipt.to_revision_id
@@ -1442,7 +1589,11 @@ def plan_guideline_adoption(
             semantic_version=receipt.to_semantic_version,
             revision_digest=receipt.to_revision_digest,
             priority=receipt.proposed_priority,
-            default_enforcement=receipt.proposed_default_enforcement,
+            enforcement=receipt.proposed_enforcement,
+            minimum_confidence=receipt.proposed_minimum_confidence,
+            metric_threshold_overrides=(
+                receipt.proposed_metric_threshold_overrides
+            ),
             source_kind=(
                 current_binding.source_kind
                 if current_binding is not None
@@ -1482,9 +1633,9 @@ def plan_guideline_adoption(
         binding_head_digest_after=receipt.binding_head_digest_after,
         policy_set_digest_before=receipt.policy_set_digest_before,
         policy_set_digest_after=receipt.policy_set_digest_after,
-        added_rule_ids=receipt.added_rule_ids,
-        changed_rule_ids=receipt.changed_rule_ids,
-        removed_rule_ids=receipt.removed_rule_ids,
+        added_metric_ids=receipt.added_metric_ids,
+        changed_metric_ids=receipt.changed_metric_ids,
+        removed_metric_ids=receipt.removed_metric_ids,
         actor_id=normalized_actor_id,
         actor_type=normalized_actor_type,
         occurred_at=normalized_occurred_at,
@@ -1515,7 +1666,7 @@ def guideline_unlink_request_digest_v1(
     binding_head_digest_after: str,
     policy_set_digest_before: str,
     policy_set_digest_after: str,
-    removed_rule_ids: tuple[str, ...],
+    removed_metric_ids: tuple[str, ...],
     actor_id: str,
     actor_type: str,
 ) -> str:
@@ -1550,10 +1701,10 @@ def guideline_unlink_request_digest_v1(
                 policy_set_digest_after,
                 "guideline_unlink_policy_set_digest_after_invalid",
             ),
-            "removed_rule_ids": list(
-                _canonical_rule_ids(
-                    removed_rule_ids,
-                    "guideline_unlink_removed_rule_ids_invalid",
+            "removed_metric_ids": list(
+                _canonical_metric_ids(
+                    removed_metric_ids,
+                    "guideline_unlink_removed_metric_ids_invalid",
                 )
             ),
             "actor_id": _required_text(
@@ -1577,7 +1728,7 @@ class GuidelineUnlinkMutation:
     binding_head_digest_after: str
     policy_set_digest_before: str
     policy_set_digest_after: str
-    removed_rule_ids: tuple[str, ...]
+    removed_metric_ids: tuple[str, ...]
     activity_id: str
     activity_action: str
     idempotency_key: str
@@ -1618,9 +1769,9 @@ class GuidelineUnlinkMutation:
                 raise GuidelineImpactError(
                     f"guideline_unlink_{field_name}_invalid"
                 ) from exc
-        removed_rule_ids = _canonical_rule_ids(
-            self.removed_rule_ids,
-            "guideline_unlink_removed_rule_ids_invalid",
+        removed_metric_ids = _canonical_metric_ids(
+            self.removed_metric_ids,
+            "guideline_unlink_removed_metric_ids_invalid",
         )
         try:
             request_digest = normalize_guideline_sha256(
@@ -1643,8 +1794,11 @@ class GuidelineUnlinkMutation:
             or self.binding.semantic_version != self.previous_binding.semantic_version
             or self.binding.revision_digest != self.previous_binding.revision_digest
             or self.binding.priority != self.previous_binding.priority
-            or self.binding.default_enforcement
-            is not self.previous_binding.default_enforcement
+            or self.binding.enforcement is not self.previous_binding.enforcement
+            or self.binding.minimum_confidence
+            != self.previous_binding.minimum_confidence
+            or dict(self.binding.metric_threshold_overrides)
+            != dict(self.previous_binding.metric_threshold_overrides)
             or self.binding.source_kind is not self.previous_binding.source_kind
             or self.event.operation != "unlink"
             or self.event.board_id != self.binding.board_id
@@ -1671,9 +1825,9 @@ class GuidelineUnlinkMutation:
             != lineage_digests["policy_set_digest_before"]
             or self.event.policy_set_digest_after
             != lineage_digests["policy_set_digest_after"]
-            or self.event.added_rule_ids
-            or self.event.changed_rule_ids
-            or self.event.removed_rule_ids != removed_rule_ids
+            or self.event.added_metric_ids
+            or self.event.changed_metric_ids
+            or self.event.removed_metric_ids != removed_metric_ids
             or self.event.actor_id != self.binding.adopted_by
             or self.event.occurred_at != self.binding.adopted_at
             or activity_id != str(uuid.uuid5(_ACTIVITY_NAMESPACE, self.event.event_id))
@@ -1688,7 +1842,7 @@ class GuidelineUnlinkMutation:
                 binding_head_digest_after=lineage_digests["binding_head_digest_after"],
                 policy_set_digest_before=lineage_digests["policy_set_digest_before"],
                 policy_set_digest_after=lineage_digests["policy_set_digest_after"],
-                removed_rule_ids=removed_rule_ids,
+                removed_metric_ids=removed_metric_ids,
                 actor_id=self.event.actor_id,
                 actor_type=self.event.actor_type,
             )
@@ -1700,7 +1854,7 @@ class GuidelineUnlinkMutation:
         object.__setattr__(self, "request_digest", request_digest)
         for field_name, value in lineage_digests.items():
             object.__setattr__(self, field_name, value)
-        object.__setattr__(self, "removed_rule_ids", removed_rule_ids)
+        object.__setattr__(self, "removed_metric_ids", removed_metric_ids)
 
 
 def plan_guideline_unlink(
@@ -1725,7 +1879,7 @@ def plan_guideline_unlink(
         or current_revision.guideline_id != current_binding.guideline_id
         or current_revision.revision_id != current_binding.revision_id
         or current_revision.semantic_version != current_binding.semantic_version
-        or current_revision.content_digest != current_binding.revision_digest
+        or current_revision.revision_digest != current_binding.revision_digest
     ):
         raise GuidelineImpactError("guideline_unlink_current_binding_invalid")
     if not isinstance(active_bindings, tuple | list) or any(
@@ -1774,7 +1928,8 @@ def plan_guideline_unlink(
     if (
         (retirement is None and current_inventory != (current_binding,))
         or (
-            retirement is not None and current_inventory not in {(), (current_binding,)}
+            retirement is not None
+            and current_inventory not in ((), (current_binding,))
         )
         or len({binding.binding_id for binding in active}) != len(active)
         or len({binding.guideline_id for binding in active}) != len(active)
@@ -1783,8 +1938,8 @@ def plan_guideline_unlink(
         raise GuidelineImpactError("guideline_unlink_active_binding_inventory_mismatch")
     revisions = tuple(active_revisions)
     revision_by_identity = _revision_map(active, revisions)
-    before_head_digest = policy_binding_head_digest_v1(active)
-    before_policy_digest = policy_set_digest_v1(active, revisions)
+    before_head_digest = semantic_binding_head_digest_v1(active)
+    before_policy_digest = semantic_policy_set_digest_v1(active, revisions)
     after = tuple(
         binding
         for binding in active
@@ -1794,8 +1949,8 @@ def plan_guideline_unlink(
         revision_by_identity[(binding.guideline_id, binding.revision_id)]
         for binding in after
     )
-    after_head_digest = policy_binding_head_digest_v1(after)
-    after_policy_digest = policy_set_digest_v1(after, after_revisions)
+    after_head_digest = semantic_binding_head_digest_v1(after)
+    after_policy_digest = semantic_policy_set_digest_v1(after, after_revisions)
     transition = plan_guideline_binding_transition(
         GuidelineBindingTransitionCommand(
             binding_id=current_binding.binding_id,
@@ -1815,7 +1970,9 @@ def plan_guideline_unlink(
         raise GuidelineImpactError("guideline_unlink_noop")
     if not isinstance(transition, GuidelineBindingApplied):
         raise GuidelineImpactError("guideline_unlink_transition_invalid")
-    removed = tuple(sorted(rule.rule_id for rule in current_revision.rules))
+    removed = tuple(
+        sorted(metric.metric_id for metric in current_revision.metrics)
+    )
     event = GuidelineBindingChangeEvent(
         event_id=normalized_event_id,
         event_type=GUIDELINE_ADOPTION_EVENT_TYPE,
@@ -1842,9 +1999,9 @@ def plan_guideline_unlink(
         binding_head_digest_after=after_head_digest,
         policy_set_digest_before=before_policy_digest,
         policy_set_digest_after=after_policy_digest,
-        added_rule_ids=(),
-        changed_rule_ids=(),
-        removed_rule_ids=removed,
+        added_metric_ids=(),
+        changed_metric_ids=(),
+        removed_metric_ids=removed,
         actor_id=normalized_actor_id,
         actor_type=normalized_actor_type,
         occurred_at=normalized_occurred_at,
@@ -1856,7 +2013,7 @@ def plan_guideline_unlink(
         binding_head_digest_after=after_head_digest,
         policy_set_digest_before=before_policy_digest,
         policy_set_digest_after=after_policy_digest,
-        removed_rule_ids=removed,
+        removed_metric_ids=removed,
         actor_id=normalized_actor_id,
         actor_type=normalized_actor_type,
     )
@@ -1868,7 +2025,7 @@ def plan_guideline_unlink(
         binding_head_digest_after=after_head_digest,
         policy_set_digest_before=before_policy_digest,
         policy_set_digest_after=after_policy_digest,
-        removed_rule_ids=removed,
+        removed_metric_ids=removed,
         activity_id=str(uuid.uuid5(_ACTIVITY_NAMESPACE, normalized_event_id)),
         activity_action=GUIDELINE_UNLINK_ACTIVITY_ACTION,
         idempotency_key=normalized_idempotency_key,
@@ -1899,7 +2056,7 @@ class GuidelineRetirementBoardEvent:
     binding_head_digest_after: str
     policy_set_digest_before: str
     policy_set_digest_after: str
-    removed_rule_ids: tuple[str, ...]
+    removed_metric_ids: tuple[str, ...]
     actor_id: str
     actor_type: str
     occurred_at: datetime
@@ -1999,10 +2156,10 @@ class GuidelineRetirementBoardEvent:
             ) from exc
         object.__setattr__(
             self,
-            "removed_rule_ids",
-            _canonical_rule_ids(
-                self.removed_rule_ids,
-                "guideline_retirement_event_removed_rules_invalid",
+            "removed_metric_ids",
+            _canonical_metric_ids(
+                self.removed_metric_ids,
+                "guideline_retirement_event_removed_metrics_invalid",
             ),
         )
         if self.actor_type not in {"agent", "user", "system"}:
@@ -2038,7 +2195,7 @@ class GuidelineRetirementBoardEvent:
             "policy_set_digest_before": self.policy_set_digest_before,
             "policy_set_digest_after": self.policy_set_digest_after,
             "policy_set_digest": self.policy_set_digest_after,
-            "removed_rule_ids": self.removed_rule_ids,
+            "removed_metric_ids": self.removed_metric_ids,
             "actor_id": self.actor_id,
             "actor_type": self.actor_type,
             "occurred_at": self.occurred_at.isoformat(),
@@ -2046,7 +2203,7 @@ class GuidelineRetirementBoardEvent:
         }
 
 
-def guideline_retirement_impact_digest_v1(
+def guideline_retirement_impact_digest_v2(
     event: GuidelineRetirementBoardEvent,
 ) -> str:
     if not isinstance(event, GuidelineRetirementBoardEvent):
@@ -2111,7 +2268,7 @@ class GuidelineRetirementImpactMutation:
             or revision.guideline_id != retirement.guideline_id
             or revision.revision_id != binding.revision_id
             or revision.semantic_version != binding.semantic_version
-            or revision.content_digest != binding.revision_digest
+            or revision.revision_digest != binding.revision_digest
             or event.board_id != binding.board_id
             or event.guideline_id != retirement.guideline_id
             or event.retirement_id != retirement.retirement_id
@@ -2122,20 +2279,20 @@ class GuidelineRetirementImpactMutation:
             or event.revision_id != revision.revision_id
             or event.revision_number != revision.revision_number
             or event.semantic_version != revision.semantic_version
-            or event.revision_digest != revision.content_digest
+            or event.revision_digest != revision.revision_digest
             or event.binding_digest_before
             != guideline_binding_snapshot_digest(
                 binding,
                 board_id=binding.board_id,
                 guideline_id=binding.guideline_id,
             )
-            or event.removed_rule_ids
-            != tuple(sorted(rule.rule_id for rule in revision.rules))
+            or event.removed_metric_ids
+            != tuple(sorted(metric.metric_id for metric in revision.metrics))
             or event.actor_id != retirement.retired_by
             or event.occurred_at != retirement.retired_at
             or activity_id != str(uuid.uuid5(_ACTIVITY_NAMESPACE, event.event_id))
             or activity_action != GUIDELINE_RETIREMENT_ACTIVITY_ACTION
-            or impact_digest != guideline_retirement_impact_digest_v1(event)
+            or impact_digest != guideline_retirement_impact_digest_v2(event)
         ):
             raise GuidelineImpactError("guideline_retirement_impact_payload_invalid")
         object.__setattr__(self, "activity_id", activity_id)
@@ -2211,12 +2368,12 @@ def plan_guideline_retirement_impact(
         current_revision.guideline_id != current_binding.guideline_id
         or current_revision.revision_id != current_binding.revision_id
         or current_revision.semantic_version != current_binding.semantic_version
-        or current_revision.content_digest != current_binding.revision_digest
+        or current_revision.revision_digest != current_binding.revision_digest
         or retirement.guideline_id != current_binding.guideline_id
     ):
         raise GuidelineImpactError("guideline_retirement_revision_mismatch")
-    before_head_digest = policy_binding_head_digest_v1(active)
-    before_policy_digest = policy_set_digest_v1(active, revisions)
+    before_head_digest = semantic_binding_head_digest_v1(active)
+    before_policy_digest = semantic_policy_set_digest_v1(active, revisions)
     after = tuple(
         binding for binding in active if binding.guideline_id != retirement.guideline_id
     )
@@ -2224,8 +2381,8 @@ def plan_guideline_retirement_impact(
         revision_by_identity[(binding.guideline_id, binding.revision_id)]
         for binding in after
     )
-    after_head_digest = policy_binding_head_digest_v1(after)
-    after_policy_digest = policy_set_digest_v1(after, after_revisions)
+    after_head_digest = semantic_binding_head_digest_v1(after)
+    after_policy_digest = semantic_policy_set_digest_v1(after, after_revisions)
     event_id = str(
         uuid.uuid5(
             _RETIREMENT_EVENT_NAMESPACE,
@@ -2246,7 +2403,7 @@ def plan_guideline_retirement_impact(
         revision_id=current_revision.revision_id,
         revision_number=current_revision.revision_number,
         semantic_version=current_revision.semantic_version,
-        revision_digest=current_revision.content_digest,
+        revision_digest=current_revision.revision_digest,
         binding_digest_before=guideline_binding_snapshot_digest(
             current_binding,
             board_id=current_binding.board_id,
@@ -2256,7 +2413,9 @@ def plan_guideline_retirement_impact(
         binding_head_digest_after=after_head_digest,
         policy_set_digest_before=before_policy_digest,
         policy_set_digest_after=after_policy_digest,
-        removed_rule_ids=tuple(sorted(rule.rule_id for rule in current_revision.rules)),
+        removed_metric_ids=tuple(
+            sorted(metric.metric_id for metric in current_revision.metrics)
+        ),
         actor_id=retirement.retired_by,
         actor_type=normalized_actor_type,
         occurred_at=retirement.retired_at,
@@ -2269,7 +2428,7 @@ def plan_guideline_retirement_impact(
         event=event,
         activity_id=str(uuid.uuid5(_ACTIVITY_NAMESPACE, event.event_id)),
         activity_action=GUIDELINE_RETIREMENT_ACTIVITY_ACTION,
-        impact_digest=guideline_retirement_impact_digest_v1(event),
+        impact_digest=guideline_retirement_impact_digest_v2(event),
     )
 
 
@@ -2294,7 +2453,7 @@ __all__ = [
     "impact_fence_from_receipt",
     "guideline_adoption_request_digest_v1",
     "guideline_impact_preview_request_digest_v1",
-    "guideline_retirement_impact_digest_v1",
+    "guideline_retirement_impact_digest_v2",
     "guideline_unlink_request_digest_v1",
     "plan_guideline_adoption",
     "plan_guideline_impact_preview",

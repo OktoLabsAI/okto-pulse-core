@@ -15,10 +15,19 @@ from okto_pulse.core.ports.requirement_lint import (
     RequirementLintWriter,
     get_requirement_lint_writer_hook,
 )
+from okto_pulse.core.services.spec_entity_canonicalization import (
+    SPEC_REQUIREMENT_FIELDS,
+    canonicalize_spec_requirement_fields,
+)
 
 
 def spec_requirement_lint_payload(spec: object) -> dict[str, Any]:
-    """Snapshot the final semantic Spec state before the UoW can commit."""
+    """Snapshot the final semantic Spec state before the UoW can commit.
+
+    Legacy requirement strings are canonicalized only in this defensive read
+    projection. This keeps the lint contract closed without turning an
+    unrelated partial update into a hidden persistence migration.
+    """
 
     payload: dict[str, Any] = {
         field_name: copy.deepcopy(getattr(spec, field_name, None))
@@ -30,6 +39,16 @@ def spec_requirement_lint_payload(spec: object) -> dict[str, Any]:
             "board_id": getattr(spec, "board_id", None),
             "version": getattr(spec, "version", None),
         }
+    )
+    requirement_fields = {
+        field_name: payload.get(field_name)
+        for field_name, _ in SPEC_REQUIREMENT_FIELDS
+    }
+    payload.update(
+        canonicalize_spec_requirement_fields(
+            requirement_fields,
+            existing_fields=requirement_fields,
+        )
     )
     return payload
 

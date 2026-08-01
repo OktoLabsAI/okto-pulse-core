@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -389,7 +390,10 @@ def test_working_ttl_expiry_does_not_touch_canonical_sources():
             created_at="2026-06-12T00:00:00Z",
         ),
     ]
-    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    enum = RebuildSourceEnumerator(
+        source_store=lambda _b: rows,
+        now=datetime(2026, 6, 12, tzinfo=timezone.utc),
+    )
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["done-current"]
@@ -423,7 +427,10 @@ def test_working_ttl_override_keeps_recent_effective_working_source():
             created_at="2026-06-12T00:00:00Z",
         ),
     ]
-    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    enum = RebuildSourceEnumerator(
+        source_store=lambda _b: rows,
+        now=datetime(2026, 6, 12, tzinfo=timezone.utc),
+    )
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["done-current"]

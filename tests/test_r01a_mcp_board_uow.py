@@ -457,7 +457,9 @@ async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board()
             board_id=board_id,
             guideline_id=linked.id,
             proposed_priority=5,
-            proposed_default_enforcement=GuidelineEnforcement.ADVISORY,
+            proposed_enforcement=GuidelineEnforcement.ADVISORY,
+            proposed_minimum_confidence=70,
+            proposed_metric_threshold_overrides={},
             requested_by=owner_id,
             idempotency_key=f"preview:{linked.id}",
         )

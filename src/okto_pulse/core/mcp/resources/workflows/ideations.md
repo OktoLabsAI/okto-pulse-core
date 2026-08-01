@@ -5,7 +5,7 @@ version: "1.0"
 Knowledge Base placement and promotion are governed by
 `okto-pulse://reference/knowledge-governance`. A KB supports the Ideation; it
 does not replace its scope, questions, or first-class downstream artifacts.
-Executable guideline evaluation follows
+Semantic guideline assessment follows
 `okto-pulse://reference/policy-compliance`.
 
 # Ideations Workflow — Scope Evaluation & Ambiguity-Killer Protocol

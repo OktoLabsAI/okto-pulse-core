@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,14 +27,13 @@ from okto_pulse.core.application.use_cases.mcp_board_crud import (
 )
 from okto_pulse.core.application.use_cases.policy_governance import (
     ADOPTION_MANAGE,
-    COMPLIANCE_EVALUATE,
-    COMPLIANCE_READ,
+    ASSESSMENTS_RECORD,
     IMPACT_PREVIEW,
+    METRICS_AUTHOR,
     POLICY_GOVERNANCE_CAPABILITIES,
     REVISIONS_CREATE,
     REVISIONS_READ,
     REVISIONS_RETIRE,
-    RULES_AUTHOR_BLOCKING,
     WAIVER_READ,
     WAIVER_REQUEST,
     WAIVER_REVALIDATE,
@@ -51,6 +51,9 @@ from okto_pulse.core.mcp.outcome import McpOutcomeKind, McpToolOutcome
 from okto_pulse.core.mcp.policy_governance_tools import (
     POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION,
     GuidelineRevisionPatchInput,
+    SemanticEvidenceRefInput,
+    SemanticMetricAssessmentInput,
+    SemanticPinpointInput,
     _native,
     register_policy_governance_tools,
 )
@@ -75,26 +78,26 @@ NEW_TOOL_NAMES = (
     "okto_pulse_get_guideline_impact",
     "okto_pulse_list_guideline_impact_items",
     "okto_pulse_adopt_guideline_revision",
-    "okto_pulse_evaluate_policy_compliance",
-    "okto_pulse_list_policy_compliance_receipts",
-    "okto_pulse_get_policy_compliance_receipt",
-    "okto_pulse_get_current_policy_compliance_receipt",
-    "okto_pulse_list_policy_compliance_findings",
-    "okto_pulse_list_policy_waivers",
-    "okto_pulse_get_policy_waiver",
-    "okto_pulse_list_policy_waiver_events",
-    "okto_pulse_request_policy_waiver",
-    "okto_pulse_review_policy_waiver",
-    "okto_pulse_revoke_policy_waiver",
-    "okto_pulse_revalidate_policy_waiver",
+    "okto_pulse_record_semantic_guideline_assessment",
+    "okto_pulse_list_semantic_guideline_assessments",
+    "okto_pulse_get_semantic_guideline_assessment",
+    "okto_pulse_get_current_semantic_guideline_assessment",
+    "okto_pulse_list_semantic_guideline_findings",
+    "okto_pulse_list_semantic_guideline_waivers",
+    "okto_pulse_get_semantic_guideline_waiver",
+    "okto_pulse_list_semantic_guideline_waiver_events",
+    "okto_pulse_request_semantic_guideline_waiver",
+    "okto_pulse_review_semantic_guideline_waiver",
+    "okto_pulse_revoke_semantic_guideline_waiver",
+    "okto_pulse_revalidate_semantic_guideline_waiver",
 )
 
 PAGINATED_TOOLS = (
     "okto_pulse_list_guideline_revisions",
     "okto_pulse_list_guideline_impact_items",
-    "okto_pulse_list_policy_compliance_receipts",
-    "okto_pulse_list_policy_compliance_findings",
-    "okto_pulse_list_policy_waivers",
+    "okto_pulse_list_semantic_guideline_assessments",
+    "okto_pulse_list_semantic_guideline_findings",
+    "okto_pulse_list_semantic_guideline_waivers",
 )
 
 _NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
@@ -176,7 +179,13 @@ class _ForbiddenUowFactory:
 def _walk_objects(schema: object) -> None:
     if isinstance(schema, dict):
         if schema.get("type") == "object" or "properties" in schema:
-            assert schema.get("additionalProperties") is False, schema
+            additional = schema.get("additionalProperties")
+            # A threshold override is intentionally a typed map keyed by the
+            # authored metric code. Structural request objects remain closed.
+            assert additional is False or (
+                "properties" not in schema
+                and additional == {"type": "integer"}
+            ), schema
         for value in schema.values():
             _walk_objects(value)
     elif isinstance(schema, list):
@@ -207,12 +216,17 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
     }
     for name in PAGINATED_TOOLS:
         properties = schemas[name]["properties"]
-        assert set(properties["profile"]["enum"]) == {"summary", "detail"}
+        expected_profiles = (
+            {"summary", "detail", "full"}
+            if "semantic_guideline" in name
+            else {"summary", "detail"}
+        )
+        assert set(properties["profile"]["enum"]) == expected_profiles
         assert {"limit", "cursor", "profile"} <= set(properties)
         assert "offset" not in properties
 
     waiver_event_properties = schemas[
-        "okto_pulse_list_policy_waiver_events"
+        "okto_pulse_list_semantic_guideline_waiver_events"
     ]["properties"]
     assert {"limit", "cursor", "profile", "offset"}.isdisjoint(
         waiver_event_properties
@@ -221,7 +235,6 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
     forbidden = {
         "actor_id",
         "actor_type",
-        "binding_id",
         "binding_revision",
         "created_at",
         "evaluation_id",
@@ -236,25 +249,144 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
     for schema in schemas.values():
         assert forbidden.isdisjoint(schema["properties"])
 
+    assessment_properties = schemas[
+        "okto_pulse_record_semantic_guideline_assessment"
+    ]["properties"]
+    assert {
+        "binding_id",
+        "expected_binding_revision",
+        "expected_subject_version",
+        "guideline_revision_id",
+    } <= set(assessment_properties)
+    binding_surfaces = {
+        name
+        for name, schema in schemas.items()
+        if "binding_id" in schema["properties"]
+    }
+    assert binding_surfaces == {
+        "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_list_semantic_guideline_assessments",
+        "okto_pulse_get_current_semantic_guideline_assessment",
+        "okto_pulse_list_semantic_guideline_findings",
+        "okto_pulse_list_semantic_guideline_waivers",
+    }
+
     assert "impact_digest" in schemas[
         "okto_pulse_adopt_guideline_revision"
     ]["properties"]
     for name in (
-        "okto_pulse_review_policy_waiver",
-        "okto_pulse_revoke_policy_waiver",
-        "okto_pulse_revalidate_policy_waiver",
+        "okto_pulse_review_semantic_guideline_waiver",
+        "okto_pulse_revoke_semantic_guideline_waiver",
+        "okto_pulse_revalidate_semantic_guideline_waiver",
     ):
         assert "expected_waiver_revision" in schemas[name]["required"]
 
+    request = schemas[
+        "okto_pulse_request_semantic_guideline_waiver"
+    ]["properties"]
+    assert {
+        "board_id",
+        "metric_result_id",
+        "finding_id",
+        "receipt_id",
+        "justification",
+        "evidence_refs",
+        "expires_at",
+        "idempotency_key",
+    } == set(request)
+    review = schemas[
+        "okto_pulse_review_semantic_guideline_waiver"
+    ]["properties"]
+    assert "expires_at" not in review
+    revalidate = schemas[
+        "okto_pulse_revalidate_semantic_guideline_waiver"
+    ]["properties"]
+    assert set(revalidate) == {
+        "board_id",
+        "waiver_id",
+        "expected_waiver_revision",
+        "evaluated_at",
+        "idempotency_key",
+    }
+    assert all("skip" not in name for name in schemas)
 
-def test_operation_capability_matrix_covers_exactly_the_13_closed_leaves() -> None:
+
+def test_operation_capability_matrix_covers_public_closed_leaves() -> None:
     mapped = {
         capability
         for capabilities in POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION.values()
         for capability in capabilities
-    } | {RULES_AUTHOR_BLOCKING}
+    } | {METRICS_AUTHOR}
     assert len(POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION) == len(NEW_TOOL_NAMES)
     assert mapped == set(POLICY_GOVERNANCE_CAPABILITIES)
+
+
+def test_policy_v1_python_names_and_evaluator_modules_are_removed() -> None:
+    from okto_pulse.core.application import use_cases
+    from okto_pulse.core.application.use_cases import policy_governance
+    from okto_pulse.core.domain import guideline_compliance
+    from okto_pulse.core.ports import guideline_policy as policy_ports
+
+    retired_application_names = {
+        "EvaluatePolicyComplianceCommand",
+        "EvaluatePolicyComplianceResult",
+        "EvaluatePolicyComplianceUseCase",
+        "GetCurrentPolicyComplianceReceiptUseCase",
+        "GetPolicyComplianceReceiptUseCase",
+        "ListPolicyComplianceFindingsUseCase",
+        "ListPolicyComplianceReceiptsUseCase",
+    }
+    assert set(policy_governance.__all__).isdisjoint(
+        retired_application_names
+    )
+    assert set(use_cases.__all__).isdisjoint(retired_application_names)
+    assert all(
+        not hasattr(policy_governance, name)
+        for name in retired_application_names
+    )
+    assert (
+        importlib.util.find_spec(
+            "okto_pulse.core.domain.guideline_policy_evaluator"
+        )
+        is None
+    )
+    assert (
+        importlib.util.find_spec(
+            "okto_pulse.core.domain.guideline_predicate_catalog"
+        )
+        is None
+    )
+    assert (
+        importlib.util.find_spec(
+            "okto_pulse.core.domain.guideline_waiver_lifecycle"
+        )
+        is None
+    )
+    assert {
+        "RecordSemanticGuidelineAssessmentCommand",
+        "RecordSemanticGuidelineAssessmentResult",
+        "RecordSemanticGuidelineAssessmentUseCase",
+    } <= set(policy_governance.__all__)
+    assert {
+        "PolicyComplianceFindingListQuery",
+        "PolicyComplianceCurrentSnapshotResolver",
+        "PolicyComplianceReceiptListQuery",
+    }.isdisjoint(policy_ports.__all__)
+    assert "SemanticGuidelineAssessmentPersistencePort" in (
+        policy_ports.__all__
+    )
+    assert {
+        "PolicyComplianceCurrentSnapshot",
+        "PolicyComplianceFindingPage",
+        "PolicyComplianceReceiptPage",
+        "assess_policy_receipt_currentness",
+        "project_policy_compliance_receipt",
+    }.isdisjoint(guideline_compliance.__all__)
+    assert {
+        "GuidelineImpactItemPage",
+        "GuidelineRevisionProjectionPage",
+        "PolicyWaiverPage",
+    } <= set(guideline_compliance.__all__)
 
 
 _DENIAL_CASES = (
@@ -295,7 +427,9 @@ _DENIAL_CASES = (
             "board_id": "board-1",
             "guideline_id": "guideline-1",
             "proposed_priority": 1,
-            "proposed_default_enforcement": "advisory",
+            "proposed_enforcement": "advisory",
+            "proposed_minimum_confidence": 80,
+            "proposed_metric_threshold_overrides": {},
             "idempotency_key": "impact-1",
         },
     ),
@@ -311,72 +445,120 @@ _DENIAL_CASES = (
         },
     ),
     (
-        "okto_pulse_evaluate_policy_compliance",
-        COMPLIANCE_EVALUATE,
+        "okto_pulse_record_semantic_guideline_assessment",
+        ASSESSMENTS_RECORD,
         {
             "board_id": "board-1",
             "entity_type": "spec",
             "subject_id": "spec-1",
-            "idempotency_key": "evaluate-1",
+            "expected_subject_version": 1,
+            "binding_id": "binding-1",
+            "expected_binding_revision": 1,
+            "guideline_revision_id": "revision-1",
+            "idempotency_key": "assessment-1",
+            "confidence": 90,
+            "model_id": "semantic-agent-v1",
+            "metric_results": [
+                SemanticMetricAssessmentInput(
+                    metric_id="metric-1",
+                    score=90,
+                    rationale="The evidence demonstrates segregation.",
+                    evidence_refs=[
+                        SemanticEvidenceRefInput(
+                            source_type="spec",
+                            source_id="spec-1",
+                            source_version=1,
+                            content_hash="a" * 64,
+                        )
+                    ],
+                    pinpoints=[
+                        SemanticPinpointInput(
+                            anchor_type="field",
+                            anchor_ref="description",
+                            excerpt_hash="b" * 64,
+                        )
+                    ],
+                )
+            ],
         },
     ),
     (
-        "okto_pulse_get_policy_compliance_receipt",
-        COMPLIANCE_READ,
-        {"board_id": "board-1", "receipt_id": "receipt-1"},
-    ),
-    (
-        "okto_pulse_get_policy_waiver",
+        "okto_pulse_get_semantic_guideline_waiver",
         WAIVER_READ,
-        {"board_id": "board-1", "waiver_id": "waiver-1"},
+        {
+            "board_id": "board-1",
+            "waiver_id": "waiver-1",
+            "evaluated_at": _NOW,
+        },
     ),
     (
-        "okto_pulse_request_policy_waiver",
+        "okto_pulse_request_semantic_guideline_waiver",
         WAIVER_REQUEST,
         {
             "board_id": "board-1",
+            "metric_result_id": "metric-result-1",
             "finding_id": "finding-1",
+            "receipt_id": "receipt-1",
             "justification": "Temporary exception",
-            "evidence_refs": ["evidence-1"],
+            "evidence_refs": [
+                SemanticEvidenceRefInput(
+                    source_type="spec",
+                    source_id="spec-1",
+                    source_version=1,
+                    content_hash="a" * 64,
+                )
+            ],
             "expires_at": _NOW,
             "idempotency_key": "request-1",
         },
     ),
     (
-        "okto_pulse_review_policy_waiver",
+        "okto_pulse_review_semantic_guideline_waiver",
         WAIVER_REVIEW,
         {
             "board_id": "board-1",
             "waiver_id": "waiver-1",
             "decision": "approve",
             "reason": "Reviewed",
-            "evidence_refs": ["evidence-1"],
+            "evidence_refs": [
+                SemanticEvidenceRefInput(
+                    source_type="spec",
+                    source_id="spec-1",
+                    source_version=1,
+                    content_hash="a" * 64,
+                )
+            ],
             "expected_waiver_revision": 1,
             "idempotency_key": "review-1",
         },
     ),
     (
-        "okto_pulse_revoke_policy_waiver",
+        "okto_pulse_revoke_semantic_guideline_waiver",
         WAIVER_REVOKE,
         {
             "board_id": "board-1",
             "waiver_id": "waiver-1",
             "reason": "No longer justified",
-            "evidence_refs": ["evidence-1"],
+            "evidence_refs": [
+                SemanticEvidenceRefInput(
+                    source_type="spec",
+                    source_id="spec-1",
+                    source_version=1,
+                    content_hash="a" * 64,
+                )
+            ],
             "expected_waiver_revision": 1,
             "idempotency_key": "revoke-1",
         },
     ),
     (
-        "okto_pulse_revalidate_policy_waiver",
+        "okto_pulse_revalidate_semantic_guideline_waiver",
         WAIVER_REVALIDATE,
         {
             "board_id": "board-1",
             "waiver_id": "waiver-1",
-            "reason": "Evidence refreshed",
-            "evidence_refs": ["evidence-2"],
             "expected_waiver_revision": 1,
-            "new_expires_at": _NOW,
+            "evaluated_at": _NOW,
             "idempotency_key": "revalidate-1",
         },
     ),
@@ -421,27 +603,25 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
 
 
 @pytest.mark.asyncio
-async def test_rule_authoring_is_the_13th_pre_uow_capability_fence() -> None:
+async def test_metric_authoring_is_a_pre_uow_capability_fence() -> None:
     reset_governance_metric_samples()
     catalog, uow_factory, calls = _registered_catalog(
-        denied_capability=RULES_AUTHOR_BLOCKING
+        denied_capability=METRICS_AUTHOR
     )
     patch = GuidelineRevisionPatchInput.model_validate(
         {
-            "rules": [
+            "metrics": [
                 {
-                    "rule_id": "rule-1",
-                    "code": "require_owner",
-                    "title": "Owner required",
-                    "description": "A spec must declare an owner.",
+                    "metric_id": "metric-1",
+                    "code": "segregation",
+                    "title": "Segregation",
+                    "description": "Measures technical/business segregation.",
+                    "evaluation_rubric": (
+                        "Score 0 for mixed concerns and 100 for full isolation."
+                    ),
                     "target_entity_types": ["spec"],
-                    "predicates": [
-                        {
-                            "predicate_code": "exists",
-                            "parameters": {"fact": "resource_gate_ready"},
-                        }
-                    ],
-                    "enforcement": "blocking",
+                    "direction": "minimum",
+                    "default_threshold": 80,
                 }
             ]
         }
@@ -452,7 +632,7 @@ async def test_rule_authoring_is_the_13th_pre_uow_capability_fence() -> None:
     ].fn(
         board_id="board-1",
         guideline_id="guideline-1",
-        idempotency_key="create-rule-1",
+        idempotency_key="create-metric-1",
         patch=patch,
     )
 
@@ -466,7 +646,7 @@ async def test_rule_authoring_is_the_13th_pre_uow_capability_fence() -> None:
     ]
     assert [sample["labels"]["capability"] for sample in samples] == [
         REVISIONS_CREATE,
-        RULES_AUTHOR_BLOCKING,
+        METRICS_AUTHOR,
     ]
     assert all(set(sample["labels"]) == {
         "surface",
@@ -525,17 +705,35 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
         path.read_text(encoding="utf-8")
         for path in sorted(resource_root.rglob("*.md"))
     )
-    assert all_resources.count("policy-compliance-resource/v1") == 1
-    assert "The five policy list tools" not in all_resources
+    assert all_resources.count("semantic-guideline-protocol/v1") == 1
+    assert "policy-compliance-resource/v1" not in all_resources
+    assert "okto_pulse_evaluate_policy_compliance" not in all_resources
     policy_resource = (
         resource_root / "reference" / "policy-compliance.md"
     ).read_text(encoding="utf-8")
-    assert "A revision with `rules=[]` is valid context-only guidance." in (
+    assert "Pulse never judges semantic adherence" in policy_resource
+    assert "`confidence` is reserved and compulsory" in policy_resource
+    assert "`okto_pulse_record_semantic_guideline_assessment`" in (
         policy_resource
     )
-    assert "Enforcement belongs to each rule" in policy_resource
-    assert "For a new binding pass `advisory`" in policy_resource
+    assert "Human skip is deliberately absent from MCP" in policy_resource
     assert "`guideline_impact_no_changes`" in policy_resource
+    assert "waiver and skip lists use `summary|detail|full`" in policy_resource
+    assert "durable idempotent events project" in policy_resource
+    assert "semantic `Entity` projections" in policy_resource
+    assert "deterministic `Constraint` nodes" in policy_resource
+    assert "explicitly terminate legacy rule nodes" in policy_resource
+    journey_tokens = (
+        "### Canonical agent journey",
+        "full context tool named by its workflow",
+        "okto_pulse_get_guideline_revision",
+        "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_get_current_semantic_guideline_assessment",
+        "listed/full receipt reports stale",
+        "new stable idempotency key",
+    )
+    positions = tuple(policy_resource.index(token) for token in journey_tokens)
+    assert positions == tuple(sorted(positions))
 
     pointer = "okto-pulse://reference/policy-compliance"
     pointer_files = (

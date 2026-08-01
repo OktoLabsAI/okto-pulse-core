@@ -519,3 +519,63 @@ async def test_unclassified_persistence_failure_propagates_for_facade_normalizat
     assert persistence.apply_calls == 1
     assert persistence.commit_calls == 0
     assert persistence.rollback_calls == 0
+
+def test_builder_never_rematerializes_an_existing_question() -> None:
+    """Regression: every semantic write re-issues the lint receipt; without
+    text dedup each write materialized up to five byte-identical Q&A items
+    (observed live: 300 duplicates of 19 findings on one spec)."""
+
+    first = build_requirement_lint_assessment_bundle(_input())
+    assert first.proposed_questions, (
+        "fixture must propose at least one question"
+    )
+    first_texts = {
+        question.question for question in first.proposed_questions
+    }
+
+    already_asked = tuple(
+        {
+            "id": f"qa_lint_{index}",
+            "revision": 1,
+            "question": text,
+            "answer": None,
+        }
+        for index, text in enumerate(sorted(first_texts))
+    )
+    second = build_requirement_lint_assessment_bundle(
+        RequirementLintAssessmentInput(
+            command=_command(),
+            authority=_authority(),
+            qa_items=already_asked,
+            default_locale=RequirementLocale.UNKNOWN,
+            current_head_revision=3,
+            current_head_receipt_id="qar_previous_2",
+        )
+    )
+
+    assert second.proposed_questions == ()
+    # Findings remain first-class on every receipt; only the HITL question
+    # materialization is deduplicated.
+    assert len(second.findings) == len(first.findings) > 0
+
+    # Whitespace/case variants of an existing question do not slip through.
+    noisy = tuple(
+        {
+            "id": f"qa_noise_{index}",
+            "revision": 1,
+            "question": f"  {text.upper()}  ",
+            "answer": None,
+        }
+        for index, text in enumerate(sorted(first_texts))
+    )
+    third = build_requirement_lint_assessment_bundle(
+        RequirementLintAssessmentInput(
+            command=_command(),
+            authority=_authority(),
+            qa_items=noisy,
+            default_locale=RequirementLocale.UNKNOWN,
+            current_head_revision=3,
+            current_head_receipt_id="qar_previous_2",
+        )
+    )
+    assert third.proposed_questions == ()

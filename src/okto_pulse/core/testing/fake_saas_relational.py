@@ -443,6 +443,16 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model guideline-policy persistence."
         )
 
+    def semantic_guideline_assessments(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyAdapterMissing,
+        )
+
+        raise GuidelinePolicyAdapterMissing(
+            "The SaaS fake does not model semantic-guideline persistence."
+        )
+
     def amendment_revision_backend(self, session: Any) -> Any:
         _ = session
         raise NotImplementedError("The SaaS fake does not model amendment persistence.")

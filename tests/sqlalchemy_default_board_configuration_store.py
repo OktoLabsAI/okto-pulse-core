@@ -125,7 +125,7 @@ class TestSqlAlchemyDefaultBoardConfigurationStore:
             version=revision.revision_number,
             revision_id=revision.revision_id,
             semantic_version=revision.semantic_version,
-            revision_digest=revision.content_digest,
+            revision_digest=revision.revision_digest,
             revision_number=revision.revision_number,
             retired=retirement is not None,
         )

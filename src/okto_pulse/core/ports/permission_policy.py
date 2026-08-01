@@ -13,6 +13,14 @@ from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.permissions import (
     DefaultPermissionPolicy,
+    GUIDELINE_ADOPTION_MANAGE,
+    GUIDELINE_ASSESSMENTS_READ,
+    GUIDELINE_ASSESSMENTS_RECORD,
+    GUIDELINE_IMPACT_PREVIEW,
+    GUIDELINE_METRICS_AUTHOR,
+    GUIDELINE_REVISIONS_CREATE,
+    GUIDELINE_REVISIONS_READ,
+    GUIDELINE_REVISIONS_RETIRE,
     InvalidPermissionContext,
     PermissionContext,
     PermissionContractViolation,
@@ -26,7 +34,7 @@ from okto_pulse.core.domain.permissions import (
     PERMISSION_INTRODUCTION_MANIFESTS,
     PERMISSION_REGISTRY,
     SKA_PERMISSION_INTRODUCTION_V1,
-    SKB_PERMISSION_INTRODUCTION_V1,
+    SKB3_PERMISSION_INTRODUCTION_V1,
     _flatten_registry,
     _get_nested,
     _match_builtin_preset_name,
@@ -135,10 +143,10 @@ def ska_permission_introduction_v1() -> PermissionIntroductionManifest:
     return SKA_PERMISSION_INTRODUCTION_V1
 
 
-def skb_permission_introduction_v1() -> PermissionIntroductionManifest:
-    """Return the immutable SK-B/v1 permission-introduction manifest."""
+def skb3_permission_introduction_v1() -> PermissionIntroductionManifest:
+    """Return the immutable SK-B3/v1 permission-introduction manifest."""
 
-    return SKB_PERMISSION_INTRODUCTION_V1
+    return SKB3_PERMISSION_INTRODUCTION_V1
 
 
 def permission_introduction_manifests() -> tuple[PermissionIntroductionManifest, ...]:
@@ -194,6 +202,14 @@ def merge_permission_registry_defaults(
 
 __all__ = [
     "DefaultPermissionPolicy",
+    "GUIDELINE_ADOPTION_MANAGE",
+    "GUIDELINE_ASSESSMENTS_READ",
+    "GUIDELINE_ASSESSMENTS_RECORD",
+    "GUIDELINE_IMPACT_PREVIEW",
+    "GUIDELINE_METRICS_AUTHOR",
+    "GUIDELINE_REVISIONS_CREATE",
+    "GUIDELINE_REVISIONS_READ",
+    "GUIDELINE_REVISIONS_RETIRE",
     "InvalidPermissionContext",
     "PermissionContext",
     "PermissionContractViolation",
@@ -207,7 +223,7 @@ __all__ = [
     "PermissionSet",
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
-    "SKB_PERMISSION_INTRODUCTION_V1",
+    "SKB3_PERMISSION_INTRODUCTION_V1",
     "builtin_permission_presets",
     "builtin_preset_name",
     "evaluate_permission",
@@ -223,6 +239,6 @@ __all__ = [
     "resolve_preset_lineage",
     "set_permission_flag",
     "ska_permission_introduction_v1",
-    "skb_permission_introduction_v1",
+    "skb3_permission_introduction_v1",
     "validate_permission_flag_values",
 ]

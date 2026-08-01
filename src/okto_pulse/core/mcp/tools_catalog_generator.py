@@ -38,7 +38,7 @@ HEADER = (
     "exact resource containing that tool's args, returns and examples.\n"
     "Required filters for the consolidated `list_*` tools:\n"
     "`okto-pulse://reference/list_tools`.\n"
-    "Governed policy protocol:\n"
+    "Semantic guideline protocol:\n"
     "`okto-pulse://reference/policy-compliance`.\n"
 )
 
@@ -75,10 +75,16 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"^okto_pulse_.*default_board_config|^okto_pulse_get_board_default_config_diff$"),
     ("Design Systems", "board",
      r"design_system"),
-    ("Policy Compliance & Waivers", "guideline",
-     r"^okto_pulse_(evaluate_policy_compliance|"
-     r"(list|get)(_current)?_policy_compliance|"
-     r"(list|get|request|review|revoke|revalidate)_policy_waiver)"),
+    ("Semantic Guideline Assessments & Exceptions", "guideline",
+     r"^okto_pulse_(record_semantic_guideline_assessment|"
+     r"list_semantic_guideline_assessments|"
+     r"get_semantic_guideline_assessment|"
+     r"get_current_semantic_guideline_assessment|"
+     r"list_semantic_guideline_findings|"
+     r"list_semantic_guideline_waivers|"
+     r"get_semantic_guideline_waiver|"
+     r"list_semantic_guideline_waiver_events|"
+     r"(request|review|revoke|revalidate)_semantic_guideline_waiver)$"),
     ("Guidelines", "guideline",
      r"guideline"),
     # --- SDLC entities ------------------------------------------------------

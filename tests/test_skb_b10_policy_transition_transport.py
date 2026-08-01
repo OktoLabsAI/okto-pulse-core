@@ -8,17 +8,20 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.domain.guideline_compliance import (
-    PolicyCurrentnessReason,
-)
 from okto_pulse.core.domain.guideline_policy import (
+    GuidelineEnforcement,
     PolicyCurrentness,
     PolicyEntityType,
 )
+from okto_pulse.core.domain.guideline_semantic_currentness import (
+    SemanticAssessmentCurrentnessReason,
+)
 from okto_pulse.core.domain.guideline_policy_transition import (
     PolicyTransitionDecision,
+    PolicyTransitionDiagnosticCode,
     PolicyTransitionReasonCode,
     PolicyTransitionRejected,
+    SemanticBindingComplianceDecision,
 )
 from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 from okto_pulse.core.inbound.policy_transition_error import (
@@ -47,6 +50,28 @@ MCP_MUTATION_HANDLERS = (
 
 
 def _rejection() -> PolicyTransitionRejected:
+    binding = SemanticBindingComplianceDecision(
+        binding_id="binding-1",
+        guideline_id="guideline-1",
+        enforcement=GuidelineEnforcement.BLOCKING,
+        applicable_metric_count=5,
+        allowed=False,
+        assessment_available=True,
+        receipt_id="receipt-1",
+        currentness=PolicyCurrentness.STALE,
+        currentness_reasons=(
+            SemanticAssessmentCurrentnessReason.POLICY_SET_CHANGED,
+        ),
+        inadmissibility_cause=None,
+        failed_metric_count=0,
+        waived_metric_count=0,
+        blocking_metric_count=0,
+        advisory_issue_count=0,
+        skipped=False,
+        diagnostic_codes=(
+            PolicyTransitionDiagnosticCode.POLICY_COMPLIANCE_RECEIPT_STALE,
+        ),
+    )
     return PolicyTransitionRejected(
         PolicyTransitionDecision(
             entity_type=PolicyEntityType.SPEC,
@@ -58,16 +83,17 @@ def _rejection() -> PolicyTransitionRejected:
             allowed=False,
             reason_codes=(
                 PolicyTransitionReasonCode.POLICY_COMPLIANCE_RECEIPT_STALE,
-                PolicyTransitionReasonCode.POLICY_COMPLIANCE_BLOCKED,
             ),
-            receipt_id="receipt-1",
-            currentness=PolicyCurrentness.STALE,
-            currentness_reasons=(PolicyCurrentnessReason.POLICY_SET_CHANGED,),
-            applicable_rule_count=5,
-            applicable_blocking_rule_count=3,
-            blocking_rule_count=2,
-            waived_rule_count=1,
-            advisory_issue_count=1,
+            diagnostic_codes=binding.diagnostic_codes,
+            binding_decisions=(binding,),
+            receipt_ids=("receipt-1",),
+            applicable_metric_count=5,
+            applicable_blocking_metric_count=5,
+            failed_metric_count=0,
+            blocking_metric_count=0,
+            waived_metric_count=0,
+            advisory_issue_count=0,
+            skipped_binding_count=0,
             fence_digest="f" * 64,
         )
     )
@@ -103,20 +129,27 @@ def test_policy_transition_rejection_projection_is_complete_and_stable() -> None
         "message": "policy_compliance_receipt_stale",
         "reason_codes": [
             "policy_compliance_receipt_stale",
-            "policy_compliance_blocked",
         ],
         "decision_digest": error.decision_digest,
         "fence_digest": "f" * 64,
-        "receipt_id": "receipt-1",
+        "receipt_ids": ["receipt-1"],
         "currentness": "stale",
         "currentness_reasons": ["policy_set_changed"],
         "counts": {
-            "applicable_rules": 5,
-            "applicable_blocking_rules": 3,
-            "blocking_rules": 2,
-            "waived_rules": 1,
-            "advisory_issues": 1,
+            "applicable_metrics": 5,
+            "applicable_blocking_metrics": 5,
+            "failed_metrics": 0,
+            "blocking_metrics": 0,
+            "waived_metrics": 0,
+            "advisory_issues": 0,
+            "skipped_bindings": 0,
         },
+        "diagnostic_codes": [
+            "policy_compliance_receipt_stale",
+        ],
+        "binding_decisions": [
+            error.decision.binding_decisions[0].to_payload()
+        ],
         "transition": {
             "entity_type": "spec",
             "subject_id": "spec-1",

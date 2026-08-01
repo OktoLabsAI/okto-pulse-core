@@ -73,12 +73,10 @@ packages = ["src/okto_pulse"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-# Default async-fixture loop scope. With "session" all session-scoped fixtures
-# (e.g. `_db_init`) run on the same loop the test functions use, eliminating
-# the cross-file race where a function-scoped per-test loop tried to use
-# objects created on a session-scoped one. This pairs with the conftest no
-# longer overriding `event_loop` itself (deprecated in pytest-asyncio 1.x).
-asyncio_default_fixture_loop_scope = "session"
+# Function scope exposes loop-bound fixture leaks instead of letting them
+# survive until the session loop is closed.  The schema bootstrap fixture
+# `_db_init` declares its required session loop explicitly in tests/conftest.py.
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "e2e: end-to-end pipeline contract tests — slow, open Kùzu handles, exercise outbox worker; excluded by the fast unit run via `pytest -m 'not e2e'`",
     "real_kg: integration tests that exercise the real LadybugDB/KG backend",

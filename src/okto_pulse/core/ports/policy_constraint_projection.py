@@ -1,26 +1,29 @@
-"""Edition-owned projection port for active guideline policy constraints."""
+"""Compatibility-named port for guideline-governance KG projection."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.guideline_policy import (
     POLICY_BOARD_ID_MAX_LENGTH,
     POLICY_SQL_INTEGER_MAX,
 )
-from okto_pulse.core.events.types import PolicyConstraintChanged
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
     require_runtime_value,
     reset_runtime_values,
 )
 
+if TYPE_CHECKING:
+    from okto_pulse.core.events.types import PolicyConstraintChanged
+
 
 PolicyConstraintProjectionOperation = Literal[
     "adopt",
     "unlink",
     "retire",
+    "sync",
     "rebuild",
 ]
 
@@ -48,7 +51,7 @@ POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class PolicyConstraintProjectionResult:
-    """Bounded acknowledgement from the edition-owned materializer."""
+    """Bounded acknowledgement from the edition-owned KG projector."""
 
     board_id: str
     operation: PolicyConstraintProjectionOperation
@@ -64,7 +67,7 @@ class PolicyConstraintProjectionResult:
         board_id = self.board_id.strip() if isinstance(self.board_id, str) else ""
         if not board_id or len(board_id) > POLICY_BOARD_ID_MAX_LENGTH:
             raise ValueError("policy_constraint_projection_board_id_invalid")
-        if self.operation not in {"adopt", "unlink", "retire", "rebuild"}:
+        if self.operation not in {"adopt", "unlink", "retire", "sync", "rebuild"}:
             raise ValueError("policy_constraint_projection_operation_invalid")
         event_id = (
             self.event_id.strip()
@@ -110,7 +113,7 @@ class PolicyConstraintProjectionResult:
 
 @runtime_checkable
 class PolicyConstraintProjectionPort(Protocol):
-    """Project immutable policy evidence in the caller-owned transaction."""
+    """Project immutable guideline evidence after relational commit."""
 
     async def apply(
         self,

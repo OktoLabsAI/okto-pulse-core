@@ -29,6 +29,15 @@ def test_af31_s2_config_import_does_not_read_pyproject(monkeypatch):
     finally:
         if previous is not None:
             sys.modules["okto_pulse.core.infra.config"] = previous
+            # import_module above also rebound the PARENT PACKAGE attribute
+            # (okto_pulse.core.infra.config) to the fresh module; restoring
+            # sys.modules alone leaves the two paths pointing at DIFFERENT
+            # module objects, so a later `from okto_pulse.core.infra import
+            # config` patches one object while lazy `from ...config import
+            # get_settings` resolves the other (ts12's 5 != 3 retry cap).
+            import okto_pulse.core.infra as _infra_pkg
+
+            _infra_pkg.config = previous
 
 
 def test_af31_s2_core_version_provider_supplies_runtime_version():

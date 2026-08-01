@@ -8704,14 +8704,24 @@ class SpecService:
                     if not isinstance(scenario, dict):
                         continue
                     scenario_id = scenario.get("id")
-                    next_status = str(scenario.get("status") or "draft")
+                    raw_next_status = scenario.get("status") or "draft"
+                    next_status = str(
+                        getattr(raw_next_status, "value", raw_next_status)
+                    ).lower()
                     previous = (
                         old_scenarios_by_id.get(str(scenario_id))
                         if scenario_id is not None
                         else None
                     )
                     if previous is not None:
-                        previous_status = str(previous.get("status") or "draft")
+                        raw_previous_status = previous.get("status") or "draft"
+                        previous_status = str(
+                            getattr(
+                                raw_previous_status,
+                                "value",
+                                raw_previous_status,
+                            )
+                        ).lower()
                         if next_status != previous_status:
                             raise ValueError(
                                 "test_scenario_status_requires_scoped_update: "
@@ -8733,14 +8743,23 @@ class SpecService:
                 current_spec_id=spec.id,
             )
 
-        # Canonicalize the complete final FR/TR/AC namespace with stable IDs.
-        # Runs BEFORE
-        # _validate_spec_linked_refs so the validator sees canonical ids; the
-        # text is preserved, so text-based linked refs keep resolving (no
-        # breaking change). Any semantic write lazily materializes untouched
-        # legacy requirement fields too, while already-canonical fields remain
-        # byte-identical and are not added to the diff.
-        if bumps_version:
+        # Canonicalize explicitly patched FR/TR/AC collections with stable IDs.
+        # The complete final namespace participates in collision validation, but
+        # omitted collections remain byte-identical: partial updates must not
+        # silently materialize legacy requirements or migrate their linked refs.
+        # Runs BEFORE _validate_spec_linked_refs so explicit requirement writes
+        # are validated against their canonical ids while title/description and
+        # other unrelated patches preserve lossless PATCH semantics.
+        _explicit_requirement_fields = {
+            field_name
+            for field_name in (
+                "functional_requirements",
+                "technical_requirements",
+                "acceptance_criteria",
+            )
+            if field_name in update_data
+        }
+        if _explicit_requirement_fields:
             _existing_requirement_fields = {
                 "functional_requirements": spec.functional_requirements,
                 "technical_requirements": spec.technical_requirements,
@@ -8758,15 +8777,11 @@ class SpecService:
                 _final_requirement_fields,
                 existing_fields=_existing_requirement_fields,
             )
-            for _field_name, _canonical_value in _canonical_requirement_fields.items():
-                if (
-                    _field_name in update_data
-                    or _canonical_value != _existing_requirement_fields[_field_name]
-                ):
-                    update_data[_field_name] = _canonical_value
+            for _field_name in _explicit_requirement_fields:
+                update_data[_field_name] = _canonical_requirement_fields[_field_name]
 
         # FR5 — lazy ref migration (spec c61569b2, IMPL-4).
-        # When FR/AC lists are materialised by canonicalize_fr_ac above,
+        # When explicit FR/AC lists are materialised by canonicalization above,
         # rewrite any index/text refs in downstream fields to the newly
         # assigned fr_/ac_ ids.  This runs on-touch only: specs not passed
         # through update_spec keep resolving via the permanent read-tolerant
@@ -14248,6 +14263,22 @@ class GuidelineService:
 
         return require_relational_application_adapter().guideline_policy(self.db)
 
+    def semantic_policy_persistence(self):
+        """Expose the transaction-bound semantic evidence authority."""
+
+        return self._semantic_policy()
+
+    def _semantic_policy(self):
+        """Resolve the edition-owned append-only semantic evidence authority."""
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().semantic_guideline_assessments(
+            self.db
+        )
+
     async def preview_policy_transition(
         self,
         *,
@@ -14340,7 +14371,7 @@ class GuidelineService:
             version=revision.revision_number,
             semantic_version=revision.semantic_version,
             revision_id=revision.revision_id,
-            revision_digest=revision.content_digest,
+            revision_digest=revision.revision_digest,
             context_scope=identity.context_scope.value,
         )
 
@@ -14367,6 +14398,11 @@ class GuidelineService:
             revision_id=binding.revision_id,
             semantic_version=binding.semantic_version,
             revision_digest=binding.revision_digest,
+            enforcement=binding.enforcement.value,
+            minimum_confidence=binding.minimum_confidence,
+            metric_threshold_overrides=dict(
+                binding.metric_threshold_overrides
+            ),
             state=binding.state.value,
         )
 
@@ -14433,7 +14469,9 @@ class GuidelineService:
         guideline_id: str,
         impact_receipt_id: str,
         proposed_priority: int,
-        proposed_default_enforcement: Any,
+        proposed_enforcement: Any,
+        proposed_minimum_confidence: int,
+        proposed_metric_threshold_overrides: Any,
         requested_by: str,
         requested_at: datetime,
         idempotency_key: str,
@@ -14451,7 +14489,7 @@ class GuidelineService:
         )
 
         if not isinstance(
-            proposed_default_enforcement,
+            proposed_enforcement,
             GuidelineEnforcement,
         ):
             raise ValueError("guideline_impact_enforcement_invalid")
@@ -14497,6 +14535,28 @@ class GuidelineService:
             if revision is None:
                 raise RuntimeError("guideline_binding_revision_mismatch")
             active_revisions.append(revision)
+        semantic_policy = self._semantic_policy()
+        semantic_waivers = []
+        waiver_cursor = None
+        seen_waiver_cursors = set()
+        while True:
+            waiver_page, next_waiver_cursor = (
+                await semantic_policy.list_board_semantic_waivers(
+                    board_id=board_id,
+                    evaluated_at=requested_at,
+                    guideline_id=guideline_id,
+                    after=waiver_cursor,
+                    limit=50,
+                )
+            )
+            semantic_waivers.extend(waiver_page)
+            if next_waiver_cursor is None:
+                break
+            if next_waiver_cursor in seen_waiver_cursors:
+                raise RuntimeError("semantic_waiver_cursor_repeated")
+            seen_waiver_cursors.add(next_waiver_cursor)
+            waiver_cursor = next_waiver_cursor
+
         return plan_guideline_impact_preview(
             GuidelineImpactPreviewCommand(
                 impact_receipt_id=impact_receipt_id,
@@ -14509,9 +14569,13 @@ class GuidelineService:
                 active_bindings=active_bindings,
                 active_revisions=tuple(active_revisions),
                 subjects=await policy.list_policy_subjects(board_id=board_id),
-                waivers=await policy.list_board_waivers(board_id=board_id),
+                waivers=tuple(semantic_waivers),
                 proposed_priority=proposed_priority,
-                proposed_default_enforcement=(proposed_default_enforcement),
+                proposed_enforcement=proposed_enforcement,
+                proposed_minimum_confidence=proposed_minimum_confidence,
+                proposed_metric_threshold_overrides=(
+                    proposed_metric_threshold_overrides
+                ),
                 requested_by=requested_by,
                 created_at=requested_at,
                 idempotency_key=idempotency_key,
@@ -14526,7 +14590,9 @@ class GuidelineService:
         board_id: str,
         guideline_id: str,
         proposed_priority: int,
-        proposed_default_enforcement: Any,
+        proposed_enforcement: Any,
+        proposed_minimum_confidence: int,
+        proposed_metric_threshold_overrides: Any,
         requested_by: str,
         idempotency_key: str,
         to_revision_id: str | None = None,
@@ -14560,7 +14626,11 @@ class GuidelineService:
                 board_id=board_id,
                 guideline_id=guideline_id,
                 proposed_priority=proposed_priority,
-                proposed_default_enforcement=proposed_default_enforcement,
+                proposed_enforcement=proposed_enforcement,
+                proposed_minimum_confidence=proposed_minimum_confidence,
+                proposed_metric_threshold_overrides=(
+                    proposed_metric_threshold_overrides
+                ),
                 requested_by=requested_by,
                 requested_to_revision_id=to_revision_id,
             )
@@ -14584,7 +14654,11 @@ class GuidelineService:
             guideline_id=guideline_id,
             impact_receipt_id=impact_receipt_id,
             proposed_priority=proposed_priority,
-            proposed_default_enforcement=proposed_default_enforcement,
+            proposed_enforcement=proposed_enforcement,
+            proposed_minimum_confidence=proposed_minimum_confidence,
+            proposed_metric_threshold_overrides=(
+                proposed_metric_threshold_overrides
+            ),
             requested_by=requested_by,
             requested_at=requested_at or self._next_event_time(),
             idempotency_key=idempotency_key,
@@ -14693,8 +14767,12 @@ class GuidelineService:
                 guideline_id=guideline_id,
                 impact_receipt_id=impact_receipt_id,
                 proposed_priority=receipt.proposed_priority,
-                proposed_default_enforcement=(
-                    receipt.proposed_default_enforcement
+                proposed_enforcement=receipt.proposed_enforcement,
+                proposed_minimum_confidence=(
+                    receipt.proposed_minimum_confidence
+                ),
+                proposed_metric_threshold_overrides=(
+                    receipt.proposed_metric_threshold_overrides
                 ),
                 requested_by=receipt.requested_by,
                 requested_at=event_at,
@@ -14790,7 +14868,7 @@ class GuidelineService:
                 title=data.title,
                 content=data.content,
                 tags=tuple(data.tags or ()),
-                rules=(),
+                metrics=(),
                 created_by=scoped_owner_id,
                 created_at=occurred_at,
                 idempotency_key=f"legacy:create:{guideline_id}",
@@ -14814,9 +14892,11 @@ class GuidelineService:
                     state=GuidelineBindingState.ACTIVE,
                     revision_id=revision.revision_id,
                     semantic_version=revision.semantic_version,
-                    revision_digest=revision.content_digest,
+                    revision_digest=revision.revision_digest,
                     priority=int(getattr(data, "priority", 0) or 0),
-                    default_enforcement=GuidelineEnforcement.ADVISORY,
+                    enforcement=GuidelineEnforcement.ADVISORY,
+                    minimum_confidence=70,
+                    metric_threshold_overrides={},
                     actor_id=scoped_owner_id,
                     occurred_at=occurred_at,
                     idempotency_key=(f"legacy:inline-binding:{identity.guideline_id}"),
@@ -15054,7 +15134,7 @@ class GuidelineService:
             if (
                 revision is None
                 or revision.semantic_version != binding.semantic_version
-                or revision.content_digest != binding.revision_digest
+                or revision.revision_digest != binding.revision_digest
             ):
                 raise RuntimeError("guideline_binding_revision_mismatch")
             items.append(
@@ -15072,14 +15152,18 @@ class GuidelineService:
                         "version": revision.revision_number,
                         "semantic_version": revision.semantic_version,
                         "revision_id": revision.revision_id,
-                        "revision_digest": revision.content_digest,
+                        "revision_digest": revision.revision_digest,
                         "updated_at": revision.created_at.isoformat(),
                     },
                     "priority": binding.priority,
                     "scope": identity.scope.value,
                     "binding_id": binding.binding_id,
                     "binding_revision": binding.binding_revision,
-                    "default_enforcement": binding.default_enforcement.value,
+                    "enforcement": binding.enforcement.value,
+                    "minimum_confidence": binding.minimum_confidence,
+                    "metric_threshold_overrides": dict(
+                        binding.metric_threshold_overrides
+                    ),
                     "binding_state": binding.state.value,
                     "source_kind": binding.source_kind.value,
                 }
@@ -15382,7 +15466,7 @@ class GuidelineService:
                 )
                 or (
                     declared_digest is not None
-                    and declared_digest != revision.content_digest
+                    and declared_digest != revision.revision_digest
                 )
                 or (
                     normalized_declared_number is not None
@@ -15405,9 +15489,11 @@ class GuidelineService:
                     state=GuidelineBindingState.ACTIVE,
                     revision_id=revision.revision_id,
                     semantic_version=revision.semantic_version,
-                    revision_digest=revision.content_digest,
+                    revision_digest=revision.revision_digest,
                     priority=priority,
-                    default_enforcement=GuidelineEnforcement.ADVISORY,
+                    enforcement=GuidelineEnforcement.ADVISORY,
+                    minimum_confidence=70,
+                    metric_threshold_overrides={},
                     source_kind=(GuidelineBindingProvenance.DEFAULT_MATERIALIZATION),
                     actor_id=actor,
                     occurred_at=self._next_event_time(),

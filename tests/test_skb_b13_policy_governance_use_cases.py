@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import okto_pulse.core.application.use_cases.policy_governance as policy_governance
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -17,78 +16,52 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.application.use_cases import guideline_import_export
 from okto_pulse.core.application.use_cases.guideline_import_export import (
     ExportGuidelinePolicyCommand,
-    ExportGuidelinePolicyV2UseCase,
+    ExportGuidelinePolicyV3UseCase,
     ImportGuidelinePolicyCommand,
     ImportGuidelinePolicyUseCase,
 )
 from okto_pulse.core.application.use_cases.policy_governance import (
     ADOPTION_MANAGE,
-    COMPLIANCE_EVALUATE,
-    COMPLIANCE_READ,
+    ASSESSMENTS_READ,
+    ASSESSMENTS_RECORD,
     IMPACT_PREVIEW,
+    METRICS_AUTHOR,
     POLICY_GOVERNANCE_CAPABILITIES,
     REVISIONS_CREATE,
     REVISIONS_READ,
     REVISIONS_RETIRE,
-    RULES_AUTHOR_BLOCKING,
-    WAIVER_READ,
-    WAIVER_REQUEST,
-    WAIVER_REVALIDATE,
-    WAIVER_REVIEW,
-    WAIVER_REVOKE,
     AdoptGuidelineRevisionCommand,
     AdoptGuidelineRevisionUseCase,
     CreateGuidelineRevisionCommand,
     CreateGuidelineRevisionUseCase,
-    EvaluatePolicyComplianceCommand,
-    EvaluatePolicyComplianceUseCase,
     GetGuidelineImpactCommand,
     GetGuidelineImpactUseCase,
-    GetPolicyComplianceReceiptCommand,
-    GetPolicyComplianceReceiptUseCase,
     GetGuidelineRevisionCommand,
     GetGuidelineRevisionUseCase,
-    GetPolicyWaiverCommand,
-    GetPolicyWaiverUseCase,
     ListGuidelineRevisionsCommand,
     ListGuidelineRevisionsUseCase,
     ListGuidelineImpactItemsCommand,
     ListGuidelineImpactItemsUseCase,
     PreviewGuidelineImpactCommand,
     PreviewGuidelineImpactUseCase,
-    RequestPolicyWaiverCommand,
-    RequestPolicyWaiverUseCase,
+    RecordSemanticGuidelineAssessmentUseCase,
     RetireGuidelineCommand,
     RetireGuidelineUseCase,
     GuidelineRevisionUnderBump,
-    ReviewPolicyWaiverCommand,
-    ReviewPolicyWaiverUseCase,
-    RevalidatePolicyWaiverCommand,
-    RevalidatePolicyWaiverUseCase,
-    RevokePolicyWaiverCommand,
-    RevokePolicyWaiverUseCase,
     _require_capability,
     _write,
 )
 from okto_pulse.core.domain.guideline_compliance import PolicyProjection
 from okto_pulse.core.domain.guideline_lifecycle import GuidelineRevisionPatch
-from okto_pulse.core.domain.guideline_lifecycle import (
-    guideline_revision_content_digest_v1,
-)
 from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_ID_MAX_LENGTH,
     GUIDELINE_RETIREMENT_ID_MAX_LENGTH,
     GUIDELINE_REVISION_ID_MAX_LENGTH,
     GUIDELINE_SEMANTIC_VERSION_MAX_LENGTH,
     POLICY_BOARD_ID_MAX_LENGTH,
-    POLICY_EVALUATION_ID_MAX_LENGTH,
-    POLICY_FINDING_ID_MAX_LENGTH,
     POLICY_IDEMPOTENCY_KEY_MAX_LENGTH,
     POLICY_IMPACT_RECEIPT_ID_MAX_LENGTH,
     POLICY_SQL_INTEGER_MAX,
-    POLICY_SUBJECT_ID_MAX_LENGTH,
-    POLICY_WAIVER_EVENT_ID_MAX_LENGTH,
-    POLICY_WAIVER_ID_MAX_LENGTH,
     BoardGuidelineBinding,
     Guideline,
     GuidelineBindingState,
@@ -100,7 +73,7 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRevisionPage,
     GuidelineScope,
     GuidelineRevisionPageCursor,
-    PolicyEntityType,
+    guideline_revision_digest_v2,
 )
 from okto_pulse.core.ports.guideline_policy import (
     GuidelineImpactListQuery,
@@ -159,6 +132,15 @@ def _actor_without(capability: str) -> ActorContext:
     )
 
 
+class _CapabilityOnlyUseCase:
+    def __init__(self, capability: str) -> None:
+        self.capability = capability
+
+    async def execute(self, _command, *, actor, uow) -> None:
+        _require_capability(actor, self.capability)
+        raise AssertionError("permission denial must happen first")
+
+
 def _denial_case(capability: str):
     if capability == REVISIONS_READ:
         return (
@@ -175,13 +157,13 @@ def _denial_case(capability: str):
                 "revision-create",
             ),
         )
-    if capability == RULES_AUTHOR_BLOCKING:
+    if capability == METRICS_AUTHOR:
         return (
             CreateGuidelineRevisionUseCase(),
             CreateGuidelineRevisionCommand(
                 "board-1",
                 "guideline-1",
-                GuidelineRevisionPatch(rules=()),
+                GuidelineRevisionPatch(metrics=()),
                 "blocking-change",
             ),
         )
@@ -201,11 +183,13 @@ def _denial_case(capability: str):
         return (
             PreviewGuidelineImpactUseCase(),
             PreviewGuidelineImpactCommand(
-                "board-1",
-                "guideline-1",
-                10,
-                GuidelineEnforcement.ADVISORY,
-                "preview-1",
+                board_id="board-1",
+                guideline_id="guideline-1",
+                proposed_priority=10,
+                proposed_enforcement=GuidelineEnforcement.ADVISORY,
+                proposed_minimum_confidence=0,
+                proposed_metric_threshold_overrides={},
+                idempotency_key="preview-1",
             ),
         )
     if capability == ADOPTION_MANAGE:
@@ -219,76 +203,12 @@ def _denial_case(capability: str):
                 "adopt-1",
             ),
         )
-    if capability == COMPLIANCE_READ:
-        return (
-            GetPolicyComplianceReceiptUseCase(),
-            GetPolicyComplianceReceiptCommand("board-1", "receipt-1"),
-        )
-    if capability == COMPLIANCE_EVALUATE:
-        return (
-            EvaluatePolicyComplianceUseCase(),
-            EvaluatePolicyComplianceCommand(
-                "board-1",
-                PolicyEntityType.SPEC,
-                "spec-1",
-                "evaluate-1",
-            ),
-        )
-    if capability == WAIVER_READ:
-        return (
-            GetPolicyWaiverUseCase(),
-            GetPolicyWaiverCommand("board-1", "waiver-1"),
-        )
-    if capability == WAIVER_REQUEST:
-        return (
-            RequestPolicyWaiverUseCase(),
-            RequestPolicyWaiverCommand(
-                "board-1",
-                "finding-1",
-                "Temporary exception",
-                ("ticket://1",),
-                NOW + timedelta(days=7),
-                "request-1",
-            ),
-        )
-    if capability == WAIVER_REVIEW:
-        return (
-            ReviewPolicyWaiverUseCase(),
-            ReviewPolicyWaiverCommand(
-                "board-1",
-                "waiver-1",
-                True,
-                "Reviewed",
-                "review-1",
-                1,
-                evidence_refs=("review://1",),
-            ),
-        )
-    if capability == WAIVER_REVOKE:
-        return (
-            RevokePolicyWaiverUseCase(),
-            RevokePolicyWaiverCommand(
-                "board-1",
-                "waiver-1",
-                "No longer justified",
-                "revoke-1",
-                2,
-                evidence_refs=("revoke://1",),
-            ),
-        )
-    if capability == WAIVER_REVALIDATE:
-        return (
-            RevalidatePolicyWaiverUseCase(),
-            RevalidatePolicyWaiverCommand(
-                "board-1",
-                "waiver-1",
-                "Still justified",
-                "revalidate-1",
-                2,
-                evidence_refs=("revalidate://1",),
-                new_expires_at=NOW + timedelta(days=14),
-            ),
-        )
+    if capability == ASSESSMENTS_READ:
+        return _CapabilityOnlyUseCase(capability), object()
+    if capability == ASSESSMENTS_RECORD:
+        return RecordSemanticGuidelineAssessmentUseCase(), object()
+    if capability.startswith("guidelines.waiver."):
+        return _CapabilityOnlyUseCase(capability), object()
     raise AssertionError(capability)
 
 
@@ -330,11 +250,13 @@ def _bounded_mutation_commands():
         "retire-key",
     )
     preview = PreviewGuidelineImpactCommand(
-        "board-1",
-        "guideline-1",
-        0,
-        GuidelineEnforcement.ADVISORY,
-        "preview-key",
+        board_id="board-1",
+        guideline_id="guideline-1",
+        proposed_priority=0,
+        proposed_enforcement=GuidelineEnforcement.ADVISORY,
+        proposed_minimum_confidence=0,
+        proposed_metric_threshold_overrides={},
+        idempotency_key="preview-key",
         to_revision_id="revision-1",
     )
     adopt = AdoptGuidelineRevisionCommand(
@@ -343,52 +265,6 @@ def _bounded_mutation_commands():
         "impact-1",
         "a" * 64,
         "adopt-key",
-    )
-    evaluate = EvaluatePolicyComplianceCommand(
-        "board-1",
-        PolicyEntityType.SPEC,
-        "spec-1",
-        "evaluation-key",
-        evaluation_id="evaluation-1",
-    )
-    request = RequestPolicyWaiverCommand(
-        "board-1",
-        "finding-1",
-        "Temporary exception",
-        ("ticket://1",),
-        NOW + timedelta(days=7),
-        "request-key",
-        waiver_id="waiver-1",
-        event_id="event-1",
-    )
-    review = ReviewPolicyWaiverCommand(
-        "board-1",
-        "waiver-1",
-        True,
-        "Approved",
-        "review-key",
-        1,
-        evidence_refs=("review://1",),
-        event_id="event-1",
-    )
-    revoke = RevokePolicyWaiverCommand(
-        "board-1",
-        "waiver-1",
-        "Revoked",
-        "revoke-key",
-        1,
-        evidence_refs=("revoke://1",),
-        event_id="event-1",
-    )
-    revalidate = RevalidatePolicyWaiverCommand(
-        "board-1",
-        "waiver-1",
-        "Still justified",
-        "revalidate-key",
-        1,
-        evidence_refs=("revalidate://1",),
-        event_id="event-1",
-        new_expires_at=NOW + timedelta(days=14),
     )
     return (
         (create, "board_id", POLICY_BOARD_ID_MAX_LENGTH),
@@ -413,27 +289,6 @@ def _bounded_mutation_commands():
         (adopt, "guideline_id", GUIDELINE_ID_MAX_LENGTH),
         (adopt, "impact_receipt_id", POLICY_IMPACT_RECEIPT_ID_MAX_LENGTH),
         (adopt, "idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        (evaluate, "board_id", POLICY_BOARD_ID_MAX_LENGTH),
-        (evaluate, "subject_id", POLICY_SUBJECT_ID_MAX_LENGTH),
-        (evaluate, "idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        (evaluate, "evaluation_id", POLICY_EVALUATION_ID_MAX_LENGTH),
-        (request, "board_id", POLICY_BOARD_ID_MAX_LENGTH),
-        (request, "finding_id", POLICY_FINDING_ID_MAX_LENGTH),
-        (request, "idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        (request, "waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-        (request, "event_id", POLICY_WAIVER_EVENT_ID_MAX_LENGTH),
-        (review, "board_id", POLICY_BOARD_ID_MAX_LENGTH),
-        (review, "waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-        (review, "idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        (review, "event_id", POLICY_WAIVER_EVENT_ID_MAX_LENGTH),
-        (revoke, "board_id", POLICY_BOARD_ID_MAX_LENGTH),
-        (revoke, "waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-        (revoke, "idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        (revoke, "event_id", POLICY_WAIVER_EVENT_ID_MAX_LENGTH),
-        (revalidate, "board_id", POLICY_BOARD_ID_MAX_LENGTH),
-        (revalidate, "waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-        (revalidate, "idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        (revalidate, "event_id", POLICY_WAIVER_EVENT_ID_MAX_LENGTH),
     )
 
 
@@ -453,58 +308,15 @@ def test_mutation_command_durable_text_bounds_are_closed_before_uow(
     assert _UntouchedUow().access_count == 0
 
 
-@pytest.mark.parametrize(
-    "command_factory",
-    (
-        lambda: RequestPolicyWaiverCommand(
-            "board-1",
-            "finding-1",
-            "Temporary exception",
-            (),
-            NOW + timedelta(days=7),
-            "request-key",
-        ),
-        lambda: ReviewPolicyWaiverCommand(
-            "board-1",
-            "waiver-1",
-            True,
-            "Approved",
-            "review-key",
-            1,
-        ),
-        lambda: RevokePolicyWaiverCommand(
-            "board-1",
-            "waiver-1",
-            "Revoked",
-            "revoke-key",
-            1,
-        ),
-        lambda: RevalidatePolicyWaiverCommand(
-            "board-1",
-            "waiver-1",
-            "Still justified",
-            "revalidate-key",
-            1,
-            new_expires_at=NOW + timedelta(days=14),
-        ),
-    ),
-    ids=("request", "review", "revoke", "revalidate"),
-)
-def test_waiver_commands_require_nonempty_evidence_before_uow(
-    command_factory,
-) -> None:
-    with pytest.raises(ValueError, match="policy_waiver_evidence_refs_required"):
-        command_factory()
-    assert _UntouchedUow().access_count == 0
-
-
 def test_sql_integer_boundaries_are_closed_before_uow() -> None:
     boundary_preview = PreviewGuidelineImpactCommand(
-        "board-1",
-        "guideline-1",
-        POLICY_SQL_INTEGER_MAX,
-        GuidelineEnforcement.ADVISORY,
-        "preview-key",
+        board_id="board-1",
+        guideline_id="guideline-1",
+        proposed_priority=POLICY_SQL_INTEGER_MAX,
+        proposed_enforcement=GuidelineEnforcement.ADVISORY,
+        proposed_minimum_confidence=0,
+        proposed_metric_threshold_overrides={},
+        idempotency_key="preview-key",
     )
     assert boundary_preview.proposed_priority == POLICY_SQL_INTEGER_MAX
     with pytest.raises(ValueError, match="guideline_impact_priority_invalid"):
@@ -512,23 +324,6 @@ def test_sql_integer_boundaries_are_closed_before_uow() -> None:
             boundary_preview,
             proposed_priority=POLICY_SQL_INTEGER_MAX + 1,
         )
-
-    boundary_review = ReviewPolicyWaiverCommand(
-        "board-1",
-        "waiver-1",
-        True,
-        "Approved",
-        "review-key",
-        POLICY_SQL_INTEGER_MAX,
-        evidence_refs=("review://1",),
-    )
-    assert boundary_review.expected_waiver_revision == POLICY_SQL_INTEGER_MAX
-    with pytest.raises(ValueError, match="policy_waiver_expected_revision_invalid"):
-        replace(
-            boundary_review,
-            expected_waiver_revision=POLICY_SQL_INTEGER_MAX + 1,
-        )
-
 
 @pytest.mark.asyncio
 async def test_actor_bound_is_rejected_before_uow_access() -> None:
@@ -642,9 +437,11 @@ class _BoardRepo:
 
 class _PolicyPort:
     def __init__(self, *, binding: BoardGuidelineBinding | None) -> None:
-        digest = guideline_revision_content_digest_v1(
+        digest = guideline_revision_digest_v2(
+            semantic_version="1.0.0",
             title="Policy",
             content="Policy body",
+            metrics=(),
         )
         self.identity = Guideline(
             guideline_id="guideline-1",
@@ -660,8 +457,8 @@ class _PolicyPort:
             semantic_version="1.0.0",
             title="Policy",
             content="Policy body",
-            content_digest=digest,
-            rules=(),
+            revision_digest=digest,
+            metrics=(),
             created_by="owner-2",
             created_at=NOW,
         )
@@ -723,9 +520,11 @@ class _GovernanceUow:
 
 
 def _active_binding() -> BoardGuidelineBinding:
-    digest = guideline_revision_content_digest_v1(
+    digest = guideline_revision_digest_v2(
+        semantic_version="1.0.0",
         title="Policy",
         content="Policy body",
+        metrics=(),
     )
     return BoardGuidelineBinding(
         binding_id="binding-1",
@@ -758,7 +557,7 @@ async def test_non_owner_global_revision_read_requires_exact_active_binding() ->
     )
     assert summary.projection is PolicyProjection.SUMMARY
     assert summary.page.items[0].content is None
-    assert summary.page.items[0].rules is None
+    assert summary.page.items[0].metrics is None
     assert summary.page.items[0].tags is None
 
     detail = await ListGuidelineRevisionsUseCase().execute(
@@ -771,7 +570,7 @@ async def test_non_owner_global_revision_read_requires_exact_active_binding() ->
         uow=bound,
     )
     assert detail.page.items[0].content == "Policy body"
-    assert detail.page.items[0].rules == ()
+    assert detail.page.items[0].metrics == ()
     assert detail.page.items[0].tags == ()
 
     with pytest.raises(EntityNotFoundError):
@@ -858,7 +657,7 @@ async def test_retired_global_history_remains_visible_on_exact_historical_bindin
         retired_revision_id=port.revision.revision_id,
         retired_revision_number=port.revision.revision_number,
         retired_semantic_version=port.revision.semantic_version,
-        retired_revision_digest=port.revision.content_digest,
+        retired_revision_digest=port.revision.revision_digest,
         retired_head_revision=port.head.head_revision,
         reason="Historical policy",
         retired_by="owner-2",
@@ -1347,107 +1146,6 @@ async def test_declared_semver_under_bump_is_typed_and_never_written() -> None:
     assert uow.rollback_count == 0
 
 
-class _WaiverLockPort:
-    def __init__(self) -> None:
-        self.lock_calls: list[bool] = []
-
-    async def resolve_idempotent_result(self, **_kwargs):
-        return None
-
-    async def get_waiver(self, **_kwargs):
-        return SimpleNamespace(
-            waiver_revision=1,
-            finding_id="finding-1",
-        )
-
-    async def resolve_policy_waiver_source(self, *, lock: bool, **_kwargs):
-        self.lock_calls.append(lock)
-        return object()
-
-    async def create_waiver(self, **_kwargs):
-        raise AssertionError("writer must not run after planner failure")
-
-    async def transition_waiver_cas(self, **_kwargs):
-        raise AssertionError("writer must not run after planner failure")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("kind", "use_case", "command", "capability"),
-    (
-        (
-            "request",
-            RequestPolicyWaiverUseCase(),
-            RequestPolicyWaiverCommand(
-                "board-1",
-                "finding-1",
-                "Temporary exception",
-                ("ticket://1",),
-                NOW + timedelta(days=7),
-                "waiver-request-lock",
-            ),
-            WAIVER_REQUEST,
-        ),
-        (
-            "review",
-            ReviewPolicyWaiverUseCase(),
-            ReviewPolicyWaiverCommand(
-                "board-1",
-                "waiver-1",
-                True,
-                "Approved",
-                "waiver-review-lock",
-                1,
-                evidence_refs=("review://lock",),
-            ),
-            WAIVER_REVIEW,
-        ),
-        (
-            "revalidate",
-            RevalidatePolicyWaiverUseCase(),
-            RevalidatePolicyWaiverCommand(
-                "board-1",
-                "waiver-1",
-                "Still justified",
-                "waiver-revalidate-lock",
-                1,
-                evidence_refs=("revalidate://lock",),
-                new_expires_at=NOW + timedelta(days=14),
-            ),
-            WAIVER_REVALIDATE,
-        ),
-    ),
-)
-async def test_post_lock_planner_failure_rolls_back_for_waiver_mutations(
-    monkeypatch: pytest.MonkeyPatch,
-    kind: str,
-    use_case,
-    command,
-    capability: str,
-) -> None:
-    port = _WaiverLockPort()
-    uow = _GovernanceUow(port)
-
-    def fail_after_lock(**_kwargs):
-        raise ValueError("post-lock planner failure")
-
-    monkeypatch.setattr(
-        policy_governance,
-        "request_policy_waiver" if kind == "request" else "transition_policy_waiver",
-        fail_after_lock,
-    )
-    with pytest.raises(ValueError, match="post-lock planner failure"):
-        await use_case.execute(
-            command,
-            actor=_owner_actor(capability),
-            uow=uow,
-        )
-
-    assert port.lock_calls == [True]
-    assert uow.commit_count == 0
-    assert uow.rollback_count == 1
-
-
 class _ImpactScopePort:
     def __init__(self) -> None:
         self.list_count = 0
@@ -1502,7 +1200,7 @@ async def test_import_export_capabilities_fail_before_uow_access(
 ) -> None:
     uow = _UntouchedUow()
     with pytest.raises(PermissionDeniedError):
-        await ExportGuidelinePolicyV2UseCase().execute(
+        await ExportGuidelinePolicyV3UseCase().execute(
             ExportGuidelinePolicyCommand(),
             actor=ActorContext("agent-1", "rest", permissions=()),
             uow=uow,
@@ -1520,16 +1218,12 @@ async def test_import_export_capabilities_fail_before_uow_access(
                         board_id=None,
                     ),
                     bindings=(),
-                    revisions=(
-                        SimpleNamespace(
-                            revision=SimpleNamespace(
-                                rules=(
-                                    SimpleNamespace(
-                                        enforcement=GuidelineEnforcement.BLOCKING
-                                    ),
-                                )
+                        revisions=(
+                            SimpleNamespace(
+                                revision=SimpleNamespace(
+                                    metrics=(SimpleNamespace(),)
+                                ),
                             ),
-                        ),
                     ),
                 ),
             ),
@@ -1549,7 +1243,7 @@ async def test_import_export_capabilities_fail_before_uow_access(
 
 
 @pytest.mark.asyncio
-async def test_advisory_only_import_does_not_require_blocking_authority(
+async def test_context_only_import_does_not_require_metric_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -1563,16 +1257,10 @@ async def test_advisory_only_import_does_not_require_blocking_authority(
                         board_id=None,
                     ),
                     bindings=(),
-                    revisions=(
-                        SimpleNamespace(
-                            revision=SimpleNamespace(
-                                rules=(
-                                    SimpleNamespace(
-                                        enforcement=GuidelineEnforcement.ADVISORY
-                                    ),
-                                )
+                        revisions=(
+                            SimpleNamespace(
+                                revision=SimpleNamespace(metrics=()),
                             ),
-                        ),
                     ),
                 ),
             ),

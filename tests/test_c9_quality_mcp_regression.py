@@ -174,7 +174,17 @@ def _current_view() -> CurrentAssessmentView:
 async def test_quality_mcp_inventory_remains_five_tools_at_312() -> None:
     tools = await server.mcp.get_tools()
 
+    # Semantic guideline v2 replaces the evaluation command with evidence
+    # recording and retains four bounded read surfaces (list, get, current and
+    # findings).  Those reads are part of the public projection/pagination
+    # contract, so the installed inventory intentionally remains at 312.
     assert len(tools) == 312
+    assert {
+        "okto_pulse_list_semantic_guideline_assessments",
+        "okto_pulse_get_semantic_guideline_assessment",
+        "okto_pulse_get_current_semantic_guideline_assessment",
+        "okto_pulse_list_semantic_guideline_findings",
+    } <= tools.keys()
     assert QUALITY_TOOLS <= tools.keys()
     assert len(QUALITY_TOOLS) == 5
 

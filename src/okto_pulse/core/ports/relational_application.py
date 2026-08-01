@@ -21,7 +21,10 @@ from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
     from .checklist import ChecklistPersistencePort
-    from .guideline_policy import GuidelinePolicyPersistencePort
+    from .guideline_policy import (
+        GuidelinePolicyPersistencePort,
+        SemanticGuidelineAssessmentPersistencePort,
+    )
     from .quality_assessment import QualityAssessmentPersistencePort
     from .quality_assessment_lifecycle import (
         QualityAssessmentLifecyclePersistencePort,
@@ -165,6 +168,14 @@ class RelationalApplicationAdapter(Protocol):
         session: Any,
     ) -> "GuidelinePolicyPersistencePort":
         """Return the transaction-bound SK-B guideline policy authority."""
+
+        ...
+
+    def semantic_guideline_assessments(
+        self,
+        session: Any,
+    ) -> "SemanticGuidelineAssessmentPersistencePort":
+        """Return the transaction-bound SK-B3 evidence authority."""
 
         ...
 

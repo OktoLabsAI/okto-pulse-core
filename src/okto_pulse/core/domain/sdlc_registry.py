@@ -103,7 +103,7 @@ _TEST_SCENARIO_PROGRESSION = dict(
         "policy_compliance_receipt_missing",
         "policy_compliance_receipt_stale",
         "policy_compliance_blocked",
-        "policy_evaluation_unavailable",
+        "policy_assessment_unavailable",
         "transition_not_allowed",
     ),
     policy_compliance=True,

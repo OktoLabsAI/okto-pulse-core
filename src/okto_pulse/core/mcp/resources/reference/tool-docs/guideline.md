@@ -151,7 +151,7 @@ Returns:
 
 Compatibility façade that appends an immutable guideline revision when title,
 content or tags change. Requires `guidelines.revisions.create`; a no-op keeps
-the current head. Executable rules require the governed revision tool.
+the current head. Semantic metrics require the governed revision tool.
 
 Args:
     board_id: Board ID (used for authentication)
@@ -198,11 +198,8 @@ Returns:
 ## `okto_pulse_create_guideline_revision`
 
 Create the next semantic revision from a closed patch. A patch that supplies
-rules also requires the blocking-rule authoring capability. Predicate
-parameters are discriminated by operator: presence uses `fact`; equality and
-numeric comparison use `fact` plus `value`; membership uses `fact` plus
-`values`; count uses `fact` plus a non-negative integer `value`; containment
-uses `fact` plus a string `value`.
+metrics also requires `guidelines.metrics.author`. Metric semantics and SemVer
+rules live only in the canonical protocol linked above.
 
 Args:
     board_id: Authenticated board scope.
@@ -238,9 +235,9 @@ Args:
     board_id: Authenticated board scope.
     guideline_id: Guideline to evaluate.
     proposed_priority: Non-negative proposed priority.
-    proposed_default_enforcement: Reserved compatibility value. Pass
-        `advisory` for a new binding and preserve the current value for an
-        existing binding; rule-level enforcement remains authoritative.
+    proposed_enforcement: `advisory` or `blocking`.
+    proposed_minimum_confidence: Board-effective confidence floor, 0 through 100.
+    proposed_metric_threshold_overrides: Optional metric-code threshold map.
     idempotency_key: Retry-stable client key.
     to_revision_id: Optional exact target revision.
 
@@ -290,174 +287,197 @@ Args:
 Returns:
     Outcome with the new exact-revision binding.
 
-## `okto_pulse_evaluate_policy_compliance`
+## `okto_pulse_record_semantic_guideline_assessment`
 
-Evaluate one current subject snapshot against current board policy.
+Record complete externally-produced semantic metric evidence. The normative
+assessment and gate protocol lives only in the canonical protocol linked
+above.
 
 Args:
     board_id: Authenticated board scope.
     entity_type: Closed governed entity type.
     subject_id: Exact entity identity.
+    expected_subject_version: Exact current entity version fence.
+    binding_id: Exact adopted binding identity.
+    expected_binding_revision: Exact binding revision fence.
+    guideline_revision_id: Exact adopted guideline revision fence.
     idempotency_key: Retry-stable client key.
+    confidence: Compulsory whole-assessment confidence, 0 through 100.
+    metric_results: Complete score, rationale, evidence and pinpoint set.
+    model_id: Optional assessor model identifier.
 
 Returns:
-    Outcome with immutable receipt and pinpoint findings.
+    Outcome with one atomically sealed receipt and all metric results.
 
-## `okto_pulse_list_policy_compliance_receipts`
+## `okto_pulse_list_semantic_guideline_assessments`
 
-List immutable compliance receipts with explicit currentness.
+Page immutable semantic assessment receipts with derived currentness.
 
 Args:
     board_id: Authenticated board scope.
     limit: Page size from 1 through 200.
-    cursor: Optional opaque `receipt` cursor.
-    entity_type: Optional governed entity type.
-    subject_id: Optional exact subject.
-    outcome: Optional `pass`, `fail`, `not_applicable`, or `error`.
-    currentness: Optional `current` or `stale`.
-    profile: `summary` or `detail`.
+    cursor: Optional signed `semantic_assessment` keyset cursor.
+    entity_type, subject_id: Optional exact subject filters.
+    guideline_id, binding_id: Optional exact policy filters.
+    outcome: Optional `passed` or `metric_threshold_failed`.
+    currentness: Optional `current` or `stale`; scanning remains keyset-safe.
+    profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with receipts and optional `next_cursor`.
+    Outcome with one homogeneous projection page and optional `next_cursor`.
 
-## `okto_pulse_get_policy_compliance_receipt`
+## `okto_pulse_get_semantic_guideline_assessment`
 
-Read one immutable compliance receipt and its findings.
+Read one immutable semantic assessment receipt by identity.
 
 Args:
     board_id: Authenticated board scope.
     receipt_id: Server-issued receipt identity.
+    profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with receipt evidence and currentness.
+    Outcome with currentness derived against authoritative live fences.
 
-## `okto_pulse_get_current_policy_compliance_receipt`
+## `okto_pulse_get_current_semantic_guideline_assessment`
 
-Read the current receipt for one exact board subject.
+Read the current receipt for one exact subject and adopted binding.
 
 Args:
     board_id: Authenticated board scope.
-    entity_type: Closed governed entity type.
-    subject_id: Exact entity identity.
+    entity_type, subject_id: Exact governed subject.
+    binding_id: Exact adopted binding.
+    profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
     Outcome with the current receipt or a canonical not-found error.
 
-## `okto_pulse_list_policy_compliance_findings`
+## `okto_pulse_list_semantic_guideline_findings`
 
-List pinpointed policy findings.
+Page independently addressable failed-metric findings.
 
 Args:
     board_id: Authenticated board scope.
     limit: Page size from 1 through 200.
-    cursor: Optional opaque `finding` cursor.
-    receipt_id: Optional receipt filter.
-    guideline_id: Optional guideline filter.
-    rule_id: Optional rule filter.
-    subject_id: Optional subject filter.
-    outcome: Optional closed evaluation outcome.
-    profile: `summary` or `detail`.
+    cursor: Optional signed `semantic_finding` keyset cursor.
+    receipt_id, guideline_id, binding_id, metric_id: Optional exact filters.
+    entity_type, subject_id: Optional exact subject filters.
+    outcome: Optional closed metric outcome.
+    profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with findings and optional `next_cursor`.
+    Outcome with findings, honest currentness, and optional `next_cursor`.
 
-## `okto_pulse_list_policy_waivers`
+## `okto_pulse_list_semantic_guideline_waivers`
 
-List waiver heads as of an explicit evaluation time.
+Page semantic metric-waiver heads at one explicit evaluation time.
 
 Args:
     board_id: Authenticated board scope.
-    evaluated_at: Time used for expiration/currentness evaluation.
+    evaluated_at: Authoritative time for expiry/currentness projection.
     limit: Page size from 1 through 200.
-    cursor: Optional opaque `waiver` cursor.
-    finding_id, receipt_id, guideline_id, revision_id, rule_id: Optional evidence filters.
-    entity_type, subject_id, subject_version: Optional subject filters.
-    status: Optional closed waiver status.
-    profile: `summary` or `detail`.
+    cursor: Optional signed `semantic_waiver` keyset cursor.
+    finding_id, metric_result_id, receipt_id: Optional anchor filters.
+    guideline_id, binding_id, metric_id: Optional policy filters.
+    entity_type, subject_id: Optional exact subject filters.
+    status: Optional closed lifecycle status.
+    profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with waiver heads and optional `next_cursor`.
+    Outcome with one homogeneous projection page and optional `next_cursor`.
+    Status is effective as of `evaluated_at`: an approved immutable head past
+    its deadline projects as `expired` without mutating its ledger history.
+    The `full` projection includes the permanent assessor fence, sealed
+    digests and the last event's idempotency key.
 
-## `okto_pulse_get_policy_waiver`
+## `okto_pulse_get_semantic_guideline_waiver`
 
-Read one policy-waiver head.
+Read one semantic metric-waiver head at an explicit evaluation time.
+
+Args:
+    board_id: Authenticated board scope.
+    waiver_id: Server-issued waiver identity.
+    evaluated_at: Authoritative time for expiry/currentness projection. Reuse
+        the collection snapshot when opening a listed waiver.
+    profile: Closed `summary`, `detail`, or `full` projection.
+
+Returns:
+    Outcome with the effective lifecycle status as of `evaluated_at`, exact
+    anchor/currentness and full fences when requested. Scheduled expiry is
+    projected consistently with the waiver collection without mutating the
+    immutable ledger head.
+    The `full` projection includes the last event's idempotency key.
+
+## `okto_pulse_list_semantic_guideline_waiver_events`
+
+Read the append-only event history for one semantic metric waiver.
 
 Args:
     board_id: Authenticated board scope.
     waiver_id: Server-issued waiver identity.
 
 Returns:
-    Outcome with current waiver state.
+    Outcome with ordered immutable events, including revalidation decisions.
 
-## `okto_pulse_list_policy_waiver_events`
+## `okto_pulse_request_semantic_guideline_waiver`
 
-Read the append-only history for one policy waiver.
-
-Args:
-    board_id: Authenticated board scope.
-    waiver_id: Server-issued waiver identity.
-
-Returns:
-    Outcome with ordered immutable waiver events.
-
-## `okto_pulse_request_policy_waiver`
-
-Request a bounded waiver for one current, waivable finding.
+Request a bounded waiver for one exact, current failed metric anchor.
 
 Args:
     board_id: Authenticated board scope.
-    finding_id: Exact finding identity.
+    metric_result_id, finding_id, receipt_id: Required exact anchor triple.
     justification: Auditable rationale.
-    evidence_refs: Non-empty evidence references.
-    expires_at: Requested bounded expiry.
+    evidence_refs: Non-empty structured evidence references.
+    expires_at: Optional requested bounded expiry.
     idempotency_key: Retry-stable client key.
 
 Returns:
-    Outcome with the server-issued requested waiver.
+    Outcome with the requested waiver and append-only request event.
 
-## `okto_pulse_review_policy_waiver`
+## `okto_pulse_review_semantic_guideline_waiver`
 
-Approve or reject a requested waiver.
+Approve or reject a requested semantic waiver independently.
 
 Args:
     board_id: Authenticated board scope.
     waiver_id: Server-issued waiver identity.
     decision: `approve` or `reject`.
-    reason: Auditable rationale.
-    evidence_refs: Non-empty evidence references.
     expected_waiver_revision: Required compare-and-swap precondition.
+    reason: Auditable rationale.
+    evidence_refs: Non-empty structured evidence references.
     idempotency_key: Retry-stable client key.
 
 Returns:
-    Outcome with the updated waiver head and append-only event.
+    Outcome with the updated waiver head and append-only review event.
 
-## `okto_pulse_revoke_policy_waiver`
+## `okto_pulse_revoke_semantic_guideline_waiver`
 
-Revoke an approved waiver.
+Revoke an approved semantic waiver.
 
 Args:
     board_id: Authenticated board scope.
     waiver_id: Server-issued waiver identity.
-    reason: Auditable rationale.
-    evidence_refs: Non-empty evidence references.
     expected_waiver_revision: Required compare-and-swap precondition.
+    reason: Auditable rationale.
+    evidence_refs: Non-empty structured evidence references.
     idempotency_key: Retry-stable client key.
 
 Returns:
     Outcome with the revoked waiver head and append-only event.
 
-## `okto_pulse_revalidate_policy_waiver`
+## `okto_pulse_revalidate_semantic_guideline_waiver`
 
-Revalidate stale or expired waiver evidence against current policy.
+Append an independent currentness decision without rebinding or automatically
+reactivating the waiver.
 
 Args:
     board_id: Authenticated board scope.
     waiver_id: Server-issued waiver identity.
-    reason: Auditable rationale.
-    evidence_refs: Non-empty evidence references.
     expected_waiver_revision: Required compare-and-swap precondition.
-    new_expires_at: New bounded expiry.
+    evaluated_at: Authoritative evaluation time.
     idempotency_key: Retry-stable client key.
 
 Returns:
-    Outcome with the revalidated waiver head and append-only event.
+    Exact `{waiver_id, waiver_revision, status, current, reason_code,
+    replayed}` where status is `approved`, `expired`, `anchor_stale`, or
+    `revoked`. Detailed drift reasons remain in the append-only event/full
+    projection.

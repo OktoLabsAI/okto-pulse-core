@@ -10,6 +10,7 @@ from okto_pulse.core.events.types import (
     PolicyBindingMaterialized,
     PolicyConstraintChanged,
     PolicyRetirementChanged,
+    SemanticGuidelineProjectionChanged,
 )
 from okto_pulse.core.ports.policy_constraint_projection import (
     PolicyConstraintProjectionResult,
@@ -17,15 +18,15 @@ from okto_pulse.core.ports.policy_constraint_projection import (
 )
 
 
-_SAFE_POLICY_CONSTRAINT_CODE = re.compile(
-    r"^policy_constraint_[a-z0-9_]{1,80}$"
+_SAFE_POLICY_PROJECTION_CODE = re.compile(
+    r"^(?:policy_constraint|semantic_guideline)_[a-z0-9_]{1,80}$"
 )
 _SAFE_EXCEPTION_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
 
 
 def _safe_projection_failure(error: Exception) -> RuntimeError:
     code = getattr(error, "code", None)
-    if isinstance(code, str) and _SAFE_POLICY_CONSTRAINT_CODE.fullmatch(code):
+    if isinstance(code, str) and _SAFE_POLICY_PROJECTION_CODE.fullmatch(code):
         return RuntimeError(code)
     exception_type = type(error).__name__
     if _SAFE_EXCEPTION_TYPE.fullmatch(exception_type) is None:
@@ -39,6 +40,7 @@ def _safe_projection_failure(error: Exception) -> RuntimeError:
     PolicyAdoptionChanged.event_type,
     PolicyBindingMaterialized.event_type,
     PolicyRetirementChanged.event_type,
+    SemanticGuidelineProjectionChanged.event_type,
 )
 class PolicyConstraintProjectionHandler:
     """Apply one immutable event through the edition-owned projection port."""
@@ -52,7 +54,8 @@ class PolicyConstraintProjectionHandler:
             event,
             PolicyAdoptionChanged
             | PolicyBindingMaterialized
-            | PolicyRetirementChanged,
+            | PolicyRetirementChanged
+            | SemanticGuidelineProjectionChanged,
         ):
             raise TypeError("policy_constraint_projection_event_invalid")
         port = get_policy_constraint_projection_port()
@@ -62,9 +65,14 @@ class PolicyConstraintProjectionHandler:
             raise _safe_projection_failure(exc) from None
         if not isinstance(result, PolicyConstraintProjectionResult):
             raise RuntimeError("policy_constraint_projection_result_invalid")
+        expected_operation = (
+            "sync"
+            if isinstance(event, SemanticGuidelineProjectionChanged)
+            else event.operation
+        )
         if (
             result.board_id != event.board_id
-            or result.operation != event.operation
+            or result.operation != expected_operation
             or result.event_id != event.event_id
         ):
             raise RuntimeError("policy_constraint_projection_result_mismatch")

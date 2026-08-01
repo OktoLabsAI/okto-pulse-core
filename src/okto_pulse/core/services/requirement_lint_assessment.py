@@ -280,6 +280,37 @@ def _qa_anchor_ids(qa_items: Sequence[Mapping[str, Any]]) -> frozenset[str]:
     )
 
 
+def _normalized_question_text(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _dedupe_proposed_questions(
+    proposed: Sequence[Any],
+    qa_items: Sequence[Mapping[str, Any]],
+) -> tuple[Any, ...]:
+    """Never re-materialize a lint question that already exists on the Spec.
+
+    Every semantic write re-issues the advisory lint receipt. Without this
+    filter each write materialized up to five NEW Q&A items whose generated
+    text was byte-identical to questions from earlier writes, flooding the
+    Spec board with duplicates (observed: 300 copies of 19 findings). The
+    findings themselves remain first-class on every receipt; only the HITL
+    question is deduplicated, by normalized question text, against the
+    Spec's existing Q&A — answered or not.
+    """
+
+    existing = {
+        _normalized_question_text(item.get("question"))
+        for item in qa_items
+    }
+    existing.discard("")
+    return tuple(
+        question
+        for question in proposed
+        if _normalized_question_text(question.question) not in existing
+    )
+
+
 def requirement_lint_natural_idempotency_key(
     command: RequirementLintWriteCommand,
     *,
@@ -394,7 +425,10 @@ def build_requirement_lint_assessment_bundle(
         ),
         scale=analysis.scale,
         findings=analysis.findings,
-        proposed_questions=analysis.proposed_questions,
+        proposed_questions=_dedupe_proposed_questions(
+            analysis.proposed_questions,
+            assessment_input.qa_items,
+        ),
     )
     service = quality_service or QualityAssessmentService()
     return service.prepare_submission(

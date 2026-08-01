@@ -155,6 +155,7 @@ def principal_from_auth_session(session: AuthSession | None) -> Principal | None
     return Principal(
         subject=session.agent_id,
         realm_id=metadata.get("realm_id"),
+        actor_kind="agent",
         claims={
             "agent_name": session.agent_name,
             "auth_channel": "mcp",

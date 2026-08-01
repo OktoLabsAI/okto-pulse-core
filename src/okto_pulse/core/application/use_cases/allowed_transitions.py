@@ -63,14 +63,18 @@ class AllowedTransitionPolicyComplianceDecision:
     reason_codes: tuple[str, ...]
     decision_digest: str | None = None
     fence_digest: str | None = None
-    receipt_id: str | None = None
+    receipt_ids: tuple[str, ...] = ()
     currentness: str | None = None
     currentness_reasons: tuple[str, ...] = ()
-    applicable_rule_count: int | None = None
-    applicable_blocking_rule_count: int | None = None
-    blocking_rule_count: int | None = None
-    waived_rule_count: int | None = None
+    applicable_metric_count: int | None = None
+    applicable_blocking_metric_count: int | None = None
+    failed_metric_count: int | None = None
+    blocking_metric_count: int | None = None
+    waived_metric_count: int | None = None
     advisory_issue_count: int | None = None
+    skipped_binding_count: int | None = None
+    diagnostic_codes: tuple[str, ...] = ()
+    binding_decisions: tuple[dict[str, Any], ...] = ()
 
     @classmethod
     def subject_required(
@@ -101,7 +105,7 @@ class AllowedTransitionPolicyComplianceDecision:
             reason_codes=tuple(reason.value for reason in decision.reason_codes),
             decision_digest=decision.decision_digest,
             fence_digest=decision.fence_digest,
-            receipt_id=decision.receipt_id,
+            receipt_ids=decision.receipt_ids,
             currentness=(
                 decision.currentness.value
                 if decision.currentness is not None
@@ -110,13 +114,21 @@ class AllowedTransitionPolicyComplianceDecision:
             currentness_reasons=tuple(
                 reason.value for reason in decision.currentness_reasons
             ),
-            applicable_rule_count=decision.applicable_rule_count,
-            applicable_blocking_rule_count=(
-                decision.applicable_blocking_rule_count
+            applicable_metric_count=decision.applicable_metric_count,
+            applicable_blocking_metric_count=(
+                decision.applicable_blocking_metric_count
             ),
-            blocking_rule_count=decision.blocking_rule_count,
-            waived_rule_count=decision.waived_rule_count,
+            failed_metric_count=decision.failed_metric_count,
+            blocking_metric_count=decision.blocking_metric_count,
+            waived_metric_count=decision.waived_metric_count,
             advisory_issue_count=decision.advisory_issue_count,
+            skipped_binding_count=decision.skipped_binding_count,
+            diagnostic_codes=tuple(
+                item.value for item in decision.diagnostic_codes
+            ),
+            binding_decisions=tuple(
+                item.to_payload() for item in decision.binding_decisions
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -127,16 +139,20 @@ class AllowedTransitionPolicyComplianceDecision:
             "reason_codes": list(self.reason_codes),
             "decision_digest": self.decision_digest,
             "fence_digest": self.fence_digest,
-            "receipt_id": self.receipt_id,
+            "receipt_ids": list(self.receipt_ids),
             "currentness": self.currentness,
             "currentness_reasons": list(self.currentness_reasons),
-            "applicable_rule_count": self.applicable_rule_count,
-            "applicable_blocking_rule_count": (
-                self.applicable_blocking_rule_count
+            "applicable_metric_count": self.applicable_metric_count,
+            "applicable_blocking_metric_count": (
+                self.applicable_blocking_metric_count
             ),
-            "blocking_rule_count": self.blocking_rule_count,
-            "waived_rule_count": self.waived_rule_count,
+            "failed_metric_count": self.failed_metric_count,
+            "blocking_metric_count": self.blocking_metric_count,
+            "waived_metric_count": self.waived_metric_count,
             "advisory_issue_count": self.advisory_issue_count,
+            "skipped_binding_count": self.skipped_binding_count,
+            "diagnostic_codes": list(self.diagnostic_codes),
+            "binding_decisions": list(self.binding_decisions),
         }
 
 

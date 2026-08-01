@@ -1,6 +1,7 @@
-"""Pure compliance receipt projections, currentness, and keyset contracts.
+"""Pure guideline projections plus deprecated policy/v1 read contracts.
 
-``guideline-domain/v1`` freezes what was evaluated.  This module compares that
+``guideline-domain/v2`` freezes semantic revisions. Legacy receipt projections
+remain temporarily importable while their consumers migrate. This module compares
 immutable evidence with an explicit current snapshot and builds list
 projections without mutating the receipt.  Missing current evidence is stale
 by construction, so callers cannot accidentally turn an old receipt into a
@@ -27,7 +28,7 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelinePolicyContractError,
     GuidelineRevision,
     GuidelineRevisionPageCursor,
-    GuidelineRule,
+    GuidelineMetric,
     PolicyComplianceFinding,
     PolicyComplianceReasonCode,
     PolicyComplianceReceipt,
@@ -40,9 +41,17 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicyWaiverExpireReasonCode,
     PolicyWaiverStatus,
 )
+from okto_pulse.core.domain.guideline_semantic_projection import (
+    SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION,
+    SemanticAssessmentPageCursor,
+    SemanticFindingPageCursor,
+    SemanticSkipPageCursor,
+    SemanticWaiverPageCursor,
+)
 
 
 POLICY_COMPLIANCE_CONTRACT_VERSION = "policy-compliance/v1"
+POLICY_CURSOR_TOKEN_MAX_LENGTH = 8192
 
 
 def _required_text(value: object, code: str) -> str:
@@ -101,9 +110,9 @@ class GuidelineRevisionListItem:
     created_at: datetime
     parent_revision_id: str | None
     content: str | None = None
-    content_digest: str | None = None
+    revision_digest: str | None = None
     tags: tuple[str, ...] | None = None
-    rules: tuple[GuidelineRule, ...] | None = None
+    metrics: tuple[GuidelineMetric, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.projection, PolicyProjection):
@@ -146,9 +155,9 @@ class GuidelineRevisionListItem:
                 value is not None
                 for value in (
                     self.content,
-                    self.content_digest,
+                    self.revision_digest,
                     self.tags,
-                    self.rules,
+                    self.metrics,
                 )
             ):
                 raise GuidelinePolicyContractError(
@@ -156,9 +165,9 @@ class GuidelineRevisionListItem:
                 )
         elif (
             self.content is None
-            or self.content_digest is None
+            or self.revision_digest is None
             or self.tags is None
-            or self.rules is None
+            or self.metrics is None
         ):
             raise GuidelinePolicyContractError(
                 "guideline_revision_detail_incomplete"
@@ -231,9 +240,9 @@ def project_guideline_revision(
         created_at=revision.created_at,
         parent_revision_id=revision.parent_revision_id,
         content=revision.content if detail else None,
-        content_digest=revision.content_digest if detail else None,
+        revision_digest=revision.revision_digest if detail else None,
         tags=revision.tags if detail else None,
-        rules=revision.rules if detail else None,
+        metrics=revision.metrics if detail else None,
     )
 
 
@@ -1254,6 +1263,10 @@ class PolicyCursorCodec:
             | PolicyFindingPageCursor
             | PolicyWaiverPageCursor
             | PolicyImpactPageCursor
+            | SemanticAssessmentPageCursor
+            | SemanticFindingPageCursor
+            | SemanticWaiverPageCursor
+            | SemanticSkipPageCursor
         ),
     ) -> str:
         if isinstance(cursor, GuidelineRevisionPageCursor):
@@ -1312,6 +1325,54 @@ class PolicyCursorCodec:
                 "filter_digest": cursor.filter_digest,
                 "projection_digest": cursor.projection_digest,
             }
+        elif isinstance(cursor, SemanticAssessmentPageCursor):
+            payload = {
+                "schema_version": cursor.schema_version,
+                "kind": "semantic_assessment",
+                "ordering": list(cursor.ordering),
+                "recorded_at": cursor.recorded_at.isoformat(
+                    timespec="microseconds"
+                ).replace("+00:00", "Z"),
+                "item_id": cursor.item_id,
+                "filter_digest": cursor.filter_digest,
+                "projection_digest": cursor.projection_digest,
+            }
+        elif isinstance(cursor, SemanticFindingPageCursor):
+            payload = {
+                "schema_version": cursor.schema_version,
+                "kind": "semantic_finding",
+                "ordering": list(cursor.ordering),
+                "created_at": cursor.created_at.isoformat(
+                    timespec="microseconds"
+                ).replace("+00:00", "Z"),
+                "item_id": cursor.item_id,
+                "filter_digest": cursor.filter_digest,
+                "projection_digest": cursor.projection_digest,
+            }
+        elif isinstance(cursor, SemanticWaiverPageCursor):
+            payload = {
+                "schema_version": cursor.schema_version,
+                "kind": "semantic_waiver",
+                "ordering": list(cursor.ordering),
+                "requested_at": cursor.requested_at.isoformat(
+                    timespec="microseconds"
+                ).replace("+00:00", "Z"),
+                "item_id": cursor.item_id,
+                "filter_digest": cursor.filter_digest,
+                "projection_digest": cursor.projection_digest,
+            }
+        elif isinstance(cursor, SemanticSkipPageCursor):
+            payload = {
+                "schema_version": cursor.schema_version,
+                "kind": "semantic_skip",
+                "ordering": list(cursor.ordering),
+                "created_at": cursor.created_at.isoformat(
+                    timespec="microseconds"
+                ).replace("+00:00", "Z"),
+                "item_id": cursor.item_id,
+                "filter_digest": cursor.filter_digest,
+                "projection_digest": cursor.projection_digest,
+            }
         else:
             raise GuidelinePolicyContractError("invalid_cursor")
         encoded = json.dumps(
@@ -1338,14 +1399,29 @@ class PolicyCursorCodec:
         | PolicyFindingPageCursor
         | PolicyWaiverPageCursor
         | PolicyImpactPageCursor
+        | SemanticAssessmentPageCursor
+        | SemanticFindingPageCursor
+        | SemanticWaiverPageCursor
+        | SemanticSkipPageCursor
     ):
         try:
+            if (
+                not isinstance(token, str)
+                or not token
+                or len(token) > POLICY_CURSOR_TOKEN_MAX_LENGTH
+                or token.count(".") != 1
+            ):
+                raise GuidelinePolicyContractError("invalid_cursor")
             if expected_kind not in {
                 "revision",
                 "receipt",
                 "finding",
                 "waiver",
                 "impact",
+                "semantic_assessment",
+                "semantic_finding",
+                "semantic_waiver",
+                "semantic_skip",
             }:
                 raise GuidelinePolicyContractError("invalid_cursor")
             encoded_part, signature_part = token.split(".", 1)
@@ -1359,9 +1435,23 @@ class PolicyCursorCodec:
             if not hmac.compare_digest(signature, expected_signature):
                 raise GuidelinePolicyContractError("invalid_cursor")
             payload = json.loads(encoded.decode("utf-8"))
+            canonical_encoded = json.dumps(
+                payload,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            if not hmac.compare_digest(encoded, canonical_encoded):
+                raise GuidelinePolicyContractError("invalid_cursor")
+            semantic_kind = expected_kind.startswith("semantic_")
+            expected_schema_version = (
+                SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION
+                if semantic_kind
+                else POLICY_KEYSET_CONTRACT_VERSION
+            )
             if (
                 not isinstance(payload, dict)
-                or payload.get("schema_version") != POLICY_KEYSET_CONTRACT_VERSION
+                or payload.get("schema_version") != expected_schema_version
                 or payload.get("kind") != expected_kind
             ):
                 raise GuidelinePolicyContractError("invalid_cursor")
@@ -1449,6 +1539,51 @@ class PolicyCursorCodec:
                     schema_version=payload["schema_version"],
                     ordering=tuple(payload["ordering"]),
                 )
+            if expected_kind in {
+                "semantic_assessment",
+                "semantic_finding",
+                "semantic_waiver",
+                "semantic_skip",
+            }:
+                timestamp_field = {
+                    "semantic_assessment": "recorded_at",
+                    "semantic_finding": "created_at",
+                    "semantic_waiver": "requested_at",
+                    "semantic_skip": "created_at",
+                }[expected_kind]
+                if set(payload) != {
+                    "schema_version",
+                    "kind",
+                    "ordering",
+                    timestamp_field,
+                    "item_id",
+                    "filter_digest",
+                    "projection_digest",
+                }:
+                    raise GuidelinePolicyContractError("invalid_cursor")
+                timestamp = str(payload[timestamp_field])
+                if timestamp.endswith("Z"):
+                    timestamp = timestamp[:-1] + "+00:00"
+                cursor_type = {
+                    "semantic_assessment": SemanticAssessmentPageCursor,
+                    "semantic_finding": SemanticFindingPageCursor,
+                    "semantic_waiver": SemanticWaiverPageCursor,
+                    "semantic_skip": SemanticSkipPageCursor,
+                }[expected_kind]
+                semantic_cursor = cursor_type(
+                    at=datetime.fromisoformat(timestamp),
+                    item_id=payload["item_id"],
+                    filter_digest=payload["filter_digest"],
+                    projection_digest=payload["projection_digest"],
+                    schema_version=payload["schema_version"],
+                    ordering=tuple(payload["ordering"]),
+                )
+                if (
+                    self.encode(semantic_cursor).split(".", 1)[0]
+                    != encoded_part
+                ):
+                    raise GuidelinePolicyContractError("invalid_cursor")
+                return semantic_cursor
             if set(payload) != {
                 "schema_version",
                 "kind",
@@ -1476,37 +1611,24 @@ class PolicyCursorCodec:
 
 
 __all__ = [
-    "POLICY_COMPLIANCE_CONTRACT_VERSION",
-    "POLICY_FINDING_ORDERING",
     "POLICY_IMPACT_ORDERING",
     "POLICY_KEYSET_CONTRACT_VERSION",
-    "POLICY_RECEIPT_ORDERING",
+    "POLICY_CURSOR_TOKEN_MAX_LENGTH",
     "POLICY_WAIVER_ORDERING",
-    "PolicyComplianceCurrentSnapshot",
-    "PolicyComplianceFindingListItem",
-    "PolicyComplianceFindingPage",
-    "PolicyComplianceReceiptListItem",
-    "PolicyComplianceReceiptPage",
-    "PolicyCurrentnessAssessment",
-    "PolicyCurrentnessReason",
     "PolicyCursorCodec",
-    "PolicyFindingPageCursor",
     "GuidelineImpactItemPage",
     "GuidelineRevisionListItem",
     "GuidelineRevisionProjectionPage",
     "PolicyImpactPageCursor",
     "PolicyKeysetPage",
     "PolicyProjection",
-    "PolicyReceiptPageCursor",
     "PolicyWaiverListItem",
     "PolicyWaiverPage",
     "PolicyWaiverPageCursor",
-    "assess_policy_receipt_currentness",
-    "assess_policy_compliance_fences",
-    "policy_finding_severity_rank",
-    "policy_finding_severity_rank_values",
-    "project_policy_compliance_finding",
-    "project_policy_compliance_receipt",
+    "SemanticAssessmentPageCursor",
+    "SemanticFindingPageCursor",
+    "SemanticSkipPageCursor",
+    "SemanticWaiverPageCursor",
     "project_policy_waiver",
     "project_guideline_revision",
 ]

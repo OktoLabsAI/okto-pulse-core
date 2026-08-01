@@ -26,15 +26,16 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 # ---------------------------------------------------------------------------
 # Baselines updated after the 2026-07-14 sprint reviewer-separation and
 # optimistic-versioning contract, then after the 2026-07-25 append-only
-# SpecHistory audit for validation submissions, and after the 2026-07-27 SK-A
-# A3 checklist predicate was deliberately added to Spec Validation. If a gate
-# changes intentionally, review its semantic tests and update this versioned
-# constant in the same change.
+# SpecHistory audit for validation submissions, after the 2026-07-27 SK-A A3
+# checklist predicate, and after the 2026-07-31 SK-B3 semantic policy transition
+# gate was deliberately added to successful Spec Validation. If a gate changes
+# intentionally, review its semantic tests and update this versioned constant in
+# the same change.
 # ---------------------------------------------------------------------------
 
 EXPECTED_HASHES = {
     "submit_spec_validation": (
-        "f14d10268d070a73f50d76173e9776983e411610e18c808bac60f386f41635ce"
+        "88b004f71f8cbf4cc5606fd449d73ea279a244f517005842c9507ae63b595c4f"
     ),
     "submit_evaluation": (
         "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"

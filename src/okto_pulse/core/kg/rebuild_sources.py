@@ -464,6 +464,7 @@ class RebuildSourceEnumerator:
     source_store: SourceStore
     working_ttl_days: int = DEFAULT_WORKING_TTL_DAYS
     cognitive_digest_provider: Callable[[str], dict[str, Any]] | None = None
+    now: datetime | None = None
 
     def enumerate(self, *, board_id: str) -> RebuildSourceSet:
         if not board_id:
@@ -508,6 +509,7 @@ class RebuildSourceEnumerator:
                     row,
                     default=self.working_ttl_days,
                 ),
+                now=self.now,
                 has_minimal_evidence=bool(row.get("has_minimal_evidence", True)),
                 # Path B amendment (spec 7ea1e4be): canonical only at done AND
                 # complete lineage. Defaults True so non-amendment sources are

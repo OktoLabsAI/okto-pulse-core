@@ -4,7 +4,7 @@ version: "1.1"
 
 # Cards Workflow — Implementation, Bug & Test Execution
 
-Executable guideline evaluation follows
+Semantic guideline assessment follows
 `okto-pulse://reference/policy-compliance`.
 
 ## 2.7b Architecture Design — Structural Artifacts (Summary)
@@ -238,11 +238,11 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 4. Implement the task.
 5. Link artifacts — attach knowledge bases, mockups, or comments as work progresses.
 6. Move to validation — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)`.
-7. Wait — another agent or human with `card.validation.submit` permission will validate your work.
+7. The card is ready for validation only after the move succeeds. `okto_pulse_submit_task_validation` requires status `validation` and fails closed otherwise — never request or hand off validation while the card is still `in_progress`.
 
 ### Validator Workflow
 
-1. Find cards awaiting validation — `okto_pulse_list_cards_by_status(board_id, status="validation")`
+1. Confirm the card is in `validation` before analyzing. Find queued cards with `okto_pulse_list_cards_by_status(board_id, status="validation")`; if a candidate is not in that status, the implementor has not completed the handoff and validation must not start.
 2. Get full gate context for each card — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Inspect `reviewer_separation` before acting; it is evaluated for the current agent against the card creator, assignee, and executor report author.
 3. Analyze the work — review implementation against card description and spec requirements. When `reviewer_separation.mode="enforce"` and `allowed=false`, hand the validation to an independent principal instead of retrying.
 4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, ...)` with:

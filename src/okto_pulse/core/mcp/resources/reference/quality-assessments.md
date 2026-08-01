@@ -58,7 +58,11 @@ stable `whole_artifact`, `field`, `structured_child`, or `qa` anchor. Array
 indexes and mutable numeric path segments are forbidden. Evidence references
 carry only source type, stable ID, version, and SHA-256.
 
-An assessment may propose at most five questions. Accepted questions and their
+An assessment may propose at most five questions. Automatic requirement
+lint additionally deduplicates its proposals against the Spec's existing Q&A
+by normalized question text (answered or not): re-issuing the advisory lint
+receipt on every semantic write never re-materializes an already-asked
+question. Accepted questions and their
 finding links are created atomically with the receipt, and the result maps each
 caller `client_key` to the issued Q&A ID. Any failure leaves no partial receipt,
 finding, question, head, history, event, or outbox mutation.

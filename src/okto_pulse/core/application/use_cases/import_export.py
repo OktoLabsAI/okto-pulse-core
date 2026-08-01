@@ -1,10 +1,8 @@
 """Import/export use cases for the admin catalog families (v0.3.0 ITEM 19).
 
 Transport-free use cases behind the REST endpoints
-``GET .../export`` / ``POST .../import`` for the four exportable families:
+``GET .../export`` / ``POST .../import`` for the three generic catalog families:
 
-* **guidelines** — the actor's global catalog + (optionally) a board's inline
-  guidelines, scope preserved;
 * **design_systems** — the global Design System catalog (or a single entry,
   any scope);
 * **presets** — permission presets visible to the actor (built-ins + own
@@ -22,11 +20,13 @@ fields (ids, owner, timestamps, sequence versions) so the import can recreate
 every item through the NORMAL creation path (service/gateway used by the
 existing POST endpoints — no parallel write path).
 
-Conflict policy (documented per family on each import use case):
+Guidelines no longer use this schema-v1 surface.  The deprecated command
+classes below fail closed with ``guideline_export_v3_required`` after
+authorization; callers must use ``guideline_import_export`` so semantic
+metrics and governed binding history cannot be silently discarded.
 
-* guidelines — natural key = title (case-insensitive) within the partition
-  (actor's global catalog, or the target board's inline set) →
-  ``skipped`` with a duplicate reason instead of duplicating;
+Conflict policy (documented per supported family on each import use case):
+
 * design_systems — natural key = title within the catalog partition
   ``(scope, board_id)`` → skipped duplicate;
 * presets — natural key = preset name among the presets visible to the actor
@@ -61,6 +61,7 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.application.use_cases.policy_governance import (
     ADOPTION_MANAGE,
     REVISIONS_CREATE,
+    REVISIONS_READ,
     require_policy_governance_capabilities,
 )
 from okto_pulse.core.services.default_board_configuration import (
@@ -69,24 +70,11 @@ from okto_pulse.core.services.default_board_configuration import (
 
 ENVELOPE_SCHEMA_VERSION = "1"
 
-KIND_GUIDELINES = "guidelines"
 KIND_DESIGN_SYSTEMS = "design_systems"
 KIND_PRESETS = "presets"
 KIND_BOARD_CONFIG = "board_config"
 
 
-def _actor_type(actor: ActorContext) -> str:
-    return (
-        "agent"
-        if actor.source == "mcp"
-        else "system"
-        if actor.source == "system"
-        else "user"
-    )
-
-# Export reads are unpaginated by design (admin backup surface); the ceiling
-# only guards against a pathological catalog.
-_EXPORT_LIST_LIMIT = 10_000
 _BOARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
 
 
@@ -106,6 +94,13 @@ class ImportItemError(Exception):
         self.index = index
         self.detail = detail
         super().__init__(str(detail))
+
+
+class GuidelineExportV3Required(ValueError):
+    """The lossy schema-v1 guideline catalog surface has been retired."""
+
+    def __init__(self) -> None:
+        super().__init__("guideline_export_v3_required")
 
 
 def build_envelope(kind: str, items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -221,21 +216,8 @@ def _norm_key(value: str | None) -> str:
 
 
 # ===========================================================================
-# Guidelines
+# Retired generic guideline surface
 # ===========================================================================
-
-
-def _guideline_export_item(
-    *, title: Any, content: Any, tags: Any, scope: Any, board_id: Any
-) -> dict[str, Any]:
-    """GuidelineResponse fields minus id / owner_id / created_at / updated_at."""
-    return {
-        "title": title,
-        "content": content,
-        "tags": list(tags) if tags else None,
-        "scope": scope,
-        "board_id": board_id,
-    }
 
 
 @dataclass(frozen=True)
@@ -244,54 +226,14 @@ class ExportGuidelinesCommand:
 
 
 class ExportGuidelinesUseCase:
-    """Export the actor's global guidelines + (if ``board_id``) the board's
-    inline guidelines, scope preserved (read, no commit)."""
+    """Deprecated fail-closed shim for the governed lossless V3 exporter."""
 
     async def execute(
         self, command: ExportGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
-
-        service = uow.services.guidelines
-        global_scope = _query_scope_for_actor(actor)
-        globals_ = await service.list_guidelines(
-            actor.actor_id,
-            offset=0,
-            limit=_EXPORT_LIST_LIMIT,
-            query_scope=global_scope,
-        )
-        items = [
-            _guideline_export_item(
-                title=g.title,
-                content=g.content,
-                tags=g.tags,
-                scope=g.scope,
-                board_id=g.board_id,
-            )
-            for g in globals_
-        ]
-        if command.board_id:
-            board_scope = await _require_board_access(
-                uow,
-                command.board_id,
-                actor,
-                write=False,
-            )
-            entries = await service.get_board_guidelines(
-                command.board_id, surface="menu_board", query_scope=board_scope
-            )
-            for entry in entries:
-                guideline = entry.get("guideline") or {}
-                if guideline.get("scope") == "inline":
-                    items.append(
-                        _guideline_export_item(
-                            title=guideline.get("title"),
-                            content=guideline.get("content"),
-                            tags=guideline.get("tags"),
-                            scope="inline",
-                            board_id=command.board_id,
-                        )
-                    )
-        return build_envelope(KIND_GUIDELINES, items)
+        del command, uow
+        require_policy_governance_capabilities(actor, REVISIONS_READ)
+        raise GuidelineExportV3Required()
 
 
 @dataclass(frozen=True)
@@ -302,147 +244,16 @@ class ImportGuidelinesCommand:
 
 
 class ImportGuidelinesUseCase:
-    """Recreate guidelines through ``GuidelineService.create_guideline``.
-
-    Conflict policy — natural key = title (case-insensitive) within the
-    partition: an identical global title in the actor's catalog, or an
-    identical inline title on the target board, is reported as skipped
-    (``duplicate_*_title``) instead of duplicated. Inline items require a
-    board: the request-level ``board_id`` override wins over the item's own
-    ``board_id`` (so an export of board A can be imported into board B).
-    """
+    """Deprecated fail-closed shim for the governed atomic V3 importer."""
 
     async def execute(
         self, command: ImportGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
-        from okto_pulse.core.services.application_schemas import GuidelineCreate
-
-        # The compatibility importer creates immutable guideline revisions.
-        # Repeat the inbound authorization at the application boundary so
-        # every adapter fails closed before any catalog or board read.
+        # Repeat authorization before the fail-closed response so callers
+        # cannot use deprecation behavior to probe a protected capability.
         require_policy_governance_capabilities(actor, REVISIONS_CREATE)
-        service = uow.services.guidelines
-        result = ImportResult()
-
-        global_scope = _query_scope_for_actor(actor)
-        existing_globals = {
-            _norm_key(g.title)
-            for g in await service.list_guidelines(
-                actor.actor_id,
-                offset=0,
-                limit=_EXPORT_LIST_LIMIT,
-                query_scope=global_scope,
-            )
-        }
-        inline_titles: dict[str, set[str]] = {}
-        inline_scopes: dict[str, QueryScope] = {}
-
-        # Preflight every target board before any create call.  A later foreign
-        # inline item therefore cannot leave earlier global/inline writers or
-        # their activity/event side effects behind.
-        for index, item in enumerate(command.items):
-            if (getattr(item, "scope", None) or "global") != "inline":
-                continue
-            target_board = command.board_id or getattr(item, "board_id", None)
-            if not target_board:
-                raise ImportItemError(
-                    index,
-                    "Inline guideline requires a board_id "
-                    "(on the item or as the ?board_id= query parameter).",
-                )
-            if target_board not in inline_scopes:
-                try:
-                    inline_scopes[target_board] = await _require_board_access(
-                        uow,
-                        target_board,
-                        actor,
-                        write=True,
-                    )
-                except EntityNotFoundError:
-                    raise ImportItemError(
-                        index, f"Board '{target_board}' not found."
-                    ) from None
-
-        async def _inline_titles_for(board_id: str) -> set[str]:
-            if board_id not in inline_titles:
-                board_scope = inline_scopes[board_id]
-                entries = await service.get_board_guidelines(
-                    board_id, surface="menu_board", query_scope=board_scope
-                )
-                inline_titles[board_id] = {
-                    _norm_key((entry.get("guideline") or {}).get("title"))
-                    for entry in entries
-                    if (entry.get("guideline") or {}).get("scope") == "inline"
-                }
-            return inline_titles[board_id]
-
-        for index, item in enumerate(command.items):
-            scope = getattr(item, "scope", None) or "global"
-            title_key = _norm_key(getattr(item, "title", None))
-            if scope == "global":
-                if title_key in existing_globals:
-                    result.skipped.append(
-                        {
-                            "index": index,
-                            "title": item.title,
-                            "reason": "duplicate_global_title",
-                        }
-                    )
-                    continue
-                await service.create_guideline(
-                    actor.actor_id,
-                    GuidelineCreate(
-                        title=item.title,
-                        content=item.content,
-                        tags=item.tags,
-                        scope="global",
-                        board_id=None,
-                    ),
-                    query_scope=global_scope,
-                    actor_type=_actor_type(actor),
-                )
-                existing_globals.add(title_key)
-                result.created += 1
-            elif scope == "inline":
-                target_board = command.board_id or getattr(item, "board_id", None)
-                if not target_board:
-                    raise ImportItemError(
-                        index,
-                        "Inline guideline requires a board_id "
-                        "(on the item or as the ?board_id= query parameter).",
-                    )
-                try:
-                    titles = await _inline_titles_for(target_board)
-                except EntityNotFoundError:
-                    raise ImportItemError(index, f"Board '{target_board}' not found.")
-                if title_key in titles:
-                    result.skipped.append(
-                        {
-                            "index": index,
-                            "title": item.title,
-                            "reason": "duplicate_inline_title",
-                        }
-                    )
-                    continue
-                await service.create_guideline(
-                    actor.actor_id,
-                    GuidelineCreate(
-                        title=item.title,
-                        content=item.content,
-                        tags=item.tags,
-                        scope="inline",
-                        board_id=target_board,
-                    ),
-                    query_scope=inline_scopes[target_board],
-                    actor_type=_actor_type(actor),
-                )
-                titles.add(title_key)
-                result.created += 1
-            else:
-                raise ImportItemError(index, f"Unsupported guideline scope '{scope}'.")
-
-        await _finalize(uow, dry_run=command.dry_run)
-        return result
+        del command, uow
+        raise GuidelineExportV3Required()
 
 
 # ===========================================================================

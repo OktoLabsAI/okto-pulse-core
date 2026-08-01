@@ -32,10 +32,16 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 
 POLICY_BINDING_MATERIALIZED_EVENT_TYPE = (
-    "board.policy_binding_materialized.v1"
+    "board.semantic_policy_binding_materialized.v2"
 )
 POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION = (
-    "policy-binding-materialized/v1"
+    "policy-binding-materialized/v2"
+)
+SEMANTIC_GUIDELINE_PROJECTION_EVENT_TYPE = (
+    "guideline.semantic_kg_projection_changed.v1"
+)
+SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION = (
+    "semantic-guideline-kg-projection/v1"
 )
 
 
@@ -98,7 +104,7 @@ class PolicyAdoptionChanged(DomainEvent):
     )
 
     event_type: ClassVar[str] = GUIDELINE_ADOPTION_EVENT_TYPE
-    event_schema_version: Literal["guideline-impact/v1"]
+    event_schema_version: Literal["guideline-impact/v2"]
     actor_id: str
     actor_type: Literal["agent", "user", "system"]
     operation: Literal["adopt", "unlink"]
@@ -120,9 +126,9 @@ class PolicyAdoptionChanged(DomainEvent):
     policy_set_digest_before: str
     policy_set_digest_after: str
     policy_set_digest: str
-    added_rule_ids: tuple[str, ...] = ()
-    changed_rule_ids: tuple[str, ...] = ()
-    removed_rule_ids: tuple[str, ...] = ()
+    added_metric_ids: tuple[str, ...] = ()
+    changed_metric_ids: tuple[str, ...] = ()
+    removed_metric_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_domain_evidence(self) -> PolicyAdoptionChanged:
@@ -153,9 +159,9 @@ class PolicyAdoptionChanged(DomainEvent):
             binding_head_digest_after=self.binding_head_digest_after,
             policy_set_digest_before=self.policy_set_digest_before,
             policy_set_digest_after=self.policy_set_digest_after,
-            added_rule_ids=self.added_rule_ids,
-            changed_rule_ids=self.changed_rule_ids,
-            removed_rule_ids=self.removed_rule_ids,
+            added_metric_ids=self.added_metric_ids,
+            changed_metric_ids=self.changed_metric_ids,
+            removed_metric_ids=self.removed_metric_ids,
             actor_id=self.actor_id,
             actor_type=self.actor_type,
             occurred_at=self.occurred_at,
@@ -179,9 +185,9 @@ class PolicyAdoptionChanged(DomainEvent):
             "binding_head_digest_after",
             "policy_set_digest_before",
             "policy_set_digest_after",
-            "added_rule_ids",
-            "changed_rule_ids",
-            "removed_rule_ids",
+            "added_metric_ids",
+            "changed_metric_ids",
+            "removed_metric_ids",
             "actor_id",
             "actor_type",
             "occurred_at",
@@ -218,7 +224,7 @@ class PolicyRetirementChanged(DomainEvent):
     )
 
     event_type: ClassVar[str] = GUIDELINE_RETIREMENT_EVENT_TYPE
-    event_schema_version: Literal["guideline-impact/v1"]
+    event_schema_version: Literal["guideline-impact/v2"]
     actor_id: str
     actor_type: Literal["agent", "user", "system"]
     operation: Literal["retire"]
@@ -238,7 +244,7 @@ class PolicyRetirementChanged(DomainEvent):
     policy_set_digest_before: str
     policy_set_digest_after: str
     policy_set_digest: str
-    removed_rule_ids: tuple[str, ...] = ()
+    removed_metric_ids: tuple[str, ...] = ()
     request_digest: str
 
     @model_validator(mode="after")
@@ -268,7 +274,7 @@ class PolicyRetirementChanged(DomainEvent):
             binding_head_digest_after=self.binding_head_digest_after,
             policy_set_digest_before=self.policy_set_digest_before,
             policy_set_digest_after=self.policy_set_digest_after,
-            removed_rule_ids=self.removed_rule_ids,
+            removed_metric_ids=self.removed_metric_ids,
             actor_id=self.actor_id,
             actor_type=self.actor_type,
             occurred_at=self.occurred_at,
@@ -291,7 +297,7 @@ class PolicyRetirementChanged(DomainEvent):
             "binding_head_digest_after",
             "policy_set_digest_before",
             "policy_set_digest_after",
-            "removed_rule_ids",
+            "removed_metric_ids",
             "actor_id",
             "actor_type",
             "occurred_at",
@@ -318,11 +324,12 @@ class PolicyBindingMaterialized(DomainEvent):
         arbitrary_types_allowed=False,
         extra="forbid",
         frozen=True,
+        strict=True,
     )
 
     event_type: ClassVar[str] = POLICY_BINDING_MATERIALIZED_EVENT_TYPE
     event_id: str = Field(min_length=1, max_length=64)
-    event_schema_version: Literal["policy-binding-materialized/v1"]
+    event_schema_version: Literal["policy-binding-materialized/v2"]
     actor_id: str
     actor_type: Literal["agent", "user", "system"]
     operation: Literal["adopt"]
@@ -333,7 +340,9 @@ class PolicyBindingMaterialized(DomainEvent):
     semantic_version: str
     revision_digest: str
     source_kind: Literal["native", "default_materialization"]
-    default_enforcement: Literal["advisory", "blocking"]
+    enforcement: Literal["advisory", "blocking"]
+    minimum_confidence: int = Field(ge=0, le=100)
+    metric_threshold_overrides: dict[str, int]
     priority: int
 
     @model_validator(mode="after")
@@ -353,9 +362,9 @@ class PolicyBindingMaterialized(DomainEvent):
             binding_revision=self.binding_revision,
             adopted_by=self.actor_id,
             adopted_at=self.occurred_at,
-            default_enforcement=GuidelineEnforcement(
-                self.default_enforcement
-            ),
+            enforcement=GuidelineEnforcement(self.enforcement),
+            minimum_confidence=self.minimum_confidence,
+            metric_threshold_overrides=self.metric_threshold_overrides,
             state=GuidelineBindingState.ACTIVE,
             source_kind=GuidelineBindingProvenance(self.source_kind),
         )
@@ -385,8 +394,18 @@ class PolicyBindingMaterialized(DomainEvent):
             )
         object.__setattr__(
             self,
-            "default_enforcement",
-            normalized.default_enforcement.value,
+            "enforcement",
+            normalized.enforcement.value,
+        )
+        object.__setattr__(
+            self,
+            "minimum_confidence",
+            normalized.minimum_confidence,
+        )
+        object.__setattr__(
+            self,
+            "metric_threshold_overrides",
+            dict(normalized.metric_threshold_overrides),
         )
         object.__setattr__(
             self,
@@ -400,10 +419,61 @@ class PolicyBindingMaterialized(DomainEvent):
         return self.revision_id
 
 
+class SemanticGuidelineProjectionChanged(DomainEvent):
+    """Durable board-KG projection intent for semantic guideline evidence.
+
+    Producers append this event and its handler execution in the same
+    relational unit of work as the authoritative mutation.  The dispatcher
+    can therefore observe it only after commit, while a rollback removes both
+    the authority and its projection intent.  ``entity_digest`` is the exact
+    immutable/head digest used by the edition adapter to fail closed before
+    reconciling the graph.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        frozen=True,
+        strict=True,
+    )
+
+    event_type: ClassVar[str] = SEMANTIC_GUIDELINE_PROJECTION_EVENT_TYPE
+    event_id: str = Field(min_length=1, max_length=64)
+    event_schema_version: Literal["semantic-guideline-kg-projection/v1"]
+    actor_id: str = Field(min_length=1, max_length=255)
+    actor_type: Literal["agent", "user", "system"]
+    entity_kind: Literal[
+        "revision",
+        "metric_definition",
+        "binding_configuration",
+        "assessment_receipt",
+        "metric_result",
+        "waiver",
+        "skip",
+    ]
+    causation_id: str = Field(min_length=1, max_length=255)
+    entity_id: str = Field(min_length=1, max_length=255)
+    entity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation: Literal["upsert", "terminate"]
+
+    @model_validator(mode="after")
+    def validate_projection_intent(self) -> SemanticGuidelineProjectionChanged:
+        if (
+            self.event_schema_version
+            != SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION
+        ):
+            raise ValueError("semantic_guideline_projection_evidence_invalid")
+        if self.occurred_at.tzinfo is None or self.occurred_at.utcoffset() is None:
+            raise ValueError("semantic_guideline_projection_time_invalid")
+        return self
+
+
 PolicyConstraintChanged = (
     PolicyAdoptionChanged
     | PolicyRetirementChanged
     | PolicyBindingMaterialized
+    | SemanticGuidelineProjectionChanged
 )
 
 
@@ -850,6 +920,7 @@ EVENT_TYPES: list[str] = [
     PolicyAdoptionChanged.event_type,
     PolicyRetirementChanged.event_type,
     PolicyBindingMaterialized.event_type,
+    SemanticGuidelineProjectionChanged.event_type,
     ArtifactArchiveChanged.event_type,
     CardCreated.event_type,
     CardMoved.event_type,
@@ -896,6 +967,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     PolicyAdoptionChanged.event_type: PolicyAdoptionChanged,
     PolicyRetirementChanged.event_type: PolicyRetirementChanged,
     PolicyBindingMaterialized.event_type: PolicyBindingMaterialized,
+    SemanticGuidelineProjectionChanged.event_type: SemanticGuidelineProjectionChanged,
     ArtifactArchiveChanged.event_type: ArtifactArchiveChanged,
     CardCreated.event_type: CardCreated,
     CardMoved.event_type: CardMoved,

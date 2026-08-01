@@ -1,8 +1,6 @@
-"""Authorization regression for the schema-v1 guideline importer."""
+"""Fail-closed regression for the retired schema-v1 guideline surface."""
 
 from __future__ import annotations
-
-from types import SimpleNamespace
 
 import pytest
 
@@ -11,10 +9,12 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
 )
 from okto_pulse.core.application.use_cases.import_export import (
+    ExportGuidelinesCommand,
+    ExportGuidelinesUseCase,
+    GuidelineExportV3Required,
     ImportGuidelinesCommand,
     ImportGuidelinesUseCase,
 )
-from okto_pulse.core.models.schemas import GuidelineCreate
 
 
 class _PoisonUow:
@@ -44,45 +44,8 @@ async def test_legacy_guideline_import_denies_before_any_read_or_write() -> None
         )
 
 
-class _GuidelineService:
-    def __init__(self) -> None:
-        self.reads = 0
-        self.created: list[tuple[str, GuidelineCreate, str]] = []
-
-    async def list_guidelines(self, owner_id: str, **_kwargs):
-        self.reads += 1
-        assert owner_id == "authorized-importer"
-        return []
-
-    async def create_guideline(
-        self,
-        owner_id: str,
-        data: GuidelineCreate,
-        *,
-        actor_type: str,
-        **_kwargs,
-    ):
-        self.created.append((owner_id, data, actor_type))
-        return SimpleNamespace(id="created-guideline")
-
-
-class _AllowedUow:
-    def __init__(self, service: _GuidelineService) -> None:
-        self.services = SimpleNamespace(guidelines=service)
-        self.commits = 0
-        self.rollbacks = 0
-
-    async def commit(self) -> None:
-        self.commits += 1
-
-    async def rollback(self) -> None:
-        self.rollbacks += 1
-
-
 @pytest.mark.asyncio
-async def test_legacy_guideline_import_allows_revision_creator() -> None:
-    service = _GuidelineService()
-    uow = _AllowedUow(service)
+async def test_authorized_legacy_import_fails_closed_before_uow_access() -> None:
     actor = ActorContext(
         "authorized-importer",
         "rest",
@@ -99,26 +62,37 @@ async def test_legacy_guideline_import_allows_revision_creator() -> None:
         },
     )
 
-    result = await ImportGuidelinesUseCase().execute(
-        ImportGuidelinesCommand(
-            items=[
-                GuidelineCreate(
-                    title="Imported policy",
-                    content="Every API change has a compatibility note.",
-                    scope="global",
-                )
-            ]
-        ),
-        actor=actor,
-        uow=uow,  # type: ignore[arg-type]
+    with pytest.raises(
+        GuidelineExportV3Required,
+        match="guideline_export_v3_required",
+    ):
+        await ImportGuidelinesUseCase().execute(
+            ImportGuidelinesCommand(items=[]),
+            actor=actor,
+            uow=_PoisonUow(),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_authorized_legacy_export_fails_closed_before_uow_access() -> None:
+    actor = ActorContext(
+        "authorized-exporter",
+        "rest",
+        realm_id="local",
+        permissions={
+            "guidelines": {
+                "read": True,
+                "revisions": {"read": True},
+            },
+        },
     )
 
-    assert result.created == 1
-    assert service.reads == 1
-    assert len(service.created) == 1
-    owner_id, created, actor_type = service.created[0]
-    assert owner_id == actor.actor_id
-    assert created.title == "Imported policy"
-    assert actor_type == "user"
-    assert uow.commits == 1
-    assert uow.rollbacks == 0
+    with pytest.raises(
+        GuidelineExportV3Required,
+        match="guideline_export_v3_required",
+    ):
+        await ExportGuidelinesUseCase().execute(
+            ExportGuidelinesCommand(),
+            actor=actor,
+            uow=_PoisonUow(),  # type: ignore[arg-type]
+        )

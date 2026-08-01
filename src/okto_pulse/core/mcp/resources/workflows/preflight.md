@@ -5,7 +5,7 @@ version: "1.0"
 # Pre-Flight Checklist (READ FIRST)
 
 Every time you start a session or pick up a new task, follow the matching sequence below.
-Before relying on executable board policy, read
+Before authoring, assessing, or relying on semantic board guidelines, read
 `okto-pulse://reference/policy-compliance`.
 
 ### Session pre-flight — before any board work

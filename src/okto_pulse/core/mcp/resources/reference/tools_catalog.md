@@ -12,7 +12,7 @@ Tool schemas arrive lazily via MCP `tools/list`. Every entry links the
 exact resource containing that tool's args, returns and examples.
 Required filters for the consolidated `list_*` tools:
 `okto-pulse://reference/list_tools`.
-Governed policy protocol:
+Semantic guideline protocol:
 `okto-pulse://reference/policy-compliance`.
 
 ## KG — Consolidation (write path)
@@ -129,19 +129,19 @@ Governed policy protocol:
 - `okto_pulse_unlink_board_design_system` — docs: `okto-pulse://reference/tool-docs/board`
 - `okto_pulse_update_design_system` — docs: `okto-pulse://reference/tool-docs/misc`
 
-## Policy Compliance & Waivers
-- `okto_pulse_evaluate_policy_compliance` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_get_current_policy_compliance_receipt` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_get_policy_compliance_receipt` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_get_policy_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_list_policy_compliance_findings` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_list_policy_compliance_receipts` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_list_policy_waiver_events` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_list_policy_waivers` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_request_policy_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_revalidate_policy_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_review_policy_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_revoke_policy_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+## Semantic Guideline Assessments & Exceptions
+- `okto_pulse_get_current_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_get_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_get_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_assessments` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_findings` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_waiver_events` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_waivers` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_record_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_request_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_revalidate_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_review_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_revoke_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
 
 ## Guidelines
 - `okto_pulse_adopt_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`

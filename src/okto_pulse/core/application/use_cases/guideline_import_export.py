@@ -1,4 +1,4 @@
-"""Transport-free ``guideline-export/v2`` application orchestration.
+"""Transport-free ``guideline-export/v3`` application orchestration.
 
 The domain codec owns the closed wire contract and the zero-overwrite import
 planner.  These use cases add only the application concerns shared by future
@@ -31,9 +31,9 @@ from okto_pulse.core.application.use_cases.board_access import (
     load_accessible_board,
 )
 from okto_pulse.core.application.use_cases.policy_governance import (
+    METRICS_AUTHOR,
     REVISIONS_CREATE,
     REVISIONS_READ,
-    RULES_AUTHOR_BLOCKING,
     _require_capability,
 )
 from okto_pulse.core.domain.guideline_import_export import (
@@ -41,14 +41,13 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineImportPlan,
     GuidelineImportResult,
     GuidelineImportTransactionStatus,
-    build_guideline_export_v2,
+    build_guideline_export_v3,
     parse_guideline_export,
     plan_guideline_import,
 )
 from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_ID_MAX_LENGTH,
     POLICY_BOARD_ID_MAX_LENGTH,
-    GuidelineEnforcement,
     GuidelineScope,
     normalize_policy_bounded_text,
 )
@@ -140,7 +139,7 @@ def _target_board_ids(
 
 @dataclass(frozen=True, slots=True)
 class ExportGuidelinePolicyCommand:
-    """Select one actor-owned policy snapshot for canonical v2 export."""
+    """Select one actor-owned policy snapshot for canonical v3 export."""
 
     board_id: str | None = None
     guideline_ids: tuple[str, ...] = ()
@@ -178,8 +177,8 @@ class ExportGuidelinePolicyResult:
     envelope: GuidelineExportEnvelope
 
 
-class ExportGuidelinePolicyV2UseCase:
-    """Build a canonical v2 envelope from one authorized snapshot."""
+class ExportGuidelinePolicyV3UseCase:
+    """Build a canonical v3 envelope from one authorized snapshot."""
 
     def __init__(self, *, clock: Clock = _utc_now) -> None:
         self._clock = clock
@@ -206,16 +205,21 @@ class ExportGuidelinePolicyV2UseCase:
             guideline_ids=(command.guideline_ids or None),
             include_binding_history=command.include_binding_history,
         )
-        envelope = build_guideline_export_v2(
+        envelope = build_guideline_export_v3(
             snapshot,
             exported_at=_clock_value(self._clock),
         )
         return ExportGuidelinePolicyResult(envelope=envelope)
 
 
+# Temporary import compatibility for callers migrating in parallel.  The old
+# name is intentionally excluded from ``__all__`` and always executes v3.
+ExportGuidelinePolicyV2UseCase = ExportGuidelinePolicyV3UseCase
+
+
 @dataclass(frozen=True, slots=True)
 class ImportGuidelinePolicyCommand:
-    """Fully encoded v1/v2 envelope plus an optional target-board remap."""
+    """Fully encoded v1/v2/v3 envelope plus an optional target-board remap."""
 
     envelope: Mapping[str, Any]
     target_board_id: str | None = None
@@ -244,7 +248,7 @@ class ImportGuidelinePolicyResult:
 
 
 class ImportGuidelinePolicyUseCase:
-    """Dispatch, authorize, plan, and atomically apply a v1/v2 import."""
+    """Dispatch, authorize, plan, and atomically apply a v1/v2/v3 import."""
 
     def __init__(self, *, clock: Clock = _utc_now) -> None:
         self._clock = clock
@@ -263,12 +267,11 @@ class ImportGuidelinePolicyUseCase:
         operation_at = _clock_value(self._clock)
         envelope = parse_guideline_export(command.envelope)
         if any(
-            rule.enforcement is GuidelineEnforcement.BLOCKING
+            exported_revision.revision.metrics
             for aggregate in envelope.guidelines
             for exported_revision in aggregate.revisions
-            for rule in exported_revision.revision.rules
         ):
-            _require_capability(actor, RULES_AUTHOR_BLOCKING)
+            _require_capability(actor, METRICS_AUTHOR)
         target_boards = _target_board_ids(
             envelope,
             target_board_id=command.target_board_id,
@@ -331,7 +334,7 @@ class ImportGuidelinePolicyUseCase:
 __all__ = [
     "ExportGuidelinePolicyCommand",
     "ExportGuidelinePolicyResult",
-    "ExportGuidelinePolicyV2UseCase",
+    "ExportGuidelinePolicyV3UseCase",
     "ImportGuidelinePolicyCommand",
     "ImportGuidelinePolicyResult",
     "ImportGuidelinePolicyUseCase",

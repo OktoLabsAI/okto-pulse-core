@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -55,6 +56,53 @@ DEFAULT_CONFIG_API_SERVICE_PATH = (
     CORE_SRC_PATH / "services" / "default_board_config_api.py"
 )
 DEFAULT_CONFIG_REST_PATH = Path(default_board_config_api.__file__)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _af23_release_domain_event_referents():
+    """Clean this file's guideline-impact rows from the SHARED test database.
+
+    The adopt/unlink/retire flows exercised here persist rows in
+    guideline_impact_adoptions / guideline_impact_unlinks /
+    guideline_retirement_impacts whose event FKs are ondelete=RESTRICT into
+    domain_events. Later tests (e.g. test_kg_relevance_dynamic) legitimately
+    wipe domain_events for clean counting; leftover af23 referents turn that
+    wipe into a FOREIGN KEY failure. Polluter pays: delete the rows this
+    file's boards created, then their events.
+    """
+
+    yield
+    from sqlalchemy import text
+
+    session_factory = get_session_factory()
+    engine = session_factory.kw["bind"]
+    # guideline_board_bindings <-> guideline_impact_adoptions/unlinks
+    # reference each other with RESTRICT in BOTH directions, so no delete
+    # order satisfies the constraints. This wipes the whole af23-owned
+    # subgraph, so relaxing FK enforcement is sound: nothing outside af23
+    # boards references these rows. AUTOCOMMIT is required — the PRAGMA is
+    # a no-op inside a transaction — and enforcement is restored on the
+    # SAME connection before it returns to the pool.
+    async with engine.connect() as connection:
+        autocommit = await connection.execution_options(
+            isolation_level="AUTOCOMMIT"
+        )
+        await autocommit.execute(text("PRAGMA foreign_keys=OFF"))
+        try:
+            for statement in (
+                "DELETE FROM guideline_board_bindings "
+                "WHERE board_id LIKE 'af23-%'",
+                "DELETE FROM guideline_impact_adoptions "
+                "WHERE board_id LIKE 'af23-%'",
+                "DELETE FROM guideline_impact_unlinks "
+                "WHERE board_id LIKE 'af23-%'",
+                "DELETE FROM guideline_retirement_impacts "
+                "WHERE board_id LIKE 'af23-%'",
+                "DELETE FROM domain_events WHERE board_id LIKE 'af23-%'",
+            ):
+                await autocommit.execute(text(statement))
+        finally:
+            await autocommit.execute(text("PRAGMA foreign_keys=ON"))
 
 
 @pytest.fixture
@@ -150,7 +198,9 @@ async def _link_guideline(board_id: str, guideline_id: str, priority: int = 1) -
             board_id=board_id,
             guideline_id=guideline_id,
             proposed_priority=priority,
-            proposed_default_enforcement=GuidelineEnforcement.ADVISORY,
+            proposed_enforcement=GuidelineEnforcement.ADVISORY,
+            proposed_minimum_confidence=70,
+            proposed_metric_threshold_overrides={},
             requested_by="af23-authoritative-seed",
             idempotency_key=f"af23-preview:{seed_nonce}",
         )

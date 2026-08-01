@@ -17,6 +17,7 @@ from okto_pulse.core.events.types import (
     PolicyAdoptionChanged,
     PolicyBindingMaterialized,
     PolicyRetirementChanged,
+    SemanticGuidelineProjectionChanged,
     resolve_event_class,
 )
 from okto_pulse.core.ports.domain_event_delivery import StoredDomainEvent
@@ -38,7 +39,7 @@ _RETIREMENT_EVENT_NAMESPACE = uuid.UUID(
 def _adoption(*, operation: str = "adopt") -> PolicyAdoptionChanged:
     adopt = operation == "adopt"
     return PolicyAdoptionChanged(
-        event_schema_version="guideline-impact/v1",
+        event_schema_version="guideline-impact/v2",
         event_id=f"event-{operation}",
         board_id="board-1",
         actor_id="agent-1",
@@ -63,9 +64,9 @@ def _adoption(*, operation: str = "adopt") -> PolicyAdoptionChanged:
         policy_set_digest_before=_SHA,
         policy_set_digest_after=_SHA,
         policy_set_digest=_SHA,
-        added_rule_ids=("rule-1",) if adopt else (),
-        changed_rule_ids=(),
-        removed_rule_ids=() if adopt else ("rule-1",),
+        added_metric_ids=("metric-1",) if adopt else (),
+        changed_metric_ids=(),
+        removed_metric_ids=() if adopt else ("metric-1",),
     )
 
 
@@ -73,7 +74,7 @@ def _retirement() -> PolicyRetirementChanged:
     retirement_id = "retirement-1"
     board_id = "board-1"
     return PolicyRetirementChanged(
-        event_schema_version="guideline-impact/v1",
+        event_schema_version="guideline-impact/v2",
         event_id=str(
             uuid.uuid5(
                 _RETIREMENT_EVENT_NAMESPACE,
@@ -101,7 +102,7 @@ def _retirement() -> PolicyRetirementChanged:
         policy_set_digest_before=_SHA,
         policy_set_digest_after=_SHA,
         policy_set_digest=_SHA,
-        removed_rule_ids=("rule-1",),
+        removed_metric_ids=("metric-1",),
         request_digest=_SHA,
     )
 
@@ -112,7 +113,7 @@ def _materialized(
     actor_type: str = "agent",
 ) -> PolicyBindingMaterialized:
     return PolicyBindingMaterialized(
-        event_schema_version="policy-binding-materialized/v1",
+        event_schema_version="policy-binding-materialized/v2",
         event_id="event-materialized-1",
         board_id="board-1",
         actor_id="agent-1",
@@ -126,8 +127,26 @@ def _materialized(
         semantic_version="1.0.0",
         revision_digest=_SHA,
         source_kind=source_kind,
-        default_enforcement="advisory",
+        enforcement="advisory",
+        minimum_confidence=70,
+        metric_threshold_overrides={"quality.require_review": 85},
         priority=3,
+    )
+
+
+def _semantic_projection() -> SemanticGuidelineProjectionChanged:
+    return SemanticGuidelineProjectionChanged(
+        event_id="semantic-event-1",
+        board_id="board-1",
+        actor_id="agent-1",
+        actor_type="agent",
+        occurred_at=_NOW,
+        event_schema_version="semantic-guideline-kg-projection/v1",
+        entity_kind="assessment_receipt",
+        causation_id="receipt-1",
+        entity_id="receipt-1",
+        entity_digest=_SHA,
+        operation="upsert",
     )
 
 
@@ -176,6 +195,63 @@ def test_adoption_companion_rejects_digest_alias_drift() -> None:
         PolicyAdoptionChanged.model_validate(payload)
 
 
+def test_semantic_projection_event_is_closed_registered_and_resolvable() -> None:
+    event = _semantic_projection()
+
+    assert resolve_event_class(event.event_type) is type(event)
+    assert PolicyConstraintProjectionHandler in registered_handlers(
+        event.event_type
+    )
+    restored = event_from_stored(
+        StoredDomainEvent(
+            event_id=event.event_id,
+            event_type=event.event_type,
+            board_id=event.board_id,
+            actor_id=event.actor_id,
+            actor_type=event.actor_type,
+            occurred_at=event.occurred_at,
+            payload=event.model_dump(mode="json"),
+        )
+    )
+    assert restored == event
+    with pytest.raises(ValidationError):
+        SemanticGuidelineProjectionChanged.model_validate(
+            {**event.model_dump(mode="python"), "unexpected": "authority"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_handler_projects_semantic_event_as_sync() -> None:
+    event = _semantic_projection()
+
+    class Projection:
+        async def apply(self, received_context, *, event):
+            assert received_context == "caller-session"
+            return PolicyConstraintProjectionResult(
+                board_id=event.board_id,
+                operation="sync",
+                event_id=event.event_id,
+                activated_count=1,
+                ended_count=0,
+                active_count=1,
+                unadopted_active_count=0,
+                node_ids=("semantic-guideline:assessment_receipt:receipt-1",),
+                replayed=False,
+            )
+
+        async def rebuild_board(self, received_context, *, board_id):
+            raise AssertionError((received_context, board_id))
+
+    register_policy_constraint_projection_port(Projection())
+    result = await PolicyConstraintProjectionHandler().handle(
+        event,
+        "caller-session",
+    )
+
+    assert result.operation == "sync"
+    reset_policy_constraint_projection_port_for_tests()
+
+
 @pytest.mark.parametrize(
     "field_name",
     ("event_id", "board_id", "actor_id", "actor_type", "occurred_at"),
@@ -186,7 +262,7 @@ def test_stored_full_payload_requires_top_level_column_equality(
     event = _adoption()
     payload = {
         **event.model_dump(mode="json"),
-        "event_schema_version": "guideline-impact/v1",
+        "event_schema_version": "guideline-impact/v2",
     }
     row = StoredDomainEvent(
         event_id=event.event_id,
@@ -340,6 +416,14 @@ async def test_handler_projects_materialized_binding_as_public_adopt() -> None:
                 {"code": "policy_constraint_adapter_unavailable"},
             )("secret body"),
             "policy_constraint_adapter_unavailable",
+        ),
+        (
+            type(
+                "ClosedSemanticProjectionFailure",
+                (RuntimeError,),
+                {"code": "semantic_guideline_authority_mismatch"},
+            )("secret body"),
+            "semantic_guideline_authority_mismatch",
         ),
     ),
 )

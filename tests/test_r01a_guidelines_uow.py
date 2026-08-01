@@ -168,7 +168,9 @@ async def _link_guideline(
             board_id=board_id,
             guideline_id=guideline_id,
             proposed_priority=priority,
-            proposed_default_enforcement=GuidelineEnforcement.ADVISORY,
+            proposed_enforcement=GuidelineEnforcement.ADVISORY,
+            proposed_minimum_confidence=70,
+            proposed_metric_threshold_overrides={},
             requested_by=USER,
             idempotency_key=f"r01a-preview:{nonce}",
         )

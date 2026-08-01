@@ -1,6 +1,6 @@
-"""Transport-free application boundary for governed guideline policy.
+"""Transport-free application boundary for governed semantic guidelines.
 
-The immutable policy domain and persistence port intentionally expose more
+The immutable guideline domain and persistence port intentionally expose more
 power than an inbound adapter may call directly.  This module is the shared
 REST/MCP application boundary: it checks the closed SK-B capability before
 touching the unit of work, proves board/owner visibility, builds the canonical
@@ -10,7 +10,7 @@ domain plans, and gives every mutation one commit/rollback boundary.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
@@ -25,11 +25,7 @@ from okto_pulse.core.application.use_cases.board_access import load_accessible_b
 from okto_pulse.core.domain.guideline_compliance import (
     GuidelineImpactItemPage,
     GuidelineRevisionProjectionPage,
-    PolicyComplianceFindingPage,
-    PolicyComplianceCurrentSnapshot,
-    PolicyComplianceReceiptPage,
     PolicyProjection,
-    PolicyWaiverPage,
     project_guideline_revision,
 )
 from okto_pulse.core.domain.guideline_lifecycle import (
@@ -50,15 +46,10 @@ from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_SEMANTIC_VERSION_MAX_LENGTH,
     POLICY_ACTOR_ID_MAX_LENGTH,
     POLICY_BOARD_ID_MAX_LENGTH,
-    POLICY_EVALUATION_ID_MAX_LENGTH,
-    POLICY_FINDING_ID_MAX_LENGTH,
     POLICY_IDEMPOTENCY_KEY_MAX_LENGTH,
     POLICY_IMPACT_RECEIPT_ID_MAX_LENGTH,
     POLICY_RECEIPT_ID_MAX_LENGTH,
     POLICY_SQL_INTEGER_MAX,
-    POLICY_SUBJECT_ID_MAX_LENGTH,
-    POLICY_WAIVER_EVENT_ID_MAX_LENGTH,
-    POLICY_WAIVER_ID_MAX_LENGTH,
     BoardGuidelineBinding,
     Guideline,
     GuidelineBindingState,
@@ -67,25 +58,18 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineLifecycleStatus,
     GuidelineRetirement,
     GuidelineRevision,
-    PolicyComplianceReceipt,
-    PolicyEntityType,
-    PolicyEvaluationResult,
-    PolicyWaiver,
-    PolicyWaiverEvent,
-    PolicyWaiverEventType,
     normalize_guideline_sha256,
     normalize_policy_bounded_text,
 )
-from okto_pulse.core.domain.guideline_policy_evaluator import (
-    build_policy_evaluation_input_v1,
-    evaluate_policy,
-)
-from okto_pulse.core.domain.guideline_waiver_lifecycle import (
-    request_policy_waiver,
-    transition_policy_waiver,
+from okto_pulse.core.domain.guideline_semantic_assessment import (
+    SemanticGuidelineAssessmentContext,
+    SemanticGuidelineAssessmentResult,
+    SemanticGuidelineAssessmentSubmission,
+    record_semantic_guideline_assessment,
+    semantic_binding_head_digest_v1,
+    semantic_policy_set_digest_v1,
 )
 from okto_pulse.core.domain.permissions import PermissionSet
-from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.ports.guideline_policy import (
     GuidelineImpactListQuery,
     GuidelinePolicyIdempotencyConflict,
@@ -94,9 +78,7 @@ from okto_pulse.core.ports.guideline_policy import (
     GuidelineRevisionNoopReplay,
     GuidelineRevisionReplay,
     GuidelineRevisionListQuery,
-    PolicyComplianceFindingListQuery,
-    PolicyComplianceReceiptListQuery,
-    PolicyWaiverListQuery,
+    SemanticGuidelineAssessmentPersistencePort,
 )
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
@@ -110,11 +92,11 @@ _WRITE_SHARES = frozenset({"editor", "admin"})
 REVISIONS_READ = "guidelines.revisions.read"
 REVISIONS_CREATE = "guidelines.revisions.create"
 REVISIONS_RETIRE = "guidelines.revisions.retire"
-RULES_AUTHOR_BLOCKING = "guidelines.rules.author_blocking"
+METRICS_AUTHOR = "guidelines.metrics.author"
 IMPACT_PREVIEW = "guidelines.impact.preview"
 ADOPTION_MANAGE = "guidelines.adoption.manage"
-COMPLIANCE_READ = "guidelines.compliance.read"
-COMPLIANCE_EVALUATE = "guidelines.compliance.evaluate"
+ASSESSMENTS_READ = "guidelines.assessments.read"
+ASSESSMENTS_RECORD = "guidelines.assessments.record"
 WAIVER_READ = "guidelines.waiver.read"
 WAIVER_REQUEST = "guidelines.waiver.request"
 WAIVER_REVIEW = "guidelines.waiver.review"
@@ -125,11 +107,11 @@ POLICY_GOVERNANCE_CAPABILITIES = (
     REVISIONS_READ,
     REVISIONS_CREATE,
     REVISIONS_RETIRE,
-    RULES_AUTHOR_BLOCKING,
+    METRICS_AUTHOR,
     IMPACT_PREVIEW,
     ADOPTION_MANAGE,
-    COMPLIANCE_READ,
-    COMPLIANCE_EVALUATE,
+    ASSESSMENTS_READ,
+    ASSESSMENTS_RECORD,
     WAIVER_READ,
     WAIVER_REQUEST,
     WAIVER_REVIEW,
@@ -177,17 +159,6 @@ def _bounded_optional_text(
     return _bounded_text(value, max_length, code)
 
 
-def _evidence_refs(value: object) -> tuple[str, ...]:
-    if not isinstance(value, tuple | list):
-        raise ValueError("policy_waiver_evidence_refs_invalid")
-    normalized = tuple(
-        _required_text(item, "policy_waiver_evidence_ref_invalid") for item in value
-    )
-    if not normalized:
-        raise ValueError("policy_waiver_evidence_refs_required")
-    return tuple(sorted(set(normalized)))
-
-
 def _aware_utc(value: datetime | None, clock: Clock, code: str) -> datetime:
     resolved = clock() if value is None else value
     if (
@@ -197,11 +168,6 @@ def _aware_utc(value: datetime | None, clock: Clock, code: str) -> datetime:
     ):
         raise ValueError(code)
     return resolved.astimezone(timezone.utc)
-
-
-def _canonical_time(value: datetime, code: str) -> str:
-    resolved = _aware_utc(value, _utc_now, code)
-    return resolved.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _actor_type(actor: ActorContext) -> str:
@@ -463,8 +429,7 @@ async def _replay_guideline_revision(
         if (
             not isinstance(candidate, GuidelinePatchNoop)
             or candidate.request_digest != replay.request_digest
-            or candidate.expected_head_revision
-            != replay.original_head.head_revision
+            or candidate.expected_head_revision != replay.original_head.head_revision
             or candidate.expected_revision_id != replay.revision.revision_id
         ):
             raise GuidelinePolicyIdempotencyConflict(
@@ -585,39 +550,6 @@ async def _replay_guideline_retirement(
             "guideline_retirement_idempotency_payload_mismatch"
         )
     return RetireGuidelineResult(retirement)
-
-
-def _current_snapshot_from_evaluation(
-    evaluation_input: Any,
-) -> PolicyComplianceCurrentSnapshot:
-    snapshot = evaluation_input.subject_snapshot
-    return PolicyComplianceCurrentSnapshot(
-        subject=snapshot.subject,
-        subject_content_digest=snapshot.content_digest,
-        input_digest=evaluation_input.input_digest,
-        policy_set_digest=evaluation_input.policy_set_digest,
-        binding_head_digest=evaluation_input.binding_head_digest,
-        catalog_version=evaluation_input.catalog_version,
-        ruleset_version=evaluation_input.ruleset_version,
-    )
-
-
-def _waiver_request_digest(
-    *,
-    operation: str,
-    board_id: str,
-    idempotency_key: str,
-    payload: Mapping[str, object],
-) -> str:
-    return canonical_sha256(
-        {
-            "contract": "policy-waiver-application-request/v1",
-            "operation": operation,
-            "board_id": board_id,
-            "idempotency_key": idempotency_key,
-            "payload": dict(payload),
-        }
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -820,7 +752,9 @@ class PreviewGuidelineImpactCommand:
     board_id: str
     guideline_id: str
     proposed_priority: int
-    proposed_default_enforcement: GuidelineEnforcement
+    proposed_enforcement: GuidelineEnforcement
+    proposed_minimum_confidence: int
+    proposed_metric_threshold_overrides: Mapping[str, int]
     idempotency_key: str
     to_revision_id: str | None = None
     requested_at: datetime | None = None
@@ -847,10 +781,36 @@ class PreviewGuidelineImpactCommand:
         ):
             raise ValueError("guideline_impact_priority_invalid")
         if not isinstance(
-            self.proposed_default_enforcement,
+            self.proposed_enforcement,
             GuidelineEnforcement,
         ):
             raise ValueError("guideline_impact_enforcement_invalid")
+        if (
+            not isinstance(self.proposed_minimum_confidence, int)
+            or isinstance(self.proposed_minimum_confidence, bool)
+            or not 0 <= self.proposed_minimum_confidence <= 100
+            or not isinstance(self.proposed_metric_threshold_overrides, Mapping)
+        ):
+            raise ValueError("guideline_impact_semantic_configuration_invalid")
+        normalized_overrides: dict[str, int] = {}
+        for metric_code, threshold in self.proposed_metric_threshold_overrides.items():
+            code = _required_text(
+                metric_code,
+                "guideline_impact_metric_code_invalid",
+            )
+            if (
+                code in normalized_overrides
+                or not isinstance(threshold, int)
+                or isinstance(threshold, bool)
+                or not 0 <= threshold <= 100
+            ):
+                raise ValueError("guideline_impact_metric_threshold_override_invalid")
+            normalized_overrides[code] = threshold
+        object.__setattr__(
+            self,
+            "proposed_metric_threshold_overrides",
+            dict(sorted(normalized_overrides.items())),
+        )
         object.__setattr__(
             self,
             "to_revision_id",
@@ -963,14 +923,11 @@ class AdoptGuidelineRevisionResult:
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluatePolicyComplianceCommand:
+class RecordSemanticGuidelineAssessmentCommand:
     board_id: str
-    entity_type: PolicyEntityType
-    subject_id: str
-    idempotency_key: str
-    evaluation_id: str | None = None
-    requested_at: datetime | None = None
-    evaluated_at: datetime | None = None
+    submission: SemanticGuidelineAssessmentSubmission
+    receipt_id: str | None = None
+    recorded_at: datetime | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -982,359 +939,34 @@ class EvaluatePolicyComplianceCommand:
                 "board_id_required",
             ),
         )
+        if not isinstance(
+            self.submission,
+            SemanticGuidelineAssessmentSubmission,
+        ):
+            raise ValueError("semantic_assessment_submission_invalid")
+        if self.submission.subject.board_id != self.board_id:
+            raise ValueError("semantic_assessment_subject_board_mismatch")
         object.__setattr__(
             self,
-            "subject_id",
-            _bounded_text(
-                self.subject_id,
-                POLICY_SUBJECT_ID_MAX_LENGTH,
-                "subject_id_required",
-            ),
-        )
-        if not isinstance(self.entity_type, PolicyEntityType):
-            raise ValueError("policy_entity_type_invalid")
-        object.__setattr__(
-            self,
-            "idempotency_key",
-            _bounded_text(
-                self.idempotency_key,
-                POLICY_IDEMPOTENCY_KEY_MAX_LENGTH,
-                "policy_evaluation_idempotency_key_required",
-            ),
-        )
-        object.__setattr__(
-            self,
-            "evaluation_id",
+            "receipt_id",
             _bounded_optional_text(
-                self.evaluation_id,
-                POLICY_EVALUATION_ID_MAX_LENGTH,
-                "policy_evaluation_id_invalid",
+                self.receipt_id,
+                POLICY_RECEIPT_ID_MAX_LENGTH,
+                "semantic_assessment_receipt_id_invalid",
             ),
         )
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluatePolicyComplianceResult:
-    evaluation: PolicyEvaluationResult
-
-
-@dataclass(frozen=True, slots=True)
-class GetPolicyComplianceReceiptCommand:
-    board_id: str
-    receipt_id: str
+class RecordSemanticGuidelineAssessmentResult:
+    assessment: SemanticGuidelineAssessmentResult
 
     def __post_init__(self) -> None:
-        for name, max_length in (
-            ("board_id", POLICY_BOARD_ID_MAX_LENGTH),
-            ("receipt_id", POLICY_RECEIPT_ID_MAX_LENGTH),
+        if not isinstance(
+            self.assessment,
+            SemanticGuidelineAssessmentResult,
         ):
-            object.__setattr__(
-                self,
-                name,
-                _bounded_text(
-                    getattr(self, name),
-                    max_length,
-                    f"{name}_required",
-                ),
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class GetPolicyComplianceReceiptResult:
-    receipt: PolicyComplianceReceipt
-
-
-@dataclass(frozen=True, slots=True)
-class GetCurrentPolicyComplianceReceiptCommand:
-    board_id: str
-    entity_type: PolicyEntityType
-    subject_id: str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "board_id",
-            _bounded_text(
-                self.board_id,
-                POLICY_BOARD_ID_MAX_LENGTH,
-                "board_id_required",
-            ),
-        )
-        object.__setattr__(
-            self,
-            "subject_id",
-            _bounded_text(
-                self.subject_id,
-                POLICY_SUBJECT_ID_MAX_LENGTH,
-                "subject_id_required",
-            ),
-        )
-        if not isinstance(self.entity_type, PolicyEntityType):
-            raise ValueError("policy_entity_type_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class GetCurrentPolicyComplianceReceiptResult:
-    receipt: PolicyComplianceReceipt
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyComplianceReceiptsCommand:
-    query: PolicyComplianceReceiptListQuery
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.query, PolicyComplianceReceiptListQuery):
-            raise ValueError("policy_receipt_query_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyComplianceReceiptsResult:
-    page: PolicyComplianceReceiptPage
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyComplianceFindingsCommand:
-    query: PolicyComplianceFindingListQuery
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.query, PolicyComplianceFindingListQuery):
-            raise ValueError("policy_finding_query_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyComplianceFindingsResult:
-    page: PolicyComplianceFindingPage
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyWaiversCommand:
-    query: PolicyWaiverListQuery
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.query, PolicyWaiverListQuery):
-            raise ValueError("policy_waiver_query_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyWaiversResult:
-    page: PolicyWaiverPage
-
-
-@dataclass(frozen=True, slots=True)
-class GetPolicyWaiverCommand:
-    board_id: str
-    waiver_id: str
-
-    def __post_init__(self) -> None:
-        for name, max_length in (
-            ("board_id", POLICY_BOARD_ID_MAX_LENGTH),
-            ("waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                name,
-                _bounded_text(
-                    getattr(self, name),
-                    max_length,
-                    f"{name}_required",
-                ),
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class GetPolicyWaiverResult:
-    waiver: PolicyWaiver
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyWaiverEventsCommand(GetPolicyWaiverCommand):
-    pass
-
-
-@dataclass(frozen=True, slots=True)
-class ListPolicyWaiverEventsResult:
-    events: tuple[PolicyWaiverEvent, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class RequestPolicyWaiverCommand:
-    board_id: str
-    finding_id: str
-    reason: str
-    evidence_refs: tuple[str, ...]
-    expires_at: datetime
-    idempotency_key: str
-    waiver_id: str | None = None
-    event_id: str | None = None
-    occurred_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        for name, max_length in (
-            ("board_id", POLICY_BOARD_ID_MAX_LENGTH),
-            ("finding_id", POLICY_FINDING_ID_MAX_LENGTH),
-            ("idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                name,
-                _bounded_text(
-                    getattr(self, name),
-                    max_length,
-                    f"{name}_required",
-                ),
-            )
-        object.__setattr__(
-            self,
-            "reason",
-            _required_text(self.reason, "reason_required"),
-        )
-        object.__setattr__(
-            self,
-            "evidence_refs",
-            _evidence_refs(self.evidence_refs),
-        )
-        for name, max_length in (
-            ("waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-            ("event_id", POLICY_WAIVER_EVENT_ID_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                name,
-                _bounded_optional_text(
-                    getattr(self, name),
-                    max_length,
-                    f"policy_{name}_invalid",
-                ),
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyWaiverMutationResult:
-    waiver: PolicyWaiver
-    event: PolicyWaiverEvent
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewPolicyWaiverCommand:
-    board_id: str
-    waiver_id: str
-    approve: bool
-    reason: str
-    idempotency_key: str
-    expected_waiver_revision: int
-    evidence_refs: tuple[str, ...] = ()
-    event_id: str | None = None
-    occurred_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        for name, max_length in (
-            ("board_id", POLICY_BOARD_ID_MAX_LENGTH),
-            ("waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-            ("idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                name,
-                _bounded_text(
-                    getattr(self, name),
-                    max_length,
-                    f"{name}_required",
-                ),
-            )
-        object.__setattr__(
-            self,
-            "reason",
-            _required_text(self.reason, "reason_required"),
-        )
-        if not isinstance(self.approve, bool):
-            raise ValueError("policy_waiver_review_decision_invalid")
-        if (
-            not isinstance(self.expected_waiver_revision, int)
-            or isinstance(self.expected_waiver_revision, bool)
-            or not 1
-            <= self.expected_waiver_revision
-            <= POLICY_SQL_INTEGER_MAX
-        ):
-            raise ValueError("policy_waiver_expected_revision_invalid")
-        object.__setattr__(
-            self,
-            "evidence_refs",
-            _evidence_refs(self.evidence_refs),
-        )
-        object.__setattr__(
-            self,
-            "event_id",
-            _bounded_optional_text(
-                self.event_id,
-                POLICY_WAIVER_EVENT_ID_MAX_LENGTH,
-                "policy_waiver_event_id_invalid",
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RevokePolicyWaiverCommand:
-    board_id: str
-    waiver_id: str
-    reason: str
-    idempotency_key: str
-    expected_waiver_revision: int
-    evidence_refs: tuple[str, ...] = ()
-    event_id: str | None = None
-    occurred_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        for name, max_length in (
-            ("board_id", POLICY_BOARD_ID_MAX_LENGTH),
-            ("waiver_id", POLICY_WAIVER_ID_MAX_LENGTH),
-            ("idempotency_key", POLICY_IDEMPOTENCY_KEY_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                name,
-                _bounded_text(
-                    getattr(self, name),
-                    max_length,
-                    f"{name}_required",
-                ),
-            )
-        object.__setattr__(
-            self,
-            "reason",
-            _required_text(self.reason, "reason_required"),
-        )
-        if (
-            not isinstance(self.expected_waiver_revision, int)
-            or isinstance(self.expected_waiver_revision, bool)
-            or not 1
-            <= self.expected_waiver_revision
-            <= POLICY_SQL_INTEGER_MAX
-        ):
-            raise ValueError("policy_waiver_expected_revision_invalid")
-        object.__setattr__(
-            self,
-            "evidence_refs",
-            _evidence_refs(self.evidence_refs),
-        )
-        object.__setattr__(
-            self,
-            "event_id",
-            _bounded_optional_text(
-                self.event_id,
-                POLICY_WAIVER_EVENT_ID_MAX_LENGTH,
-                "policy_waiver_event_id_invalid",
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RevalidatePolicyWaiverCommand(RevokePolicyWaiverCommand):
-    new_expires_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        RevokePolicyWaiverCommand.__post_init__(self)
-        if self.new_expires_at is None:
-            raise ValueError("policy_waiver_revalidation_expiry_required")
+            raise ValueError("semantic_assessment_result_invalid")
 
 
 class ListGuidelineRevisionsUseCase:
@@ -1432,12 +1064,11 @@ class CreateGuidelineRevisionUseCase:
         uow: PulseUnitOfWork,
     ) -> CreateGuidelineRevisionResult:
         required = [REVISIONS_CREATE]
-        # A closed rule collection is an authority-bearing replacement, not a
-        # merge. Requiring the blocking-author capability for any supplied rule
-        # set also covers removal/downgrade of an existing blocking rule without
-        # trusting an inbound "contains blocking changes" assertion.
-        if command.patch.rules is not None:
-            required.append(RULES_AUTHOR_BLOCKING)
+        # Metrics are an authority-bearing closed replacement, never an
+        # inferred merge. Any supplied set (including removal) requires the
+        # explicit semantic-metric authoring capability.
+        if command.patch.metrics is not None:
+            required.append(METRICS_AUTHOR)
         _require_capability(actor, *required)
         await _require_board(uow, command.board_id, actor, write=True)
         port = uow.services.guidelines.policy_persistence()
@@ -1447,9 +1078,8 @@ class CreateGuidelineRevisionUseCase:
             board_id=command.board_id,
             guideline_id=command.guideline_id,
         )
-        next_revision_id = (
-            command.next_revision_id
-            or self._id_factory("guideline-revision", command.idempotency_key)
+        next_revision_id = command.next_revision_id or self._id_factory(
+            "guideline-revision", command.idempotency_key
         )
         replay = await port.get_revision_result_by_idempotency(
             guideline_id=command.guideline_id,
@@ -1635,8 +1265,10 @@ class PreviewGuidelineImpactUseCase:
                 board_id=command.board_id,
                 guideline_id=command.guideline_id,
                 proposed_priority=command.proposed_priority,
-                proposed_default_enforcement=(
-                    command.proposed_default_enforcement
+                proposed_enforcement=command.proposed_enforcement,
+                proposed_minimum_confidence=(command.proposed_minimum_confidence),
+                proposed_metric_threshold_overrides=(
+                    command.proposed_metric_threshold_overrides
                 ),
                 requested_by=actor.actor_id,
                 idempotency_key=command.idempotency_key,
@@ -1736,7 +1368,53 @@ class AdoptGuidelineRevisionUseCase:
         return AdoptGuidelineRevisionResult(binding, receipt)
 
 
-class EvaluatePolicyComplianceUseCase:
+def _semantic_assessment_replay_matches(
+    replay: SemanticGuidelineAssessmentResult,
+    submission: SemanticGuidelineAssessmentSubmission,
+) -> bool:
+    receipt = replay.receipt
+    if (
+        receipt.subject != submission.subject
+        or receipt.binding_id != submission.binding_id
+        or receipt.binding_revision != submission.expected_binding_revision
+        or receipt.guideline_revision_id != submission.guideline_revision_id
+        or receipt.idempotency_key != submission.idempotency_key
+        or receipt.assessor != submission.assessor
+        or receipt.confidence != submission.confidence
+        or len(receipt.metric_results) != len(submission.metric_results)
+    ):
+        return False
+    recorded_by_metric = {result.metric_id: result for result in receipt.metric_results}
+    for submitted in submission.metric_results:
+        recorded = recorded_by_metric.get(submitted.metric_id)
+        if recorded is None or (
+            recorded.score != submitted.score
+            or recorded.rationale != submitted.rationale
+            or recorded.evidence_refs != submitted.evidence_refs
+            or tuple(
+                (
+                    pinpoint.anchor_type,
+                    pinpoint.anchor_ref,
+                    pinpoint.excerpt_hash,
+                )
+                for pinpoint in recorded.pinpoints
+            )
+            != tuple(
+                (
+                    pinpoint.anchor_type,
+                    pinpoint.anchor_ref,
+                    pinpoint.excerpt_hash,
+                )
+                for pinpoint in submitted.pinpoints
+            )
+        ):
+            return False
+    return True
+
+
+class RecordSemanticGuidelineAssessmentUseCase:
+    """Validate and atomically persist external cognition against exact fences."""
+
     def __init__(
         self,
         *,
@@ -1748,672 +1426,129 @@ class EvaluatePolicyComplianceUseCase:
 
     async def execute(
         self,
-        command: EvaluatePolicyComplianceCommand,
+        command: RecordSemanticGuidelineAssessmentCommand,
         *,
         actor: ActorContext,
         uow: PulseUnitOfWork,
-    ) -> EvaluatePolicyComplianceResult:
-        _require_capability(actor, COMPLIANCE_EVALUATE)
+    ) -> RecordSemanticGuidelineAssessmentResult:
+        _require_capability(actor, ASSESSMENTS_RECORD)
         await _require_board(uow, command.board_id, actor, write=True)
+        submission = command.submission
+        if submission.assessor.agent_id != actor.actor_id:
+            raise PermissionDeniedError("semantic_assessment_assessor_mismatch")
         port = uow.services.guidelines.policy_persistence()
-        subject = await port.resolve_policy_subject_snapshot(
+        semantic_port: SemanticGuidelineAssessmentPersistencePort = (
+            uow.services.guidelines.semantic_policy_persistence()
+        )
+        replay = await semantic_port.get_semantic_assessment_result_by_idempotency(
             board_id=command.board_id,
-            entity_type=command.entity_type,
-            subject_id=command.subject_id,
-            lock=False,
+            binding_id=submission.binding_id,
+            idempotency_key=submission.idempotency_key,
         )
-        if subject is None:
-            raise EntityNotFoundError("policy_subject", command.subject_id)
-        requested_at = _aware_utc(
-            command.requested_at,
-            self._clock,
-            "policy_evaluation_requested_at_invalid",
+        if replay is not None:
+            if not _semantic_assessment_replay_matches(replay, submission):
+                raise GuidelinePolicyIdempotencyConflict(
+                    "semantic_assessment_idempotency_conflict"
+                )
+            return RecordSemanticGuidelineAssessmentResult(
+                replace(replay, replayed=True)
+            )
+
+        subject_snapshot = await semantic_port.resolve_policy_subject_snapshot(
+            board_id=command.board_id,
+            entity_type=submission.subject.entity_type,
+            subject_id=submission.subject.subject_id,
+            lock=True,
         )
-        evaluated_at = _aware_utc(
-            command.evaluated_at,
-            self._clock,
-            "policy_evaluation_evaluated_at_invalid",
+        if subject_snapshot is None:
+            raise EntityNotFoundError(
+                "policy_subject",
+                submission.subject.subject_id,
+            )
+        bindings = tuple(
+            binding
+            for binding in await port.list_bindings(board_id=command.board_id)
+            if binding.state is GuidelineBindingState.ACTIVE
         )
-        if command.evaluated_at is None and evaluated_at < requested_at:
-            evaluated_at = requested_at
-        bindings = await port.list_bindings(board_id=command.board_id)
+        selected = tuple(
+            binding
+            for binding in bindings
+            if binding.binding_id == submission.binding_id
+        )
+        if len(selected) != 1:
+            raise EntityNotFoundError(
+                "guideline_binding",
+                submission.binding_id,
+            )
+        binding = selected[0]
         revisions: list[GuidelineRevision] = []
-        for binding in bindings:
+        selected_revision: GuidelineRevision | None = None
+        for active_binding in bindings:
             revision = await port.get_revision(
-                guideline_id=binding.guideline_id,
-                revision_id=binding.revision_id,
+                guideline_id=active_binding.guideline_id,
+                revision_id=active_binding.revision_id,
             )
             if revision is None:
                 raise RuntimeError("guideline_binding_revision_mismatch")
             revisions.append(revision)
-        evaluation_input = build_policy_evaluation_input_v1(
-            evaluation_id=(
-                command.evaluation_id
-                or self._id_factory("policy-evaluation", command.idempotency_key)
-            ),
-            subject_snapshot=subject,
-            bindings=bindings,
-            revisions=tuple(revisions),
-            requested_by=actor.actor_id,
-            requested_at=requested_at,
-            idempotency_key=command.idempotency_key,
-        )
-        request_digest = canonical_sha256(
-            {
-                "contract": "policy-evaluation-application-request/v1",
-                "board_id": command.board_id,
-                "evaluation_id": evaluation_input.evaluation_id,
-                "input_digest": evaluation_input.input_digest,
-                "requested_by": actor.actor_id,
-            }
-        )
-        replay = await port.resolve_idempotent_result(
-            operation="policy_evaluation",
-            scope_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            request_digest=request_digest,
-        )
-        if replay is not None:
-            if not isinstance(replay, PolicyEvaluationResult):
-                raise RuntimeError("policy_evaluation_replay_invalid")
-            return EvaluatePolicyComplianceResult(replay)
-
-        authorizations = []
-        for revision in revisions:
-            for rule in revision.rules:
-                if not rule.applies_to(command.entity_type):
-                    continue
-                authorization = await port.resolve_effective_waiver(
-                    board_id=command.board_id,
-                    guideline_id=revision.guideline_id,
-                    revision_id=revision.revision_id,
-                    rule_id=rule.rule_id,
-                    entity_type=command.entity_type,
-                    subject_id=command.subject_id,
-                    subject_version=subject.subject.subject_version,
-                    evaluated_at=evaluated_at,
-                )
-                if authorization is not None:
-                    authorizations.append(authorization)
-        output = evaluate_policy(
-            evaluation_input,
-            revisions=tuple(revisions),
-            waivers=tuple(authorizations),
-            evaluated_at=evaluated_at,
-            evaluated_by=actor.actor_id,
-        )
-        current_snapshot = _current_snapshot_from_evaluation(evaluation_input)
-
-        async def mutate() -> PolicyEvaluationResult:
-            return await port.save_evaluation_result(
-                result=output.result,
-                current_snapshot=current_snapshot,
-                idempotency_key=command.idempotency_key,
-                request_digest=request_digest,
-            )
-
-        return EvaluatePolicyComplianceResult(await _write(uow, mutate))
-
-
-class GetPolicyComplianceReceiptUseCase:
-    async def execute(
-        self,
-        command: GetPolicyComplianceReceiptCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> GetPolicyComplianceReceiptResult:
-        _require_capability(actor, COMPLIANCE_READ)
-        await _require_board(uow, command.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        receipt = await port.get_compliance_receipt(
-            board_id=command.board_id,
-            receipt_id=command.receipt_id,
-        )
-        if receipt is None:
-            raise EntityNotFoundError("policy_compliance_receipt", command.receipt_id)
-        return GetPolicyComplianceReceiptResult(receipt)
-
-
-class GetCurrentPolicyComplianceReceiptUseCase:
-    async def execute(
-        self,
-        command: GetCurrentPolicyComplianceReceiptCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> GetCurrentPolicyComplianceReceiptResult:
-        _require_capability(actor, COMPLIANCE_READ)
-        await _require_board(uow, command.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        receipt = await port.get_current_compliance_receipt(
-            board_id=command.board_id,
-            entity_type=command.entity_type,
-            subject_id=command.subject_id,
-        )
-        if receipt is None:
+            if active_binding.binding_id == binding.binding_id:
+                selected_revision = revision
+        if (
+            selected_revision is None
+            or selected_revision.revision_id != submission.guideline_revision_id
+        ):
             raise EntityNotFoundError(
-                "current_policy_compliance_receipt",
-                command.subject_id,
+                "guideline_revision",
+                submission.guideline_revision_id,
             )
-        return GetCurrentPolicyComplianceReceiptResult(receipt)
-
-
-class ListPolicyComplianceReceiptsUseCase:
-    async def execute(
-        self,
-        command: ListPolicyComplianceReceiptsCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> ListPolicyComplianceReceiptsResult:
-        _require_capability(actor, COMPLIANCE_READ)
-        await _require_board(uow, command.query.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        return ListPolicyComplianceReceiptsResult(
-            await port.list_compliance_receipts(command.query)
-        )
-
-
-class ListPolicyComplianceFindingsUseCase:
-    async def execute(
-        self,
-        command: ListPolicyComplianceFindingsCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> ListPolicyComplianceFindingsResult:
-        _require_capability(actor, COMPLIANCE_READ)
-        await _require_board(uow, command.query.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        return ListPolicyComplianceFindingsResult(
-            await port.list_compliance_findings(command.query)
-        )
-
-
-class ListPolicyWaiversUseCase:
-    async def execute(
-        self,
-        command: ListPolicyWaiversCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> ListPolicyWaiversResult:
-        _require_capability(actor, WAIVER_READ)
-        await _require_board(uow, command.query.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        return ListPolicyWaiversResult(await port.list_waivers(command.query))
-
-
-class GetPolicyWaiverUseCase:
-    async def execute(
-        self,
-        command: GetPolicyWaiverCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> GetPolicyWaiverResult:
-        _require_capability(actor, WAIVER_READ)
-        await _require_board(uow, command.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        waiver = await port.get_waiver(
-            board_id=command.board_id,
-            waiver_id=command.waiver_id,
-        )
-        if waiver is None:
-            raise EntityNotFoundError("policy_waiver", command.waiver_id)
-        return GetPolicyWaiverResult(waiver)
-
-
-class ListPolicyWaiverEventsUseCase:
-    async def execute(
-        self,
-        command: ListPolicyWaiverEventsCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> ListPolicyWaiverEventsResult:
-        _require_capability(actor, WAIVER_READ)
-        await _require_board(uow, command.board_id, actor, write=False)
-        port = uow.services.guidelines.policy_persistence()
-        events = await port.list_waiver_events(
-            board_id=command.board_id,
-            waiver_id=command.waiver_id,
-        )
-        if not events:
-            waiver = await port.get_waiver(
-                board_id=command.board_id,
-                waiver_id=command.waiver_id,
-            )
-            if waiver is None:
-                raise EntityNotFoundError("policy_waiver", command.waiver_id)
-        return ListPolicyWaiverEventsResult(events)
-
-
-class RequestPolicyWaiverUseCase:
-    def __init__(
-        self,
-        *,
-        clock: Clock = _utc_now,
-        id_factory: IdFactory = _uuid5,
-    ) -> None:
-        self._clock = clock
-        self._id_factory = id_factory
-
-    async def execute(
-        self,
-        command: RequestPolicyWaiverCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> PolicyWaiverMutationResult:
-        _require_capability(actor, WAIVER_REQUEST)
-        await _require_board(uow, command.board_id, actor, write=True)
-        request_digest = _waiver_request_digest(
-            operation="request",
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            payload={
-                "finding_id": command.finding_id,
-                "reason": command.reason,
-                "evidence_refs": command.evidence_refs,
-                "expires_at": _canonical_time(
-                    command.expires_at,
-                    "policy_waiver_event_expires_at_invalid",
-                ),
-                "waiver_id": command.waiver_id,
-                "requested_by": actor.actor_id,
-            },
-        )
-        port = uow.services.guidelines.policy_persistence()
-        replay = await port.resolve_idempotent_result(
-            operation="create_waiver",
-            scope_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            request_digest=request_digest,
-        )
-        if replay is not None:
-            if (
-                not isinstance(replay, tuple)
-                or len(replay) != 2
-                or not isinstance(replay[0], PolicyWaiver)
-                or not isinstance(replay[1], PolicyWaiverEvent)
-            ):
-                raise RuntimeError("policy_waiver_replay_invalid")
-            return PolicyWaiverMutationResult(replay[0], replay[1])
-        async def mutate() -> tuple[PolicyWaiver, PolicyWaiverEvent]:
-            source = await port.resolve_policy_waiver_source(
-                board_id=command.board_id,
-                finding_id=command.finding_id,
-                require_current=True,
-                lock=True,
-            )
-            if source is None:
-                raise EntityNotFoundError(
-                    "policy_compliance_finding",
-                    command.finding_id,
-                )
-            mutation = request_policy_waiver(
-                event_id=(
-                    command.event_id
-                    or self._id_factory(
-                        "policy-waiver-request-event",
-                        command.idempotency_key,
-                    )
-                ),
-                waiver_id=(
-                    command.waiver_id
-                    or self._id_factory("policy-waiver", command.idempotency_key)
-                ),
-                source=source,
-                requester_id=actor.actor_id,
-                reason=command.reason,
-                evidence_refs=command.evidence_refs,
-                expires_at=command.expires_at,
-                occurred_at=_aware_utc(
-                    command.occurred_at,
-                    self._clock,
-                    "policy_waiver_event_time_invalid",
-                ),
-            )
-            return await port.create_waiver(
-                mutation=mutation,
-                idempotency_key=command.idempotency_key,
-                request_digest=request_digest,
-            )
-
-        waiver, event = await _write(uow, mutate)
-        return PolicyWaiverMutationResult(waiver, event)
-
-
-async def _load_waiver_for_mutation(
-    *,
-    port: GuidelinePolicyPersistencePort,
-    board_id: str,
-    waiver_id: str,
-    expected_revision: int,
-) -> PolicyWaiver:
-    waiver = await port.get_waiver(board_id=board_id, waiver_id=waiver_id)
-    if waiver is None:
-        raise EntityNotFoundError("policy_waiver", waiver_id)
-    if waiver.waiver_revision != expected_revision:
-        from okto_pulse.core.ports.guideline_policy import GuidelinePolicyCasConflict
-
-        raise GuidelinePolicyCasConflict(
-            "policy_waiver_compare_and_swap_conflict",
-            details=(
-                ("expected_revision", str(expected_revision)),
-                ("current_revision", str(waiver.waiver_revision)),
+        context = SemanticGuidelineAssessmentContext(
+            subject_snapshot=subject_snapshot,
+            binding=binding,
+            revision=selected_revision,
+            policy_set_digest=semantic_policy_set_digest_v1(
+                bindings,
+                tuple(revisions),
             ),
+            binding_head_digest=semantic_binding_head_digest_v1(bindings),
         )
-    return waiver
-
-
-async def _waiver_transition_replay(
-    *,
-    port: GuidelinePolicyPersistencePort,
-    board_id: str,
-    idempotency_key: str,
-    request_digest: str,
-) -> PolicyWaiverMutationResult | None:
-    replay = await port.resolve_idempotent_result(
-        operation="transition_waiver_cas",
-        scope_id=board_id,
-        idempotency_key=idempotency_key,
-        request_digest=request_digest,
-    )
-    if replay is None:
-        return None
-    if (
-        not isinstance(replay, tuple)
-        or len(replay) != 2
-        or not isinstance(replay[0], PolicyWaiver)
-        or not isinstance(replay[1], PolicyWaiverEvent)
-    ):
-        raise RuntimeError("policy_waiver_replay_invalid")
-    return PolicyWaiverMutationResult(replay[0], replay[1])
-
-
-class ReviewPolicyWaiverUseCase:
-    def __init__(
-        self,
-        *,
-        clock: Clock = _utc_now,
-        id_factory: IdFactory = _uuid5,
-    ) -> None:
-        self._clock = clock
-        self._id_factory = id_factory
-
-    async def execute(
-        self,
-        command: ReviewPolicyWaiverCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> PolicyWaiverMutationResult:
-        _require_capability(actor, WAIVER_REVIEW)
-        await _require_board(uow, command.board_id, actor, write=True)
-        port = uow.services.guidelines.policy_persistence()
-        event_type = (
-            PolicyWaiverEventType.APPROVE
-            if command.approve
-            else PolicyWaiverEventType.REJECT
+        recorded_at = _aware_utc(
+            command.recorded_at,
+            self._clock,
+            "semantic_assessment_recorded_at_invalid",
         )
-        request_digest = _waiver_request_digest(
-            operation=event_type.value,
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            payload={
-                "waiver_id": command.waiver_id,
-                "expected_waiver_revision": command.expected_waiver_revision,
-                "reason": command.reason,
-                "evidence_refs": command.evidence_refs,
-                "actor_id": actor.actor_id,
-            },
-        )
-        replay = await _waiver_transition_replay(
-            port=port,
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            request_digest=request_digest,
-        )
-        if replay is not None:
-            return replay
-        waiver = await _load_waiver_for_mutation(
-            port=port,
-            board_id=command.board_id,
-            waiver_id=command.waiver_id,
-            expected_revision=command.expected_waiver_revision,
-        )
-        async def mutate() -> tuple[PolicyWaiver, PolicyWaiverEvent]:
-            source = (
-                await port.resolve_policy_waiver_source(
-                    board_id=command.board_id,
-                    finding_id=waiver.finding_id,
-                    require_current=True,
-                    lock=True,
+        result = record_semantic_guideline_assessment(
+            submission,
+            context,
+            receipt_id=(
+                command.receipt_id
+                or self._id_factory(
+                    "semantic-guideline-assessment",
+                    f"{command.board_id}:{submission.idempotency_key}",
                 )
-                if command.approve
-                else None
-            )
-            if command.approve and source is None:
-                raise EntityNotFoundError(
-                    "policy_compliance_finding",
-                    waiver.finding_id,
-                )
-            mutation = transition_policy_waiver(
-                waiver=waiver,
-                event_id=(
-                    command.event_id
-                    or self._id_factory(
-                        "policy-waiver-review-event",
-                        command.idempotency_key,
-                    )
-                ),
-                event_type=event_type,
-                actor_id=actor.actor_id,
-                reason=command.reason,
-                occurred_at=_aware_utc(
-                    command.occurred_at,
-                    self._clock,
-                    "policy_waiver_event_time_invalid",
-                ),
-                expected_waiver_revision=command.expected_waiver_revision,
-                evidence_refs=command.evidence_refs,
-                source=source,
-            )
-            return await port.transition_waiver_cas(
-                mutation=mutation,
-                expected_waiver_revision=command.expected_waiver_revision,
-                idempotency_key=command.idempotency_key,
-                request_digest=request_digest,
-            )
-
-        next_waiver, event = await _write(uow, mutate)
-        return PolicyWaiverMutationResult(next_waiver, event)
-
-
-class RevokePolicyWaiverUseCase:
-    def __init__(
-        self,
-        *,
-        clock: Clock = _utc_now,
-        id_factory: IdFactory = _uuid5,
-    ) -> None:
-        self._clock = clock
-        self._id_factory = id_factory
-
-    async def execute(
-        self,
-        command: RevokePolicyWaiverCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> PolicyWaiverMutationResult:
-        _require_capability(actor, WAIVER_REVOKE)
-        await _require_board(uow, command.board_id, actor, write=True)
-        port = uow.services.guidelines.policy_persistence()
-        request_digest = _waiver_request_digest(
-            operation=PolicyWaiverEventType.REVOKE.value,
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            payload={
-                "waiver_id": command.waiver_id,
-                "expected_waiver_revision": command.expected_waiver_revision,
-                "reason": command.reason,
-                "evidence_refs": command.evidence_refs,
-                "actor_id": actor.actor_id,
-            },
-        )
-        replay = await _waiver_transition_replay(
-            port=port,
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            request_digest=request_digest,
-        )
-        if replay is not None:
-            return replay
-        waiver = await _load_waiver_for_mutation(
-            port=port,
-            board_id=command.board_id,
-            waiver_id=command.waiver_id,
-            expected_revision=command.expected_waiver_revision,
-        )
-        mutation = transition_policy_waiver(
-            waiver=waiver,
-            event_id=(
-                command.event_id
-                or self._id_factory("policy-waiver-revoke-event", command.idempotency_key)
             ),
-            event_type=PolicyWaiverEventType.REVOKE,
-            actor_id=actor.actor_id,
-            reason=command.reason,
-            occurred_at=_aware_utc(
-                command.occurred_at,
-                self._clock,
-                "policy_waiver_event_time_invalid",
-            ),
-            expected_waiver_revision=command.expected_waiver_revision,
-            evidence_refs=command.evidence_refs,
+            recorded_at=recorded_at,
         )
 
-        async def mutate() -> tuple[PolicyWaiver, PolicyWaiverEvent]:
-            return await port.transition_waiver_cas(
-                mutation=mutation,
-                expected_waiver_revision=command.expected_waiver_revision,
-                idempotency_key=command.idempotency_key,
-                request_digest=request_digest,
+        async def mutate() -> SemanticGuidelineAssessmentResult:
+            return await semantic_port.save_semantic_assessment_result(
+                result=result,
+                request_digest=result.request_digest,
             )
 
-        next_waiver, event = await _write(uow, mutate)
-        return PolicyWaiverMutationResult(next_waiver, event)
-
-
-class RevalidatePolicyWaiverUseCase:
-    def __init__(
-        self,
-        *,
-        clock: Clock = _utc_now,
-        id_factory: IdFactory = _uuid5,
-    ) -> None:
-        self._clock = clock
-        self._id_factory = id_factory
-
-    async def execute(
-        self,
-        command: RevalidatePolicyWaiverCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> PolicyWaiverMutationResult:
-        _require_capability(actor, WAIVER_REVALIDATE)
-        await _require_board(uow, command.board_id, actor, write=True)
-        port = uow.services.guidelines.policy_persistence()
-        request_digest = _waiver_request_digest(
-            operation=PolicyWaiverEventType.REVALIDATE.value,
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            payload={
-                "waiver_id": command.waiver_id,
-                "expected_waiver_revision": command.expected_waiver_revision,
-                "reason": command.reason,
-                "evidence_refs": command.evidence_refs,
-                "new_expires_at": _canonical_time(
-                    command.new_expires_at,
-                    "policy_waiver_event_expires_at_invalid",
-                ),
-                "actor_id": actor.actor_id,
-            },
-        )
-        replay = await _waiver_transition_replay(
-            port=port,
-            board_id=command.board_id,
-            idempotency_key=command.idempotency_key,
-            request_digest=request_digest,
-        )
-        if replay is not None:
-            return replay
-        waiver = await _load_waiver_for_mutation(
-            port=port,
-            board_id=command.board_id,
-            waiver_id=command.waiver_id,
-            expected_revision=command.expected_waiver_revision,
-        )
-        async def mutate() -> tuple[PolicyWaiver, PolicyWaiverEvent]:
-            source = await port.resolve_policy_waiver_source(
-                board_id=command.board_id,
-                finding_id=waiver.finding_id,
-                require_current=True,
-                lock=True,
-            )
-            if source is None:
-                raise EntityNotFoundError(
-                    "policy_compliance_finding",
-                    waiver.finding_id,
-                )
-            mutation = transition_policy_waiver(
-                waiver=waiver,
-                event_id=(
-                    command.event_id
-                    or self._id_factory(
-                        "policy-waiver-revalidate-event",
-                        command.idempotency_key,
-                    )
-                ),
-                event_type=PolicyWaiverEventType.REVALIDATE,
-                actor_id=actor.actor_id,
-                reason=command.reason,
-                occurred_at=_aware_utc(
-                    command.occurred_at,
-                    self._clock,
-                    "policy_waiver_event_time_invalid",
-                ),
-                expected_waiver_revision=command.expected_waiver_revision,
-                evidence_refs=command.evidence_refs,
-                new_expires_at=command.new_expires_at,
-                source=source,
-            )
-            return await port.transition_waiver_cas(
-                mutation=mutation,
-                expected_waiver_revision=command.expected_waiver_revision,
-                idempotency_key=command.idempotency_key,
-                request_digest=request_digest,
-            )
-
-        next_waiver, event = await _write(uow, mutate)
-        return PolicyWaiverMutationResult(next_waiver, event)
+        saved = await _write(uow, mutate)
+        return RecordSemanticGuidelineAssessmentResult(saved)
 
 
 __all__ = [
     "ADOPTION_MANAGE",
-    "COMPLIANCE_EVALUATE",
-    "COMPLIANCE_READ",
+    "ASSESSMENTS_READ",
+    "ASSESSMENTS_RECORD",
     "IMPACT_PREVIEW",
+    "METRICS_AUTHOR",
     "POLICY_GOVERNANCE_CAPABILITIES",
     "REVISIONS_CREATE",
     "REVISIONS_READ",
     "REVISIONS_RETIRE",
-    "RULES_AUTHOR_BLOCKING",
     "WAIVER_READ",
     "WAIVER_REQUEST",
     "WAIVER_REVALIDATE",
@@ -2426,56 +1561,26 @@ __all__ = [
     "CreateGuidelineRevisionResult",
     "CreateGuidelineRevisionUseCase",
     "GuidelineRevisionUnderBump",
-    "EvaluatePolicyComplianceCommand",
-    "EvaluatePolicyComplianceResult",
-    "EvaluatePolicyComplianceUseCase",
-    "GetCurrentPolicyComplianceReceiptCommand",
-    "GetCurrentPolicyComplianceReceiptResult",
-    "GetCurrentPolicyComplianceReceiptUseCase",
     "GetGuidelineImpactCommand",
     "GetGuidelineImpactResult",
     "GetGuidelineImpactUseCase",
     "GetGuidelineRevisionCommand",
     "GetGuidelineRevisionResult",
     "GetGuidelineRevisionUseCase",
-    "GetPolicyComplianceReceiptCommand",
-    "GetPolicyComplianceReceiptResult",
-    "GetPolicyComplianceReceiptUseCase",
-    "GetPolicyWaiverCommand",
-    "GetPolicyWaiverResult",
-    "GetPolicyWaiverUseCase",
     "ListGuidelineImpactItemsCommand",
     "ListGuidelineImpactItemsResult",
     "ListGuidelineImpactItemsUseCase",
     "ListGuidelineRevisionsCommand",
     "ListGuidelineRevisionsResult",
     "ListGuidelineRevisionsUseCase",
-    "ListPolicyComplianceFindingsCommand",
-    "ListPolicyComplianceFindingsResult",
-    "ListPolicyComplianceFindingsUseCase",
-    "ListPolicyComplianceReceiptsCommand",
-    "ListPolicyComplianceReceiptsResult",
-    "ListPolicyComplianceReceiptsUseCase",
-    "ListPolicyWaiverEventsCommand",
-    "ListPolicyWaiverEventsResult",
-    "ListPolicyWaiverEventsUseCase",
-    "ListPolicyWaiversCommand",
-    "ListPolicyWaiversResult",
-    "ListPolicyWaiversUseCase",
-    "PolicyWaiverMutationResult",
     "PreviewGuidelineImpactCommand",
     "PreviewGuidelineImpactResult",
     "PreviewGuidelineImpactUseCase",
-    "RequestPolicyWaiverCommand",
-    "RequestPolicyWaiverUseCase",
+    "RecordSemanticGuidelineAssessmentCommand",
+    "RecordSemanticGuidelineAssessmentResult",
+    "RecordSemanticGuidelineAssessmentUseCase",
     "RetireGuidelineCommand",
     "RetireGuidelineResult",
     "RetireGuidelineUseCase",
-    "ReviewPolicyWaiverCommand",
-    "ReviewPolicyWaiverUseCase",
-    "RevalidatePolicyWaiverCommand",
-    "RevalidatePolicyWaiverUseCase",
-    "RevokePolicyWaiverCommand",
-    "RevokePolicyWaiverUseCase",
     "require_policy_governance_capabilities",
 ]

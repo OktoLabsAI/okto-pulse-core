@@ -270,6 +270,34 @@ def test_payload_is_a_defensive_snapshot_of_nested_semantic_state() -> None:
     assert spec.technical_requirements[0]["text"] == ("Persist through the caller UoW.")
 
 
+def test_payload_canonicalizes_legacy_requirements_without_mutating_source() -> None:
+    spec = _spec_snapshot()
+    spec.functional_requirements = ["Legacy FR"]
+    spec.acceptance_criteria = ["Legacy AC"]
+    spec.business_rules = [{"linked_requirements": ["0"]}]
+
+    payload = spec_requirement_lint_payload(spec)
+
+    assert spec.functional_requirements == ["Legacy FR"]
+    assert spec.acceptance_criteria == ["Legacy AC"]
+    assert spec.business_rules == [{"linked_requirements": ["0"]}]
+    assert payload["functional_requirements"] == [
+        {
+            "id": payload["functional_requirements"][0]["id"],
+            "text": "Legacy FR",
+            "status": "active",
+        }
+    ]
+    assert payload["acceptance_criteria"] == [
+        {
+            "id": payload["acceptance_criteria"][0]["id"],
+            "text": "Legacy AC",
+            "status": "active",
+        }
+    ]
+    assert payload["business_rules"] == [{"linked_requirements": ["0"]}]
+
+
 async def test_existing_spec_service_changes_roll_back_when_lint_staging_fails(
     db_factory,
 ) -> None:

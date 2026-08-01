@@ -67,6 +67,7 @@ from .authentication import (
     InvalidCredential,
     MissingCredential,
     Principal,
+    PrincipalKind,
 )
 from .mcp_instructions import (
     McpInstructionProvider,
@@ -315,6 +316,7 @@ __all__ = [
     "PackageVersionProvider",
     "ProductState",
     "Principal",
+    "PrincipalKind",
     "PublishHealthSource",
     "TelemetryPort",
     "TelemetryResult",

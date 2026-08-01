@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Mapping, Protocol, TypeVar, runtime_checkable
 
-from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.authentication import Principal, PrincipalKind
 from okto_pulse.core.domain.realm import (
     LOCAL_REALM_ID,
     RealmScope,
@@ -28,14 +28,16 @@ class ActorContext:
     """Transport-neutral actor for a use case execution (tr_b18aefe5).
 
     Carries identity and authorization data only — never a framework object.
-    ``source`` records the inbound surface as plain data, not as a dependency
-    on FastAPI/MCP. Immutable by convention.
+    ``source`` records the inbound surface; ``actor_kind`` records the
+    independently authenticated identity class.  Neither is inferred from the
+    other inside application policy. Immutable by convention.
     """
 
     __slots__ = (
         "actor_id",
         "source",
         "actor_name",
+        "actor_kind",
         "board_id",
         "realm_id",
         "realm_scope",
@@ -49,6 +51,7 @@ class ActorContext:
         source: Source,
         *,
         actor_name: str | None = None,
+        actor_kind: PrincipalKind = "unknown",
         board_id: str | None = None,
         realm_id: str | None = None,
         realm_scope: RealmScope | None = None,
@@ -60,6 +63,7 @@ class ActorContext:
         # Display name for audit, when the transport already resolved it (e.g. the
         # MCP agent name). None lets the service resolve it (the REST behavior).
         self.actor_name = actor_name
+        self.actor_kind: PrincipalKind = actor_kind
         self.board_id = board_id
         if realm_scope is None and realm_id:
             realm_scope = (
@@ -75,7 +79,8 @@ class ActorContext:
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return (
             f"ActorContext(actor_id={self.actor_id!r}, source={self.source!r}, "
-            f"actor_name={self.actor_name!r}, board_id={self.board_id!r}, "
+            f"actor_name={self.actor_name!r}, actor_kind={self.actor_kind!r}, "
+            f"board_id={self.board_id!r}, "
             f"realm_id={self.realm_id!r})"
         )
 
@@ -115,6 +120,7 @@ def actor_context_from_principal(
         principal.subject,
         source,
         actor_name=str(actor_name) if actor_name else None,
+        actor_kind=principal.actor_kind,
         board_id=board_id,
         realm_scope=(
             RealmScope.local()

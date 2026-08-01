@@ -78,16 +78,12 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://reference/policy-compliance",
         required_headings=(
-            "# Versioned guidelines and policy compliance",
-            "## Authority and pre-flight",
-            "## Revision lifecycle",
-            "## Impact, adoption, and unlink",
-            "## Compliance evaluation and currentness",
-            "## Waiver lifecycle and separation",
-            "## Projections and keyset pagination",
-            "## MCP outcome and errors",
-            "## Capabilities",
-            "## KG projection and recovery",
+            "# Semantic guideline protocol",
+            "## Revision and adoption",
+            "## Recording an assessment",
+            "## Gate and currentness",
+            "## Lists, pagination and errors",
+            "## Capabilities and KG",
         ),
         required_cross_links=(
             "okto-pulse://reference/errors",
