@@ -240,3 +240,64 @@ def test_port_is_reexported_from_ports_package():
         is canonical_cognitive_source_fingerprint
     )
     assert ports.latest_cognitive_source_records is latest_cognitive_source_records
+
+def test_fingerprint_v2_ignores_volatile_usage_statistics() -> None:
+    """Regression: read-side stats drift on every KG query without bumping
+    attestation_count/source_revision. Under fingerprint v1 that made an
+    identical knowledge replay diverge from its own stored revision and
+    poisoned consolidation with cognitive_source_replay_conflict (observed
+    live on decision_059d5828). Usage drift must not change identity; a
+    content change still must."""
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS,
+        canonical_cognitive_source_fingerprint,
+    )
+
+    base_payload = {
+        "title": "D-8 layout decision",
+        "content": "Keep max-w-lg; the block collapses with inner scroll.",
+        "attestation_count": 2,
+        "query_hits": 3,
+        "last_queried_at": "2026-08-01T16:00:00Z",
+        "relevance_score": 0.41,
+        "priority_boost": 0.0,
+        "last_attested_at": "2026-08-01T16:29:00Z",
+    }
+    identity = dict(
+        board_id="board-1",
+        node_id="decision_regression",
+        node_type="Decision",
+        generation=0,
+        evidence_refs=("spec:one:decision:dec_1",),
+    )
+    original = canonical_cognitive_source_fingerprint(
+        payload=base_payload, **identity
+    )
+
+    drifted = dict(base_payload)
+    drifted["query_hits"] = 99
+    drifted["last_queried_at"] = "2026-08-02T09:00:00Z"
+    drifted["relevance_score"] = 0.97
+    drifted["priority_boost"] = 1.5
+    drifted["last_attested_at"] = "2026-08-02T09:00:01Z"
+    assert canonical_cognitive_source_fingerprint(
+        payload=drifted, **identity
+    ) == original
+
+    changed = dict(base_payload)
+    changed["content"] = "Different assertion content."
+    assert canonical_cognitive_source_fingerprint(
+        payload=changed, **identity
+    ) != original
+
+    # The volatile set is a closed contract: guard against silent widening.
+    assert COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS == frozenset(
+        {
+            "last_attested_at",
+            "last_queried_at",
+            "priority_boost",
+            "query_hits",
+            "relevance_score",
+        }
+    )

@@ -80,6 +80,10 @@ class RequirementLintAssessmentInput:
     authority: AssessmentAuthoritySnapshot
     qa_items: tuple[Mapping[str, Any], ...] = ()
     default_locale: RequirementLocale = RequirementLocale.UNKNOWN
+    #: Declared board language profile (BoardSettings.lint_languages).
+    #: Non-empty supersedes ``default_locale`` with a deterministic union
+    #: of the declared lexicons for children without an explicit locale.
+    default_locales: tuple[RequirementLocale, ...] = ()
     current_head_revision: int = 0
     current_head_receipt_id: str | None = None
 
@@ -95,6 +99,13 @@ class RequirementLintAssessmentInput:
         if not isinstance(self.default_locale, RequirementLocale):
             raise RequirementLintWriterContractError(
                 "requirement_lint_default_locale_invalid"
+            )
+        if not isinstance(self.default_locales, tuple) or any(
+            not isinstance(item, RequirementLocale)
+            for item in self.default_locales
+        ):
+            raise RequirementLintWriterContractError(
+                "requirement_lint_default_locales_invalid"
             )
         if not isinstance(self.qa_items, Sequence) or isinstance(
             self.qa_items,
@@ -133,6 +144,7 @@ class RequirementLintAssessmentInput:
 
 def requirement_lint_calculation_policy_manifest_v1(
     default_locale: RequirementLocale,
+    default_locales: tuple[RequirementLocale, ...] = (),
 ) -> Mapping[str, object]:
     """Return only deterministic calculation choices, never authority/gates."""
 
@@ -140,11 +152,24 @@ def requirement_lint_calculation_policy_manifest_v1(
         raise RequirementLintWriterContractError(
             "requirement_lint_default_locale_invalid"
         )
+    if not isinstance(default_locales, tuple) or any(
+        not isinstance(item, RequirementLocale) for item in default_locales
+    ):
+        raise RequirementLintWriterContractError(
+            "requirement_lint_default_locales_invalid"
+        )
     return MappingProxyType(
         {
             "scope": "calculation_only",
             "default_locale": default_locale.value,
-            "locale_resolution": "explicit_child_then_default",
+            "default_locales": tuple(
+                item.value for item in default_locales
+            ),
+            "locale_resolution": (
+                "explicit_child_then_declared_profile_union"
+                if default_locales
+                else "explicit_child_then_default"
+            ),
             "unknown_locale_profile": "neutral_only",
             "included_child_statuses": ("active",),
             "score": MappingProxyType(
@@ -255,11 +280,13 @@ def requirement_lint_normative_digests_v1(
     content_digest: str,
     clarification_digest: str,
     default_locale: RequirementLocale,
+    default_locales: tuple[RequirementLocale, ...] = (),
 ) -> AssessmentDigestSet:
     """Rederive the complete normative digest set for the A1a v1 runtime."""
 
     policy_manifest = requirement_lint_calculation_policy_manifest_v1(
-        default_locale
+        default_locale,
+        default_locales,
     )
     return AssessmentDigestSet(
         content_digest=content_digest,
@@ -277,37 +304,6 @@ def _qa_anchor_ids(qa_items: Sequence[Mapping[str, Any]]) -> frozenset[str]:
     # ``clarification_digest_v1`` runs first and validates the complete shape.
     return frozenset(
         str(item.get("id", item.get("qa_id"))).strip() for item in qa_items
-    )
-
-
-def _normalized_question_text(value: object) -> str:
-    return " ".join(str(value or "").split()).casefold()
-
-
-def _dedupe_proposed_questions(
-    proposed: Sequence[Any],
-    qa_items: Sequence[Mapping[str, Any]],
-) -> tuple[Any, ...]:
-    """Never re-materialize a lint question that already exists on the Spec.
-
-    Every semantic write re-issues the advisory lint receipt. Without this
-    filter each write materialized up to five NEW Q&A items whose generated
-    text was byte-identical to questions from earlier writes, flooding the
-    Spec board with duplicates (observed: 300 copies of 19 findings). The
-    findings themselves remain first-class on every receipt; only the HITL
-    question is deduplicated, by normalized question text, against the
-    Spec's existing Q&A — answered or not.
-    """
-
-    existing = {
-        _normalized_question_text(item.get("question"))
-        for item in qa_items
-    }
-    existing.discard("")
-    return tuple(
-        question
-        for question in proposed
-        if _normalized_question_text(question.question) not in existing
     )
 
 
@@ -362,6 +358,7 @@ def build_requirement_lint_assessment_bundle(
         content_digest=content_digest,
         clarification_digest=clarification_digest,
         default_locale=assessment_input.default_locale,
+        default_locales=assessment_input.default_locales,
     )
     versions = AssessmentVersionSet(
         ruleset_version=REQUIREMENT_LINT_RULESET_VERSION,
@@ -379,6 +376,7 @@ def build_requirement_lint_assessment_bundle(
             spec_version=command.spec_version,
             input_digest=digests.input_digest or "",
             locale=assessment_input.default_locale,
+            locales=assessment_input.default_locales,
         ),
     )
     subject = AssessmentSubjectRef(
@@ -425,10 +423,7 @@ def build_requirement_lint_assessment_bundle(
         ),
         scale=analysis.scale,
         findings=analysis.findings,
-        proposed_questions=_dedupe_proposed_questions(
-            analysis.proposed_questions,
-            assessment_input.qa_items,
-        ),
+        proposed_questions=analysis.proposed_questions,
     )
     service = quality_service or QualityAssessmentService()
     return service.prepare_submission(

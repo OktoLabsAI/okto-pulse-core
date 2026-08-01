@@ -46,10 +46,11 @@ _MUTABLE_CHILD_ID_RE = re.compile(r"(?:^|[./])\d+(?:$|[./])|\[\d+\]")
 _NUMBER_WITH_UNIT_RE = re.compile(
     r"(?<!\w)\d+(?:[.,]\d+)?\s*"
     r"(?:%|"
-    r"(?:ms|milliseconds?|milissegundos?|"
-    r"seconds?|segundos?|secs?|segs?|"
-    r"minutes?|minutos?|mins?|"
-    r"hours?|horas?|hrs?|"
+    r"(?:ms|milliseconds?|milissegundos?|milisegundos?|"
+    r"millisekunden?|millisecondes?|"
+    r"seconds?|segundos?|secs?|segs?|sekunden?|secondes?|"
+    r"minutes?|minutos?|mins?|minuten?|"
+    r"hours?|horas?|hrs?|stunden?|heures?|"
     r"bytes?|kib|mib|gib|kb|mb|gb|tb|"
     r"requests?/s|req/s|rps|items?|itens?|records?|registros?))"
     r"(?!\w)"
@@ -170,6 +171,225 @@ _EN_ERRORS: Final[tuple[str, ...]] = (
     "reject",
     "timeout",
 )
+_GWT_ES_RE = re.compile(r"\bdado\b[\s\S]*\bcuando\b[\s\S]*\bentonces\b")
+_GWT_DE_RE = re.compile(r"\bangenommen\b[\s\S]*\bwenn\b[\s\S]*\bdann\b")
+_GWT_FR_RE = re.compile(
+    r"\b(?:étant donné|etant donne|soit)\b[\s\S]*\bquand\b[\s\S]*\balors\b"
+)
+_ES_PLACEHOLDERS: Final[tuple[str, ...]] = (
+    "a definir",
+    "por definir",
+)
+_DE_PLACEHOLDERS: Final[tuple[str, ...]] = (
+    "noch zu definieren",
+    "zu definieren",
+)
+_FR_PLACEHOLDERS: Final[tuple[str, ...]] = (
+    "a definir",
+    "a determiner",
+    "à définir",
+    "à déterminer",
+)
+_ES_COMPARATORS: Final[tuple[str, ...]] = (
+    "a lo sumo",
+    "al menos",
+    "como maximo",
+    "como máximo",
+    "dentro de",
+    "no mas de",
+    "no más de",
+)
+_DE_COMPARATORS: Final[tuple[str, ...]] = (
+    "hochstens",
+    "höchstens",
+    "innerhalb von",
+    "maximal",
+    "mindestens",
+    "nicht mehr als",
+    "nicht weniger als",
+)
+_FR_COMPARATORS: Final[tuple[str, ...]] = (
+    "au moins",
+    "au plus",
+    "dans un delai de",
+    "dans un délai de",
+    "en moins de",
+    "pas moins de",
+    "pas plus de",
+)
+_ES_CONDITIONS: Final[tuple[str, ...]] = (
+    "cuando",
+    "dado que",
+    "en caso de",
+    "si",
+    "siempre que",
+)
+_DE_CONDITIONS: Final[tuple[str, ...]] = (
+    "falls",
+    "im falle",
+    "sobald",
+    "sofern",
+    "wenn",
+)
+_FR_CONDITIONS: Final[tuple[str, ...]] = (
+    "des que",
+    "dès que",
+    "en cas de",
+    "lorsque",
+    "pourvu que",
+    "quand",
+    "si",
+)
+_ES_OBSERVABLE_RESULTS: Final[tuple[str, ...]] = (
+    "devolver",
+    "devuelve",
+    "emite",
+    "emitir",
+    "guarda",
+    "guardar",
+    "mostrar",
+    "muestra",
+    "persiste",
+    "persistir",
+    "rechaza",
+    "rechazar",
+    "respuesta",
+    "resultado",
+    "retorna",
+    "retornar",
+)
+_DE_OBSERVABLE_RESULTS: Final[tuple[str, ...]] = (
+    "ablehnen",
+    "antwort",
+    "anzeigen",
+    "ergebnis",
+    "gibt zuruck",
+    "gibt zurück",
+    "lehnt ab",
+    "liefert",
+    "persistiert",
+    "sendet",
+    "speichern",
+    "speichert",
+    "zeigt",
+    "zuruckgeben",
+    "zurückgeben",
+)
+_FR_OBSERVABLE_RESULTS: Final[tuple[str, ...]] = (
+    "affiche",
+    "afficher",
+    "emet",
+    "emettre",
+    "enregistre",
+    "enregistrer",
+    "persiste",
+    "persister",
+    "rejeter",
+    "rejette",
+    "renvoie",
+    "renvoyer",
+    "reponse",
+    "resultat",
+    "retourne",
+    "retourner",
+    "réponse",
+    "résultat",
+    "émet",
+    "émettre",
+)
+_ES_STATES: Final[tuple[str, ...]] = (
+    "activo",
+    "completado",
+    "deshabilitado",
+    "estado",
+    "estatus",
+    "habilitado",
+    "inactivo",
+    "pendiente",
+)
+_DE_STATES: Final[tuple[str, ...]] = (
+    "abgeschlossen",
+    "aktiv",
+    "aktiviert",
+    "ausstehend",
+    "deaktiviert",
+    "inaktiv",
+    "status",
+    "zustand",
+)
+_FR_STATES: Final[tuple[str, ...]] = (
+    "actif",
+    "activé",
+    "desactive",
+    "désactivé",
+    "en attente",
+    "etat",
+    "inactif",
+    "statut",
+    "termine",
+    "terminé",
+    "état",
+)
+_ES_ERRORS: Final[tuple[str, ...]] = (
+    "error",
+    "excepcion",
+    "excepción",
+    "falla",
+    "fallo",
+    "invalido",
+    "inválido",
+    "rechaza",
+    "timeout",
+)
+_DE_ERRORS: Final[tuple[str, ...]] = (
+    "ausnahme",
+    "fehler",
+    "fehlschlag",
+    "lehnt ab",
+    "timeout",
+    "ungultig",
+    "ungültig",
+    "zeituberschreitung",
+    "zeitüberschreitung",
+)
+_FR_ERRORS: Final[tuple[str, ...]] = (
+    "delai depasse",
+    "délai dépassé",
+    "echec",
+    "erreur",
+    "exception",
+    "invalide",
+    "rejette",
+    "timeout",
+    "échec",
+)
+_ES_VAGUE_TERMS: Final[tuple[str, ...]] = (
+    "adecuado",
+    "facil",
+    "fácil",
+    "intuitivo",
+    "mejor",
+    "rapido",
+    "rápido",
+    "simple",
+)
+_DE_VAGUE_TERMS: Final[tuple[str, ...]] = (
+    "angemessen",
+    "benutzerfreundlich",
+    "besser",
+    "einfach",
+    "intuitiv",
+    "schnell",
+)
+_FR_VAGUE_TERMS: Final[tuple[str, ...]] = (
+    "adequat",
+    "adéquat",
+    "facile",
+    "intuitif",
+    "meilleur",
+    "rapide",
+    "simple",
+)
 _PT_VAGUE_TERMS: Final[tuple[str, ...]] = (
     "adequado",
     "fácil",
@@ -242,6 +462,9 @@ class RequirementLintContractError(ValueError):
 class RequirementLocale(str, Enum):
     PT = "pt"
     EN = "en"
+    ES = "es"
+    DE = "de"
+    FR = "fr"
     UNKNOWN = "unknown"
 
 
@@ -267,6 +490,10 @@ class RequirementLintContext:
     spec_version: int
     input_digest: str
     locale: RequirementLocale
+    #: Declared board language profile. Non-empty replaces ``locale`` as the
+    #: default for children without an explicit locale; signals are the
+    #: deterministic UNION of every declared lexicon.
+    locales: tuple[RequirementLocale, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name in ("board_id", "spec_id"):
@@ -292,6 +519,13 @@ class RequirementLintContext:
         if not _SHA256_RE.fullmatch(digest):
             raise RequirementLintContractError(
                 "requirement_lint_input_digest_invalid"
+            )
+        if any(
+            not isinstance(item, RequirementLocale)
+            for item in self.locales
+        ):
+            raise RequirementLintContractError(
+                "requirement_lint_locales_invalid"
             )
         object.__setattr__(self, "input_digest", digest)
         if not isinstance(self.locale, RequirementLocale):
@@ -447,7 +681,13 @@ _ALL_LOCALES = (
     RequirementLocale.EN,
     RequirementLocale.UNKNOWN,
 )
-_KNOWN_LOCALES = (RequirementLocale.PT, RequirementLocale.EN)
+_KNOWN_LOCALES = (
+    RequirementLocale.PT,
+    RequirementLocale.EN,
+    RequirementLocale.ES,
+    RequirementLocale.DE,
+    RequirementLocale.FR,
+)
 
 REQUIREMENT_LINT_RULE_CATALOG_V1: Final[tuple[RequirementLintRule, ...]] = (
     RequirementLintRule(
@@ -636,6 +876,10 @@ REQUIREMENT_LINT_RULESET_MANIFEST_V1 = MappingProxyType(
         "symbolic_comparator_pattern": _SYMBOLIC_COMPARATOR_RE.pattern,
         "gwt_en_pattern": _GWT_EN_RE.pattern,
         "dado_quando_entao_pt_pattern": _DQT_PT_RE.pattern,
+        "gherkin_es_pattern": _GWT_ES_RE.pattern,
+        "gherkin_de_pattern": _GWT_DE_RE.pattern,
+        "gherkin_fr_pattern": _GWT_FR_RE.pattern,
+        "rule_text_fallback_locale": RequirementLocale.EN.value,
         "neutral_placeholders": _NEUTRAL_PLACEHOLDERS,
         "case_sensitive_neutral_placeholders": (
             _CASE_SENSITIVE_NEUTRAL_PLACEHOLDERS
@@ -654,6 +898,27 @@ REQUIREMENT_LINT_RULESET_MANIFEST_V1 = MappingProxyType(
         "en_errors": _EN_ERRORS,
         "pt_vague_terms": _PT_VAGUE_TERMS,
         "en_vague_terms": _EN_VAGUE_TERMS,
+        "es_placeholders": _ES_PLACEHOLDERS,
+        "es_comparators": _ES_COMPARATORS,
+        "es_conditions": _ES_CONDITIONS,
+        "es_observable_results": _ES_OBSERVABLE_RESULTS,
+        "es_states": _ES_STATES,
+        "es_errors": _ES_ERRORS,
+        "es_vague_terms": _ES_VAGUE_TERMS,
+        "de_placeholders": _DE_PLACEHOLDERS,
+        "de_comparators": _DE_COMPARATORS,
+        "de_conditions": _DE_CONDITIONS,
+        "de_observable_results": _DE_OBSERVABLE_RESULTS,
+        "de_states": _DE_STATES,
+        "de_errors": _DE_ERRORS,
+        "de_vague_terms": _DE_VAGUE_TERMS,
+        "fr_placeholders": _FR_PLACEHOLDERS,
+        "fr_comparators": _FR_COMPARATORS,
+        "fr_conditions": _FR_CONDITIONS,
+        "fr_observable_results": _FR_OBSERVABLE_RESULTS,
+        "fr_states": _FR_STATES,
+        "fr_errors": _FR_ERRORS,
+        "fr_vague_terms": _FR_VAGUE_TERMS,
         "technical_lexicon": {
             "version": REQUIREMENT_LINT_TECHNICAL_LEXICON_VERSION,
             "digest": REQUIREMENT_LINT_TECHNICAL_LEXICON_DIGEST,
@@ -735,6 +1000,74 @@ def _contains_bounded_comparator(
     )
 
 
+_BUILTIN_LOCALE_LEXICONS: Final[
+    Mapping[RequirementLocale, Mapping[str, Any]]
+] = MappingProxyType(
+    {
+        RequirementLocale.PT: MappingProxyType(
+            {
+                "gherkin": _DQT_PT_RE,
+                "comparators": _PT_COMPARATORS,
+                "conditions": _PT_CONDITIONS,
+                "observable_results": _PT_OBSERVABLE_RESULTS,
+                "states": _PT_STATES,
+                "errors": _PT_ERRORS,
+                "placeholders": _PT_PLACEHOLDERS,
+                "vague_terms": _PT_VAGUE_TERMS,
+            }
+        ),
+        RequirementLocale.EN: MappingProxyType(
+            {
+                "gherkin": _GWT_EN_RE,
+                "comparators": _EN_COMPARATORS,
+                "conditions": _EN_CONDITIONS,
+                "observable_results": _EN_OBSERVABLE_RESULTS,
+                "states": _EN_STATES,
+                "errors": _EN_ERRORS,
+                "placeholders": _EN_PLACEHOLDERS,
+                "vague_terms": _EN_VAGUE_TERMS,
+            }
+        ),
+        RequirementLocale.ES: MappingProxyType(
+            {
+                "gherkin": _GWT_ES_RE,
+                "comparators": _ES_COMPARATORS,
+                "conditions": _ES_CONDITIONS,
+                "observable_results": _ES_OBSERVABLE_RESULTS,
+                "states": _ES_STATES,
+                "errors": _ES_ERRORS,
+                "placeholders": _ES_PLACEHOLDERS,
+                "vague_terms": _ES_VAGUE_TERMS,
+            }
+        ),
+        RequirementLocale.DE: MappingProxyType(
+            {
+                "gherkin": _GWT_DE_RE,
+                "comparators": _DE_COMPARATORS,
+                "conditions": _DE_CONDITIONS,
+                "observable_results": _DE_OBSERVABLE_RESULTS,
+                "states": _DE_STATES,
+                "errors": _DE_ERRORS,
+                "placeholders": _DE_PLACEHOLDERS,
+                "vague_terms": _DE_VAGUE_TERMS,
+            }
+        ),
+        RequirementLocale.FR: MappingProxyType(
+            {
+                "gherkin": _GWT_FR_RE,
+                "comparators": _FR_COMPARATORS,
+                "conditions": _FR_CONDITIONS,
+                "observable_results": _FR_OBSERVABLE_RESULTS,
+                "states": _FR_STATES,
+                "errors": _FR_ERRORS,
+                "placeholders": _FR_PLACEHOLDERS,
+                "vague_terms": _FR_VAGUE_TERMS,
+            }
+        ),
+    }
+)
+
+
 def detect_requirement_signals(
     text: str,
     *,
@@ -783,52 +1116,34 @@ def detect_requirement_signals(
             vague_term=False,
         )
 
-    if locale is RequirementLocale.PT:
-        gwt_en = False
-        dado_quando_entao_pt = (
-            _DQT_PT_RE.search(normalized_casefold) is not None
-        )
-        localized_comparator = _contains_bounded_comparator(
-            normalized_casefold,
-            _PT_COMPARATORS,
-        )
-        condition = dado_quando_entao_pt or _contains_term(
-            normalized_casefold,
-            _PT_CONDITIONS,
-        )
-        observable_result = dado_quando_entao_pt or _contains_term(
-            normalized_casefold,
-            _PT_OBSERVABLE_RESULTS,
-        )
-        state = _contains_term(normalized_casefold, _PT_STATES)
-        error = _contains_term(normalized_casefold, _PT_ERRORS)
-        localized_placeholder = _contains_term(
-            normalized_casefold,
-            _PT_PLACEHOLDERS,
-        )
-        vague_term = _contains_term(normalized_casefold, _PT_VAGUE_TERMS)
-    else:
-        gwt_en = _GWT_EN_RE.search(normalized_casefold) is not None
-        dado_quando_entao_pt = False
-        localized_comparator = _contains_bounded_comparator(
-            normalized_casefold,
-            _EN_COMPARATORS,
-        )
-        condition = gwt_en or _contains_term(
-            normalized_casefold,
-            _EN_CONDITIONS,
-        )
-        observable_result = gwt_en or _contains_term(
-            normalized_casefold,
-            _EN_OBSERVABLE_RESULTS,
-        )
-        state = _contains_term(normalized_casefold, _EN_STATES)
-        error = _contains_term(normalized_casefold, _EN_ERRORS)
-        localized_placeholder = _contains_term(
-            normalized_casefold,
-            _EN_PLACEHOLDERS,
-        )
-        vague_term = _contains_term(normalized_casefold, _EN_VAGUE_TERMS)
+    lexicon = _BUILTIN_LOCALE_LEXICONS[locale]
+    gherkin = lexicon["gherkin"].search(normalized_casefold) is not None
+    gwt_en = gherkin if locale is RequirementLocale.EN else False
+    dado_quando_entao_pt = (
+        gherkin if locale is RequirementLocale.PT else False
+    )
+    localized_comparator = _contains_bounded_comparator(
+        normalized_casefold,
+        lexicon["comparators"],
+    )
+    condition = gherkin or _contains_term(
+        normalized_casefold,
+        lexicon["conditions"],
+    )
+    observable_result = gherkin or _contains_term(
+        normalized_casefold,
+        lexicon["observable_results"],
+    )
+    state = _contains_term(normalized_casefold, lexicon["states"])
+    error = _contains_term(normalized_casefold, lexicon["errors"])
+    localized_placeholder = _contains_term(
+        normalized_casefold,
+        lexicon["placeholders"],
+    )
+    vague_term = _contains_term(
+        normalized_casefold,
+        lexicon["vague_terms"],
+    )
 
     return RequirementLintSignals(
         number_with_unit=number_with_unit,
@@ -844,6 +1159,57 @@ def detect_requirement_signals(
         localized_placeholder=localized_placeholder,
         vague_term=vague_term,
     )
+
+
+def detect_requirement_signals_for_locales(
+    text: str,
+    locales: tuple[RequirementLocale, ...],
+) -> RequirementLintSignals:
+    """Detect signals as the deterministic UNION of the given lexicons.
+
+    Order-independent: every boolean field is the OR across the per-locale
+    detections. An empty/unknown-only profile keeps the neutral-only
+    contract of ``RequirementLocale.UNKNOWN``.
+    """
+
+    known = tuple(
+        dict.fromkeys(
+            locale
+            for locale in locales
+            if locale is not RequirementLocale.UNKNOWN
+        )
+    )
+    if not known:
+        return detect_requirement_signals(
+            text,
+            locale=RequirementLocale.UNKNOWN,
+        )
+    merged = detect_requirement_signals(text, locale=known[0])
+    for locale in known[1:]:
+        extra = detect_requirement_signals(text, locale=locale)
+        merged = RequirementLintSignals(
+            number_with_unit=merged.number_with_unit or extra.number_with_unit,
+            comparator=merged.comparator or extra.comparator,
+            gwt_en=merged.gwt_en or extra.gwt_en,
+            dado_quando_entao_pt=(
+                merged.dado_quando_entao_pt or extra.dado_quando_entao_pt
+            ),
+            condition=merged.condition or extra.condition,
+            observable_result=(
+                merged.observable_result or extra.observable_result
+            ),
+            state=merged.state or extra.state,
+            error=merged.error or extra.error,
+            technical_term=merged.technical_term or extra.technical_term,
+            neutral_placeholder=(
+                merged.neutral_placeholder or extra.neutral_placeholder
+            ),
+            localized_placeholder=(
+                merged.localized_placeholder or extra.localized_placeholder
+            ),
+            vague_term=merged.vague_term or extra.vague_term,
+        )
+    return merged
 
 
 def _rule_fires(
@@ -970,15 +1336,38 @@ def lint_requirements(
     evaluated_rule_count = 0
 
     for child in active_children:
-        effective_locale = child.locale or context.locale
-        signals = detect_requirement_signals(
+        if child.locale is not None:
+            profile: tuple[RequirementLocale, ...] = (child.locale,)
+        elif context.locales:
+            profile = context.locales
+        else:
+            profile = (context.locale,)
+        known_profile = tuple(
+            dict.fromkeys(
+                locale
+                for locale in profile
+                if locale is not RequirementLocale.UNKNOWN
+            )
+        )
+        effective_profile = known_profile or (RequirementLocale.UNKNOWN,)
+        signals = detect_requirement_signals_for_locales(
             child.text,
-            locale=effective_locale,
+            effective_profile,
+        )
+        # Rule texts stay Portuguese only for a single-PT profile; every
+        # multi-language or non-PT profile falls back to the English texts.
+        effective_locale = (
+            known_profile[0]
+            if len(known_profile) == 1
+            else (
+                RequirementLocale.EN
+                if known_profile
+                else RequirementLocale.UNKNOWN
+            )
         )
         for rule in REQUIREMENT_LINT_RULE_CATALOG_V1:
-            if (
-                child.entity_type not in rule.entity_types
-                or effective_locale not in rule.locales
+            if child.entity_type not in rule.entity_types or not any(
+                locale in rule.locales for locale in effective_profile
             ):
                 continue
             evaluated_rule_count += 1

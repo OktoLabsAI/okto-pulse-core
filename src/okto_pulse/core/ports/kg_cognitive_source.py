@@ -93,6 +93,27 @@ class CognitiveSourceConflict(CognitiveSourceError):
     """
 
 
+COGNITIVE_SOURCE_FINGERPRINT_CONTRACT = "cognitive-source-fingerprint/v2"
+
+#: Read-side usage statistics mutate without an attestation bump (every KG
+#: query touches ``query_hits``/``last_queried_at``/``relevance_score``).
+#: ``source_revision`` derives from ``attestation_count``, so including these
+#: fields in the fingerprint turned any stat drift into a permanent
+#: ``cognitive_source_replay_conflict`` poisoning the consolidation queue
+#: (observed live on decision_059d5828). They describe USAGE of the
+#: assertion, never the assertion itself; the stored payload keeps them for
+#: literal rebuild restoration — only the identity fingerprint ignores them.
+COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS: frozenset[str] = frozenset(
+    {
+        "last_attested_at",
+        "last_queried_at",
+        "priority_boost",
+        "query_hits",
+        "relevance_score",
+    }
+)
+
+
 def canonical_cognitive_source_fingerprint(
     *,
     board_id: str,
@@ -105,19 +126,29 @@ def canonical_cognitive_source_fingerprint(
     """Return the immutable semantic fingerprint for one source revision.
 
     Revision/session/timestamp/metadata are intentionally excluded: they
-    describe the append event, not the cognitive assertion. ``sort_keys``
-    makes nested mapping order irrelevant while evidence order remains part
-    of the literal evidence binding restored by replay.
+    describe the append event, not the cognitive assertion. Read-side usage
+    statistics (:data:`COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS`) are excluded
+    for the same reason — they drift on every KG read without advancing
+    ``attestation_count``/``source_revision``, and identity must be stable
+    across such drift. ``sort_keys`` makes nested mapping order irrelevant
+    while evidence order remains part of the literal evidence binding
+    restored by replay.
     """
 
     if not isinstance(payload, Mapping):
         raise ValueError("cognitive source payload must be a mapping")
+    identity_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS
+    }
     canonical = {
+        "contract": COGNITIVE_SOURCE_FINGERPRINT_CONTRACT,
         "board_id": str(board_id),
         "node_id": str(node_id),
         "node_type": str(node_type),
         "generation": int(generation),
-        "payload": dict(payload),
+        "payload": identity_payload,
         "evidence_refs": [str(ref) for ref in evidence_refs],
     }
     return hashlib.sha256(

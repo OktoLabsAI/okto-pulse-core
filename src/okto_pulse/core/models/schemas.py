@@ -3413,6 +3413,14 @@ class BoardSettings(BaseModel):
     # default-board template versions inject ``enforce`` unless the administrator
     # chooses another mode.
     reviewer_separation_mode: Literal["off", "warn", "enforce"] = "off"
+    # Requirement-lint languages for this board's spec content. Each code
+    # activates the built-in lexicon of that language; multiple codes are
+    # evaluated as a deterministic UNION of lexicons. Empty (the legacy
+    # default) keeps the neutral-only profile: no language guessing, only
+    # numbers/comparators/units/technical terms count as signals.
+    lint_languages: list[
+        Literal["pt-BR", "en-US", "es-ES", "de-DE", "fr-FR"]
+    ] = Field(default_factory=list)
     # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
     # of the board's Design System gate mode (the design_system_default_ref only carries
     # the DS identity; any gate_mode inside it is a derived mirror). off = no gate;
@@ -3496,6 +3504,18 @@ class BoardSettings(BaseModel):
                 "when auto_derive_spec_resources_enabled is true"
             )
         return self
+
+    @field_validator("lint_languages")
+    @classmethod
+    def _validate_lint_languages(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        deduped: list[str] = []
+        for code in value:
+            if code not in deduped:
+                deduped.append(code)
+        return deduped
 
     @field_validator("max_ideation_ambiguity")
     @classmethod
