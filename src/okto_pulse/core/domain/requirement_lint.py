@@ -55,7 +55,21 @@ _NUMBER_WITH_UNIT_RE = re.compile(
     r"requests?/s|req/s|rps|items?|itens?|records?|registros?))"
     r"(?!\w)"
 )
-_SYMBOLIC_COMPARATOR_RE = re.compile(r"(?:<=|>=|==|=|<|>)\s*\d")
+_SYMBOLIC_COMPARATOR_RE = re.compile(r"(?:<=|>=|==|=|<|>|≥|≤|≠)\s*\d")
+# Code-artifact recognition is language-NEUTRAL: identifiers, file names and
+# literal key=value fragments are code, not prose, so they count as technical
+# restrictions under every locale profile (including UNKNOWN). CamelCase needs
+# the case-preserving normalized text — never the casefolded copy.
+_CODE_ARTIFACT_RES: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b"),
+    re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b"),
+    re.compile(r"\b[\w-]+\.(?:py|tsx?|jsx?|sql|md|json|ya?ml)\b", re.IGNORECASE),
+    re.compile(r"\b\w+=(?:'[^']*'|\"[^\"]*\"|[A-Za-z0-9_]+)"),
+    re.compile(r"'[^'\s]{1,40}'"),
+)
+_ERROR_CLASS_RE: Final[re.Pattern[str]] = re.compile(
+    r"\b[A-Z][A-Za-z0-9]*(?:Error|Exception)\b"
+)
 _GWT_EN_RE = re.compile(r"\bgiven\b[\s\S]*\bwhen\b[\s\S]*\bthen\b")
 _DQT_PT_RE = re.compile(r"\bdado\b[\s\S]*\bquando\b[\s\S]*\bent(?:ão|ao)\b")
 
@@ -137,9 +151,17 @@ _EN_OBSERVABLE_RESULTS: Final[tuple[str, ...]] = (
 )
 _PT_STATES: Final[tuple[str, ...]] = (
     "ativo",
+    "colapsada",
+    "colapsadas",
+    "colapsado",
+    "colapsados",
     "concluído",
     "desabilitado",
     "estado",
+    "expandida",
+    "expandidas",
+    "expandido",
+    "expandidos",
     "habilitado",
     "inativo",
     "pendente",
@@ -147,30 +169,84 @@ _PT_STATES: Final[tuple[str, ...]] = (
 )
 _EN_STATES: Final[tuple[str, ...]] = (
     "active",
+    "collapsed",
     "completed",
     "disabled",
+    "done",
     "enabled",
+    "expanded",
     "inactive",
     "pending",
+    "read-only",
     "state",
     "status",
 )
 _PT_ERRORS: Final[tuple[str, ...]] = (
+    "corrompida",
+    "corrompidas",
+    "corrompido",
+    "corrompidos",
     "erro",
     "exceção",
     "falha",
     "inválido",
+    "nao conforme",
+    "nao-conforme",
+    "não conforme",
+    "não-conforme",
     "rejeita",
+    "rejeitada",
+    "rejeitadas",
+    "rejeitado",
+    "rejeitados",
     "timeout",
 )
 _EN_ERRORS: Final[tuple[str, ...]] = (
+    "corrupted",
     "error",
     "exception",
     "failure",
     "invalid",
+    "non-conformant",
     "reject",
+    "rejected",
     "timeout",
 )
+# Zero-cardinality assertions are verifiable count bounds ("NENHUM payload
+# contém X" == at most zero). Strong-equality tokens carry their own oracle
+# (byte-level comparison). Bound-exact only counts when "exatamente/exactly"
+# binds a number or an enumerable article — the bare adverb was rejected by
+# the dilution review ("exatamente como esperado" stays vague). Only
+# panel-validated locales carry terms; other languages extend via curated
+# custom lexicons, never by guessing.
+_PT_ZERO_CARDINALITY: Final[tuple[str, ...]] = (
+    "nenhum",
+    "nenhuma",
+    "nenhumas",
+    "nenhuns",
+    "zero",
+)
+_EN_ZERO_CARDINALITY: Final[tuple[str, ...]] = (
+    "none",
+    "zero",
+)
+_PT_STRONG_EQUALITY: Final[tuple[str, ...]] = (
+    "byte a byte",
+    "byte-a-byte",
+    "byte-identica",
+    "byte-identico",
+    "byte-idêntica",
+    "byte-idêntico",
+)
+_EN_STRONG_EQUALITY: Final[tuple[str, ...]] = (
+    "byte for byte",
+    "byte-for-byte",
+    "byte-identical",
+)
+_EMPTY_ZERO_CARDINALITY: Final[tuple[str, ...]] = ()
+_EMPTY_STRONG_EQUALITY: Final[tuple[str, ...]] = ()
+_PT_BOUND_EXACT_RE = re.compile(r"\bexatamente\s+(?:\d|o\b|os\b|a\b|as\b)")
+_EN_BOUND_EXACT_RE = re.compile(r"\bexactly\s+(?:\d|the\b|all\b)")
 _GWT_ES_RE = re.compile(r"\bdado\b[\s\S]*\bcuando\b[\s\S]*\bentonces\b")
 _GWT_DE_RE = re.compile(r"\bangenommen\b[\s\S]*\bwenn\b[\s\S]*\bdann\b")
 _GWT_FR_RE = re.compile(
@@ -874,6 +950,10 @@ REQUIREMENT_LINT_RULESET_MANIFEST_V1 = MappingProxyType(
         "ordering": "severity_desc,confidence_desc,finding_key_asc",
         "number_with_unit_pattern": _NUMBER_WITH_UNIT_RE.pattern,
         "symbolic_comparator_pattern": _SYMBOLIC_COMPARATOR_RE.pattern,
+        "code_artifact_patterns": tuple(
+            pattern.pattern for pattern in _CODE_ARTIFACT_RES
+        ),
+        "error_class_pattern": _ERROR_CLASS_RE.pattern,
         "gwt_en_pattern": _GWT_EN_RE.pattern,
         "dado_quando_entao_pt_pattern": _DQT_PT_RE.pattern,
         "gherkin_es_pattern": _GWT_ES_RE.pattern,
@@ -898,6 +978,12 @@ REQUIREMENT_LINT_RULESET_MANIFEST_V1 = MappingProxyType(
         "en_errors": _EN_ERRORS,
         "pt_vague_terms": _PT_VAGUE_TERMS,
         "en_vague_terms": _EN_VAGUE_TERMS,
+        "pt_zero_cardinality": _PT_ZERO_CARDINALITY,
+        "en_zero_cardinality": _EN_ZERO_CARDINALITY,
+        "pt_strong_equality": _PT_STRONG_EQUALITY,
+        "en_strong_equality": _EN_STRONG_EQUALITY,
+        "pt_bound_exact_pattern": _PT_BOUND_EXACT_RE.pattern,
+        "en_bound_exact_pattern": _EN_BOUND_EXACT_RE.pattern,
         "es_placeholders": _ES_PLACEHOLDERS,
         "es_comparators": _ES_COMPARATORS,
         "es_conditions": _ES_CONDITIONS,
@@ -1014,6 +1100,9 @@ _BUILTIN_LOCALE_LEXICONS: Final[
                 "errors": _PT_ERRORS,
                 "placeholders": _PT_PLACEHOLDERS,
                 "vague_terms": _PT_VAGUE_TERMS,
+                "zero_cardinality": _PT_ZERO_CARDINALITY,
+                "strong_equality": _PT_STRONG_EQUALITY,
+                "bound_exact": _PT_BOUND_EXACT_RE,
             }
         ),
         RequirementLocale.EN: MappingProxyType(
@@ -1026,6 +1115,9 @@ _BUILTIN_LOCALE_LEXICONS: Final[
                 "errors": _EN_ERRORS,
                 "placeholders": _EN_PLACEHOLDERS,
                 "vague_terms": _EN_VAGUE_TERMS,
+                "zero_cardinality": _EN_ZERO_CARDINALITY,
+                "strong_equality": _EN_STRONG_EQUALITY,
+                "bound_exact": _EN_BOUND_EXACT_RE,
             }
         ),
         RequirementLocale.ES: MappingProxyType(
@@ -1038,6 +1130,9 @@ _BUILTIN_LOCALE_LEXICONS: Final[
                 "errors": _ES_ERRORS,
                 "placeholders": _ES_PLACEHOLDERS,
                 "vague_terms": _ES_VAGUE_TERMS,
+                "zero_cardinality": _EMPTY_ZERO_CARDINALITY,
+                "strong_equality": _EMPTY_STRONG_EQUALITY,
+                "bound_exact": None,
             }
         ),
         RequirementLocale.DE: MappingProxyType(
@@ -1050,6 +1145,9 @@ _BUILTIN_LOCALE_LEXICONS: Final[
                 "errors": _DE_ERRORS,
                 "placeholders": _DE_PLACEHOLDERS,
                 "vague_terms": _DE_VAGUE_TERMS,
+                "zero_cardinality": _EMPTY_ZERO_CARDINALITY,
+                "strong_equality": _EMPTY_STRONG_EQUALITY,
+                "bound_exact": None,
             }
         ),
         RequirementLocale.FR: MappingProxyType(
@@ -1062,6 +1160,9 @@ _BUILTIN_LOCALE_LEXICONS: Final[
                 "errors": _FR_ERRORS,
                 "placeholders": _FR_PLACEHOLDERS,
                 "vague_terms": _FR_VAGUE_TERMS,
+                "zero_cardinality": _EMPTY_ZERO_CARDINALITY,
+                "strong_equality": _EMPTY_STRONG_EQUALITY,
+                "bound_exact": None,
             }
         ),
     }
@@ -1088,7 +1189,12 @@ def detect_requirement_signals(
     symbolic_comparator = (
         _SYMBOLIC_COMPARATOR_RE.search(normalized_casefold) is not None
     )
-    technical_term = _contains_term(
+    code_artifact = any(
+        pattern.search(normalized) is not None
+        for pattern in _CODE_ARTIFACT_RES
+    )
+    error_class = _ERROR_CLASS_RE.search(normalized) is not None
+    technical_term = code_artifact or _contains_term(
         normalized_casefold,
         REQUIREMENT_LINT_TECHNICAL_LEXICON_V1,
     )
@@ -1109,7 +1215,7 @@ def detect_requirement_signals(
             condition=False,
             observable_result=False,
             state=False,
-            error=False,
+            error=error_class,
             technical_term=technical_term,
             neutral_placeholder=neutral_placeholder,
             localized_placeholder=False,
@@ -1125,6 +1231,20 @@ def detect_requirement_signals(
     localized_comparator = _contains_bounded_comparator(
         normalized_casefold,
         lexicon["comparators"],
+    )
+    zero_cardinality = _contains_term(
+        normalized_casefold,
+        lexicon["zero_cardinality"],
+    )
+    strong_equality = _contains_term(
+        normalized_casefold,
+        lexicon["strong_equality"],
+    )
+    bound_exact_re = lexicon["bound_exact"]
+    bound_exact = (
+        bound_exact_re.search(normalized_casefold) is not None
+        if bound_exact_re is not None
+        else False
     )
     condition = gherkin or _contains_term(
         normalized_casefold,
@@ -1147,13 +1267,19 @@ def detect_requirement_signals(
 
     return RequirementLintSignals(
         number_with_unit=number_with_unit,
-        comparator=symbolic_comparator or localized_comparator,
+        comparator=(
+            symbolic_comparator
+            or localized_comparator
+            or zero_cardinality
+            or strong_equality
+            or bound_exact
+        ),
         gwt_en=gwt_en,
         dado_quando_entao_pt=dado_quando_entao_pt,
         condition=condition,
         observable_result=observable_result,
         state=state,
-        error=error,
+        error=error or error_class,
         technical_term=technical_term,
         neutral_placeholder=neutral_placeholder,
         localized_placeholder=localized_placeholder,
