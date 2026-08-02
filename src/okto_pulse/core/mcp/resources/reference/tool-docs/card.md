@@ -223,8 +223,9 @@ execution report is required (e.g. moving to on_hold or started).
 Typed declared-impact block attached to the execution report: `files`
 (repo+path+change_kind, `previous_path` iff `renamed`), `symbols`
 (name+kind+action+repo+file — file is mandatory), `surfaces`
-(kind+identifier), `tests` (added/updated authored artifacts) and
-`evidence_refs` (deduplicated, non-blank). Paths are repo-root-relative
+(kind+identifier), `tests` (added/updated authored artifacts:
+`action`+`repo`+`test_file_path` required, `test_function` and
+`scenario_id` optional) and `evidence_refs` (deduplicated, non-blank). Paths are repo-root-relative
 with forward slashes; caps 200/200/50/100/50; closed input — unknown keys
 reject the move with a field-naming error and nothing persists.
 

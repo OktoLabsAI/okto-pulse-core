@@ -360,3 +360,43 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
         # submit_task_validation set DONE directly WITHOUT demanding a new
         # impact block (the validator conclusion path is exempt).
         assert persisted.status == CardStatus.DONE
+
+
+def test_tolerance_is_read_only_write_paths_stay_strict():
+    """Independent review of I2 (F1): the AC-9 read tolerance must NOT leak
+    into write validators. A tampered value in a GLOBAL default-config
+    template would silently disable governance for every new board."""
+
+    from okto_pulse.core.services.board_governance import BoardGovernanceService
+
+    # READ path (move governance) degrades a persisted/tampered value.
+    resolved = BoardGovernanceService.from_settings(
+        {"impact_evidence_mode": "banana"}
+    )
+    assert resolved.settings["impact_evidence_mode"] == "off"
+
+    # WRITE path (default board config template validation, board create)
+    # stays strict — same as every other enum.
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.normalize_settings(
+            {"impact_evidence_mode": "banana"}
+        )
+
+    # A PATCH that authors the field is strict...
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.merge_settings_patch(
+            {}, {"impact_evidence_mode": "banana"}
+        )
+    # ...while a tampered PERSISTED value never blocks an unrelated edit.
+    merged = BoardGovernanceService.merge_settings_patch(
+        {"impact_evidence_mode": "banana"}, {"max_scenarios_per_card": 3}
+    )
+    assert merged["impact_evidence_mode"] == "off"
+    assert merged["max_scenarios_per_card"] == 3
+    # And a valid authored value is written through.
+    assert (
+        BoardGovernanceService.merge_settings_patch(
+            {}, {"impact_evidence_mode": "require"}
+        )["impact_evidence_mode"]
+        == "require"
+    )

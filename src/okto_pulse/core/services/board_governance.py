@@ -62,26 +62,36 @@ class BoardGovernanceService:
         self.db = db
 
     @staticmethod
-    def normalize_settings(settings: dict[str, Any] | BoardSettings | None) -> dict[str, Any]:
+    def normalize_settings(
+        settings: dict[str, Any] | BoardSettings | None,
+        *,
+        read_tolerant: bool = False,
+    ) -> dict[str, Any]:
+        """Normalize a settings payload against :class:`BoardSettings`.
+
+        ``read_tolerant`` is OPT-IN and belongs to READ paths only. A
+        persisted/tampered ``impact_evidence_mode`` must never fail-close a
+        move (AC-9 of SK-B2-S1), so read callers degrade it to the ``off``
+        default exactly like ``resolve_impact_evidence_mode``. WRITE callers
+        (board create/update, default-config templates) keep the strict
+        parse: an out-of-enum value there is an authoring error and must be
+        rejected, never silently disabled.
+        """
+
         if isinstance(settings, BoardSettings):
             return settings.model_dump(mode="json")
         raw = dict(settings or {})
-        # AC-9 (SK-B2-S1): a persisted/tampered impact_evidence_mode must
-        # NEVER fail-close a read path (this normalizer runs inside move
-        # governance). The write boundaries (BoardCreate/BoardUpdate) parse
-        # BoardSettings strictly and already reject invalid values; here the
-        # invalid persisted value degrades to the 'off' default, matching
-        # resolve_impact_evidence_mode's invalid_value_fail_compat.
-        from okto_pulse.core.services.impact_evidence import (
-            IMPACT_EVIDENCE_MODES,
-        )
+        if read_tolerant:
+            from okto_pulse.core.services.impact_evidence import (
+                IMPACT_EVIDENCE_MODES,
+            )
 
-        mode = raw.get("impact_evidence_mode")
-        if (
-            mode is not None
-            and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
-        ):
-            raw.pop("impact_evidence_mode", None)
+            mode = raw.get("impact_evidence_mode")
+            if (
+                mode is not None
+                and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
+            ):
+                raw.pop("impact_evidence_mode", None)
         return BoardSettings.model_validate(raw).model_dump(mode="json")
 
     @classmethod
@@ -89,7 +99,7 @@ class BoardGovernanceService:
         cls,
         settings: dict[str, Any] | BoardSettings | None,
     ) -> BoardGovernanceSettings:
-        normalized = cls.normalize_settings(settings)
+        normalized = cls.normalize_settings(settings, read_tolerant=True)
         return BoardGovernanceSettings(
             allow_agent_self_answering=bool(
                 normalized.get("allow_agent_self_answering", False)
@@ -137,7 +147,15 @@ class BoardGovernanceService:
             for key in LEGACY_ABSENT_SETTING_KEYS
             if key not in current_raw and key not in patch_raw
         }
-        normalized = cls.normalize_settings({**current_raw, **patch_raw})
+        # A patch merges PERSISTED state (read) with AUTHORED keys (write).
+        # Tolerance applies only to the persisted half: a value the author is
+        # actually writing stays strict, so a typo is rejected instead of
+        # silently disabling governance, while a previously tampered value
+        # never blocks an unrelated settings edit.
+        normalized = cls.normalize_settings(
+            {**current_raw, **patch_raw},
+            read_tolerant=("impact_evidence_mode" not in patch_raw),
+        )
         for key in preserve_absent:
             normalized.pop(key, None)
         return normalized
