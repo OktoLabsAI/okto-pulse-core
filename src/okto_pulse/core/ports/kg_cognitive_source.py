@@ -93,7 +93,7 @@ class CognitiveSourceConflict(CognitiveSourceError):
     """
 
 
-COGNITIVE_SOURCE_FINGERPRINT_CONTRACT = "cognitive-source-fingerprint/v2"
+COGNITIVE_SOURCE_FINGERPRINT_CONTRACT = "cognitive-source-fingerprint/v3"
 
 #: Read-side usage statistics mutate without an attestation bump (every KG
 #: query touches ``query_hits``/``last_queried_at``/``relevance_score``).
@@ -107,6 +107,8 @@ COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS: frozenset[str] = frozenset(
     {
         "last_attested_at",
         "last_queried_at",
+        "last_recomputed_at",
+        "pre_cancellation_relevance_score",
         "priority_boost",
         "query_hits",
         "relevance_score",

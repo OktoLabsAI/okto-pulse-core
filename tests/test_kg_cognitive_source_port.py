@@ -241,13 +241,17 @@ def test_port_is_reexported_from_ports_package():
     )
     assert ports.latest_cognitive_source_records is latest_cognitive_source_records
 
-def test_fingerprint_v2_ignores_volatile_usage_statistics() -> None:
+def test_fingerprint_v3_ignores_volatile_usage_statistics() -> None:
     """Regression: read-side stats drift on every KG query without bumping
     attestation_count/source_revision. Under fingerprint v1 that made an
     identical knowledge replay diverge from its own stored revision and
     poisoned consolidation with cognitive_source_replay_conflict (observed
-    live on decision_059d5828). Usage drift must not change identity; a
-    content change still must."""
+    live on decision_059d5828). v2 excluded the five query-side stats but
+    MISSED the commit-hook recompute stamps (last_recomputed_at,
+    pre_cancellation_relevance_score — the trio primitives protects at
+    kg scoring recompute), so the SAME node poisoned consolidation again
+    after every relevance recompute. Usage/derivation drift must not change
+    identity; a content change still must."""
 
     from okto_pulse.core.ports.kg_cognitive_source import (
         COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS,
@@ -281,6 +285,8 @@ def test_fingerprint_v2_ignores_volatile_usage_statistics() -> None:
     drifted["relevance_score"] = 0.97
     drifted["priority_boost"] = 1.5
     drifted["last_attested_at"] = "2026-08-02T09:00:01Z"
+    drifted["last_recomputed_at"] = "2026-08-02T09:00:02Z"
+    drifted["pre_cancellation_relevance_score"] = 0.41
     assert canonical_cognitive_source_fingerprint(
         payload=drifted, **identity
     ) == original
@@ -296,6 +302,8 @@ def test_fingerprint_v2_ignores_volatile_usage_statistics() -> None:
         {
             "last_attested_at",
             "last_queried_at",
+            "last_recomputed_at",
+            "pre_cancellation_relevance_score",
             "priority_boost",
             "query_hits",
             "relevance_score",
