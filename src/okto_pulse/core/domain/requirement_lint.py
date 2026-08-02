@@ -70,6 +70,12 @@ _CODE_ARTIFACT_RES: Final[tuple[re.Pattern[str], ...]] = (
 _ERROR_CLASS_RE: Final[re.Pattern[str]] = re.compile(
     r"\b[A-Z][A-Za-z0-9]*(?:Error|Exception)\b"
 )
+#: Deterministic cap for the requirement excerpt embedded in proposed
+#: questions. Sealed in the ruleset manifest — changing it changes analysis.
+QUESTION_ANCHOR_EXCERPT_CAP: Final[int] = 280
+QUESTION_ANCHOR_FORMAT_VERSION: Final[str] = (
+    "child-id-parenthesized+excerpt/v1"
+)
 _GWT_EN_RE = re.compile(r"\bgiven\b[\s\S]*\bwhen\b[\s\S]*\bthen\b")
 _DQT_PT_RE = re.compile(r"\bdado\b[\s\S]*\bquando\b[\s\S]*\bent(?:ão|ao)\b")
 
@@ -960,6 +966,8 @@ REQUIREMENT_LINT_RULESET_MANIFEST_V1 = MappingProxyType(
         "gherkin_de_pattern": _GWT_DE_RE.pattern,
         "gherkin_fr_pattern": _GWT_FR_RE.pattern,
         "rule_text_fallback_locale": RequirementLocale.EN.value,
+        "question_anchor_format": QUESTION_ANCHOR_FORMAT_VERSION,
+        "question_anchor_excerpt_cap": QUESTION_ANCHOR_EXCERPT_CAP,
         "neutral_placeholders": _NEUTRAL_PLACEHOLDERS,
         "case_sensitive_neutral_placeholders": (
             _CASE_SENSITIVE_NEUTRAL_PLACEHOLDERS
@@ -1415,15 +1423,27 @@ def _finding_from_candidate(
     )
 
 
+def _question_anchor_excerpt(text: str) -> str:
+    if len(text) <= QUESTION_ANCHOR_EXCERPT_CAP:
+        return text
+    return text[: QUESTION_ANCHOR_EXCERPT_CAP - 1].rstrip() + "…"
+
+
 def _question_from_candidate(
     candidate: _FindingCandidate,
     *,
     context: RequirementLintContext,
 ) -> ProposedQuestionDraft:
+    # A human answering in the dashboard sees ONLY the question text, so it
+    # must carry the anchored item id (parenthesized) AND the requirement
+    # text itself — an id alone is unanswerable for the user.
     is_pt = candidate.locale is RequirementLocale.PT
     question = (
         candidate.rule.question_pt if is_pt else candidate.rule.question_en
-    ).format(child_id=candidate.child.child_id)
+    ).format(child_id=f"({candidate.child.child_id})")
+    anchor_label = "Requisito" if is_pt else "Requirement"
+    excerpt = _question_anchor_excerpt(candidate.child.text)
+    question = f'{question} {anchor_label}: "{excerpt}"'
     return ProposedQuestionDraft(
         client_key=f"question:{candidate.finding_key}",
         question=question,

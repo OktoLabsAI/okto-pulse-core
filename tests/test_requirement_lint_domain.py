@@ -247,3 +247,67 @@ def test_manifest_seals_new_signal_families() -> None:
     ):
         assert key in manifest, key
     assert "≥" in manifest["symbolic_comparator_pattern"]
+
+
+def test_proposed_questions_carry_anchored_id_and_requirement_text() -> None:
+    """A human answering in the dashboard sees only the question text: it must
+    contain the flagged item id in parentheses AND the requirement text; long
+    texts truncate deterministically at the sealed cap."""
+
+    from okto_pulse.core.domain.requirement_lint import (
+        QUESTION_ANCHOR_EXCERPT_CAP,
+        REQUIREMENT_LINT_RULESET_MANIFEST_V1,
+        RequirementEntityType,
+        RequirementLintChild,
+        RequirementLintContext,
+        RequirementLocale,
+        lint_requirements,
+    )
+
+    text = "AC-X: O sistema deve funcionar de forma adequada e performática."
+    context = RequirementLintContext(
+        board_id="board-1",
+        spec_id="spec-1",
+        spec_version=1,
+        input_digest="0" * 64,
+        locale=RequirementLocale.UNKNOWN,
+        locales=(RequirementLocale.PT,),
+    )
+    result = lint_requirements(
+        [
+            RequirementLintChild(
+                entity_type=RequirementEntityType.AC,
+                child_id="ac_anchor1",
+                text=text,
+            )
+        ],
+        context=context,
+    )
+    assert result.proposed_questions, "expected at least one question"
+    question = result.proposed_questions[0].question
+    assert "(ac_anchor1)" in question
+    assert 'Requisito: "' in question
+    assert text in question
+
+    long_text = "AC-Y: " + ("critério vago " * 40)
+    long_result = lint_requirements(
+        [
+            RequirementLintChild(
+                entity_type=RequirementEntityType.AC,
+                child_id="ac_anchor2",
+                text=long_text,
+            )
+        ],
+        context=context,
+    )
+    long_question = long_result.proposed_questions[0].question
+    assert "…" in long_question
+    start = long_question.index('Requisito: "') + len('Requisito: "')
+    excerpt = long_question[start : long_question.rindex('"')]
+    assert len(excerpt) <= QUESTION_ANCHOR_EXCERPT_CAP
+
+    manifest = REQUIREMENT_LINT_RULESET_MANIFEST_V1
+    assert manifest["question_anchor_format"] == (
+        "child-id-parenthesized+excerpt/v1"
+    )
+    assert manifest["question_anchor_excerpt_cap"] == QUESTION_ANCHOR_EXCERPT_CAP

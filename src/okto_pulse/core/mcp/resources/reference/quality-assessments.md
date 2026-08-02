@@ -62,10 +62,29 @@ An assessment may propose at most five questions. Automatic requirement
 lint additionally deduplicates its proposals against the Spec's existing Q&A
 by normalized question text (answered or not): re-issuing the advisory lint
 receipt on every semantic write never re-materializes an already-asked
-question. Accepted questions and their
+question. Lint questions embed the flagged item id in parentheses and the
+requirement text itself, so a human can answer them from the Q&A surface
+alone. Accepted questions and their
 finding links are created atomically with the receipt, and the result maps each
 caller `client_key` to the issued Q&A ID. Any failure leaves no partial receipt,
 finding, question, head, history, event, or outbox mutation.
+
+**After any semantic Spec write, review what the lint generated.** The write
+that mutated the Spec also produced a fresh advisory `requirement_lint`
+receipt. Before moving on, the writing agent MUST:
+
+1. Fetch the current receipt
+   (`okto_pulse_get_current_quality_assessment` with
+   `assessment_kind="requirement_lint"`) and list its findings
+   (`okto_pulse_list_quality_findings` filtered by the receipt id).
+2. Triage every finding: either sharpen the flagged requirement text in the
+   same working session, or leave the finding standing deliberately and say
+   why in the conversation or the linked Q&A answer.
+3. List the Spec's open Q&A (`okto_pulse_list_qa`) and account for every
+   lint-proposed question: answer it with the decided criterion when the
+   decision is yours to make, or leave it explicitly for the human — never
+   ignore generated questions silently. Answering a question does not clear
+   its finding; only editing the requirement text does.
 
 ## Currentness is computed, not inferred from head
 

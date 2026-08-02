@@ -73,6 +73,14 @@ Use this section for **status-to-action routing**. Receipt mechanics live in
 - Never call `okto_pulse_record_ambiguity_assessment` or create a Spec receipt
   manually. Lint is advisory: its score is the finding count over evaluated
   rules (lower is better); zero is not permission to advance.
+- **Every semantic write ends with a lint review, not with the write.** The
+  write you just made produced a fresh `requirement_lint` receipt and may have
+  materialized proposed questions into the Spec's Q&A. Read the receipt,
+  triage its findings, and account for every generated question (answer it or
+  explicitly leave it for the human) before declaring the authoring step done
+  — the mandatory steps live in
+  `okto-pulse://reference/quality-assessments` under "After any semantic Spec
+  write, review what the lint generated".
 
 #### Agent flow by Spec status
 

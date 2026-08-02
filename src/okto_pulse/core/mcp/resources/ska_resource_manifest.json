@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "bde71c3e6f714e44218c618ada009c20a3310a24e946acaf2bcfc7d14371e6da",
+  "manifest_sha256": "b4be773d248acd30bbb912796483218b359c21a6047632935e6fcb501743d92c",
   "manifest_version": "agent-resources/v2",
   "resource_count": 21,
   "resources": [
@@ -133,7 +133,7 @@
       "uri": "okto-pulse://reference/projection-profiles"
     },
     {
-      "content_sha256": "76e1dbc4cafdd8546487b5ea9b36907c963b15c14d22a35fefb4a6712c326665",
+      "content_sha256": "500cba47b6c88c2ad41c58c53d2868c2d511e72dc13aadee943453833a1fbd74",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/policy-compliance",
@@ -419,7 +419,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "d3f10863008d5099978bf4d333b73fdeec928e11b8197904512084a3d7d26255",
+      "content_sha256": "d9e4ce315a694ecfe187df10d8f746807d6ef7e63bd36956a86fd7984dfdf52d",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/policy-compliance",
