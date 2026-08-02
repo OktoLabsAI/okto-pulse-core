@@ -256,3 +256,107 @@ def test_resolver_contract():
         _B({"impact_evidence_mode": " REQUIRE "})
     ) == ("require", "board_settings")
     assert IMPACT_EVIDENCE_MODES == {"off", "advisory", "require"}
+
+
+async def test_require_exemptions_inherited_from_report_target(db_factory):
+    """TS-7/AC-7: under 'require', the two exempt paths never demand the
+    block — a TEST card moving to validation (no report gate at all) and
+    submit_task_validation approving a card straight to DONE."""
+
+    from test_card_lifecycle import _mark_all_resources_na
+
+    from okto_pulse.core.domain.enums import CardType
+
+    await _seed_board(db_factory)
+    async with db_factory() as db:
+        board = await db.get(Board, BOARD_ID)
+        board.settings = {
+            **dict(board.settings or {}),
+            "impact_evidence_mode": "require",
+        }
+        svc = CardService(db)
+        specs = (
+            (await db.execute(select(Spec).where(Spec.board_id == BOARD_ID)))
+            .scalars()
+            .all()
+        )
+        specs[0].status = SpecStatus.IN_PROGRESS
+        specs[0].require_task_validation = False
+
+        # Path 1: TEST card -> validation, no conclusion, no block.
+        test_card = await svc.create_card(
+            BOARD_ID,
+            USER_ID,
+            CardCreate(
+                title=f"IE exempt test card {uuid.uuid4().hex[:6]}",
+                status=CardStatus.NOT_STARTED,
+                spec_id=specs[0].id,
+                card_type="test",
+                test_scenario_ids=[
+                    (specs[0].test_scenarios or [{}])[0].get("id", "ts_seed")
+                ]
+                if specs[0].test_scenarios
+                else ["ts_seed"],
+            ),
+        )
+        test_card.status = CardStatus.IN_PROGRESS
+
+        # Path 2: normal card approved via submit_task_validation -> DONE.
+        exec_card = await svc.create_card(
+            BOARD_ID,
+            USER_ID,
+            CardCreate(
+                title=f"IE exempt exec card {uuid.uuid4().hex[:6]}",
+                status=CardStatus.NOT_STARTED,
+                spec_id=specs[0].id,
+            ),
+        )
+        exec_card.status = CardStatus.IN_PROGRESS
+        await db.commit()
+        test_card_id, exec_card_id = test_card.id, exec_card.id
+
+    async with db_factory() as db:
+        svc = CardService(db)
+        moved = await svc.move_card(
+            test_card_id,
+            USER_ID,
+            CardMove(status=CardStatus.VALIDATION),
+        )
+        assert moved.status == CardStatus.VALIDATION
+        assert getattr(moved, "card_type", None) == CardType.TEST
+
+        await svc.move_card(
+            exec_card_id,
+            USER_ID,
+            CardMove(status=CardStatus.VALIDATION, **_REPORT_KWARGS,
+                     impact_evidence=_VALID_BLOCK),
+        )
+        await db.commit()
+        await _mark_all_resources_na(db, "card", exec_card_id)
+        result = await svc.submit_task_validation(
+            exec_card_id,
+            "reviewer-exempt",
+            "Reviewer Exempt",
+            {
+                "confidence": 95,
+                "confidence_justification": "Reviewed the delivered change",
+                "estimated_completeness": 100,
+                "completeness_justification": "Complete against the plan",
+                "estimated_drift": 0,
+                "drift_justification": "No deviation",
+                "general_justification": "Approved; exemption path proof.",
+                "recommendation": "approve",
+            },
+        )
+        assert result["outcome"] == "success"
+        await db.commit()
+
+    async with db_factory() as db:
+        from sqlalchemy_test_models import Card
+
+        persisted = (
+            await db.execute(select(Card).where(Card.id == exec_card_id))
+        ).scalar_one()
+        # submit_task_validation set DONE directly WITHOUT demanding a new
+        # impact block (the validator conclusion path is exempt).
+        assert persisted.status == CardStatus.DONE
