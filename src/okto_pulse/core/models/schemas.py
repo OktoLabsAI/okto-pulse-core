@@ -1,5 +1,6 @@
 """Pydantic schemas for API request/response models."""
 
+import re
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Any, Generic, Literal, TypeAlias, TypeVar
@@ -2785,8 +2786,191 @@ class CardUpdate(BaseModel):
     )
 
 
-class ConclusionEntry(BaseModel):
-    """A single conclusion entry."""
+def _slim_impact_schema(schema: dict[str, Any]) -> None:
+    """Keep the published MCP contract lean (budget R1.1, FR-8).
+
+    Auto-generated titles and docstring descriptions carry no contract:
+    enums, caps, lengths and required/forbid ARE the contract and stay.
+    """
+
+    schema.pop("title", None)
+    schema.pop("description", None)
+    for prop in schema.get("properties", {}).values():
+        prop.pop("title", None)
+
+
+class _ImpactEvidenceInput(BaseModel):
+    """Base for the write-strict impact_evidence family (SK-B2-S1, TR-2).
+
+    INPUT models are closed (``extra="forbid"``): an unknown key rejects the
+    whole move with a field-naming error instead of being silently dropped.
+    Read tolerance lives in ``ConclusionEntry`` (a stored non-conform block
+    normalizes to ``None``) — never here.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra=_slim_impact_schema
+    )
+
+
+_IMPACT_DRIVE_RE = re.compile(r"^[A-Za-z]:")
+
+
+def _validate_impact_repo_path(path: str) -> str:
+    """FR-2 path contract: repo-root-relative with forward slashes."""
+
+    if "\\" in path:
+        raise ValueError(
+            "impact_evidence_path_invalid: backslashes are not allowed - "
+            "use forward slashes"
+        )
+    if path.startswith("/"):
+        raise ValueError(
+            "impact_evidence_path_invalid: leading slash - paths are "
+            "repo-root-relative"
+        )
+    if _IMPACT_DRIVE_RE.match(path):
+        raise ValueError(
+            "impact_evidence_path_invalid: drive letters are not allowed - "
+            "paths are repo-root-relative"
+        )
+    if any(segment == ".." for segment in path.split("/")):
+        raise ValueError(
+            "impact_evidence_path_invalid: '..' segments are not allowed"
+        )
+    return path
+
+
+class ImpactEvidenceFile(_ImpactEvidenceInput):
+    repo: Literal["core", "community"]
+    path: str = Field(..., min_length=1, max_length=500)
+    change_kind: Literal["created", "modified", "deleted", "renamed"]
+    previous_path: str | None = Field(None, min_length=1, max_length=500)
+    note: str | None = Field(None, min_length=1, max_length=2000)
+
+    @field_validator("path", "previous_path")
+    @classmethod
+    def _paths_repo_relative(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_impact_repo_path(value)
+
+    @model_validator(mode="after")
+    def _previous_path_iff_renamed(self) -> "ImpactEvidenceFile":
+        if self.change_kind == "renamed" and self.previous_path is None:
+            raise ValueError(
+                "impact_evidence_previous_path_required: files.previous_path "
+                "is required when change_kind='renamed'"
+            )
+        if self.change_kind != "renamed" and self.previous_path is not None:
+            raise ValueError(
+                "impact_evidence_previous_path_forbidden: files.previous_path "
+                "is only allowed when change_kind='renamed'"
+            )
+        return self
+
+
+class ImpactEvidenceSymbol(_ImpactEvidenceInput):
+    name: str = Field(..., min_length=1, max_length=500)
+    kind: Literal["function", "class", "method", "component", "port", "other"]
+    action: Literal["created", "modified", "deleted"]
+    repo: Literal["core", "community"]
+    # Mandatory: a symbol claim without its file is not verifiable.
+    file: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("file")
+    @classmethod
+    def _file_repo_relative(cls, value: str) -> str:
+        return _validate_impact_repo_path(value)
+
+
+class ImpactEvidenceSurface(_ImpactEvidenceInput):
+    kind: Literal[
+        "rest_route",
+        "mcp_tool",
+        "mcp_resource",
+        "ui_component",
+        "table",
+        "cli_command",
+        "event",
+        "migration",
+        "other",
+    ]
+    identifier: str = Field(..., min_length=1, max_length=500)
+
+
+class ImpactEvidenceTest(_ImpactEvidenceInput):
+    action: Literal["added", "updated"]
+    repo: Literal["core", "community"]
+    test_file_path: str = Field(..., min_length=1, max_length=500)
+    test_function: str | None = Field(None, min_length=1, max_length=500)
+    scenario_id: str | None = Field(None, min_length=1, max_length=500)
+
+    @field_validator("test_file_path")
+    @classmethod
+    def _test_path_repo_relative(cls, value: str) -> str:
+        return _validate_impact_repo_path(value)
+
+
+class ImpactEvidence(_ImpactEvidenceInput):
+    """Declared execution impact (SK-B2-S1 shape v1) — a CLAIM, not authority.
+
+    The validator keeps diffing reality; declared-vs-real divergence in
+    either direction is a first-class validation finding. Lives inside the
+    append-only ``cards.conclusions`` JSON — no relational migration (TR-6).
+    """
+
+    schema_version: Literal[1] = 1
+    files: list[ImpactEvidenceFile] = Field(
+        default_factory=list, max_length=200
+    )
+    symbols: list[ImpactEvidenceSymbol] = Field(
+        default_factory=list, max_length=200
+    )
+    surfaces: list[ImpactEvidenceSurface] = Field(
+        default_factory=list, max_length=50
+    )
+    tests: list[ImpactEvidenceTest] = Field(
+        default_factory=list, max_length=100
+    )
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def _evidence_refs_stripped_unique(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for ref in value:
+            stripped = ref.strip()
+            if not stripped:
+                raise ValueError(
+                    "impact_evidence_evidence_ref_empty: evidence_refs "
+                    "entries must be non-empty after strip"
+                )
+            if len(stripped) > 500:
+                raise ValueError(
+                    "impact_evidence_evidence_ref_too_long: max 500 characters"
+                )
+            if stripped in cleaned:
+                raise ValueError(
+                    "impact_evidence_evidence_ref_duplicate: "
+                    f"{stripped!r} appears more than once"
+                )
+            cleaned.append(stripped)
+        return cleaned
+
+    def is_minimally_populated(self) -> bool:
+        """FR-6 require bar: at least one item in any of the four sections."""
+
+        return bool(self.files or self.symbols or self.surfaces or self.tests)
+
+
+class ConclusionEntrySummary(BaseModel):
+    """Lean conclusion entry for paginated projections (FR-4/AC-5).
+
+    Deliberately has NO ``impact_evidence`` field: the block is served only
+    by the full projections (CardResponse, get_task_conclusions). Parsing a
+    stored dict that carries the block simply ignores it here.
+    """
 
     text: str
     author_id: str
@@ -2795,6 +2979,11 @@ class ConclusionEntry(BaseModel):
     completeness_justification: str = ""
     drift: int = 0  # 0-100
     drift_justification: str = ""
+    # FR-9: declared provenance fields - legacy conclusions already carry
+    # them in the JSON; declaring them stops the REST projection from
+    # stripping them (the dead Legacy report badge bug).
+    source: str | None = None
+    validation_id: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -2828,6 +3017,33 @@ class ConclusionEntry(BaseModel):
             )
         if not data.get("created_at"):
             data["created_at"] = "1970-01-01T00:00:00+00:00"
+        return data
+
+
+class ConclusionEntry(ConclusionEntrySummary):
+    """A single conclusion entry (full projection).
+
+    Read-tolerant for ``impact_evidence`` (FR-3): a malformed or
+    unknown-version stored block normalizes to ``None`` instead of failing
+    the card read. Write strictness lives in ``CardMove``/MCP input parsing,
+    never here.
+    """
+
+    impact_evidence: ImpactEvidence | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerate_stored_impact_evidence(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        block = value.get("impact_evidence")
+        if block is None:
+            return value
+        data = dict(value)
+        try:
+            data["impact_evidence"] = ImpactEvidence.model_validate(block)
+        except Exception:
+            data["impact_evidence"] = None
         return data
 
 
@@ -3021,6 +3237,15 @@ class CardMove(BaseModel):
         None,
         description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
     )
+    impact_evidence: ImpactEvidence | None = Field(
+        None,
+        description=(
+            "Evidencia declarada de impacto (schema v1, opcional): files/"
+            "symbols/surfaces/tests/evidence_refs re-enumerados pelo autor "
+            "no ato da conclusion. CLAIM, nao autoridade - o validador "
+            "continua diffando a realidade. Fica FORA do oneOf de placement."
+        ),
+    )
 
 
 class CardResponse(BaseSchema):
@@ -3113,7 +3338,8 @@ class CardSummary(BaseSchema):
     due_date: datetime | None
     labels: list[str]
     test_scenario_ids: list[str] | None
-    conclusions: list[ConclusionEntry] | None
+    # FR-4/AC-5: the paginated projection NEVER carries impact_evidence.
+    conclusions: list[ConclusionEntrySummary] | None
     card_type: CardType
     origin_task_id: str | None
     severity: str | None
@@ -3421,6 +3647,13 @@ class BoardSettings(BaseModel):
     lint_languages: list[
         Literal["pt-BR", "en-US", "es-ES", "de-DE", "fr-FR"]
     ] = Field(default_factory=list)
+    # Impact-evidence enforcement on execution reports (SK-B2-S1, FR-5).
+    # off = no effect; advisory = gated moves succeed but a missing block is
+    # recorded in the activity log; require = gated moves reject a conclusion
+    # without a minimally populated block. Write-time validation rejects
+    # out-of-enum values; READ-side resolution of persisted legacy/tampered
+    # values is fail-compat ('off') via resolve_impact_evidence_mode.
+    impact_evidence_mode: Literal["off", "advisory", "require"] = "off"
     # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
     # of the board's Design System gate mode (the design_system_default_ref only carries
     # the DS identity; any gate_mode inside it is a derived mirror). off = no gate;

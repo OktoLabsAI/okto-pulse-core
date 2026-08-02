@@ -6038,24 +6038,88 @@ class CardService:
                     "Explain what caused the deviation from the original plan."
                 )
 
+            # SK-B2-S1 (FR-6): impact_evidence enforcement lives EXACTLY
+            # inside the existing report_target block, inheriting its real
+            # exemptions (test cards; submit_task_validation->DONE never
+            # passes through here).
+            from okto_pulse.core.services.impact_evidence import (
+                resolve_impact_evidence_mode,
+            )
+
+            impact_mode, _impact_mode_source = resolve_impact_evidence_mode(
+                board
+            )
+            impact_block = data.impact_evidence
+            impact_populated = (
+                impact_block is not None
+                and impact_block.is_minimally_populated()
+            )
+            if impact_mode == "require" and not impact_populated:
+                raise CardOperationError(
+                    "impact_evidence_required",
+                    "This board requires declared impact evidence on the "
+                    f"execution report before moving to {report_target}: "
+                    "include impact_evidence with at least one populated "
+                    "section (files, symbols, surfaces or tests).",
+                    remediation=(
+                        "Re-enumerate what the execution touched and resubmit "
+                        "the move with impact_evidence (schema_version=1): "
+                        "changed files (repo+path+change_kind), key symbols "
+                        "(name+kind+action+file), affected surfaces "
+                        "(kind+identifier) and authored tests. The block is a "
+                        "claim - the validator still diffs reality."
+                    ),
+                    facts={
+                        "card_id": card_id,
+                        "impact_evidence_mode": impact_mode,
+                        "target_status": data.status.value,
+                    },
+                )
+            if impact_mode == "advisory" and not impact_populated:
+                # AC-17: exact advisory payload - action name, card scope and
+                # {mode, target_status, author_id} details; no entry in the
+                # off/require modes.
+                await self._log_activity(
+                    board_id=card.board_id,
+                    action="impact_evidence_missing",
+                    actor_type="user",
+                    actor_id=user_id,
+                    actor_name=actor_name
+                    or await resolve_actor_name(
+                        self.db, user_id, card.board_id
+                    ),
+                    card_id=card.id,
+                    details={
+                        "mode": "advisory",
+                        "target_status": data.status.value,
+                        "author_id": user_id,
+                    },
+                )
+
             report_source = (
                 "move_to_validation"
                 if data.status == CardStatus.VALIDATION
                 else "move_to_done"
             )
             conclusions = list(card.conclusions or [])
-            conclusions.append(
-                {
-                    "text": data.conclusion.strip(),
-                    "author_id": user_id,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "completeness": data.completeness,
-                    "completeness_justification": data.completeness_justification.strip(),
-                    "drift": data.drift,
-                    "drift_justification": data.drift_justification.strip(),
-                    "source": report_source,
-                }
-            )
+            conclusion_entry: dict[str, Any] = {
+                "text": data.conclusion.strip(),
+                "author_id": user_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "completeness": data.completeness,
+                "completeness_justification": data.completeness_justification.strip(),
+                "drift": data.drift,
+                "drift_justification": data.drift_justification.strip(),
+                "source": report_source,
+            }
+            if impact_block is not None:
+                # FR-1: the block persists next to the conclusion in the
+                # append-only JSON; omitted optional fields stay omitted so
+                # the stored shape round-trips the submitted one (AC-2).
+                conclusion_entry["impact_evidence"] = impact_block.model_dump(
+                    mode="json", exclude_none=True
+                )
+            conclusions.append(conclusion_entry)
             card.conclusions = conclusions
             card.mark_dirty("conclusions")
 

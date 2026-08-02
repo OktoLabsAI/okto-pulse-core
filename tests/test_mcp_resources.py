@@ -488,8 +488,14 @@ def test_initial_footprint_under_budget() -> None:
         schema = json.dumps(getattr(tool, "parameters", {}), separators=(",", ":"))
         parts.append(f"{tool_name}\n{desc}\n{schema}")
     tools_tokens = len(enc.encode("\n".join(parts)))
-    assert tools_tokens <= 47_000, (
-        f"tools/list metadata {tools_tokens} tokens exceeds 47K guard — "
+    # 47_500: recalibrated for SK-B2-S1 (okto_pulse_move_card gained the
+    # typed impact_evidence contract - 5 closed input models, RDL
+    # rdle_18fd9fd0 forbids degrading it to a loose dict). The nested schema
+    # was slimmed first (titles/docstring descriptions stripped, ~206 tokens)
+    # and measured at ~47_250 after slimming; pre-feature headroom was ~300.
+    # Deliberate, reviewed surface addition - not budget drift.
+    assert tools_tokens <= 47_500, (
+        f"tools/list metadata {tools_tokens} tokens exceeds 47.5K guard — "
         f"P1 lazy-loading by role will reduce this per session."
     )
 

@@ -86,6 +86,7 @@ from okto_pulse.core.ports.mcp_auth import (
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
+    ImpactEvidence,
 )
 from okto_pulse.core.models.quality_assessment import (
     QualityFindingInput,
@@ -341,6 +342,12 @@ def _build_mcp_catalog() -> CoreMcpCatalog:
 
 # The descriptor is immutable; concrete managers and mutable indexes are owned
 # by RuntimeValueRegistry and cloned when a RuntimeComposition is created.
+
+# SK-B2-S1 (FR-8/TR-5): typed-input parameter for okto_pulse_move_card.
+# The core input family is already closed (extra="forbid"), so the published
+# tool schema carries the full nested contract instead of a loose dict.
+ImpactEvidenceParam = ImpactEvidence | None
+
 mcp = runtime_state("mcp.catalog", _build_mcp_catalog)
 
 # ============================================================================
@@ -3779,12 +3786,21 @@ async def okto_pulse_get_task_conclusions(board_id: str, card_id: str) -> str:
         if not card or card.board_id != board_id:
             return json.dumps({"error": "Card not found"})
 
+        # FR-3/FR-4 (SK-B2-S1): serve the DECLARED entry shape - the full
+        # block plus source/validation_id - through the read-tolerant model,
+        # so a corrupted stored impact_evidence exposes None instead of
+        # leaking garbage (and the read never fails because of the block).
+        from okto_pulse.core.models.schemas import ConclusionEntry
+
         result: dict = {
             "id": card.id,
             "title": card.title,
             "status": card.status.value,
             "card_type": card.card_type.value if card.card_type else "normal",
-            "conclusions": card.conclusions or [],
+            "conclusions": [
+                ConclusionEntry.model_validate(entry).model_dump(mode="json")
+                for entry in (card.conclusions or [])
+            ],
         }
 
         if card.card_type and card.card_type.value == "bug":
@@ -3966,6 +3982,15 @@ async def okto_pulse_move_card(
     cancellation_reason: Annotated[
         str, Field(description="Required when status=cancelled; cleared on reopen")
     ] = "",
+    impact_evidence: Annotated[
+        ImpactEvidenceParam,
+        Field(
+            description=(
+                "Optional declared impact (schema v1); a claim, not "
+                "authority. 'require' boards reject gated moves without it."
+            )
+        ),
+    ] = None,
 ) -> str:
     """Move a card to a different column/position on the board.
 
@@ -3975,7 +4000,8 @@ async def okto_pulse_move_card(
     completeness/drift when no execution report is required (e.g. moving to
     on_hold or started). status='cancelled' requires cancellation_reason;
     reopening clears it. Errors: resource_gate_missing_resources;
-    missing_regression_test_task (bug -> in_progress).
+    missing_regression_test_task (bug -> in_progress);
+    impact_evidence_required (mode 'require' without a populated block).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -4022,6 +4048,7 @@ async def okto_pulse_move_card(
             drift=drift if drift >= 0 else None,
             drift_justification=drift_justification or None,
             cancellation_reason=cancellation_reason or None,
+            impact_evidence=impact_evidence,
         )
 
         try:

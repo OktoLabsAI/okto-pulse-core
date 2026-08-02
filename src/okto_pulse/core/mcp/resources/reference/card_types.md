@@ -32,6 +32,35 @@ version: "1.0"
 **Test card naming convention:** Prefix with `[TEST]`:
 Example: `[TEST] E2E — Valid OAuth2 token grants access`
 
+### Impact evidence on test cards — reference-first
+
+When a conclusion carries the optional `impact_evidence` block
+(SK-B2-S1, `schema_version=1`), test cards follow the **reference-first**
+rule:
+
+- `tests.added` / `tests.updated` entries declare **authored artifacts**
+  (the test files/functions you wrote or changed) — never scenario
+  outcomes. Scenario outcomes are owned by
+  `okto_pulse_update_test_scenario_status` and are **never re-declared**
+  inside the block.
+- `evidence_refs` point at scenario ids **always** — recommended format
+  `ts_<id>` (e.g. `ts_a1b2c3d4`). Receipts/manifests enter
+  `evidence_refs` **only when the scenario carries Evidence V2**; without
+  Evidence V2 the scenario id alone is the reference (graceful
+  degradation: scenario ids always; receipts only with Evidence V2).
+- The block is **claim-only**: it never substitutes the evidence gate
+  above, and it is explicitly distinct from the authenticated
+  `guideline_impact_evidence` family (see below).
+
+### `impact_evidence` vs `guideline_impact_evidence`
+
+These are different constructs and must not be conflated:
+`impact_evidence` (this block) is a **declared, unauthenticated claim**
+recorded by the conclusion author and later diffed against reality by the
+validator. `guideline_impact_evidence` is the **authenticated** flow owned
+by the semantic guideline machinery (receipts sealed by Pulse with
+digests and fences). Declaring one never satisfies the other.
+
 Evidence gate for `okto_pulse_update_test_scenario_status` (NC-9, active unless `skip_test_evidence_global=true`):
 
 - `draft`, `ready` — evidence optional.

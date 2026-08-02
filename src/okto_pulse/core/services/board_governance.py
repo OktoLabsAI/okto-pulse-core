@@ -65,7 +65,24 @@ class BoardGovernanceService:
     def normalize_settings(settings: dict[str, Any] | BoardSettings | None) -> dict[str, Any]:
         if isinstance(settings, BoardSettings):
             return settings.model_dump(mode="json")
-        return BoardSettings.model_validate(settings or {}).model_dump(mode="json")
+        raw = dict(settings or {})
+        # AC-9 (SK-B2-S1): a persisted/tampered impact_evidence_mode must
+        # NEVER fail-close a read path (this normalizer runs inside move
+        # governance). The write boundaries (BoardCreate/BoardUpdate) parse
+        # BoardSettings strictly and already reject invalid values; here the
+        # invalid persisted value degrades to the 'off' default, matching
+        # resolve_impact_evidence_mode's invalid_value_fail_compat.
+        from okto_pulse.core.services.impact_evidence import (
+            IMPACT_EVIDENCE_MODES,
+        )
+
+        mode = raw.get("impact_evidence_mode")
+        if (
+            mode is not None
+            and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
+        ):
+            raw.pop("impact_evidence_mode", None)
+        return BoardSettings.model_validate(raw).model_dump(mode="json")
 
     @classmethod
     def from_settings(
