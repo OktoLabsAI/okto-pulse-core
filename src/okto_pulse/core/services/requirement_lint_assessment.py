@@ -201,6 +201,44 @@ def requirement_lint_calculation_policy_manifest_v1(
     )
 
 
+#: Board-declared lint language codes to analyzer locales. The closed set
+#: mirrors BoardSettings.lint_languages; unknown codes resolve to nothing
+#: (read-side fail-compat — write-side validation owns rejection).
+LINT_LANGUAGE_LOCALES: Final[Mapping[str, RequirementLocale]] = MappingProxyType(
+    {
+        "pt-BR": RequirementLocale.PT,
+        "en-US": RequirementLocale.EN,
+        "es-ES": RequirementLocale.ES,
+        "de-DE": RequirementLocale.DE,
+        "fr-FR": RequirementLocale.FR,
+    }
+)
+
+
+def resolve_lint_language_profile(
+    board_settings: Mapping[str, Any] | None,
+) -> tuple[RequirementLocale, ...]:
+    """Resolve ``BoardSettings.lint_languages`` to the analyzer profile.
+
+    Single source of truth shared by the write-side hook and the read-side
+    currentness evaluator — the two MUST resolve identically or every
+    profiled receipt is born stale. Absent/malformed settings or unknown
+    codes resolve to the empty (neutral-only) profile.
+    """
+
+    if not isinstance(board_settings, Mapping):
+        return ()
+    codes = board_settings.get("lint_languages")
+    if not isinstance(codes, (list, tuple)):
+        return ()
+    profile: list[RequirementLocale] = []
+    for code in codes:
+        locale = LINT_LANGUAGE_LOCALES.get(str(code))
+        if locale is not None and locale not in profile:
+            profile.append(locale)
+    return tuple(profile)
+
+
 def requirement_lint_authority_snapshot_v1(
     *,
     board_id: str,
@@ -466,6 +504,8 @@ async def commit_requirement_lint_assessment(
 
 
 __all__ = [
+    "LINT_LANGUAGE_LOCALES",
+    "resolve_lint_language_profile",
     "REQUIREMENT_LINT_AUTHORITY_VERSION",
     "REQUIREMENT_LINT_CALCULATION_POLICY_VERSION",
     "REQUIREMENT_LINT_CHANNEL_PREFIX",

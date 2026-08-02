@@ -38,6 +38,7 @@ from okto_pulse.core.services.ambiguity_assessment import (
 )
 from okto_pulse.core.services.requirement_lint_assessment import (
     requirement_lint_normative_digests_v1,
+    resolve_lint_language_profile,
 )
 
 LEGACY_SPEC_VALIDATION_RULESET_VERSION = (
@@ -172,6 +173,10 @@ def current_quality_projection_digests(
                 ambiguity_qa_payload(qa_items),
             ),
             default_locale=RequirementLocale.UNKNOWN,
+            # The write-side hook seals the board language profile into the
+            # policy digest; the read side MUST resolve the same profile or
+            # every profiled receipt is evaluated as policy_changed/stale.
+            default_locales=resolve_lint_language_profile(board_settings),
         )
 
     if (

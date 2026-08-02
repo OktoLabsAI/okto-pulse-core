@@ -519,3 +519,47 @@ async def test_unclassified_persistence_failure_propagates_for_facade_normalizat
     assert persistence.apply_calls == 1
     assert persistence.commit_calls == 0
     assert persistence.rollback_calls == 0
+
+
+def test_currentness_profile_resolution_matches_writer_hook() -> None:
+    """Regression: the read-side currentness evaluator must rederive the SAME
+    policy digest as the write-side hook for a board that declares
+    lint_languages — otherwise every profiled receipt is born stale with
+    policy_changed (observed live on SK-B2-S1 right after enabling pt-BR)."""
+
+    from okto_pulse.core.domain.requirement_lint import RequirementLocale
+    from okto_pulse.core.services.requirement_lint_assessment import (
+        requirement_lint_normative_digests_v1,
+        resolve_lint_language_profile,
+    )
+
+    writer_side = requirement_lint_normative_digests_v1(
+        content_digest="a" * 64,
+        clarification_digest="b" * 64,
+        default_locale=RequirementLocale.UNKNOWN,
+        default_locales=(RequirementLocale.PT,),
+    )
+    read_side = requirement_lint_normative_digests_v1(
+        content_digest="a" * 64,
+        clarification_digest="b" * 64,
+        default_locale=RequirementLocale.UNKNOWN,
+        default_locales=resolve_lint_language_profile(
+            {"lint_languages": ["pt-BR"]}
+        ),
+    )
+    assert writer_side == read_side
+
+    # Profile changes MUST change the policy digest (staleness is real).
+    neutral = requirement_lint_normative_digests_v1(
+        content_digest="a" * 64,
+        clarification_digest="b" * 64,
+        default_locale=RequirementLocale.UNKNOWN,
+        default_locales=resolve_lint_language_profile(None),
+    )
+    assert neutral.policy_digest != writer_side.policy_digest
+
+    # Resolver contract: dedupe, unknown codes ignored, malformed -> neutral.
+    assert resolve_lint_language_profile(
+        {"lint_languages": ["pt-BR", "pt-BR", "xx-XX", "en-US"]}
+    ) == (RequirementLocale.PT, RequirementLocale.EN)
+    assert resolve_lint_language_profile({"lint_languages": "pt-BR"}) == ()
