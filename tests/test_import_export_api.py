@@ -259,6 +259,8 @@ def test_design_systems_roundtrip_single_and_bulk():
     assert single.json()["kind"] == "design_systems"
     assert single.json()["items"] == [
         {
+            "id": ds1_id,
+            "version": 1,
             "title": title_1,
             "scope": "global",
             "board_id": None,
@@ -274,7 +276,15 @@ def test_design_systems_roundtrip_single_and_bulk():
     mine = [i for i in envelope["items"] if i["title"] in {title_1, title_2}]
     assert len(mine) == 2
     for item in mine:
-        assert set(item) == {"title", "scope", "board_id", "payload", "status"}
+        assert set(item) == {
+            "id",
+            "version",
+            "title",
+            "scope",
+            "board_id",
+            "payload",
+            "status",
+        }
 
     # "Clean" the catalog of the originals, then import them back.
     assert client.delete(f"{PREFIX}/design-systems/{ds1_id}").status_code == 204
@@ -304,11 +314,12 @@ def test_design_systems_roundtrip_single_and_bulk():
     assert imported_detail.json()["payload"] == {"tokens": {"radius": 8}}
     assert imported_detail.json()["version"] == 1  # recreated via the normal path
 
-    # Re-import: (scope, board_id, title) natural key → skipped duplicates.
+    # Re-import: stable-id conflict creates a new version.
     again = client.post(f"{PREFIX}/design-systems/import", json=import_env)
     assert again.status_code == 200
     assert again.json()["created"] == 0
-    assert len(again.json()["skipped"]) == 2
+    assert again.json()["updated"] == 2
+    assert again.json()["skipped"] == []
 
 
 def test_design_systems_import_dry_run_and_invalid_item():
@@ -339,8 +350,8 @@ def test_design_systems_import_dry_run_and_invalid_item():
     }
     assert dry_title not in titles
 
-    # Second item hits the SERVICE creation validator (inline requires board):
-    # all-or-nothing → the valid first item must not persist.
+    # Inline provenance is accepted but normalized to global. A later invalid
+    # title still proves all-or-nothing rollback.
     valid_title = _uid("DS Valid")
     bad = client.post(
         f"{PREFIX}/design-systems/import",
@@ -349,7 +360,7 @@ def test_design_systems_import_dry_run_and_invalid_item():
             "kind": "design_systems",
             "items": [
                 {"title": valid_title, "scope": "global"},
-                {"title": "Inline missing board", "scope": "inline"},
+                {"title": "", "scope": "inline"},
             ],
         },
     )
@@ -357,9 +368,7 @@ def test_design_systems_import_dry_run_and_invalid_item():
     detail = bad.json()["detail"]
     assert detail["created"] == 0
     assert detail["errors"][0]["index"] == 1
-    assert (
-        detail["errors"][0]["detail"]["code"] == "design_system_inline_requires_board"
-    )
+    assert detail["errors"][0]["detail"]["code"] == "design_system_invalid_title"
     titles = {
         d["title"] for d in client.get(f"{PREFIX}/design-systems").json()["items"]
     }
@@ -384,7 +393,6 @@ def test_design_systems_import_dry_run_and_invalid_item():
 
 def test_presets_roundtrip_clean_tenant_and_duplicates():
     user_a = _uid("impexp-preset-a")
-    user_b = _uid("impexp-preset-b")
     client_a = _client(user_a)
 
     preset_name = _uid("Preset Custom")
@@ -402,41 +410,53 @@ def test_presets_roundtrip_clean_tenant_and_duplicates():
     mine = [i for i in envelope["items"] if i["name"] == preset_name]
     assert mine == [
         {
+            "id": created.json()["id"],
             "name": preset_name,
             "description": "exported preset",
             "flags": flags,
             "is_builtin": False,
+            "base_preset_id": None,
         }
     ]
 
-    # Same user re-import → duplicate name is skipped, nothing created.
+    single = client_a.get(f"{PREFIX}/presets/{created.json()['id']}/export")
+    assert single.status_code == 200, single.text
+    assert single.json()["items"] == mine
+
+    # Same id requires explicit confirmation and is not replaced by default.
     same = client_a.post(
         f"{PREFIX}/presets/import",
         json={"schema_version": "1", "kind": "presets", "items": mine},
     )
     assert same.status_code == 200, same.text
     assert same.json()["created"] == 0
-    assert same.json()["skipped"][0]["reason"] == "duplicate_name"
+    assert same.json()["skipped"][0]["reason"] == "replacement_requires_confirmation"
 
-    # Clean tenant (different user) → created as a NEW custom preset.
-    client_b = _client(user_b)
-    imported = client_b.post(
+    replacement = {
+        **mine[0],
+        "description": "replacement",
+        "flags": {"board": {"read": False}},
+    }
+    imported = client_a.post(
         f"{PREFIX}/presets/import",
-        json={"schema_version": "1", "kind": "presets", "items": mine},
+        params={"replace_existing": "true"},
+        json={"schema_version": "1", "kind": "presets", "items": [replacement]},
     )
     assert imported.status_code == 200, imported.text
     assert imported.json() == {
-        "created": 1,
+        "created": 0,
+        "replaced": 1,
         "skipped": [],
         "errors": [],
         "dry_run": False,
     }
-    listed = client_b.get(f"{PREFIX}/presets").json()
+    listed = client_a.get(f"{PREFIX}/presets").json()
     match = [p for p in listed if p["name"] == preset_name]
     assert len(match) == 1
-    assert match[0]["flags"] == flags
+    assert match[0]["flags"] == {"board": {"read": False}}
+    assert match[0]["description"] == "replacement"
     assert match[0]["is_builtin"] is False
-    assert match[0]["owner_id"] == user_b  # new record, new ownership
+    assert match[0]["owner_id"] == user_a
 
 
 def test_presets_import_dry_run_and_invalid_item():

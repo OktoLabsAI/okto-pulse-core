@@ -44,6 +44,15 @@ class _FakeStore:
         del context
         return await self.append_many(records)
 
+    async def sealed_birth_payloads_in_context(
+        self,
+        context: object,
+        board_id: str,
+        keys: tuple[tuple[str, str, int], ...],
+    ) -> dict[tuple[str, str, int], dict[str, object]]:
+        del context, board_id, keys
+        return {}
+
     async def enumerate(self, board_id: str) -> tuple[CognitiveSourceRecord, ...]:
         return ()
 

@@ -83,6 +83,8 @@ class PermissionPresetGateway(Protocol):
 
     async def list_presets(self, *, user_id: str) -> list[PermissionPresetView]: ...
 
+    async def get_preset(self, *, preset_id: str) -> PermissionPresetView | None: ...
+
     async def create_preset(
         self,
         *,
@@ -90,6 +92,7 @@ class PermissionPresetGateway(Protocol):
         name: str,
         description: str,
         flags: dict[str, Any] | None,
+        preset_id: str | None = None,
     ) -> PermissionPresetView: ...
 
     async def clone_preset(
@@ -110,6 +113,7 @@ class PermissionPresetGateway(Protocol):
         name: str | None,
         description: str | None,
         flags: dict[str, Any] | None,
+        replace: bool = False,
     ) -> PermissionPresetView | None: ...
 
     async def delete_preset(self, *, preset_id: str, user_id: str) -> bool: ...

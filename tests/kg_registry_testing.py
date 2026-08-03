@@ -365,6 +365,23 @@ class _InMemoryCognitiveSourceStore:
     ) -> tuple[str, ...]:
         return await self.append_many(records)
 
+    async def sealed_birth_payloads_in_context(
+        self,
+        _context: object,
+        board_id: str,
+        keys: tuple[tuple[str, str, int], ...],
+    ) -> dict[tuple[str, str, int], dict[str, Any]]:
+        wanted = set(keys)
+        sealed: dict[tuple[str, str, int], dict[str, Any]] = {}
+        for record in self.records:
+            if record.board_id != board_id:
+                continue
+            key = (record.node_type, record.node_id, record.generation)
+            if key not in wanted or key in sealed:
+                continue
+            sealed[key] = dict(record.payload or {})
+        return sealed
+
     async def enumerate(self, board_id: str):
         return tuple(
             sorted(

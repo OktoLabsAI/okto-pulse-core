@@ -232,7 +232,8 @@ class McpGetBoardDefaultConfigDiffUseCase:
         uow: PulseUnitOfWork,
     ) -> _DataResult:
         data = await uow.services.default_board_config.get_board_diff(
-            board_id=command.board_id
+            board_id=command.board_id,
+            uow=uow,
         )
         return _DataResult(data)
 

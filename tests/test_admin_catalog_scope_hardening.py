@@ -24,7 +24,6 @@ from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.application.use_cases.import_export import (
     ImportDesignSystemsCommand,
     ImportDesignSystemsUseCase,
-    ImportItemError,
 )
 from okto_pulse.core.services.amendment_revision_api import (
     AmendmentRevisionApiError,
@@ -216,7 +215,7 @@ async def test_screen_mockup_foreign_parent_stops_before_gate_and_entity_writer(
 
 
 @pytest.mark.asyncio
-async def test_design_system_import_preflights_every_inline_board_before_any_catalog_call():
+async def test_design_system_import_normalizes_inline_source_without_board_access():
     catalog = SimpleNamespace(
         list_catalog=AsyncMock(return_value=[]),
         create_design_system=AsyncMock(),
@@ -235,26 +234,30 @@ async def test_design_system_import_preflights_every_inline_board_before_any_cat
         ),
     )
 
-    with pytest.raises(ImportItemError) as exc:
-        await ImportDesignSystemsUseCase().execute(
-            ImportDesignSystemsCommand(
-                items=[
-                    {"title": "valid global", "scope": "global"},
-                    {
-                        "title": "foreign inline",
-                        "scope": "inline",
-                        "board_id": "foreign-board",
-                    },
-                ]
-            ),
-            actor=ActorContext("attacker", "rest", realm_id="local"),
-            uow=uow,
-        )
+    result = await ImportDesignSystemsUseCase().execute(
+        ImportDesignSystemsCommand(
+            items=[
+                {"title": "valid global", "scope": "global"},
+                {
+                    "title": "foreign inline",
+                    "scope": "inline",
+                    "board_id": "foreign-board",
+                },
+            ]
+        ),
+        actor=ActorContext("attacker", "rest", realm_id="local"),
+        uow=uow,
+    )
 
-    assert exc.value.index == 1
+    assert result.created == 2
+    uow.boards.get.assert_not_awaited()
     catalog.list_catalog.assert_not_awaited()
-    catalog.create_design_system.assert_not_awaited()
-    uow.commit.assert_not_awaited()
+    assert catalog.create_design_system.await_count == 2
+    assert all(
+        call.kwargs["scope"] == "global" and call.kwargs["board_id"] is None
+        for call in catalog.create_design_system.await_args_list
+    )
+    uow.commit.assert_awaited_once()
     uow.rollback.assert_not_awaited()
 
 
@@ -284,4 +287,35 @@ async def test_default_config_diff_rejects_foreign_board_before_diff_service():
     assert exc.value.code == "board_not_found"
     assert exc.value.status_code == 404
     default_config.get_board_diff.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_default_config_diff_reuses_authenticated_request_uow():
+    board = SimpleNamespace(
+        id="owned-board",
+        owner_id="owner",
+        realm_id="local",
+    )
+    default_config = SimpleNamespace(
+        get_board_diff=AsyncMock(return_value={"fields": []})
+    )
+    uow = _uow(
+        boards={"owned-board": board},
+        services=SimpleNamespace(
+            shares=_shares(),
+            default_board_config=default_config,
+        ),
+    )
+
+    result = await GetBoardDefaultConfigDiffUseCase().execute(
+        DefaultBoardConfigCommand(board_id="owned-board"),
+        actor=ActorContext("owner", "rest", realm_id="local"),
+        uow=uow,
+    )
+
+    assert result.data == {"fields": []}
+    default_config.get_board_diff.assert_awaited_once_with(
+        board_id="owned-board",
+        uow=uow,
+    )
 

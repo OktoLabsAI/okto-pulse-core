@@ -40,16 +40,20 @@ from okto_pulse.core.runtime_context import (
 )
 
 __all__ = [
+    "COGNITIVE_SOURCE_SEALED_BIRTH_FIELDS",
     "CognitiveSourceConflict",
     "CognitiveSourceError",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
+    "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
+    "cognitive_source_semantic_key",
     "latest_cognitive_source_records",
     "register_cognitive_source_store",
     "require_cognitive_source_store",
     "reset_cognitive_source_store_for_tests",
     "resolve_cognitive_source_store",
+    "restore_sealed_birth_fields",
 ]
 
 
@@ -114,6 +118,17 @@ COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS: frozenset[str] = frozenset(
         "relevance_score",
     }
 )
+
+
+#: Payload fields that record WHEN the assertion was first made, not what it
+#: says. Consolidation re-derives a whole birth payload whenever it believes a
+#: node is new — a legitimate belief once the graph projection has lost the
+#: node (restore from an older copy, targeted removal, rebuild, DLQ replay).
+#: The durable ledger still holds that birth, and BR2 makes the ledger the
+#: source of truth, so its sealed value wins over the re-derived one. These
+#: stay INSIDE the fingerprint: a birth stamp is part of the assertion's
+#: identity, which is exactly why it may never be silently re-minted.
+COGNITIVE_SOURCE_SEALED_BIRTH_FIELDS: frozenset[str] = frozenset({"created_at"})
 
 
 def canonical_cognitive_source_fingerprint(
@@ -207,6 +222,89 @@ class CognitiveSourceRecord:
         object.__setattr__(self, "source_revision", revision)
         object.__setattr__(self, "evidence_refs", evidence_refs)
         object.__setattr__(self, "record_fingerprint", fingerprint)
+
+
+SemanticNodeKey = tuple[str, str, int]
+
+
+def cognitive_source_semantic_key(record: Mapping[str, Any]) -> SemanticNodeKey:
+    """Return the ``(node_type, node_id, generation)`` key of a record draft.
+
+    Board scoping is implicit: one consolidation commit writes one board.
+    """
+
+    return (
+        str(record.get("node_type") or ""),
+        str(record.get("node_id") or ""),
+        int(record.get("generation") or 0),
+    )
+
+
+@dataclass(frozen=True)
+class SealedBirthRestoration:
+    """One re-derived birth field replaced by its sealed durable value."""
+
+    node_type: str
+    node_id: str
+    generation: int
+    field: str
+    rederived: Any
+    sealed: Any
+
+
+def restore_sealed_birth_fields(
+    records: Iterable[Mapping[str, Any]],
+    sealed_payloads: Mapping[SemanticNodeKey, Mapping[str, Any]],
+) -> tuple[tuple[dict[str, Any], ...], tuple[SealedBirthRestoration, ...]]:
+    """Re-seat re-derived birth fields on the values the ledger already sealed.
+
+    Consolidation builds a fresh birth payload for every node it materializes,
+    stamping ``created_at`` from the wall clock. That is right for a genuinely
+    new assertion and wrong for one the durable ledger already recorded: the
+    re-minted stamp changes the record fingerprint, so the append re-presents a
+    sealed immutable revision with divergent content and fails closed
+    (``cognitive_source_replay_conflict``), dead-lettering the consolidation.
+
+    Restoring the sealed value makes the append byte-identical to the record
+    already stored, so the existing idempotency path accepts it. Divergence in
+    the assertion itself still changes the fingerprint and still fails closed —
+    this narrows what counts as a replay, it does not weaken the guard.
+
+    Returns the reconciled drafts plus every restoration performed, so the
+    caller can log drift instead of healing it silently.
+    """
+
+    reconciled: list[dict[str, Any]] = []
+    restorations: list[SealedBirthRestoration] = []
+    for record in records:
+        draft = dict(record)
+        sealed = sealed_payloads.get(cognitive_source_semantic_key(draft))
+        if not sealed:
+            reconciled.append(draft)
+            continue
+        payload = dict(draft.get("payload") or {})
+        changed = False
+        for name in sorted(COGNITIVE_SOURCE_SEALED_BIRTH_FIELDS):
+            if name not in sealed or name not in payload:
+                continue
+            if payload[name] == sealed[name]:
+                continue
+            restorations.append(
+                SealedBirthRestoration(
+                    node_type=str(draft.get("node_type") or ""),
+                    node_id=str(draft.get("node_id") or ""),
+                    generation=int(draft.get("generation") or 0),
+                    field=name,
+                    rederived=payload[name],
+                    sealed=sealed[name],
+                )
+            )
+            payload[name] = sealed[name]
+            changed = True
+        if changed:
+            draft["payload"] = payload
+        reconciled.append(draft)
+    return tuple(reconciled), tuple(restorations)
 
 
 _CognitiveRecordT = TypeVar("_CognitiveRecordT")
@@ -358,6 +456,26 @@ class CognitiveSourceStore(Protocol):
         outer UOW; transaction completion remains the caller's responsibility.
         A raised exception makes the complete outer UOW uncommittable by the
         consolidation contract, so partial batch publication is forbidden.
+        """
+        ...
+
+    async def sealed_birth_payloads_in_context(
+        self,
+        context: object,
+        board_id: str,
+        keys: tuple[SemanticNodeKey, ...],
+    ) -> Mapping[SemanticNodeKey, Mapping[str, Any]]:
+        """Return the EARLIEST sealed payload for each ``(type, id, generation)``.
+
+        The earliest record is the one that carries the assertion's birth, so
+        this is what :func:`restore_sealed_birth_fields` reconciles against.
+        Keys with no durable history are simply absent from the result — that
+        is a genuinely new node, not a failure.
+
+        Implementations MUST read through ``context`` for the same reason
+        :meth:`append_many_in_context` does: opening a second connection can
+        self-deadlock against the caller's SQLite snapshot/writer slot. This
+        operation never writes and never completes the outer UOW.
         """
         ...
 

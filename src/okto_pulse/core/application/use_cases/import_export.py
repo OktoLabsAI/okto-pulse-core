@@ -159,15 +159,22 @@ def validate_items(
 @dataclass
 class ImportResult:
     created: int = 0
+    updated: int = 0
+    replaced: int = 0
     skipped: list[dict[str, Any]] = field(default_factory=list)
 
     def payload(self, *, dry_run: bool) -> dict[str, Any]:
-        return {
+        payload = {
             "created": self.created,
             "skipped": self.skipped,
             "errors": [],
             "dry_run": dry_run,
         }
+        if self.updated:
+            payload["updated"] = self.updated
+        if self.replaced:
+            payload["replaced"] = self.replaced
+        return payload
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
@@ -213,6 +220,12 @@ async def _finalize(uow: PulseUnitOfWork, *, dry_run: bool) -> None:
 
 def _norm_key(value: str | None) -> str:
     return (value or "").strip().lower()
+
+
+def _item_value(item: Any, name: str, default: Any = None) -> Any:
+    if isinstance(item, dict):
+        return item.get(name, default)
+    return getattr(item, name, default)
 
 
 # ===========================================================================
@@ -262,8 +275,10 @@ class ImportGuidelinesUseCase:
 
 
 def _design_system_export_item(serialized: dict[str, Any]) -> dict[str, Any]:
-    """serialize_design_system fields minus id / version / owner_id / timestamps."""
+    """Portable Design System identity plus its complete domain payload."""
     return {
+        "id": serialized["id"],
+        "version": serialized["version"],
         "title": serialized["title"],
         "scope": serialized["scope"],
         "board_id": serialized["board_id"],
@@ -343,13 +358,10 @@ class ImportDesignSystemsCommand:
 
 
 class ImportDesignSystemsUseCase:
-    """Recreate Design Systems through ``DesignSystemService.create_design_system``
-    (version restarts at 1, exactly like the normal POST).
+    """Import complete Design Systems into the GLOBAL catalog.
 
-    Conflict policy — natural key = title (case-insensitive) within the catalog
-    partition ``(scope, board_id)``: a matching title is reported as skipped
-    (``duplicate_title``). Service-level validation failures (invalid scope /
-    status / missing title / inline without board) raise ``ImportItemError``.
+    Matching stable ids create a new version. New ids are preserved. Imported
+    ``scope`` and ``board_id`` values never create an inline Design System.
     """
 
     async def execute(
@@ -361,81 +373,53 @@ class ImportDesignSystemsUseCase:
 
         service = uow.services.design_systems
         result = ImportResult()
-        existing: dict[tuple[str, str | None], set[str]] = {}
-        inline_boards: set[str] = set()
-
-        # Resolve every inline board before the first catalog writer.  Foreign,
-        # cross-realm and viewer-only targets therefore have zero downstream
-        # create calls even when they appear after valid global items.
+        imported_by_id: dict[str, Any] = {}
         for index, item in enumerate(command.items):
-            scope = item.get("scope") or "global"
-            if scope not in ("global", "inline"):
-                raise ImportItemError(
-                    index, f"Unsupported design system scope '{scope}'."
-                )
-            if scope != "inline":
-                continue
-            board_id = item.get("board_id")
-            if not board_id:
-                raise ImportItemError(
-                    index,
-                    {
-                        "error": "design_system_inline_requires_board",
-                        "code": "design_system_inline_requires_board",
-                        "message": "Inline Design Systems require a board_id (AC2).",
-                        "status_code": 422,
-                    },
-                )
-            if board_id not in inline_boards:
-                try:
-                    await _require_board_access(
-                        uow,
-                        board_id,
-                        actor,
-                        write=True,
-                    )
-                except EntityNotFoundError:
-                    raise ImportItemError(
-                        index, f"Board '{board_id}' not found."
-                    ) from None
-                inline_boards.add(board_id)
-
-        async def _titles_for(scope: str, board_id: str | None) -> set[str]:
-            partition = (scope, board_id)
-            if partition not in existing:
-                catalog = await service.list_catalog(
-                    scope=scope,
-                    board_id=board_id,
-                    owner_id=actor.actor_id if scope == "global" else None,
-                )
-                existing[partition] = {_norm_key(item.title) for item in catalog}
-            return existing[partition]
-
-        for index, item in enumerate(command.items):
-            scope = item.get("scope") or "global"
-            if scope not in ("global", "inline"):
-                raise ImportItemError(index, f"Unsupported design system scope '{scope}'.")
-            board_id = item.get("board_id") if scope == "inline" else None
-            title_key = _norm_key(item.get("title"))
-            titles = await _titles_for(scope, board_id)
-            if title_key and title_key in titles:
-                result.skipped.append(
-                    {"index": index, "title": item.get("title"), "reason": "duplicate_title"}
-                )
-                continue
+            design_system_id = item.get("id")
             try:
-                await service.create_design_system(
-                    actor.actor_id,
-                    title=item.get("title") or "",
-                    scope=scope,
-                    board_id=item.get("board_id"),
-                    payload=item.get("payload"),
-                    status=item.get("status") or "active",
+                existing = (
+                    imported_by_id.get(design_system_id)
+                    if design_system_id
+                    else None
                 )
+                if design_system_id and existing is None:
+                    existing = await service.get_design_system(design_system_id)
+                if existing is not None:
+                    if existing.owner_id != actor.actor_id:
+                        raise DesignSystemError(
+                            "design_system_not_found",
+                            f"Design System '{design_system_id}' was not found.",
+                            404,
+                            {"design_system_id": design_system_id},
+                        )
+                    await service.update_design_system(
+                        design_system_id,
+                        actor.actor_id,
+                        allow_owned_global_without_link=True,
+                        title=item.get("title") or "",
+                        payload=item.get("payload"),
+                        status=item.get("status") or "active",
+                        force_version_bump=True,
+                        normalize_global=True,
+                        replace_fields=True,
+                    )
+                    result.updated += 1
+                else:
+                    created = await service.create_design_system(
+                        actor.actor_id,
+                        title=item.get("title") or "",
+                        scope="global",
+                        board_id=None,
+                        payload=item.get("payload"),
+                        status=item.get("status") or "active",
+                        design_system_id=design_system_id,
+                        version=int(item.get("version") or 1),
+                    )
+                    if design_system_id:
+                        imported_by_id[design_system_id] = created
+                    result.created += 1
             except DesignSystemError as exc:
                 raise ImportItemError(index, exc.to_dict()) from exc
-            titles.add(title_key)
-            result.created += 1
 
         await _finalize(uow, dry_run=command.dry_run)
         return result
@@ -446,8 +430,9 @@ class ImportDesignSystemsUseCase:
 # ===========================================================================
 
 
+@dataclass(frozen=True)
 class ExportPresetsCommand:
-    __slots__ = ()
+    preset_id: str | None = None
 
 
 class ExportPresetsUseCase:
@@ -460,12 +445,18 @@ class ExportPresetsUseCase:
     ) -> dict[str, Any]:
         gateway = uow.services.permission_presets
         presets = await gateway.list_presets(user_id=actor.actor_id)
+        if command.preset_id:
+            presets = [preset for preset in presets if preset.id == command.preset_id]
+            if not presets:
+                raise EntityNotFoundError("preset", command.preset_id)
         items = [
             {
+                "id": preset.id,
                 "name": preset.name,
                 "description": preset.description,
                 "flags": preset.flags,
                 "is_builtin": preset.is_builtin,
+                "base_preset_id": preset.base_preset_id,
             }
             for preset in presets
         ]
@@ -476,15 +467,14 @@ class ExportPresetsUseCase:
 class ImportPresetsCommand:
     items: list[Any]  # PresetCreate-shaped (name/description/flags)
     dry_run: bool = False
+    replace_existing: bool = False
 
 
 class ImportPresetsUseCase:
-    """Recreate presets through the permission-preset gateway's ``create_preset``
-    (same path as POST /presets — always a NEW custom preset owned by the actor).
+    """Import presets with explicit confirmation for same-id replacement.
 
-    Conflict policy — natural key = preset name (case-insensitive) among the
-    presets the actor can already see (built-ins + own custom): matching names
-    are reported as skipped (``duplicate_name``).
+    Built-ins remain immutable. Legacy id-less envelopes retain name-based
+    duplicate protection and create a fresh custom preset otherwise.
     """
 
     async def execute(
@@ -492,24 +482,69 @@ class ImportPresetsUseCase:
     ) -> ImportResult:
         gateway = uow.services.permission_presets
         result = ImportResult()
-        existing = {
-            _norm_key(preset.name)
-            for preset in await gateway.list_presets(user_id=actor.actor_id)
-        }
+        visible = await gateway.list_presets(user_id=actor.actor_id)
+        existing_by_id = {preset.id: preset for preset in visible}
+        existing_names = {_norm_key(preset.name) for preset in visible}
         for index, item in enumerate(command.items):
-            name_key = _norm_key(getattr(item, "name", None))
-            if name_key in existing:
+            preset_id = _item_value(item, "id")
+            name = _item_value(item, "name")
+            name_key = _norm_key(name)
+            existing = existing_by_id.get(preset_id) if preset_id else None
+            if preset_id and existing is None and await gateway.get_preset(preset_id=preset_id):
+                raise ImportItemError(
+                    index,
+                    {
+                        "code": "preset_id_conflict",
+                        "message": "The preset id already belongs to another catalog.",
+                        "id": preset_id,
+                    },
+                )
+            if existing is not None:
+                if existing.is_builtin:
+                    result.skipped.append(
+                        {
+                            "index": index,
+                            "id": preset_id,
+                            "name": name,
+                            "reason": "builtin_not_replaceable",
+                        }
+                    )
+                    continue
+                if not command.replace_existing:
+                    result.skipped.append(
+                        {
+                            "index": index,
+                            "id": preset_id,
+                            "name": name,
+                            "reason": "replacement_requires_confirmation",
+                        }
+                    )
+                    continue
+                await gateway.update_preset(
+                    preset_id=preset_id,
+                    user_id=actor.actor_id,
+                    name=name,
+                    description=_item_value(item, "description"),
+                    flags=_item_value(item, "flags"),
+                    replace=True,
+                )
+                result.replaced += 1
+                continue
+            if not preset_id and name_key in existing_names:
                 result.skipped.append(
-                    {"index": index, "name": item.name, "reason": "duplicate_name"}
+                    {"index": index, "name": name, "reason": "duplicate_name"}
                 )
                 continue
-            await gateway.create_preset(
+            created = await gateway.create_preset(
                 user_id=actor.actor_id,
-                name=item.name,
-                description=item.description,
-                flags=item.flags,
+                name=name,
+                description=_item_value(item, "description", "") or "",
+                flags=_item_value(item, "flags"),
+                preset_id=preset_id,
             )
-            existing.add(name_key)
+            if preset_id:
+                existing_by_id[preset_id] = created
+            existing_names.add(name_key)
             result.created += 1
 
         await _finalize(uow, dry_run=command.dry_run)

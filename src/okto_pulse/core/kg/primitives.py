@@ -4626,6 +4626,77 @@ def _cognitive_source_record_kwargs(
     }
 
 
+async def _restore_sealed_birth_fields(
+    board_id: str,
+    session_id: str,
+    records: list[dict],
+    *,
+    context: object,
+    store: object,
+) -> list[dict]:
+    """Re-seat re-derived birth stamps on what the durable ledger already sealed.
+
+    The graph is a projection and may fall behind the ledger (restore from an
+    older copy, targeted removal, rebuild, DLQ replay). Consolidation then
+    materializes a node it believes to be new and stamps a fresh ``created_at``,
+    which re-presents an immutable revision with divergent content and poisons
+    the queue fail-closed (observed live on decision_059d5828). BR2 makes the
+    relational ledger the authority, so its sealed birth wins.
+
+    Fail-closed: a store that cannot answer aborts the commit. Degrading to the
+    re-derived stamp would reintroduce exactly the corruption this prevents.
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        CognitiveSourceError,
+        cognitive_source_semantic_key,
+        restore_sealed_birth_fields,
+    )
+
+    lookup = getattr(store, "sealed_birth_payloads_in_context", None)
+    if not callable(lookup):
+        raise CognitiveSourceError(
+            "cognitive_source_birth_lookup_unsupported",
+            board_id=board_id,
+            remediation=(
+                "Install a CognitiveSourceStore adapter exposing "
+                "sealed_birth_payloads_in_context(); the durable ledger is the "
+                "authority for a cognitive node's birth stamp and consolidation "
+                "may not re-mint it from the graph projection."
+            ),
+        )
+
+    keys = tuple(dict.fromkeys(cognitive_source_semantic_key(r) for r in records))
+    sealed = await lookup(context, board_id, keys)
+    reconciled, restorations = restore_sealed_birth_fields(records, sealed or {})
+    for restoration in restorations:
+        # WARNING, not INFO: a restoration means the graph projection lost a
+        # node the ledger still holds. The append is safe now, but the graph
+        # carries a birth stamp that a rebuild will overwrite.
+        logger.warning(
+            "kg.cognitive_source.birth_stamp_restored board=%s session=%s "
+            "node_id=%s field=%s rederived=%s sealed=%s",
+            board_id,
+            session_id,
+            restoration.node_id,
+            restoration.field,
+            restoration.rederived,
+            restoration.sealed,
+            extra={
+                "event": "kg.cognitive_source.birth_stamp_restored",
+                "board_id": board_id,
+                "session_id": session_id,
+                "node_id": restoration.node_id,
+                "node_type": restoration.node_type,
+                "generation": restoration.generation,
+                "field": restoration.field,
+                "rederived_value": str(restoration.rederived),
+                "sealed_value": str(restoration.sealed),
+            },
+        )
+    return list(reconciled)
+
+
 async def _append_cognitive_source_records(
     board_id: str,
     session_id: str,
@@ -4653,8 +4724,10 @@ async def _append_cognitive_source_records(
 
     try:
         resolved_store = store or require_cognitive_source_store()
-        source_records = tuple(CognitiveSourceRecord(**kwargs) for kwargs in records)
         if context is None:
+            source_records = tuple(
+                CognitiveSourceRecord(**kwargs) for kwargs in records
+            )
             await resolved_store.append_many(source_records)
         else:
             append_in_context = getattr(
@@ -4671,6 +4744,16 @@ async def _append_cognitive_source_records(
                         "the caller-owned relational unit of work."
                     ),
                 )
+            records = await _restore_sealed_birth_fields(
+                board_id,
+                session_id,
+                records,
+                context=context,
+                store=resolved_store,
+            )
+            source_records = tuple(
+                CognitiveSourceRecord(**kwargs) for kwargs in records
+            )
             await append_in_context(context, source_records)
     except CognitiveSourceError as exc:
         # OR1: structured failure log — the operator must distinguish

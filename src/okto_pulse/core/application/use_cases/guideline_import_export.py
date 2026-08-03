@@ -19,8 +19,8 @@ the inbound surfaces migrate in SK-B B13/B14.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -38,18 +38,29 @@ from okto_pulse.core.application.use_cases.policy_governance import (
 )
 from okto_pulse.core.domain.guideline_import_export import (
     GuidelineExportEnvelope,
+    GuidelineExportAggregate,
+    GuidelineExportRevision,
+    GuidelineExportSnapshot,
     GuidelineImportPlan,
     GuidelineImportResult,
     GuidelineImportTransactionStatus,
     build_guideline_export_v3,
+    canonical_guideline_sha256,
     parse_guideline_export,
     plan_guideline_import,
 )
 from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_ID_MAX_LENGTH,
     POLICY_BOARD_ID_MAX_LENGTH,
+    GuidelineHead,
+    GuidelineRevision,
     GuidelineScope,
     normalize_policy_bounded_text,
+)
+from okto_pulse.core.domain.guideline_lifecycle import (
+    GuidelineVersionBump,
+    SemanticVersion,
+    classify_guideline_change,
 )
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
@@ -137,6 +148,150 @@ def _target_board_ids(
     return tuple(sorted(board_ids))
 
 
+def _normalize_guideline_import_global(
+    envelope: GuidelineExportEnvelope,
+) -> GuidelineExportEnvelope:
+    """Return a canonical envelope whose identities belong to the global catalog.
+
+    Binding histories remain inert provenance; only the guideline identity is
+    normalized. Rebuilding the envelope reseals its content digest after the
+    intentional destination transformation.
+    """
+
+    aggregates = tuple(
+        replace(
+            aggregate,
+            identity=replace(
+                aggregate.identity,
+                scope=GuidelineScope.GLOBAL,
+                board_id=None,
+            ),
+            migration_notes=tuple(
+                sorted(
+                    {
+                        *aggregate.migration_notes,
+                        "import_destination_normalized_global",
+                    }
+                )
+            ),
+        )
+        for aggregate in envelope.guidelines
+    )
+    return build_guideline_export_v3(
+        GuidelineExportSnapshot(aggregates=aggregates, source_board_id=None),
+        exported_at=envelope.exported_at,
+    )
+
+
+def _version_existing_guideline_ids(
+    envelope: GuidelineExportEnvelope,
+    *,
+    existing: GuidelineExportSnapshot,
+    target_owner_id: str,
+    imported_at: datetime,
+) -> GuidelineExportEnvelope:
+    """Append the imported head as a new immutable local revision on ID match.
+
+    The destination history remains authoritative. The imported head supplies
+    the complete content, policies, tags, and custom metric definitions for one
+    new revision. Retired identities retain the governed fail-closed behavior.
+    """
+
+    existing_by_id = {
+        aggregate.guideline_id: aggregate for aggregate in existing.aggregates
+    }
+    transformed: list[GuidelineExportAggregate] = []
+    for source in envelope.guidelines:
+        current = existing_by_id.get(source.guideline_id)
+        if (
+            current is None
+            or current.identity.owner_id != target_owner_id
+            or current.identity.scope is not GuidelineScope.GLOBAL
+            or current.retirement is not None
+            or source.retirement is not None
+        ):
+            transformed.append(source)
+            continue
+
+        previous = current.revisions[-1].revision
+        imported_head = source.revisions[-1].revision
+        bump = classify_guideline_change(
+            previous,
+            title=imported_head.title,
+            content=imported_head.content,
+            tags=imported_head.tags,
+            metrics=imported_head.metrics,
+        ) or GuidelineVersionBump.PATCH
+        semantic_version = str(
+            SemanticVersion.parse(previous.semantic_version).minimum_successor(bump)
+        )
+        created_at = max(
+            imported_at,
+            previous.created_at + timedelta(microseconds=1),
+            current.head.updated_at + timedelta(microseconds=1),
+        )
+        revision_number = previous.revision_number + 1
+        revision_id = "imp-" + canonical_guideline_sha256(
+            {
+                "contract": "guideline-same-id-import-version/v1",
+                "guideline_id": source.guideline_id,
+                "parent_revision_id": previous.revision_id,
+                "semantic_version": semantic_version,
+                "source_content_digest": envelope.content_digest,
+            }
+        )[:32]
+        revision = GuidelineRevision(
+            revision_id=revision_id,
+            guideline_id=source.guideline_id,
+            revision_number=revision_number,
+            semantic_version=semantic_version,
+            title=imported_head.title,
+            content=imported_head.content,
+            metrics=imported_head.metrics,
+            created_by=target_owner_id,
+            created_at=created_at,
+            parent_revision_id=previous.revision_id,
+            tags=imported_head.tags,
+        )
+        exported_revision = GuidelineExportRevision(
+            revision=revision,
+            published_head_revision=revision_number,
+            published_head_updated_at=created_at,
+        )
+        notes = {
+            *current.migration_notes,
+            *source.migration_notes,
+            "same_id_import_version_bump",
+        }
+        if source.bindings:
+            notes.add("source_binding_history_not_applied_to_existing_identity")
+        transformed.append(
+            GuidelineExportAggregate(
+                identity=current.identity,
+                revisions=(*current.revisions, exported_revision),
+                head=GuidelineHead(
+                    guideline_id=source.guideline_id,
+                    revision_id=revision_id,
+                    revision_number=revision_number,
+                    semantic_version=semantic_version,
+                    head_revision=revision_number,
+                    updated_at=created_at,
+                ),
+                retirement=None,
+                bindings=current.bindings,
+                history_status=current.history_status,
+                migration_notes=tuple(sorted(notes)),
+            )
+        )
+    return build_guideline_export_v3(
+        GuidelineExportSnapshot(
+            aggregates=tuple(transformed),
+            source_board_id=None,
+        ),
+        exported_at=envelope.exported_at,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ExportGuidelinePolicyCommand:
     """Select one actor-owned policy snapshot for canonical v3 export."""
@@ -219,7 +374,7 @@ ExportGuidelinePolicyV2UseCase = ExportGuidelinePolicyV3UseCase
 
 @dataclass(frozen=True, slots=True)
 class ImportGuidelinePolicyCommand:
-    """Fully encoded v1/v2/v3 envelope plus an optional target-board remap."""
+    """Fully encoded v1/v2/v3 envelope plus an optional authorization board."""
 
     envelope: Mapping[str, Any]
     target_board_id: str | None = None
@@ -248,7 +403,7 @@ class ImportGuidelinePolicyResult:
 
 
 class ImportGuidelinePolicyUseCase:
-    """Dispatch, authorize, plan, and atomically apply a v1/v2/v3 import."""
+    """Dispatch, authorize, and atomically import into the global catalog."""
 
     def __init__(self, *, clock: Clock = _utc_now) -> None:
         self._clock = clock
@@ -272,17 +427,17 @@ class ImportGuidelinePolicyUseCase:
             for exported_revision in aggregate.revisions
         ):
             _require_capability(actor, METRICS_AUTHOR)
-        target_boards = _target_board_ids(
-            envelope,
-            target_board_id=command.target_board_id,
-        )
-        for board_id in target_boards:
+        # The board parameter supplies the permission context for the UI route,
+        # but it is never an import destination. Guideline identities are always
+        # normalized to global and imported binding histories stay inert.
+        if command.target_board_id is not None:
             await _require_board_access(
                 uow,
-                board_id,
+                command.target_board_id,
                 actor,
                 write=True,
             )
+        envelope = _normalize_guideline_import_global(envelope)
 
         port = uow.services.guidelines.policy_persistence()
         source_guideline_ids = tuple(
@@ -291,12 +446,18 @@ class ImportGuidelinePolicyUseCase:
         existing = await port.load_guideline_import_snapshot(
             guideline_ids=source_guideline_ids,
         )
+        envelope = _version_existing_guideline_ids(
+            envelope,
+            existing=existing,
+            target_owner_id=actor.actor_id,
+            imported_at=operation_at,
+        )
         plan = plan_guideline_import(
             envelope,
             existing_aggregates=existing.aggregates,
             dry_run=command.dry_run,
             target_owner_id=actor.actor_id,
-            target_board_id=command.target_board_id,
+            target_board_id=None,
         )
 
         if plan.transaction_status is GuidelineImportTransactionStatus.ROLLED_BACK:

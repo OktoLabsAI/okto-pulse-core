@@ -629,9 +629,15 @@ class _CoreTestPermissionPresetGateway:
         )
         return [_test_preset_view(row) for row in result.scalars().all()]
 
-    async def create_preset(self, *, user_id, name, description, flags):
+    async def get_preset(self, *, preset_id):
+        preset = await self._session.get(PermissionPreset, preset_id)
+        return _test_preset_view(preset) if preset is not None else None
+
+    async def create_preset(
+        self, *, user_id, name, description, flags, preset_id=None
+    ):
         preset = PermissionPreset(
-            id=str(uuid.uuid4()),
+            id=preset_id or str(uuid.uuid4()),
             owner_id=user_id,
             name=name,
             description=description or None,
@@ -675,7 +681,9 @@ class _CoreTestPermissionPresetGateway:
         await self._session.refresh(preset)
         return _test_preset_view(preset)
 
-    async def update_preset(self, *, preset_id, user_id, name, description, flags):
+    async def update_preset(
+        self, *, preset_id, user_id, name, description, flags, replace=False
+    ):
         preset = await self._session.get(PermissionPreset, preset_id)
         if preset is None:
             return None
@@ -685,9 +693,9 @@ class _CoreTestPermissionPresetGateway:
             raise PermissionError("You can only modify your own presets")
         if name is not None:
             preset.name = name
-        if description is not None:
+        if replace or description is not None:
             preset.description = description
-        if flags is not None:
+        if replace or flags is not None:
             preset.flags = copy.deepcopy(flags)
         await self._session.flush()
         await self._session.refresh(preset)

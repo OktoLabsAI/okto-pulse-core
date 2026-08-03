@@ -359,7 +359,7 @@ async def test_default_export_selects_actor_catalog_instead_of_empty_selection()
 
 
 @pytest.mark.asyncio
-async def test_import_authorizes_every_target_board_before_adapter_access() -> None:
+async def test_global_import_does_not_require_source_board_access() -> None:
     payload = _payload(
         _aggregate(
             guideline_id="guideline-1",
@@ -385,16 +385,18 @@ async def test_import_authorizes_every_target_board_before_adapter_access() -> N
         },
     )
 
-    with pytest.raises(EntityNotFoundError):
-        await ImportGuidelinePolicyUseCase(clock=lambda: NOW).execute(
-            ImportGuidelinePolicyCommand(envelope=payload),
-            actor=ACTOR,
-            uow=uow,
-        )
+    result = await ImportGuidelinePolicyUseCase(clock=lambda: NOW).execute(
+        ImportGuidelinePolicyCommand(envelope=payload, dry_run=True),
+        actor=ACTOR,
+        uow=uow,
+    )
 
-    assert uow.boards.calls == ["board-1", "board-2"]
-    assert uow.guidelines.policy_persistence_calls == 0
-    assert port.export_calls == []
+    assert uow.boards.calls == []
+    assert all(
+        entry.aggregate.identity.scope is GuidelineScope.GLOBAL
+        and entry.aggregate.identity.board_id is None
+        for entry in result.plan.entries
+    )
     assert port.apply_calls == []
 
 
@@ -525,7 +527,7 @@ async def test_dry_run_remaps_owner_and_has_no_write_or_transaction_finalize() -
 
 
 @pytest.mark.asyncio
-async def test_target_remap_stores_source_binding_as_inert_candidate_only() -> None:
+async def test_board_context_imports_global_and_keeps_source_binding_inert() -> None:
     imported = _aggregate(
         board_id="source-board",
         with_binding=True,
@@ -548,18 +550,19 @@ async def test_target_remap_stores_source_binding_as_inert_candidate_only() -> N
 
     entry = output.plan.entries[0]
     assert entry.aggregate.identity.owner_id == ACTOR.actor_id
-    assert entry.aggregate.identity.board_id == "target-board"
+    assert entry.aggregate.identity.scope is GuidelineScope.GLOBAL
+    assert entry.aggregate.identity.board_id is None
     assert entry.aggregate.bindings[0].materialization.value == "candidate"
     assert entry.binding_candidates[0].source_board_id == "source-board"
-    assert entry.binding_candidates[0].target_board_id == "target-board"
+    assert entry.binding_candidates[0].target_board_id == "source-board"
     assert output.plan.live_binding_writes == ()
     assert port.import_snapshot_calls == [{"guideline_ids": ("guideline-1",)}]
     assert port.apply_calls == []
 
 
 @pytest.mark.asyncio
-async def test_conflicting_semver_rolls_back_without_apply_or_overwrite() -> None:
-    imported = _aggregate(content="new body")
+async def test_same_id_changed_import_appends_a_new_revision_without_overwrite() -> None:
+    imported = _aggregate(content="new body", with_binding=True)
     existing = _aggregate(
         owner_id=ACTOR.actor_id,
         content="different existing body",
@@ -573,15 +576,25 @@ async def test_conflicting_semver_rolls_back_without_apply_or_overwrite() -> Non
         uow=uow,
     )
 
-    assert (
-        output.result.transaction_status is GuidelineImportTransactionStatus.ROLLED_BACK
-    )
-    assert output.result.error_code == "conflict"
-    assert output.result.conflict_count == 1
+    assert output.result.transaction_status is GuidelineImportTransactionStatus.COMMITTED
+    assert output.result.created_count == 1
+    assert output.result.conflict_count == 0
     assert output.result.overwritten_row_count == 0
-    assert port.apply_calls == []
-    assert uow.commit_count == 0
-    assert uow.rollback_count == 1
+    entry = output.plan.entries[0]
+    assert entry.aggregate.revisions[-1].revision.content == "new body"
+    assert (
+        entry.aggregate.revisions[-1].revision.metrics
+        == imported.revisions[-1].revision.metrics
+    )
+    assert entry.aggregate.revisions[-1].semantic_version == "1.0.1"
+    assert "same_id_import_version_bump" in entry.aggregate.migration_notes
+    assert (
+        "source_binding_history_not_applied_to_existing_identity"
+        in entry.aggregate.migration_notes
+    )
+    assert len(port.apply_calls) == 1
+    assert uow.commit_count == 1
+    assert uow.rollback_count == 0
 
 
 @pytest.mark.asyncio
@@ -610,7 +623,7 @@ async def test_valid_import_applies_once_and_reports_commit_only_after_commit() 
 
 
 @pytest.mark.asyncio
-async def test_exact_round_trip_is_skip_identical_with_zero_overwrite() -> None:
+async def test_exact_round_trip_creates_patch_version_with_zero_overwrite() -> None:
     aggregate = _aggregate(owner_id=ACTOR.actor_id)
     port = _Port(snapshot=GuidelineExportSnapshot(aggregates=(aggregate,)))
     uow = _Uow(port)
@@ -624,9 +637,11 @@ async def test_exact_round_trip_is_skip_identical_with_zero_overwrite() -> None:
     assert (
         output.result.transaction_status is GuidelineImportTransactionStatus.COMMITTED
     )
-    assert output.result.created_count == 0
+    assert output.result.created_count == 1
     assert output.result.skip_identical_count == 1
     assert output.result.overwritten_row_count == 0
+    assert output.plan.entries[0].aggregate.head.semantic_version == "1.0.1"
+    assert output.plan.entries[0].aggregate.head.head_revision == 2
     assert len(port.apply_calls) == 1
     assert uow.commit_count == 1
 

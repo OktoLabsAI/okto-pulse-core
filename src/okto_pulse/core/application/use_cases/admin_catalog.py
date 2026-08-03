@@ -452,7 +452,8 @@ class GetBoardDefaultConfigDiffUseCase:
                 404,
             )
         data = await uow.services.default_board_config.get_board_diff(
-            board_id=command.board_id
+            board_id=command.board_id,
+            uow=uow,
         )
         return DataResult(data)
 

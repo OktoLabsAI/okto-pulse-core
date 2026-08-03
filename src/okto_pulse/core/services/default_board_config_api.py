@@ -125,13 +125,23 @@ class DefaultBoardConfigApiService:
             template_id=template_id,
         )
 
-    async def get_board_diff(self, *, board_id: str) -> dict[str, Any]:
+    async def get_board_diff(
+        self,
+        *,
+        board_id: str,
+        uow: object | None = None,
+    ) -> dict[str, Any]:
         # R01C IMP3 drain: existence get-by-id via the edition-owned repository port
         # (R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
         # import. No owner/permission predicate here (access is enforced at the REST
         # layer); the ``board is None`` → 404 mapping is preserved exactly.
-        uow = resolve_unit_of_work_factory().wrap(self._db)
-        board = await uow.boards.get(board_id)
+        # Application use cases already own an authenticated request UoW. Reuse
+        # it when supplied: wrapping the same session again loses the actor at
+        # this Core-only seam and conflicts with Community's fail-closed
+        # semantic-subject actor binding. Direct service/MCP compatibility
+        # callers may still omit it and use the legacy wrapping path.
+        resolved_uow = uow or resolve_unit_of_work_factory().wrap(self._db)
+        board = await resolved_uow.boards.get(board_id)
         if board is None:
             raise DefaultBoardConfigurationError(
                 "board_not_found",
@@ -163,7 +173,7 @@ class DefaultBoardConfigApiService:
             try:
                 binding = await ChecklistService().get_binding(
                     board_id=board_id,
-                    persistence=uow.services.checklists,
+                    persistence=resolved_uow.services.checklists,
                 )
                 current_mode = binding.mode.value
             except ChecklistNotFoundError:

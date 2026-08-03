@@ -167,6 +167,10 @@ class _FakePermissionPresetGateway:
             )
         return views
 
+    async def get_preset(self, *, preset_id: str) -> PermissionPresetView | None:
+        preset = self._adapter._presets.get(preset_id)
+        return _preset_view(preset) if preset is not None else None
+
     async def create_preset(
         self,
         *,
@@ -174,10 +178,11 @@ class _FakePermissionPresetGateway:
         name: str,
         description: str,
         flags: dict[str, Any] | None,
+        preset_id: str | None = None,
     ) -> PermissionPresetView:
         created_at = _now()
         preset = _FakePreset(
-            id=str(uuid.uuid4()),
+            id=preset_id or str(uuid.uuid4()),
             owner_id=user_id,
             name=name,
             description=description or None,
@@ -252,6 +257,7 @@ class _FakePermissionPresetGateway:
         name: str | None,
         description: str | None,
         flags: dict[str, Any] | None,
+        replace: bool = False,
     ) -> PermissionPresetView | None:
         preset = self._adapter._presets.get(preset_id)
         if preset is None:
@@ -262,9 +268,9 @@ class _FakePermissionPresetGateway:
             raise PermissionError("You can only modify your own presets")
         if name is not None:
             preset.name = name
-        if description is not None:
+        if replace or description is not None:
             preset.description = description
-        if flags is not None:
+        if replace or flags is not None:
             if preset.base_preset_id is None:
                 preset.flags = copy.deepcopy(flags)
             else:

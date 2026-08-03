@@ -51,6 +51,7 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_lifecycle import (
     GuidelineLifecycleError,
+    GuidelineVersionBump,
     SemanticVersion,
     classify_guideline_change,
     validate_binding_transition,
@@ -661,10 +662,11 @@ class GuidelineExportAggregate:
                     metrics=revision.metrics,
                 )
                 if minimum_bump is None:
-                    raise GuidelineImportExportError(
-                        "guideline_export_revision_noop",
-                        path=f"$.revisions[{index}]",
-                    )
+                    # Imports of a stable ID are explicitly version-producing,
+                    # including byte-identical content. Native authoring still
+                    # rejects no-op patches in the lifecycle planner; this codec
+                    # only needs to represent the resulting durable history.
+                    minimum_bump = GuidelineVersionBump.PATCH
                 previous_version = SemanticVersion.parse(
                     previous_revision.semantic_version
                 )
