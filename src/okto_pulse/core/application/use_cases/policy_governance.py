@@ -66,12 +66,14 @@ from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticGuidelineAssessmentResult,
     SemanticGuidelineAssessmentSubmission,
     record_semantic_guideline_assessment,
-    semantic_binding_head_digest_v1,
-    semantic_policy_set_digest_v1,
+)
+from okto_pulse.core.domain.guideline_semantic_currentness import (
+    semantic_assessment_current_snapshot_from_context,
 )
 from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.ports.guideline_policy import (
     GuidelineImpactListQuery,
+    GuidelinePolicyDigestConflict,
     GuidelinePolicyIdempotencyConflict,
     GuidelinePolicyPersistencePort,
     GuidelineRetirementReplay,
@@ -1481,7 +1483,6 @@ class RecordSemanticGuidelineAssessmentUseCase:
                 submission.binding_id,
             )
         binding = selected[0]
-        revisions: list[GuidelineRevision] = []
         selected_revision: GuidelineRevision | None = None
         for active_binding in bindings:
             revision = await port.get_revision(
@@ -1490,7 +1491,6 @@ class RecordSemanticGuidelineAssessmentUseCase:
             )
             if revision is None:
                 raise RuntimeError("guideline_binding_revision_mismatch")
-            revisions.append(revision)
             if active_binding.binding_id == binding.binding_id:
                 selected_revision = revision
         if (
@@ -1501,16 +1501,32 @@ class RecordSemanticGuidelineAssessmentUseCase:
                 "guideline_revision",
                 submission.guideline_revision_id,
             )
+        current_snapshot = (
+            await semantic_port.resolve_semantic_assessment_current_snapshot(
+                board_id=command.board_id,
+                entity_type=submission.subject.entity_type,
+                subject_id=submission.subject.subject_id,
+                binding_id=binding.binding_id,
+                lock=True,
+            )
+        )
+        if current_snapshot is None:
+            raise EntityNotFoundError(
+                "guideline_binding",
+                submission.binding_id,
+            )
         context = SemanticGuidelineAssessmentContext(
             subject_snapshot=subject_snapshot,
             binding=binding,
             revision=selected_revision,
-            policy_set_digest=semantic_policy_set_digest_v1(
-                bindings,
-                tuple(revisions),
-            ),
-            binding_head_digest=semantic_binding_head_digest_v1(bindings),
+            policy_set_digest=current_snapshot.policy_set_digest,
+            binding_head_digest=current_snapshot.binding_head_digest,
         )
+        if (
+            semantic_assessment_current_snapshot_from_context(context)
+            != current_snapshot
+        ):
+            raise GuidelinePolicyDigestConflict("semantic_assessment_authority_stale")
         recorded_at = _aware_utc(
             command.recorded_at,
             self._clock,
