@@ -66,6 +66,7 @@ def _isolated_kg_registry():
 def _runtime_store():
     from okto_pulse.core.kg.interfaces.graph_runtime_store import (
         GraphPurgeResult,
+        GraphRuntimeBudgetSnapshot,
         GraphRuntimeState,
         GraphStorageFootprint,
     )
@@ -122,6 +123,13 @@ def _runtime_store():
                 unavailable_reason="not_exposed_by_backend",
             )
 
+        def budget_snapshot(self) -> GraphRuntimeBudgetSnapshot:
+            return GraphRuntimeBudgetSnapshot(
+                source="runtime_capability",
+                status="unavailable",
+                unavailable_reason="not_exposed_by_backend",
+            )
+
     return RuntimeStore()
 
 
@@ -134,6 +142,7 @@ def test_ts1_graph_runtime_store_contract_has_no_path_surface() -> None:
         "purge_board_graph",
         "erase_board_graph",
         "footprint",
+        "budget_snapshot",
     }
     for method_name in required_methods:
         method = getattr(GraphRuntimeStore, method_name)

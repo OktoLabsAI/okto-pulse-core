@@ -50,6 +50,7 @@ from okto_pulse.core.kg.interfaces.graph_recovery import (
 )
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphPurgeResult,
+    GraphRuntimeBudgetSnapshot,
     GraphRuntimeObservationState,
     GraphRuntimeState,
     GraphRuntimeStore,
@@ -166,6 +167,7 @@ __all__ = [
     "GraphLockContention",
     "GraphRecovery",
     "GraphPurgeResult",
+    "GraphRuntimeBudgetSnapshot",
     "GraphRuntimeObservationState",
     "GraphRuntimeState",
     "GraphRuntimeStore",

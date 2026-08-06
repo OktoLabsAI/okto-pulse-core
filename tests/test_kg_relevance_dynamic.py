@@ -493,6 +493,10 @@ def test_ts35_response_model_defaults_when_fields_missing():
             "description": "test fixture",
             "tooltip": "test fixture",
         },
+        "native_runtime_budget": {
+            "description": "test fixture",
+            "tooltip": "test fixture",
+        },
     }
     response = KGHealthResponse(**payload)
     assert response.last_decay_tick_at is None
@@ -522,6 +526,10 @@ def test_ts35_response_model_accepts_populated_new_fields():
             "operational_debt": False,
         },
         "storage_footprint_proxy": {
+            "description": "test fixture",
+            "tooltip": "test fixture",
+        },
+        "native_runtime_budget": {
             "description": "test fixture",
             "tooltip": "test fixture",
         },

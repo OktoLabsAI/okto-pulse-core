@@ -312,6 +312,7 @@ KG_HEALTH_SLIM_EXTRA = (
     "boards_failed_in_last_tick",
     "decay_scheduler_diagnostics",
     "storage_footprint_proxy",
+    "native_runtime_budget",
     "probe_diagnostics",
     # RKG-05 (fr_3fbb564c / tr_1db056de / tr_22d4434d / br_df421357): technical
     # signals are NON-MASKABLE. The slim view may omit prose, but the

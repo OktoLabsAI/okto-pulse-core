@@ -19,6 +19,7 @@ from okto_pulse.core.kg.interfaces.graph_lifecycle import (
 )
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphPurgeResult,
+    GraphRuntimeBudgetSnapshot,
     GraphRuntimeObservationState,
     GraphRuntimeState,
     GraphStorageFootprint,
@@ -1382,6 +1383,13 @@ class InMemoryGraphRuntimeStore:
             configured_max_bytes=None,
             percentage=None,
             unavailable_reason=None if exists else "graph_absent",
+        )
+
+    def budget_snapshot(self) -> GraphRuntimeBudgetSnapshot:
+        return GraphRuntimeBudgetSnapshot(
+            source="runtime_capability",
+            status="available",
+            unavailable_reason=None,
         )
 
 

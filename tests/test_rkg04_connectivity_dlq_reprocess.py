@@ -18,6 +18,7 @@ Coverage:
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -248,7 +249,11 @@ async def test_ts2_connectivity_dlq_drains_to_graph(db_factory):
     assert ok is True
 
     # graph.lbug queryable for the artifact + class cleared (no return to DLQ).
-    assert _count_nodes_containing(board_id, spec_id) > 0
+    assert await asyncio.to_thread(
+        _count_nodes_containing,
+        board_id,
+        spec_id,
+    ) > 0
     async with db_factory() as db:
         verify = await verify_connectivity_class_cleared(
             db, board_id, artifact_refs=[f"spec:{spec_id}"])

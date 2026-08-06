@@ -151,11 +151,16 @@ from .kg_events import (
     reset_kg_events_reader_port_for_tests,
 )
 from .kg_cognitive_source import (
+    COGNITIVE_SOURCE_FINGERPRINT_CONTRACT,
+    COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3,
+    CognitiveSourceAppendDecision,
     CognitiveSourceConflict,
     CognitiveSourceError,
+    CognitiveSourcePersistedRevision,
     CognitiveSourceRecord,
     CognitiveSourceStore,
     canonical_cognitive_source_fingerprint,
+    decide_cognitive_source_append,
     latest_cognitive_source_records,
     register_cognitive_source_store,
     require_cognitive_source_store,
@@ -292,6 +297,8 @@ from .telemetry import (
 )
 
 __all__ = [
+    "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT",
+    "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3",
     "HEALTH_REPORT_FIELDS",
     "PRODUCT_AGGREGATE_FAMILIES",
     "PRODUCT_METRIC_KEYS",
@@ -366,11 +373,14 @@ __all__ = [
     "DataBootstrapStep",
     "DataBootstrapStepResult",
     "DataBootstrapper",
+    "CognitiveSourceAppendDecision",
     "CognitiveSourceConflict",
     "CognitiveSourceError",
+    "CognitiveSourcePersistedRevision",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
     "canonical_cognitive_source_fingerprint",
+    "decide_cognitive_source_append",
     "latest_cognitive_source_records",
     "EquivalenceLedger",
     "EquivalenceLedgerError",

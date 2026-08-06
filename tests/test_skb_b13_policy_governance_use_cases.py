@@ -1244,35 +1244,26 @@ async def test_import_export_capabilities_fail_before_uow_access(
 
 @pytest.mark.asyncio
 async def test_context_only_import_does_not_require_metric_authority(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        guideline_import_export,
-        "parse_guideline_export",
-        lambda _payload: SimpleNamespace(
-            guidelines=(
-                SimpleNamespace(
-                    identity=SimpleNamespace(
-                        scope=GuidelineScope.GLOBAL,
-                        board_id=None,
-                    ),
-                    bindings=(),
-                        revisions=(
-                            SimpleNamespace(
-                                revision=SimpleNamespace(metrics=()),
-                            ),
-                    ),
-                ),
-            ),
-        ),
-    )
     uow = _UntouchedUow()
     with pytest.raises(
         AssertionError,
         match="services must not be touched",
     ):
         await ImportGuidelinePolicyUseCase().execute(
-            ImportGuidelinePolicyCommand(envelope={}),
+            ImportGuidelinePolicyCommand(
+                envelope={
+                    "schema_version": "1",
+                    "kind": "guidelines",
+                    "items": [
+                        {
+                            "title": "Context-only guideline",
+                            "content": "Imported without semantic metrics.",
+                            "scope": "global",
+                        }
+                    ],
+                }
+            ),
             actor=ActorContext(
                 "agent-1",
                 "rest",

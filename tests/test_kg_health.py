@@ -204,6 +204,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         # KG-HS.1 clarity payloads.
         "decay_scheduler_diagnostics",
         "storage_footprint_proxy",
+        "native_runtime_budget",
         "probe_diagnostics",
         # KG-ZO-02 integrity debt projection.
         "orphan_integrity",
@@ -284,6 +285,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["checked_at"], str)
     assert isinstance(result["decay_scheduler_diagnostics"], dict)
     assert isinstance(result["storage_footprint_proxy"], dict)
+    assert isinstance(result["native_runtime_budget"], dict)
     assert isinstance(result["orphan_integrity"], dict)
     assert isinstance(result["kg_layer_counts"], dict)
     assert isinstance(result["canonical_debt"], dict)
@@ -291,6 +293,44 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
     assert result["storage_footprint_proxy"]["source"] == "runtime_capability"
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
+    assert result["native_runtime_budget"]["source"] == "runtime_capability"
+    assert result["native_runtime_budget"]["is_direct_memory_telemetry"] is False
+
+
+@pytest.mark.asyncio
+async def test_native_budget_failure_stays_available_as_health_response(
+    monkeypatch, db_factory, kg_health_board
+):
+    from okto_pulse.community.api.kg_health import KGHealthResponse
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    async with db_factory() as session:
+        baseline = await get_kg_health(kg_health_board, session)
+
+    runtime = get_kg_registry().graph_runtime_store
+
+    def fail_budget_snapshot():
+        raise RuntimeError(r"C:\private\board\graph.lbug secret")
+
+    monkeypatch.setattr(runtime, "budget_snapshot", fail_budget_snapshot)
+    async with db_factory() as session:
+        degraded = await get_kg_health(kg_health_board, session)
+
+    response = KGHealthResponse(**degraded)
+    assert response.native_runtime_budget.status == "unavailable"
+    assert (
+        response.native_runtime_budget.unavailable_reason
+        == "budget_snapshot_unavailable"
+    )
+    assert response.native_runtime_budget.is_direct_memory_telemetry is False
+    assert response.memory_pressure_status == baseline["memory_pressure_status"]
+    assert response.native_runtime_budget.requested.model_dump() == {
+        "board_buffer_pool_mb": None,
+        "global_buffer_pool_mb": None,
+        "max_db_size_gb": None,
+        "connection_pool_size": None,
+    }
+    assert "private" not in str(response.native_runtime_budget.model_dump()).lower()
 
 
 @pytest.mark.asyncio

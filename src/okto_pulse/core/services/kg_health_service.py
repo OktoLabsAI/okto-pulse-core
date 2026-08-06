@@ -1809,6 +1809,52 @@ def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
     return base
 
 
+def _unavailable_native_runtime_budget(reason: str | None = None) -> dict[str, Any]:
+    """Return the stable fail-closed shape for a missing budget capability."""
+
+    return {
+        "source": "runtime_capability",
+        "status": "unavailable",
+        "requested": {},
+        "normalized": {},
+        "effective": {},
+        "sources": {},
+        "process_envelope": {},
+        "is_direct_memory_telemetry": False,
+        "description": (
+            "Derived native graph runtime budget from configured limits and "
+            "edition operational caps."
+        ),
+        "tooltip": (
+            "This is a deterministic, non-live capacity envelope; it is not "
+            "process RSS or direct allocator telemetry."
+        ),
+        "unavailable_reason": reason,
+    }
+
+
+def _build_native_runtime_budget() -> dict[str, Any]:
+    """Serialize the edition-owned native budget without opening graph storage."""
+
+    try:
+        snapshot = get_kg_registry().graph_runtime_store.budget_snapshot()
+    except Exception:
+        return _unavailable_native_runtime_budget("budget_snapshot_unavailable")
+    return {
+        "source": snapshot.source,
+        "status": snapshot.status,
+        "requested": dict(snapshot.requested),
+        "normalized": dict(snapshot.normalized),
+        "effective": dict(snapshot.effective),
+        "sources": dict(snapshot.sources),
+        "process_envelope": dict(snapshot.process_envelope),
+        "is_direct_memory_telemetry": False,
+        "description": snapshot.description,
+        "tooltip": snapshot.tooltip,
+        "unavailable_reason": snapshot.unavailable_reason,
+    }
+
+
 def _probe_board_graph_telemetry(
     *,
     board_id: str,
@@ -2676,6 +2722,7 @@ async def get_kg_health(
                 refresh_in_progress=False,
             )
 
+    native_runtime_budget = _build_native_runtime_budget()
     probe_diagnostics = {
         _GRAPH_HEALTH_PROBE: graph_probe.diagnostic(),
         _ARTIFACT_HEALTH_PROBE: artifact_probe.diagnostic(),
@@ -2711,6 +2758,10 @@ async def get_kg_health(
             "reason": graph_snapshot["storage_footprint_proxy"].get(
                 "unavailable_reason"
             ),
+        },
+        "native_runtime_budget": {
+            "status": native_runtime_budget.get("status", "unavailable"),
+            "reason": native_runtime_budget.get("unavailable_reason"),
         },
         "layer_counts": {
             "status": graph_snapshot["kg_layer_counts"].get("status", "unavailable"),
@@ -3774,6 +3825,7 @@ async def get_kg_health(
         # --- KG-HS.1 additive scheduler/footprint clarity surface ---
         "decay_scheduler_diagnostics": decay_scheduler_diagnostics,
         "storage_footprint_proxy": storage_footprint_proxy,
+        "native_runtime_budget": native_runtime_budget,
         "orphan_integrity": orphan_integrity,
         "kg_layer_counts": kg_layer_counts,
         "canonical_debt": canonical_debt,
