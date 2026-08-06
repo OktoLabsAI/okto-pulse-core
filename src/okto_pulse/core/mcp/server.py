@@ -1551,6 +1551,12 @@ def _flag_enabled(value: BoolInput) -> bool:
     raise ValueError(f"invalid boolean literal {value!r}; expected true/false or 1/0")
 
 
+def _card_subject_version(card: object) -> int:
+    """Project the card's internal policy fence under its public name."""
+
+    return int(getattr(card, "policy_version"))
+
+
 def _dump_model(value: Any) -> dict[str, Any]:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
@@ -3201,6 +3207,7 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
                     "description": card.description,
                     "details": card.details,
                     "status": card.status.value,
+                    "subject_version": _card_subject_version(card),
                     **project_cancellation(card),
                     "priority": card.priority.value,
                     "position": card.position,
@@ -3425,6 +3432,7 @@ async def okto_pulse_get_task_context(
                 "description": card.description,
                 "details": card.details,
                 "status": card.status.value,
+                "subject_version": _card_subject_version(card),
                 **project_cancellation(card),
                 "priority": card.priority.value,
                 "assignee_id": card.assignee_id,
@@ -4094,6 +4102,7 @@ async def okto_pulse_move_card(
                     "id": updated.id,
                     "title": updated.title,
                     "status": updated.status.value,
+                    "subject_version": _card_subject_version(updated),
                     "position": updated.position,
                 },
             },

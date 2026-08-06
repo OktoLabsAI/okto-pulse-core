@@ -281,6 +281,15 @@ class McpMoveCardUseCase:
         )
         if not updated:
             return McpMoveCardResult(None)
+        # Flush and refresh inside the still-open transaction.  Refreshing
+        # after commit would create a causal gap where a concurrent writer
+        # could advance the row again (or where refresh failure would report a
+        # failed call after the mutation had already become durable).
+        await uow.synchronize()
+        await uow.reload(
+            updated,
+            fields=("status", "position", "policy_version"),
+        )
         await commit(uow)
         return McpMoveCardResult(updated)
 

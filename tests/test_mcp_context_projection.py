@@ -32,6 +32,7 @@ from okto_pulse.core.mcp.context_projection import (
     CONTEXT_DETAIL_BUDGET_BYTES,
     CONTEXT_GATE_BUDGET_BYTES,
     CONTEXT_SUMMARY_BUDGET_BYTES,
+    _essential_context_projection,
     project_entity_context,
     project_spec_context,
     project_task_context,
@@ -50,6 +51,23 @@ from sqlalchemy_test_models import (
 )
 
 USER_ID = "context-projection-agent"
+
+
+def test_last_resort_projection_preserves_card_subject_version() -> None:
+    projected, _omitted = _essential_context_projection(
+        {
+            "card": {
+                "id": "card-version-fence",
+                "title": "Versioned card",
+                "status": "in_progress",
+                "subject_version": 17,
+                "oversized_unimportant_field": "x" * 10_000,
+            }
+        },
+        profile="summary",
+    )
+
+    assert projected["card"]["subject_version"] == 17
 
 
 def _full_task_result() -> dict:

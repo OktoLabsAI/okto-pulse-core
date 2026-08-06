@@ -103,6 +103,11 @@ class McpMoveSpecUseCase:
         )
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
+        # Resolve persistence-managed revisions before the commit while this
+        # transaction still owns the row. A post-commit refresh could observe
+        # a later writer or fail after the mutation was already durable.
+        await uow.synchronize()
+        await uow.reload(spec, fields=("status", "edition", "version"))
         await commit(uow)
         return McpMoveSpecResult(spec, old_status)
 

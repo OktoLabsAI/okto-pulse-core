@@ -692,6 +692,27 @@ def test_mcp_error_outcome_preserves_canonical_projector_semantics(
     }
 
 
+def test_mcp_inadmissible_assessor_returns_safe_actionable_cause() -> None:
+    from okto_pulse.core.domain.guideline_semantic_assessment import (
+        SemanticAssessmentInadmissibleError,
+        SemanticAssessmentInadmissibilityCause,
+    )
+    from okto_pulse.core.mcp.policy_governance_tools import _error_outcome
+
+    outcome = _error_outcome(
+        SemanticAssessmentInadmissibleError(
+            SemanticAssessmentInadmissibilityCause.ASSESSOR_SEPARATION_REQUIRED
+        )
+    )
+
+    assert outcome.code == "policy_assessment_inadmissible"
+    assert outcome.next_action == {"rel": "request_independent_assessor"}
+    assert outcome.details["inadmissibility_cause"] == (
+        "assessor_separation_required"
+    )
+    assert "agent_id" not in repr(outcome)
+
+
 def test_policy_resource_contract_and_pointer_cardinality() -> None:
     mcp_root = (
         Path(__file__).parents[1]

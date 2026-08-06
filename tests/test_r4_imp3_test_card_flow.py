@@ -57,7 +57,12 @@ async def _call(name: str, **kwargs) -> dict:
     return json.loads(raw)
 
 
-async def _seed_test_card(db_factory, *, scenarios):
+async def _seed_test_card(
+    db_factory,
+    *,
+    scenarios,
+    status: CardStatus = CardStatus.IN_PROGRESS,
+):
     board_id = _id("board")
     spec_id = _id("spec")
     card_id = _id("card")
@@ -68,7 +73,7 @@ async def _seed_test_card(db_factory, *, scenarios):
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=scenarios, business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="test card",
-                    status=CardStatus.IN_PROGRESS, card_type=CardType.TEST, created_by=USER_ID,
+                    status=status, card_type=CardType.TEST, created_by=USER_ID,
                     test_scenario_ids=scenario_ids))
         await db.commit()
     return board_id, card_id
@@ -136,6 +141,33 @@ def test_operational_flow_block_blocked_and_ready():
     assert ready["next_action"]["params"]["board_id"] == "b1"
     assert ready["next_action"]["params"]["status"] == "done"
     assert ready["mutation_allowed"] is False
+
+
+def test_operational_flow_for_done_card_has_no_done_to_done_action() -> None:
+    flow = operational_flow_for_test_card(
+        card_id="c1",
+        board_id="b1",
+        spec_id="s1",
+        current_status="done",
+        linked_scenarios=[
+            {
+                "id": "ts1",
+                "title": "A",
+                "status": "passed",
+                "evidence": {
+                    "evidence_class": "automated_test_pointer",
+                    "test_file_path": "tests/test_x.py",
+                    "test_function": "test_a",
+                },
+            }
+        ],
+    )
+
+    assert flow["would_block_done"] is False
+    assert flow["required_tool"] is None
+    assert flow["follow_up_tool"] is None
+    assert flow["next_action"] is None
+    assert "already done" in flow["operator_action"].lower()
 
 
 # ===========================================================================
@@ -230,6 +262,42 @@ async def test_get_task_context_test_card_ready_flow(db_factory):
     assert flow["next_action"]["params"]["status"] == "done"
     assert flow["next_action"]["params"]["board_id"] == board_id
     assert flow["linked_scenarios"][0]["evidence_present"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_task_context_done_test_card_has_no_completion_gate(db_factory):
+    board_id, card_id = await _seed_test_card(
+        db_factory,
+        status=CardStatus.DONE,
+        scenarios=[
+            {
+                "id": "ts1",
+                "title": "Done scenario",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "status": "passed",
+                "evidence": {
+                    "evidence_class": "automated_test_pointer",
+                    "test_file_path": "tests/test_x.py",
+                    "test_function": "test_done",
+                },
+            }
+        ],
+    )
+
+    result = await _call(
+        "okto_pulse_get_task_context",
+        board_id=board_id,
+        card_id=card_id,
+        profile="summary",
+    )
+
+    flow = result["test_card_operational_flow"]
+    assert flow["current_status"] == "done"
+    assert flow["next_action"] is None
+    assert flow["follow_up_tool"] is None
+    assert result["gate_readiness"]["active_gate"] is None
 
 
 @pytest.mark.asyncio

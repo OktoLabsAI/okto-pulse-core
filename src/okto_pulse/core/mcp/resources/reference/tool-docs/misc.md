@@ -114,6 +114,9 @@ Args:
 
 Returns:
     JSON with task context selected by profile/scope.
+    The card projection includes `subject_version`, the current policy-subject
+    fence used as `expected_subject_version` by semantic guideline assessment
+    writes.
     `reviewer_separation` projects the current caller's task-validation policy
     decision (`mode`, `allowed`, `warning`, creator/assignee/executor
     `conflicts`, and `source`); inspect it from

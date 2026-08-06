@@ -157,6 +157,10 @@ Delete a card from the board. This operation is permanent and cannot be undone.
 ## `okto_pulse_get_card`
 
 Get detailed card information including attachments, Q&A, and comments.
+The response includes `subject_version`, the current policy-subject revision.
+Use that exact value as `expected_subject_version` when recording semantic
+guideline assessments; reload the card or its full gate context after any
+card mutation instead of reusing a stale revision.
 
 ## Card Knowledge assignments
 
@@ -212,6 +216,9 @@ Use 'open' for all cards NOT in done/cancelled. Max limit is 200.
 ## `okto_pulse_move_card`
 
 Move a card to a different column/position on the board.
+
+The successful response includes the committed `subject_version`. This is the
+post-move policy-subject revision, not the pre-commit value.
 
 Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
 completeness_justification, drift (0-100), and drift_justification so the

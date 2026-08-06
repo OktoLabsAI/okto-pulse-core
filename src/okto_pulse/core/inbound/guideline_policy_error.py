@@ -26,6 +26,10 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineImportExportError,
 )
 from okto_pulse.core.domain.guideline_policy import GuidelinePolicyContractError
+from okto_pulse.core.domain.guideline_semantic_assessment import (
+    SemanticAssessmentInadmissibleError,
+    SemanticAssessmentInadmissibilityCause,
+)
 from okto_pulse.core.inbound.guideline_policy_cursor import (
     GuidelinePolicyCursorConfigurationError,
 )
@@ -125,6 +129,20 @@ def project_guideline_policy_error(error: Exception) -> dict[str, Any]:
         message = "The declared semantic version is below the required minimum."
         retryable = False
         next_action = "increase_semantic_version"
+    if isinstance(error, SemanticAssessmentInadmissibleError):
+        code = "policy_assessment_inadmissible"
+        retryable = False
+        if error.cause == (
+            SemanticAssessmentInadmissibilityCause.ASSESSOR_SEPARATION_REQUIRED.value
+        ):
+            message = (
+                "A blocking assessment requires an assessor independent from "
+                "the subject's last semantic editor."
+            )
+            next_action = "request_independent_assessor"
+        else:
+            message = "Assessment confidence is below the active binding minimum."
+            next_action = "reassess_with_sufficient_confidence"
     if isinstance(error, GuidelinePolicyCursorConflict) or reason_code == (
         "invalid_cursor"
     ):
@@ -204,6 +222,14 @@ def _classify(
         if declared is not None:
             details["declared_semantic_version"] = declared
         return GuidelinePolicyErrorCategory.INVALID_ARGUMENT, None, details
+    if isinstance(error, SemanticAssessmentInadmissibleError):
+        cause = _safe_reason_code(error.cause)
+        details = {"inadmissibility_cause": cause} if cause is not None else {}
+        return (
+            GuidelinePolicyErrorCategory.INVALID_ARGUMENT,
+            "policy_assessment_inadmissible",
+            details,
+        )
     if isinstance(error, EntityNotFoundError):
         details = {}
         entity_type = _safe_reason_code(error.entity_type)

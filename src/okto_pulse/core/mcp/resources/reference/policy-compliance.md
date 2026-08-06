@@ -66,6 +66,12 @@ metric is missing/unknown/non-applicable, confidence is below the board
 minimum, or an agent that last changed the subject attempts a blocking
 assessment. Receipt and all metric results are written atomically.
 
+`policy_assessment_inadmissible` is non-retryable without remediation. Inspect
+`details.inadmissibility_cause`: `confidence_below_minimum` requires a new
+assessment with sufficient confidence; `assessor_separation_required` requires
+an independent assessor. The response deliberately exposes no editor or
+assessor identity.
+
 ### Canonical agent journey
 
 1. Load the entity with the full context tool named by its workflow and use its

@@ -8681,6 +8681,10 @@ class SpecService:
             "integration_requirements",
             "observability_requirements",
             "decisions",
+            "require_task_validation",
+            "validation_min_confidence",
+            "validation_min_completeness",
+            "validation_max_drift",
         }
         # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields.
         # Some also bump version through content_fields so bulk and structured
@@ -16726,6 +16730,10 @@ class SprintService:
             "skip_rules_coverage",
             "skip_qualitative_validation",
             "validation_threshold",
+            "require_task_validation",
+            "validation_min_confidence",
+            "validation_min_completeness",
+            "validation_max_drift",
         }
         bumps_version = bool(content_fields & update_data.keys())
 

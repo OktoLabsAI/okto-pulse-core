@@ -6,6 +6,7 @@ from enum import Enum as PyEnum
 from typing import Any, Generic, Literal, TypeAlias, TypeVar
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -2219,6 +2220,28 @@ class SpecUpdate(BaseModel):
     skip_decisions_coverage: bool | None = Field(
         None, description="Se True, o gate de cobertura de decisions e ignorado."
     )
+    require_task_validation: bool | None = Field(
+        None,
+        description="Override da spec para exigir Task Validation; None herda do board.",
+    )
+    validation_min_confidence: int | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Override 0-100 de confianca minima; None herda do board.",
+    )
+    validation_min_completeness: int | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Override 0-100 de completude minima; None herda do board.",
+    )
+    validation_max_drift: int | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Override 0-100 de drift maximo; None herda do board.",
+    )
     assignee_id: str | None = Field(
         None, description="Novo ID do responsavel pela spec."
     )
@@ -2567,6 +2590,10 @@ class SpecResponse(BaseSchema):
     skip_contract_coverage: bool = False
     skip_ir_coverage: bool = False
     skip_or_coverage: bool = False
+    require_task_validation: bool | None = None
+    validation_min_confidence: int | None = None
+    validation_min_completeness: int | None = None
+    validation_max_drift: int | None = None
     archived: bool = False
     pre_archive_status: str | None = None
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
@@ -3259,6 +3286,15 @@ class CardResponse(BaseSchema):
     description: str | None
     details: str | None
     status: CardStatus
+    subject_version: int = Field(
+        ...,
+        ge=1,
+        validation_alias=AliasChoices("subject_version", "policy_version"),
+        description=(
+            "Current card policy-subject revision; pass this value as "
+            "expected_subject_version when recording an assessment."
+        ),
+    )
     priority: CardPriority
     position: int
     assignee_id: str | None
@@ -4073,6 +4109,13 @@ class SprintUpdate(BaseModel):
     skip_rules_coverage: bool | None = None
     skip_qualitative_validation: bool | None = None
     validation_threshold: int | None = None
+    require_task_validation: bool | None = Field(
+        None,
+        description="Override do sprint para exigir Task Validation; None herda da spec/board.",
+    )
+    validation_min_confidence: int | None = Field(None, ge=0, le=100)
+    validation_min_completeness: int | None = Field(None, ge=0, le=100)
+    validation_max_drift: int | None = Field(None, ge=0, le=100)
     expected_version: int | None = Field(
         None,
         ge=1,
@@ -4217,6 +4260,10 @@ class SprintResponse(BaseSchema):
     skip_rules_coverage: bool = False
     skip_qualitative_validation: bool = False
     validation_threshold: int | None = None
+    require_task_validation: bool | None = None
+    validation_min_confidence: int | None = None
+    validation_min_completeness: int | None = None
+    validation_max_drift: int | None = None
     version: int
     labels: list[str] | None = None
     archived: bool = False

@@ -25,14 +25,19 @@ from mcp_runtime_testing import register_mcp_test_runtime
 import ast
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, inspect, select
+from sqlalchemy.orm import Session
 
 from okto_pulse.core.mcp import server as mcp_server
-from sqlalchemy_test_models import ActivityLog, Board, Spec, SpecStatus
+from okto_pulse.core.domain.enums import CardPriority, CardStatus
+from okto_pulse.core.models.schemas import CardResponse
+from sqlalchemy_test_models import ActivityLog, Board, Card, Spec, SpecStatus
 
 BOARD_A = "r01a-mcpcard-a"
 BOARD_B = "r01a-mcpcard-b"
@@ -169,6 +174,164 @@ async def test_cross_board_returns_card_not_found(_seed):
     ):
         payload = await _call(tool, board_id=BOARD_B, card_id=card_id, **extra)
         assert payload.get("error") == "Card not found", (tool, payload)
+
+
+def test_card_response_projects_policy_version_as_subject_version() -> None:
+    now = datetime.now(timezone.utc)
+    response = CardResponse.model_validate(
+        {
+            "id": "card-1",
+            "board_id": BOARD_A,
+            "title": "Versioned card",
+            "description": None,
+            "details": None,
+            "status": CardStatus.NOT_STARTED,
+            "policy_version": 7,
+            "priority": CardPriority.NONE,
+            "position": 0,
+            "assignee_id": None,
+            "created_by": USER_ID,
+            "created_at": now,
+            "updated_at": now,
+            "due_date": None,
+            "labels": None,
+        }
+    )
+
+    payload = response.model_dump()
+    assert payload["subject_version"] == 7
+    assert "policy_version" not in payload
+
+
+@pytest.mark.asyncio
+async def test_move_card_refreshes_inside_transaction_before_commit() -> None:
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.mcp_card_crud import (
+        McpMoveCardCommand,
+        McpMoveCardUseCase,
+    )
+
+    card = SimpleNamespace(
+        id="card-transaction-order",
+        board_id=BOARD_A,
+        status=CardStatus.NOT_STARTED,
+        position=0,
+        policy_version=3,
+    )
+
+    class Cards:
+        async def get_card(self, _card_id: str):
+            return card
+
+        async def move_card(self, *_args, **_kwargs):
+            card.status = CardStatus.CANCELLED
+            return card
+
+    class UnitOfWork:
+        services = SimpleNamespace(cards=Cards())
+
+        def __init__(self, *, fail_reload: bool = False) -> None:
+            self.events: list[str] = []
+            self.fail_reload = fail_reload
+
+        async def synchronize(self) -> None:
+            self.events.append("synchronize")
+
+        async def reload(self, entity: object, *, fields: tuple[str, ...] = ()) -> None:
+            assert fields == ("status", "position", "policy_version")
+            self.events.append("reload")
+            if self.fail_reload:
+                raise RuntimeError("refresh failed")
+            entity.policy_version = 4
+
+        async def commit(self) -> None:
+            self.events.append("commit")
+
+    actor = ActorContext(USER_ID, "mcp", board_id=BOARD_A)
+    successful = UnitOfWork()
+    result = await McpMoveCardUseCase().execute(
+        McpMoveCardCommand(card.id, BOARD_A, object()),
+        actor=actor,
+        uow=successful,
+    )
+    assert successful.events == ["synchronize", "reload", "commit"]
+    assert result.card.policy_version == 4
+
+    failing = UnitOfWork(fail_reload=True)
+    with pytest.raises(RuntimeError, match="refresh failed"):
+        await McpMoveCardUseCase().execute(
+            McpMoveCardCommand(card.id, BOARD_A, object()),
+            actor=actor,
+            uow=failing,
+        )
+    assert failing.events == ["synchronize", "reload"]
+
+
+@pytest.mark.asyncio
+async def test_card_reads_expose_same_subject_version(_seed) -> None:
+    spec_id, _ = _seed
+    card_id = (await _create_card(spec_id))["card"]["id"]
+
+    card_payload = await _call(
+        "okto_pulse_get_card",
+        board_id=BOARD_A,
+        card_id=card_id,
+    )
+    context_payload = await _call(
+        "okto_pulse_get_task_context",
+        board_id=BOARD_A,
+        card_id=card_id,
+        profile="full",
+    )
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        persisted = await db.get(Card, card_id)
+
+    assert card_payload["subject_version"] == persisted.policy_version
+    assert context_payload["card"]["subject_version"] == persisted.policy_version
+
+
+@pytest.mark.asyncio
+async def test_move_card_returns_committed_subject_version(_seed) -> None:
+    spec_id, _ = _seed
+    card_id = (await _create_card(spec_id))["card"]["id"]
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        before = (await db.get(Card, card_id)).policy_version
+
+    # Mirror the production adapter's before_flush subject-version bump; the
+    # lightweight Core test adapter intentionally has no global listener.
+    def bump_policy_version_on_flush(session, _flush_context, _instances) -> None:
+        for entity in tuple(session.dirty):
+            if (
+                isinstance(entity, Card)
+                and inspect(entity).attrs.status.history.has_changes()
+            ):
+                entity.policy_version += 1
+
+    event.listen(Session, "before_flush", bump_policy_version_on_flush)
+    try:
+        payload = await _call(
+            "okto_pulse_move_card",
+            board_id=BOARD_A,
+            card_id=card_id,
+            status="cancelled",
+            cancellation_reason="No longer required",
+        )
+    finally:
+        event.remove(Session, "before_flush", bump_policy_version_on_flush)
+
+    async with get_session_factory()() as db:
+        persisted = await db.get(Card, card_id)
+
+    assert payload["success"] is True
+    assert payload["card"]["status"] == persisted.status.value == "cancelled"
+    assert payload["card"]["subject_version"] == persisted.policy_version
+    assert payload["card"]["subject_version"] == before + 1
 
 
 # --- atomic activity log ----------------------------------------------------

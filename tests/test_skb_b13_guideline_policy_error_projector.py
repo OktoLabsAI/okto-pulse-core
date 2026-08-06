@@ -19,6 +19,10 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineImportExportError,
 )
 from okto_pulse.core.domain.guideline_policy import GuidelinePolicyContractError
+from okto_pulse.core.domain.guideline_semantic_assessment import (
+    SemanticAssessmentInadmissibleError,
+    SemanticAssessmentInadmissibilityCause,
+)
 from okto_pulse.core.inbound.guideline_policy_cursor import (
     GuidelinePolicyCursorConfigurationError,
 )
@@ -135,6 +139,37 @@ def test_domain_invalid_cursor_is_projected_identically() -> None:
     assert projected["code"] == "invalid_cursor"
     assert projected["http_status"] == 400
     assert projected["details"] == {"reason_code": "invalid_cursor"}
+
+
+@pytest.mark.parametrize(
+    ("cause", "next_action"),
+    (
+        (
+            SemanticAssessmentInadmissibilityCause.ASSESSOR_SEPARATION_REQUIRED,
+            "request_independent_assessor",
+        ),
+        (
+            SemanticAssessmentInadmissibilityCause.CONFIDENCE_BELOW_MINIMUM,
+            "reassess_with_sufficient_confidence",
+        ),
+    ),
+)
+def test_assessment_inadmissibility_exposes_only_closed_remediation(
+    cause: SemanticAssessmentInadmissibilityCause,
+    next_action: str,
+) -> None:
+    projected = project_guideline_policy_error(
+        SemanticAssessmentInadmissibleError(cause)
+    )
+
+    assert projected["code"] == "policy_assessment_inadmissible"
+    assert projected["next_action"] == next_action
+    assert projected["retryable"] is False
+    assert projected["details"] == {
+        "reason_code": "policy_assessment_inadmissible",
+        "inadmissibility_cause": cause.value,
+    }
+    assert "agent_id" not in repr(projected)
 
 
 def test_unchanged_impact_has_specific_non_retryable_projection() -> None:

@@ -27,10 +27,12 @@ import ast
 from copy import deepcopy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, inspect, select
+from sqlalchemy.orm import Session
 
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
@@ -158,6 +160,71 @@ def test_core_resolver_fr_then_tr_dedup_unresolved():
     assert unresolved == ["nope"]
     assert available_structured_ids(frs) == ["fr_a", "fr_b"]
     assert available_structured_ids(trs) == ["tr_x"]
+
+
+@pytest.mark.asyncio
+async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.mcp_spec_crud import (
+        McpMoveSpecCommand,
+        McpMoveSpecUseCase,
+    )
+
+    spec = SimpleNamespace(
+        id="spec-transaction-order",
+        board_id=BOARD_ID,
+        status=SpecStatus.DRAFT,
+        edition=2,
+        version=5,
+    )
+
+    class Specs:
+        async def get_spec(self, _spec_id: str):
+            return spec
+
+        async def move_spec(self, *_args, **_kwargs):
+            spec.status = SpecStatus.REVIEW
+            return spec
+
+    class UnitOfWork:
+        services = SimpleNamespace(specs=Specs())
+
+        def __init__(self, *, fail_reload: bool = False) -> None:
+            self.events: list[str] = []
+            self.fail_reload = fail_reload
+
+        async def synchronize(self) -> None:
+            self.events.append("synchronize")
+
+        async def reload(self, entity: object, *, fields: tuple[str, ...] = ()) -> None:
+            assert fields == ("status", "edition", "version")
+            self.events.append("reload")
+            if self.fail_reload:
+                raise RuntimeError("refresh failed")
+            entity.version = 6
+
+        async def commit(self) -> None:
+            self.events.append("commit")
+
+    actor = ActorContext(USER_ID, "mcp", board_id=BOARD_ID)
+    successful = UnitOfWork()
+    result = await McpMoveSpecUseCase().execute(
+        McpMoveSpecCommand(spec.id, BOARD_ID, object()),
+        actor=actor,
+        uow=successful,
+    )
+    assert successful.events == ["synchronize", "reload", "commit"]
+    assert result.spec.version == 6
+
+    spec.status = SpecStatus.DRAFT
+    failing = UnitOfWork(fail_reload=True)
+    with pytest.raises(RuntimeError, match="refresh failed"):
+        await McpMoveSpecUseCase().execute(
+            McpMoveSpecCommand(spec.id, BOARD_ID, object()),
+            actor=actor,
+            uow=failing,
+        )
+    assert failing.events == ["synchronize", "reload"]
 
 
 def test_api_contract_f9_f10_canonical_no_pydantic_url():
@@ -395,6 +462,41 @@ async def _spec_mutation_state(spec_id: str) -> dict:
             "evaluations": deepcopy(spec.evaluations),
         })
         return state
+
+
+@pytest.mark.asyncio
+async def test_move_spec_returns_committed_version(_seed) -> None:
+    # The production relational adapter advances this fence in before_flush.
+    # Core's lightweight test adapter deliberately omits that cross-cutting
+    # listener, so install the equivalent behavior for this regression.
+    def bump_version_on_flush(session, _flush_context, _instances) -> None:
+        for entity in tuple(session.dirty):
+            if (
+                isinstance(entity, Spec)
+                and inspect(entity).attrs.status.history.has_changes()
+            ):
+                entity.version += 1
+
+    event.listen(Session, "before_flush", bump_version_on_flush)
+    try:
+        payload = await _call(
+            "okto_pulse_move_spec",
+            board_id=BOARD_ID,
+            spec_id=_seed,
+            status="review",
+        )
+    finally:
+        event.remove(Session, "before_flush", bump_version_on_flush)
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        persisted = await db.get(Spec, _seed)
+
+    assert payload["success"] is True
+    assert payload["from_status"] == "draft"
+    assert payload["to_status"] == persisted.status.value == "review"
+    assert payload["version"] == persisted.version == 2
 
 
 @pytest.mark.asyncio

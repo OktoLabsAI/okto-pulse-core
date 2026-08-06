@@ -492,8 +492,16 @@ def operational_flow_for_test_card(
                 "status": "missing",
             }
         ]
-    would_block_done = bool(pending)
-    if would_block_done:
+    already_done = str(current_status or "").strip().lower() == "done"
+    would_block_done = bool(pending) and not already_done
+    follow_up_tool = None if already_done else "okto_pulse_move_card"
+    if already_done:
+        operator_action = (
+            "The test card is already done; no completion transition is required."
+        )
+        required_tool = None
+        next_action = None
+    elif would_block_done:
         has_linkage_failure = any(
             str(item.get("status") or "") == "missing" for item in pending
         )
@@ -546,7 +554,7 @@ def operational_flow_for_test_card(
         "linked_scenarios": scenarios,
         "pending_scenarios": pending,
         "required_tool": required_tool,
-        "follow_up_tool": "okto_pulse_move_card",
+        "follow_up_tool": follow_up_tool,
         "operator_action": operator_action,
         "next_action": next_action,
         "mutation_allowed": False,
@@ -739,14 +747,19 @@ def task_gate_readiness(
         # transition is derived from the flow's own current_status ("<status>->done")
         # so the context exposes the actionable transition, not just the gate type.
         flow_status = operational_flow.get("current_status")
-        active_gate = {
-            "gate_type": operational_flow.get("gate_type"),
-            "blocked_transition": f"{flow_status}->done" if flow_status else None,
-            "required_status": "done",
-            "required_tool": operational_flow.get("required_tool"),
-            "follow_up_tool": operational_flow.get("follow_up_tool"),
-            "would_block_done": bool(operational_flow.get("would_block_done")),
-        }
+        terminal = any(
+            str(value or "").strip().lower() == "done"
+            for value in (card_status, flow_status)
+        )
+        if not terminal:
+            active_gate = {
+                "gate_type": operational_flow.get("gate_type"),
+                "blocked_transition": f"{flow_status}->done" if flow_status else None,
+                "required_status": "done",
+                "required_tool": operational_flow.get("required_tool"),
+                "follow_up_tool": operational_flow.get("follow_up_tool"),
+                "would_block_done": bool(operational_flow.get("would_block_done")),
+            }
     elif cognitive_verdict and cognitive_verdict.get("would_block_done"):
         active_gate = {
             "gate_type": GATE_COGNITIVE_READINESS,
