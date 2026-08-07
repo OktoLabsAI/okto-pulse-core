@@ -45,6 +45,8 @@ from sqlalchemy_test_models import (
     Spec,
     SpecQAItem,
     SpecStatus,
+    Sprint,
+    SprintStatus,
 )
 
 USER_ID = "r4-agent"
@@ -272,12 +274,27 @@ async def test_ask_uses_target_specific_permission_for_card_and_sprint():
     # Every target has a canonical QA leaf; the sprint service keeps its transport
     # asymmetries but no longer bypasses authorization.
     db_factory = get_session_factory()
-    board_id, card_id, spec_id = _id("r4s-board"), _id("r4s-card"), _id("r4s-spec")
+    board_id, card_id, spec_id, sprint_id = (
+        _id("r4s-board"),
+        _id("r4s-card"),
+        _id("r4s-spec"),
+        _id("r4s-sprint"),
+    )
     async with db_factory() as db:
         db.add(Board(id=board_id, name="R4S", owner_id=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.IN_PROGRESS, created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="Card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL, created_by=USER_ID))
+        db.add(
+            Sprint(
+                id=sprint_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Sprint",
+                status=SprintStatus.ACTIVE,
+                created_by=USER_ID,
+            )
+        )
         await db.commit()
 
     with patch.object(
@@ -286,7 +303,7 @@ async def test_ask_uses_target_specific_permission_for_card_and_sprint():
         AsyncMock(return_value=_stub_ctx(board_id, permissions=["board:read"])),
     ):
         card_res = await _call("okto_pulse_ask", board_id=board_id, target_type="card", parent_id=card_id, question="Q")
-        sprint_res = await _call("okto_pulse_ask", board_id=board_id, target_type="sprint", parent_id="nonexistent-sprint", question="Q")
+        sprint_res = await _call("okto_pulse_ask", board_id=board_id, target_type="sprint", parent_id=sprint_id, question="Q")
 
     assert "card.qa.ask" in card_res["error"]
     assert "sprint.qa.ask" in sprint_res["error"]

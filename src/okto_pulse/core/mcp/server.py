@@ -4557,15 +4557,6 @@ async def _ask_question_impl(
             }
         )
 
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        f"{target_type}.qa.ask",
-        Permissions.QA_CREATE,
-    )
-    if perm_err:
-        _telemetry("error")
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpAskQuestionCommand,
         McpAskQuestionUseCase,
@@ -4616,14 +4607,6 @@ async def okto_pulse_answer_question(board_id: str, qa_id: str, answer: str) -> 
     if not ctx:
         return _auth_error()
 
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.qa.answer",
-        Permissions.QA_ANSWER,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpAnswerQuestionCommand,
         McpAnswerQuestionUseCase,
@@ -4648,14 +4631,6 @@ async def okto_pulse_delete_question(board_id: str, qa_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.qa.delete",
-        Permissions.QA_DELETE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpDeleteQuestionCommand,
@@ -4685,14 +4660,6 @@ async def okto_pulse_add_comment(board_id: str, card_id: str, content: str) -> s
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.comments.create",
-        Permissions.COMMENTS_CREATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpAddCommentCommand,
@@ -4728,14 +4695,6 @@ async def okto_pulse_add_choice_comment(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.comments.create_choice",
-        Permissions.COMMENTS_CREATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.models.schemas import ChoiceOption
 
@@ -4901,14 +4860,6 @@ async def okto_pulse_update_comment(
     if not ctx:
         return _auth_error()
 
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.comments.edit",
-        Permissions.COMMENTS_UPDATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpUpdateCommentCommand,
         McpUpdateCommentUseCase,
@@ -4933,14 +4884,6 @@ async def okto_pulse_delete_comment(board_id: str, comment_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.comments.delete",
-        Permissions.COMMENTS_DELETE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpDeleteCommentCommand,
@@ -4979,14 +4922,6 @@ async def okto_pulse_upload_attachment(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.attachments.upload",
-        Permissions.ATTACHMENTS_UPLOAD,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     content, err = await _resolve_binary_content(
         content_base64=content_base64, content_reference=content_reference
@@ -5052,14 +4987,6 @@ async def okto_pulse_delete_attachment(board_id: str, attachment_id: str) -> str
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "card.attachments.delete",
-        Permissions.ATTACHMENTS_DELETE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpDeleteAttachmentCommand,
@@ -5183,11 +5110,6 @@ async def okto_pulse_create_topic(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions, "topic.entity.create", Permissions.SPECS_CREATE
-    )
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpCreateTopicCommand,
         McpCreateTopicUseCase,
@@ -5215,11 +5137,6 @@ async def okto_pulse_update_topic(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions, "topic.entity.edit_fields", Permissions.SPECS_UPDATE
-    )
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
     update_data = {}
     if name:
         update_data["name"] = name
@@ -5254,11 +5171,6 @@ async def okto_pulse_archive_topic(board_id: str, topic_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions, "topic.entity.archive", Permissions.SPECS_UPDATE
-    )
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpSetTopicArchivedCommand,
         McpSetTopicArchivedUseCase,
@@ -5281,11 +5193,6 @@ async def okto_pulse_restore_topic(board_id: str, topic_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions, "topic.entity.restore", Permissions.SPECS_UPDATE
-    )
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpSetTopicArchivedCommand,
         McpSetTopicArchivedUseCase,
@@ -5308,11 +5215,6 @@ async def okto_pulse_delete_topic(board_id: str, topic_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions, "topic.entity.delete", Permissions.SPECS_DELETE
-    )
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpDeleteTopicCommand,
         McpDeleteTopicUseCase,
@@ -5337,11 +5239,6 @@ async def okto_pulse_merge_topics(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions, "topic.entity.merge", Permissions.SPECS_UPDATE
-    )
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpMergeTopicsCommand,
         McpMergeTopicsUseCase,
@@ -17636,10 +17533,6 @@ async def okto_pulse_submit_task_validation(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, "card.validation.submit")
-    if perm_err:
-        return _perm_error(perm_err)
 
     if recommendation not in ("approve", "reject"):
         return json.dumps({"error": "recommendation must be: approve or reject"})

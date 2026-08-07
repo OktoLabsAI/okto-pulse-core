@@ -49,7 +49,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r4 test2"
-        self.permissions = set()
+        self.permissions = ["card.validation.submit"]
 
 
 async def _call(name: str, **kwargs) -> dict:

@@ -7,25 +7,33 @@ Work path so wrappers do not open ``get_db_for_mcp`` directly.
 
 from __future__ import annotations
 
-from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
-
 from dataclasses import dataclass
 from typing import Any
 
+from okto_pulse.core.application.use_cases._service_payload import (
+    payload,
+    payload_choices,
+)
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.card_collaboration import (
     AttachmentStorageError,
     InvalidAttachmentFilenameError,
     validate_attachment_filename,
 )
-from okto_pulse.core.application.use_cases._service_payload import (
-    payload,
-    payload_choices,
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_requirement,
+    entity_state,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 
 @dataclass(frozen=True)
@@ -104,13 +112,30 @@ async def _get_qa_in_scope(
 ) -> Any | None:
     """Resolve Q&A -> card before exposing or mutating the child row."""
 
+    scoped = await _get_qa_with_card_in_scope(
+        services,
+        qa_id,
+        board_id,
+        actor,
+    )
+    return scoped[0] if scoped else None
+
+
+async def _get_qa_with_card_in_scope(
+    services: ApplicationServiceCatalog,
+    qa_id: str,
+    board_id: str | None,
+    actor: ActorContext,
+) -> tuple[Any, Any] | None:
+    """Resolve one Q&A item and retain its scoped card for authorization."""
+
     if board_id is None or actor.board_id != board_id:
         return None
     qa = await services.qa.get_question(qa_id)
     if not qa:
         return None
     card = await _get_card_in_scope(services, qa.card_id, board_id, actor)
-    return qa if card else None
+    return (qa, card) if card else None
 
 
 async def _get_comment_in_scope(
@@ -121,13 +146,48 @@ async def _get_comment_in_scope(
 ) -> Any | None:
     """Resolve comment/choice -> card before exposing or mutating it."""
 
+    scoped = await _get_comment_with_card_in_scope(
+        services,
+        comment_id,
+        board_id,
+        actor,
+    )
+    return scoped[0] if scoped else None
+
+
+async def _get_comment_with_card_in_scope(
+    services: ApplicationServiceCatalog,
+    comment_id: str,
+    board_id: str | None,
+    actor: ActorContext,
+) -> tuple[Any, Any] | None:
+    """Resolve one comment and retain its scoped card for authorization."""
+
     if board_id is None or actor.board_id != board_id:
         return None
     comment = await services.comments.get_comment(comment_id)
     if not comment:
         return None
     card = await _get_card_in_scope(services, comment.card_id, board_id, actor)
-    return comment if card else None
+    return (comment, card) if card else None
+
+
+def _stateful_requirement(
+    operation: str,
+    legacy_operation: str,
+    *,
+    entity: str,
+    parent: Any,
+) -> PermissionRequirement:
+    """Build a state-aware requirement when the parent exposes a status."""
+
+    state = entity_state(parent)
+    return PermissionRequirement(
+        operation,
+        legacy_operation=legacy_operation,
+        entity=entity if state is not None else None,
+        state=state,
+    )
 
 
 def _qa_payload(qa: Any) -> dict[str, Any]:
@@ -138,6 +198,22 @@ def _qa_payload(qa: Any) -> dict[str, Any]:
         "asked_by": getattr(qa, "asked_by", None),
         "answered_by": getattr(qa, "answered_by", None),
     }
+
+
+async def _get_topic_in_scope(
+    story_service: Any,
+    topic_id: str,
+    board_id: str,
+    actor: ActorContext,
+) -> Any | None:
+    """Resolve a topic only inside the actor-bound command board."""
+
+    if actor.board_id != board_id:
+        return None
+    topic = await story_service.get_topic(topic_id)
+    if not topic or topic.board_id != board_id:
+        return None
+    return topic
 
 
 def _topic_payload(topic: Any) -> dict[str, Any]:
@@ -217,6 +293,16 @@ class McpAskQuestionUseCase:
                     {"error": "Failed to create question (card not found)"}
                 )
 
+            await require_authorization(
+                actor,
+                card_requirement(
+                    "card.qa.ask",
+                    state=entity_state(card),
+                    legacy_operation="qa:create",
+                ),
+                uow=uow,
+                board_id=card.board_id,
+            )
             qa = await uow.services.qa.create_question(
                 command.parent_id,
                 actor.actor_id,
@@ -273,6 +359,17 @@ class McpAskQuestionUseCase:
             if not parent:
                 return McpPayloadResult({"error": not_found})
 
+            await require_authorization(
+                actor,
+                _stateful_requirement(
+                    f"{command.target_type}.qa.ask",
+                    "qa:create",
+                    entity=command.target_type,
+                    parent=parent,
+                ),
+                uow=uow,
+                board_id=parent.board_id,
+            )
             qa = await qa_service.create_question(
                 command.parent_id,
                 actor.actor_id,
@@ -313,6 +410,17 @@ class McpAskQuestionUseCase:
         ):
             return McpPayloadResult({"error": "Sprint not found"})
 
+        await require_authorization(
+            actor,
+            _stateful_requirement(
+                "sprint.qa.ask",
+                "qa:create",
+                entity="sprint",
+                parent=sprint,
+            ),
+            uow=uow,
+            board_id=sprint.board_id,
+        )
         qa = await uow.services.sprint_qa.create_question(
             command.parent_id,
             actor.actor_id,
@@ -350,15 +458,26 @@ class McpAnswerQuestionUseCase:
     ) -> McpPayloadResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        existing = await _get_qa_in_scope(
+        scoped = await _get_qa_with_card_in_scope(
             uow.services,
             command.qa_id,
             command.board_id,
             actor,
         )
-        if not existing:
+        if not scoped:
             return McpPayloadResult({"error": "Failed to answer question (not found)"})
+        _existing, card = scoped
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.qa.answer",
+                state=entity_state(card),
+                legacy_operation="qa:answer",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         try:
             qa = await uow.services.qa.answer_question(
                 command.qa_id,
@@ -409,15 +528,26 @@ class McpDeleteQuestionUseCase:
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
-        qa = await _get_qa_in_scope(
+        scoped = await _get_qa_with_card_in_scope(
             uow.services,
             command.qa_id,
             command.board_id,
             actor,
         )
-        if not qa:
+        if not scoped:
             return McpPayloadResult({"error": "Q&A item not found"})
+        _qa, card = scoped
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.qa.delete",
+                state=entity_state(card),
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         deleted = await uow.services.qa.delete_question(command.qa_id)
         if not deleted:
             return McpPayloadResult({"error": "Q&A item not found"})
@@ -452,6 +582,16 @@ class McpAddCommentUseCase:
                 {"error": "Failed to create comment (card not found)"}
             )
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.create",
+                state=entity_state(card),
+                legacy_operation="comments:create",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         comment = await uow.services.comments.create_comment(
             command.card_id,
             actor.actor_id,
@@ -518,6 +658,16 @@ class McpAddChoiceCommentUseCase:
                 {"error": "Failed to create choice comment (card not found)"}
             )
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.create_choice",
+                state=entity_state(card),
+                legacy_operation="comments:create",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         comment_type = (
             command.comment_type
             if command.comment_type in ("choice", "multi_choice")
@@ -582,19 +732,30 @@ class McpRespondToChoiceUseCase:
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
-        existing = await _get_comment_in_scope(
+        scoped = await _get_comment_with_card_in_scope(
             uow.services,
             command.comment_id,
             command.board_id,
             actor,
         )
-        if not existing:
+        if not scoped:
             return McpPayloadResult(
                 {"error": "Choice comment not found or invalid selection"}
             )
+        _existing, card = scoped
 
         from okto_pulse.core.services.qa_selection import QASelectionError
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.respond_choice",
+                state=entity_state(card),
+                legacy_operation="comments:create",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         try:
             comment = await uow.services.comments.respond_to_choice(
                 comment_id=command.comment_id,
@@ -718,17 +879,28 @@ class McpUpdateCommentUseCase:
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
-        existing = await _get_comment_in_scope(
+        scoped = await _get_comment_with_card_in_scope(
             uow.services,
             command.comment_id,
             command.board_id,
             actor,
         )
-        if not existing:
+        if not scoped:
             return McpPayloadResult(
                 {"error": "Comment not found or not owned by this agent"}
             )
+        _existing, card = scoped
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.edit",
+                state=entity_state(card),
+                legacy_operation="comments:update",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         comment = await uow.services.comments.update_comment(
             command.comment_id,
             actor.actor_id,
@@ -778,16 +950,27 @@ class McpDeleteCommentUseCase:
     ) -> McpPayloadResult:
 
         comment_service = uow.services.comments
-        comment = await _get_comment_in_scope(
+        scoped = await _get_comment_with_card_in_scope(
             uow.services,
             command.comment_id,
             command.board_id,
             actor,
         )
-        if not comment:
+        if not scoped:
             return McpPayloadResult(
                 {"error": "Comment not found or not owned by this agent"}
             )
+        comment, card = scoped
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.delete",
+                state=entity_state(card),
+                legacy_operation="comments:delete",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         card_id = comment.card_id
         deleted = await comment_service.delete_comment(
             command.comment_id,
@@ -837,6 +1020,16 @@ class McpUploadAttachmentUseCase:
                 {"error": "Failed to upload attachment (card not found)"}
             )
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.attachments.upload",
+                state=entity_state(card),
+                legacy_operation="attachments:upload",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         try:
             filename = validate_attachment_filename(command.filename)
         except InvalidAttachmentFilenameError as exc:
@@ -956,6 +1149,16 @@ class McpDeleteAttachmentUseCase:
         if not card:
             return McpPayloadResult({"error": "Attachment not found"})
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.attachments.delete",
+                state=entity_state(card),
+                legacy_operation="attachments:delete",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         service = uow.services.attachments
         try:
             receipt = await service.delete_attachment(command.attachment_id)
@@ -1001,6 +1204,18 @@ class McpCreateTopicUseCase:
     ) -> McpPayloadResult:
         from okto_pulse.core.services import TopicOperationError
 
+        board = await load_accessible_board(uow, command.board_id, actor)
+        if board is None:
+            return McpPayloadResult({"error": "Board not found"})
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "topic.entity.create",
+                legacy_operation="specs:create",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         try:
             topic = await uow.services.stories.create_topic(
                 command.board_id,
@@ -1044,8 +1259,13 @@ class McpUpdateTopicUseCase:
         from okto_pulse.core.services import TopicOperationError
 
         story_service = uow.services.stories
-        topic = await story_service.get_topic(command.topic_id)
-        if not topic or topic.board_id != command.board_id:
+        topic = await _get_topic_in_scope(
+            story_service,
+            command.topic_id,
+            command.board_id,
+            actor,
+        )
+        if not topic:
             return McpPayloadResult(
                 {
                     "success": False,
@@ -1053,6 +1273,15 @@ class McpUpdateTopicUseCase:
                     "code": "topic_not_found",
                 }
             )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "topic.entity.edit_fields",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=topic.board_id,
+        )
         try:
             updated = await story_service.update_topic(
                 command.topic_id,
@@ -1098,8 +1327,13 @@ class McpSetTopicArchivedUseCase:
         from okto_pulse.core.services import TopicOperationError
 
         story_service = uow.services.stories
-        topic = await story_service.get_topic(command.topic_id)
-        if not topic or topic.board_id != command.board_id:
+        topic = await _get_topic_in_scope(
+            story_service,
+            command.topic_id,
+            command.board_id,
+            actor,
+        )
+        if not topic:
             return McpPayloadResult(
                 {
                     "success": False,
@@ -1107,6 +1341,18 @@ class McpSetTopicArchivedUseCase:
                     "code": "topic_not_found",
                 }
             )
+        operation = (
+            "topic.entity.archive" if command.archived else "topic.entity.restore"
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                operation,
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=topic.board_id,
+        )
         try:
             updated = await story_service.update_topic(
                 command.topic_id,
@@ -1158,8 +1404,13 @@ class McpDeleteTopicUseCase:
         from okto_pulse.core.services import TopicOperationError
 
         story_service = uow.services.stories
-        topic = await story_service.get_topic(command.topic_id)
-        if not topic or topic.board_id != command.board_id:
+        topic = await _get_topic_in_scope(
+            story_service,
+            command.topic_id,
+            command.board_id,
+            actor,
+        )
+        if not topic:
             return McpPayloadResult(
                 {
                     "success": False,
@@ -1167,6 +1418,15 @@ class McpDeleteTopicUseCase:
                     "code": "topic_not_found",
                 }
             )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "topic.entity.delete",
+                legacy_operation="specs:delete",
+            ),
+            uow=uow,
+            board_id=topic.board_id,
+        )
         try:
             deleted = await story_service.delete_topic(
                 command.topic_id,
@@ -1216,8 +1476,19 @@ class McpMergeTopicsUseCase:
         from okto_pulse.core.services import TopicOperationError
 
         story_service = uow.services.stories
-        source = await story_service.get_topic(command.source_topic_id)
-        if not source or source.board_id != command.board_id:
+        source = await _get_topic_in_scope(
+            story_service,
+            command.source_topic_id,
+            command.board_id,
+            actor,
+        )
+        target = await _get_topic_in_scope(
+            story_service,
+            command.target_topic_id,
+            command.board_id,
+            actor,
+        )
+        if not source or not target:
             return McpPayloadResult(
                 {
                     "success": False,
@@ -1225,6 +1496,15 @@ class McpMergeTopicsUseCase:
                     "code": "topic_not_found",
                 }
             )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "topic.entity.merge",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=source.board_id,
+        )
         try:
             result = await story_service.merge_topics(
                 command.source_topic_id,

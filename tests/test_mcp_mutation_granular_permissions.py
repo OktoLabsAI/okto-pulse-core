@@ -91,7 +91,7 @@ async def test_card_create_keeps_internal_mcp_wildcard_compatibility(
 
 
 @pytest.mark.asyncio
-async def test_sprint_qa_ask_is_no_longer_an_ungated_variant(
+async def test_sprint_qa_ask_defers_permission_until_after_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _context(_board_id: str):
@@ -105,7 +105,7 @@ async def test_sprint_qa_ask_is_no_longer_an_ungated_variant(
         question="Can this proceed?",
     )
 
-    assert _required_permission(raw) == "sprint.qa.ask"
+    assert json.loads(raw) == {"error": "Sprint not found"}
 
 
 @pytest.mark.asyncio

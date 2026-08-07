@@ -26,6 +26,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
 )
 from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
     require_all,
     require_authorization,
 )
@@ -545,8 +546,9 @@ class SubmitTaskValidationUseCase:
     card routing stay in the service). ``CardOperationError`` (including the
     reviewer-separation action-required contract), ``GateContractError`` and
     ``ResourceGateError`` propagate for the adapter to map; a missing card is
-    ``EntityNotFoundError`` (→ 404). Commits only after the service mutation,
-    exactly as the legacy endpoint did."""
+    ``EntityNotFoundError`` (→ 404). The canonical ``card.validation.submit``
+    permission is required without a legacy-token fallback. Commits only after
+    the service mutation, exactly as the legacy endpoint did."""
 
     _REQUIRED = (
         "confidence",
@@ -582,6 +584,18 @@ class SubmitTaskValidationUseCase:
             )
         if data.get("recommendation") not in ("approve", "reject"):
             raise CommandValidationError("recommendation must be 'approve' or 'reject'")
+
+        state = entity_state(card)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "card.validation.submit",
+                entity="card" if state is not None else None,
+                state=state,
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
 
         if actor.actor_name:
             reviewer_name = actor.actor_name
@@ -703,8 +717,9 @@ class DeleteTaskValidationUseCase:
     raises ``ValueError`` for a missing card (adapter → 404 with its message) and
     returns ``False`` for an unknown validation id → ``EntityNotFoundError`` the
     adapter maps to the legacy 404 ("Validation not found"). The service mutates
-    in place without committing, so the use case commits — exactly as the legacy
-    endpoint did."""
+    in place without committing. The canonical ``card.validation.delete``
+    permission is required without a legacy-token fallback, and the use case
+    commits only after the authorized mutation."""
 
     async def execute(
         self,
@@ -714,7 +729,7 @@ class DeleteTaskValidationUseCase:
         uow: PulseUnitOfWork,
     ) -> DeleteTaskValidationResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        card = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
@@ -727,6 +742,17 @@ class DeleteTaskValidationUseCase:
         )
         if not validation:
             raise EntityNotFoundError("task_validation", command.validation_id)
+        state = entity_state(card)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "card.validation.delete",
+                entity="card" if state is not None else None,
+                state=state,
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         deleted = await service.delete_task_validation(
             command.card_id, command.validation_id, actor.actor_id
         )
@@ -853,9 +879,10 @@ class LinkTestTaskToBugUseCase:
 
     The two ``get_card`` lookups stay on ``CardService``; the spec re-fetch uses
     the typed UnitOfWork catalog (replacing the legacy inline lookup). The JSONB
-    mutation uses ``flag_modified`` and commits ONLY when the id was actually
-    appended — exactly as the legacy endpoint did. ``is_unblocked`` mirrors the
-    legacy ``len(linked) >= 1``."""
+    mutation is authorized by state-aware ``card.entity.link_tests`` (with
+    ``cards:update`` compatibility), uses ``flag_modified`` and commits ONLY
+    when the id was actually appended — exactly as the legacy endpoint did.
+    ``is_unblocked`` mirrors the legacy ``len(linked) >= 1``."""
 
     async def execute(
         self,
@@ -920,6 +947,17 @@ class LinkTestTaskToBugUseCase:
                         "exist on the bug spec"
                     )
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.link_tests",
+                state=entity_state(bug_card),
+                legacy_operation="cards:update",
+            ),
+            uow=uow,
+            board_id=bug_card.board_id,
+        )
+
         # Add test task to linked_test_task_ids.
         linked = list(bug_card.linked_test_task_ids or [])
         if command.test_task_id not in linked:
@@ -951,7 +989,8 @@ class UnlinkTestTaskFromBugUseCase:
     missing bug card is ``EntityNotFoundError("card", …)`` (adapter → 404,
     "Card not found"). The JSONB mutation uses ``flag_modified`` and commits ONLY
     when the id was actually present and removed — exactly as the legacy endpoint
-    did (an absent id is a no-op 204)."""
+    did (an absent id is a no-op 204). Authorization is state-aware
+    ``card.entity.link_tests`` with ``cards:update`` compatibility."""
 
     async def execute(
         self,
@@ -979,6 +1018,17 @@ class UnlinkTestTaskFromBugUseCase:
         )
         if not test_task or getattr(test_task, "spec_id", None) != bug_card.spec_id:
             raise EntityNotFoundError("test_task", command.test_task_id)
+
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.link_tests",
+                state=entity_state(bug_card),
+                legacy_operation="cards:update",
+            ),
+            uow=uow,
+            board_id=bug_card.board_id,
+        )
 
         linked = list(bug_card.linked_test_task_ids or [])
         if command.test_task_id in linked:
