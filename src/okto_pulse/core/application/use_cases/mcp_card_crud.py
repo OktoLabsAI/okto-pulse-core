@@ -31,6 +31,17 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    require_all,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_create_permission_requirement,
+    card_requirement,
+    card_update_permission_requirements,
+    entity_state,
+)
 from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.domain.knowledge_selection import KnowledgeTargetType
 from okto_pulse.core.ports.knowledge_propagation import KnowledgeTargetKey
@@ -117,10 +128,16 @@ class McpCreateCardUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpCreateCardResult:
-        try:
-            _require_actor_board(actor, command.board_id)
-        except EntityNotFoundError as exc:
-            raise ValueError("Board not found") from exc
+        board = await load_accessible_board(uow, command.board_id, actor)
+        if board is None:
+            raise ValueError("Board not found")
+
+        await require_authorization(
+            actor,
+            card_create_permission_requirement(command.data),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         if getattr(command.data, "knowledge_propagation", None) is not None:
             from okto_pulse.core.application.use_cases.knowledge_propagation import (
@@ -229,8 +246,17 @@ class McpUpdateCardUseCase:
         uow: PulseUnitOfWork,
     ) -> McpUpdateCardResult:
         service = uow.services.cards
-        await _get_card_in_scope(
+        existing = await _get_card_in_scope(
             service, command.card_id, command.board_id, actor
+        )
+        await require_all(
+            actor,
+            *card_update_permission_requirements(
+                command.data,
+                state=entity_state(existing),
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         updated = await service.update_card(
             command.card_id,
@@ -330,8 +356,18 @@ class McpDeleteCardUseCase:
         uow: PulseUnitOfWork,
     ) -> McpDeleteCardResult:
         service = uow.services.cards
-        await _get_card_in_scope(
+        existing = await _get_card_in_scope(
             service, command.card_id, command.board_id, actor
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.delete",
+                state=entity_state(existing),
+                legacy_operation="cards:delete",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         delete_result = await service.delete_card(
             command.card_id,
@@ -463,6 +499,16 @@ class McpRemoveCardDependencyUseCase:
         ):
             return McpRemoveCardDependencyResult(False)
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.manage_dependencies",
+                state=entity_state(card),
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
+
         removed = await service.remove_dependency(
             command.card_id, command.depends_on_id
         )
@@ -552,6 +598,15 @@ class McpCopyKnowledgeToCardUseCase:
         card = await uow.services.cards.get_card(command.card_id)
         if not card or card.board_id != command.board_id:
             raise EntityNotFoundError("card", command.card_id)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.copy_from_spec.knowledge",
+                state=entity_state(card),
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         knowledge_state = await uow.services.knowledge_propagation.read(
             KnowledgeTargetKey(

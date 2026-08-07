@@ -79,6 +79,23 @@ def test_none_is_trusted_full_access_but_unknown_flag_fails_closed() -> None:
     }
 
 
+@pytest.mark.parametrize("source", ["mcp", "system"])
+def test_internal_sources_preserve_legacy_trusted_wildcard(source: str) -> None:
+    decision = decide_authorization(
+        _actor(["*"], source=source),
+        PermissionRequirement("card.entity.create", legacy_operation="cards:create"),
+    )
+    assert decision.allowed is True
+
+
+def test_rest_does_not_treat_legacy_wildcard_as_trusted() -> None:
+    decision = decide_authorization(
+        _actor(["*"], source="rest"),
+        PermissionRequirement("card.entity.create", legacy_operation="cards:create"),
+    )
+    assert decision.allowed is False
+
+
 def test_permission_set_decision_is_state_aware() -> None:
     actor = _actor(
         PermissionSet(

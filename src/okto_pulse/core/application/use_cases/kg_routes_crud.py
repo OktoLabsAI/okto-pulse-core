@@ -32,6 +32,10 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -194,6 +198,12 @@ class StartHistoricalUseCase:
     ) -> StartHistoricalResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement("kg.admin.historical_consolidation"),
+            uow=uow,
+            board_id=command.board_id,
+        )
         payload = await uow.services.kg.start_historical_consolidation(command.board_id
         )
         return StartHistoricalResult(payload)
@@ -226,6 +236,12 @@ class CancelHistoricalUseCase:
     ) -> CancelHistoricalResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement("kg.admin.historical_consolidation"),
+            uow=uow,
+            board_id=command.board_id,
+        )
         payload = await uow.services.kg.cancel_historical(command.board_id)
         return CancelHistoricalResult(payload)
 
@@ -290,6 +306,12 @@ class DeleteBoardKgUseCase:
     ) -> DeleteBoardKgResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement("kg.admin.wipe_board"),
+            uow=uow,
+            board_id=command.board_id,
+        )
         counts = await uow.services.kg.right_to_erasure(command.board_id)
         return DeleteBoardKgResult(counts)
 

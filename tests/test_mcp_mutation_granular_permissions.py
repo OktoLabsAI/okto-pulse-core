@@ -29,7 +29,7 @@ def _required_permission(raw: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_card_create_denies_false_granular_leaf_before_validation(
+async def test_card_create_validates_input_before_core_lookup_and_authorization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _context(_board_id: str):
@@ -44,7 +44,8 @@ async def test_card_create_denies_false_granular_leaf_before_validation(
         status="not-a-status",
     )
 
-    assert _required_permission(raw) == "card.entity.create"
+    payload = json.loads(raw)
+    assert "Invalid status" in payload["error"]
 
 
 @pytest.mark.asyncio
@@ -59,6 +60,27 @@ async def test_card_create_keeps_legacy_list_fallback(
     raw = await server.okto_pulse_create_card.fn(
         board_id=BOARD_ID,
         title="Legacy",
+        spec_id="spec-1",
+        status="not-a-status",
+    )
+
+    payload = json.loads(raw)
+    assert "Invalid status" in payload["error"]
+    assert "permission" not in payload["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_card_create_keeps_internal_mcp_wildcard_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _context(_board_id: str):
+        return _ctx(["*"])
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _context)
+
+    raw = await server.okto_pulse_create_card.fn(
+        board_id=BOARD_ID,
+        title="Trusted internal caller",
         spec_id="spec-1",
         status="not-a-status",
     )
@@ -114,40 +136,34 @@ async def test_profile_update_denies_false_canonical_leaf_before_uow(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("flags", "kwargs", "required_permission"),
+    ("flags", "kwargs"),
     (
         (
             {"card": {"entity": {"edit_fields": False}}},
             {"title": "Changed"},
-            "card.entity.edit_fields",
         ),
         (
             {"card": {"entity": {"assign": False}}},
             {"assignee_id": "agent-2"},
-            "card.entity.assign",
         ),
         (
             {"card": {"entity": {"label": False}}},
             {"labels": ["blocked"]},
-            "card.entity.label",
         ),
         (
             {"card": {"entity": {"link_tests": False}}},
             {"linked_test_task_ids": ["card-test-1"]},
-            "card.entity.link_tests",
         ),
         (
             {"card": {"entity": {"edit_bug_fields": False}}},
-            {"severity": "high"},
-            "card.entity.edit_bug_fields",
+            {"severity": "major"},
         ),
     ),
 )
-async def test_update_card_checks_each_requested_capability(
+async def test_update_card_defers_permission_decision_until_after_lookup(
     monkeypatch: pytest.MonkeyPatch,
     flags: dict,
     kwargs: dict,
-    required_permission: str,
 ) -> None:
     async def _context(_board_id: str):
         return _ctx(PermissionSet(flags))
@@ -160,7 +176,7 @@ async def test_update_card_checks_each_requested_capability(
         **kwargs,
     )
 
-    assert _required_permission(raw) == required_permission
+    assert json.loads(raw) == {"error": "Card not found"}
 
 
 @pytest.mark.asyncio
@@ -192,7 +208,7 @@ async def test_structured_resource_denies_false_specific_leaf(
         server.okto_pulse_remove_card_dependency,
     ),
 )
-async def test_card_dependency_mutations_deny_before_uow(
+async def test_card_dependency_mutations_lookup_before_permission_denial(
     monkeypatch: pytest.MonkeyPatch,
     tool,
 ) -> None:
@@ -201,15 +217,7 @@ async def test_card_dependency_mutations_deny_before_uow(
             PermissionSet({"card": {"entity": {"manage_dependencies": False}}})
         )
 
-    def _forbidden_uow_factory():
-        raise AssertionError("denied dependency mutation resolved a UoW")
-
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        _forbidden_uow_factory,
-    )
 
     raw = await tool.fn(
         board_id=BOARD_ID,
@@ -217,48 +225,40 @@ async def test_card_dependency_mutations_deny_before_uow(
         depends_on_id="card-2",
     )
 
-    assert _required_permission(raw) == "card.entity.manage_dependencies"
+    assert json.loads(raw) == {"error": "Card not found"}
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("flags", "kwargs", "required_permission"),
+    ("flags", "kwargs"),
     (
         (
             {"sprint": {"entity": {"edit_fields": False}}},
             {"title": "Changed"},
-            "sprint.entity.edit_fields",
         ),
         (
             {"sprint": {"entity": {"edit_coverage_flags": False}}},
             {"skip_test_coverage": False},
-            "sprint.entity.edit_coverage_flags",
+        ),
+        (
+            {"sprint": {"entity": {"edit_coverage_flags": False}}},
+            {"validation_threshold": 80},
         ),
         (
             {"sprint": {"entity": {"label": False}}},
             {"labels": ["blocked"]},
-            "sprint.entity.label",
         ),
     ),
 )
-async def test_update_sprint_checks_each_requested_capability_before_uow(
+async def test_update_sprint_defers_permission_decision_until_after_lookup(
     monkeypatch: pytest.MonkeyPatch,
     flags: dict,
     kwargs: dict,
-    required_permission: str,
 ) -> None:
     async def _context(_board_id: str):
         return _ctx(PermissionSet(flags))
 
-    def _forbidden_uow_factory():
-        raise AssertionError("denied sprint update resolved a UoW")
-
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        _forbidden_uow_factory,
-    )
 
     raw = await server.okto_pulse_update_sprint.fn(
         board_id=BOARD_ID,
@@ -266,12 +266,47 @@ async def test_update_sprint_checks_each_requested_capability_before_uow(
         **kwargs,
     )
 
-    assert _required_permission(raw) == required_permission
+    assert json.loads(raw) == {"error": "Sprint not found"}
+
+
+@pytest.mark.asyncio
+async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ReachedCore(RuntimeError):
+        pass
+
+    async def _context(_board_id: str):
+        return _ctx([Permissions.SPECS_EVALUATE])
+
+    def _reached_core_factory():
+        raise ReachedCore
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _context)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        _reached_core_factory,
+    )
+
+    with pytest.raises(ReachedCore):
+        await server.okto_pulse_submit_spec_validation.fn(
+            board_id=BOARD_ID,
+            spec_id="spec-1",
+            completeness=90,
+            completeness_justification="Complete enough",
+            assertiveness=90,
+            assertiveness_justification="Assertive enough",
+            ambiguity=10,
+            ambiguity_justification="Low ambiguity",
+            general_justification="A sufficiently complete validation rationale",
+            recommendation="approve",
+        )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("tool", "flags", "kwargs", "required_permission"),
+    ("tool", "flags", "kwargs", "expected_error"),
     (
         (
             server.okto_pulse_submit_sprint_evaluation,
@@ -289,41 +324,33 @@ async def test_update_sprint_checks_each_requested_capability_before_uow(
                 "overall_justification": "Ready",
                 "recommendation": "approve",
             },
-            "sprint.evaluations.submit",
+            "Sprint not found",
         ),
         (
             server.okto_pulse_delete_sprint_evaluation,
             {"sprint": {"evaluations": {"delete": False}}},
             {"evaluation_id": "evaluation-1"},
-            "sprint.evaluations.delete",
+            "Sprint not found",
         ),
         (
             server.okto_pulse_answer_sprint_question,
             {"sprint": {"qa": {"answer": False}}},
             {"qa_id": "qa-1", "answer": "No"},
-            "sprint.qa.answer",
+            "Q&A item not found",
         ),
     ),
 )
-async def test_sprint_mutations_deny_specific_leaf_before_uow(
+async def test_sprint_mutations_lookup_before_permission_denial(
     monkeypatch: pytest.MonkeyPatch,
     tool,
     flags: dict,
     kwargs: dict,
-    required_permission: str,
+    expected_error: str,
 ) -> None:
     async def _context(_board_id: str):
         return _ctx(PermissionSet(flags))
 
-    def _forbidden_uow_factory():
-        raise AssertionError("denied sprint mutation resolved a UoW")
-
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        _forbidden_uow_factory,
-    )
 
     raw = await tool.fn(
         board_id=BOARD_ID,
@@ -331,33 +358,25 @@ async def test_sprint_mutations_deny_specific_leaf_before_uow(
         **kwargs,
     )
 
-    assert _required_permission(raw) == required_permission
+    assert json.loads(raw) == {"error": expected_error}
 
 
 @pytest.mark.asyncio
-async def test_assign_tasks_to_sprint_denies_before_parsing_or_uow(
+async def test_assign_tasks_to_sprint_lookup_precedes_permission_denial(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _context(_board_id: str):
         return _ctx(PermissionSet({"sprint": {"entity": {"assign": False}}}))
 
-    def _forbidden_uow_factory():
-        raise AssertionError("denied sprint assignment resolved a UoW")
-
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        _forbidden_uow_factory,
-    )
 
     raw = await server.okto_pulse_assign_tasks_to_sprint.fn(
         board_id=BOARD_ID,
         sprint_id="sprint-1",
-        card_ids="card-1,card-2",
+        card_ids=["card-1", "card-2"],
     )
 
-    assert _required_permission(raw) == "sprint.entity.assign"
+    assert json.loads(raw) == {"error": "Sprint not found"}
 
 
 @pytest.mark.asyncio
@@ -367,12 +386,12 @@ async def test_assign_tasks_to_sprint_denies_before_parsing_or_uow(
         (
             server.okto_pulse_copy_mockups_to_card,
             "card.copy_from_spec.mockups",
-            {"screen_ids": "screen-1,screen-2"},
+            {"screen_ids": ["screen-1", "screen-2"]},
         ),
         (
             server.okto_pulse_copy_knowledge_to_card,
             "card.copy_from_spec.knowledge",
-            {"knowledge_ids": "knowledge-1,knowledge-2"},
+            {"knowledge_ids": ["knowledge-1", "knowledge-2"]},
         ),
         (
             server.okto_pulse_copy_qa_to_card,
@@ -381,7 +400,7 @@ async def test_assign_tasks_to_sprint_denies_before_parsing_or_uow(
         ),
     ),
 )
-async def test_copy_to_card_denies_specific_leaf_before_parsing_or_uow(
+async def test_copy_to_card_looks_up_source_before_permission_denial(
     monkeypatch: pytest.MonkeyPatch,
     tool,
     permission_leaf: str,
@@ -396,15 +415,7 @@ async def test_copy_to_card_denies_specific_leaf_before_parsing_or_uow(
             )
         )
 
-    def _forbidden_uow_factory():
-        raise AssertionError("denied card copy resolved a UoW")
-
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        _forbidden_uow_factory,
-    )
 
     raw = await tool.fn(
         board_id=BOARD_ID,
@@ -413,4 +424,4 @@ async def test_copy_to_card_denies_specific_leaf_before_parsing_or_uow(
         **kwargs,
     )
 
-    assert _required_permission(raw) == permission_leaf
+    assert json.loads(raw) == {"error": "Spec not found"}

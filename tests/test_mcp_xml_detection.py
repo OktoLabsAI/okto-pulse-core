@@ -6,6 +6,7 @@ Cobre helper `_detect_nested_parameter_xml` e decorator
 
 from __future__ import annotations
 
+import json
 import logging
 
 import pytest
@@ -225,6 +226,25 @@ async def test_decorator_does_not_alter_return_value() -> None:
     result_dirty = await wrapped(x="<parameter>")
     assert result_clean is payload
     assert result_dirty is payload
+
+
+@pytest.mark.asyncio
+async def test_common_mcp_wrapper_projects_core_permission_denials() -> None:
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+    from okto_pulse.core.mcp.server import _xml_safety_log_decorator
+
+    detail = {
+        "error": "permission_denied",
+        "reason": "permission_missing",
+        "required_permission": "card.interact_in.done",
+    }
+
+    async def fake_tool(**kwargs):
+        raise PermissionDeniedError(json.dumps(detail))
+
+    raw = await _xml_safety_log_decorator(fake_tool)()
+
+    assert json.loads(json.loads(raw)["error"]) == detail
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,11 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_requirement,
+    entity_state,
+)
 from okto_pulse.core.application.use_cases._service_payload import (
     ServicePayload,
     payload,
@@ -217,6 +222,15 @@ class McpCopyMockupsToCardUseCase:
         card = await card_service.get_card(command.card_id)
         if not _in_board_scope(card, command.board_id, actor):
             raise EntityNotFoundError("card", command.card_id)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.copy_from_spec.mockups",
+                state=entity_state(card),
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         source_mockups = [m for m in (spec.screen_mockups or []) if isinstance(m, dict)]
         fallback = False
@@ -353,6 +367,15 @@ class McpCopyQaToCardUseCase:
         card = await uow.services.cards.get_card(command.card_id)
         if not _in_board_scope(card, command.board_id, actor):
             raise EntityNotFoundError("card", command.card_id)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.copy_from_spec.qa",
+                state=entity_state(card),
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         qa_items = [qa for qa in (spec.qa_items or []) if _qa_answer_text(qa)]
         if not qa_items:

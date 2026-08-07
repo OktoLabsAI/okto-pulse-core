@@ -51,6 +51,15 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    require_all,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    sprint_requirement,
+    sprint_update_permission_requirements,
+)
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 
@@ -410,6 +419,15 @@ class CreateSprintUseCase:
             write=True,
             entity_type="spec_or_board",
         )
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.entity.create",
+                legacy_operation="specs:create",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         service = uow.services.sprints
         sprint = await service.create_sprint(
@@ -455,7 +473,18 @@ class UpdateSprintUseCase:
         self, command: UpdateSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateSprintResult:
         service = uow.services.sprints
-        await _require_sprint_access(uow, command.sprint_id, actor, write=True)
+        existing = await _require_sprint_access(
+            uow, command.sprint_id, actor, write=True
+        )
+        await require_all(
+            actor,
+            *sprint_update_permission_requirements(
+                command.data,
+                state=entity_state(existing),
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
 
         sprint = await service.update_sprint(command.sprint_id, actor.actor_id, command.data)
         if not sprint:
@@ -525,7 +554,19 @@ class DeleteSprintUseCase:
         self, command: DeleteSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteSprintResult:
         service = uow.services.sprints
-        await _require_sprint_access(uow, command.sprint_id, actor, write=True)
+        existing = await _require_sprint_access(
+            uow, command.sprint_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.entity.delete",
+                state=entity_state(existing),
+                legacy_operation="specs:delete",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
 
         deleted = await service.delete_sprint(command.sprint_id, actor.actor_id)
         if not deleted:
@@ -563,7 +604,19 @@ class SubmitSprintEvaluationUseCase:
         self, command: SubmitSprintEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitSprintEvaluationResult:
         service = uow.services.sprints
-        await _require_sprint_access(uow, command.sprint_id, actor, write=True)
+        existing = await _require_sprint_access(
+            uow, command.sprint_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.evaluations.submit",
+                state=entity_state(existing),
+                legacy_operation="specs:evaluate",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
 
         sprint = await service.submit_evaluation(
             command.sprint_id, actor.actor_id, command.evaluation
@@ -604,7 +657,18 @@ class AssignSprintTasksUseCase:
         self, command: AssignSprintTasksCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AssignSprintTasksResult:
         service = uow.services.sprints
-        await _require_sprint_access(uow, command.sprint_id, actor, write=True)
+        existing = await _require_sprint_access(
+            uow, command.sprint_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.entity.assign",
+                state=entity_state(existing),
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
 
         count = await service.assign_tasks(command.sprint_id, command.card_ids, actor.actor_id)
         await commit(uow)
@@ -641,7 +705,18 @@ class UnassignSprintTasksUseCase:
         self, command: UnassignSprintTasksCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UnassignSprintTasksResult:
         service = uow.services.sprints
-        await _require_sprint_access(uow, command.sprint_id, actor, write=True)
+        existing = await _require_sprint_access(
+            uow, command.sprint_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.entity.assign",
+                state=entity_state(existing),
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
 
         count = await service.unassign_tasks(
             command.sprint_id,

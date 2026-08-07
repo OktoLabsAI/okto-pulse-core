@@ -27,6 +27,11 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    sprint_requirement,
+)
 
 
 # --- create (skip_ownership; service only flushes -> use-case-commit) ---------
@@ -67,6 +72,16 @@ class McpCreateSprintUseCase:
         spec = await uow.services.specs.get_spec(command.data.spec_id)
         if not spec or spec.board_id != command.board_id:
             return McpCreateSprintResult(None)
+
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.entity.create",
+                legacy_operation="specs:create",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         sprint = await uow.services.sprints.create_sprint(
             command.board_id, actor.actor_id, command.data, skip_ownership_check=True
@@ -441,6 +456,17 @@ class McpDeleteSprintEvaluationUseCase:
         if not sprint or sprint.board_id != actor.board_id:
             return McpDeleteSprintEvaluationResult("sprint_not_found")
 
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.evaluations.delete",
+                state=entity_state(sprint),
+                legacy_operation="specs:evaluate",
+            ),
+            uow=uow,
+            board_id=sprint.board_id,
+        )
+
         status = await uow.services.sprints.delete_evaluation(
             command.sprint_id, actor.actor_id, command.evaluation_id
         )
@@ -497,6 +523,17 @@ class McpAnswerSprintQuestionUseCase:
             or sprint.board_id != actor.board_id
         ):
             return McpAnswerSprintQuestionResult(qa_not_found=True)
+
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.qa.answer",
+                state=entity_state(sprint),
+                legacy_operation="qa:answer",
+            ),
+            uow=uow,
+            board_id=sprint.board_id,
+        )
 
         try:
             qa = await service.answer_question(

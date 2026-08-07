@@ -40,6 +40,10 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_create_permission_requirement,
+)
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 
@@ -472,6 +476,12 @@ class CreateCardInBoardUseCase:
         uow: PulseUnitOfWork,
     ) -> CreateCardInBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            card_create_permission_requirement(command.data),
+            uow=uow,
+            board_id=command.board_id,
+        )
         if getattr(command.data, "knowledge_propagation", None) is not None:
             from okto_pulse.core.application.use_cases.knowledge_propagation import (
                 CreateCardKnowledgeV2Command,

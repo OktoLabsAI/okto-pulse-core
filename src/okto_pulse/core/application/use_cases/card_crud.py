@@ -25,6 +25,15 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    require_all,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_requirement,
+    card_update_permission_requirements,
+    entity_state,
+)
 
 
 _CARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -164,11 +173,20 @@ class UpdateCardUseCase:
         self, command: UpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateCardResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        existing = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        await require_all(
+            actor,
+            *card_update_permission_requirements(
+                command.data,
+                state=entity_state(existing),
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         card = await service.update_card(command.card_id, actor.actor_id, command.data)
         if not card:
@@ -207,11 +225,21 @@ class DeleteCardUseCase:
         self, command: DeleteCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteCardResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        existing = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.delete",
+                state=entity_state(existing),
+                legacy_operation="cards:delete",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         delete_result = await service.delete_card(
             command.card_id,
@@ -411,6 +439,16 @@ class AddCardDependencyUseCase:
         if not depends_on:
             raise EntityNotFoundError("card", command.depends_on_id)
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.manage_dependencies",
+                state=entity_state(card),
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
+
         dep = await service.add_dependency(command.card_id, command.depends_on_id)
         dependency_id = dep.id
         await commit(uow)
@@ -460,6 +498,15 @@ class RemoveCardDependencyUseCase:
             )
         if source is None or target is None:
             raise EntityNotFoundError("dependency", command.card_id)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.manage_dependencies",
+                state=entity_state(source),
+            ),
+            uow=uow,
+            board_id=source.board_id,
+        )
         removed = await service.remove_dependency(
             command.card_id, command.depends_on_id
         )

@@ -104,6 +104,14 @@ def decide_authorization(
     else:
         raw_permissions = permissions
     normalized = normalize_permission_input(raw_permissions)
+    if (
+        actor.source in ("mcp", "system")
+        and isinstance(normalized, (list, tuple))
+        and "*" in normalized
+    ):
+        # Historical MCP/system principals use the flat wildcard as their
+        # explicit trusted sentinel. REST never inherits this compatibility.
+        normalized = None
     if normalized is None and actor.source not in ("mcp", "system"):
         normalized = ()
     evaluator = policy or DefaultPermissionPolicy()
