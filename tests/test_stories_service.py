@@ -344,6 +344,33 @@ async def test_story_lifecycle_filters_and_archive(db_factory):
         assert moved is not None
         assert moved.status == StoryStatus.READY
 
+        moved_activity_count = await db.scalar(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(
+                ActivityLog.board_id == board_id,
+                ActivityLog.action == "story_moved",
+            )
+        )
+        same_state = await service.move_story(
+            story.id,
+            actor_id,
+            StoryMove(status=StoryStatus.READY),
+        )
+        assert same_state is not None
+        assert same_state.status == StoryStatus.READY
+        assert (
+            await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(
+                    ActivityLog.board_id == board_id,
+                    ActivityLog.action == "story_moved",
+                )
+            )
+            == moved_activity_count
+        )
+
         with pytest.raises(ValueError):
             await service.move_story(story.id, actor_id, StoryMove(status=StoryStatus.CONVERTED))
 

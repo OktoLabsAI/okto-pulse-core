@@ -268,9 +268,9 @@ async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
 
 
 @pytest.mark.asyncio
-async def test_ask_sprint_skips_permission_gate_card_does_not():
-    # Sprint asymmetry: the sprint path has NO QA_CREATE permission gate; the card
-    # path does. With a denying permission, card->perm error, sprint->proceeds.
+async def test_ask_uses_target_specific_permission_for_card_and_sprint():
+    # Every target has a canonical QA leaf; the sprint service keeps its transport
+    # asymmetries but no longer bypasses authorization.
     db_factory = get_session_factory()
     board_id, card_id, spec_id = _id("r4s-board"), _id("r4s-card"), _id("r4s-spec")
     async with db_factory() as db:
@@ -280,15 +280,16 @@ async def test_ask_sprint_skips_permission_gate_card_does_not():
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL, created_by=USER_ID))
         await db.commit()
 
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
-         patch.object(mcp_server, "check_permission", return_value="qa.create denied"):
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=_stub_ctx(board_id, permissions=["board:read"])),
+    ):
         card_res = await _call("okto_pulse_ask", board_id=board_id, target_type="card", parent_id=card_id, question="Q")
         sprint_res = await _call("okto_pulse_ask", board_id=board_id, target_type="sprint", parent_id="nonexistent-sprint", question="Q")
 
-    # card path hit the permission gate...
-    assert "error" in card_res and "denied" in json.dumps(card_res).lower()
-    # ...sprint path skipped it and reached the service (sprint not found).
-    assert sprint_res.get("error") == "Sprint not found"
+    assert "card.qa.ask" in card_res["error"]
+    assert "sprint.qa.ask" in sprint_res["error"]
 
 
 @pytest.mark.asyncio

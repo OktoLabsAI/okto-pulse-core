@@ -11544,8 +11544,13 @@ class StoryService:
                 "This story is archived. Restore it before changing status."
             )
         old_status = story.status
+        # A lifecycle no-op is a read, not a mutation. Returning before the
+        # activity/event path prevents callers from manufacturing audit rows
+        # without holding any ``story.move.*`` capability.
+        if data.status == old_status:
+            return story
         allowed = self._STORY_TRANSITIONS.get(old_status, [])
-        if data.status not in allowed and data.status != old_status:
+        if data.status not in allowed:
             allowed_str = (
                 ", ".join(status.value for status in allowed) if allowed else "none"
             )
