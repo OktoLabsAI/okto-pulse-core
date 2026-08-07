@@ -16,6 +16,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, TypeAlias
 
+from okto_pulse.core.domain.sdlc_registry import (
+    SDLC_REGISTRY,
+    lifecycle_state_permission_registry,
+    transition_permission_flags,
+    transition_permission_registry,
+)
+
 
 PermissionFlags: TypeAlias = dict[str, Any]
 
@@ -299,11 +306,645 @@ SKB3_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
+_BUILTIN_PRESET_NAMES: tuple[str, ...] = (
+    "Full Control",
+    "Executor",
+    "Validator",
+    "QA",
+    "Reporter",
+    "Sprint Manager",
+    "Spec",
+)
+
+
+def _explicit_preset_grants(
+    leaves: tuple[str, ...],
+    grants: Mapping[str, tuple[str, ...]],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Materialize an explicit grant row for every built-in preset."""
+
+    unknown = set(grants) - set(_BUILTIN_PRESET_NAMES)
+    if unknown:
+        raise PermissionContractViolation(
+            f"unknown built-in presets in introduction manifest: {sorted(unknown)}"
+        )
+    return tuple(
+        (
+            name,
+            leaves if name == "Full Control" else tuple(grants.get(name, ())),
+        )
+        for name in _BUILTIN_PRESET_NAMES
+    )
+
+
+_ADMIN_CATALOG_PERMISSION_LEAVES: tuple[str, ...] = (
+    "agent.entity.read",
+    "agent.entity.create",
+    "agent.entity.edit",
+    "agent.entity.delete",
+    "agent.api_key.rotate",
+    "agent.board_access.read",
+    "agent.board_access.grant",
+    "agent.board_access.edit",
+    "agent.board_access.revoke",
+    "board.admin.create",
+    "board.admin.edit",
+    "board.admin.delete",
+    "board.share.read",
+    "board.share.create",
+    "board.share.edit",
+    "board.share.revoke",
+    "board.share.leave",
+    "permission_preset.entity.read",
+    "permission_preset.entity.create",
+    "permission_preset.entity.edit",
+    "permission_preset.entity.delete",
+    "permission_preset.clone",
+    "permission_preset.import",
+    "permission_preset.export",
+    "default_board_config.read",
+    "default_board_config.diff_read",
+    "default_board_config.candidates_read",
+    "default_board_config.export",
+    "default_board_config.create",
+    "default_board_config.activate",
+    "default_board_config.deactivate",
+    "default_board_config.import",
+    "default_board_config.set_design_system",
+    "default_board_config.guidelines.edit",
+    "design_system.entity.read",
+    "design_system.entity.create",
+    "design_system.entity.edit",
+    "design_system.entity.delete",
+    "design_system.import",
+    "design_system.export",
+    "design_system.board_link.read",
+    "design_system.board_link.create",
+    "design_system.board_link.delete",
+)
+
+_ADMIN_CATALOG_READ_GRANTS: tuple[str, ...] = (
+    "default_board_config.read",
+    "default_board_config.diff_read",
+    "default_board_config.candidates_read",
+    "default_board_config.export",
+    "design_system.entity.read",
+    "design_system.export",
+    "design_system.board_link.read",
+)
+
+ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="ADMIN-CATALOG/v1",
+    leaves=_ADMIN_CATALOG_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(
+        _ADMIN_CATALOG_PERMISSION_LEAVES,
+        {
+            "Executor": _ADMIN_CATALOG_READ_GRANTS,
+            "Validator": _ADMIN_CATALOG_READ_GRANTS,
+            "QA": _ADMIN_CATALOG_READ_GRANTS,
+            "Reporter": _ADMIN_CATALOG_READ_GRANTS,
+            "Sprint Manager": _ADMIN_CATALOG_READ_GRANTS,
+            "Spec": (
+                *_ADMIN_CATALOG_READ_GRANTS,
+                "default_board_config.create",
+                "default_board_config.activate",
+                "default_board_config.deactivate",
+                "default_board_config.import",
+                "default_board_config.set_design_system",
+                "default_board_config.guidelines.edit",
+                "design_system.entity.create",
+                "design_system.entity.edit",
+                "design_system.entity.delete",
+                "design_system.import",
+                "design_system.board_link.create",
+                "design_system.board_link.delete",
+            ),
+        },
+    ),
+    historical_authorities=(
+        ("agent.entity.read", "board.read"),
+        ("agent.entity.create", "profile.update"),
+        ("agent.entity.edit", "profile.update"),
+        ("agent.entity.delete", "profile.update"),
+        ("agent.api_key.rotate", "profile.update"),
+        ("agent.board_access.read", "board.read"),
+        ("agent.board_access.grant", "board.read"),
+        ("agent.board_access.edit", "board.read"),
+        ("agent.board_access.revoke", "board.read"),
+        ("board.admin.create", "board.read"),
+        ("board.admin.edit", "board.read"),
+        ("board.admin.delete", "board.read"),
+        ("board.share.read", "board.read"),
+        ("board.share.create", "board.read"),
+        ("board.share.edit", "board.read"),
+        ("board.share.revoke", "board.read"),
+        ("board.share.leave", "board.read"),
+        ("permission_preset.entity.read", "board.read"),
+        ("permission_preset.entity.create", "profile.update"),
+        ("permission_preset.entity.edit", "profile.update"),
+        ("permission_preset.entity.delete", "profile.update"),
+        ("permission_preset.clone", "profile.update"),
+        ("permission_preset.import", "profile.update"),
+        ("permission_preset.export", "board.read"),
+        ("default_board_config.read", "board.read"),
+        ("default_board_config.diff_read", "board.read"),
+        ("default_board_config.candidates_read", "board.read"),
+        ("default_board_config.export", "board.read"),
+        ("default_board_config.create", "spec.entity.edit_fields"),
+        ("default_board_config.activate", "spec.entity.edit_fields"),
+        ("default_board_config.deactivate", "spec.entity.edit_fields"),
+        ("default_board_config.import", "spec.entity.edit_fields"),
+        ("default_board_config.set_design_system", "spec.entity.edit_fields"),
+        ("default_board_config.guidelines.edit", "guidelines.adoption.manage"),
+        ("design_system.entity.read", "board.read"),
+        ("design_system.entity.create", "spec.architecture.create"),
+        ("design_system.entity.edit", "spec.architecture.edit"),
+        ("design_system.entity.delete", "spec.architecture.delete"),
+        ("design_system.import", "spec.architecture.import"),
+        ("design_system.export", "spec.architecture.read"),
+        ("design_system.board_link.read", "board.read"),
+        ("design_system.board_link.create", "spec.architecture.edit"),
+        ("design_system.board_link.delete", "spec.architecture.edit"),
+    ),
+)
+
+
+_OPERATIONAL_PERMISSION_LEAVES: tuple[str, ...] = (
+    "runtime.settings.read",
+    "runtime.settings.write",
+    "metrics.local.summary.read",
+    "metrics.publish_health.read",
+    "metrics.local.events.create",
+    "metrics.settings.edit",
+    "metrics.settings.migration_notice_seen",
+    "metrics.local.export",
+    "metrics.local.purge",
+    "amendment.revision.read",
+    "amendment.revision.create",
+    "amendment.revision.associate",
+    "amendment.revision.transition",
+    "amendment.coverage.confirm",
+)
+
+_OPERATIONAL_READ_GRANTS: tuple[str, ...] = (
+    "metrics.local.summary.read",
+    "metrics.publish_health.read",
+    "amendment.revision.read",
+)
+
+OPERATIONAL_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="OPERATIONAL/v1",
+    leaves=_OPERATIONAL_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(
+        _OPERATIONAL_PERMISSION_LEAVES,
+        {
+            "Executor": (
+                *_OPERATIONAL_READ_GRANTS,
+                "amendment.revision.create",
+                "amendment.revision.associate",
+                "amendment.revision.transition",
+            ),
+            "Validator": (
+                *_OPERATIONAL_READ_GRANTS,
+                "amendment.coverage.confirm",
+            ),
+            "QA": _OPERATIONAL_READ_GRANTS,
+            "Reporter": _OPERATIONAL_READ_GRANTS,
+            "Sprint Manager": _OPERATIONAL_READ_GRANTS,
+            "Spec": _OPERATIONAL_READ_GRANTS,
+        },
+    ),
+    historical_authorities=(
+        ("runtime.settings.read", "kg.admin.settings_read"),
+        ("runtime.settings.write", "kg.admin.settings_write"),
+        ("metrics.local.summary.read", "board.read"),
+        ("metrics.publish_health.read", "board.read"),
+        ("metrics.local.events.create", "board.analytics_read"),
+        ("metrics.settings.edit", "board.analytics_read"),
+        ("metrics.settings.migration_notice_seen", "board.analytics_read"),
+        ("metrics.local.export", "board.analytics_read"),
+        ("metrics.local.purge", "board.analytics_read"),
+        ("amendment.revision.read", "card.entity.read"),
+        ("amendment.revision.create", "card.entity.edit_bug_fields"),
+        ("amendment.revision.associate", "card.entity.edit_bug_fields"),
+        ("amendment.revision.transition", "card.entity.edit_bug_fields"),
+        ("amendment.coverage.confirm", "card.validation.submit"),
+    ),
+)
+
+
+_MCP_GAPS_PERMISSION_LEAVES: tuple[str, ...] = (
+    "ideation.knowledge.read",
+    "ideation.knowledge.create",
+    "ideation.knowledge.delete",
+    "ideation.qa.delete",
+    "refinement.qa.delete",
+    "spec.qa.delete",
+    "sprint.qa.delete",
+    "spec.tests.execute",
+    "spec.tests.edit",
+    "spec.tests.delete",
+    "story.mockups.read",
+    "story.mockups.create",
+    "story.mockups.edit",
+    "story.mockups.delete",
+    "story.mockups.annotate",
+    "sprint.tasks.assign",
+    "test_scenario.interact_in.draft",
+    "test_scenario.interact_in.ready",
+    "test_scenario.interact_in.automated",
+    "test_scenario.interact_in.passed",
+    "test_scenario.interact_in.failed",
+)
+
+MCP_GAPS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="MCP-GAPS/v1",
+    leaves=_MCP_GAPS_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(
+        _MCP_GAPS_PERMISSION_LEAVES,
+        {
+            "Executor": (
+                "story.mockups.read",
+            ),
+            "Validator": (
+                "ideation.knowledge.read",
+                "story.mockups.read",
+            ),
+            "QA": (
+                "ideation.knowledge.read",
+                "spec.tests.execute",
+                "spec.tests.edit",
+                "spec.tests.delete",
+                "story.mockups.read",
+                "test_scenario.interact_in.draft",
+                "test_scenario.interact_in.ready",
+                "test_scenario.interact_in.automated",
+                "test_scenario.interact_in.passed",
+                "test_scenario.interact_in.failed",
+            ),
+            "Reporter": (
+                "ideation.knowledge.read",
+                "story.mockups.read",
+            ),
+            "Sprint Manager": (
+                "ideation.knowledge.read",
+                "story.mockups.read",
+                "sprint.tasks.assign",
+            ),
+            "Spec": (
+                "ideation.knowledge.read",
+                "ideation.knowledge.create",
+                "ideation.knowledge.delete",
+                "spec.tests.execute",
+                "spec.tests.edit",
+                "spec.tests.delete",
+                "story.mockups.read",
+                "story.mockups.create",
+                "story.mockups.edit",
+                "story.mockups.delete",
+                "story.mockups.annotate",
+                "test_scenario.interact_in.draft",
+                "test_scenario.interact_in.ready",
+                "test_scenario.interact_in.automated",
+                "test_scenario.interact_in.passed",
+                "test_scenario.interact_in.failed",
+            ),
+        },
+    ),
+    historical_authorities=(
+        ("ideation.knowledge.read", "ideation.entity.read"),
+        ("ideation.knowledge.create", "ideation.entity.edit_fields"),
+        ("ideation.knowledge.delete", "ideation.entity.edit_fields"),
+        ("ideation.qa.delete", "ideation.qa.answer"),
+        ("refinement.qa.delete", "refinement.qa.answer"),
+        ("spec.qa.delete", "spec.qa.answer"),
+        ("sprint.qa.delete", "sprint.qa.answer"),
+        ("spec.tests.execute", "spec.tests.update_status"),
+        ("spec.tests.edit", "spec.tests.create"),
+        ("spec.tests.delete", "spec.tests.create"),
+        ("story.mockups.read", "story.entity.read"),
+        ("story.mockups.create", "story.entity.edit_fields"),
+        ("story.mockups.edit", "story.entity.edit_fields"),
+        ("story.mockups.delete", "story.entity.edit_fields"),
+        ("story.mockups.annotate", "story.entity.edit_fields"),
+        ("sprint.tasks.assign", "sprint.entity.assign"),
+        ("test_scenario.interact_in.draft", "spec.tests.update_status"),
+        ("test_scenario.interact_in.ready", "spec.tests.update_status"),
+        ("test_scenario.interact_in.automated", "spec.tests.update_status"),
+        ("test_scenario.interact_in.passed", "spec.tests.update_status"),
+        ("test_scenario.interact_in.failed", "spec.tests.update_status"),
+    ),
+)
+
+
+_KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
+    "kg.operations.health.read",
+    "kg.operations.integrity.read",
+    "kg.operations.integrity.reconcile",
+    "kg.operations.integrity.backfill",
+    "kg.operations.cognitive.read",
+    "kg.operations.cognitive.skip",
+    "kg.operations.cognitive.clear",
+    "kg.operations.queue.read",
+    "kg.operations.queue.reprocess",
+    "kg.operations.audit.read",
+    "kg.operations.schema.migrate",
+    "kg.operations.tick.run",
+    "kg.operations.global_outbox.read",
+    "kg.operations.global_outbox.reprocess",
+    "kg.operations.global_outbox.verify",
+    "kg.operations.global_recovery.preflight",
+    "kg.operations.global_recovery.confirm",
+    "kg.operations.global_recovery.read",
+    "kg.operations.global_recovery.cancel",
+    "kg.operations.global_recovery.resume",
+    "kg.operations.global_recovery.run",
+    "kg.operations.historical.read",
+    "kg.operations.historical.start",
+    "kg.operations.historical.cancel",
+    "kg.operations.node.boost",
+    "kg.operations.settings.read",
+    "kg.operations.settings.write",
+    "kg.operations.rebuild.preflight",
+    "kg.operations.rebuild.confirm",
+    "kg.operations.rebuild.run",
+    "kg.operations.quarantine.restore",
+    "kg.operations.board.erase",
+)
+
+KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="KG-OPERATIONS/v1",
+    leaves=_KG_OPERATIONS_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(_KG_OPERATIONS_PERMISSION_LEAVES, {}),
+    historical_authorities=(
+        ("kg.operations.health.read", "kg.admin.settings_read"),
+        ("kg.operations.integrity.read", "kg.admin.settings_read"),
+        ("kg.operations.integrity.reconcile", "kg.admin.settings_write"),
+        ("kg.operations.integrity.backfill", "kg.admin.settings_write"),
+        ("kg.operations.cognitive.read", "kg.admin.settings_read"),
+        ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
+        ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
+        ("kg.operations.queue.read", "kg.admin.settings_read"),
+        ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
+        ("kg.operations.audit.read", "kg.admin.settings_read"),
+        ("kg.operations.schema.migrate", "kg.admin.settings_write"),
+        ("kg.operations.tick.run", "kg.admin.settings_write"),
+        ("kg.operations.global_outbox.read", "kg.admin.settings_read"),
+        ("kg.operations.global_outbox.reprocess", "kg.admin.settings_write"),
+        ("kg.operations.global_outbox.verify", "kg.admin.settings_read"),
+        ("kg.operations.global_recovery.preflight", "kg.admin.settings_read"),
+        ("kg.operations.global_recovery.confirm", "kg.admin.settings_write"),
+        ("kg.operations.global_recovery.read", "kg.admin.settings_read"),
+        ("kg.operations.global_recovery.cancel", "kg.admin.settings_write"),
+        ("kg.operations.global_recovery.resume", "kg.admin.settings_write"),
+        ("kg.operations.global_recovery.run", "kg.admin.settings_write"),
+        (
+            "kg.operations.historical.read",
+            "kg.admin.historical_consolidation",
+        ),
+        (
+            "kg.operations.historical.start",
+            "kg.admin.historical_consolidation",
+        ),
+        (
+            "kg.operations.historical.cancel",
+            "kg.admin.historical_consolidation",
+        ),
+        ("kg.operations.node.boost", "kg.admin.settings_write"),
+        ("kg.operations.settings.read", "kg.admin.settings_read"),
+        ("kg.operations.settings.write", "kg.admin.settings_write"),
+        ("kg.operations.rebuild.preflight", "kg.admin.settings_read"),
+        ("kg.operations.rebuild.confirm", "kg.admin.settings_write"),
+        ("kg.operations.rebuild.run", "kg.admin.settings_write"),
+        ("kg.operations.quarantine.restore", "kg.admin.settings_write"),
+        ("kg.operations.board.erase", "kg.admin.wipe_board"),
+    ),
+)
+
+
+# These exact leaves existed before the lifecycle registry became the source of
+# truth.  They remain ordinary historical permissions.  Only newly projected
+# edges belong to the fail-closed introduction generation; mixing both sets in
+# one manifest makes a materialized pre-upgrade snapshot look like a partial
+# explicit deny document.
+_PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES = frozenset(
+    {
+        "card.move.in_progress_to_done",
+        "card.move.in_progress_to_on_hold",
+        "card.move.in_progress_to_validation",
+        "card.move.not_started_to_started",
+        "card.move.on_hold_to_in_progress",
+        "card.move.started_to_in_progress",
+        "card.move.validation_to_cancelled",
+        "card.move.validation_to_done",
+        "card.move.validation_to_on_hold",
+        "refinement.move.approved_to_done",
+        "refinement.move.review_to_approved",
+        "spec.move.approved_to_draft",
+        "spec.move.approved_to_validated",
+        "spec.move.draft_to_review",
+        "spec.move.in_progress_to_done",
+        "spec.move.review_to_approved",
+        "spec.move.validated_to_draft",
+        "spec.move.validated_to_in_progress",
+        "sprint.move.active_to_review",
+        "sprint.move.draft_to_active",
+        "sprint.move.review_to_closed",
+        "story.move.draft_to_ready",
+        "story.move.draft_to_triage",
+        "story.move.ready_to_triage",
+        "story.move.triage_to_draft",
+        "story.move.triage_to_ready",
+    }
+)
+_RETIRED_TRANSITION_PERMISSION_LEAVES: tuple[str, ...] = (
+    "card.move.any_to_cancelled",
+    "card.move.validation_to_not_started",
+    "ideation.move.any_to_cancelled",
+    "ideation.move.draft_to_evaluating",
+    "ideation.move.evaluating_to_refined",
+    "ideation.move.refined_to_done",
+    "refinement.move.any_to_cancelled",
+    "refinement.move.draft_to_in_progress",
+    "refinement.move.in_progress_to_review",
+    "spec.move.any_to_cancelled",
+    "sprint.move.any_to_cancelled",
+)
+_RETIRED_STATE_PERMISSION_LEAVES: tuple[str, ...] = (
+    "ideation.interact_in.refined",
+    "refinement.interact_in.in_progress",
+)
+if not _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES <= set(
+    transition_permission_flags()
+):
+    raise PermissionContractViolation(
+        "historical transition fingerprint is not present in SDLC_REGISTRY"
+    )
+
+_NEW_SDLC_TRANSITION_PERMISSION_LEAVES: tuple[str, ...] = tuple(
+    flag
+    for flag in transition_permission_flags()
+    if flag not in _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES
+)
+_NEW_SDLC_STATE_PERMISSION_LEAVES: tuple[str, ...] = (
+    "ideation.interact_in.review",
+    "ideation.interact_in.approved",
+)
+_SDLC_TRANSITION_PERMISSION_LEAVES: tuple[str, ...] = (
+    *_NEW_SDLC_TRANSITION_PERMISSION_LEAVES,
+    *_NEW_SDLC_STATE_PERMISSION_LEAVES,
+)
+
+
+def _transition_subset(
+    entity: str,
+    *edges: tuple[str, str],
+) -> tuple[str, ...]:
+    available = set(transition_permission_flags(entity))
+    selected = tuple(
+        f"{entity}.move.{current}_to_{target}" for current, target in edges
+    )
+    if not set(selected) <= available:
+        raise PermissionContractViolation(
+            f"transition preset references unregistered {entity} edges: "
+            f"{sorted(set(selected) - available)}"
+        )
+    return selected
+
+
+def _transitions_to(entity: str, target: str) -> tuple[str, ...]:
+    suffix = f"_to_{target}"
+    return tuple(
+        flag for flag in transition_permission_flags(entity) if flag.endswith(suffix)
+    )
+
+
+_EXECUTOR_TRANSITION_GRANTS = (
+    *_transition_subset(
+        "card",
+        ("not_started", "started"),
+        ("started", "in_progress"),
+        ("in_progress", "on_hold"),
+        ("on_hold", "in_progress"),
+        ("in_progress", "validation"),
+    ),
+    *_transitions_to("card", "cancelled"),
+)
+
+_VALIDATOR_TRANSITION_GRANTS = (
+    *_transition_subset(
+        "spec",
+        ("approved", "validated"),
+        ("validated", "in_progress"),
+        ("in_progress", "done"),
+        ("approved", "draft"),
+        ("validated", "draft"),
+    ),
+    *_transition_subset(
+        "sprint",
+        ("active", "review"),
+        ("review", "closed"),
+    ),
+    *_transition_subset(
+        "card",
+        ("validation", "done"),
+        ("validation", "in_progress"),
+    ),
+)
+
+_QA_TRANSITION_GRANTS = (
+    *_transition_subset(
+        "card",
+        ("not_started", "started"),
+        ("not_started", "in_progress"),
+        ("started", "in_progress"),
+        ("in_progress", "on_hold"),
+        ("on_hold", "in_progress"),
+        ("in_progress", "done"),
+    ),
+    *_transitions_to("card", "cancelled"),
+    *transition_permission_flags("test_scenario"),
+)
+
+_SPEC_TRANSITION_GRANTS = (
+    *transition_permission_flags("story"),
+    *transition_permission_flags("ideation"),
+    *transition_permission_flags("refinement"),
+    *_transition_subset(
+        "spec",
+        ("draft", "review"),
+        ("review", "draft"),
+        ("review", "approved"),
+        ("approved", "review"),
+    ),
+    *_transitions_to("spec", "cancelled"),
+    *_transition_subset(
+        "sprint",
+        ("draft", "active"),
+        ("active", "review"),
+    ),
+    *_transitions_to("sprint", "cancelled"),
+    *transition_permission_flags("test_scenario"),
+)
+
+_TRANSITION_HISTORICAL_AUTHORITY = {
+    "story": "story.entity.read",
+    "ideation": "ideation.entity.read",
+    "refinement": "refinement.entity.read",
+    "spec": "spec.entity.read",
+    "card": "card.entity.read",
+    "sprint": "sprint.entity.read",
+    "test_scenario": "spec.tests.update_status",
+}
+
+
+def _introduced_sdlc_grants(*flags: str) -> tuple[str, ...]:
+    introduced = set(_SDLC_TRANSITION_PERMISSION_LEAVES)
+    return tuple(flag for flag in flags if flag in introduced)
+
+SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="SDLC-TRANSITIONS/v1",
+    leaves=_SDLC_TRANSITION_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(
+        _SDLC_TRANSITION_PERMISSION_LEAVES,
+        {
+            "Executor": _introduced_sdlc_grants(*_EXECUTOR_TRANSITION_GRANTS),
+            "Validator": _introduced_sdlc_grants(*_VALIDATOR_TRANSITION_GRANTS),
+            "QA": _introduced_sdlc_grants(*_QA_TRANSITION_GRANTS),
+            "Reporter": (),
+            "Sprint Manager": _introduced_sdlc_grants(
+                *transition_permission_flags("sprint")
+            ),
+            "Spec": _introduced_sdlc_grants(
+                *_SPEC_TRANSITION_GRANTS,
+                *_NEW_SDLC_STATE_PERMISSION_LEAVES,
+            ),
+        },
+    ),
+    historical_authorities=tuple(
+        (
+            leaf,
+            (
+                "ideation.entity.read"
+                if leaf in _NEW_SDLC_STATE_PERMISSION_LEAVES
+                else _TRANSITION_HISTORICAL_AUTHORITY[leaf.split(".", 1)[0]]
+            ),
+        )
+        for leaf in _SDLC_TRANSITION_PERMISSION_LEAVES
+    ),
+)
+
+
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
     SKA_PERMISSION_INTRODUCTION_V1,
     SKB3_PERMISSION_INTRODUCTION_V1,
+    ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1,
+    OPERATIONAL_PERMISSION_INTRODUCTION_V1,
+    MCP_GAPS_PERMISSION_INTRODUCTION_V1,
+    KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
+    SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
 )
 
 
@@ -339,6 +980,18 @@ if len({manifest.version for manifest in PERMISSION_INTRODUCTION_MANIFESTS}) != 
     )
 
 _FAIL_CLOSED_INTRODUCED_FLAGS = frozenset(_INTRODUCED_PERMISSION_LEAVES)
+
+# SK-A/SK-B were introduced as strict governance boundaries and deliberately
+# never accept flat-token fallbacks.  The later catalog and SDLC generations
+# are a staged migration of actions that already existed behind flat MCP
+# permissions.  Their use cases name the one accepted legacy token explicitly;
+# retaining that narrow fallback lets old agents keep working while persisted
+# permission documents are reconciled to the new canonical leaves.
+_LEGACY_COMPATIBLE_INTRODUCED_FLAGS = frozenset(
+    leaf
+    for manifest in PERMISSION_INTRODUCTION_MANIFESTS[2:]
+    for leaf in manifest.leaves
+)
 
 
 @dataclass(frozen=True)
@@ -513,6 +1166,94 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "analytics_read": True,
         "mentions_read": True,
         "mentions_mark_seen": True,
+        "admin": {
+            "create": True,
+            "edit": True,
+            "delete": True,
+        },
+        "share": {
+            "read": True,
+            "create": True,
+            "edit": True,
+            "revoke": True,
+            "leave": True,
+        },
+    },
+    "agent": {
+        "entity": {
+            "read": True,
+            "create": True,
+            "edit": True,
+            "delete": True,
+        },
+        "api_key": {"rotate": True},
+        "board_access": {
+            "read": True,
+            "grant": True,
+            "edit": True,
+            "revoke": True,
+        },
+    },
+    "permission_preset": {
+        "entity": {
+            "read": True,
+            "create": True,
+            "edit": True,
+            "delete": True,
+        },
+        "clone": True,
+        "import": True,
+        "export": True,
+    },
+    "default_board_config": {
+        "read": True,
+        "diff_read": True,
+        "candidates_read": True,
+        "export": True,
+        "create": True,
+        "activate": True,
+        "deactivate": True,
+        "import": True,
+        "set_design_system": True,
+        "guidelines": {"edit": True},
+    },
+    "design_system": {
+        "entity": {
+            "read": True,
+            "create": True,
+            "edit": True,
+            "delete": True,
+        },
+        "import": True,
+        "export": True,
+        "board_link": {
+            "read": True,
+            "create": True,
+            "delete": True,
+        },
+    },
+    "runtime": {"settings": {"read": True, "write": True}},
+    "metrics": {
+        "local": {
+            "summary": {"read": True},
+            "events": {"create": True},
+            "export": True,
+            "purge": True,
+        },
+        "publish_health": {"read": True},
+        "settings": {
+            "edit": True,
+            "migration_notice_seen": True,
+        },
+    },
+    "amendment": {
+        "revision": {
+            "read": True,
+            "create": True,
+            "associate": True,
+            "transition": True,
+        },
+        "coverage": {"confirm": True},
     },
     "profile": {
         "update": True,
@@ -562,22 +1303,22 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "restore": True,
             "delete": True,
         },
-        "move": {
-            "draft_to_triage": True,
-            "draft_to_ready": True,
-            "triage_to_draft": True,
-            "triage_to_ready": True,
-            "ready_to_triage": True,
-        },
+        "move": transition_permission_registry("story"),
         "interact_in": {
-            "draft": True,
-            "triage": True,
-            "ready": True,
-            "converted": True,
+            **lifecycle_state_permission_registry("story"),
+            # Archival is represented separately from StoryStatus but remains
+            # a supported historical policy scope.
             "archived": True,
         },
         "links": {
             "ideation": True,
+        },
+        "mockups": {
+            "read": True,
+            "create": True,
+            "edit": True,
+            "delete": True,
+            "annotate": True,
         },
         "conversion": {
             "to_ideation": True,
@@ -608,20 +1349,17 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "restore": True,
             "delete": True,
         },
-        "move": {
-            "draft_to_evaluating": True,
-            "evaluating_to_refined": True,
-            "refined_to_done": True,
-            "any_to_cancelled": True,
-        },
+        "move": transition_permission_registry("ideation"),
         "interact_in": {
-            "draft": True,
-            "evaluating": True,
-            "refined": True,
-            "done": True,
-            "cancelled": True,
+            **lifecycle_state_permission_registry("ideation"),
         },
-        "qa": {"read": True, "ask": True, "ask_choice": True, "answer": True},
+        "qa": {
+            "read": True,
+            "ask": True,
+            "ask_choice": True,
+            "answer": True,
+            "delete": True,
+        },
         "mockups": {
             "read": True,
             "create": True,
@@ -638,6 +1376,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "render": True,
         },
         "quality": {"read": True, "assess": True},
+        "knowledge": {"read": True, "create": True, "delete": True},
         "specs_derive": True,
         "versions_read": True,
         "history_read": True,
@@ -654,22 +1393,17 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "restore": True,
             "delete": True,
         },
-        "move": {
-            "draft_to_in_progress": True,
-            "in_progress_to_review": True,
-            "review_to_approved": True,
-            "approved_to_done": True,
-            "any_to_cancelled": True,
-        },
+        "move": transition_permission_registry("refinement"),
         "interact_in": {
-            "draft": True,
-            "in_progress": True,
-            "review": True,
-            "approved": True,
-            "done": True,
-            "cancelled": True,
+            **lifecycle_state_permission_registry("refinement"),
         },
-        "qa": {"read": True, "ask": True, "ask_choice": True, "answer": True},
+        "qa": {
+            "read": True,
+            "ask": True,
+            "ask_choice": True,
+            "answer": True,
+            "delete": True,
+        },
         "mockups": {
             "read": True,
             "create": True,
@@ -706,30 +1440,23 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "restore": True,
             "delete": True,
         },
-        "move": {
-            "draft_to_review": True,
-            "review_to_approved": True,
-            "approved_to_validated": True,
-            "validated_to_in_progress": True,
-            "in_progress_to_done": True,
-            "any_to_cancelled": True,
-            # Spec Validation Gate — direct backward transitions to draft.
-            # approved_to_draft unblocks minor edits; validated_to_draft unlocks
-            # a validated spec in 1 click (replaces the 3-hop validated→approved→review→draft).
-            "approved_to_draft": True,
-            "validated_to_draft": True,
+        "move": transition_permission_registry("spec"),
+        "interact_in": lifecycle_state_permission_registry("spec"),
+        "qa": {
+            "read": True,
+            "ask": True,
+            "ask_choice": True,
+            "answer": True,
+            "delete": True,
         },
-        "interact_in": {
-            "draft": True,
-            "review": True,
-            "approved": True,
-            "validated": True,
-            "in_progress": True,
-            "done": True,
-            "cancelled": True,
+        "tests": {
+            "read": True,
+            "create": True,
+            "execute": True,
+            "edit": True,
+            "delete": True,
+            "update_status": True,
         },
-        "qa": {"read": True, "ask": True, "ask_choice": True, "answer": True},
-        "tests": {"read": True, "create": True, "update_status": True},
         "rules": {"read": True, "create": True, "edit": True, "delete": True},
         "contracts": {"read": True, "create": True, "edit": True, "delete": True},
         "integration_requirements": {
@@ -773,6 +1500,10 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "cards_derive": True,
         "history_read": True,
     },
+    "test_scenario": {
+        "move": transition_permission_registry("test_scenario"),
+        "interact_in": lifecycle_state_permission_registry("test_scenario"),
+    },
     # ---- Sprint ----
     "sprint": {
         "entity": {
@@ -786,20 +1517,10 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "restore": True,
             "delete": True,
         },
-        "move": {
-            "draft_to_active": True,
-            "active_to_review": True,
-            "review_to_closed": True,
-            "any_to_cancelled": True,
-        },
-        "interact_in": {
-            "draft": True,
-            "active": True,
-            "review": True,
-            "closed": True,
-            "cancelled": True,
-        },
-        "qa": {"read": True, "ask": True, "answer": True},
+        "move": transition_permission_registry("sprint"),
+        "interact_in": lifecycle_state_permission_registry("sprint"),
+        "qa": {"read": True, "ask": True, "answer": True, "delete": True},
+        "tasks": {"assign": True},
         "evaluations": {"read": True, "submit": True, "delete": True},
         "history_read": True,
     },
@@ -833,28 +1554,8 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "ir": True,
             "or": True,
         },
-        "move": {
-            "not_started_to_started": True,
-            "started_to_in_progress": True,
-            "in_progress_to_on_hold": True,
-            "on_hold_to_in_progress": True,
-            "in_progress_to_done": True,
-            "any_to_cancelled": True,
-            "in_progress_to_validation": True,
-            "validation_to_done": True,
-            "validation_to_not_started": True,
-            "validation_to_on_hold": True,
-            "validation_to_cancelled": True,
-        },
-        "interact_in": {
-            "not_started": True,
-            "started": True,
-            "in_progress": True,
-            "on_hold": True,
-            "done": True,
-            "cancelled": True,
-            "validation": True,
-        },
+        "move": transition_permission_registry("card"),
+        "interact_in": lifecycle_state_permission_registry("card"),
         "validation": {
             "submit": True,
             "read": True,
@@ -916,6 +1617,50 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "propose": True,
             "commit": True,
             "abort": True,
+        },
+        "operations": {
+            "health": {"read": True},
+            "integrity": {
+                "read": True,
+                "reconcile": True,
+                "backfill": True,
+            },
+            "cognitive": {
+                "read": True,
+                "skip": True,
+                "clear": True,
+            },
+            "queue": {"read": True, "reprocess": True},
+            "audit": {"read": True},
+            "schema": {"migrate": True},
+            "tick": {"run": True},
+            "global_outbox": {
+                "read": True,
+                "reprocess": True,
+                "verify": True,
+            },
+            "global_recovery": {
+                "preflight": True,
+                "confirm": True,
+                "read": True,
+                "cancel": True,
+                "resume": True,
+                "run": True,
+            },
+            "historical": {
+                "read": True,
+                "start": True,
+                "cancel": True,
+            },
+            "node": {"boost": True},
+            "settings": {"read": True, "write": True},
+            "rebuild": {
+                "preflight": True,
+                "confirm": True,
+                "run": True,
+            },
+            "quarantine": {"restore": True},
+            "board": {"erase": True},
         },
         "admin": {
             "wipe_board": True,
@@ -1214,19 +1959,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "card.link_to.or",
     ],
     "cards:delete": ["card.entity.delete"],
-    "cards:move": [
-        "card.move.not_started_to_started",
-        "card.move.started_to_in_progress",
-        "card.move.in_progress_to_on_hold",
-        "card.move.on_hold_to_in_progress",
-        "card.move.in_progress_to_done",
-        "card.move.any_to_cancelled",
-        "card.move.in_progress_to_validation",
-        "card.move.validation_to_done",
-        "card.move.validation_to_not_started",
-        "card.move.validation_to_on_hold",
-        "card.move.validation_to_cancelled",
-    ],
+    "cards:move": list(transition_permission_flags("card")),
     "specs:create": [
         "story.entity.create",
         "topic.entity.create",
@@ -1296,24 +2029,11 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.entity.delete",
     ],
     "specs:move": [
-        "story.move.draft_to_triage",
-        "story.move.draft_to_ready",
-        "story.move.triage_to_draft",
-        "story.move.triage_to_ready",
-        "story.move.ready_to_triage",
-        "spec.move.draft_to_review",
-        "spec.move.review_to_approved",
-        "spec.move.approved_to_validated",
-        "spec.move.validated_to_in_progress",
-        "spec.move.in_progress_to_done",
-        "spec.move.any_to_cancelled",
-        # Spec Validation Gate — new backward transitions
-        "spec.move.approved_to_draft",
-        "spec.move.validated_to_draft",
-        "sprint.move.draft_to_active",
-        "sprint.move.active_to_review",
-        "sprint.move.review_to_closed",
-        "sprint.move.any_to_cancelled",
+        *transition_permission_flags("story"),
+        *transition_permission_flags("ideation"),
+        *transition_permission_flags("refinement"),
+        *transition_permission_flags("spec"),
+        *transition_permission_flags("sprint"),
     ],
     "specs:evaluate": [
         "spec.evaluations.submit",
@@ -1404,6 +2124,21 @@ def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
             _set_nested(flags, flag_path, True)
     if "specs:evaluate" in old_permissions:
         _set_nested(flags, "spec.quality.assess", True)
+    if "cards:move" in old_permissions:
+        for flag_path in transition_permission_flags("card"):
+            _set_nested(flags, flag_path, True)
+    if "specs:move" in old_permissions:
+        for entity_type in ("story", "ideation", "refinement", "spec", "sprint"):
+            for flag_path in transition_permission_flags(entity_type):
+                _set_nested(flags, flag_path, True)
+        for flag_path in _NEW_SDLC_STATE_PERMISSION_LEAVES:
+            _set_nested(flags, flag_path, True)
+    if "specs:update" in old_permissions:
+        _set_nested(flags, "spec.tests.execute", True)
+        for flag_path in transition_permission_flags("test_scenario"):
+            _set_nested(flags, flag_path, True)
+        for state in SDLC_REGISTRY["test_scenario"].status_enum:
+            _set_nested(flags, f"test_scenario.interact_in.{state.value}", True)
 
     return flags
 
@@ -1814,6 +2549,40 @@ def normalize_agent_permission_overrides(
     if not materialized:
         return working
 
+    # The retired ``any_to_cancelled`` leaf dominated every source-specific
+    # cancellation check.  Some historical presets therefore carried a False
+    # exact leaf that was semantically irrelevant beside a True wildcard.  Do
+    # not project the wildcard into newly introduced leaves yet: doing so would
+    # turn an otherwise absent manifest generation into a partial explicit
+    # document.  Remove only overlapping historical exact leaves now, then
+    # preserve any missing capability in the final sparse delta below.
+    legacy_cancel_all_entities = {
+        entity_type
+        for entity_type in ("ideation", "refinement", "spec", "card", "sprint")
+        if _permission_value_presence(
+            working, f"{entity_type}.move.any_to_cancelled"
+        )
+        == (True, True)
+    }
+    for flag_path in _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES:
+        entity_type = flag_path.split(".", 1)[0]
+        if entity_type in legacy_cancel_all_entities and flag_path.endswith(
+            "_to_cancelled"
+        ):
+            _delete_permission_value(working, flag_path)
+
+    # Exact aliases removed when the canonical graph gained source-specific
+    # edges are migration fingerprints, not extension grants.  They no longer
+    # authorize an operation and must not prevent a materialized historical
+    # Full Control snapshot from normalizing to the trusted ``None`` sentinel.
+    for path in (
+        *_RETIRED_TRANSITION_PERMISSION_LEAVES,
+        *_RETIRED_STATE_PERMISSION_LEAVES,
+    ):
+        present, value = _permission_value_presence(working, path)
+        if present and type(value) is bool:
+            _delete_permission_value(working, path)
+
     generic_introduction_manifests: list[PermissionIntroductionManifest] = []
     non_propagating_introduction_manifests: list[PermissionIntroductionManifest] = []
     complete_explicit_introduction_manifests: list[PermissionIntroductionManifest] = []
@@ -1894,6 +2663,13 @@ def normalize_agent_permission_overrides(
             present, value = _permission_value_presence(working, path)
             if present and type(value) is bool:
                 _set_nested(explicit_delta, path, value)
+    for entity_type in legacy_cancel_all_entities:
+        for flag_path in transition_permission_flags(entity_type):
+            if (
+                flag_path.endswith("_to_cancelled")
+                and _get_nested(base, flag_path) is not True
+            ):
+                _set_nested(explicit_delta, flag_path, True)
     return explicit_delta
 
 
@@ -1965,11 +2741,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "story.entity.archive",
             "story.entity.restore",
             "story.entity.delete",
-            "story.move.draft_to_triage",
-            "story.move.draft_to_ready",
-            "story.move.triage_to_draft",
-            "story.move.triage_to_ready",
-            "story.move.ready_to_triage",
             "story.interact_in.draft",
             "story.interact_in.triage",
             "story.interact_in.ready",
@@ -1995,10 +2766,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "ideation.entity.archive",
             "ideation.entity.restore",
             "ideation.entity.delete",
-            "ideation.move.draft_to_evaluating",
-            "ideation.move.evaluating_to_refined",
-            "ideation.move.refined_to_done",
-            "ideation.move.any_to_cancelled",
             "ideation.interact_in.draft",
             "ideation.interact_in.evaluating",
             "ideation.interact_in.refined",
@@ -2029,11 +2796,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "refinement.entity.archive",
             "refinement.entity.restore",
             "refinement.entity.delete",
-            "refinement.move.draft_to_in_progress",
-            "refinement.move.in_progress_to_review",
-            "refinement.move.review_to_approved",
-            "refinement.move.approved_to_done",
-            "refinement.move.any_to_cancelled",
             "refinement.interact_in.draft",
             "refinement.interact_in.in_progress",
             "refinement.interact_in.review",
@@ -2070,9 +2832,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.entity.archive",
             "spec.entity.restore",
             "spec.entity.delete",
-            "spec.move.draft_to_review",
-            "spec.move.review_to_approved",
-            "spec.move.any_to_cancelled",
             # Spec interacts in every forward status. Post-validated edits are
             # allowed to reduce the "dance back to draft" friction for cosmetic
             # fixes (knowledge typo, mockup annotation). Convention in
@@ -2141,9 +2900,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "sprint.entity.archive",
             "sprint.entity.restore",
             "sprint.entity.delete",
-            "sprint.move.draft_to_active",
-            "sprint.move.active_to_review",
-            "sprint.move.any_to_cancelled",
             "sprint.interact_in.draft",
             "sprint.interact_in.active",
             "sprint.qa.read",
@@ -2274,12 +3030,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.interact_in.in_progress",
             "card.interact_in.on_hold",
             "card.interact_in.validation",  # read-only touch (to see failed validation feedback)
-            "card.move.not_started_to_started",
-            "card.move.started_to_in_progress",
-            "card.move.in_progress_to_on_hold",
-            "card.move.on_hold_to_in_progress",
-            "card.move.in_progress_to_validation",
-            "card.move.any_to_cancelled",
             "card.qa.read",
             "card.qa.ask",
             "card.qa.answer",
@@ -2421,12 +3171,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.interact_in.in_progress",
             "card.interact_in.on_hold",
             "card.interact_in.done",
-            "card.move.not_started_to_started",
-            "card.move.started_to_in_progress",
-            "card.move.in_progress_to_on_hold",
-            "card.move.on_hold_to_in_progress",
-            "card.move.in_progress_to_done",  # test cards bypass validation gate
-            "card.move.any_to_cancelled",
             # KG — QA reads and surfaces gaps. Propose-only session (no commit
             # or abort); Spec/Validator commit on review. Natural + schema
             # help QA investigate, cypher stays gated.
@@ -2507,13 +3251,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.validation.read",
             "spec.validation.submit",
             # Spec status promotions — only the gate-bound moves
-            "spec.move.approved_to_validated",
-            "spec.move.validated_to_in_progress",
-            "spec.move.in_progress_to_done",
             # Backward unlock paths (preserved from current preset — enables the
             # fix-and-revalidate loop after a gate failure).
-            "spec.move.approved_to_draft",
-            "spec.move.validated_to_draft",
             "spec.interact_in.approved",
             "spec.interact_in.validated",
             "spec.interact_in.in_progress",
@@ -2532,8 +3271,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "sprint.history_read",
             "sprint.interact_in.active",
             "sprint.interact_in.review",
-            "sprint.move.active_to_review",
-            "sprint.move.review_to_closed",
             # Card — ONLY the validation status, EXCLUSIVE task_validation submit
             "card.entity.read",
             "card.entity.context_read",
@@ -2554,8 +3291,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.interact_in.validation",
             # moves ONLY validation → {done, not_started} — hard user requirement.
             # submit_task_validation auto-routes via these flags.
-            "card.move.validation_to_done",
-            "card.move.validation_to_not_started",
             # KG — Validator investigates deeply and consolidates autonomously.
             # Cypher to trace supersedence/contradictions during spec validation;
             # full session to commit decisions emerged from the gate. Admin stays
@@ -2743,10 +3478,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "sprint.entity.archive",
             "sprint.entity.restore",
             "sprint.entity.delete",
-            "sprint.move.draft_to_active",
-            "sprint.move.active_to_review",
-            "sprint.move.review_to_closed",
-            "sprint.move.any_to_cancelled",
             "sprint.interact_in.draft",
             "sprint.interact_in.active",
             "sprint.interact_in.review",
@@ -2832,6 +3563,25 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             grants = set(manifest.grants_for(definition["name"]))
             for flag_path in manifest.leaves:
                 _set_nested(definition["flags"], flag_path, flag_path in grants)
+        transition_grants = {
+            "Executor": _EXECUTOR_TRANSITION_GRANTS,
+            "Validator": _VALIDATOR_TRANSITION_GRANTS,
+            "QA": _QA_TRANSITION_GRANTS,
+            "Reporter": (),
+            "Sprint Manager": transition_permission_flags("sprint"),
+            "Spec": _SPEC_TRANSITION_GRANTS,
+        }
+        allowed_transitions = set(
+            transition_permission_flags()
+            if definition["name"] == "Full Control"
+            else transition_grants[definition["name"]]
+        )
+        for flag_path in transition_permission_flags():
+            _set_nested(
+                definition["flags"],
+                flag_path,
+                flag_path in allowed_transitions,
+            )
     return definitions
 
 
@@ -3056,11 +3806,15 @@ def evaluate_permission(context: PermissionContext) -> PermissionDecision:
     reason = _reason_for(operation, state_aware=True)
     if (
         not isinstance(permissions, PermissionSet)
-        and operation not in _FAIL_CLOSED_INTRODUCED_FLAGS
+        and (
+            operation not in _FAIL_CLOSED_INTRODUCED_FLAGS
+            or operation in _LEGACY_COMPATIBLE_INTRODUCED_FLAGS
+        )
         and reason
         and context.legacy_operation
     ):
-        # Existing permissions retain the pre-SK-A compatibility fallback.
+        # Historical leaves and explicitly staged post-SK-B introductions keep
+        # their caller-declared flat-token compatibility during migration.
         reason = _reason_for(
             context.legacy_operation,
             state_aware=False,
@@ -3096,6 +3850,7 @@ class DefaultPermissionPolicy:
 
 
 __all__ = [
+    "ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1",
     "ALL_FLAGS",
     "DefaultPermissionPolicy",
     "GUIDELINE_ADOPTION_MANAGE",
@@ -3108,6 +3863,9 @@ __all__ = [
     "GUIDELINE_REVISIONS_RETIRE",
     "InvalidPermissionContext",
     "LEGACY_PERMISSION_MAP",
+    "KG_OPERATIONS_PERMISSION_INTRODUCTION_V1",
+    "MCP_GAPS_PERMISSION_INTRODUCTION_V1",
+    "OPERATIONAL_PERMISSION_INTRODUCTION_V1",
     "PERMISSION_REGISTRY",
     "PermissionContext",
     "PermissionContractViolation",
@@ -3122,6 +3880,7 @@ __all__ = [
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
     "SKB3_PERMISSION_INTRODUCTION_V1",
+    "SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1",
     "STRUCTURED_SPEC_ENTITY_OPERATIONS",
     "STRUCTURED_SPEC_ENTITY_TYPES",
     "check_permission",

@@ -206,10 +206,19 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
         async def commit(self) -> None:
             self.events.append("commit")
 
-    actor = ActorContext(USER_ID, "mcp", board_id=BOARD_ID)
+    actor = ActorContext(
+        USER_ID,
+        "mcp",
+        board_id=BOARD_ID,
+        permissions=["specs:move"],
+    )
     successful = UnitOfWork()
     result = await McpMoveSpecUseCase().execute(
-        McpMoveSpecCommand(spec.id, BOARD_ID, object()),
+        McpMoveSpecCommand(
+            spec.id,
+            BOARD_ID,
+            SimpleNamespace(status=SpecStatus.REVIEW),
+        ),
         actor=actor,
         uow=successful,
     )
@@ -220,7 +229,11 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
     failing = UnitOfWork(fail_reload=True)
     with pytest.raises(RuntimeError, match="refresh failed"):
         await McpMoveSpecUseCase().execute(
-            McpMoveSpecCommand(spec.id, BOARD_ID, object()),
+            McpMoveSpecCommand(
+                spec.id,
+                BOARD_ID,
+                SimpleNamespace(status=SpecStatus.REVIEW),
+            ),
             actor=actor,
             uow=failing,
         )

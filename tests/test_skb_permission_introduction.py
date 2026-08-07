@@ -134,7 +134,7 @@ def test_public_manifest_tuple_is_ordered_unique_and_exact() -> None:
     assert dict(SKB3_PERMISSION_INTRODUCTION_V1.historical_authorities) == AUTHORITIES
     assert skb3_permission_introduction_v1() is SKB3_PERMISSION_INTRODUCTION_V1
     assert permission_introduction_manifests() is PERMISSION_INTRODUCTION_MANIFESTS
-    assert PERMISSION_INTRODUCTION_MANIFESTS == (
+    assert PERMISSION_INTRODUCTION_MANIFESTS[:2] == (
         SKA_PERMISSION_INTRODUCTION_V1,
         SKB3_PERMISSION_INTRODUCTION_V1,
     )

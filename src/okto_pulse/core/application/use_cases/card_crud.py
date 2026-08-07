@@ -34,6 +34,7 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
     card_requirement,
     card_update_permission_requirements,
     entity_state,
+    transition_permission_requirement,
 )
 
 
@@ -300,11 +301,33 @@ class MoveCardUseCase:
         self, command: MoveCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveCardResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        existing = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        current_state = entity_state(existing)
+        target_state = str(getattr(command.data.status, "value", command.data.status))
+        requirement = (
+            card_requirement(
+                "card.entity.edit_fields",
+                state=current_state,
+                legacy_operation="cards:move",
+            )
+            if current_state == target_state
+            else transition_permission_requirement(
+                "card",
+                existing.status,
+                command.data.status,
+                legacy_operation="cards:move",
+            )
+        )
+        await require_authorization(
+            actor,
+            requirement,
+            uow=uow,
+            board_id=existing.board_id,
         )
         card = await service.move_card(command.card_id, actor.actor_id, command.data)
         if not card:

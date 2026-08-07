@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from okto_pulse.core.application.use_cases.authorization import PermissionRequirement
+from okto_pulse.core.domain.sdlc_registry import transition_permission_flag
 
 
 _CARD_ASSIGN_FIELDS = {"assignee_id", "sprint_id"}
@@ -118,6 +119,25 @@ def sprint_requirement(
     )
 
 
+def transition_permission_requirement(
+    entity: str,
+    current_state: Any,
+    target_state: Any,
+    *,
+    legacy_operation: str | None,
+) -> PermissionRequirement:
+    """Build the exact state-aware requirement for one registered SDLC edge."""
+
+    current = str(getattr(current_state, "value", current_state))
+    target = str(getattr(target_state, "value", target_state))
+    return PermissionRequirement(
+        transition_permission_flag(entity, current, target),
+        legacy_operation=legacy_operation,
+        entity=entity,
+        state=current,
+    )
+
+
 def card_create_permission_requirement(data: Any) -> PermissionRequirement:
     raw_card_type = (
         data.get("card_type", "normal")
@@ -190,4 +210,5 @@ __all__ = [
     "payload_fields_set",
     "sprint_requirement",
     "sprint_update_permission_requirements",
+    "transition_permission_requirement",
 ]

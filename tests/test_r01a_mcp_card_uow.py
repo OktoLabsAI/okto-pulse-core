@@ -247,10 +247,19 @@ async def test_move_card_refreshes_inside_transaction_before_commit() -> None:
         async def commit(self) -> None:
             self.events.append("commit")
 
-    actor = ActorContext(USER_ID, "mcp", board_id=BOARD_A)
+    actor = ActorContext(
+        USER_ID,
+        "mcp",
+        board_id=BOARD_A,
+        permissions=["cards:move"],
+    )
     successful = UnitOfWork()
     result = await McpMoveCardUseCase().execute(
-        McpMoveCardCommand(card.id, BOARD_A, object()),
+        McpMoveCardCommand(
+            card.id,
+            BOARD_A,
+            SimpleNamespace(status=CardStatus.CANCELLED),
+        ),
         actor=actor,
         uow=successful,
     )
@@ -260,7 +269,11 @@ async def test_move_card_refreshes_inside_transaction_before_commit() -> None:
     failing = UnitOfWork(fail_reload=True)
     with pytest.raises(RuntimeError, match="refresh failed"):
         await McpMoveCardUseCase().execute(
-            McpMoveCardCommand(card.id, BOARD_A, object()),
+            McpMoveCardCommand(
+                card.id,
+                BOARD_A,
+                SimpleNamespace(status=CardStatus.CANCELLED),
+            ),
             actor=actor,
             uow=failing,
         )

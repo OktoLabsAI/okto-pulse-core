@@ -30,6 +30,14 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    transition_permission_requirement,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import SpecUpdate
@@ -272,7 +280,20 @@ class MoveSpecUseCase:
         self, command: MoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveSpecResult:
         service = uow.services.specs
-        await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+        existing = await _require_actor_board_spec(
+            uow, command.spec_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "spec",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
         spec = await service.move_spec(command.spec_id, actor.actor_id, command.data)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -999,11 +1020,53 @@ class SetTestScenarioStatusUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> SetTestScenarioStatusResult:
+        from okto_pulse.core.services.test_scenario_lifecycle import (
+            VALID_SCENARIO_STATUSES,
+        )
+
+        if command.status not in VALID_SCENARIO_STATUSES:
+            raise ValueError(
+                f"status_not_valid: must be one of {list(VALID_SCENARIO_STATUSES)}"
+            )
         service = uow.services.specs
         try:
-            await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+            spec = await _require_actor_board_spec(
+                uow, command.spec_id, actor, write=True
+            )
         except EntityNotFoundError as exc:
             raise ValueError("scenario_not_found: spec not found") from exc
+        scenario = next(
+            (
+                item
+                for item in (spec.test_scenarios or [])
+                if isinstance(item, dict) and item.get("id") == command.scenario_id
+            ),
+            None,
+        )
+        if scenario is None:
+            raise ValueError(f"scenario_not_found: {command.scenario_id}")
+        current_status = str(scenario.get("status") or "draft")
+        requirement = (
+            PermissionRequirement(
+                "spec.tests.execute",
+                legacy_operation="specs:update",
+                entity="spec",
+                state=entity_state(spec),
+            )
+            if current_status == command.status
+            else transition_permission_requirement(
+                "test_scenario",
+                current_status,
+                command.status,
+                legacy_operation="specs:update",
+            )
+        )
+        await require_authorization(
+            actor,
+            requirement,
+            uow=uow,
+            board_id=spec.board_id,
+        )
         result = await service.set_test_scenario_status(
             command.spec_id,
             actor.actor_id,

@@ -50,6 +50,11 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    transition_permission_requirement,
+)
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
@@ -619,19 +624,14 @@ class MoveStoryResult:
 
 class MoveStoryUseCase:
     """Change a Story's lifecycle status (write). A missing story is
-    ``EntityNotFoundError("story")``; board ownership + the transition-specific
-    ``story_move_permission`` gate with the ``story`` ``interact_in`` state apply;
+    ``EntityNotFoundError("story")``; board ownership + the canonical exact-edge
+    permission with the ``story`` ``interact_in`` state apply;
     ``ValueError`` (illegal transition / archived → 400) propagates. Re-fetches via
     ``get_story`` after commit."""
 
     async def execute(
         self, command: MoveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveStoryResult:
-        from okto_pulse.core.services.story_permissions import (
-            story_move_permission,
-            story_state,
-        )
-
         service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing:
@@ -644,13 +644,24 @@ class MoveStoryUseCase:
             denied_entity_type="story",
             denied_entity_id=command.story_id,
         )
-        await _require_permissions(
-            uow.services,
-            actor.actor_id,
-            existing.board_id,
-            story_move_permission(existing.status, command.data.status),
-            entity="story",
-            entity_status=story_state(existing.status, archived=bool(existing.archived)),
+        if existing.archived:
+            raise ValueError(
+                "This story is archived. Restore it before changing status."
+            )
+        if entity_state(existing) == str(
+            getattr(command.data.status, "value", command.data.status)
+        ):
+            return MoveStoryResult(existing)
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "story",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         story = await service.move_story(command.story_id, actor.actor_id, command.data)
         if not story:

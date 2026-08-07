@@ -59,9 +59,11 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
     entity_state,
     sprint_requirement,
     sprint_update_permission_requirements,
+    transition_permission_requirement,
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.domain.sdlc_registry import transition_contracts
 
 
 _WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -522,7 +524,37 @@ class MoveSprintUseCase:
         self, command: MoveSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveSprintResult:
         service = uow.services.sprints
-        await _require_sprint_access(uow, command.sprint_id, actor, write=True)
+        existing = await _require_sprint_access(
+            uow, command.sprint_id, actor, write=True
+        )
+        try:
+            requirement = transition_permission_requirement(
+                "sprint",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            )
+        except ValueError as exc:
+            current_status = str(
+                getattr(existing.status, "value", existing.status)
+            )
+            target_status = str(
+                getattr(command.data.status, "value", command.data.status)
+            )
+            allowed = [
+                edge.to_status
+                for edge in transition_contracts("sprint", current_status)
+            ]
+            raise ValueError(
+                f"Cannot move sprint from '{current_status}' to "
+                f"'{target_status}'. Allowed: {allowed}"
+            ) from exc
+        await require_authorization(
+            actor,
+            requirement,
+            uow=uow,
+            board_id=existing.board_id,
+        )
 
         sprint = await service.move_sprint(command.sprint_id, actor.actor_id, command.data)
         if not sprint:
@@ -663,8 +695,9 @@ class AssignSprintTasksUseCase:
         await require_authorization(
             actor,
             sprint_requirement(
-                "sprint.entity.assign",
+                "sprint.tasks.assign",
                 state=entity_state(existing),
+                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -711,8 +744,9 @@ class UnassignSprintTasksUseCase:
         await require_authorization(
             actor,
             sprint_requirement(
-                "sprint.entity.assign",
+                "sprint.tasks.assign",
                 state=entity_state(existing),
+                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=existing.board_id,

@@ -618,7 +618,9 @@ def test_sprint_manager_sprint_lifecycle(presets_by_name):
     assert _get_nested(flags, "sprint.move.draft_to_active") is True
     assert _get_nested(flags, "sprint.move.active_to_review") is True
     assert _get_nested(flags, "sprint.move.review_to_closed") is True
-    assert _get_nested(flags, "sprint.move.any_to_cancelled") is True
+    assert _get_nested(flags, "sprint.move.draft_to_cancelled") is True
+    assert _get_nested(flags, "sprint.move.active_to_cancelled") is True
+    assert _get_nested(flags, "sprint.move.review_to_cancelled") is True
     assert _get_nested(flags, "sprint.evaluations.submit") is True
 
 

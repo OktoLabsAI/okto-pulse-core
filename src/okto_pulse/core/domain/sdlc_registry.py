@@ -564,6 +564,62 @@ def transition_map(entity_type: str) -> dict[Enum, list[Enum]]:
     }
 
 
+def transition_permission_flag(
+    entity_type: str,
+    current_status: str,
+    target_status: str,
+) -> str:
+    """Return the canonical permission leaf for one registered edge."""
+
+    normalized_entity = lifecycle_definition(entity_type).entity_type
+    # Permission leaves describe the registered edge itself. Card-type
+    # restrictions remain a domain admission concern in ``is_transition_allowed``
+    # and the mutation service; requiring a card_type here would make valid
+    # subtype-specific edges impossible to authorize.
+    if not any(
+        edge.to_status == target_status
+        for edge in transition_contracts(normalized_entity, current_status)
+    ):
+        raise ValueError(
+            f"Unregistered transition '{normalized_entity}:{current_status}"
+            f"->{target_status}'"
+        )
+    return f"{normalized_entity}.move.{current_status}_to_{target_status}"
+
+
+def transition_permission_flags(entity_type: str | None = None) -> tuple[str, ...]:
+    """Project exact transition permission leaves from ``SDLC_REGISTRY``."""
+
+    definitions = (
+        (lifecycle_definition(entity_type),)
+        if entity_type is not None
+        else tuple(SDLC_REGISTRY.values())
+    )
+    return tuple(
+        f"{definition.entity_type}.move.{current_status}_to_{edge.to_status}"
+        for definition in definitions
+        for current_status, edges in definition.transitions.items()
+        for edge in edges
+    )
+
+
+def transition_permission_registry(entity_type: str) -> dict[str, bool]:
+    """Return the nested ``move`` branch consumed by the policy registry."""
+
+    prefix = f"{lifecycle_definition(entity_type).entity_type}.move."
+    return {
+        flag.removeprefix(prefix): True
+        for flag in transition_permission_flags(entity_type)
+    }
+
+
+def lifecycle_state_permission_registry(entity_type: str) -> dict[str, bool]:
+    """Return the canonical ``interact_in`` branch for a lifecycle entity."""
+
+    definition = lifecycle_definition(entity_type)
+    return {member.value: True for member in definition.status_enum}
+
+
 def is_transition_allowed(
     entity_type: str,
     current_status: str,
@@ -603,7 +659,11 @@ __all__ = [
     "TransitionContract",
     "is_transition_allowed",
     "lifecycle_definition",
+    "lifecycle_state_permission_registry",
     "transition_contracts",
     "transition_map",
+    "transition_permission_flag",
+    "transition_permission_flags",
+    "transition_permission_registry",
     "transition_requires_policy_compliance",
 ]

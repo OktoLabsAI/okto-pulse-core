@@ -4011,10 +4011,6 @@ async def okto_pulse_move_card(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_MOVE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.domain.enums import CardStatus
     from okto_pulse.core.models.schemas import CardMove
 
@@ -5584,8 +5580,6 @@ async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> st
         return json.dumps({"error": str(e)})
     if result.not_found:
         return json.dumps({"error": "Story not found"})
-    if result.perm_err is not None:
-        return _mcp_permission_error_response(result.perm_err)
     return json.dumps(
         {"success": True, "story": _story_payload(result.story)}, default=str
     )
@@ -6233,10 +6227,6 @@ async def okto_pulse_move_ideation(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_MOVE)
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.domain.enums import IdeationStatus
     from okto_pulse.core.models.schemas import IdeationMove
@@ -7515,10 +7505,6 @@ async def okto_pulse_move_refinement(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_MOVE)
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.domain.enums import RefinementStatus
     from okto_pulse.core.models.schemas import RefinementMove
@@ -9832,10 +9818,6 @@ async def okto_pulse_move_spec(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_MOVE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.domain.enums import SpecStatus
     from okto_pulse.core.models.schemas import SpecMove
 
@@ -10281,14 +10263,6 @@ async def okto_pulse_update_test_scenario_status(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "spec.tests.update_status",
-        Permissions.SPECS_UPDATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
 
     valid = VALID_SCENARIO_STATUSES
     if status not in valid:

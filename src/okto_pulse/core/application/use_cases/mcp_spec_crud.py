@@ -25,6 +25,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    transition_permission_requirement,
+)
 from okto_pulse.core.domain.test_scenarios import ScenarioType
 from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
@@ -94,10 +98,24 @@ class McpMoveSpecUseCase:
         self, command: McpMoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveSpecResult:
         service = uow.services.specs
-        existing = await service.get_spec(command.spec_id)
-        if not existing or existing.board_id != command.board_id:
-            raise EntityNotFoundError("spec", command.spec_id)
+        existing = await _require_actor_board_spec(
+            service,
+            command.spec_id,
+            actor,
+            board_id=command.board_id,
+        )
         old_status = existing.status.value
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "spec",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
         spec = await service.move_spec(
             command.spec_id, actor.actor_id, command.data, actor_name=actor.actor_name
         )

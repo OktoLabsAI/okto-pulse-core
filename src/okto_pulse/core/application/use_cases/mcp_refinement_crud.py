@@ -24,6 +24,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    transition_permission_requirement,
+)
 from okto_pulse.core.application.history_pagination import (
     history_page_metadata,
     validate_history_window,
@@ -200,6 +204,17 @@ class McpMoveRefinementUseCase:
         if not _in_board_scope(existing, command.board_id, actor):
             raise EntityNotFoundError("refinement", command.refinement_id)
         old_status = existing.status.value
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "refinement",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
         refinement = await service.move_refinement(
             command.refinement_id,
             actor.actor_id,
