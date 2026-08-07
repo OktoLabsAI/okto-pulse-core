@@ -103,6 +103,15 @@ from okto_pulse.core.application.use_cases.base import (
     UseCaseError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    decide_authorization,
+    normalize_permission_input,
+    require_all,
+    require_any_authority,
+    require_authorization,
+    resolve_actor_permissions,
+)
 from okto_pulse.core.application.use_cases.card_traceability import (
     LinkCardTraceabilityCommand,
     LinkCardTraceabilityResult,
@@ -1101,6 +1110,7 @@ __all__ = [
     "ConflictError",
     "EntityNotFoundError",
     "PermissionDeniedError",
+    "PermissionRequirement",
     "commit",
     # selective Knowledge propagation v2
     "CreateCardKnowledgeV2Command",
@@ -2097,6 +2107,12 @@ __all__ = [
     "UpdateAgentCommand",
     "UpdateAgentResult",
     "UpdateAgentUseCase",
+    "decide_authorization",
+    "normalize_permission_input",
+    "require_all",
+    "require_any_authority",
+    "require_authorization",
+    "resolve_actor_permissions",
     # update_board_overrides
     "UpdateBoardOverridesCommand",
     "UpdateBoardOverridesResult",

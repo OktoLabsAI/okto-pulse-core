@@ -3027,6 +3027,18 @@ def evaluate_permission(context: PermissionContext) -> PermissionDecision:
     operation = context.operation.strip()
     if not operation:
         raise InvalidPermissionContext("operation must be a non-empty flag path")
+    if operation not in ALL_FLAGS:
+        return PermissionDecision.deny(
+            operation,
+            _perm_error_detailed(
+                reason="unknown_permission",
+                required_permission=operation,
+                detail=(
+                    f"The permission '{operation}' is not registered by the Core "
+                    "permission policy."
+                ),
+            ),
+        )
 
     permissions = context.permissions
 
@@ -3043,7 +3055,8 @@ def evaluate_permission(context: PermissionContext) -> PermissionDecision:
 
     reason = _reason_for(operation, state_aware=True)
     if (
-        operation not in _FAIL_CLOSED_INTRODUCED_FLAGS
+        not isinstance(permissions, PermissionSet)
+        and operation not in _FAIL_CLOSED_INTRODUCED_FLAGS
         and reason
         and context.legacy_operation
     ):

@@ -11,7 +11,7 @@ cases depend only on the typed ``PulseUnitOfWork`` port.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Mapping, Protocol, TypeVar, runtime_checkable
+from typing import Any, Literal, Protocol, TypeVar, runtime_checkable
 
 from okto_pulse.core.ports.authentication import Principal, PrincipalKind
 from okto_pulse.core.domain.realm import (
@@ -55,7 +55,7 @@ class ActorContext:
         board_id: str | None = None,
         realm_id: str | None = None,
         realm_scope: RealmScope | None = None,
-        permissions: Mapping[str, Any] | None = None,
+        permissions: Any = None,
         roles: tuple[str, ...] = (),
     ) -> None:
         self.actor_id = actor_id
