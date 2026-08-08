@@ -19,6 +19,22 @@ resource/tool manifests.
   revisions, impact evidence, compliance receipts and governed waivers.
 - The installed MCP contract is frozen at 312 tools (304 canonical and 8 aliases).
 
+#### Permission-governance hardening changeset — 2026-08-08
+
+- Mutable MCP operations use specific canonical permission flags, with legacy
+  aliases limited to compatibility fallback.
+- `AuthorizeOperationUseCase` centralizes edition-neutral authorization for
+  REST and MCP consumers, including exact deny, wildcard and role semantics.
+- New policy namespaces cover agent, board administration and sharing,
+  permission presets, default board configuration, design system, runtime,
+  metrics, amendments and Knowledge Graph operations.
+- SDLC transition flags are generated from `SDLC_REGISTRY`; drift between the
+  live tool catalog and policies is now a blocking CI error unless an action has
+  an explicit human-only exemption.
+- The closed registry contains 312 live MCP tools, 309 policy entries and three
+  human-only exemptions. Ruff and 182 focused regressions pass on the reconciled
+  release branch.
+
 
 ### 0.3.0
 
