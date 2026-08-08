@@ -33,6 +33,16 @@ class UowSessionFinding:
 def _annotation_name(annotation: ast.expr | None) -> str | None:
     if annotation is None:
         return None
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        candidates = [
+            name
+            for name in (
+                _annotation_name(annotation.left),
+                _annotation_name(annotation.right),
+            )
+            if name not in {None, "None"}
+        ]
+        return candidates[0] if len(candidates) == 1 else " | ".join(candidates)
     if isinstance(annotation, ast.Name):
         return annotation.id
     if isinstance(annotation, ast.Attribute):

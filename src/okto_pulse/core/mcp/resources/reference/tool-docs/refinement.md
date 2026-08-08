@@ -4,6 +4,9 @@ version: "1.0"
 
 # Tool docs — `refinement`
 
+Lifecycle ordering and RDL usage rules:
+`okto-pulse://workflows/refinements`.
+
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
 ## `okto_pulse_answer_refinement_question`
@@ -167,6 +170,55 @@ Args:
 
 Returns:
     JSON with complete snapshot including Q&A history
+
+## `okto_pulse_append_research_decision`
+
+Append an immutable research-decision entry to a refinement. To revise an
+existing decision, append a successor by passing the current ledger ID, entry
+ID, and head revision; existing entries cannot be edited in place. Exact
+retries must reuse the same idempotency key and payload.
+
+Args:
+    board_id: Board ID
+    refinement_id: Refinement ID
+    idempotency_key: Caller-stable key for safe exact retries
+    expected_refinement_version: Current refinement version
+    unknown: The ambiguity or unknown being investigated
+    anchor_type: One of functional_requirement, acceptance_criterion,
+        technical_requirement, qa
+    anchor_ref: Stable ID of the anchored entity (never a list position)
+    status: One of open, investigating, resolved, deferred
+    evidence_refs: Multi-value evidence references
+    alternatives: Multi-value alternatives considered
+    decision: Decision text; required when status is resolved
+    rationale: Rationale; required when status is resolved
+    confidence: Optional number from 0.0 to 1.0; required when resolved
+    evidence_absence_justification: Required for a resolved entry without
+        evidence_refs
+    ledger_id: Existing ledger ID when superseding
+    supersedes_entry_id: Current entry ID when superseding
+    expected_head_revision: 0 for append; current positive revision for
+        supersede
+
+Returns:
+    Success envelope containing the immutable entry, ledger/thread ID, head
+    revision, new refinement version, and replay flag
+
+## `okto_pulse_list_research_decisions`
+
+List a refinement's immutable research-decision entries in stable
+created-at/ID descending order using an opaque keyset cursor.
+
+Args:
+    board_id: Board ID
+    refinement_id: Refinement ID
+    limit: Maximum entries, from 1 through 200 (default 50)
+    cursor: Opaque next_cursor returned by a previous call
+    ledger_id: Optional ledger/thread filter
+    status: Optional open, investigating, resolved, or deferred filter
+
+Returns:
+    Success envelope with items, limit, has_more, next_cursor, and ordering
 
 ## `okto_pulse_move_refinement`
 

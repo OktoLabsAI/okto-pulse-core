@@ -66,7 +66,11 @@ async def test_stale_parity_mcp_tool_is_read_only(db_factory, monkeypatch):
             {
                 "agent_id": "r2t4-agent",
                 "agent_name": "r2t4-agent",
-                "permissions": ["board:read"],
+                "permissions": [
+                    "board.read",
+                    "kg.operations.integrity.read",
+                    "kg.admin.settings_read",
+                ],
             },
         )()
 

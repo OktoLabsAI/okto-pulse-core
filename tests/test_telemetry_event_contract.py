@@ -25,15 +25,10 @@ from okto_pulse.core.telemetry.event_contract import (  # noqa: E402
     is_pending,
 )
 from okto_pulse.core.telemetry.schema import TELEMETRY_EVENT_TYPES  # noqa: E402
+from repository_checkout_testing import community_source_for  # noqa: E402
 
 CORE_SRC = ROOT / "src" / "okto_pulse" / "core"
-COMMUNITY_SRC = (
-    ROOT.parent
-    / "okto_labs_pulse_community"
-    / "src"
-    / "okto_pulse"
-    / "community"
-)
+COMMUNITY_SRC = community_source_for(ROOT)
 
 
 def _core_src(rel: str) -> str:
@@ -62,11 +57,7 @@ def test_wired_types_have_real_emitter_and_live_aggregate() -> None:
     metrics_src = _community_src("api/metrics.py")
     # R10-E Pass 2: TelemetryBeaconSender moved to Community. Read the community
     # sender source (sibling repo) to verify aggregates are still materialised.
-    community_sender = (
-        ROOT.parent
-        / "okto_labs_pulse_community"
-        / "src" / "okto_pulse" / "community" / "adapters" / "telemetry_sender.py"
-    )
+    community_sender = COMMUNITY_SRC / "adapters" / "telemetry_sender.py"
     sender_src = community_sender.read_text(encoding="utf-8")
     for entry in TELEMETRY_EVENT_CONTRACT.values():
         if entry.coverage != COVERAGE_WIRED:
@@ -109,11 +100,7 @@ def test_no_maintained_type_is_pending_after_r5a_b() -> None:
 def test_lifecycle_and_pipeline_now_have_live_aggregates() -> None:
     # R5A-B added the dedicated maps that used to be missing (the closed gap).
     # R10-E Pass 2: sender moved to Community — verify in the community adapter.
-    community_sender = (
-        ROOT.parent
-        / "okto_labs_pulse_community"
-        / "src" / "okto_pulse" / "community" / "adapters" / "telemetry_sender.py"
-    )
+    community_sender = COMMUNITY_SRC / "adapters" / "telemetry_sender.py"
     sender_src = community_sender.read_text(encoding="utf-8")
     for aggregate in ("lifecycle_counts", "pipeline_transition_counts"):
         assert aggregate in LIVE_AGGREGATE_MAPS

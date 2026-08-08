@@ -45,12 +45,13 @@ from okto_pulse.core.application.boundary.dependency_ledger import (
     build_dependency_ledger,
     normalize_token,
 )
+from repository_checkout_testing import community_repo_for
 
 CONF_PY = Path(_conf_mod.__file__)
 LEDGER_PY = Path(_ledger_mod.__file__)
 SRC_ROOT = CONF_PY.resolve().parents[4]  # .../src
 REPO_ROOT = SRC_ROOT.parent
-COMMUNITY_ROOT = REPO_ROOT.parent / "okto_labs_pulse_community"
+COMMUNITY_ROOT = community_repo_for(REPO_ROOT)
 
 
 # --------------------------------------------------------------------------- #
@@ -513,14 +514,16 @@ def test_report_is_actionable_and_serialisable():
 
 
 def test_af05_readmes_document_dependency_owner_matrix():
-    community_readme_path = COMMUNITY_ROOT / "README.md"
-    if not community_readme_path.exists():
-        pytest.skip("Community sibling repo not available for README matrix check")
+    community_architecture_path = COMMUNITY_ROOT / "docs" / "ARCHITECTURE.md"
+    if not community_architecture_path.exists():
+        pytest.skip("Community sibling repo not available for architecture matrix check")
 
-    core_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    community_readme = community_readme_path.read_text(encoding="utf-8")
+    core_architecture = (
+        REPO_ROOT / "docs" / "ARCHITECTURE-OVERVIEW.md"
+    ).read_text(encoding="utf-8")
+    community_architecture = community_architecture_path.read_text(encoding="utf-8")
 
-    for text in (core_readme, community_readme):
+    for text in (core_architecture, community_architecture):
         assert "AF-05/AF40 dependency owner matrix" in text
         assert "`dependency_ledger.py`" in text
         assert "`CANONICAL_AF40_DEPENDENCY_TOKENS`" in text
@@ -538,8 +541,8 @@ def test_af05_readmes_document_dependency_owner_matrix():
 
         assert "F14 dependency ownership" in text
 
-    assert "published core dependency" in core_readme
-    assert "published `okto-pulse-core`" in community_readme
+    assert "published core dependency" in core_architecture
+    assert "published `okto-pulse-core`" in community_architecture
 
 
 def test_real_repo_is_conformant():

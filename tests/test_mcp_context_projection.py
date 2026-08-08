@@ -32,6 +32,7 @@ from okto_pulse.core.mcp.context_projection import (
     CONTEXT_DETAIL_BUDGET_BYTES,
     CONTEXT_GATE_BUDGET_BYTES,
     CONTEXT_SUMMARY_BUDGET_BYTES,
+    _essential_context_projection,
     project_entity_context,
     project_spec_context,
     project_task_context,
@@ -50,6 +51,23 @@ from sqlalchemy_test_models import (
 )
 
 USER_ID = "context-projection-agent"
+
+
+def test_last_resort_projection_preserves_card_subject_version() -> None:
+    projected, _omitted = _essential_context_projection(
+        {
+            "card": {
+                "id": "card-version-fence",
+                "title": "Versioned card",
+                "status": "in_progress",
+                "subject_version": 17,
+                "oversized_unimportant_field": "x" * 10_000,
+            }
+        },
+        profile="summary",
+    )
+
+    assert projected["card"]["subject_version"] == 17
 
 
 def _full_task_result() -> dict:
@@ -639,6 +657,7 @@ async def test_get_task_context_default_summary_and_full_passthrough():
                 board_id=board_id,
                 title="Spec",
                 status=SpecStatus.IN_PROGRESS,
+                edition=3,
                 created_by=USER_ID,
                 functional_requirements=[{"id": "fr_0", "text": "FR text"}],
             )
@@ -696,10 +715,14 @@ async def test_get_task_context_default_summary_and_full_passthrough():
         assert key in default["projection"]
     # summary keeps the card body (unique content the agent needs)
     assert default["card"]["title"] == "Card"
+    assert default["spec"]["edition"] == 3
+    assert default["spec"]["version"] == 1
 
     # full preserves the prior payload shape (no projection envelope injected)
     assert "projection" not in full
     assert full["spec"]["functional_requirements"][0]["text"] == "FR text"
+    assert full["spec"]["edition"] == 3
+    assert full["spec"]["version"] == 1
 
     # full/gate is a bounded, content-addressed pre-mutation projection.
     assert full_gate["context_scope"] == "gate"
@@ -937,6 +960,7 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
                 board_id=board_id,
                 title="Spec",
                 status=SpecStatus.IN_PROGRESS,
+                edition=5,
                 created_by=USER_ID,
                 functional_requirements=[{"id": "fr_0", "text": "FR text"}],
             )
@@ -959,10 +983,14 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     for key in ENVELOPE_METADATA_KEYS:
         assert key in default["projection"]
     assert default["functional_requirements"][0]["text"] == "FR text"
+    assert default["edition"] == 5
+    assert default["version"] == 1
 
     # full preserves the prior payload shape (no projection envelope injected)
     assert "projection" not in full
     assert full["functional_requirements"][0]["text"] == "FR text"
+    assert full["edition"] == 5
+    assert full["version"] == 1
 
     # unsupported profile → structured error, no silent fallback
     assert bad["error_code"] == "unsupported_projection"

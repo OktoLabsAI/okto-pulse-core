@@ -36,6 +36,8 @@ from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.models import BoardCreate, IdeationMove
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.core.ports.authentication import Principal
 from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.services import BoardService
 from okto_pulse.core.services.board_governance import BoardGovernanceService
@@ -241,8 +243,14 @@ async def test_create_board_rest_equivalent(db_factory):
             # the handler now takes `uow` instead of a raw `db`.
             lambda: rest_create_board(
                 data=BoardCreate(name=name),
-                user_id=USER_ID,
-                realm_id=None,
+                principal=Principal(
+                    subject=USER_ID,
+                    realm_id=LOCAL_REALM_ID,
+                    claims={
+                        "permissions": ["board.admin.create", "board:read"]
+                    },
+                    actor_kind="human",
+                ),
                 uow=SQLAlchemyUnitOfWork(db),
             ),
             normalize=_norm_board,

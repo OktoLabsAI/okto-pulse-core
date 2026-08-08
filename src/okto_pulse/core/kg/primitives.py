@@ -482,6 +482,8 @@ async def begin_consolidation(
     spec_lineage_parent_intent: SpecLineageParentIntent = (
         SpecLineageParentIntent.PRESERVE
     ),
+    relational_projection_candidate_ids: frozenset[str] = frozenset(),
+    relational_projection_active_set_intent: object | None = None,
 ) -> BeginConsolidationResponse:
     """Open a new transactional session. SHA256-dedup against the last commit."""
     registry = get_kg_registry()
@@ -515,6 +517,71 @@ async def begin_consolidation(
         session_id=session_id,
         force_reprocess=force_reprocess,
     )
+
+    projection_candidate_ids = frozenset(
+        str(candidate_id)
+        for candidate_id in relational_projection_candidate_ids
+    )
+    projection_intent = relational_projection_active_set_intent
+    if projection_intent is not None:
+        owner_type = str(getattr(projection_intent, "owner_type", ""))
+        owner_id = str(getattr(projection_intent, "owner_id", ""))
+        namespace = str(getattr(projection_intent, "namespace", ""))
+        active_refs = tuple(getattr(projection_intent, "active_refs", ()))
+        if (
+            not agent_id.startswith("system:")
+            or req.artifact_type != "refinement"
+            or owner_type != "refinement"
+            or owner_id != req.artifact_id
+            or namespace != "rdl"
+        ):
+            raise KGPrimitiveError(
+                "relational_projection_scope_invalid",
+                "Relational projection ownership is restricted to the "
+                "server-side refinement/RDL consolidation path.",
+                session_id=session_id,
+            )
+        active_candidate_ids = frozenset(
+            str(getattr(ref, "candidate_id", "")) for ref in active_refs
+        )
+        if (
+            "" in active_candidate_ids
+            or active_candidate_ids != projection_candidate_ids
+        ):
+            raise KGPrimitiveError(
+                "relational_projection_active_set_mismatch",
+                "Projection candidate ids must exactly match the active-set "
+                "member identities.",
+                session_id=session_id,
+            )
+        for ref in active_refs:
+            candidate_id = str(getattr(ref, "candidate_id", ""))
+            candidate = deterministic_candidates.get(candidate_id)
+            if candidate is None:
+                raise KGPrimitiveError(
+                    "relational_projection_candidate_missing",
+                    "An active relational projection candidate is absent from "
+                    "the deterministic candidate set.",
+                    session_id=session_id,
+                )
+            if (
+                _enum_value(candidate.node_type)
+                != str(getattr(ref, "node_type", ""))
+                or str(candidate.source_artifact_ref or "")
+                != str(getattr(ref, "source_artifact_ref", ""))
+            ):
+                raise KGPrimitiveError(
+                    "relational_projection_candidate_identity_mismatch",
+                    "An active relational projection member does not match its "
+                    "deterministic candidate identity.",
+                    session_id=session_id,
+                )
+    elif projection_candidate_ids:
+        raise KGPrimitiveError(
+            "relational_projection_intent_required",
+            "Relational projection candidates require an exact active-set intent.",
+            session_id=session_id,
+        )
 
     content_hash = compute_content_hash(req.raw_content, req.artifact_id, req.board_id)
 
@@ -561,6 +628,8 @@ async def begin_consolidation(
     )
     session.node_candidates.update(deterministic_candidates)
     session.spec_lineage_parent_intent = lineage_intent
+    session.relational_projection_candidate_ids = projection_candidate_ids
+    session.relational_projection_active_set_intent = projection_intent
 
     # Spec 4007e4a3 (Ideação #3, FR6): structured counter for the
     # nothing_changed short-circuit. Lets observability tooling track how
@@ -995,175 +1064,25 @@ async def propose_reconciliation(
 def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> None:
     """Sync: reverse graph writes for a failed commit.
 
-    Mirrors ``TransactionOrchestrator.compensate()`` but runs synchronously
-    inside the thread pool. Ordinary cleanup remains best-effort. Exclusive
-    Spec-lineage swaps are different: their before-image receipt is restored
-    first and a restore failure aborts generic cleanup so the replacement edge
-    is never deleted while no old parent is known to exist.
+    Re-open a writer scope and replay the same fail-closed compensation engine
+    used inline. Projection receipts, Spec lineage, in-place property
+    before-images, session edges and session nodes are restored in that order.
+    Any incomplete restore propagates so callers never acknowledge graph-ahead
+    state as a successful relational rollback.
     """
-    from okto_pulse.core.kg.schema_contract import (
-        MULTI_REL_TYPES,
-        REL_TYPES,
-    )
+    from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     async def _run() -> None:
         async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
-            lineage_receipts = [
-                receipt
-                for record in reversed(records)
-                if (receipt := getattr(record, "lineage_receipt", None)) is not None
-            ]
-            preserved_lineage_edges = []
-            for receipt in lineage_receipts:
-                try:
-                    scope.compensate_spec_lineage_parent(receipt)
-                except Exception as exc:
-                    logger.error(
-                        "kg.compensate_sync.spec_lineage_restore_failed "
-                        "session=%s board=%s source=%s target=%s err=%s",
-                        session_id,
-                        board_id,
-                        receipt.source_id,
-                        receipt.target_id,
-                        exc,
-                        extra={
-                            "event": (
-                                "kg.compensate_sync."
-                                "spec_lineage_restore_failed"
-                            ),
-                            "session_id": session_id,
-                            "board_id": board_id,
-                            "source_id": receipt.source_id,
-                            "target_id": receipt.target_id,
-                        },
-                    )
-                    raise SpecLineageReconciliationError(
-                        "spec_lineage_compensation_restore_failed",
-                        "Restore-first Spec-lineage compensation failed; "
-                        "generic session cleanup was aborted so the replacement "
-                        "parent remains attached.",
-                        receipt=receipt,
-                    ) from exc
-                preserved_lineage_edges.extend(receipt.removed_edges)
+            orchestrator = TransactionOrchestrator(
+                graph_scope=scope,
+                session_id=session_id,
+                board_id=board_id,
+            )
+            orchestrator.records = list(records)
+            await orchestrator.compensate()
 
-            # Delete edges first (they reference nodes)
-            if lineage_receipts:
-                try:
-                    scope.delete_edges_by_session_preserving_spec_lineage(
-                        session_id,
-                        tuple(preserved_lineage_edges),
-                    )
-                except Exception as exc:
-                    raise SpecLineageReconciliationError(
-                        "spec_lineage_session_cleanup_failed",
-                        "Spec-lineage before-images were restored, but generic "
-                        "session-edge cleanup failed.",
-                        receipt=lineage_receipts[-1],
-                    ) from exc
-            else:
-                rel_pairs = list(REL_TYPES)
-                for rel_name, endpoint_pairs in MULTI_REL_TYPES:
-                    rel_pairs.extend(
-                        (rel_name, from_type, to_type)
-                        for from_type, to_type in endpoint_pairs
-                    )
-                for rel_name, from_type, to_type in rel_pairs:
-                    try:
-                        scope.execute(
-                            f"MATCH (a:{from_type})-[r:{rel_name}]->"
-                            f"(b:{to_type}) "
-                            "WHERE r.created_by_session_id = $sid DELETE r",
-                            {"sid": session_id},
-                        )
-                    except Exception:
-                        pass
-
-            # A fresh SUPERSEDE marks its predecessor before creating the
-            # session-owned successor.  Deleting that successor without
-            # clearing the mark leaves a dangling ``superseded_by`` pointer.
-            # The record intersection is a safe local before-image substitute:
-            # only a :supersedes edge created by this session whose successor
-            # is also a node created by this session can qualify.  The Cypher
-            # predicate then clears metadata only while the predecessor still
-            # points at that exact successor, preserving any later writer.
-            created_nodes = {
-                (record.entity_type, record.entity_id)
-                for record in records
-                if record.kind == "node"
-            }
-            for record in records:
-                successor_id = getattr(record, "from_id", None)
-                predecessor_id = getattr(record, "to_id", None)
-                if (
-                    record.kind != "edge"
-                    or record.entity_type != "supersedes"
-                    or not successor_id
-                    or not predecessor_id
-                ):
-                    continue
-                successor_types = sorted(
-                    node_type
-                    for node_type, node_id in created_nodes
-                    if node_id == successor_id
-                )
-                for node_type in successor_types:
-                    try:
-                        scope.execute(
-                            f"MATCH (n:{node_type}) "
-                            "WHERE n.id = $predecessor_id "
-                            "AND n.superseded_by = $successor_id "
-                            "SET n.superseded_by = NULL, "
-                            "n.superseded_at = NULL, "
-                            "n.revocation_reason = NULL",
-                            {
-                                "predecessor_id": predecessor_id,
-                                "successor_id": successor_id,
-                            },
-                        )
-                    except Exception:
-                        pass
-
-            # Delete nodes
-            node_types = {r.entity_type for r in records if r.kind == "node"}
-            for node_type in node_types:
-                try:
-                    scope.execute(
-                        f"MATCH (n:{node_type}) "
-                        f"WHERE n.source_session_id = $sid DETACH DELETE n",
-                        {"sid": session_id},
-                    )
-                except Exception:
-                    pass
-
-    try:
-        run_async_blocking(_run())
-    except SpecLineageReconciliationError:
-        # Never downgrade this failure. A caller may retry the receipt, while
-        # swallowing it would let a later generic cleanup erase the only
-        # surviving parent edge.
-        raise
-    except Exception as exc:
-        # Spec 818748f2 — FR4 + BR4: downgrade to warning. The compensation
-        # failure is recoverable (lock contention, schema drift) and the
-        # message must direct the operator to schema migration, never manual
-        # deletion of edition-owned graph storage.
-        logger.warning(
-            "kg.compensate_sync.failed session=%s board=%s err=%s. "
-            "Schema migration may be needed — run "
-            "`okto-pulse kg migrate-schema --board %s` "
-            "or call MCP tool `okto_pulse_kg_migrate_schema`. "
-            "Do NOT delete graph storage manually (destructive).",
-            session_id,
-            board_id,
-            exc,
-            board_id,
-            extra={
-                "event": "kg.compensate_sync.failed",
-                "session_id": session_id,
-                "board_id": board_id,
-                "remediation": "migrate-schema",
-            },
-        )
+    run_async_blocking(_run())
 
 
 def _connectivity_writer_path(agent_id: str) -> str:
@@ -2350,6 +2269,8 @@ def _do_graph_commit(
     spec_lineage_parent_intent: SpecLineageParentIntent = (
         SpecLineageParentIntent.PRESERVE
     ),
+    relational_projection_candidate_ids: frozenset[str] = frozenset(),
+    relational_projection_active_set_intent: object | None = None,
 ) -> tuple[dict, object, list, datetime, dict, list[dict]]:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -2418,6 +2339,18 @@ def _do_graph_commit(
 
         if node_type not in _COGNITIVE_SOURCE_TYPES:
             return
+        from okto_pulse.core.kg.relational_projection import (
+            is_relational_projection_node,
+        )
+
+        if is_relational_projection_node(
+            node_type=node_type,
+            source_artifact_ref=str(attrs.get("source_artifact_ref") or ""),
+            created_by_agent=str(attrs.get("created_by_agent") or ""),
+        ):
+            # Relational RDL projections are rebuildable derivatives. Persisting
+            # them in MKG-A would create a second source of truth.
+            return
         cognitive_source_records.append(
             _cognitive_source_record_kwargs(
                 board_id=board_id,
@@ -2435,6 +2368,26 @@ def _do_graph_commit(
             node_candidates=node_candidates,
             effective_hints=effective_hints,
         )
+        # Generic Decision reconciliation upgrades semantic UPDATEs to
+        # SUPERSEDE so cognitive history remains walkable.  RDL history is
+        # already immutable in the relational ledger, while its KG nodes are
+        # current-state projections.  Normalize those admitted candidates
+        # back to UPDATE before the connectivity guard and write loop so no
+        # synthetic supersedes edge or duplicate graph node is introduced.
+        effective_hints = dict(effective_hints)
+        for projection_candidate_id in relational_projection_candidate_ids:
+            projection_hint = effective_hints.get(projection_candidate_id)
+            if (
+                projection_hint is not None
+                and _resolve_op(projection_hint, 1.0)
+                == ReconciliationOperation.SUPERSEDE
+                and getattr(projection_hint, "target_node_id", None)
+            ):
+                effective_hints[projection_candidate_id] = (
+                    projection_hint.model_copy(
+                        update={"operation": ReconciliationOperation.UPDATE}
+                    )
+                )
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
             board_id=board_id,
@@ -2450,6 +2403,9 @@ def _do_graph_commit(
             hint = effective_hints.get(cand_id)
             op = _resolve_op(hint, cand.source_confidence)
             node_type = _enum_value(cand.node_type)
+            is_relational_projection = (
+                cand_id in relational_projection_candidate_ids
+            )
 
             if op == ReconciliationOperation.NOOP:
                 # Spec eca49df9 (FR6): NOOP is a processed candidate too.
@@ -2484,6 +2440,12 @@ def _do_graph_commit(
                     node_type,
                     target_node_id,
                 )
+                # A relational RDL projection is rebuildable current state,
+                # never a user-curated cognitive source.  Relational truth
+                # therefore wins even if a stale/corrupt graph row retained
+                # the generic human_curated marker.
+                if is_relational_projection:
+                    is_curated_target = False
                 if is_curated_target and not has_explicit_override:
                     logger.info(
                         "kg.consolidation.manual_edit_preserved candidate=%s "
@@ -2523,7 +2485,13 @@ def _do_graph_commit(
             # as human_curated. With an explicit override, update the target in
             # place and reset authorship instead of minting a colliding node.
             if (
-                op == ReconciliationOperation.UPDATE
+                (
+                    op == ReconciliationOperation.UPDATE
+                    or (
+                        is_relational_projection
+                        and op == ReconciliationOperation.SUPERSEDE
+                    )
+                )
                 and hint
                 and getattr(hint, "target_node_id", None)
             ):
@@ -2716,13 +2684,14 @@ def _do_graph_commit(
                             orch, node_type, new_node_id, new_attrs
                         )
                     if candidate_ref and not existing_ref:
-                        graph_scope.update_node(
+                        orch.update_node(
                             node_type,
                             new_node_id,
                             {"source_artifact_ref": candidate_ref},
+                            count_candidate=False,
                         )
                     if linked_successor is None:
-                        graph_scope.mark_superseded(
+                        orch.mark_superseded(
                             node_type,
                             superseded_id,
                             superseded_by=new_node_id,
@@ -2846,7 +2815,14 @@ def _do_graph_commit(
                     # a supersede-with-trail — the previous state is
                     # preserved as a walkable chain entry instead of
                     # evaporating under a destructive UPDATE.
-                    if not is_curated and (
+                    # SK-A relational projections are a current-state cache of
+                    # the immutable relational RDL.  Their source reference is
+                    # the stable projection identity, so a changed Decision or
+                    # Alternative must update that graph node in place.  The
+                    # generic cognitive supersedence trail would duplicate RDL
+                    # history in the KG and leave two owner edges for one
+                    # source ref, making the exact active-set ambiguous.
+                    if not is_curated and not is_relational_projection and (
                         decision_semantic_change
                         or normalize_text(cand.title)
                         != normalize_text(
@@ -3137,10 +3113,11 @@ def _do_graph_commit(
                 # derived from this exact candidate identity and non-empty
                 # conflicting refs were rejected above.
                 if candidate_ref and not existing_ref:
-                    graph_scope.update_node(
+                    orch.update_node(
                         node_type,
                         node_id,
                         {"source_artifact_ref": candidate_ref},
+                        count_candidate=False,
                     )
                 _bump_attestation(orch, node_type, node_id)
                 candidate_to_graph_id[cand_id] = node_id
@@ -3244,6 +3221,110 @@ def _do_graph_commit(
                 to_type=to_hint,
             )
 
+        if relational_projection_active_set_intent is not None:
+            from okto_pulse.core.kg.interfaces.graph_transaction import (
+                ProjectionActiveSetIntent,
+                ProjectionNodeRef,
+            )
+
+            active_nodes: list[ProjectionNodeRef] = []
+            active_refs = tuple(
+                getattr(
+                    relational_projection_active_set_intent,
+                    "active_refs",
+                    (),
+                )
+            )
+            active_candidate_ids = frozenset(
+                str(getattr(ref, "candidate_id", "")) for ref in active_refs
+            )
+            if active_candidate_ids != frozenset(
+                relational_projection_candidate_ids
+            ):
+                raise KGPrimitiveError(
+                    "relational_projection_active_set_mismatch",
+                    "Projection ownership changed after session admission.",
+                    session_id=session_id,
+                )
+            for ref in active_refs:
+                candidate_id = str(getattr(ref, "candidate_id", ""))
+                node_id = candidate_to_graph_id.get(candidate_id)
+                if node_id is None:
+                    raise KGPrimitiveError(
+                        "relational_projection_member_unresolved",
+                        "An active relational projection candidate could not "
+                        "be resolved to a graph identity.",
+                        session_id=session_id,
+                        details={"candidate_id": candidate_id},
+                    )
+                active_nodes.append(
+                    ProjectionNodeRef(
+                        node_type=str(getattr(ref, "node_type", "")),
+                        node_id=node_id,
+                        source_artifact_ref=str(
+                            getattr(ref, "source_artifact_ref", "")
+                        ),
+                    )
+                )
+            projection_owner_type = str(
+                getattr(
+                    relational_projection_active_set_intent,
+                    "owner_type",
+                    "",
+                )
+            )
+            projection_owner_id = str(
+                getattr(
+                    relational_projection_active_set_intent,
+                    "owner_id",
+                    "",
+                )
+            )
+            owner_source_ref = (
+                f"{projection_owner_type}:{projection_owner_id}"
+            )
+            owner_candidate_ids = [
+                candidate_id
+                for candidate_id, candidate in node_candidates.items()
+                if _enum_value(candidate.node_type) == "Entity"
+                and str(candidate.source_artifact_ref or "")
+                == owner_source_ref
+            ]
+            owner_node_id = None
+            if owner_candidate_ids:
+                if len(owner_candidate_ids) != 1:
+                    raise KGPrimitiveError(
+                        "relational_projection_owner_ambiguous",
+                        "The projection owner resolves to multiple deterministic "
+                        "root candidates.",
+                        session_id=session_id,
+                    )
+                owner_node_id = candidate_to_graph_id.get(
+                    owner_candidate_ids[0]
+                )
+                if owner_node_id is None:
+                    raise KGPrimitiveError(
+                        "relational_projection_owner_unresolved",
+                        "The projection owner root could not be resolved to a "
+                        "graph identity.",
+                        session_id=session_id,
+                    )
+            orch.reconcile_projection_active_set(
+                ProjectionActiveSetIntent(
+                    owner_type=projection_owner_type,
+                    owner_id=projection_owner_id,
+                    namespace=str(
+                        getattr(
+                            relational_projection_active_set_intent,
+                            "namespace",
+                            "",
+                        )
+                    ),
+                    owner_node_id=owner_node_id,
+                    active_nodes=tuple(active_nodes),
+                )
+            )
+
         # v0.3.0 R2: recompute relevance_score for every node touched by
         # this session. This includes nodes-only fallback commits, which
         # otherwise stay pinned to the neutral 0.5 score and inflate
@@ -3289,6 +3370,16 @@ def _do_graph_commit(
                         seen.add(key)
                         endpoints_to_recompute.append(key)
             if endpoints_to_recompute:
+                for node_type, node_id in endpoints_to_recompute:
+                    orch.protect_node_properties(
+                        node_type,
+                        node_id,
+                        (
+                            "last_recomputed_at",
+                            "pre_cancellation_relevance_score",
+                            "relevance_score",
+                        ),
+                    )
                 _recompute_relevance_batch(
                     graph_scope,
                     board_id,
@@ -3313,18 +3404,83 @@ def _do_graph_commit(
             cognitive_source_records,
         )
 
-    except KGPrimitiveError:
+    except KGPrimitiveError as primitive_error:
+        rollback_error: Exception | None = None
         try:
             run_async_blocking(graph_scope.rollback())
-        except Exception:
-            pass
+        except Exception as exc:
+            rollback_error = exc
+        try:
+            _compensate_graph_writes(board_id, session_id, orch.records)
+        except Exception as compensation_error:
+            raise KGPrimitiveError(
+                "graph_compensation_failed",
+                "Graph mutation was rejected and its complete before-image "
+                "could not be restored; the session remains retryable and "
+                "must not be acknowledged.",
+                session_id=session_id,
+                details={
+                    "original_error_code": primitive_error.code,
+                    "rollback_failure_type": (
+                        type(rollback_error).__name__
+                        if rollback_error is not None
+                        else None
+                    ),
+                    "compensation_failure_type": type(
+                        compensation_error
+                    ).__name__,
+                },
+            ) from compensation_error
+        if rollback_error is not None:
+            raise KGPrimitiveError(
+                "graph_scope_cleanup_failed",
+                "Graph mutation was compensated, but the original writer "
+                "scope could not be proven closed.",
+                session_id=session_id,
+                details={
+                    "original_error_code": primitive_error.code,
+                    "rollback_failure_type": type(rollback_error).__name__,
+                },
+            ) from rollback_error
         raise
     except Exception as exc:
+        rollback_error: Exception | None = None
         try:
             run_async_blocking(graph_scope.rollback())
-        except Exception:
-            pass
-        _compensate_graph_writes(board_id, session_id, orch.records)
+        except Exception as cleanup_error:
+            rollback_error = cleanup_error
+        try:
+            _compensate_graph_writes(board_id, session_id, orch.records)
+        except Exception as compensation_error:
+            raise KGPrimitiveError(
+                "graph_compensation_failed",
+                "Graph commit failed and its complete before-image could not "
+                "be restored; the session remains retryable and must not be "
+                "acknowledged.",
+                session_id=session_id,
+                details={
+                    "original_failure_type": type(exc).__name__,
+                    "rollback_failure_type": (
+                        type(rollback_error).__name__
+                        if rollback_error is not None
+                        else None
+                    ),
+                    "compensation_failure_type": type(
+                        compensation_error
+                    ).__name__,
+                },
+            ) from compensation_error
+        if rollback_error is not None:
+            raise KGPrimitiveError(
+                "graph_scope_cleanup_failed",
+                "Graph commit was compensated, but the original writer scope "
+                "could not be proven closed.",
+                session_id=session_id,
+                details={
+                    "original_failure_type": type(exc).__name__,
+                    "rollback_failure_type": type(rollback_error).__name__,
+                },
+            ) from rollback_error
         message, details = _contextualize_graph_commit_error(exc)
         raise KGPrimitiveError(
             "commit_failed",
@@ -3392,7 +3548,8 @@ async def commit_consolidation(
     cognitive_source_store = None
     if any(
         _enum_value(candidate.node_type) in _COGNITIVE_SOURCE_TYPES
-        for candidate in session.node_candidates.values()
+        and candidate_id not in session.relational_projection_candidate_ids
+        for candidate_id, candidate in session.node_candidates.items()
     ):
         from okto_pulse.core.ports.kg_cognitive_source import (
             CognitiveSourceError,
@@ -3523,6 +3680,16 @@ async def commit_consolidation(
                 frozenset(req.agent_overrides),
                 session.artifact_type,
                 session.spec_lineage_parent_intent,
+                getattr(
+                    session,
+                    "relational_projection_candidate_ids",
+                    frozenset(),
+                ),
+                getattr(
+                    session,
+                    "relational_projection_active_set_intent",
+                    None,
+                ),
                 executor=blocking_execution,
             )
         except KGPrimitiveError:
@@ -3541,9 +3708,9 @@ async def commit_consolidation(
         # deliberately a saga rather than a cross-engine transaction.  Both
         # the durable cognitive append and audit/outbox staging belong to the
         # same post-graph compensation barrier: neither may fail while leaving
-        # session-created graph entities acknowledged as committed.  In-place
-        # UPDATE/NC-8 writes are intentionally not claimed as reversible:
-        # GraphWriteRecord carries no before-image for them.
+        # graph state acknowledged as committed. In-place UPDATE/NC-8,
+        # attestation, supersedence and relational projection mutations all
+        # carry exact before-images in GraphWriteRecord.
         failure_stage = "cognitive_source_append"
         try:
             await _append_cognitive_source_records(
@@ -3565,7 +3732,7 @@ async def commit_consolidation(
                 agent_id,
                 committed_at,
             )
-        except Exception:
+        except Exception as staging_error:
             try:
                 await _run_graph_io(
                     _compensate_graph_writes,
@@ -3575,16 +3742,13 @@ async def commit_consolidation(
                     executor=blocking_execution,
                 )
             except Exception as compensation_error:
-                # Compensation is explicitly best-effort.  Never replace the
-                # original append/audit exception with an executor/cleanup
-                # failure; preserve both and identify the failed stage in
-                # telemetry for operator recovery.
-                logger.warning(
+                logger.error(
                     "kg.post_graph.compensation_failed board=%s session=%s "
-                    "failure_stage=%s err=%s",
+                    "failure_stage=%s staging_error=%s compensation_error=%s",
                     session.board_id,
                     req.session_id,
                     failure_stage,
+                    staging_error,
                     compensation_error,
                     extra={
                         "event": "kg.post_graph.compensation_failed",
@@ -3593,6 +3757,20 @@ async def commit_consolidation(
                         "failure_stage": failure_stage,
                     },
                 )
+                raise KGPrimitiveError(
+                    "graph_compensation_failed",
+                    "Relational staging failed and the graph before-image could "
+                    "not be restored; the session remains retryable and must "
+                    "not be acknowledged.",
+                    session_id=req.session_id,
+                    details={
+                        "failure_stage": failure_stage,
+                        "staging_failure_type": type(staging_error).__name__,
+                        "compensation_failure_type": type(
+                            compensation_error
+                        ).__name__,
+                    },
+                ) from compensation_error
             raise
 
         response = CommitConsolidationResponse(
@@ -4043,7 +4221,7 @@ def _bump_attestation(orch, node_type: str, node_id: str) -> None:
     as one prior attestation.
     """
 
-    orch.graph_scope.increment_attestation(
+    orch.increment_attestation(
         node_type,
         node_id,
         attested_at=_now_iso(),
@@ -4448,6 +4626,77 @@ def _cognitive_source_record_kwargs(
     }
 
 
+async def _restore_sealed_birth_fields(
+    board_id: str,
+    session_id: str,
+    records: list[dict],
+    *,
+    context: object,
+    store: object,
+) -> list[dict]:
+    """Re-seat re-derived birth stamps on what the durable ledger already sealed.
+
+    The graph is a projection and may fall behind the ledger (restore from an
+    older copy, targeted removal, rebuild, DLQ replay). Consolidation then
+    materializes a node it believes to be new and stamps a fresh ``created_at``,
+    which re-presents an immutable revision with divergent content and poisons
+    the queue fail-closed (observed live on decision_059d5828). BR2 makes the
+    relational ledger the authority, so its sealed birth wins.
+
+    Fail-closed: a store that cannot answer aborts the commit. Degrading to the
+    re-derived stamp would reintroduce exactly the corruption this prevents.
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        CognitiveSourceError,
+        cognitive_source_semantic_key,
+        restore_sealed_birth_fields,
+    )
+
+    lookup = getattr(store, "sealed_birth_payloads_in_context", None)
+    if not callable(lookup):
+        raise CognitiveSourceError(
+            "cognitive_source_birth_lookup_unsupported",
+            board_id=board_id,
+            remediation=(
+                "Install a CognitiveSourceStore adapter exposing "
+                "sealed_birth_payloads_in_context(); the durable ledger is the "
+                "authority for a cognitive node's birth stamp and consolidation "
+                "may not re-mint it from the graph projection."
+            ),
+        )
+
+    keys = tuple(dict.fromkeys(cognitive_source_semantic_key(r) for r in records))
+    sealed = await lookup(context, board_id, keys)
+    reconciled, restorations = restore_sealed_birth_fields(records, sealed or {})
+    for restoration in restorations:
+        # WARNING, not INFO: a restoration means the graph projection lost a
+        # node the ledger still holds. The append is safe now, but the graph
+        # carries a birth stamp that a rebuild will overwrite.
+        logger.warning(
+            "kg.cognitive_source.birth_stamp_restored board=%s session=%s "
+            "node_id=%s field=%s rederived=%s sealed=%s",
+            board_id,
+            session_id,
+            restoration.node_id,
+            restoration.field,
+            restoration.rederived,
+            restoration.sealed,
+            extra={
+                "event": "kg.cognitive_source.birth_stamp_restored",
+                "board_id": board_id,
+                "session_id": session_id,
+                "node_id": restoration.node_id,
+                "node_type": restoration.node_type,
+                "generation": restoration.generation,
+                "field": restoration.field,
+                "rederived_value": str(restoration.rederived),
+                "sealed_value": str(restoration.sealed),
+            },
+        )
+    return list(reconciled)
+
+
 async def _append_cognitive_source_records(
     board_id: str,
     session_id: str,
@@ -4475,8 +4724,10 @@ async def _append_cognitive_source_records(
 
     try:
         resolved_store = store or require_cognitive_source_store()
-        source_records = tuple(CognitiveSourceRecord(**kwargs) for kwargs in records)
         if context is None:
+            source_records = tuple(
+                CognitiveSourceRecord(**kwargs) for kwargs in records
+            )
             await resolved_store.append_many(source_records)
         else:
             append_in_context = getattr(
@@ -4493,6 +4744,16 @@ async def _append_cognitive_source_records(
                         "the caller-owned relational unit of work."
                     ),
                 )
+            records = await _restore_sealed_birth_fields(
+                board_id,
+                session_id,
+                records,
+                context=context,
+                store=resolved_store,
+            )
+            source_records = tuple(
+                CognitiveSourceRecord(**kwargs) for kwargs in records
+            )
             await append_in_context(context, source_records)
     except CognitiveSourceError as exc:
         # OR1: structured failure log — the operator must distinguish
@@ -4791,11 +5052,12 @@ def _apply_graph_node_update_partial(
     }
     if not values:
         return
-    orch.graph_scope.update_node(node_type, node_id, values)
-    # Note: do NOT append a GraphWriteRecord — the existing node was created
-    # by a prior session, and compensation rollback uses source_session_id
-    # to scope deletes. Re-recording here would risk deleting the node on
-    # rollback of the current session despite belonging to the prior one.
+    orch.update_node(
+        node_type,
+        node_id,
+        values,
+        count_candidate=False,
+    )
 
 
 def _apply_graph_node_create(orch, node_type: str, node_id: str, attrs: dict) -> None:

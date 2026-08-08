@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from okto_pulse.core.events import EVENT_TYPES, EventBus, publish
 from okto_pulse.core.application.processors.event_delivery import (
@@ -119,12 +119,16 @@ async def event_board(db_factory):
     yield BOARD_ID
 
 
-@pytest_asyncio.fixture
-async def clean_tables(db_factory, event_board):
-    """Wipe events / executions / queue rows before each test."""
+async def _clean_event_test_tables(db_factory) -> None:
+    """Remove only this module's board-scoped event state."""
+
     async with db_factory() as session:
         await session.execute(DomainEventHandlerExecution.__table__.delete())
-        await session.execute(DomainEventRow.__table__.delete())
+        await session.execute(
+            DomainEventRow.__table__.delete().where(
+                DomainEventRow.board_id == BOARD_ID
+            )
+        )
         await session.execute(
             ConsolidationQueue.__table__.delete().where(
                 ConsolidationQueue.board_id == BOARD_ID
@@ -136,6 +140,13 @@ async def clean_tables(db_factory, event_board):
             )
         )
         await session.commit()
+
+
+@pytest_asyncio.fixture
+async def clean_tables(db_factory, event_board):
+    """Wipe this module's events / executions / queue rows before each test."""
+
+    await _clean_event_test_tables(db_factory)
     yield
 
 
@@ -161,7 +172,17 @@ async def test_publish_rolled_back_does_not_persist(db_factory, clean_tables):
         await session.rollback()
 
     async with db_factory() as session:
-        events = (await session.execute(select(DomainEventRow))).scalars().all()
+        events = (
+            (
+                await session.execute(
+                    select(DomainEventRow).where(
+                        DomainEventRow.board_id == BOARD_ID
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         execs = (
             (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
         )
@@ -186,7 +207,17 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
         await session.commit()
 
     async with db_factory() as session:
-        events = (await session.execute(select(DomainEventRow))).scalars().all()
+        events = (
+            (
+                await session.execute(
+                    select(DomainEventRow).where(
+                        DomainEventRow.board_id == BOARD_ID
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(events) == 1
         assert events[0].event_type == "card.created"
         assert events[0].board_id == BOARD_ID
@@ -199,10 +230,102 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
         assert execs[0].status == "pending"
 
 
+@pytest.mark.asyncio
+async def test_clean_tables_preserves_restricted_events_from_other_boards(
+    db_factory,
+    clean_tables,
+):
+    """Cross-suite child rows must not make this module's cleanup fail.
+
+    Community C7/SK-B3 adds durable children of ``domain_events``.  A global
+    parent delete therefore couples this suite to unrelated boards.  Keep a
+    synthetic RESTRICT child as the ratchet for the real relational shape.
+    """
+
+    other_board_id = "board-events-foreign"
+    owned_event_id = "event-owned-cleanup"
+    foreign_event_id = "event-foreign-restrict"
+    child_table = "test_event_restrict_children"
+    now = datetime.now(timezone.utc)
+
+    async with db_factory() as session:
+        await session.execute(text(f'DROP TABLE IF EXISTS "{child_table}"'))
+        await session.execute(
+            text(
+                f'CREATE TABLE "{child_table}" ('
+                'id TEXT PRIMARY KEY, event_id TEXT NOT NULL, '
+                'FOREIGN KEY(event_id) REFERENCES domain_events(id) '
+                'ON DELETE RESTRICT)'
+            )
+        )
+        session.add(
+            Board(
+                id=other_board_id,
+                name="foreign event board",
+                owner_id=USER_ID,
+            )
+        )
+        session.add_all(
+            (
+                DomainEventRow(
+                    id=owned_event_id,
+                    event_type="test.owned",
+                    board_id=BOARD_ID,
+                    actor_id=USER_ID,
+                    actor_type="user",
+                    payload_json={},
+                    occurred_at=now,
+                ),
+                DomainEventRow(
+                    id=foreign_event_id,
+                    event_type="test.foreign",
+                    board_id=other_board_id,
+                    actor_id=USER_ID,
+                    actor_type="user",
+                    payload_json={},
+                    occurred_at=now,
+                ),
+            )
+        )
+        await session.flush()
+        await session.execute(
+            text(
+                f'INSERT INTO "{child_table}" (id, event_id) '
+                "VALUES ('child-foreign', :event_id)"
+            ),
+            {"event_id": foreign_event_id},
+        )
+        await session.commit()
+
+    try:
+        await _clean_event_test_tables(db_factory)
+        async with db_factory() as session:
+            assert await session.get(DomainEventRow, owned_event_id) is None
+            assert await session.get(DomainEventRow, foreign_event_id) is not None
+            assert (
+                await session.execute(
+                    text(f'SELECT COUNT(*) FROM "{child_table}"')
+                )
+            ).scalar_one() == 1
+    finally:
+        async with db_factory() as session:
+            await session.execute(text(f'DELETE FROM "{child_table}"'))
+            await session.execute(
+                DomainEventRow.__table__.delete().where(
+                    DomainEventRow.id == foreign_event_id
+                )
+            )
+            await session.execute(
+                Board.__table__.delete().where(Board.id == other_board_id)
+            )
+            await session.execute(text(f'DROP TABLE "{child_table}"'))
+            await session.commit()
+
+
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_thirty_four_events():
+def test_registry_has_forty_three_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -213,7 +336,12 @@ def test_registry_has_thirty_four_events():
     + 4 Story lifecycle events for working-graph ingestion + 1 durable
     delivery-redrive continuation + 1 dedicated fail-closed full-rebuild tick
     intent + ideation/refinement lifecycle move events + one generic
-    archive/restore event = 34.
+    archive/restore event + the SK-A quality-assessment recorded event + the
+    A3 checklist-binding governance audit event = 36.
+    SK-A research-decision append/supersede events = 38. The closed
+    clarification-currentness signal brings the registry to 39. Three closed
+    SK-B policy-constraint companions bring the registry to 42. The semantic-
+    guideline KG projection outbox envelope brings it to 43.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -222,20 +350,25 @@ def test_registry_has_thirty_four_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 34
-    operational_kg_events = {
+    assert len(EVENT_TYPES) == 43
+    non_consolidation_events = {
         "kg.hit_flushed",
         "card.priority_changed",
         "card.severity_changed",
         "kg.tick.daily",
         "kg.tick.full_rebuild",
         "kg.tick.delivery_redrive",
+        "checklist.binding_changed.v1",
+        "board.semantic_guideline_adoption_changed.v2",
+        "board.semantic_policy_binding_materialized.v2",
+        "board.semantic_guideline_retirement_changed.v2",
+        "guideline.semantic_kg_projection_changed.v1",
     }
     for et in EVENT_TYPES:
         assert et in EventBus._registry, f"{et} not registered"
-        if et in operational_kg_events:
-            # Operational events: handled by dedicated KG-scoring handlers,
-            # not the consolidation enqueuer (different concern).
+        if et in non_consolidation_events:
+            # Operational/audit events have dedicated handlers and do not
+            # enqueue artifact consolidation.
             continue
         assert ConsolidationEnqueuer in EventBus._registry[et]
 
@@ -265,6 +398,82 @@ def test_ideation_moved_reenqueues_ideation_projection():
 
     assert ConsolidationEnqueuer()._map_targets(event) == [
         ("ideation", "ideation-cancelled")
+    ]
+
+
+def test_quality_assessment_recorded_reenqueues_subject_projection():
+    from okto_pulse.core.events.types import QualityAssessmentRecorded
+
+    event = QualityAssessmentRecorded(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        subject_type="refinement",
+        subject_id="refinement-1",
+        subject_version=3,
+        assessment_kind="ambiguity",
+        receipt_id="receipt-1",
+        input_digest="a" * 64,
+        request_fingerprint="b" * 64,
+        authority_digest="c" * 64,
+        head_revision=2,
+    )
+
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        ("refinement", "refinement-1")
+    ]
+
+
+@pytest.mark.parametrize("subject_type", ["ideation", "refinement", "spec"])
+def test_quality_clarification_changed_reenqueues_subject_projection(
+    subject_type,
+):
+    from okto_pulse.core.events.types import QualityClarificationChanged
+
+    event = QualityClarificationChanged(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        subject_type=subject_type,
+        subject_id=f"{subject_type}-1",
+        subject_version=3,
+        qa_id="qa-1",
+        operation="answered",
+    )
+
+    assert event.payload_for_storage()["event_schema_version"] == 1
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        (subject_type, f"{subject_type}-1")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("event_type", "event_class_name"),
+    [
+        ("research_decision.appended", "ResearchDecisionAppended"),
+        ("research_decision.superseded", "ResearchDecisionSuperseded"),
+    ],
+)
+def test_research_decision_events_reenqueue_refinement_projection(
+    event_type,
+    event_class_name,
+):
+    from okto_pulse.core.events import types
+
+    event_class = getattr(types, event_class_name)
+    event = event_class(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        refinement_id="refinement-rdl",
+        refinement_version=3,
+        ledger_id="ledger-1",
+        entry_id="entry-2",
+        head_revision=2,
+        status="resolved",
+    )
+
+    assert event.event_type == event_type
+    assert event.payload_for_storage()["event_schema_version"] == 1
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        ("refinement", "refinement-rdl")
     ]
 
 
@@ -2368,7 +2577,11 @@ async def test_decay_idempotent(db_factory, clean_tables, decay_board):
     # from landing a fresh execution on the already-cancelled card.
     async with db_factory() as session:
         await session.execute(DomainEventHandlerExecution.__table__.delete())
-        await session.execute(DomainEventRow.__table__.delete())
+        await session.execute(
+            DomainEventRow.__table__.delete().where(
+                DomainEventRow.board_id == decay_board
+            )
+        )
         await session.commit()
 
     await _publish_and_drain()

@@ -106,6 +106,7 @@ async def _insert_dlq_row(db, board_id: str, artifact_id: str) -> str:
 def _register_pending_tool():
     class _Agent:
         id = "agent-test-001"
+        permissions = ["board.read", "kg.admin.settings_read"]
 
     class _NullDb:
         async def __aenter__(self):

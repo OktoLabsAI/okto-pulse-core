@@ -15,6 +15,7 @@ import pytest
 from okto_pulse.core.application.kg_operations import CoreKnowledgeGraphOperations
 from okto_pulse.core.application.processors import consolidation
 from okto_pulse.core.ports.consolidation import (
+    ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
     get_consolidation_persistence_port,
     register_consolidation_persistence_port,
@@ -293,6 +294,19 @@ class _RaceStore:
         assert (artifact_type, artifact_id) == ("spec", ARTIFACT_ID)
         return SimpleNamespace(title="stale-window")
 
+    async def load_projection_inputs(
+        self,
+        _context,
+        **identity,
+    ) -> ConsolidationProjectionInputs:
+        assert identity == {
+            "board_id": BOARD_ID,
+            "artifact_type": "spec",
+            "artifact_id": ARTIFACT_ID,
+            "artifact": SimpleNamespace(title="stale-window"),
+        }
+        return ConsolidationProjectionInputs()
+
     async def queue_claim_is_current_and_unfenced(self, _context, **identity):
         self.fence_checks.append(identity)
         return True
@@ -364,7 +378,7 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
     monkeypatch.setattr(
         consolidation,
         "_run_deterministic_worker",
-        lambda *_args, **_kwargs: SimpleNamespace(
+        lambda *_args, **_kwargs: consolidation.WorkerResult(
             nodes=[object()], edges=[], missing_link_candidates=[], raw_content="x"
         ),
     )

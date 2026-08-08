@@ -24,6 +24,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 
 
 class UpdateBoardOverridesCommand:
@@ -74,6 +78,15 @@ class UpdateBoardOverridesUseCase:
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
 
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.board_access.edit",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         agent_board = await service.update_board_overrides(
             command.agent_id, command.board_id, command.permission_overrides
         )

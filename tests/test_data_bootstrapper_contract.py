@@ -17,6 +17,7 @@ def test_knowledge_propagation_is_a_canonical_data_bootstrap_domain() -> None:
         "permissions",
         "discovery_intents",
         "knowledge_propagation",
+        "quality_assessment",
     )
     assert set(get_args(BootstrapDomain)) == set(BOOTSTRAP_DOMAINS)
 

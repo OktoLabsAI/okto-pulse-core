@@ -13,6 +13,10 @@ queries are intentionally permissive — stubs return the full graph so the
 server stays operational while the scoring pipeline lands.
 """
 
+from okto_pulse.core.ports.policy_constraint_projection import (
+    POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS,
+)
+
 # Default filter clause injected into every read query.
 # The service layer replaces $min_confidence, $min_relevance, and $max_rows
 # at call time. v0.3.0 R3 adds the relevance threshold — default 0.3 (below
@@ -21,6 +25,26 @@ _DEFAULT_FILTERS = (
     "AND n.source_confidence >= $min_confidence "
     "AND n.relevance_score >= $min_relevance "
 )
+
+# Tombstones that must never surface through active-memory reads.  This rule is
+# intentionally independent from ``include_superseded``: that opt-in exposes
+# historical versions, not nodes whose governed source disappeared or whose
+# projection was removed.
+ACTIVE_READ_TOMBSTONE_REASONS = (
+    frozenset(
+        {
+            "source_deleted",
+            "source_projection_removed",
+        }
+    )
+    | POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS
+)
+
+
+def is_visible_in_active_reads(revocation_reason: object) -> bool:
+    """Return whether ``revocation_reason`` is visible to active read surfaces."""
+
+    return str(revocation_reason or "") not in ACTIVE_READ_TOMBSTONE_REASONS
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +86,22 @@ def superseded_filter_clause(var: str, *, param: str = "$include_superseded") ->
     return f"({param} = true OR {var}.superseded_by IS NULL)"
 
 
+def active_read_filter_clause(var: str) -> str:
+    """Exclude permanent source/projection tombstones from active reads.
+
+    The values are trusted constants rather than caller parameters so every
+    template and adapter applies the exact same closed set.  Explicit
+    comparisons keep the predicate compatible with Kùzu while ``coalesce``
+    preserves legacy rows that have no revocation reason.
+    """
+
+    clauses = " AND ".join(
+        f"coalesce({var}.revocation_reason, '') <> '{reason}'"
+        for reason in sorted(ACTIVE_READ_TOMBSTONE_REASONS)
+    )
+    return f"({clauses})"
+
+
 def layer_label_projection(var: str, *, alias: str = "graph_layer") -> str:
     """Fail-SAFE label projection for ``var.graph_layer`` (bug 07bdf670).
 
@@ -86,6 +126,7 @@ WHERE d.title CONTAINS $topic
   AND d.source_confidence >= $min_confidence
   AND d.relevance_score >= $min_relevance
   AND {superseded_filter_clause('d')}
+  AND {active_read_filter_clause('d')}
 RETURN d.id, d.title, d.content, d.created_at, d.source_confidence,
        d.relevance_score, d.superseded_by, d.source_artifact_ref
 ORDER BY d.relevance_score DESC, d.created_at DESC
@@ -101,12 +142,15 @@ GET_RELATED_CONTEXT = f"""
 MATCH (center)-[r1]-(hop1)
 WHERE center.source_artifact_ref = $artifact_id
   AND center.source_confidence >= $min_confidence
+  AND {active_read_filter_clause('center')}
   AND {layer_filter_clause('hop1')}
   AND {superseded_filter_clause('hop1')}
+  AND {active_read_filter_clause('hop1')}
 OPTIONAL MATCH (hop1)-[r2]-(hop2)
 WHERE (hop2 IS NULL
        OR ({layer_filter_clause('hop2')}
-           AND {superseded_filter_clause('hop2')}))
+           AND {superseded_filter_clause('hop2')}
+           AND {active_read_filter_clause('hop2')}))
 RETURN center.id AS center_id, center.title AS center_title,
        hop1.id AS hop1_id, hop1.title AS hop1_title,
        hop2.id AS hop2_id, hop2.title AS hop2_title,
@@ -119,8 +163,10 @@ LIMIT $max_rows
 # Variable-length path *..10 on :supersedes for a specific decision_id.
 # ---------------------------------------------------------------------------
 
-GET_SUPERSEDENCE_CHAIN = """
-MATCH (current:Decision {id: $decision_id})-[:supersedes]->(next:Decision)
+GET_SUPERSEDENCE_CHAIN = f"""
+MATCH (current:Decision {{id: $decision_id}})-[:supersedes]->(next:Decision)
+WHERE {active_read_filter_clause('current')}
+  AND {active_read_filter_clause('next')}
 RETURN next.id, next.title, next.created_at,
        next.superseded_by, next.superseded_at
 """
@@ -131,8 +177,8 @@ def supersedence_chain_template(node_type: str) -> str:
 
     ``node_type`` is validated against the NODE_TYPES allowlist BEFORE any
     string interpolation — an unknown label fails closed with ValueError,
-    never a free-form Cypher injection. Decision keeps the exact legacy
-    template text (retrocompat).
+    never a free-form Cypher injection. Decision keeps the shared named
+    template so its visibility contract cannot drift from the generic path.
     """
     from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
@@ -145,6 +191,8 @@ def supersedence_chain_template(node_type: str) -> str:
     return (
         f"\nMATCH (current:{node_type} {{id: $decision_id}})"
         f"-[:supersedes]->(next:{node_type})\n"
+        f"WHERE {active_read_filter_clause('current')}\n"
+        f"  AND {active_read_filter_clause('next')}\n"
         "RETURN next.id, next.title, next.created_at,\n"
         "       next.superseded_by, next.superseded_at\n"
     )
@@ -154,17 +202,21 @@ def supersedence_chain_template(node_type: str) -> str:
 # Pairs via :contradicts rel. Optional node_id filter.
 # ---------------------------------------------------------------------------
 
-FIND_CONTRADICTIONS_BY_NODE = """
+FIND_CONTRADICTIONS_BY_NODE = f"""
 MATCH (a:Decision)-[r:contradicts]->(b:Decision)
-WHERE a.id = $node_id OR b.id = $node_id
+WHERE (a.id = $node_id OR b.id = $node_id)
+  AND {active_read_filter_clause('a')}
+  AND {active_read_filter_clause('b')}
 RETURN a.id AS id_a, a.title AS title_a,
        b.id AS id_b, b.title AS title_b,
        r.confidence AS confidence
 LIMIT $max_rows
 """
 
-FIND_CONTRADICTIONS_ALL = """
+FIND_CONTRADICTIONS_ALL = f"""
 MATCH (a:Decision)-[r:contradicts]->(b:Decision)
+WHERE {active_read_filter_clause('a')}
+  AND {active_read_filter_clause('b')}
 RETURN a.id AS id_a, a.title AS title_a,
        b.id AS id_b, b.title AS title_b,
        r.confidence AS confidence
@@ -177,11 +229,12 @@ LIMIT $max_rows
 # but we define the fallback text-match template here.
 # ---------------------------------------------------------------------------
 
-FIND_SIMILAR_DECISIONS_TEXT_FALLBACK = """
+FIND_SIMILAR_DECISIONS_TEXT_FALLBACK = f"""
 MATCH (d:Decision)
 WHERE d.title CONTAINS $topic
   AND d.source_confidence >= $min_confidence
   AND d.relevance_score >= $min_relevance
+  AND {active_read_filter_clause('d')}
 RETURN d.id, d.title, d.content, d.source_confidence,
        d.source_artifact_ref, d.created_at
 ORDER BY d.relevance_score DESC, d.source_confidence DESC
@@ -193,19 +246,24 @@ LIMIT $max_rows
 # Constraint + origin via :derives_from + :violates.
 # ---------------------------------------------------------------------------
 
-EXPLAIN_CONSTRAINT = """
-MATCH (c:Constraint {id: $constraint_id})
+EXPLAIN_CONSTRAINT = f"""
+MATCH (c:Constraint {{id: $constraint_id}})
+WHERE {active_read_filter_clause('c')}
 RETURN c.id, c.title, c.content, c.justification,
        c.source_artifact_ref, c.source_confidence
 """
 
-EXPLAIN_CONSTRAINT_ORIGINS = """
-MATCH (c:Constraint {id: $constraint_id})<-[:derives_from]-(origin:Decision)
+EXPLAIN_CONSTRAINT_ORIGINS = f"""
+MATCH (c:Constraint {{id: $constraint_id}})<-[:derives_from]-(origin:Decision)
+WHERE {active_read_filter_clause('c')}
+  AND {active_read_filter_clause('origin')}
 RETURN origin.id, origin.title
 """
 
-EXPLAIN_CONSTRAINT_VIOLATIONS = """
-MATCH (c:Constraint {id: $constraint_id})<-[:violates]-(bug:Bug)
+EXPLAIN_CONSTRAINT_VIOLATIONS = f"""
+MATCH (c:Constraint {{id: $constraint_id}})<-[:violates]-(bug:Bug)
+WHERE {active_read_filter_clause('c')}
+  AND {active_read_filter_clause('bug')}
 RETURN bug.id, bug.title
 """
 
@@ -214,8 +272,10 @@ RETURN bug.id, bug.title
 # Alternative nodes via :relates_to from a Decision.
 # ---------------------------------------------------------------------------
 
-LIST_ALTERNATIVES = """
-MATCH (d:Decision {id: $decision_id})-[:relates_to]->(alt:Alternative)
+LIST_ALTERNATIVES = f"""
+MATCH (d:Decision {{id: $decision_id}})-[:relates_to]->(alt:Alternative)
+WHERE {active_read_filter_clause('d')}
+  AND {active_read_filter_clause('alt')}
 RETURN alt.id, alt.title, alt.content, alt.justification,
        alt.source_confidence, alt.source_artifact_ref
 ORDER BY alt.source_confidence DESC
@@ -228,11 +288,13 @@ LIMIT $max_rows
 # Area filtering via Entity :mentions on the Bug.
 # ---------------------------------------------------------------------------
 
-GET_LEARNING_FROM_BUGS = """
+GET_LEARNING_FROM_BUGS = f"""
 MATCH (l:Learning)-[:validates]->(b:Bug)
 WHERE l.source_confidence >= $min_confidence
   AND l.relevance_score >= $min_relevance
   AND (b.title CONTAINS $area OR b.content CONTAINS $area)
+  AND {active_read_filter_clause('l')}
+  AND {active_read_filter_clause('b')}
 RETURN l.id AS learning_id, l.title AS learning_title,
        l.content AS learning_content, l.justification,
        l.source_confidence,
@@ -258,6 +320,7 @@ MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
+  AND {active_read_filter_clause('n')}
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
@@ -271,6 +334,7 @@ MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
+  AND {active_read_filter_clause('n')}
   AND label(n) = $node_type
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
@@ -289,6 +353,7 @@ MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
+  AND {active_read_filter_clause('n')}
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
@@ -304,6 +369,7 @@ MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
+  AND {active_read_filter_clause('n')}
   AND label(n) = $node_type
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
@@ -320,6 +386,7 @@ MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
+  AND {active_read_filter_clause('n')}
 RETURN count(n)
 """
 
@@ -328,6 +395,7 @@ MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
+  AND {active_read_filter_clause('n')}
   AND label(n) = $node_type
 RETURN count(n)
 """

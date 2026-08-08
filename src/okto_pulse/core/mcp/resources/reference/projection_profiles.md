@@ -8,6 +8,8 @@ High-volume Okto Pulse MCP responses can be wrapped by a shared **projection
 envelope** (`MCPProjectionEnvelopeHelper`) so agents fetch only as much payload
 as a step needs. This resource is the single source of truth for profile
 semantics; tool descriptions link here instead of repeating it inline.
+The governed policy lists intentionally support only `summary|detail`; see
+`okto-pulse://reference/policy-compliance`.
 
 ## Canonical success key: `outcome`
 
@@ -32,6 +34,14 @@ mode — positive `success` is intentionally omitted there. `success: true` and
 
 An unsupported profile returns a structured error `unsupported_projection`
 with the allowed list under `supported_profiles`.
+
+Entity REST lists preserve their legacy array shape unless the caller opts into
+offset/limit PageEnvelope pagination. Only that envelope may add the
+permission-gated `quality_summaries` field, whose closed row allowlist is
+`receipt_id`, `subject_version`, `currentness`, `score`, `scale`, and
+`head_revision`. Dedicated Quality MCP list tools use keyset cursors and are
+not projection-profile aliases; see
+`okto-pulse://reference/quality-assessments`.
 
 **Per-family variance:** the `copy_*_to_card` family supports a 3-value
 profile set — `summary`/`full`/`legacy`, **no `detail`**. Passing `detail`

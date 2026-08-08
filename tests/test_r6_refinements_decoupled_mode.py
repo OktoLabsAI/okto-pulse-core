@@ -19,15 +19,11 @@ from pathlib import Path
 
 import pytest
 
+from repository_checkout_testing import community_source_for
+
 _REPO = Path(__file__).resolve().parent.parent
 _CORE = _REPO / "src" / "okto_pulse" / "core"
-_COMMUNITY = (
-    _REPO.parent
-    / "okto_labs_pulse_community"
-    / "src"
-    / "okto_pulse"
-    / "community"
-)
+_COMMUNITY = community_source_for(_REPO)
 REFINEMENTS_MD = _CORE / "mcp" / "resources" / "workflows" / "refinements.md"
 SCHEMAS_PY = _CORE / "models" / "schemas.py"
 DB_PY = _COMMUNITY / "adapters" / "sqlalchemy_models.py"

@@ -428,7 +428,10 @@ def _tick_principal() -> Principal:
     return Principal(
         "op",
         realm_id=LOCAL_REALM_ID,
-        claims={"roles": ["admin"]},
+        claims={
+            "roles": ["admin"],
+            "permissions": ["kg.admin.settings_write"],
+        },
     )
 
 
@@ -604,7 +607,12 @@ async def test_ts_67fe9fd2_mcp_twin_inherits_refusal(monkeypatch):
     _install_tick_health(monkeypatch, "recovery_needed")
 
     async def _fake_ctx(board_id):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+        return server.AgentContext(
+            "agent-mcp",
+            "Agent",
+            board_id,
+            ["kg.admin.settings_write"],
+        )
 
     health_session = _FakeSession()
 
@@ -637,7 +645,12 @@ async def test_ts_67fe9fd2_mcp_twin_inherits_refusal(monkeypatch):
 @pytest.mark.asyncio
 async def test_mcp_tick_releases_lease_when_health_probe_raises(monkeypatch):
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+        return server.AgentContext(
+            "agent-mcp",
+            "Agent",
+            _board_id,
+            ["kg.admin.settings_write"],
+        )
 
     async def _failed_health(_board_id, _uow, scheduler_control=None):
         del scheduler_control
@@ -673,7 +686,12 @@ async def test_mcp_tick_maps_retryable_recovery_defer_and_releases_lease(
     _install_tick_health(monkeypatch, "healthy")
 
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+        return server.AgentContext(
+            "agent-mcp",
+            "Agent",
+            _board_id,
+            ["kg.admin.settings_write"],
+        )
 
     class _DeferredSession(_FakeSession):
         async def _dispatch_manual_tick(self, **_kwargs) -> None:
@@ -722,7 +740,12 @@ async def test_mcp_tick_releases_lease_after_success(monkeypatch):
     published = _spy_publish(monkeypatch)
 
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+        return server.AgentContext(
+            "agent-mcp",
+            "Agent",
+            _board_id,
+            ["kg.admin.settings_write"],
+        )
 
     session = _FakeSession()
 
@@ -771,7 +794,12 @@ async def test_mcp_tick_release_failure_after_commit_does_not_mask_success(
     register_coordination_providers(lease_provider=lease_provider)
 
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+        return server.AgentContext(
+            "agent-mcp",
+            "Agent",
+            _board_id,
+            ["kg.admin.settings_write"],
+        )
 
     session = _FakeSession()
 
@@ -817,7 +845,12 @@ async def test_mcp_tick_releases_lease_after_schedule_failure(monkeypatch):
     _install_tick_health(monkeypatch, "healthy")
 
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+        return server.AgentContext(
+            "agent-mcp",
+            "Agent",
+            _board_id,
+            ["kg.admin.settings_write"],
+        )
 
     class _FailedSession(_FakeSession):
         async def _dispatch_manual_tick(self, **_kwargs) -> None:

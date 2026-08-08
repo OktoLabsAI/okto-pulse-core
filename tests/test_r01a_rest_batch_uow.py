@@ -39,6 +39,7 @@ from okto_pulse.community.api.auth_deps import (
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 from okto_pulse.core.repositories.relational_boundary_gate import (
     default_use_cases_path,
     run_relational_boundary_gate,
@@ -74,7 +75,11 @@ def _client(*router_prefixes) -> TestClient:
     app.dependency_overrides[require_principal] = lambda: Principal(
         USER,
         realm_id=LOCAL_REALM_ID,
-        claims={"roles": ["admin"]},
+        actor_kind="human",
+        claims={
+            "roles": ["admin"],
+            "permissions": registered_permission_flags(),
+        },
     )
     return TestClient(app)
 

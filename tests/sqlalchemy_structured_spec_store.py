@@ -24,7 +24,10 @@ _JSON_FIELDS = (
 
 def _record(row: Any) -> StructuredSpecRecord:
     values = {
-        field_name: copy.deepcopy(getattr(row, field_name, None) or [])
+        # The Core record must retain NULL versus [] so the requirement-lint
+        # snapshot staged by a structured writer is byte-equivalent to the
+        # persisted final Spec.
+        field_name: copy.deepcopy(getattr(row, field_name, None))
         for field_name in _JSON_FIELDS
     }
     return StructuredSpecRecord(
@@ -33,6 +36,9 @@ def _record(row: Any) -> StructuredSpecRecord:
         status=row.status,
         version=int(row.version),
         archived=bool(row.archived),
+        title=row.title,
+        description=row.description,
+        context=row.context,
         **values,
     )
 

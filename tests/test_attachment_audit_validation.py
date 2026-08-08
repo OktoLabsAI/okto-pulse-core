@@ -35,6 +35,7 @@ REST_ACTOR = ActorContext(
     "rest",
     board_id=BOARD_ID,
     realm_id=LOCAL_REALM_ID,
+    permissions=("attachments:upload", "attachments:delete"),
 )
 MCP_ACTOR = ActorContext("attachment-agent", "mcp", board_id=BOARD_ID)
 

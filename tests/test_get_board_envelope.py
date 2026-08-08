@@ -179,6 +179,7 @@ def test_board_response_normalizes_historical_card_conclusion_shapes():
                     "description": None,
                     "details": None,
                     "status": "done",
+                    "subject_version": 1,
                     "priority": "none",
                     "position": 0,
                     "assignee_id": None,

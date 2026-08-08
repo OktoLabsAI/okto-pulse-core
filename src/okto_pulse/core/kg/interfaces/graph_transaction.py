@@ -11,6 +11,7 @@ SPEC_LINEAGE_RULE_PREFIXES: tuple[str, str] = (
     "belongs_to/spec_to_ideation@",
     "belongs_to/spec_to_refinement@",
 )
+SOURCE_PROJECTION_REMOVED_REASON = "source_projection_removed"
 
 
 def is_spec_lineage_rule_id(rule_id: str) -> bool:
@@ -59,6 +60,81 @@ class SpecLineageReconciliationError(RuntimeError):
         message: str,
         *,
         receipt: SpecLineageReconciliationReceipt | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.receipt = receipt
+
+
+@dataclass(frozen=True)
+class GraphNodePropertyBeforeImage:
+    """Exact mutable-property state captured before an in-place graph write."""
+
+    node_type: str
+    node_id: str
+    attrs: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ProjectionNodeRef:
+    """One relationally-owned graph node in a projection active set."""
+
+    node_type: str
+    node_id: str
+    source_artifact_ref: str
+
+
+@dataclass(frozen=True)
+class ProjectionActiveSetIntent:
+    """Bounded replacement intent for one exact relational projection namespace."""
+
+    owner_type: str
+    owner_id: str
+    namespace: str
+    owner_node_id: str | None = None
+    active_nodes: tuple[ProjectionNodeRef, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProjectionEdgeBeforeImage:
+    """Complete relationship state removed by projection reconciliation."""
+
+    edge_type: str
+    from_type: str
+    to_type: str
+    from_id: str
+    to_id: str
+    attrs: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ProjectionNodeBeforeImage:
+    """Complete node state needed to reverse an active-set mutation."""
+
+    node_type: str
+    node_id: str
+    source_session_id: Any
+    attrs: dict[str, Any]
+    incident_edges: tuple[ProjectionEdgeBeforeImage, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProjectionActiveSetReceipt:
+    """Before-images for every node mutated by an active-set replacement."""
+
+    intent: ProjectionActiveSetIntent
+    before_images: tuple[ProjectionNodeBeforeImage, ...] = ()
+
+
+class ProjectionActiveSetReconciliationError(RuntimeError):
+    """Typed fail-closed error carrying a compensable active-set receipt."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        receipt: ProjectionActiveSetReceipt | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -117,6 +193,22 @@ class GraphTransactionScope(Protocol):
         attrs: dict[str, Any],
     ) -> None: ...
 
+    def snapshot_node_properties(
+        self,
+        node_type: str,
+        node_id: str,
+        property_names: tuple[str, ...],
+    ) -> GraphNodePropertyBeforeImage | None:
+        """Capture exact mutable values before an in-place graph write."""
+        ...
+
+    def restore_node_properties(
+        self,
+        before_image: GraphNodePropertyBeforeImage,
+    ) -> None:
+        """Restore an in-place mutation from its exact before-image."""
+        ...
+
     def mark_superseded(
         self,
         node_type: str,
@@ -169,6 +261,20 @@ class GraphTransactionScope(Protocol):
         """Remove only deterministic Spec-parent edges with a compensable receipt."""
         ...
 
+    def reconcile_projection_active_set(
+        self,
+        intent: ProjectionActiveSetIntent,
+    ) -> ProjectionActiveSetReceipt:
+        """Replace one exact relational projection active set atomically."""
+        ...
+
+    def compensate_projection_active_set(
+        self,
+        receipt: ProjectionActiveSetReceipt,
+    ) -> None:
+        """Restore every active-set mutation from its complete before-image."""
+        ...
+
     def find_node_types(self, node_id: str) -> tuple[str, ...]: ...
 
     def delete_edges_by_session(self, session_id: str) -> None: ...
@@ -217,8 +323,16 @@ class GraphTransaction(Protocol):
 
 __all__ = [
     "GraphStatementResult",
+    "GraphNodePropertyBeforeImage",
     "GraphTransaction",
     "GraphTransactionScope",
+    "ProjectionActiveSetIntent",
+    "ProjectionActiveSetReceipt",
+    "ProjectionActiveSetReconciliationError",
+    "ProjectionEdgeBeforeImage",
+    "ProjectionNodeBeforeImage",
+    "ProjectionNodeRef",
+    "SOURCE_PROJECTION_REMOVED_REASON",
     "SPEC_LINEAGE_RULE_PREFIXES",
     "SpecLineageEdgeSnapshot",
     "SpecLineageParentIntent",

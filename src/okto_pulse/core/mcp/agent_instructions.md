@@ -22,6 +22,8 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Delete/archive something (destructive ops) | `okto-pulse://reference/destructive_ops` |
 | Understand card type rules (test/bug/normal) | `okto-pulse://reference/card_types` |
 | Navigate spec validation/evaluation gates | `okto-pulse://reference/spec_gates` |
+| Record/read Quality assessments or pinpoint findings | `okto-pulse://reference/quality-assessments` |
+| Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
 | Move a card / sprint / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |
@@ -68,6 +70,7 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`). Be
 Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalog grouped by domain: `okto-pulse://reference/tools_catalog`. Each catalog section links its concrete family docs with args, returns, and examples.
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
+- **Quality evidence**: read `okto-pulse://reference/quality-assessments` before recording ambiguity or using a receipt/currentness result in a gate decision.
 
 ### Response projection profiles — summary-first reads
 High-volume reads can be returned under a projection profile — see `okto-pulse://reference/projection-profiles`. Use `summary` (the default/slim profile) for cheap exploration; `detail` plus follow-ups for bounded body reads; `full` for complete single-item reads; and `legacy` for compatibility. **Summary-first is for exploration ONLY.** It never replaces the mandatory full gate read required before any status-changing move (moving a card/spec/sprint, submitting a gate). For cards use `okto_pulse_get_task_context(profile="full", context_scope="gate")`; other entity-context tools use `profile="full"`. Profiles apply to `get_*_context`/`copy_*` reads — NOT to the `list_*` tools: `okto_pulse_list_by_board(entity_type="spec")` returns full descriptions (payloads of tens of KB) — filter by status/labels and read bodies via `okto_pulse_get_spec`; `entity_type="refinement"` requires `filters.ideation_id`.

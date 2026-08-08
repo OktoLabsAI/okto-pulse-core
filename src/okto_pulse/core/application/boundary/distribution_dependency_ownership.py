@@ -142,6 +142,26 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ),
         ),
         _entry(
+            "typing-extensions",
+            core,
+            "core",
+            ("typing_extensions",),
+            "direct",
+            (
+                "src/okto_pulse/core/discovery_params_schema.py",
+                "src/okto_pulse/core/mcp/helpers.py",
+                "src/okto_pulse/core/mcp/filters.py",
+            ),
+            rationale=(
+                "Python 3.11 requires the backported TypedDict implementation "
+                "for Pydantic-compatible runtime schema materialization."
+            ),
+            removal_criterion=(
+                "Raise the minimum supported Python version to one whose stdlib "
+                "TypedDict satisfies every supported Pydantic runtime."
+            ),
+        ),
+        _entry(
             "PyYAML", core, "core", ("yaml",), "direct",
             ("src/okto_pulse/core/application/processors/deterministic_kg.py",),
             rationale="The deterministic processor reads the packaged taxonomy resource.",

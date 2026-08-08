@@ -15,15 +15,22 @@ class StructuredSpecRecord:
     status: Any
     version: int
     archived: bool
-    functional_requirements: list[Any]
-    business_rules: list[Any]
-    technical_requirements: list[Any]
-    decisions: list[Any]
-    acceptance_criteria: list[Any]
-    api_contracts: list[Any]
-    integration_requirements: list[Any]
-    observability_requirements: list[Any]
-    test_scenarios: list[Any]
+    # Preserve stored NULL versus an authored empty collection.  Requirement
+    # lint hashes the exact post-mutation semantic snapshot; normalizing an
+    # untouched NULL to [] in this projection would make a structured-write
+    # receipt immediately stale when currentness is rederived from persistence.
+    functional_requirements: list[Any] | None
+    business_rules: list[Any] | None
+    technical_requirements: list[Any] | None
+    decisions: list[Any] | None
+    acceptance_criteria: list[Any] | None
+    api_contracts: list[Any] | None
+    integration_requirements: list[Any] | None
+    observability_requirements: list[Any] | None
+    test_scenarios: list[Any] | None
+    title: str | None = None
+    description: str | None = None
+    context: str | None = None
 
 
 class StructuredSpecStore(Protocol):

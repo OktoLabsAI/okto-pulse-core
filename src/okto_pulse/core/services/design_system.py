@@ -224,6 +224,8 @@ class DesignSystemService:
         board_id: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str = "active",
+        design_system_id: str | None = None,
+        version: int = 1,
     ) -> DesignSystemRecord:
         """Create a global catalog entry or a board-inline Design System (FR1). Inline
         REQUIRES board_id (AC2); a global one is never board-scoped. version starts 1."""
@@ -257,12 +259,12 @@ class DesignSystemService:
             )
         now = datetime.now(timezone.utc)
         ds = DesignSystemRecord(
-            id=str(uuid.uuid4()),
+            id=design_system_id or str(uuid.uuid4()),
             scope=scope,
             board_id=board_id,
             title=title,
             payload=payload,
-            version=1,
+            version=max(1, version),
             status=status,
             owner_id=owner_id,
             created_at=now,
@@ -443,6 +445,9 @@ class DesignSystemService:
         title: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str | None = None,
+        force_version_bump: bool = False,
+        normalize_global: bool = False,
+        replace_fields: bool = False,
     ) -> DesignSystemRecord:
         """Update title/payload/status. A title or payload change bumps ``version``
         (including inline, so the mockup gate has a stable version to compare)."""
@@ -460,6 +465,11 @@ class DesignSystemService:
         if ds.scope == "global" and ds.owner_id != owner_id:
             self._raise_not_found(design_system_id)
         bump = False
+        if normalize_global:
+            if ds.scope != "global" or ds.board_id is not None:
+                bump = True
+            ds.scope = "global"
+            ds.board_id = None
         if title is not None and title != ds.title:
             if not title.strip():
                 raise DesignSystemError(
@@ -467,9 +477,10 @@ class DesignSystemService:
                 )
             ds.title = title
             bump = True
-        if payload is not None and payload != ds.payload:
+        if replace_fields or payload is not None:
+            if payload != ds.payload:
+                bump = True
             ds.payload = payload
-            bump = True
         if status is not None:
             if status not in _VALID_STATUSES:
                 raise DesignSystemError(
@@ -479,7 +490,7 @@ class DesignSystemService:
                     {"status": status},
                 )
             ds.status = status
-        if bump:
+        if bump or force_version_bump:
             ds.version = (ds.version or 1) + 1
         return await get_design_system_store().save(self.db, ds)
 

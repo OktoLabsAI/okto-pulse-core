@@ -8,6 +8,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-27
+
+### Added
+
+- Receipt-backed ambiguity assessments with pinpoint findings, currentness,
+  version fences and governed Q&A proposals for ideations and refinements.
+- Append-only research decision ledger entries for refinements and curated,
+  version-bound checklist execution receipts for Specs.
+- Agent resources, permission policies and deterministic manifests covering all
+  11 SK-A MCP tools and their documentation contracts.
+
+### Changed
+
+- Refinement completion now supports the same configurable ambiguity-gate model
+  as ideation, including a human-only audited skip.
+- Test-scenario types are closed across domain, API and MCP, with `negative`
+  promoted to a supported first-class type.
+- The MCP catalog ratchet is 292 total tools, 284 canonical tools and 8 aliases.
+
 ## [0.3.0] - 2026-07-14
 
 Version 0.3.0 turns `okto-pulse-core` into the edition-neutral application and

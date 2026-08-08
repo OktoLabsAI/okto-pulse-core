@@ -25,6 +25,17 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_all,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_requirement,
+    card_update_permission_requirements,
+    entity_state,
+    transition_permission_requirement,
+)
 
 
 _CARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -164,11 +175,20 @@ class UpdateCardUseCase:
         self, command: UpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateCardResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        existing = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        await require_all(
+            actor,
+            *card_update_permission_requirements(
+                command.data,
+                state=entity_state(existing),
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         card = await service.update_card(command.card_id, actor.actor_id, command.data)
         if not card:
@@ -207,11 +227,21 @@ class DeleteCardUseCase:
         self, command: DeleteCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteCardResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        existing = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.delete",
+                state=entity_state(existing),
+                legacy_operation="cards:delete",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         delete_result = await service.delete_card(
             command.card_id,
@@ -271,11 +301,33 @@ class MoveCardUseCase:
         self, command: MoveCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveCardResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        existing = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        current_state = entity_state(existing)
+        target_state = str(getattr(command.data.status, "value", command.data.status))
+        requirement = (
+            card_requirement(
+                "card.entity.edit_fields",
+                state=current_state,
+                legacy_operation="cards:move",
+            )
+            if current_state == target_state
+            else transition_permission_requirement(
+                "card",
+                existing.status,
+                command.data.status,
+                legacy_operation="cards:move",
+            )
+        )
+        await require_authorization(
+            actor,
+            requirement,
+            uow=uow,
+            board_id=existing.board_id,
         )
         card = await service.move_card(command.card_id, actor.actor_id, command.data)
         if not card:
@@ -411,6 +463,16 @@ class AddCardDependencyUseCase:
         if not depends_on:
             raise EntityNotFoundError("card", command.depends_on_id)
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.manage_dependencies",
+                state=entity_state(card),
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
+
         dep = await service.add_dependency(command.card_id, command.depends_on_id)
         dependency_id = dep.id
         await commit(uow)
@@ -460,6 +522,15 @@ class RemoveCardDependencyUseCase:
             )
         if source is None or target is None:
             raise EntityNotFoundError("dependency", command.card_id)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.manage_dependencies",
+                state=entity_state(source),
+            ),
+            uow=uow,
+            board_id=source.board_id,
+        )
         removed = await service.remove_dependency(
             command.card_id, command.depends_on_id
         )
@@ -498,8 +569,9 @@ class SubmitTaskValidationUseCase:
     card routing stay in the service). ``CardOperationError`` (including the
     reviewer-separation action-required contract), ``GateContractError`` and
     ``ResourceGateError`` propagate for the adapter to map; a missing card is
-    ``EntityNotFoundError`` (→ 404). Commits only after the service mutation,
-    exactly as the legacy endpoint did."""
+    ``EntityNotFoundError`` (→ 404). The canonical ``card.validation.submit``
+    permission is required without a legacy-token fallback. Commits only after
+    the service mutation, exactly as the legacy endpoint did."""
 
     _REQUIRED = (
         "confidence",
@@ -535,6 +607,18 @@ class SubmitTaskValidationUseCase:
             )
         if data.get("recommendation") not in ("approve", "reject"):
             raise CommandValidationError("recommendation must be 'approve' or 'reject'")
+
+        state = entity_state(card)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "card.validation.submit",
+                entity="card" if state is not None else None,
+                state=state,
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
 
         if actor.actor_name:
             reviewer_name = actor.actor_name
@@ -656,8 +740,9 @@ class DeleteTaskValidationUseCase:
     raises ``ValueError`` for a missing card (adapter → 404 with its message) and
     returns ``False`` for an unknown validation id → ``EntityNotFoundError`` the
     adapter maps to the legacy 404 ("Validation not found"). The service mutates
-    in place without committing, so the use case commits — exactly as the legacy
-    endpoint did."""
+    in place without committing. The canonical ``card.validation.delete``
+    permission is required without a legacy-token fallback, and the use case
+    commits only after the authorized mutation."""
 
     async def execute(
         self,
@@ -667,7 +752,7 @@ class DeleteTaskValidationUseCase:
         uow: PulseUnitOfWork,
     ) -> DeleteTaskValidationResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        card = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
@@ -680,6 +765,17 @@ class DeleteTaskValidationUseCase:
         )
         if not validation:
             raise EntityNotFoundError("task_validation", command.validation_id)
+        state = entity_state(card)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "card.validation.delete",
+                entity="card" if state is not None else None,
+                state=state,
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         deleted = await service.delete_task_validation(
             command.card_id, command.validation_id, actor.actor_id
         )
@@ -806,9 +902,10 @@ class LinkTestTaskToBugUseCase:
 
     The two ``get_card`` lookups stay on ``CardService``; the spec re-fetch uses
     the typed UnitOfWork catalog (replacing the legacy inline lookup). The JSONB
-    mutation uses ``flag_modified`` and commits ONLY when the id was actually
-    appended — exactly as the legacy endpoint did. ``is_unblocked`` mirrors the
-    legacy ``len(linked) >= 1``."""
+    mutation is authorized by state-aware ``card.entity.link_tests`` (with
+    ``cards:update`` compatibility), uses ``flag_modified`` and commits ONLY
+    when the id was actually appended — exactly as the legacy endpoint did.
+    ``is_unblocked`` mirrors the legacy ``len(linked) >= 1``."""
 
     async def execute(
         self,
@@ -873,6 +970,17 @@ class LinkTestTaskToBugUseCase:
                         "exist on the bug spec"
                     )
 
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.link_tests",
+                state=entity_state(bug_card),
+                legacy_operation="cards:update",
+            ),
+            uow=uow,
+            board_id=bug_card.board_id,
+        )
+
         # Add test task to linked_test_task_ids.
         linked = list(bug_card.linked_test_task_ids or [])
         if command.test_task_id not in linked:
@@ -904,7 +1012,8 @@ class UnlinkTestTaskFromBugUseCase:
     missing bug card is ``EntityNotFoundError("card", …)`` (adapter → 404,
     "Card not found"). The JSONB mutation uses ``flag_modified`` and commits ONLY
     when the id was actually present and removed — exactly as the legacy endpoint
-    did (an absent id is a no-op 204)."""
+    did (an absent id is a no-op 204). Authorization is state-aware
+    ``card.entity.link_tests`` with ``cards:update`` compatibility."""
 
     async def execute(
         self,
@@ -932,6 +1041,17 @@ class UnlinkTestTaskFromBugUseCase:
         )
         if not test_task or getattr(test_task, "spec_id", None) != bug_card.spec_id:
             raise EntityNotFoundError("test_task", command.test_task_id)
+
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.entity.link_tests",
+                state=entity_state(bug_card),
+                legacy_operation="cards:update",
+            ),
+            uow=uow,
+            board_id=bug_card.board_id,
+        )
 
         linked = list(bug_card.linked_test_task_ids or [])
         if command.test_task_id in linked:

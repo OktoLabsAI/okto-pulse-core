@@ -134,6 +134,17 @@ class _BrokenStore:
         del context
         return await self.append_many(records)
 
+    async def sealed_birth_payloads_in_context(
+        self,
+        context: object,
+        board_id: str,
+        keys: tuple[tuple[str, str, int], ...],
+    ) -> dict[tuple[str, str, int], dict[str, object]]:
+        # The outage this double models is on the write path; the ledger has
+        # no prior birth for these nodes.
+        del context, board_id, keys
+        return {}
+
     async def enumerate(self, board_id: str):
         return ()
 
@@ -144,6 +155,7 @@ class _CapturingBatchStore:
         self.thread_id: int | None = None
         self.records: tuple[CognitiveSourceRecord, ...] = ()
         self.contexts: list[object] = []
+        self.birth_lookups: list[tuple[tuple[str, str, int], ...]] = []
 
     async def append(self, record: CognitiveSourceRecord) -> str:
         raise AssertionError("commit path must use append_many")
@@ -163,6 +175,24 @@ class _CapturingBatchStore:
     ) -> tuple[str, ...]:
         self.contexts.append(context)
         return await self.append_many(records)
+
+    async def sealed_birth_payloads_in_context(
+        self,
+        context: object,
+        board_id: str,
+        keys: tuple[tuple[str, str, int], ...],
+    ) -> dict[tuple[str, str, int], dict[str, object]]:
+        self.birth_lookups.append(keys)
+        del context
+        sealed: dict[tuple[str, str, int], dict[str, object]] = {}
+        wanted = set(keys)
+        for record in self.records:
+            if record.board_id != board_id:
+                continue
+            key = (record.node_type, record.node_id, record.generation)
+            if key in wanted and key not in sealed:
+                sealed[key] = dict(record.payload or {})
+        return sealed
 
     async def enumerate(self, board_id: str):
         return tuple(record for record in self.records if record.board_id == board_id)
@@ -587,6 +617,16 @@ async def test_explicit_update_repairs_missing_durable_record(
         ) -> tuple[str, ...]:
             self.records = records
             return await delegate.append_many_in_context(context, records)
+
+        async def sealed_birth_payloads_in_context(
+            self,
+            context: object,
+            requested_board_id: str,
+            keys: tuple[tuple[str, str, int], ...],
+        ):
+            return await delegate.sealed_birth_payloads_in_context(
+                context, requested_board_id, keys
+            )
 
         async def enumerate(self, requested_board_id: str):
             return await delegate.enumerate(requested_board_id)

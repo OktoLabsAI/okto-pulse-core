@@ -463,6 +463,31 @@ async def test_archive_tree_and_restore_tree_e2e(db_factory) -> None:
     assert snap[ids["sa"]] == ("started", 2, False)
 
 
+async def test_restore_tree_to_draft_does_not_advance_spec_edition(
+    db_factory,
+) -> None:
+    from okto_pulse.core.services.main import ArchiveService
+    from sqlalchemy_test_models import Spec, SpecStatus
+
+    ids = await _seed_board(db_factory)
+    async with db_factory() as db:
+        spec = await db.get(Spec, ids["spec"])
+        spec.status = SpecStatus.DRAFT
+        spec.edition = 7
+        await db.commit()
+
+    async with db_factory() as db:
+        await ArchiveService(db).archive_tree("spec", ids["spec"])
+        await db.commit()
+    async with db_factory() as db:
+        await ArchiveService(db).restore_tree("spec", ids["spec"])
+        await db.commit()
+        restored = await db.get(Spec, ids["spec"])
+        restored_state = (restored.status, restored.edition)
+
+    assert restored_state == (SpecStatus.DRAFT, 7)
+
+
 async def test_archive_restore_tree_cascades_to_sprint(db_factory) -> None:
     """spec -> sprint -> card: archive_tree / restore_tree cascade to the Sprint
     (a first-class descendant of Spec) — counts include it and the reversal

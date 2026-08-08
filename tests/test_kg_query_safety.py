@@ -211,6 +211,13 @@ def _full_health_payload() -> dict:
             "high_water_mark_pct": 12.5,
             "is_direct_memory_telemetry": False,
         },
+        "native_runtime_budget": {
+            "source": "runtime_capability",
+            "status": "available",
+            "effective": {"board_buffer_pool_mb": 256},
+            "process_envelope": {"max_derived_buffer_envelope_mb": 640},
+            "is_direct_memory_telemetry": False,
+        },
         # verbose diagnostics / aliases (dropped in slim)
         "state": "healthy",  # alias of overall_state
         "classification_reasons": ["metric.ok"],  # dup of classification_reason
@@ -250,6 +257,10 @@ def test_health_slim_keeps_stop_fields_and_drops_verbose():
     assert out["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
     assert out["storage_footprint_proxy"]["source"] == "runtime_capability"
     assert out["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
+    assert out["native_runtime_budget"]["source"] == "runtime_capability"
+    assert out["native_runtime_budget"]["process_envelope"][
+        "max_derived_buffer_envelope_mb"
+    ] == 640
     # Verbose diagnostics and aliases are omitted until full is requested.
     for field in (
         "state",

@@ -52,7 +52,10 @@ USER_ID = "ds-default-user"
 
 class _Ctx:
     agent_id = USER_ID
-    permissions: list = []
+    permissions = [
+        "default_board_config.set_design_system",
+        "spec.entity.edit_fields",
+    ]
 
 
 async def _call(name: str, **kwargs) -> dict:

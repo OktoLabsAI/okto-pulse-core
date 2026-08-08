@@ -376,6 +376,60 @@ async def test_rest_endpoint_and_mcp_tool_return_the_same_contract(client: TestC
 
 
 @pytest.mark.asyncio
+async def test_rest_and_mcp_current_status_policy_subject_required_parity(
+    client: TestClient,
+) -> None:
+    board_id = _id("af23-policy-subject-board")
+    async with get_session_factory()() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="AF23 policy subject",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                settings={},
+            )
+        )
+        await db.commit()
+
+    rest = client.get(
+        f"{PREFIX}/boards/{board_id}/allowed-transitions",
+        params={"entity_type": "spec", "current_status": "approved"},
+    )
+    assert rest.status_code == 200, rest.text
+    rest_payload = rest.json()
+
+    register_mcp_test_runtime(get_session_factory())
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=_ctx(board_id)),
+    ), patch.object(mcp_server, "check_permission", return_value=None):
+        tool = await mcp_server.mcp.get_tool(
+            "okto_pulse_get_allowed_transitions"
+        )
+        raw = await tool.fn(
+            board_id=board_id,
+            entity_type="spec",
+            current_status="approved",
+        )
+    mcp_payload = json.loads(raw)
+
+    assert mcp_payload == rest_payload
+    validated = next(
+        item
+        for item in rest_payload["allowed_transitions"]
+        if item["to_status"] == "validated"
+    )
+    assert validated["policy_compliance"] is True
+    assert (
+        validated["policy_compliance_decision"]["state"]
+        == "policy_subject_required"
+    )
+    assert validated["policy_compliance_decision"]["allowed"] is None
+
+
+@pytest.mark.asyncio
 async def test_rest_viewer_share_can_read_allowed_transitions(client: TestClient) -> None:
     board_id = _id("af23-shared-board")
     spec_id = _id("af23-shared-spec")

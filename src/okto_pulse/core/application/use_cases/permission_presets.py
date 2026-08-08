@@ -13,6 +13,10 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.ports.relational_application import (
     EffectivePermissions,
 )
@@ -72,6 +76,14 @@ class ListPermissionPresetsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListPermissionPresetsResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         return ListPermissionPresetsResult(
             await _gateway(uow).list_presets(user_id=actor.actor_id)
         )
@@ -107,6 +119,14 @@ class CreatePermissionPresetUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> PermissionPresetResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.entity.create",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
         preset = await _gateway(uow).create_preset(
             user_id=actor.actor_id,
             name=command.name,
@@ -142,14 +162,26 @@ class ClonePermissionPresetUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> PermissionPresetResult:
-        preset = await _gateway(uow).clone_preset(
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.clone",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
+        gateway = _gateway(uow)
+        source = await gateway.get_preset(preset_id=command.preset_id)
+        if source is None:
+            raise EntityNotFoundError("source_preset", command.preset_id)
+        preset = await gateway.clone_preset(
             source_preset_id=command.preset_id,
             user_id=actor.actor_id,
             name=command.name,
             description=command.description,
             flags=command.flags,
         )
-        if preset is None:
+        if preset is None:  # Defensive against a concurrent source deletion.
             raise EntityNotFoundError("source_preset", command.preset_id)
         await commit(uow)
         return PermissionPresetResult(preset)
@@ -180,8 +212,24 @@ class UpdatePermissionPresetUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> PermissionPresetResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.entity.edit",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
+        gateway = _gateway(uow)
+        current = await gateway.get_preset(preset_id=command.preset_id)
+        if current is None:
+            raise EntityNotFoundError("preset", command.preset_id)
+        if current.is_builtin:
+            raise PermissionDeniedError("Built-in presets cannot be modified or deleted")
+        if current.owner_id != actor.actor_id:
+            raise PermissionDeniedError("You can only modify your own presets")
         try:
-            preset = await _gateway(uow).update_preset(
+            preset = await gateway.update_preset(
                 preset_id=command.preset_id,
                 user_id=actor.actor_id,
                 name=command.name,
@@ -211,8 +259,24 @@ class DeletePermissionPresetUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> None:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.entity.delete",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
+        gateway = _gateway(uow)
+        current = await gateway.get_preset(preset_id=command.preset_id)
+        if current is None:
+            raise EntityNotFoundError("preset", command.preset_id)
+        if current.is_builtin:
+            raise PermissionDeniedError("Built-in presets cannot be modified or deleted")
+        if current.owner_id != actor.actor_id:
+            raise PermissionDeniedError("You can only delete your own presets")
         try:
-            deleted = await _gateway(uow).delete_preset(
+            deleted = await gateway.delete_preset(
                 preset_id=command.preset_id,
                 user_id=actor.actor_id,
             )

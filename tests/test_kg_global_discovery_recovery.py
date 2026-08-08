@@ -2555,7 +2555,7 @@ async def test_global_recovery_authorization_fails_closed(monkeypatch):
             "agent-1",
             "Agent",
             "",
-            ["kg.admin.historical_consolidation"],
+            ["kg.admin.settings_read"],
         )
 
     monkeypatch.setattr(server, "_get_global_agent_ctx", admin)

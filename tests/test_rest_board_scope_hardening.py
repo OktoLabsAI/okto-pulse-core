@@ -168,6 +168,28 @@ class _Uow:
 
 
 ACTOR = ActorContext("user-a", "rest")
+KG_QUEUE_READER = ActorContext(
+    "user-a",
+    "rest",
+    board_id="board-b",
+    permissions={
+        "kg": {
+            "operations": {"queue": {"read": True}},
+            "admin": {"settings_read": True},
+        }
+    },
+)
+KG_COGNITIVE_SKIPPER = ActorContext(
+    "user-a",
+    "rest",
+    board_id="board-b",
+    permissions={
+        "kg": {
+            "operations": {"cognitive": {"skip": True}},
+            "admin": {"settings_write": True},
+        }
+    },
+)
 FOREIGN_BOARD = SimpleNamespace(id="board-b", owner_id="user-b")
 
 
@@ -430,7 +452,7 @@ async def test_operational_owner_reaches_cognitive_skip_writer() -> None:
             None,
             None,
         ),
-        actor=ACTOR,
+        actor=KG_COGNITIVE_SKIPPER,
         uow=uow,
     )
 
@@ -468,7 +490,10 @@ async def test_runtime_settings_viewer_is_denied_before_writer() -> None:
         ActorContext(
             "capability-a",
             "rest",
-            permissions={"runtime": {"settings": {"write": True}}},
+            permissions={
+                "runtime": {"settings": {"write": True}},
+                "kg": {"admin": {"settings_write": True}},
+            },
         ),
     ],
     ids=["admin", "operator", "capability"],
@@ -510,7 +535,7 @@ async def test_queue_drilldown_owner_reaches_reader() -> None:
 
     result = await GetQueueDrilldownUseCase().execute(
         GetQueueDrilldownCommand("board-b"),
-        actor=ACTOR,
+        actor=KG_QUEUE_READER,
         uow=uow,
     )
 
@@ -546,7 +571,12 @@ async def test_global_queue_viewer_is_denied_before_reader(use_case, command) ->
         ActorContext(
             "capability-a",
             "rest",
-            permissions={"queue": {"read": {"all": True}}},
+            permissions={
+                "kg": {
+                    "operations": {"queue": {"read": True}},
+                    "admin": {"settings_read": True},
+                }
+            },
         ),
     ],
     ids=["admin", "operator", "capability"],
@@ -594,7 +624,7 @@ async def test_dead_letter_owner_reaches_reader() -> None:
 
     result = await ListDeadLetterRowsUseCase().execute(
         ListDeadLetterRowsCommand("board-b", limit=20, offset=0),
-        actor=ACTOR,
+        actor=KG_QUEUE_READER,
         uow=uow,
     )
 

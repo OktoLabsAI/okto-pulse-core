@@ -485,6 +485,108 @@ async def test_targeted_delete_tombstones_active_working_projection(
 
 
 @pytest.mark.asyncio
+async def test_deleted_refinement_tombstones_relational_rdl_but_preserves_cognitive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refinement_id = "deleted-refinement"
+    decision_ref = (
+        f"refinement:{refinement_id}:rdl:ledger-decision:decision"
+    )
+    alternative_ref = (
+        f"refinement:{refinement_id}:rdl:ledger-alternative:alternative:"
+        + "a" * 64
+    )
+    cognitive_ref = (
+        f"refinement:{refinement_id}:alternative:ordinary-cognitive"
+    )
+    scope = _GraphScope(
+        rows_by_type={
+            "Decision": [
+                (
+                    "relational-rdl-decision",
+                    decision_ref,
+                    "system:layer1_worker",
+                    "canonical_eligible",
+                    "canonical",
+                    None,
+                    0.75,
+                )
+            ],
+            "Alternative": [
+                (
+                    "relational-rdl-alternative",
+                    alternative_ref,
+                    "system:layer1_worker",
+                    "canonical_eligible",
+                    "canonical",
+                    None,
+                    0.75,
+                ),
+                (
+                    "ordinary-cognitive-alternative",
+                    cognitive_ref,
+                    "agent:cognitive",
+                    "canonical_eligible",
+                    "canonical",
+                    None,
+                    0.75,
+                ),
+            ],
+        }
+    )
+    _install_registry(
+        monkeypatch,
+        snapshot=BoardSourceSnapshot(),
+        scope=scope,
+    )
+
+    result = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=[f"refinement:{refinement_id}"],
+        correlation_id="delete-refinement-rdl",
+    )
+
+    assert set(scope.writes) == {
+        ("Decision", "relational-rdl-decision"),
+        ("Alternative", "relational-rdl-alternative"),
+    }
+    assert {
+        params["node_id"] for params in scope.write_params
+    } == {
+        "relational-rdl-decision",
+        "relational-rdl-alternative",
+    }
+    assert all(
+        params["graph_layer"] == "working"
+        and params["maturity_status"] == "working_stale"
+        and params["revocation_reason"] == "source_deleted"
+        and params["relevance_score"] == 0.0
+        and params["erased_text"] == ""
+        for params in scope.write_params
+    )
+    assert {
+        item["node_id"] for item in result.demoted
+    } == {
+        "relational-rdl-decision",
+        "relational-rdl-alternative",
+    }
+    assert all(
+        item["revocation_reason"] == "source_deleted"
+        for item in result.demoted
+    )
+    assert [
+        item["node_id"] for item in result.skipped_cognitive
+    ] == ["ordinary-cognitive-alternative"]
+    assert result.target_identity_count == 1
+    assert result.target_found_count == 3
+    assert result.target_demoted_count == 2
+    assert result.target_skipped_cognitive_count == 1
+    assert result.target_already_converged_count == 0
+    assert result.target_preserved_canonical_count == 0
+
+
+@pytest.mark.asyncio
 async def test_fallback_fails_closed_when_deleted_node_has_embedding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -29,7 +29,11 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
 from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
-from okto_pulse.core.models.schemas import CardMove, SpecUpdate
+from okto_pulse.core.models.schemas import (
+    CardMove,
+    SpecUpdate,
+    TestScenarioWrite as ScenarioWrite,
+)
 from okto_pulse.core.services.main import CardService, SpecLockedError, SpecService
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.test_scenario_lifecycle import StatusNotMutableError
@@ -159,11 +163,25 @@ def test_services_main_does_not_import_mcp_server():
 
 
 # ====================================================================
-# TC-2 — update_spec NC-9 gate
+# TC-2 — update_spec is not a scenario lifecycle writer
 # ====================================================================
 
 
-async def test_update_spec_rejects_gated_without_evidence_transition_and_new(db_factory):
+def test_write_schema_closes_test_scenario_status_taxonomy():
+    scenario = ScenarioWrite(id="ts_closed", title="Closed taxonomy")
+    assert scenario.model_dump()["status"] == "draft"
+
+    with pytest.raises(ValueError):
+        ScenarioWrite(
+            id="ts_unknown",
+            title="Unknown status",
+            status="invented",
+        )
+
+
+async def test_update_spec_rejects_gated_without_evidence_transition_and_new(
+    db_factory,
+):
     # ts_5d2e7aa5
     _b, spec_id, _c = await _seed_spec(
         db_factory, scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}]
@@ -171,16 +189,24 @@ async def test_update_spec_rejects_gated_without_evidence_transition_and_new(db_
     # (A) transition ready -> passed without evidence
     async with db_factory() as db:
         svc = SpecService(db)
-        with pytest.raises(ValueError, match="evidence_required"):
+        with pytest.raises(
+            ValueError,
+            match="test_scenario_status_requires_scoped_update",
+        ):
             await svc.update_spec(
                 spec_id,
                 USER,
-                SpecUpdate(test_scenarios=[{"id": "ts_a", "title": "A", "status": "passed"}]),
+                SpecUpdate(
+                    test_scenarios=[{"id": "ts_a", "title": "A", "status": "passed"}]
+                ),
             )
     # (B) NEW scenario already passed without evidence (no old_s)
     async with db_factory() as db:
         svc = SpecService(db)
-        with pytest.raises(ValueError, match="evidence_required"):
+        with pytest.raises(
+            ValueError,
+            match="test_scenario_status_requires_scoped_update",
+        ):
             await svc.update_spec(
                 spec_id,
                 USER,
@@ -193,26 +219,102 @@ async def test_update_spec_rejects_gated_without_evidence_transition_and_new(db_
             )
 
 
-async def test_update_spec_accepts_gated_with_evidence(db_factory):
+async def test_update_spec_rejects_board_wide_test_scenario_identity_conflict(
+    db_factory,
+):
+    board_id, first_spec_id, _card_id = await _seed_spec(
+        db_factory,
+        scenarios=[{"id": "ts_unique", "title": "First", "status": "ready"}],
+    )
+    second_spec_id = str(uuid.uuid4())
+    async with db_factory() as db:
+        db.add(
+            Spec(
+                id=second_spec_id,
+                board_id=board_id,
+                title="Second",
+                status=SpecStatus.DRAFT,
+                created_by=USER,
+                functional_requirements=["FR1"],
+                acceptance_criteria=[
+                    {"id": "ac_two", "text": "AC two", "status": "active"}
+                ],
+                test_scenarios=[],
+            )
+        )
+        await db.commit()
+
+    async with db_factory() as db:
+        with pytest.raises(ValueError, match="test_scenario_identity_conflict"):
+            await SpecService(db).update_spec(
+                second_spec_id,
+                USER,
+                SpecUpdate(
+                    test_scenarios=[
+                        {
+                            "id": "ts_unique",
+                            "title": "Conflicting",
+                            "status": "ready",
+                        }
+                    ]
+                ),
+            )
+
+        first = await db.get(Spec, first_spec_id)
+        second = await db.get(Spec, second_spec_id)
+        assert first is not None
+        assert second is not None
+        assert second.test_scenarios == []
+
+
+async def test_update_spec_rejects_duplicate_scenario_ids_inside_candidate(
+    db_factory,
+):
+    _board_id, spec_id, _card_id = await _seed_spec(db_factory, scenarios=[])
+    async with db_factory() as db:
+        with pytest.raises(ValueError, match="test_scenario_identity_conflict"):
+            await SpecService(db).update_spec(
+                spec_id,
+                USER,
+                SpecUpdate(
+                    test_scenarios=[
+                        {"id": "ts_dup", "title": "One", "status": "ready"},
+                        {"id": "ts_dup", "title": "Two", "status": "ready"},
+                    ]
+                ),
+            )
+
+
+async def test_update_spec_rejects_gated_transition_even_with_evidence(db_factory):
     _b, spec_id, _c = await _seed_spec(
         db_factory, scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}]
     )
     async with db_factory() as db:
         svc = SpecService(db)
-        spec = await svc.update_spec(
-            spec_id,
-            USER,
-            SpecUpdate(
-                test_scenarios=[
-                    {"id": "ts_a", "title": "A", "status": "passed", "evidence": _VALID_EVIDENCE}
-                ]
-            ),
-        )
-        await db.commit()
-    assert spec.test_scenarios[0]["status"] == "passed"
+        with pytest.raises(
+            ValueError,
+            match="test_scenario_status_requires_scoped_update",
+        ):
+            await svc.update_spec(
+                spec_id,
+                USER,
+                SpecUpdate(
+                    test_scenarios=[
+                        {
+                            "id": "ts_a",
+                            "title": "A",
+                            "status": "passed",
+                            "evidence": _VALID_EVIDENCE,
+                        }
+                    ]
+                ),
+            )
 
 
-async def test_update_spec_skip_flag_allows_and_audits(db_factory, caplog):
+async def test_update_spec_skip_flag_does_not_bypass_scoped_status_writer(
+    db_factory,
+    caplog,
+):
     # ts_f25daf3d
     _b, spec_id, _c = await _seed_spec(
         db_factory,
@@ -222,14 +324,20 @@ async def test_update_spec_skip_flag_allows_and_audits(db_factory, caplog):
     async with db_factory() as db:
         svc = SpecService(db)
         with caplog.at_level(logging.INFO, logger="okto_pulse.spec.test_scenario"):
-            spec = await svc.update_spec(
-                spec_id,
-                USER,
-                SpecUpdate(test_scenarios=[{"id": "ts_a", "title": "A", "status": "passed"}]),
-            )
-            await db.commit()
-    assert spec.test_scenarios[0]["status"] == "passed"
-    assert any("evidence_gate_skipped" in r.getMessage() for r in caplog.records)
+            with pytest.raises(
+                ValueError,
+                match="test_scenario_status_requires_scoped_update",
+            ):
+                await svc.update_spec(
+                    spec_id,
+                    USER,
+                    SpecUpdate(
+                        test_scenarios=[
+                            {"id": "ts_a", "title": "A", "status": "passed"}
+                        ]
+                    ),
+                )
+    assert not any("evidence_gate_skipped" in r.getMessage() for r in caplog.records)
 
 
 # ====================================================================
@@ -261,9 +369,19 @@ async def test_update_test_scenario_edits_body_and_clears(db_factory):
     async with db_factory() as db:
         svc = SpecService(db)
         result = await svc.update_test_scenario(
-            spec_id, USER, "ts_a", given="new g", title="A2", clear=["notes", "linked_criteria"]
+            spec_id,
+            USER,
+            "ts_a",
+            given="new g",
+            title="A2",
+            clear=["notes", "linked_criteria"],
         )
-    assert set(result["updated_fields"]) == {"given", "title", "notes", "linked_criteria"}
+    assert set(result["updated_fields"]) == {
+        "given",
+        "title",
+        "notes",
+        "linked_criteria",
+    }
     async with db_factory() as db:
         svc = SpecService(db)
         spec = await svc.get_spec(spec_id)
@@ -293,7 +411,9 @@ async def test_update_test_scenario_unresolved_criteria_fails_closed(db_factory)
     async with db_factory() as db:
         svc = SpecService(db)
         with pytest.raises(ValueError, match="unresolved_criteria"):
-            await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["ghost"])
+            await svc.update_test_scenario(
+                spec_id, USER, "ts_a", linked_criteria=["ghost"]
+            )
 
 
 async def test_semantic_edit_invalidates_evidence_cosmetic_preserves(db_factory):
@@ -319,11 +439,16 @@ async def test_semantic_edit_invalidates_evidence_cosmetic_preserves(db_factory)
     _b2, spec_id2, _c2 = await _seed_spec(db_factory, scenarios=[dict(base)])
     async with db_factory() as db:
         svc = SpecService(db)
-        result = await svc.update_test_scenario(spec_id2, USER, "ts_a", title="A-renamed")
+        result = await svc.update_test_scenario(
+            spec_id2, USER, "ts_a", title="A-renamed"
+        )
         assert result["evidence_invalidated"] is False
         spec = await svc.get_spec(spec_id2)
     sc = spec.test_scenarios[0]
-    assert sc["status"] == "passed" and sc["evidence"]["last_run_at"] == _VALID_EVIDENCE["last_run_at"]
+    assert (
+        sc["status"] == "passed"
+        and sc["evidence"]["last_run_at"] == _VALID_EVIDENCE["last_run_at"]
+    )
 
 
 # ====================================================================
@@ -421,11 +546,16 @@ async def test_status_allowed_in_progress_blocked_validated_done(db_factory):
     # in_progress (locked by a passed validation) — still allowed, proving the
     # guard is by STATUS and NOT the content-lock.
     _b, ip_id, _c = await _seed_spec(
-        db_factory, status=SpecStatus.IN_PROGRESS, locked=True, scenarios=list(scenarios)
+        db_factory,
+        status=SpecStatus.IN_PROGRESS,
+        locked=True,
+        scenarios=list(scenarios),
     )
     async with db_factory() as db:
         svc = SpecService(db)
-        res = await svc.set_test_scenario_status(ip_id, USER, "ts_a", "passed", _VALID_EVIDENCE)
+        res = await svc.set_test_scenario_status(
+            ip_id, USER, "ts_a", "passed", _VALID_EVIDENCE
+        )
         assert res["new_status"] == "passed"
 
     for blocked_status in (SpecStatus.VALIDATED, SpecStatus.DONE):
@@ -435,7 +565,9 @@ async def test_status_allowed_in_progress_blocked_validated_done(db_factory):
         async with db_factory() as db:
             svc = SpecService(db)
             with pytest.raises(StatusNotMutableError):
-                await svc.set_test_scenario_status(sid, USER, "ts_a", "passed", _VALID_EVIDENCE)
+                await svc.set_test_scenario_status(
+                    sid, USER, "ts_a", "passed", _VALID_EVIDENCE
+                )
 
 
 @pytest.mark.parametrize("locked_status", [SpecStatus.VALIDATED, SpecStatus.DONE])
@@ -473,7 +605,9 @@ async def test_status_allowed_on_locked_spec_when_scenario_has_executable_test_c
         assert card.test_scenario_ids == ["ts_a"]
 
 
-async def test_status_still_blocked_on_done_spec_when_test_card_not_executable(db_factory):
+async def test_status_still_blocked_on_done_spec_when_test_card_not_executable(
+    db_factory,
+):
     _b, spec_id, _card_id = await _seed_spec(
         db_factory,
         status=SpecStatus.DONE,
@@ -563,13 +697,22 @@ async def test_status_path_does_not_call_update_spec(db_factory, monkeypatch):
             raise AssertionError("status path must not call update_spec")
 
         monkeypatch.setattr(SpecService, "update_spec", _boom)
-        res = await svc.set_test_scenario_status(spec_id, USER, "ts_a", "passed", _VALID_EVIDENCE)
+        res = await svc.set_test_scenario_status(
+            spec_id, USER, "ts_a", "passed", _VALID_EVIDENCE
+        )
         assert res["new_status"] == "passed"
 
 
 async def test_status_path_preserves_non_target_scenarios(db_factory):
     # ts_144b47eb — non-target scenarios stay semantically identical.
-    other = {"id": "ts_y", "title": "Y", "status": "ready", "given": "g", "when": "w", "then": "t"}
+    other = {
+        "id": "ts_y",
+        "title": "Y",
+        "status": "ready",
+        "given": "g",
+        "when": "w",
+        "then": "t",
+    }
     _b, spec_id, _c = await _seed_spec(
         db_factory,
         status=SpecStatus.APPROVED,
@@ -577,13 +720,41 @@ async def test_status_path_preserves_non_target_scenarios(db_factory):
     )
     async with db_factory() as db:
         svc = SpecService(db)
-        await svc.set_test_scenario_status(spec_id, USER, "ts_x", "passed", _VALID_EVIDENCE)
+        await svc.set_test_scenario_status(
+            spec_id, USER, "ts_x", "passed", _VALID_EVIDENCE
+        )
     async with db_factory() as db:
         svc = SpecService(db)
         spec = await svc.get_spec(spec_id)
     by_id = {s["id"]: s for s in spec.test_scenarios}
     assert by_id["ts_x"]["status"] == "passed"
     assert by_id["ts_y"] == other  # untouched, byte-for-byte
+
+
+async def test_exact_status_replay_skips_persistence(db_factory, monkeypatch):
+    """An exact operational replay must not invalidate policy compliance."""
+    _board_id, spec_id, _card_id = await _seed_spec(
+        db_factory,
+        status=SpecStatus.APPROVED,
+        scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}],
+    )
+
+    async def _unexpected_commit(_db):
+        raise AssertionError("an exact replay must not persist or commit")
+
+    monkeypatch.setattr(
+        "okto_pulse.core.services.main._application_commit",
+        _unexpected_commit,
+    )
+    async with db_factory() as db:
+        result = await SpecService(db).set_test_scenario_status(
+            spec_id,
+            USER,
+            "ts_a",
+            "ready",
+            None,
+        )
+        assert result["old_status"] == result["new_status"] == "ready"
 
 
 @pytest_asyncio.fixture

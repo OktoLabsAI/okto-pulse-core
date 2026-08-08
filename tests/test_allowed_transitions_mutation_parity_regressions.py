@@ -419,6 +419,21 @@ async def test_refinement_done_preview_uses_canonical_cognitive_gate(
     )
 
     async with db_factory() as db:
+        resource_gate = ResourceGateService(db)
+        for resource_type in ("architecture", "mockup", "knowledge_base"):
+            await resource_gate.mark_not_applicable(
+                board_id,
+                "refinement",
+                refinement_id,
+                resource_type,
+                USER_ID,
+                justification=(
+                    f"{resource_type} is not applicable to this cognitive "
+                    "preview regression."
+                ),
+                source_channel="ui",
+            )
+        await db.commit()
         done = await _preview_transition(
             db,
             board_id=board_id,
@@ -842,6 +857,7 @@ async def test_spec_terminal_to_draft_starts_new_version_and_clears_cancellation
             board_id=board_id,
             title=f"Reopen {terminal_status.value} spec",
             status=terminal_status,
+            edition=3,
             version=7,
             cancellation_reason="Superseded delivery" if is_cancelled else None,
             cancelled_at=cancelled_at if is_cancelled else None,
@@ -860,7 +876,81 @@ async def test_spec_terminal_to_draft_starts_new_version_and_clears_cancellation
 
     assert reopened is not None
     assert reopened.status == SpecStatus.DRAFT
+    assert reopened.edition == 4
     assert reopened.version == 8
     assert reopened.cancellation_reason is None
     assert reopened.cancelled_at is None
     assert reopened.cancelled_by is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source_status",
+    [SpecStatus.REVIEW, SpecStatus.APPROVED, SpecStatus.VALIDATED],
+)
+async def test_spec_entering_draft_advances_edition_without_technical_version(
+    db_factory,
+    source_status: SpecStatus,
+) -> None:
+    board_id = _id(f"spec-edition-{source_status.value}-board")
+    spec_id = _id(f"spec-edition-{source_status.value}")
+    await _persist(
+        db_factory,
+        _board(board_id),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title=f"Edition from {source_status.value}",
+            status=source_status,
+            edition=5,
+            version=37,
+            created_by=USER_ID,
+        ),
+    )
+
+    async with db_factory() as db:
+        moved = await SpecService(db).move_spec(
+            spec_id,
+            USER_ID,
+            SpecMove(status=SpecStatus.DRAFT),
+            actor_name=USER_ID,
+        )
+
+    assert moved is not None
+    assert moved.status == SpecStatus.DRAFT
+    assert moved.edition == 6
+    assert moved.version == 37
+
+
+@pytest.mark.asyncio
+async def test_spec_move_not_targeting_draft_preserves_edition(
+    db_factory,
+) -> None:
+    board_id = _id("spec-edition-forward-board")
+    spec_id = _id("spec-edition-forward")
+    await _persist(
+        db_factory,
+        _board(board_id),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Forward move preserves edition",
+            status=SpecStatus.DRAFT,
+            edition=8,
+            version=42,
+            created_by=USER_ID,
+        ),
+    )
+
+    async with db_factory() as db:
+        moved = await SpecService(db).move_spec(
+            spec_id,
+            USER_ID,
+            SpecMove(status=SpecStatus.REVIEW),
+            actor_name=USER_ID,
+        )
+
+    assert moved is not None
+    assert moved.status == SpecStatus.REVIEW
+    assert moved.edition == 8
+    assert moved.version == 42

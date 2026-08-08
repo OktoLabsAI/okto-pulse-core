@@ -7,9 +7,11 @@ file names belong to adapters.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
@@ -130,6 +132,47 @@ class GraphStorageFootprint:
 
 
 @dataclass(frozen=True)
+class GraphRuntimeBudgetSnapshot:
+    """Backend-neutral, non-live native graph runtime budget projection.
+
+    The mappings are copied into read-only proxies so an adapter cannot mutate
+    a published snapshot after Core has started serializing it.  This contract
+    deliberately contains no backend identifiers, local paths, process RSS or
+    resident board identities.
+    """
+
+    source: str
+    status: str
+    requested: Mapping[str, int | None] = field(default_factory=dict)
+    normalized: Mapping[str, int | None] = field(default_factory=dict)
+    effective: Mapping[str, int | None] = field(default_factory=dict)
+    sources: Mapping[str, str | None] = field(default_factory=dict)
+    process_envelope: Mapping[str, int | None] = field(default_factory=dict)
+    is_direct_memory_telemetry: bool = False
+    description: str = (
+        "Derived native graph runtime budget from configured limits and "
+        "edition operational caps."
+    )
+    tooltip: str = (
+        "This is a deterministic, non-live capacity envelope; it is not "
+        "process RSS or direct allocator telemetry."
+    )
+    unavailable_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.is_direct_memory_telemetry:
+            raise ValueError("native runtime budget is not direct memory telemetry")
+        for name in (
+            "requested",
+            "normalized",
+            "effective",
+            "sources",
+            "process_envelope",
+        ):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+
+
+@dataclass(frozen=True)
 class GraphPurgeResult:
     board_id: str
     removed: bool
@@ -167,9 +210,14 @@ class GraphRuntimeStore(Protocol):
         """Return a logical storage footprint projection if the adapter has one."""
         ...
 
+    def budget_snapshot(self) -> GraphRuntimeBudgetSnapshot:
+        """Return the process-level native graph budget without opening a graph."""
+        ...
+
 
 __all__ = [
     "GraphPurgeResult",
+    "GraphRuntimeBudgetSnapshot",
     "GraphRuntimeObservationState",
     "GraphRuntimeState",
     "GraphRuntimeStore",

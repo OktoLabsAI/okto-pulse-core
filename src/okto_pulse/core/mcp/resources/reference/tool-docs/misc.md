@@ -114,6 +114,9 @@ Args:
 
 Returns:
     JSON with task context selected by profile/scope.
+    The card projection includes `subject_version`, the current policy-subject
+    fence used as `expected_subject_version` by semantic guideline assessment
+    writes.
     `reviewer_separation` projects the current caller's task-validation policy
     decision (`mode`, `allowed`, `warning`, creator/assignee/executor
     `conflicts`, and `source`); inspect it from
@@ -154,6 +157,8 @@ degraded, recovering, failing, stale, disabled, or unavailable — plus the
 last success/failure timestamps, the scheduled next retry, and freshness.
 Agent-facing twin of `GET /metrics/publish-health`; it reads the
 install-local failure-state and is NOT board-scoped.
+
+Requires `metrics.publish_health.read`.
 
 No parameters.
 
@@ -349,7 +354,7 @@ Returns:
 ## `okto_pulse_list_design_systems`
 
 List Design Systems (spec 3a006f65 / FR2, admin read). REST twin:
-GET /design-systems. Perm: BOARD_READ.
+GET /design-systems. Requires `design_system.entity.read`.
 
 Args:
     board_id: Board ID used for authentication.
@@ -362,7 +367,7 @@ Returns:
 ## `okto_pulse_get_design_system`
 
 Get a Design System by id, including its payload (admin read). REST twin:
-GET /design-systems/{id}. Perm: BOARD_READ.
+GET /design-systems/{id}. Requires `design_system.entity.read`.
 
 Args:
     board_id: Board ID used for access checks.
@@ -374,7 +379,7 @@ Returns:
 ## `okto_pulse_create_design_system`
 
 Create a Design System (spec 3a006f65 / FR1, admin write). REST twin:
-POST /design-systems. Perm: SPECS_UPDATE.
+POST /design-systems. Requires `design_system.entity.create`.
 
 `scope="global"` creates a catalog entry that can be linked to any board or
 made a template default; `scope="inline"` binds it to THIS board (board_id).
@@ -393,7 +398,7 @@ Returns:
 ## `okto_pulse_update_design_system`
 
 Update a Design System (admin write); a title/payload change bumps the version.
-REST twin: PATCH /design-systems/{id}. Perm: SPECS_UPDATE.
+REST twin: PATCH /design-systems/{id}. Requires `design_system.entity.edit`.
 
 Args:
     board_id: Board ID.
@@ -408,7 +413,7 @@ Returns:
 ## `okto_pulse_delete_design_system`
 
 Delete a Design System (admin write). REST twin: DELETE /design-systems/{id}.
-Perm: SPECS_UPDATE.
+Requires `design_system.entity.delete`.
 
 Args:
     board_id: Board ID.
@@ -421,7 +426,8 @@ Returns:
 
 Set the Design System default reference + canonical gate mode on a default
 board-configuration TEMPLATE (spec 3a006f65 / FR3, admin write). REST twin:
-POST /default-board-configurations/{template_id}/design-system. Perm: SPECS_UPDATE.
+POST /default-board-configurations/{template_id}/design-system. Requires
+`default_board_config.set_design_system`.
 
 The `design_system_id` must be a real, global, active DesignSystem —
 inline/synthetic references are rejected fail-closed. An ACTIVE template is

@@ -51,7 +51,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 test1 agent"
-        self.permissions = {"board:read"}
+        self.permissions = ["*"]
 
 
 @pytest.fixture(autouse=True)

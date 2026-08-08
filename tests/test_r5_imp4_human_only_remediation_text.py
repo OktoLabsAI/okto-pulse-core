@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from mcp_runtime_testing import register_mcp_test_runtime
 
+from datetime import datetime, timezone
 import json
 import re
 import uuid
@@ -23,12 +24,31 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from okto_pulse.core.domain.quality_assessment import (
+    AssessmentKind,
+    AssessmentOrigin,
+    AssessmentOutcome,
+    AssessmentReceipt,
+    AssessmentSource,
+    AssessmentSubjectHead,
+    AssessmentSubjectRef,
+    AssessmentSubjectType,
+)
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.models.schemas import IdeationMove
+from okto_pulse.core.services.ambiguity_assessment import (
+    AMBIGUITY_SCALE,
+    AmbiguityGateConfiguration,
+    AmbiguityGateService,
+    ambiguity_digest_set,
+    ambiguity_versions_v1,
+)
 from okto_pulse.core.services.main import AmbiguityGateError, IdeationService
 
 ACTOR = "r5-imp4-actor"
+NOW = datetime.now(timezone.utc)
 
 # Imperative phrasings that would tell an AGENT to apply/clear a skip itself.
 _AGENT_SKIP_IMPERATIVES = (
@@ -54,29 +74,102 @@ def _no_agent_skip_imperative(text: str) -> None:
 # ===========================================================================
 
 
-async def _seed(db, *, ambiguity):
+async def _seed(db):
     board_id, ideation_id = _id("board"), _id("idea")
     db.add(Board(id=board_id, name="Gate", owner_id=ACTOR,
                  settings={"require_ideation_ambiguity_gate": True,
                            "max_ideation_ambiguity": 3}))
     db.add(Ideation(id=ideation_id, board_id=board_id, title="g", created_by=ACTOR,
                     status=IdeationStatus.EVALUATING,
-                    scope_assessment=(None if ambiguity is None else {"ambiguity": ambiguity})))
+                    scope_assessment=None))
     await db.flush()
     return ideation_id
+
+
+class _ReceiptPersistence:
+    def __init__(self, receipt: AssessmentReceipt | None) -> None:
+        self.receipt = receipt
+
+    async def get_current(self, **_: object):
+        if self.receipt is None:
+            return None
+        receipt = self.receipt
+        return (
+            receipt,
+            AssessmentSubjectHead(
+                board_id=receipt.subject.board_id,
+                subject_type=receipt.subject.subject_type,
+                subject_id=receipt.subject.subject_id,
+                assessment_kind=receipt.assessment_kind,
+                receipt_id=receipt.id,
+                revision=1,
+                updated_at=NOW,
+            ),
+        )
+
+
+def _receipt_for(ideation: Ideation, *, score: int) -> AssessmentReceipt:
+    configuration = AmbiguityGateConfiguration(
+        required=True,
+        maximum_score=3,
+    )
+    digests = ambiguity_digest_set(
+        subject_type=AssessmentSubjectType.IDEATION,
+        subject=ideation,
+        qa_items=[],
+        configuration=configuration,
+    )
+    subject = AssessmentSubjectRef(
+        board_id=ideation.board_id,
+        subject_type=AssessmentSubjectType.IDEATION,
+        subject_id=ideation.id,
+        subject_version=ideation.version,
+    )
+    return AssessmentReceipt(
+        id=_id("receipt"),
+        subject=subject,
+        assessment_kind=AssessmentKind.AMBIGUITY,
+        origin=AssessmentOrigin.HUMAN_OR_AGENT,
+        source=AssessmentSource.NATIVE,
+        channel="rest",
+        outcome=AssessmentOutcome.RECORDED,
+        scale=AMBIGUITY_SCALE,
+        score=score,
+        justification="Receipt-backed remediation contract.",
+        digests=digests,
+        versions=ambiguity_versions_v1(),
+        run_identity_digest=canonical_sha256(
+            [subject.subject_version, digests.input_digest]
+        ),
+        authority_digest=canonical_sha256("r5-imp4-authority"),
+        idempotency_key=_id("r5-imp4-idempotency"),
+        request_digest=canonical_sha256("r5-imp4-request"),
+        created_by=ACTOR,
+        created_at=NOW,
+    )
+
+
+def _install_receipt_gate(
+    service: IdeationService,
+    receipt: AssessmentReceipt | None,
+) -> None:
+    persistence = _ReceiptPersistence(receipt)
+    service._ambiguity_gate_service_factory = (  # type: ignore[attr-defined]
+        lambda _db: AmbiguityGateService(persistence)  # type: ignore[arg-type]
+    )
 
 
 @pytest.mark.asyncio
 async def test_ambiguity_gate_unevaluated_remediation_is_human_only(db_factory):
     async with db_factory() as db:
-        ideation_id = await _seed(db, ambiguity=None)
+        ideation_id = await _seed(db)
+        service = IdeationService(db)
+        _install_receipt_gate(service, None)
         with pytest.raises(AmbiguityGateError) as exc:
-            await IdeationService(db).move_ideation(
+            await service.move_ideation(
                 ideation_id, ACTOR, IdeationMove(status=IdeationStatus.DONE))
     msg = str(exc.value)
-    # Legacy substring preserved (so other gate tests stay green) ...
-    assert "ambiguity has not been evaluated" in msg
-    # ... and the remediation now frames skip as a HUMAN decision, not an agent action.
+    assert "no current ambiguity assessment exists" in msg
     assert "human" in msg.lower()
     _no_agent_skip_imperative(msg)
 
@@ -84,15 +177,19 @@ async def test_ambiguity_gate_unevaluated_remediation_is_human_only(db_factory):
 @pytest.mark.asyncio
 async def test_ambiguity_gate_over_threshold_remediation_is_human_only(db_factory):
     async with db_factory() as db:
-        ideation_id = await _seed(db, ambiguity=4)
+        ideation_id = await _seed(db)
+        ideation = await db.get(Ideation, ideation_id)
+        assert ideation is not None
+        service = IdeationService(db)
+        _install_receipt_gate(service, _receipt_for(ideation, score=4))
         with pytest.raises(AmbiguityGateError) as exc:
-            await IdeationService(db).move_ideation(
+            await service.move_ideation(
                 ideation_id, ACTOR, IdeationMove(status=IdeationStatus.DONE))
     msg = str(exc.value)
-    assert "ambiguity score 4 exceeds configured max 3" in msg
+    assert "score 4 exceeds configured max 3" in msg
     assert "human" in msg.lower()
-    # Agent-doable remediations stay (reduce ambiguity / raise threshold) ...
-    assert "reduce ambiguity" in msg.lower()
+    # Agent-doable remediation remains explicit for the receipt-backed gate.
+    assert "resolve the pinpointed findings/q&a" in msg.lower()
     # ... but the skip is framed as human-only, not an agent imperative.
     _no_agent_skip_imperative(msg)
 

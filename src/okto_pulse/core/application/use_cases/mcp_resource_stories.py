@@ -16,6 +16,11 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    transition_permission_requirement,
+)
 
 
 @dataclass(frozen=True)
@@ -220,21 +225,33 @@ class McpMoveStoryUseCase:
     async def execute(
         self, command: McpMoveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services.permission_policy import Permissions
-        from okto_pulse.core.services.story_permissions import story_move_permission
-
         service = uow.services.stories
         existing = await service.get_story(command.story_id)
-        if not existing or existing.board_id != command.board_id:
+        if (
+            not existing
+            or existing.board_id != command.board_id
+            or actor.board_id != command.board_id
+        ):
             return McpStoryMutationResult(not_found=True)
-        perm_err = _mcp_story_state_perm(
-            actor.permissions,
-            story_move_permission(existing.status, command.target_status),
-            Permissions.SPECS_CREATE,
-            existing,
+        if existing.archived:
+            raise ValueError(
+                "This story is archived. Restore it before changing status."
+            )
+        if entity_state(existing) == str(
+            getattr(command.target_status, "value", command.target_status)
+        ):
+            return McpStoryMutationResult(story=existing)
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "story",
+                existing.status,
+                command.target_status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
-        if perm_err:
-            return McpStoryMutationResult(perm_err=perm_err)
         story = await service.move_story(command.story_id, actor.actor_id, command.data)
         await commit(uow)
         if not story or story.board_id != command.board_id:

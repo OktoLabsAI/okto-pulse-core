@@ -254,7 +254,7 @@ async def test_ac3_handler_options_json_wins_over_options_behavioral():
     ctx = type("Ctx", (), {
         "agent_id": user_id,
         "agent_name": "prec-agent",
-        "permissions": ["comment.create"],
+        "permissions": ["*"],
     })()
 
     register_mcp_test_runtime(get_session_factory())

@@ -5,6 +5,8 @@ version: "1.0"
 # Destructive Operations — Read Before Calling
 
 Some MCP tools are **irreversible** at the storage layer. Calling them by mistake is one of the most costly failure modes an agent can hit because there is no undo and no confirmation prompt.
+For versioned guidelines prefer retirement/unlink as defined in
+`okto-pulse://reference/policy-compliance`.
 
 ## Hard Delete — Row is Physically Removed, Cannot Be Recovered
 
@@ -75,3 +77,13 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
    `include_working=true` must not recover the former title/body/context,
    source quote, or justification. The Community graph adapter also replaces
    the indexed node without its embedding.
+8. **SK-A histories follow the root lifecycle.** Archive or cancel preserves
+   immutable Quality/RDL/checklist history for authorized audit reads and
+   invalidates its use as a live head where required. Restore/reopen recomputes
+   currentness and never replays the one-shot legacy import. A governed hard
+   delete/purge removes dependent heads, links, findings, executions, receipts,
+   RDL rows, audit/outbox projections, and graph roots in the explicit
+   child-first order; verify that no cross-subject head or stale RDL projection
+   remains. Never delete a receipt merely to make a gate pass. Recompute and
+   interpret Quality currentness according to
+   `okto-pulse://reference/quality-assessments`.

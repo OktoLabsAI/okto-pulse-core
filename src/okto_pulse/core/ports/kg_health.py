@@ -15,6 +15,19 @@ class KGHealthQueueSnapshot:
     queue_depth: int
     oldest_triggered_at: datetime | None
     dead_letter_count: int
+    # Policy-constraint projection delivery is intentionally a separate
+    # operational domain.  These fields must never be folded into the legacy
+    # consolidation queue/DLQ counters above.
+    policy_constraint_projection_pending_count: int = 0
+    policy_constraint_projection_processing_count: int = 0
+    policy_constraint_projection_retry_scheduled_count: int = 0
+    policy_constraint_projection_dlq_count: int = 0
+    policy_constraint_projection_max_attempt_count: int = 0
+    policy_constraint_projection_oldest_pending_at: datetime | None = None
+    policy_constraint_projection_oldest_processing_at: datetime | None = None
+    policy_constraint_projection_oldest_retry_scheduled_at: datetime | None = None
+    policy_constraint_projection_oldest_retry_due_at: datetime | None = None
+    policy_constraint_projection_oldest_dlq_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

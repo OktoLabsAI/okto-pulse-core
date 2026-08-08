@@ -292,7 +292,12 @@ async def test_boost_graph_and_fence_are_off_loop_but_uow_stays_on_loop(
     result, ticker_elapsed = await _run_with_responsiveness_probe(
         crud.BoostNodeUseCase().execute(
             crud.BoostNodeCommand(board_id, "node-1"),
-            actor=crud.ActorContext("actor-1", "rest"),
+                actor=crud.ActorContext(
+                    "actor-1",
+                    "rest",
+                    board_id=board_id,
+                    permissions=["kg.admin.settings_write"],
+                ),
             uow=uow,
         ),
         started=started,

@@ -5,6 +5,8 @@ use case errors to the MCP tool's JSON error envelope, with NO business rule.
 The MCP first-cut tools return ``json.dumps({"error": str(exc)})`` for handled
 failures; ``error`` reproduces that. The agent display name flows through
 ``ActorContext.actor_name`` so the migrated use case keeps the MCP audit name.
+Policy Compliance transition rejections use the same structured projection as
+REST so clients can compare mutation failure evidence with transition preview.
 """
 
 from __future__ import annotations
@@ -13,6 +15,12 @@ import json
 from typing import Any
 
 from okto_pulse.core.application.use_cases import ActorContext
+from okto_pulse.core.domain.guideline_policy_transition import (
+    PolicyTransitionRejected,
+)
+from okto_pulse.core.inbound.policy_transition_error import (
+    project_policy_transition_rejection,
+)
 
 
 class MCPAdapterContract:
@@ -37,6 +45,7 @@ class MCPAdapterContract:
             ctx.agent_id,
             "mcp",
             actor_name=getattr(ctx, "agent_name", None),
+            actor_kind="agent",
             board_id=board_id,
             realm_id=realm_id or getattr(ctx, "realm_id", None),
             permissions=getattr(ctx, "permissions", None),
@@ -45,6 +54,8 @@ class MCPAdapterContract:
     @staticmethod
     def error(exc: Exception) -> str:
         """Map a domain/use case error to the MCP JSON error envelope."""
+        if isinstance(exc, PolicyTransitionRejected):
+            return json.dumps(project_policy_transition_rejection(exc))
         code = getattr(exc, "code", None)
         if isinstance(code, str) and code.strip():
             details = getattr(exc, "details", None)

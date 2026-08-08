@@ -62,7 +62,29 @@ def client():
             yield session
 
     async def _override_user():
-        return {"sub": ACTOR, "roles": ["admin"]}
+        return {
+            "sub": ACTOR,
+            "roles": ["admin"],
+            "permissions": {
+                "kg": {
+                    "admin": {
+                        "historical_consolidation": True,
+                        "settings_read": True,
+                        "wipe_board": True,
+                    },
+                    "operations": {
+                        "audit": {"read": True},
+                        "settings": {"read": True},
+                        "historical": {
+                            "read": True,
+                            "start": True,
+                            "cancel": True,
+                        },
+                        "board": {"erase": True},
+                    },
+                }
+            },
+        }
 
     def _override_user_id():
         return ACTOR

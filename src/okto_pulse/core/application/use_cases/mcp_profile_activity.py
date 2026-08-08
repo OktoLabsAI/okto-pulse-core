@@ -18,6 +18,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.services.analytics_contract import encode_activity_cursor
 
 
@@ -216,7 +220,15 @@ class McpListAgentsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpListAgentsResult:
-
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         agents = await uow.services.agents.list_agents(command.board_id)
         await commit(uow)
         return McpListAgentsResult(agents)

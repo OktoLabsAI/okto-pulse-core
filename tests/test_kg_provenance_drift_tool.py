@@ -23,7 +23,7 @@ from okto_pulse.core.kg import provenance_drift as provenance_module
 from okto_pulse.core.kg.provenance_drift import provenance_drift_report
 
 from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
-    _bootstrap_test_board,
+    _bootstrap_test_board as _bootstrap_uncomposed_test_board,
 )
 from test_kg_provenance_commit_fill import (  # noqa: F401  (harness reuse)
     _drive_with_provenance,
@@ -31,6 +31,22 @@ from test_kg_provenance_commit_fill import (  # noqa: F401  (harness reuse)
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+async def _bootstrap_test_board(monkeypatch):
+    """Reuse the shared bootstrap with the official Community Session."""
+
+    _plain_factory, board_id, spec_id = (
+        await _bootstrap_uncomposed_test_board(monkeypatch)
+    )
+    from okto_pulse.community.adapters.sqlalchemy_database import (
+        build_community_session_factory,
+    )
+    from okto_pulse.core.infra.database import get_engine
+
+    session_factory = build_community_session_factory(get_engine())
+    configure_real_graph_test_kg_registry(session_factory=session_factory)
+    return session_factory, board_id, spec_id
 
 
 @pytest.fixture(autouse=True)

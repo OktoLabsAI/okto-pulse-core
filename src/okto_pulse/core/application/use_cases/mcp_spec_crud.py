@@ -18,14 +18,25 @@ cases must NOT add a UoW commit there).
 
 from __future__ import annotations
 
-from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
-
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
+)
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    transition_permission_requirement,
+)
+from okto_pulse.core.domain.test_scenarios import ScenarioType
+from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+from okto_pulse.core.services.application_schemas import (
+    PersistedTestScenarioSpecUpdate,
 )
 
 
@@ -90,15 +101,34 @@ class McpMoveSpecUseCase:
         self, command: McpMoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveSpecResult:
         service = uow.services.specs
-        existing = await service.get_spec(command.spec_id)
-        if not existing or existing.board_id != command.board_id:
-            raise EntityNotFoundError("spec", command.spec_id)
+        existing = await _require_actor_board_spec(
+            service,
+            command.spec_id,
+            actor,
+            board_id=command.board_id,
+        )
         old_status = existing.status.value
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "spec",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
         spec = await service.move_spec(
             command.spec_id, actor.actor_id, command.data, actor_name=actor.actor_name
         )
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
+        # Resolve persistence-managed revisions before the commit while this
+        # transaction still owns the row. A post-commit refresh could observe
+        # a later writer or fail after the mutation was already durable.
+        await uow.synchronize()
+        await uow.reload(spec, fields=("status", "edition", "version"))
         await commit(uow)
         return McpMoveSpecResult(spec, old_status)
 
@@ -268,6 +298,16 @@ class McpDeriveSpecUseCase:
         )
         if not spec:
             raise EntityNotFoundError(command.source, command.source_id)
+        if command.source == "refinement":
+            from okto_pulse.core.application.use_cases.research_decision_ledger import (
+                bind_research_decisions_to_spec,
+            )
+
+            await bind_research_decisions_to_spec(
+                refinement=parent,
+                spec=spec,
+                uow=uow,
+            )
         await commit(uow)
         return McpDeriveSpecResult(spec)
 
@@ -1731,7 +1771,7 @@ class McpAddTestScenarioCommand:
         when: str,
         then: str,
         *,
-        scenario_type: str,
+        scenario_type: ScenarioType,
         linked_criteria_tokens: list | None,
         notes: str | None,
     ) -> None:
@@ -1779,7 +1819,6 @@ class McpAddTestScenarioUseCase:
     async def execute(
         self, command: McpAddTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddTestScenarioResult:
-        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_criteria_to_ids,
@@ -1826,7 +1865,10 @@ class McpAddTestScenarioUseCase:
         scenarios = list(spec.test_scenarios or [])
         scenarios.append(scenario)
         await service.update_spec(
-            command.spec_id, actor.actor_id, SpecUpdate(test_scenarios=scenarios)
+            command.spec_id,
+            actor.actor_id,
+            PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
+            requirement_lint_writer=RequirementLintWriter.STRUCTURED_CRUD,
         )
         await commit(uow)
         return McpAddTestScenarioResult(
@@ -1881,7 +1923,7 @@ class McpUpdateTestScenarioCommand:
         given: str,
         when: str,
         then: str,
-        scenario_type: str,
+        scenario_type: ScenarioType | None,
         linked_criteria_tokens: list | None,
         notes: str,
         clear_fields: list | None,
@@ -1914,6 +1956,15 @@ class McpUpdateTestScenarioUseCase:
     async def execute(
         self, command: McpUpdateTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateTestScenarioResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.tests.edit",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=actor.board_id,
+        )
         service = uow.services.specs
         await _require_actor_board_scenario_spec(service, command.spec_id, actor)
         result = await service.update_test_scenario(
@@ -1924,7 +1975,7 @@ class McpUpdateTestScenarioUseCase:
             given=command.given or None,
             when=command.when or None,
             then=command.then or None,
-            scenario_type=command.scenario_type or None,
+            scenario_type=command.scenario_type,
             linked_criteria=command.linked_criteria_tokens,
             notes=command.notes or None,
             clear=command.clear_fields,
@@ -1956,6 +2007,15 @@ class McpDeleteTestScenarioUseCase:
     async def execute(
         self, command: McpDeleteTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteTestScenarioResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.tests.delete",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=actor.board_id,
+        )
         service = uow.services.specs
         await _require_actor_board_scenario_spec(service, command.spec_id, actor)
         result = await service.delete_test_scenario(

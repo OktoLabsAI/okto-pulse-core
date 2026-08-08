@@ -21,6 +21,11 @@ from okto_pulse.core.application.use_cases.base import (
     CommandValidationError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import entity_state
 from okto_pulse.core.application.use_cases.spec_crud import (
     _require_actor_board_spec,
 )
@@ -107,6 +112,18 @@ class SubmitSpecValidationUseCase:
             uow, command.spec_id, actor, write=True
         )
         command.validate()
+        state = entity_state(spec)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.validation.submit",
+                legacy_operation="specs:evaluate",
+                entity="spec" if state is not None else None,
+                state=state,
+            ),
+            uow=uow,
+            board_id=spec.board_id,
+        )
         # MCP supplies the resolved agent name (actor.actor_name); REST leaves it
         # None and we resolve it here — preserving each surface's reviewer_name.
         reviewer_name = actor.actor_name or await _resolve_reviewer_name(

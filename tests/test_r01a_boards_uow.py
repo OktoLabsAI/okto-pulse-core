@@ -24,9 +24,11 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import boards as boards_api
 from okto_pulse.community.api.boards import router as boards_router
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import require_principal
+from okto_pulse.core.domain.permissions import PERMISSION_REGISTRY
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.ports.authentication import Principal
 
 USER = "r01a-fu7-s1-user"
 OTHER = "r01a-fu7-s1-other"
@@ -86,8 +88,12 @@ def client(tmp_path):
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[require_user] = lambda: USER
-    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=USER,
+        realm_id=LOCAL_REALM_ID,
+        actor_kind="human",
+        claims={"permissions": PERMISSION_REGISTRY},
+    )
     try:
         yield TestClient(app)
     finally:
@@ -333,7 +339,12 @@ async def test_delete_board_commits_relational_erasure_before_external_stores(
     monkeypatch.setattr(boards_crud, "_require_owned_board", _require_owned)
     await DeleteBoardUseCase().execute(
         DeleteBoardCommand("board-strict-erasure"),
-        actor=ActorContext("owner", "rest"),
+        actor=ActorContext(
+            "owner",
+            "rest",
+            board_id="board-strict-erasure",
+            permissions=["board.read"],
+        ),
         uow=_Uow(),
     )
 
@@ -341,9 +352,10 @@ async def test_delete_board_commits_relational_erasure_before_external_stores(
         ("authorize", "board-strict-erasure", "owner"),
         ("create_erasure_scope", "board-strict-erasure", "owner"),
         "enter_erasure_scope",
+        ("stage_relational_erasure", "board-strict-erasure", "owner"),
+        "ensure_lease",
         ("delete_source", "board-strict-erasure", "owner"),
         "synchronize",
-        ("stage_relational_erasure", "board-strict-erasure", "owner"),
         "ensure_lease",
         "commit",
         "ensure_lease",
@@ -421,7 +433,12 @@ async def test_delete_board_relational_erasure_failure_skips_commit_and_physical
     with pytest.raises(RuntimeError, match="relational erasure failed"):
         await DeleteBoardUseCase().execute(
             DeleteBoardCommand("board-strict-erasure"),
-            actor=ActorContext("owner", "rest"),
+            actor=ActorContext(
+                "owner",
+                "rest",
+                board_id="board-strict-erasure",
+                permissions=["board.read"],
+            ),
             uow=_Uow(),
         )
 
@@ -429,8 +446,6 @@ async def test_delete_board_relational_erasure_failure_skips_commit_and_physical
         "authorize",
         "create_erasure_scope",
         "enter_erasure_scope",
-        "delete_source",
-        "synchronize",
         "stage_relational_erasure",
         "exit_erasure_scope",
     ]
@@ -505,7 +520,12 @@ async def test_delete_board_external_failure_occurs_only_after_source_commit(
     with pytest.raises(RuntimeError, match="external purge failed"):
         await DeleteBoardUseCase().execute(
             DeleteBoardCommand("board-external-failure"),
-            actor=ActorContext("owner", "rest"),
+            actor=ActorContext(
+                "owner",
+                "rest",
+                board_id="board-external-failure",
+                permissions=["board.read"],
+            ),
             uow=_Uow(),
         )
 
@@ -574,7 +594,12 @@ async def test_delete_board_resumes_durable_erasure_after_source_is_absent(
     monkeypatch.setattr(boards_crud, "_require_owned_board", _unexpected_authorize)
     await DeleteBoardUseCase().execute(
         DeleteBoardCommand("board-resume-erasure"),
-        actor=ActorContext("owner", "rest"),
+        actor=ActorContext(
+            "owner",
+            "rest",
+            board_id="board-resume-erasure",
+            permissions=["board.read"],
+        ),
         uow=_Uow(),
     )
 
@@ -688,7 +713,12 @@ async def test_delete_board_cancellation_drains_terminal_erasure(
     request = asyncio.create_task(
         DeleteBoardUseCase().execute(
             DeleteBoardCommand("board-cancel-terminal"),
-            actor=ActorContext("owner", "rest"),
+            actor=ActorContext(
+                "owner",
+                "rest",
+                board_id="board-cancel-terminal",
+                permissions=["board.read"],
+            ),
             uow=_Uow(),
         )
     )

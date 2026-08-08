@@ -62,6 +62,48 @@ STORAGE_BYPASS_OCCURRENCE_ALLOWLIST: dict[str, dict[str, str]] = {
         "reason": "Bundled payload-budget profile reader; not user content ingestion.",
         "removal_criteria": "Inject immutable payload-budget profiles through MCP composition.",
     },
+    "02ac168c606d79cbebd75305ba2c707a24dde2cf908f555ea5a98522bb199bd3": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time resource-manifest reader for the bundled MCP instruction; "
+            "not user-supplied content ingestion."
+        ),
+        "removal_criteria": (
+            "Inject the canonical instruction content into resource-manifest generation."
+        ),
+    },
+    "a0469bcdc2cc76e495a49ca4a0703b22013bf1ddf4bd7726ea4d787fdc4f222c": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time generated resource-manifest writer; not runtime content ingestion."
+        ),
+        "removal_criteria": "Move resource-manifest regeneration to an external build command.",
+    },
+    "795dda49fae0a18cf4a3fac982a50400ca1ffa5e08c82f1520d24640b70df4e4": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time checked-in resource-manifest verifier; not runtime content ingestion."
+        ),
+        "removal_criteria": (
+            "Move checked-in resource-manifest verification to an external build command."
+        ),
+    },
+    "81c1437bc415d2264a0020575f87cac22cdd06bd28fcfaf84d315aec2046ef90": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time generated tool-manifest writer; not runtime content ingestion."
+        ),
+        "removal_criteria": "Move tool-manifest regeneration to an external build command.",
+    },
+    "1781f560053ff66823af2075d0f7bda0b6d7f4d64a6dc8046b0b831a34c88b36": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time checked-in tool-manifest verifier; not runtime content ingestion."
+        ),
+        "removal_criteria": (
+            "Move checked-in tool-manifest verification to an external build command."
+        ),
+    },
 }
 
 

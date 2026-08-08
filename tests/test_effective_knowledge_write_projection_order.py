@@ -11,6 +11,7 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
 )
+from okto_pulse.core.domain.enums import CardStatus, SpecStatus
 
 
 _CASES = (
@@ -84,7 +85,13 @@ async def test_commit_precedes_refetch_and_effective_knowledge_projection(
     target_type: str,
 ) -> None:
     events: list[str] = []
-    entity = SimpleNamespace(id="entity-1", board_id="board-1")
+    current_status = (
+        CardStatus.NOT_STARTED if target_type == "card" else SpecStatus.DRAFT
+    )
+    target_status = CardStatus.STARTED if target_type == "card" else SpecStatus.REVIEW
+    entity = SimpleNamespace(
+        id="entity-1", board_id="board-1", status=current_status
+    )
 
     async def guard(*_args, **_kwargs):
         events.append("guard")
@@ -117,7 +124,13 @@ async def test_commit_precedes_refetch_and_effective_knowledge_projection(
     monkeypatch.setattr(module, guard_name, guard)
     monkeypatch.setattr(module, "project_effective_knowledge", project)
 
-    data = SimpleNamespace(model_fields_set=set())
+    async def authorize(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(module, "require_all", authorize, raising=False)
+    monkeypatch.setattr(module, "require_authorization", authorize, raising=False)
+
+    data = SimpleNamespace(model_fields_set=set(), status=target_status)
     result = await use_case_type().execute(
         command_type("entity-1", data),
         actor=ActorContext("actor-1", "rest"),
@@ -156,7 +169,13 @@ async def test_missing_post_commit_refetch_is_explicit_and_not_projected(
     target_type: str,
 ) -> None:
     events: list[str] = []
-    entity = SimpleNamespace(id="entity-1", board_id="board-1")
+    current_status = (
+        CardStatus.NOT_STARTED if target_type == "card" else SpecStatus.DRAFT
+    )
+    target_status = CardStatus.STARTED if target_type == "card" else SpecStatus.REVIEW
+    entity = SimpleNamespace(
+        id="entity-1", board_id="board-1", status=current_status
+    )
 
     async def guard(*_args, **_kwargs):
         events.append("guard")
@@ -190,9 +209,18 @@ async def test_missing_post_commit_refetch_is_explicit_and_not_projected(
         unexpected_projection,
     )
 
+    async def authorize(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(module, "require_all", authorize, raising=False)
+    monkeypatch.setattr(module, "require_authorization", authorize, raising=False)
+
     with pytest.raises(EntityNotFoundError) as raised:
         await use_case_type().execute(
-            command_type("entity-1", SimpleNamespace(model_fields_set=set())),
+            command_type(
+                "entity-1",
+                SimpleNamespace(model_fields_set=set(), status=target_status),
+            ),
             actor=ActorContext("actor-1", "rest"),
             uow=uow,
         )

@@ -322,17 +322,18 @@ async def test_auth_and_permission_denial_envelopes_are_preserved(db_factory) ->
         ),
     ):
         denied = json.loads(await mcp_server.okto_pulse_update_my_profile.fn())
-        assert denied == {"error": "Permission denied: requires 'self:update'"}
+        assert denied == {"error": "Permission denied: requires 'profile.update'"}
 
     with patch.object(
         mcp_server,
         "_get_agent_ctx",
         AsyncMock(return_value=_ctx("board-no-read", permissions=[])),
     ):
-        denied_agents = json.loads(
-            await mcp_server.okto_pulse_list_agents.fn(board_id="board-no-read")
-        )
-        assert denied_agents == {"error": "Permission denied: requires 'board:read'"}
+            denied_agents = json.loads(
+                await mcp_server.okto_pulse_list_agents.fn(board_id="board-no-read")
+            )
+            denial_detail = json.loads(denied_agents["error"])
+            assert denial_detail["required_permission"] == "agent.entity.read"
 
 
 @pytest.mark.asyncio

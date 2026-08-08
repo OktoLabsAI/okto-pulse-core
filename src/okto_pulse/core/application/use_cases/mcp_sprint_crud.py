@@ -27,6 +27,14 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    sprint_requirement,
+)
 
 
 # --- create (skip_ownership; service only flushes -> use-case-commit) ---------
@@ -67,6 +75,16 @@ class McpCreateSprintUseCase:
         spec = await uow.services.specs.get_spec(command.data.spec_id)
         if not spec or spec.board_id != command.board_id:
             return McpCreateSprintResult(None)
+
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.entity.create",
+                legacy_operation="specs:create",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         sprint = await uow.services.sprints.create_sprint(
             command.board_id, actor.actor_id, command.data, skip_ownership_check=True
@@ -441,6 +459,17 @@ class McpDeleteSprintEvaluationUseCase:
         if not sprint or sprint.board_id != actor.board_id:
             return McpDeleteSprintEvaluationResult("sprint_not_found")
 
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.evaluations.delete",
+                state=entity_state(sprint),
+                legacy_operation="specs:evaluate",
+            ),
+            uow=uow,
+            board_id=sprint.board_id,
+        )
+
         status = await uow.services.sprints.delete_evaluation(
             command.sprint_id, actor.actor_id, command.evaluation_id
         )
@@ -498,6 +527,17 @@ class McpAnswerSprintQuestionUseCase:
         ):
             return McpAnswerSprintQuestionResult(qa_not_found=True)
 
+        await require_authorization(
+            actor,
+            sprint_requirement(
+                "sprint.qa.answer",
+                state=entity_state(sprint),
+                legacy_operation="qa:answer",
+            ),
+            uow=uow,
+            board_id=sprint.board_id,
+        )
+
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.answer,
@@ -532,12 +572,22 @@ class McpDeleteSprintQuestionUseCase:
     """Delete a sprint Q&A item + atomic ``sprint_question_deleted`` activity log. A
     falsy delete short-circuits BEFORE the log and BEFORE the commit -> ``qa_not_found``
     -> "Q&A item not found". On success the log + commit run ATOMICALLY in the SAME
-    transaction (``BoardService._log_activity``). The ``QA_DELETE`` permission gate
-    stays in the adapter (present here, unlike the answer tool)."""
+    transaction (``BoardService._log_activity``). Authorization is owned by Core so
+    every inbound adapter evaluates the same canonical operation."""
 
     async def execute(
         self, command: McpDeleteSprintQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteSprintQuestionResult:
+
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "sprint.qa.delete",
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         qa = await uow.services.sprint_qa.get_question(command.qa_id)
         if not qa or qa.sprint_id != command.sprint_id:

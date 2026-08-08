@@ -65,7 +65,10 @@ from okto_pulse.core.kg.materialization_health import (
 )
 from okto_pulse.core.kg.scoring import get_contradict_warn_count
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.ports.kg_health import get_kg_health_read_port
+from okto_pulse.core.ports.kg_health import (
+    KGHealthQueueSnapshot,
+    get_kg_health_read_port,
+)
 from okto_pulse.core.ports.materialization_health import (
     get_materialization_evidence_port,
 )
@@ -119,6 +122,9 @@ DEFAULT_SCORE_RATIO_ALARM_THRESHOLD = 0.7
 # active transaction.  The read therefore runs in its own cancellation-safe
 # scope; the caller's session must never inherit that cancelled transaction.
 _DIGEST_OVERLAY_TIMEOUT_S = 0.1
+_POLICY_CONSTRAINT_PROJECTION_DOMAIN = "policy_constraint_projection"
+_POLICY_CONSTRAINT_PROJECTION_DLQ = "policy_constraint_projection_dlq"
+_POLICY_CONSTRAINT_PROJECTION_STUCK_DEFAULT_S = 300
 
 _SENSITIVE_ERROR_RE = re.compile(
     r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.py\b|"
@@ -164,6 +170,201 @@ def _as_utc(value: datetime | None) -> datetime | None:
 def _iso(value: datetime | None) -> str | None:
     normalized = _as_utc(value)
     return normalized.isoformat() if normalized is not None else None
+
+
+def _age_seconds(value: datetime | None, now: datetime) -> float:
+    normalized = _as_utc(value)
+    if normalized is None:
+        return 0.0
+    return max(0.0, (now - normalized).total_seconds())
+
+
+def _policy_constraint_projection_stuck_after_seconds() -> int:
+    try:
+        value = int(get_settings().kg_queue_stuck_age_seconds)
+    except Exception:  # pragma: no cover - defensive settings degradation
+        value = _POLICY_CONSTRAINT_PROJECTION_STUCK_DEFAULT_S
+    return max(1, value)
+
+
+def _build_policy_constraint_projection_health(
+    snapshot: KGHealthQueueSnapshot,
+    *,
+    now: datetime,
+    stuck_after_seconds: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    """Project policy delivery health without contaminating legacy queues.
+
+    The edition owns the board-scoped SQL aggregation.  Core owns the stable
+    classification and public payload.  No handler error text crosses this
+    boundary: counts and bounded timestamps are sufficient for health/readiness.
+    """
+
+    pending = max(
+        0,
+        int(snapshot.policy_constraint_projection_pending_count),
+    )
+    processing = max(
+        0,
+        int(snapshot.policy_constraint_projection_processing_count),
+    )
+    retry_scheduled = max(
+        0,
+        int(snapshot.policy_constraint_projection_retry_scheduled_count),
+    )
+    dlq = max(0, int(snapshot.policy_constraint_projection_dlq_count))
+    max_attempts = max(
+        0,
+        int(snapshot.policy_constraint_projection_max_attempt_count),
+    )
+    retry_due_at = _as_utc(
+        snapshot.policy_constraint_projection_oldest_retry_due_at
+    )
+    retry_overdue_age_seconds = (
+        _age_seconds(retry_due_at, now)
+        if retry_due_at is not None and retry_due_at <= _as_utc(now)
+        else 0.0
+    )
+    retry_state_unavailable = retry_scheduled > 0 and retry_due_at is None
+    retry_stuck = retry_scheduled > 0 and (
+        retry_state_unavailable
+        or retry_overdue_age_seconds >= max(1, int(stuck_after_seconds))
+    )
+
+    if dlq:
+        classification = "dead_letter"
+        severity = "warning"
+    elif retry_stuck:
+        classification = "retry_stuck"
+        severity = "warning"
+    elif retry_scheduled:
+        classification = "retry_scheduled"
+        severity = "info"
+    elif processing:
+        classification = "processing"
+        severity = "info"
+    elif pending:
+        classification = "pending"
+        severity = "info"
+    else:
+        classification = "idle"
+        severity = "info"
+
+    timestamps = {
+        "oldest_pending_at": _iso(
+            snapshot.policy_constraint_projection_oldest_pending_at
+        ),
+        "oldest_processing_at": _iso(
+            snapshot.policy_constraint_projection_oldest_processing_at
+        ),
+        "oldest_retry_scheduled_at": _iso(
+            snapshot.policy_constraint_projection_oldest_retry_scheduled_at
+        ),
+        "oldest_retry_due_at": _iso(retry_due_at),
+        "oldest_dlq_at": _iso(
+            snapshot.policy_constraint_projection_oldest_dlq_at
+        ),
+    }
+    domain = {
+        "domain": _POLICY_CONSTRAINT_PROJECTION_DOMAIN,
+        "semantics": "policy_constraint_event_delivery",
+        "handler_name": "PolicyConstraintProjectionHandler",
+        "pending_count": pending,
+        "processing_count": processing,
+        "retry_scheduled_count": retry_scheduled,
+        "dlq_count": dlq,
+        "active_count": pending + processing + retry_scheduled,
+        "max_attempt_count": max_attempts,
+        **timestamps,
+        "oldest_pending_age_seconds": round(
+            _age_seconds(
+                snapshot.policy_constraint_projection_oldest_pending_at,
+                now,
+            ),
+            3,
+        ),
+        "oldest_processing_age_seconds": round(
+            _age_seconds(
+                snapshot.policy_constraint_projection_oldest_processing_at,
+                now,
+            ),
+            3,
+        ),
+        "oldest_retry_scheduled_age_seconds": round(
+            _age_seconds(
+                snapshot.policy_constraint_projection_oldest_retry_scheduled_at,
+                now,
+            ),
+            3,
+        ),
+        "retry_overdue_age_seconds": round(retry_overdue_age_seconds, 3),
+        "oldest_dlq_age_seconds": round(
+            _age_seconds(
+                snapshot.policy_constraint_projection_oldest_dlq_at,
+                now,
+            ),
+            3,
+        ),
+        "stuck_after_seconds": max(1, int(stuck_after_seconds)),
+        "classification": classification,
+        "severity": severity,
+        "drill_down_tool": "okto_pulse_kg_health_readiness",
+        "drill_down_signal": _POLICY_CONSTRAINT_PROJECTION_DLQ,
+    }
+
+    issues: list[dict[str, Any]] = []
+    if retry_scheduled:
+        issues.append(
+            {
+                "code": (
+                    "policy_constraint_projection_retry_stuck"
+                    if retry_stuck
+                    else "policy_constraint_projection_retry_scheduled"
+                ),
+                "component": _POLICY_CONSTRAINT_PROJECTION_DOMAIN,
+                "severity": "warning" if retry_stuck else "info",
+                "reason": (
+                    "retry_due_state_unavailable"
+                    if retry_state_unavailable
+                    else (
+                        "retry_overdue_beyond_stuck_threshold"
+                        if retry_stuck
+                        else "retry_backoff_scheduled"
+                    )
+                ),
+                "description": (
+                    f"{retry_scheduled} policy-constraint projection "
+                    + (
+                        "retry row(s) are stuck or cannot prove a due time."
+                        if retry_stuck
+                        else "retry row(s) are within the normal delivery policy."
+                    )
+                ),
+                "operator_action": (
+                    "inspect_policy_constraint_projection_worker"
+                    if retry_stuck
+                    else "wait_for_policy_constraint_projection_retry"
+                ),
+                "drill_down_tool": "okto_pulse_kg_health_readiness",
+            }
+        )
+    if dlq:
+        issues.append(
+            {
+                "code": _POLICY_CONSTRAINT_PROJECTION_DLQ,
+                "component": _POLICY_CONSTRAINT_PROJECTION_DOMAIN,
+                "severity": "warning",
+                "reason": "policy_constraint_projection_dlq_count_gt_zero",
+                "description": (
+                    f"{dlq} terminal policy-constraint projection delivery "
+                    "row(s) require diagnosis. This domain is separate from "
+                    "consolidation and global-outbox dead letters."
+                ),
+                "operator_action": "inspect_policy_constraint_projection_dlq",
+                "drill_down_tool": "okto_pulse_kg_health_readiness",
+            }
+        )
+    return domain, issues, dlq > 0
 
 
 def safe_health_error(
@@ -1608,6 +1809,52 @@ def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
     return base
 
 
+def _unavailable_native_runtime_budget(reason: str | None = None) -> dict[str, Any]:
+    """Return the stable fail-closed shape for a missing budget capability."""
+
+    return {
+        "source": "runtime_capability",
+        "status": "unavailable",
+        "requested": {},
+        "normalized": {},
+        "effective": {},
+        "sources": {},
+        "process_envelope": {},
+        "is_direct_memory_telemetry": False,
+        "description": (
+            "Derived native graph runtime budget from configured limits and "
+            "edition operational caps."
+        ),
+        "tooltip": (
+            "This is a deterministic, non-live capacity envelope; it is not "
+            "process RSS or direct allocator telemetry."
+        ),
+        "unavailable_reason": reason,
+    }
+
+
+def _build_native_runtime_budget() -> dict[str, Any]:
+    """Serialize the edition-owned native budget without opening graph storage."""
+
+    try:
+        snapshot = get_kg_registry().graph_runtime_store.budget_snapshot()
+    except Exception:
+        return _unavailable_native_runtime_budget("budget_snapshot_unavailable")
+    return {
+        "source": snapshot.source,
+        "status": snapshot.status,
+        "requested": dict(snapshot.requested),
+        "normalized": dict(snapshot.normalized),
+        "effective": dict(snapshot.effective),
+        "sources": dict(snapshot.sources),
+        "process_envelope": dict(snapshot.process_envelope),
+        "is_direct_memory_telemetry": False,
+        "description": snapshot.description,
+        "tooltip": snapshot.tooltip,
+        "unavailable_reason": snapshot.unavailable_reason,
+    }
+
+
 def _probe_board_graph_telemetry(
     *,
     board_id: str,
@@ -2475,6 +2722,7 @@ async def get_kg_health(
                 refresh_in_progress=False,
             )
 
+    native_runtime_budget = _build_native_runtime_budget()
     probe_diagnostics = {
         _GRAPH_HEALTH_PROBE: graph_probe.diagnostic(),
         _ARTIFACT_HEALTH_PROBE: artifact_probe.diagnostic(),
@@ -2510,6 +2758,10 @@ async def get_kg_health(
             "reason": graph_snapshot["storage_footprint_proxy"].get(
                 "unavailable_reason"
             ),
+        },
+        "native_runtime_budget": {
+            "status": native_runtime_budget.get("status", "unavailable"),
+            "reason": native_runtime_budget.get("unavailable_reason"),
         },
         "layer_counts": {
             "status": graph_snapshot["kg_layer_counts"].get("status", "unavailable"),
@@ -3360,13 +3612,46 @@ async def get_kg_health(
             health_diagnostics["primary_health_cause"] = f"active_queue_{_aq_class}"
             health_diagnostics["operator_action"] = "inspect_active_queue"
 
+    (
+        policy_constraint_projection,
+        policy_constraint_projection_issues,
+        policy_constraint_projection_has_dlq,
+    ) = _build_policy_constraint_projection_health(
+        relational,
+        now=now,
+        stuck_after_seconds=(
+            _policy_constraint_projection_stuck_after_seconds()
+        ),
+    )
+    health_diagnostics["health_issues"].extend(
+        policy_constraint_projection_issues
+    )
+    _policy_projection_classification = policy_constraint_projection[
+        "classification"
+    ]
+    if (
+        _policy_projection_classification in {"dead_letter", "retry_stuck"}
+        and health_diagnostics["primary_health_cause"] == "none"
+    ):
+        health_diagnostics["primary_health_cause"] = (
+            _POLICY_CONSTRAINT_PROJECTION_DLQ
+            if policy_constraint_projection_has_dlq
+            else "policy_constraint_projection_retry_stuck"
+        )
+        health_diagnostics["operator_action"] = (
+            "inspect_policy_constraint_projection_dlq"
+            if policy_constraint_projection_has_dlq
+            else "inspect_policy_constraint_projection_worker"
+        )
+
     # Explicit, deduplicated separation of operational domains. Terminal global
     # discovery delivery failures are not consolidation DLQ and never inflate
     # the active retry-window count.
     # domains so a caller never conflates them — each is its OWN counter + drill-down:
     #   active_queue   = transient operational work (transient|stuck|backpressure),
     #   dead_letter    = TERMINAL consolidation failures (DLQ),
-    #   canonical_debt = semantic canonicality pendency (retry/cognitive promotion).
+    #   canonical_debt = semantic canonicality pendency (retry/cognitive promotion),
+    #   policy_constraint_projection = isolated policy event delivery.
     # Reuses the existing counts (no new store); DLQ is NEVER summed into the active
     # queue and canonical debt is NEVER reported as DLQ.
     operational_domains = {
@@ -3399,6 +3684,9 @@ async def get_kg_health(
             "count": int(canonical_debt.get("open_count") or 0),
             "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
         },
+        _POLICY_CONSTRAINT_PROJECTION_DOMAIN: (
+            policy_constraint_projection
+        ),
     }
 
     # SPEC4 (card 2e913ac3): structured, bounded recovery root-cause block.
@@ -3458,6 +3746,17 @@ async def get_kg_health(
         if "drilldown.source_enumeration.unavailable" not in combined_reasons:
             combined_reasons.append("drilldown.source_enumeration.unavailable")
         classification_reason = ";".join(combined_reasons)
+    if _policy_projection_classification in {"dead_letter", "retry_stuck"}:
+        if _STATE_SEVERITY[overall_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
+            overall_state = HealthState.AT_RISK
+        policy_reason = (
+            "policy_constraint_projection:dlq"
+            if policy_constraint_projection_has_dlq
+            else "policy_constraint_projection:retry_stuck"
+        )
+        if policy_reason not in combined_reasons:
+            combined_reasons.append(policy_reason)
+        classification_reason = ";".join(combined_reasons)
 
     payload = {
         # --- KG-01 REST contract api_3ed9037f ---
@@ -3485,8 +3784,8 @@ async def get_kg_health(
         # R6-IMP2: active operational-queue drill-down (sources/worker_mode/
         # classification). Read-only; DLQ/canonical debt excluded.
         "active_queue": active_queue,
-        # R6-IMP5: deduplicated 3-domain separation (active_queue / dead_letter /
-        # canonical_debt), each with its own count + drill-down tool.
+        # R6-IMP5 + B14 OR4: operational domains remain disjoint. Policy
+        # projection counts never alter the established queue/DLQ scalars.
         "operational_domains": operational_domains,
         # SPEC4 (card 2e913ac3): structured bounded recovery root-cause —
         # distinguishes wal_or_commit / empty_after_materialized_history /
@@ -3526,6 +3825,7 @@ async def get_kg_health(
         # --- KG-HS.1 additive scheduler/footprint clarity surface ---
         "decay_scheduler_diagnostics": decay_scheduler_diagnostics,
         "storage_footprint_proxy": storage_footprint_proxy,
+        "native_runtime_budget": native_runtime_budget,
         "orphan_integrity": orphan_integrity,
         "kg_layer_counts": kg_layer_counts,
         "canonical_debt": canonical_debt,

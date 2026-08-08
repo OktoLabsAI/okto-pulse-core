@@ -3,7 +3,24 @@
 Changeset per version, newest first.
 
 
-### 0.3.0 — current
+### 0.3.1 — current
+
+This is the **quality-governance release**: receipt-backed ambiguity assessments
+with pinpoint findings now cover ideations and refinements, refinements gain an
+append-only research decision ledger, Specs gain curated checklist executions,
+and all SK-A agent surfaces are governed by explicit permissions and frozen
+resource/tool manifests.
+
+- Refinement completion now uses the same configurable ambiguity gate model as
+  ideation, including a human-only audited skip.
+- Test-scenario types are closed across domain and MCP; `negative` is a supported
+  first-class type.
+- Versioned guideline policy adds 20 closed MCP commands for immutable
+  revisions, impact evidence, compliance receipts and governed waivers.
+- The installed MCP contract is frozen at 312 tools (304 canonical and 8 aliases).
+
+
+### 0.3.0
 
 **90 commits over `v0.2.6`** (`feat` 35 · `fix` 19 · `refactor` 9 · `test` 8 · `docs` 3 · `chore` 3 · 13 unprefixed).
 This is the **hexagonal decontamination release**: the core stopped owning any concrete

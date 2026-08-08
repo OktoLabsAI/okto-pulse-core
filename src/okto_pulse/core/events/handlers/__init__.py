@@ -15,6 +15,9 @@ from okto_pulse.core.events.handlers.cancellation_decay import (  # noqa: F401
 from okto_pulse.core.events.handlers.cognitive_extraction import (  # noqa: F401
     CognitiveExtractionHandler,
 )
+from okto_pulse.core.events.handlers.checklist_binding_audit import (  # noqa: F401
+    ChecklistBindingAuditHandler,
+)
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (  # noqa: F401
     ConsolidationEnqueuer,
 )
@@ -23,6 +26,9 @@ from okto_pulse.core.events.handlers.discovery_selector_cache import (  # noqa: 
 )
 from okto_pulse.core.events.handlers.kg_hit_recompute import (  # noqa: F401
     KGHitRecomputeHandler,
+)
+from okto_pulse.core.events.handlers.policy_constraint_projection import (  # noqa: F401
+    PolicyConstraintProjectionHandler,
 )
 from okto_pulse.core.events.handlers.card_boost_recompute import (  # noqa: F401
     CardPriorityChangedHandler,
@@ -39,9 +45,11 @@ __all__ = [
     "SourceArchiveLifecycleHandler",
     "SourceCancellationLifecycleHandler",
     "CognitiveExtractionHandler",
+    "ChecklistBindingAuditHandler",
     "ConsolidationEnqueuer",
     "DiscoverySelectorCacheInvalidationHandler",
     "KGHitRecomputeHandler",
+    "PolicyConstraintProjectionHandler",
     "CardPriorityChangedHandler",
     "CardSeverityChangedHandler",
     "KGDailyTickHandler",

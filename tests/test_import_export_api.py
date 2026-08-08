@@ -1,7 +1,8 @@
-"""ITEM 19 — JSON import/export for Guidelines, Design Systems, Presets and
-Default Board Configs (schema_version-1 envelope, REST → use case → UoW).
+"""ITEM 19 — JSON import/export for admin catalogs (REST → use case → UoW).
 
-Per family: ROUNDTRIP (create via the normal API → export → import into a
+Generic catalogs use schema v1. Guidelines use the governed lossless V3
+codec, while still accepting explicitly bounded legacy envelopes. Per family:
+ROUNDTRIP (create via the normal API → export → import into a
 clean tenant/board → equivalent objects re-created through the normal creation
 path), dry-run mutates nothing, and an invalid item → 400 with NO mutation
 (all-or-nothing per request).
@@ -28,6 +29,7 @@ from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.community.api.presets import router as presets_router
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import Board
 
@@ -38,7 +40,7 @@ def _client(
     user_id: str,
     *,
     roles: tuple[str, ...] = ("admin",),
-    permissions: dict | None = None,
+    permissions: object | None = None,
 ) -> TestClient:
     app = FastAPI()
     # Same registration order as api/router.py: default_board_config BEFORE
@@ -63,8 +65,14 @@ def _client(
     app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[require_user] = lambda: user_id
     claims: dict = {"roles": list(roles)}
+    # Existing roundtrip cases represent an unrestricted local administrator.
+    # Explicit permission documents below still exercise capability-only
+    # access.  The wildcard keeps the compatibility guideline endpoints
+    # authorized after SK-B closes their previously implicit write access.
     if permissions is not None:
         claims["permissions"] = permissions
+    elif "admin" in roles:
+        claims["permissions"] = registered_permission_flags()
     app.dependency_overrides[require_principal] = lambda: Principal(
         subject=user_id,
         realm_id="local",
@@ -98,15 +106,14 @@ def _uid(prefix: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_guidelines_roundtrip_export_import_clean_board():
-    user_a = _uid("impexp-guide-a")
-    user_b = _uid("impexp-guide-b")
-    client_a = _client(user_a)
-    board_a = await _seed_board(user_a)
+async def test_guidelines_generic_export_delegates_to_lossless_v3():
+    user = _uid("impexp-guide-v3")
+    client = _client(user)
+    board = await _seed_board(user)
 
     global_title = _uid("Global rule")
     inline_title = _uid("Inline rule")
-    created_global = client_a.post(
+    created_global = client.post(
         f"{PREFIX}/guidelines",
         json={
             "title": global_title,
@@ -116,88 +123,51 @@ async def test_guidelines_roundtrip_export_import_clean_board():
         },
     )
     assert created_global.status_code == 201, created_global.text
-    created_inline = client_a.post(
-        f"{PREFIX}/boards/{board_a}/guidelines",
+    created_inline = client.post(
+        f"{PREFIX}/boards/{board}/guidelines",
         json={"title": inline_title, "content": "Board-only rule.", "tags": ["board"]},
     )
     assert created_inline.status_code == 201, created_inline.text
 
-    exported = client_a.get(f"{PREFIX}/guidelines/export", params={"board_id": board_a})
+    exported = client.get(f"{PREFIX}/guidelines/export", params={"board_id": board})
     assert exported.status_code == 200, exported.text
     envelope = exported.json()
-    assert envelope["schema_version"] == "1"
+    assert envelope["contract_version"] == "guideline-export/v3"
+    assert envelope["schema_version"] == "3"
     assert envelope["kind"] == "guidelines"
     assert envelope["exported_at"]
-    items = envelope["items"]
-    assert {(i["title"], i["scope"]) for i in items} == {
+    assert "items" not in envelope
+    aggregates = envelope["guidelines"]
+    assert {
+        (item["revisions"][-1]["title"], item["identity"]["scope"])
+        for item in aggregates
+    } == {
         (global_title, "global"),
         (inline_title, "inline"),
     }
-    # Server-generated fields must NOT leak into the export.
-    for item in items:
-        assert set(item) == {"title", "content", "tags", "scope", "board_id"}
-
-    # Import into a CLEAN tenant (different user) and a CLEAN board.
-    client_b = _client(user_b)
-    board_b = await _seed_board(user_b)
-    imported = client_b.post(
-        f"{PREFIX}/guidelines/import",
-        params={"board_id": board_b},
-        json=envelope,
-    )
-    assert imported.status_code == 200, imported.text
-    body = imported.json()
-    assert body == {"created": 2, "skipped": [], "errors": [], "dry_run": False}
-
-    globals_b = client_b.get(f"{PREFIX}/guidelines").json()
-    match = [g for g in globals_b if g["title"] == global_title]
-    assert len(match) == 1
-    assert match[0]["content"] == "Review API contracts."
-    assert match[0]["tags"] == ["review", "api"]
-    assert match[0]["scope"] == "global"
-
-    board_b_items = client_b.get(f"{PREFIX}/boards/{board_b}/guidelines").json()
-    inline_match = [e for e in board_b_items if e["guideline"]["title"] == inline_title]
-    assert len(inline_match) == 1
-    assert inline_match[0]["guideline"]["scope"] == "inline"
-    assert inline_match[0]["guideline"]["board_id"] == board_b
-
-    # Re-import: natural key (title within partition) → skipped duplicates.
-    again = client_b.post(
-        f"{PREFIX}/guidelines/import", params={"board_id": board_b}, json=envelope
-    )
-    assert again.status_code == 200, again.text
-    body = again.json()
-    assert body["created"] == 0
-    assert {s["reason"] for s in body["skipped"]} == {
-        "duplicate_global_title",
-        "duplicate_inline_title",
-    }
+    for aggregate in aggregates:
+        revision = aggregate["revisions"][-1]
+        assert "metrics" in revision
+        assert "revision_digest" in revision
 
 
 @pytest.mark.asyncio
-async def test_guidelines_import_dry_run_does_not_mutate():
+async def test_guidelines_legacy_v1_import_is_context_only_and_dry_run():
     user = _uid("impexp-guide-dry")
     client = _client(user)
     board = await _seed_board(user)
     envelope = {
         "schema_version": "1",
         "kind": "guidelines",
-        "exported_at": "2026-07-10T00:00:00+00:00",
+        "exported_at": "2026-07-10T00:00:00Z",
         "items": [
             {
                 "title": "Dry global",
                 "content": "c",
-                "tags": None,
+                "tags": ["legacy"],
                 "scope": "global",
-                "board_id": None,
-            },
-            {
-                "title": "Dry inline",
-                "content": "c",
-                "tags": None,
-                "scope": "inline",
-                "board_id": None,
+                "blocking": True,
+                "rules": [{"enforcement": "blocking", "code": "old.rule"}],
             },
         ],
     }
@@ -207,13 +177,18 @@ async def test_guidelines_import_dry_run_does_not_mutate():
         json=envelope,
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"created": 2, "skipped": [], "errors": [], "dry_run": True}
+    body = resp.json()
+    assert body["transaction_status"] == "dry_run"
+    assert body["created_count"] == 0
+    assert body["conflict_count"] == 0
+    assert body["overwritten_row_count"] == 0
+    assert body["dry_run"] is True
 
     assert client.get(f"{PREFIX}/guidelines").json() == []
     assert client.get(f"{PREFIX}/boards/{board}/guidelines").json() == []
 
 
-def test_guidelines_import_invalid_item_400_without_mutation():
+def test_guidelines_invalid_legacy_import_is_atomic_and_structured():
     user = _uid("impexp-guide-bad")
     client = _client(user)
 
@@ -228,24 +203,24 @@ def test_guidelines_import_invalid_item_400_without_mutation():
     resp = client.post(f"{PREFIX}/guidelines/import", json=envelope)
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
-    assert detail["created"] == 0
-    assert detail["errors"] and detail["errors"][0]["index"] == 1
+    assert detail["code"] == "validation_failed"
+    assert detail["next_action"] == "fix_input"
     # All-or-nothing: the valid item was NOT created either.
     assert client.get(f"{PREFIX}/guidelines").json() == []
 
-    # Envelope guards: wrong kind and wrong schema_version are rejected.
+    # Envelope guards remain closed and use the governed error contract.
     wrong_kind = client.post(
         f"{PREFIX}/guidelines/import",
         json={"schema_version": "1", "kind": "presets", "items": []},
     )
     assert wrong_kind.status_code == 400
-    assert wrong_kind.json()["detail"]["error"] == "invalid_envelope"
+    assert wrong_kind.json()["detail"]["code"] == "validation_failed"
     wrong_version = client.post(
         f"{PREFIX}/guidelines/import",
-        json={"schema_version": "2", "kind": "guidelines", "items": []},
+        json={"schema_version": "99", "kind": "guidelines", "items": []},
     )
     assert wrong_version.status_code == 400
-    assert wrong_version.json()["detail"]["error"] == "invalid_envelope"
+    assert wrong_version.json()["detail"]["code"] == "validation_failed"
 
 
 # ===========================================================================
@@ -285,6 +260,8 @@ def test_design_systems_roundtrip_single_and_bulk():
     assert single.json()["kind"] == "design_systems"
     assert single.json()["items"] == [
         {
+            "id": ds1_id,
+            "version": 1,
             "title": title_1,
             "scope": "global",
             "board_id": None,
@@ -300,7 +277,15 @@ def test_design_systems_roundtrip_single_and_bulk():
     mine = [i for i in envelope["items"] if i["title"] in {title_1, title_2}]
     assert len(mine) == 2
     for item in mine:
-        assert set(item) == {"title", "scope", "board_id", "payload", "status"}
+        assert set(item) == {
+            "id",
+            "version",
+            "title",
+            "scope",
+            "board_id",
+            "payload",
+            "status",
+        }
 
     # "Clean" the catalog of the originals, then import them back.
     assert client.delete(f"{PREFIX}/design-systems/{ds1_id}").status_code == 204
@@ -330,11 +315,12 @@ def test_design_systems_roundtrip_single_and_bulk():
     assert imported_detail.json()["payload"] == {"tokens": {"radius": 8}}
     assert imported_detail.json()["version"] == 1  # recreated via the normal path
 
-    # Re-import: (scope, board_id, title) natural key → skipped duplicates.
+    # Re-import: stable-id conflict creates a new version.
     again = client.post(f"{PREFIX}/design-systems/import", json=import_env)
     assert again.status_code == 200
     assert again.json()["created"] == 0
-    assert len(again.json()["skipped"]) == 2
+    assert again.json()["updated"] == 2
+    assert again.json()["skipped"] == []
 
 
 def test_design_systems_import_dry_run_and_invalid_item():
@@ -365,8 +351,8 @@ def test_design_systems_import_dry_run_and_invalid_item():
     }
     assert dry_title not in titles
 
-    # Second item hits the SERVICE creation validator (inline requires board):
-    # all-or-nothing → the valid first item must not persist.
+    # Inline provenance is accepted but normalized to global. A later invalid
+    # title still proves all-or-nothing rollback.
     valid_title = _uid("DS Valid")
     bad = client.post(
         f"{PREFIX}/design-systems/import",
@@ -375,7 +361,7 @@ def test_design_systems_import_dry_run_and_invalid_item():
             "kind": "design_systems",
             "items": [
                 {"title": valid_title, "scope": "global"},
-                {"title": "Inline missing board", "scope": "inline"},
+                {"title": "", "scope": "inline"},
             ],
         },
     )
@@ -383,9 +369,7 @@ def test_design_systems_import_dry_run_and_invalid_item():
     detail = bad.json()["detail"]
     assert detail["created"] == 0
     assert detail["errors"][0]["index"] == 1
-    assert (
-        detail["errors"][0]["detail"]["code"] == "design_system_inline_requires_board"
-    )
+    assert detail["errors"][0]["detail"]["code"] == "design_system_invalid_title"
     titles = {
         d["title"] for d in client.get(f"{PREFIX}/design-systems").json()["items"]
     }
@@ -410,7 +394,6 @@ def test_design_systems_import_dry_run_and_invalid_item():
 
 def test_presets_roundtrip_clean_tenant_and_duplicates():
     user_a = _uid("impexp-preset-a")
-    user_b = _uid("impexp-preset-b")
     client_a = _client(user_a)
 
     preset_name = _uid("Preset Custom")
@@ -428,41 +411,53 @@ def test_presets_roundtrip_clean_tenant_and_duplicates():
     mine = [i for i in envelope["items"] if i["name"] == preset_name]
     assert mine == [
         {
+            "id": created.json()["id"],
             "name": preset_name,
             "description": "exported preset",
             "flags": flags,
             "is_builtin": False,
+            "base_preset_id": None,
         }
     ]
 
-    # Same user re-import → duplicate name is skipped, nothing created.
+    single = client_a.get(f"{PREFIX}/presets/{created.json()['id']}/export")
+    assert single.status_code == 200, single.text
+    assert single.json()["items"] == mine
+
+    # Same id requires explicit confirmation and is not replaced by default.
     same = client_a.post(
         f"{PREFIX}/presets/import",
         json={"schema_version": "1", "kind": "presets", "items": mine},
     )
     assert same.status_code == 200, same.text
     assert same.json()["created"] == 0
-    assert same.json()["skipped"][0]["reason"] == "duplicate_name"
+    assert same.json()["skipped"][0]["reason"] == "replacement_requires_confirmation"
 
-    # Clean tenant (different user) → created as a NEW custom preset.
-    client_b = _client(user_b)
-    imported = client_b.post(
+    replacement = {
+        **mine[0],
+        "description": "replacement",
+        "flags": {"board": {"read": False}},
+    }
+    imported = client_a.post(
         f"{PREFIX}/presets/import",
-        json={"schema_version": "1", "kind": "presets", "items": mine},
+        params={"replace_existing": "true"},
+        json={"schema_version": "1", "kind": "presets", "items": [replacement]},
     )
     assert imported.status_code == 200, imported.text
     assert imported.json() == {
-        "created": 1,
+        "created": 0,
+        "replaced": 1,
         "skipped": [],
         "errors": [],
         "dry_run": False,
     }
-    listed = client_b.get(f"{PREFIX}/presets").json()
+    listed = client_a.get(f"{PREFIX}/presets").json()
     match = [p for p in listed if p["name"] == preset_name]
     assert len(match) == 1
-    assert match[0]["flags"] == flags
+    assert match[0]["flags"] == {"board": {"read": False}}
+    assert match[0]["description"] == "replacement"
     assert match[0]["is_builtin"] is False
-    assert match[0]["owner_id"] == user_b  # new record, new ownership
+    assert match[0]["owner_id"] == user_a
 
 
 def test_presets_import_dry_run_and_invalid_item():
@@ -505,7 +500,11 @@ def test_presets_import_dry_run_and_invalid_item():
 
 def test_board_config_global_writes_require_real_admin_principal():
     user = _uid("impexp-dbc-denied")
-    client = _client(user, roles=())
+    client = _client(
+        user,
+        roles=(),
+        permissions=["default_board_config.read"],
+    )
     before = len(
         client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
     )
@@ -545,7 +544,7 @@ def test_board_config_global_writes_require_real_admin_principal():
     for url, kwargs in calls:
         denied = client.post(url, **kwargs)
         assert denied.status_code == 403, denied.text
-        assert "admin or operator capability" in denied.json()["detail"]
+        assert "permission_denied" in denied.json()["detail"]
 
     after = len(
         client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
@@ -555,7 +554,7 @@ def test_board_config_global_writes_require_real_admin_principal():
     capability_client = _client(
         _uid("impexp-dbc-capability"),
         roles=(),
-        permissions={"admin": {"catalog": {"write": True}}},
+        permissions=["default_board_config.create"],
     )
     allowed = capability_client.post(
         f"{PREFIX}/default-board-config/versions",
@@ -574,7 +573,11 @@ def test_board_config_roundtrip_versions_and_active():
     marker = {"max_scenarios_per_card": 7, "min_confidence": 71}
     created = client.post(
         f"{PREFIX}/default-board-config/versions",
-        json={"settings_payload": marker, "activate": True},
+        json={
+            "settings_payload": marker,
+            "spec_checklist_mode": "blocking",
+            "activate": True,
+        },
     )
     assert created.status_code == 200, created.text
 
@@ -587,13 +590,20 @@ def test_board_config_roundtrip_versions_and_active():
     active_items = [i for i in items if i["is_active"]]
     assert len(active_items) == 1  # the active version is marked
     assert active_items[0]["settings_payload"]["max_scenarios_per_card"] == 7
+    assert active_items[0]["spec_checklist_mode"] == "blocking"
     for item in items:
         assert set(item) == {
             "scope",
             "settings_payload",
             "guideline_default_refs",
             "design_system_default_ref",
+            "spec_checklist_mode",
             "is_active",
+        }
+        assert item["spec_checklist_mode"] in {
+            "off",
+            "advisory",
+            "blocking",
         }
 
     before = client.get(f"{PREFIX}/default-board-config/versions").json()
@@ -611,6 +621,7 @@ def test_board_config_roundtrip_versions_and_active():
     assert active is not None
     assert active["settings_payload"]["max_scenarios_per_card"] == 7
     assert active["settings_payload"]["min_confidence"] == 71
+    assert active["spec_checklist_mode"] == "blocking"
 
 
 def test_board_config_import_dry_run_and_invalid_item():

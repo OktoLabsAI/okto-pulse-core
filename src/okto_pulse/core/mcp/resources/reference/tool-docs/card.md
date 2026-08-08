@@ -157,6 +157,10 @@ Delete a card from the board. This operation is permanent and cannot be undone.
 ## `okto_pulse_get_card`
 
 Get detailed card information including attachments, Q&A, and comments.
+The response includes `subject_version`, the current policy-subject revision.
+Use that exact value as `expected_subject_version` when recording semantic
+guideline assessments; reload the card or its full gate context after any
+card mutation instead of reusing a stale revision.
 
 ## Card Knowledge assignments
 
@@ -213,10 +217,43 @@ Use 'open' for all cards NOT in done/cancelled. Max limit is 200.
 
 Move a card to a different column/position on the board.
 
+The successful response includes the committed `subject_version`. This is the
+post-move policy-subject revision, not the pre-commit value.
+
 Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
 completeness_justification, drift (0-100), and drift_justification so the
 reviewer can validate the claim. Use -1 for completeness/drift when no
 execution report is required (e.g. moving to on_hold or started).
+
+### `impact_evidence` (optional, schema_version=1)
+
+Typed declared-impact block attached to the execution report: `files`
+(repo+path+change_kind, `previous_path` iff `renamed`), `symbols`
+(name+kind+action+repo+file — file is mandatory), `surfaces`
+(kind+identifier), `tests` (added/updated authored artifacts:
+`action`+`repo`+`test_file_path` required, `test_function` and
+`scenario_id` optional) and `evidence_refs` (deduplicated, non-blank). Paths are repo-root-relative
+with forward slashes; caps 200/200/50/100/50; closed input — unknown keys
+reject the move with a field-naming error and nothing persists.
+
+The block is a **claim, not authority**: validators keep diffing declared
+vs real, and divergence in either direction is a first-class validation
+finding. It is claim-only and explicitly distinct from the authenticated
+`guideline_impact_evidence` flow (semantic guideline receipts sealed by
+Pulse); declaring one never satisfies the other.
+
+Board enforcement via `BoardSettings.impact_evidence_mode`:
+`off` (default) — no effect; `advisory` — gated moves succeed but a
+missing block is recorded in the activity log
+(`impact_evidence_missing`); `require` — gated moves reject a conclusion
+without a minimally populated block (>=1 item across
+files/symbols/surfaces/tests) with `impact_evidence_required`. Coverage
+is exactly the existing report gate: test cards moving to validation and
+the `submit_task_validation` -> DONE path stay exempt.
+
+For test cards, follow the reference-first rule (scenario ids always in
+`evidence_refs`, format `ts_<id>` recommended; receipts only with
+Evidence V2) — see `okto-pulse://reference/card_types`.
 
 ## `okto_pulse_remove_card_dependency`
 

@@ -33,6 +33,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from okto_pulse.core.kg.schema_contract import STABLE_NODE_PROPERTIES
+from okto_pulse.core.kg.relational_projection import (
+    is_relational_projection_node,
+)
 
 logger = logging.getLogger("okto_pulse.kg.canonical_cognitive_preservation")
 
@@ -189,6 +192,16 @@ def snapshot_canonical_cognitive(board_id: str) -> CognitiveSnapshot:
                 attrs = {cols[i]: row[i] for i in range(len(cols))}
                 nid = str(attrs.get("id") or "")
                 if not nid:
+                    continue
+                if is_relational_projection_node(
+                    node_type=ntype,
+                    source_artifact_ref=str(
+                        attrs.get("source_artifact_ref") or ""
+                    ),
+                    created_by_agent=str(attrs.get("created_by_agent") or ""),
+                ):
+                    # SK-A RDL nodes are rebuilt from relational truth and must
+                    # not be copied into the durable cognitive preservation path.
                     continue
                 node_ids.add(nid)
                 nodes.append({"node_type": ntype, "id": nid, "attrs": attrs})
@@ -499,6 +512,16 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
     for record in records:
         node_type = record.node_type
         if node_type not in COGNITIVE_TYPES:
+            continue
+        if is_relational_projection_node(
+            node_type=node_type,
+            source_artifact_ref=str(
+                record.payload.get("source_artifact_ref") or ""
+            ),
+            created_by_agent=str(
+                record.payload.get("created_by_agent") or ""
+            ),
+        ):
             continue
         if _node_present(board_id, node_type, record.node_id):
             skipped_present += 1

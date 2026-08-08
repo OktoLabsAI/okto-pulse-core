@@ -22,6 +22,10 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.base import ActorContext
 
 
@@ -75,6 +79,15 @@ class EvaluateBugCognitiveClosureUseCase:
     async def execute(
         self, command: EvaluateBugCognitiveClosureCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> EvaluateBugCognitiveClosureResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.cognitive.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.kg.evaluate_bug_cognitive_closure(
             _readiness_service(),
             board_id=command.board_id,
@@ -139,6 +152,15 @@ class ListCognitiveReadinessItemsUseCase:
     async def execute(
         self, command: ListCognitiveReadinessItemsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCognitiveReadinessItemsResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.cognitive.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         result = await uow.services.kg.list_cognitive_signals(
             self._readiness_service_factory(),
             board_id=command.board_id,
@@ -190,6 +212,15 @@ class EvaluateCognitiveReadinessUseCase:
     async def execute(
         self, command: EvaluateCognitiveReadinessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> EvaluateCognitiveReadinessResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.cognitive.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         verdict = await uow.services.kg.evaluate_cognitive_readiness(
             _readiness_service(),
             board_id=command.board_id,

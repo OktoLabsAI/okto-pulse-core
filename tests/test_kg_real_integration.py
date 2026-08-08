@@ -1,4 +1,4 @@
-"""Real KG Integration Test — runs against the ACTUAL ~/.okto-pulse/ data.
+"""Real KG Integration Test — runs against an explicitly selected data home.
 
 This test does NOT use the temp database or stub embedding from conftest.py.
 It must be invoked explicitly:
@@ -6,8 +6,10 @@ It must be invoked explicitly:
     pytest tests/test_kg_real_integration.py -v -s -m real_kg
 
 Environment requirements:
-- ~/.okto-pulse/data/pulse.db must exist (the real SQLite database)
-- ~/.okto-pulse/boards/<BOARD_ID>/graph.kuzu must exist (the real Kùzu graph)
+- OKTO_PULSE_REAL_KG=1 must explicitly opt in
+- OKTO_PULSE_REAL_KG_HOME must name the exact data home
+- OKTO_PULSE_REAL_KG_BOARD_ID must name the exact board
+- <HOME>/data/pulse.db and <HOME>/boards/<BOARD_ID>/graph.lbug must exist
 - the Community edition must be installed for real sentence-transformers tests
 - The server must NOT be running (to avoid DB lock conflicts)
 
@@ -27,7 +29,9 @@ import gc
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 # ---------------------------------------------------------------------------
 # ENVIRONMENT SETUP — real paths, applied per-module via fixture below.
@@ -42,10 +46,45 @@ from pathlib import Path
 # itself afterwards.
 # ---------------------------------------------------------------------------
 
-_REAL_DATA_DIR = Path(os.path.expanduser("~/.okto-pulse"))
-_REAL_BOARD_ID = "72474fc3-0162-4bd9-8444-f7b8ffcf1bcf"
-_REAL_SQLITE_DB = _REAL_DATA_DIR / "data" / "pulse.db"
-_REAL_KUZU_GRAPH = _REAL_DATA_DIR / "boards" / _REAL_BOARD_ID / "graph.kuzu"
+
+@dataclass(frozen=True)
+class RealKgTarget:
+    opted_in: bool
+    data_dir: Path | None
+    board_id: str | None
+
+    @property
+    def configured(self) -> bool:
+        return self.opted_in and self.data_dir is not None and bool(self.board_id)
+
+    @property
+    def sqlite_db(self) -> Path | None:
+        if self.data_dir is None:
+            return None
+        return self.data_dir / "data" / "pulse.db"
+
+    @property
+    def graph(self) -> Path | None:
+        if self.data_dir is None or not self.board_id:
+            return None
+        return self.data_dir / "boards" / self.board_id / "graph.lbug"
+
+
+def _resolve_real_kg_target(environment: Mapping[str, str]) -> RealKgTarget:
+    raw_home = (environment.get("OKTO_PULSE_REAL_KG_HOME") or "").strip()
+    raw_board_id = (environment.get("OKTO_PULSE_REAL_KG_BOARD_ID") or "").strip()
+    return RealKgTarget(
+        opted_in=(environment.get("OKTO_PULSE_REAL_KG") or "").strip() == "1",
+        data_dir=Path(raw_home).expanduser().resolve() if raw_home else None,
+        board_id=raw_board_id or None,
+    )
+
+
+_REAL_TARGET = _resolve_real_kg_target(os.environ)
+_REAL_DATA_DIR = _REAL_TARGET.data_dir
+_REAL_BOARD_ID = _REAL_TARGET.board_id
+_REAL_SQLITE_DB = _REAL_TARGET.sqlite_db
+_REAL_GRAPH_PATH = _REAL_TARGET.graph
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +95,7 @@ logger = logging.getLogger(__name__)
 import ladybug as kuzu  # type: ignore
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
 from kg_schema_testing import NODE_TYPES
@@ -66,13 +106,24 @@ from okto_pulse.core.kg.tier_power import get_schema_info
 # Skip conditions
 # ---------------------------------------------------------------------------
 
+
 def _real_kuzu_exists() -> bool:
-    return _REAL_KUZU_GRAPH.exists()
+    return bool(
+        _REAL_TARGET.configured
+        and _REAL_SQLITE_DB is not None
+        and _REAL_SQLITE_DB.is_file()
+        and _REAL_GRAPH_PATH is not None
+        and _REAL_GRAPH_PATH.exists()
+    )
 
 
 skip_no_real_kuzu = pytest.mark.skipif(
     not _real_kuzu_exists(),
-    reason=f"Real Kùzu graph not found at {_REAL_KUZU_GRAPH}",
+    reason=(
+        "Real KG tests require OKTO_PULSE_REAL_KG=1, "
+        "OKTO_PULSE_REAL_KG_HOME, OKTO_PULSE_REAL_KG_BOARD_ID, and existing "
+        "SQLite/graph paths for that exact target"
+    ),
 )
 
 real_kg = pytest.mark.real_kg
@@ -87,6 +138,12 @@ def _real_env():
     ONLY when a test here actually executes (skipped/deselected tests never
     trigger it). MonkeyPatch.undo() restores the suite's temp-database env.
     """
+    if not _REAL_TARGET.configured:
+        yield
+        return
+
+    assert _REAL_DATA_DIR is not None
+    assert _REAL_SQLITE_DB is not None
     mp = pytest.MonkeyPatch()
     mp.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{_REAL_SQLITE_DB}")
     mp.setenv("KG_BASE_DIR", str(_REAL_DATA_DIR))
@@ -108,13 +165,15 @@ def _real_env():
 # Helper: open a direct Kùzu connection bypassing the registry
 # ---------------------------------------------------------------------------
 
+
 def _open_real_kuzu():
     """Open a Kùzu connection directly to the real graph, bypassing registry.
 
     Uses read_only=True because the 122MB production database crashes Kùzu
     in write mode (Bus Error). Read-only mode works reliably.
     """
-    path = str(_REAL_KUZU_GRAPH)
+    assert _REAL_GRAPH_PATH is not None
+    path = str(_REAL_GRAPH_PATH)
     logger.debug("[KG-TEST] Opening Kùzu directly (read-only): path=%s", path)
     db = kuzu.Database(
         path,
@@ -146,6 +205,7 @@ def _close_kuzu(db, conn):
 # the schema_info function works end-to-end)
 # ---------------------------------------------------------------------------
 
+
 @real_kg
 @real_timeout
 @skip_no_real_kuzu
@@ -153,6 +213,7 @@ def test_real_schema_info():
     """Verify the schema_info function works."""
     logger.info("[KG-TEST] === Test 1: Schema Info ===")
 
+    assert _REAL_BOARD_ID is not None
     result = get_schema_info(_REAL_BOARD_ID)
 
     logger.info("[KG-TEST] Schema version: %s", result.get("schema_version"))
@@ -169,6 +230,7 @@ def test_real_schema_info():
 # ---------------------------------------------------------------------------
 # Test 2: Direct Kùzu — count all nodes
 # ---------------------------------------------------------------------------
+
 
 @real_kg
 @real_timeout
@@ -195,6 +257,7 @@ def test_real_cypher_count_nodes():
 # ---------------------------------------------------------------------------
 # Test 3: Direct Kùzu — count per node type
 # ---------------------------------------------------------------------------
+
 
 @real_kg
 @real_timeout
@@ -231,6 +294,7 @@ def test_real_count_per_node_type():
 # Test 4: Direct Kùzu — check relationships
 # ---------------------------------------------------------------------------
 
+
 @real_kg
 @real_timeout
 @skip_no_real_kuzu
@@ -241,12 +305,19 @@ def test_real_count_relationships():
     db, conn = _open_real_kuzu()
     try:
         from kg_schema_testing import REL_TYPES
+
         for rel_name, from_type, to_type in REL_TYPES:
             try:
                 res = conn.execute(f"MATCH ()-[r:{rel_name}]->() RETURN count(r)")
                 if res.has_next():
                     cnt = res.get_next()[0]
-                    logger.info("[KG-TEST]   %s (%s->%s): %d rels", rel_name, from_type, to_type, cnt)
+                    logger.info(
+                        "[KG-TEST]   %s (%s->%s): %d rels",
+                        rel_name,
+                        from_type,
+                        to_type,
+                        cnt,
+                    )
                 res.close()
             except Exception as e:
                 logger.warning("[KG-TEST]   %s: query error: %s", rel_name, e)
@@ -259,6 +330,7 @@ def test_real_count_relationships():
 # ---------------------------------------------------------------------------
 # Test 5: Real embedding via CommunitySentenceTransformerProvider
 # ---------------------------------------------------------------------------
+
 
 @real_kg
 @real_timeout
@@ -299,6 +371,7 @@ def test_real_embedding():
 # Test 6: Direct Kùzu — semantic search (manual HNSW query)
 # ---------------------------------------------------------------------------
 
+
 @real_kg
 @real_timeout
 @skip_no_real_kuzu
@@ -333,9 +406,16 @@ def test_real_hnsw_search():
             logger.info("[KG-TEST] HNSW Decision search: %d results", len(rows))
             for r in rows[:3]:
                 sim = max(0.0, min(1.0, 1.0 - float(r[2])))
-                logger.info("[KG-TEST]   id=%s title=%s sim=%.3f", str(r[0])[:20], str(r[1])[:60], sim)
+                logger.info(
+                    "[KG-TEST]   id=%s title=%s sim=%.3f",
+                    str(r[0])[:20],
+                    str(r[1])[:60],
+                    sim,
+                )
         except Exception as e:
-            logger.warning("[KG-TEST] HNSW search failed (may be expected if no data): %s", e)
+            logger.warning(
+                "[KG-TEST] HNSW search failed (may be expected if no data): %s", e
+            )
     finally:
         _close_kuzu(db, conn)
 
@@ -345,6 +425,7 @@ def test_real_hnsw_search():
 # ---------------------------------------------------------------------------
 # Test 7: Direct Kùzu — find contradictions
 # ---------------------------------------------------------------------------
+
 
 @real_kg
 @real_timeout
@@ -366,8 +447,12 @@ def test_real_find_contradictions():
             res.close()
             logger.info("[KG-TEST] Contradiction pairs: %d", len(rows))
             for r in rows[:3]:
-                logger.info("[KG-TEST]   %s <-> %s (conf=%s)",
-                            str(r[1])[:40], str(r[3])[:40], r[4])
+                logger.info(
+                    "[KG-TEST]   %s <-> %s (conf=%s)",
+                    str(r[1])[:40],
+                    str(r[3])[:40],
+                    r[4],
+                )
         except Exception as e:
             logger.warning("[KG-TEST] Contradictions query failed: %s", e)
     finally:
@@ -379,6 +464,7 @@ def test_real_find_contradictions():
 # ---------------------------------------------------------------------------
 # Test 8: Direct Kùzu — supersedence chain
 # ---------------------------------------------------------------------------
+
 
 @real_kg
 @real_timeout
@@ -400,7 +486,9 @@ def test_real_supersedence():
             res.close()
             logger.info("[KG-TEST] Supersedence edges: %d", len(rows))
             for r in rows[:3]:
-                logger.info("[KG-TEST]   %s supersedes %s", str(r[1])[:40], str(r[3])[:40])
+                logger.info(
+                    "[KG-TEST]   %s supersedes %s", str(r[1])[:40], str(r[3])[:40]
+                )
         except Exception as e:
             logger.warning("[KG-TEST] Supersedence query failed: %s", e)
     finally:
@@ -412,6 +500,7 @@ def test_real_supersedence():
 # ---------------------------------------------------------------------------
 # Test 9: Connection liveness after multiple operations
 # ---------------------------------------------------------------------------
+
 
 @real_kg
 @real_timeout

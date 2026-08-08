@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from repository_checkout_testing import community_source_for
+
 _REST_FILES = (
     "kg_cognitive_candidate_commands.py",
     "kg_rebuild.py",
@@ -13,15 +15,8 @@ _REST_FILES = (
 
 
 def _module_tree(filename: str) -> ast.Module:
-    path = (
-        Path(__file__).resolve().parents[2]
-        / "okto_labs_pulse_community"
-        / "src"
-        / "okto_pulse"
-        / "community"
-        / "api"
-        / filename
-    )
+    core_repo = Path(__file__).resolve().parents[1]
+    path = community_source_for(core_repo) / "api" / filename
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 

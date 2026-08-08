@@ -5,6 +5,8 @@ version: "1.0"
 # Pre-Flight Checklist (READ FIRST)
 
 Every time you start a session or pick up a new task, follow the matching sequence below.
+Before authoring, assessing, or relying on semantic board guidelines, read
+`okto-pulse://reference/policy-compliance`.
 
 ### Session pre-flight — before any board work
 
@@ -44,6 +46,26 @@ gate slice is the bounded operational view.
 
 This is an operational protocol rule: the MCP server does not prove that you
 read context; your audit trail and artifact quality do.
+
+### Quality Assessment pre-flight — before record/read/gate use
+
+Read `okto-pulse://reference/quality-assessments` before operating on Quality
+evidence. For an ambiguity write:
+
+1. Read the subject's full current context.
+2. Read its current ambiguity head and retain `head_revision` (use 0 when
+   absent).
+3. Confirm domain-write authority AND `{subject}.quality.assess`; proposed
+   questions also require `{subject}.qa.ask`.
+4. Submit a stable idempotency key with the exact
+   `expected_subject_version` and `expected_head_revision`.
+5. After success, re-read currentness. A head is not proof that the receipt is
+   current.
+
+Before executing the Spec checklist, read the full Spec context and
+`okto_pulse_get_checklist_binding`; freeze the current Spec version and binding
+identity when starting the execution. Submit every immutable item exactly once.
+`manual_checklist_ref` is legacy evidence only and never satisfies A3.
 
 ### Resource Gate pre-flight — mandatory before completion
 

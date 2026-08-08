@@ -245,7 +245,7 @@ async def test_mcp_tool_inventory_schema_and_success_outcome(
         "agent-a",
         "Agent A",
         "board-a",
-        ["kg.admin.historical_consolidation"],
+        ["kg.admin.settings_write"],
     )
     uow = _FakeUow()
 
@@ -285,7 +285,7 @@ async def test_mcp_tool_returns_structured_permission_and_validation_errors(
         "agent-a",
         "Agent A",
         "board-a",
-        ["board:read"],
+        ["kg.admin.historical_consolidation"],
     )
 
     async def _denied_ctx(_board_id: str) -> object:
@@ -304,12 +304,15 @@ async def test_mcp_tool_returns_structured_permission_and_validation_errors(
     assert isinstance(denied, McpToolOutcome)
     assert denied.is_error is True
     assert denied.code == "permission_denied"
+    assert denied.details["required_permission"] == (
+        "kg.operations.integrity.reconcile"
+    )
 
     admin_ctx = mcp_server.AgentContext(
         "agent-a",
         "Agent A",
         "board-a",
-        ["kg.admin.historical_consolidation"],
+        ["kg.admin.settings_write"],
     )
     uow = _FakeUow()
     uow.kg = _KgOperations(error=ValueError("reason must be an audit code"))

@@ -10,6 +10,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
+from okto_pulse.core.kg.cypher_templates import is_visible_in_active_reads
 from okto_pulse.core.kg.interfaces.graph_lifecycle import (
     GraphHandle,
     GraphLifecycleStepResult,
@@ -18,6 +19,7 @@ from okto_pulse.core.kg.interfaces.graph_lifecycle import (
 )
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphPurgeResult,
+    GraphRuntimeBudgetSnapshot,
     GraphRuntimeObservationState,
     GraphRuntimeState,
     GraphStorageFootprint,
@@ -25,7 +27,14 @@ from okto_pulse.core.kg.interfaces.graph_runtime_store import (
 from okto_pulse.core.kg.interfaces.graph_schema_manager import SchemaValidationResult
 from okto_pulse.core.kg.interfaces.graph_store import GraphCapabilities, QueryFilters
 from okto_pulse.core.kg.interfaces.graph_transaction import (
+    GraphNodePropertyBeforeImage,
     GraphStatementResult,
+    ProjectionActiveSetIntent,
+    ProjectionActiveSetReceipt,
+    ProjectionActiveSetReconciliationError,
+    ProjectionEdgeBeforeImage,
+    ProjectionNodeBeforeImage,
+    SOURCE_PROJECTION_REMOVED_REASON,
     SpecLineageEdgeSnapshot,
     SpecLineageReconciliationError,
     SpecLineageReconciliationReceipt,
@@ -40,15 +49,17 @@ from okto_pulse.core.kg.schema_contract import (
     stable_rel_type_entries,
     vector_index_name,
 )
+from okto_pulse.core.kg.relational_projection import (
+    is_relational_projection_node,
+    parse_relational_projection_ref,
+    relational_projection_rule_node_type,
+)
 
 
-_SOURCE_DELETED_REVOCATION_REASON = "source_deleted"
+def _node_is_visible_in_active_reads(node: dict[str, Any]) -> bool:
+    """Apply the Core tombstone contract to an in-memory node."""
 
-
-def _is_source_deleted_tombstone(node: dict[str, Any]) -> bool:
-    """Whether a node was permanently withdrawn with its governed source."""
-
-    return str(node.get("revocation_reason") or "") == _SOURCE_DELETED_REVOCATION_REASON
+    return is_visible_in_active_reads(node.get("revocation_reason"))
 
 
 class InMemoryGraphStore:
@@ -198,6 +209,12 @@ class InMemoryGraphStore:
         for n in nodes.values():
             if n.get("_type") != node_type:
                 continue
+            if not _node_is_visible_in_active_reads(n):
+                continue
+            if n.get("superseded_by") and not bool(
+                getattr(filters, "include_superseded", False)
+            ):
+                continue
             title = (n.get("title") or "").lower()
             if topic_lower in title:
                 conf = n.get("source_confidence", 0)
@@ -234,10 +251,13 @@ class InMemoryGraphStore:
             query_vec,
             top_k=filters.max_rows,
             min_similarity=min_similarity,
+            include_superseded=bool(getattr(filters, "include_superseded", False)),
         )
         results = []
         for hit in hits:
             node = nodes.get(hit["node_id"], {})
+            if not _node_is_visible_in_active_reads(node):
+                continue
             if float(node.get("source_confidence") or 0.0) < filters.min_confidence:
                 continue
             if float(node.get("relevance_score") or 0.0) < filters.min_relevance:
@@ -262,7 +282,10 @@ class InMemoryGraphStore:
         nodes = self._board_nodes(board_id)
         results = []
         for n in nodes.values():
-            if n.get("source_artifact_ref") == artifact_id:
+            if (
+                n.get("source_artifact_ref") == artifact_id
+                and _node_is_visible_in_active_reads(n)
+            ):
                 results.append(
                     [
                         n["id"],
@@ -299,7 +322,7 @@ class InMemoryGraphStore:
     ) -> list[list]:
         nodes = self._board_nodes(board_id)
         node = nodes.get(decision_id)
-        if node is None:
+        if node is None or not _node_is_visible_in_active_reads(node):
             return []
         return [
             [
@@ -324,6 +347,12 @@ class InMemoryGraphStore:
                 continue
             na = nodes.get(e["_from"], {})
             nb = nodes.get(e["_to"], {})
+            if not na or not nb:
+                continue
+            if not _node_is_visible_in_active_reads(
+                na
+            ) or not _node_is_visible_in_active_reads(nb):
+                continue
             results.append(
                 [
                     e["_from"],
@@ -353,7 +382,7 @@ class InMemoryGraphStore:
         for n in nodes.values():
             if n.get("_type") != node_type:
                 continue
-            if _is_source_deleted_tombstone(n):
+            if not _node_is_visible_in_active_reads(n):
                 continue
             if n.get("superseded_by") and not include_superseded:
                 continue
@@ -391,7 +420,7 @@ class InMemoryGraphStore:
             if node.get("_type") == node_type
             and node.get("source_artifact_ref") == source_artifact_ref
             and not node.get("superseded_by")
-            and not _is_source_deleted_tombstone(node)
+            and _node_is_visible_in_active_reads(node)
         ]
         if not matches:
             return None
@@ -418,7 +447,7 @@ class InMemoryGraphStore:
     ) -> tuple[list[list], list[list], list[list]]:
         nodes = self._board_nodes(board_id)
         node = nodes.get(constraint_id)
-        if node is None:
+        if node is None or not _node_is_visible_in_active_reads(node):
             return [], [], []
         main = [
             [
@@ -437,10 +466,15 @@ class InMemoryGraphStore:
     ) -> list[list]:
         edges = self._board_edges(board_id)
         nodes = self._board_nodes(board_id)
+        decision = nodes.get(decision_id)
+        if decision is None or not _node_is_visible_in_active_reads(decision):
+            return []
         results = []
         for e in edges:
             if e.get("_type") == "relates_to" and e["_from"] == decision_id:
                 alt = nodes.get(e["_to"], {})
+                if not alt or not _node_is_visible_in_active_reads(alt):
+                    continue
                 results.append(
                     [
                         alt.get("id"),
@@ -574,6 +608,32 @@ class _InMemoryGraphTransactionScope:
         node = self.store._board_nodes(self.board_id).get(node_id)
         if node is not None and node.get("_type") == node_type:
             node.update(attrs)
+
+    def snapshot_node_properties(
+        self,
+        node_type: str,
+        node_id: str,
+        property_names: tuple[str, ...],
+    ) -> GraphNodePropertyBeforeImage | None:
+        node = self.store._board_nodes(self.board_id).get(node_id)
+        if node is None or node.get("_type") != node_type:
+            return None
+        return GraphNodePropertyBeforeImage(
+            node_type=node_type,
+            node_id=node_id,
+            attrs={name: node.get(name) for name in property_names},
+        )
+
+    def restore_node_properties(
+        self,
+        before_image: GraphNodePropertyBeforeImage,
+    ) -> None:
+        node = self.store._board_nodes(self.board_id).get(before_image.node_id)
+        if node is None or node.get("_type") != before_image.node_type:
+            raise LookupError(
+                "graph node missing during property before-image restore"
+            )
+        node.update(before_image.attrs)
 
     def replace_with_source_deleted_tombstone(
         self,
@@ -917,6 +977,269 @@ class _InMemoryGraphTransactionScope:
                 )
             )
 
+    def _projection_node_before_image(
+        self,
+        node_type: str,
+        node_id: str,
+    ) -> ProjectionNodeBeforeImage | None:
+        node = self.store._board_nodes(self.board_id).get(node_id)
+        if node is None or node.get("_type") != node_type:
+            return None
+        incident_edges = tuple(
+            ProjectionEdgeBeforeImage(
+                edge_type=str(edge.get("_type") or ""),
+                from_type=str(edge.get("_from_type") or ""),
+                to_type=str(edge.get("_to_type") or ""),
+                from_id=str(edge.get("_from") or ""),
+                to_id=str(edge.get("_to") or ""),
+                attrs={
+                    key: value
+                    for key, value in edge.items()
+                    if not key.startswith("_")
+                },
+            )
+            for edge in self.store._board_edges(self.board_id)
+            if edge.get("_from") == node_id or edge.get("_to") == node_id
+        )
+        return ProjectionNodeBeforeImage(
+            node_type=node_type,
+            node_id=node_id,
+            source_session_id=node.get("source_session_id"),
+            attrs={
+                key: value
+                for key, value in node.items()
+                if key not in {"_type", "id", "source_session_id"}
+            },
+            incident_edges=incident_edges,
+        )
+
+    @staticmethod
+    def _projection_edge_key(
+        edge: ProjectionEdgeBeforeImage,
+    ) -> tuple[Any, ...]:
+        return (
+            edge.edge_type,
+            edge.from_type,
+            edge.to_type,
+            edge.from_id,
+            edge.to_id,
+            tuple(sorted((str(key), repr(value)) for key, value in edge.attrs.items())),
+        )
+
+    def reconcile_projection_active_set(
+        self,
+        intent: ProjectionActiveSetIntent,
+    ) -> ProjectionActiveSetReceipt:
+        """Reconcile only exact parser-owned RDL nodes for one refinement."""
+
+        if intent.owner_type != "refinement" or intent.namespace != "rdl":
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_scope_invalid",
+                "Only the exact refinement/RDL relational projection is supported.",
+            )
+
+        active_by_ref: dict[str, tuple[str, str]] = {}
+        for ref in intent.active_nodes:
+            identity = parse_relational_projection_ref(ref.source_artifact_ref)
+            if (
+                identity is None
+                or identity.owner_type != intent.owner_type
+                or identity.owner_id != intent.owner_id
+                or identity.namespace != intent.namespace
+                or identity.node_type != ref.node_type
+            ):
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_member_invalid",
+                    "An active member is outside the exact projection scope.",
+                )
+            if ref.source_artifact_ref in active_by_ref:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_member_duplicate",
+                    "The active projection contains a duplicate source reference.",
+                )
+            active_by_ref[ref.source_artifact_ref] = (ref.node_type, ref.node_id)
+
+        nodes = self.store._board_nodes(self.board_id)
+        owned: list[tuple[str, str, dict[str, Any]]] = []
+        for node_id, node in nodes.items():
+            node_type = str(node.get("_type") or "")
+            source_ref = str(node.get("source_artifact_ref") or "")
+            if is_relational_projection_node(
+                node_type=node_type,
+                source_artifact_ref=source_ref,
+                created_by_agent=str(node.get("created_by_agent") or ""),
+                owner_type=intent.owner_type,
+                owner_id=intent.owner_id,
+                namespace=intent.namespace,
+            ):
+                reason = str(node.get("revocation_reason") or "")
+                exact_owner_edge = any(
+                    edge.get("_type") == "belongs_to"
+                    and edge.get("_from_type") == node_type
+                    and edge.get("_to_type") == "Entity"
+                    and edge.get("_from") == node_id
+                    and (
+                        intent.owner_node_id is None
+                        or edge.get("_to") == intent.owner_node_id
+                    )
+                    and relational_projection_rule_node_type(
+                        str(edge.get("rule_id") or "")
+                    )
+                    == node_type
+                    and str(
+                        nodes.get(str(edge.get("_to") or ""), {}).get(
+                            "source_artifact_ref"
+                        )
+                        or ""
+                    )
+                    == f"refinement:{intent.owner_id}"
+                    for edge in self.store._board_edges(self.board_id)
+                )
+                if (
+                    exact_owner_edge
+                    or reason == SOURCE_PROJECTION_REMOVED_REASON
+                ):
+                    owned.append((node_type, node_id, node))
+
+        owned_by_ref: dict[str, tuple[str, str, dict[str, Any]]] = {}
+        for node_type, node_id, node in owned:
+            source_ref = str(node.get("source_artifact_ref") or "")
+            if source_ref in owned_by_ref:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_source_ref_ambiguous",
+                    "A relational source reference resolves to multiple graph nodes.",
+                )
+            owned_by_ref[source_ref] = (node_type, node_id, node)
+        for source_ref, (node_type, node_id) in active_by_ref.items():
+            current = owned_by_ref.get(source_ref)
+            if current is None:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_member_missing",
+                    "An active relational projection member is missing or has "
+                    "untrusted provenance.",
+                )
+            if current[0] != node_type or current[1] != node_id:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_identity_conflict",
+                    "An active relational source reference resolves to a "
+                    "different graph identity.",
+                )
+
+        before_images: list[ProjectionNodeBeforeImage] = []
+        active_refs = frozenset(active_by_ref)
+        for node_type, node_id, node in owned:
+            source_ref = str(node.get("source_artifact_ref") or "")
+            is_active = source_ref in active_refs
+            needs_restore = (
+                is_active
+                and str(node.get("revocation_reason") or "")
+                == SOURCE_PROJECTION_REMOVED_REASON
+            )
+            current_reason = str(node.get("revocation_reason") or "")
+            incident = any(
+                edge.get("_from") == node_id or edge.get("_to") == node_id
+                for edge in self.store._board_edges(self.board_id)
+            )
+            needs_remove = (
+                not is_active
+                and current_reason in {"", SOURCE_PROJECTION_REMOVED_REASON}
+                and (
+                    current_reason != SOURCE_PROJECTION_REMOVED_REASON
+                    or incident
+                )
+            )
+            if not needs_restore and not needs_remove:
+                continue
+            snapshot = self._projection_node_before_image(node_type, node_id)
+            if snapshot is None:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_snapshot_failed",
+                    "A projection member disappeared while its before-image "
+                    "was being captured.",
+                )
+            before_images.append(snapshot)
+
+        receipt = ProjectionActiveSetReceipt(
+            intent=intent,
+            before_images=tuple(before_images),
+        )
+        try:
+            for before_image in before_images:
+                node = nodes.get(before_image.node_id)
+                if node is None:
+                    raise LookupError("projection member disappeared during apply")
+                source_ref = str(node.get("source_artifact_ref") or "")
+                if source_ref in active_refs:
+                    if (
+                        str(node.get("revocation_reason") or "")
+                        == SOURCE_PROJECTION_REMOVED_REASON
+                    ):
+                        node["revocation_reason"] = ""
+                    continue
+                node["revocation_reason"] = SOURCE_PROJECTION_REMOVED_REASON
+                self.store._edges[self.board_id] = [
+                    edge
+                    for edge in self.store._board_edges(self.board_id)
+                    if (
+                        edge.get("_from") != before_image.node_id
+                        and edge.get("_to") != before_image.node_id
+                    )
+                ]
+        except Exception as exc:
+            try:
+                self.compensate_projection_active_set(receipt)
+            except Exception as restore_exc:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_apply_and_restore_failed",
+                    "Projection reconciliation failed and its complete "
+                    "before-image could not be restored.",
+                    receipt=receipt,
+                ) from restore_exc
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_apply_failed",
+                "Projection reconciliation failed and was restored.",
+                receipt=receipt,
+            ) from exc
+        return receipt
+
+    def compensate_projection_active_set(
+        self,
+        receipt: ProjectionActiveSetReceipt,
+    ) -> None:
+        if not receipt.before_images:
+            return
+        restored_ids = {item.node_id for item in receipt.before_images}
+        self.store._edges[self.board_id] = [
+            edge
+            for edge in self.store._board_edges(self.board_id)
+            if edge.get("_from") not in restored_ids
+            and edge.get("_to") not in restored_ids
+        ]
+        nodes = self.store._board_nodes(self.board_id)
+        for item in receipt.before_images:
+            nodes[item.node_id] = {
+                **item.attrs,
+                "id": item.node_id,
+                "_type": item.node_type,
+                "source_session_id": item.source_session_id,
+            }
+        seen_edges: set[tuple[Any, ...]] = set()
+        for item in receipt.before_images:
+            for edge in item.incident_edges:
+                key = self._projection_edge_key(edge)
+                if key in seen_edges:
+                    continue
+                seen_edges.add(key)
+                self.store.create_edge(
+                    self.board_id,
+                    edge.edge_type,
+                    edge.from_id,
+                    edge.to_id,
+                    dict(edge.attrs),
+                    from_type=edge.from_type,
+                    to_type=edge.to_type,
+                )
+
     def find_node_types(self, node_id: str) -> tuple[str, ...]:
         node = self.store._board_nodes(self.board_id).get(node_id)
         return (str(node["_type"]),) if node and node.get("_type") else ()
@@ -1060,6 +1383,13 @@ class InMemoryGraphRuntimeStore:
             configured_max_bytes=None,
             percentage=None,
             unavailable_reason=None if exists else "graph_absent",
+        )
+
+    def budget_snapshot(self) -> GraphRuntimeBudgetSnapshot:
+        return GraphRuntimeBudgetSnapshot(
+            source="runtime_capability",
+            status="available",
+            unavailable_reason=None,
         )
 
 

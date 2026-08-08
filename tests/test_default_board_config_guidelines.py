@@ -38,13 +38,13 @@ from sqlalchemy_test_models import (
     DefaultBoardConfigurationAudit,
     Guideline,
 )
-from okto_pulse.core.models.schemas import BoardCreate, BoardSettings
+from okto_pulse.core.models.schemas import BoardCreate, BoardSettings, GuidelineCreate
 from okto_pulse.core.services.default_board_config_api import DefaultBoardConfigApiService
 from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationError,
     DefaultBoardConfigurationService,
 )
-from okto_pulse.core.services.main import BoardService
+from okto_pulse.core.services.main import BoardService, GuidelineService
 
 pytestmark = pytest.mark.asyncio
 
@@ -57,7 +57,7 @@ def _scope() -> str:
 
 class _Ctx:
     agent_id = USER_ID
-    permissions: list = []
+    permissions = ["*"]
     realm_id = "local"
 
 
@@ -73,13 +73,27 @@ async def _call(name: str, **kwargs) -> dict:
         return json.loads(await tool.fn(**kwargs))
 
 
-async def _global_guideline(db, title: str) -> Guideline:
-    g = Guideline(
-        title=title, content="c", scope="global", board_id=None, owner_id=USER_ID, version=1
+async def _global_guideline(db, title: str):
+    return await GuidelineService(db).create_guideline(
+        USER_ID,
+        GuidelineCreate(
+            title=title,
+            content="c",
+            scope="global",
+            board_id=None,
+        ),
     )
-    db.add(g)
-    await db.flush()
-    return g
+
+
+def _native_ref(guideline, *, priority: int = 0) -> dict:
+    return {
+        "guideline_id": guideline.id,
+        "priority": priority,
+        "revision_id": guideline.revision_id,
+        "revision_number": guideline.version,
+        "semantic_version": guideline.semantic_version,
+        "revision_digest": guideline.revision_digest,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +117,7 @@ async def test_active_update_creates_new_version_and_keeps_old_intact():
         # update the ACTIVE template -> a NEW version is created + activated.
         updated = await api.update_template_guidelines(
             template_id=v1.id,
-            guideline_default_refs=[{"guideline_id": g1.id, "priority": 1}],
+            guideline_default_refs=[_native_ref(g1, priority=1)],
             actor=USER_ID,
         )
         assert updated["id"] != v1.id
@@ -145,14 +159,14 @@ async def test_active_update_each_change_bumps_version():
 
         v2 = await api.update_template_guidelines(
             template_id=v1.id,
-            guideline_default_refs=[{"guideline_id": g1.id, "priority": 1}],
+            guideline_default_refs=[_native_ref(g1, priority=1)],
             actor=USER_ID,
         )
         v3 = await api.update_template_guidelines(
             template_id=v2["id"],
             guideline_default_refs=[
-                {"guideline_id": g1.id, "priority": 1},
-                {"guideline_id": g2.id, "priority": 2},
+                _native_ref(g1, priority=1),
+                _native_ref(g2, priority=2),
             ],
             actor=USER_ID,
         )
@@ -190,7 +204,7 @@ async def test_draft_update_mutates_in_place():
 
         updated = await api.update_template_guidelines(
             template_id=draft.id,
-            guideline_default_refs=[{"guideline_id": g1.id, "priority": 5}],
+            guideline_default_refs=[_native_ref(g1, priority=5)],
             actor=USER_ID,
         )
         # SAME template id + version: mutated in place, no version-bump.
@@ -222,16 +236,35 @@ async def test_inline_missing_and_boardscoped_refs_rejected_failclosed():
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
         # an inline / board-scoped guideline (board_id set) is NOT a global default.
-        inline = Guideline(
-            title="Inline", content="c", scope="inline", board_id=board.id, owner_id=USER_ID, version=1
+        inline = await GuidelineService(db).create_guideline(
+            USER_ID,
+            GuidelineCreate(
+                title="Inline",
+                content="c",
+                scope="inline",
+                board_id=board.id,
+            ),
         )
-        db.add(inline)
-        await db.flush()
 
         cases = [
             ([{"priority": 1}], "default_guideline_inline_not_allowed"),  # no guideline_id
-            ([{"guideline_id": "does-not-exist"}], "default_guideline_not_found"),
-            ([{"guideline_id": inline.id}], "default_guideline_not_global"),
+            (
+                [
+                    {
+                        "guideline_id": "does-not-exist",
+                        "priority": 0,
+                        "revision_id": str(uuid.uuid4()),
+                        "revision_number": 1,
+                        "semantic_version": "1.0.0",
+                        "revision_digest": "0" * 64,
+                    }
+                ],
+                "default_guideline_not_found",
+            ),
+            (
+                [_native_ref(inline)],
+                "default_guideline_not_global",
+            ),
         ]
         for refs, expected_code in cases:
             with pytest.raises(DefaultBoardConfigurationError) as exc:
@@ -280,7 +313,7 @@ async def test_default_state_derived_from_template_not_guideline_flag():
         # becomes default purely by the template ref change.
         await api.update_template_guidelines(
             template_id=v1.id,
-            guideline_default_refs=[{"guideline_id": g1.id, "priority": 1}],
+            guideline_default_refs=[_native_ref(g1, priority=1)],
             actor=USER_ID,
         )
         after = {
@@ -310,7 +343,13 @@ async def test_mcp_twin_list_candidates_and_update_refs():
         g1 = await _global_guideline(db, "MCP default")
         # MCP twins open a separate session, so the seed must be committed.
         await db.commit()
-        ids = {"board": board.id, "v1": v1.id, "v1ver": v1.version, "g1": g1.id}
+        ids = {
+            "board": board.id,
+            "v1": v1.id,
+            "v1ver": v1.version,
+            "g1": g1.id,
+            "g1ref": _native_ref(g1, priority=1),
+        }
 
     try:
         # read twin — g1 is eligible, not yet default.
@@ -326,7 +365,7 @@ async def test_mcp_twin_list_candidates_and_update_refs():
             "okto_pulse_update_default_guideline_refs",
             board_id=ids["board"],
             template_id=ids["v1"],
-            guideline_default_refs=[{"guideline_id": ids["g1"], "priority": 1}],
+            guideline_default_refs=[ids["g1ref"]],
         )
         assert updated["id"] != ids["v1"]
         assert updated["version"] == ids["v1ver"] + 1
@@ -337,7 +376,16 @@ async def test_mcp_twin_list_candidates_and_update_refs():
             "okto_pulse_update_default_guideline_refs",
             board_id=ids["board"],
             template_id=updated["id"],
-            guideline_default_refs=[{"guideline_id": "missing"}],
+            guideline_default_refs=[
+                {
+                    "guideline_id": "missing",
+                    "priority": 0,
+                    "revision_id": str(uuid.uuid4()),
+                    "revision_number": 1,
+                    "semantic_version": "1.0.0",
+                    "revision_digest": "0" * 64,
+                }
+            ],
         )
         assert err["code"] == "default_guideline_not_found"
     finally:

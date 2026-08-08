@@ -293,8 +293,13 @@ async def test_choice_comment_membership_error_is_returned_as_typed_payload(
     uow = SimpleNamespace(services=SimpleNamespace(comments=comments))
     monkeypatch.setattr(
         mcp_collaboration,
-        "_get_comment_in_scope",
-        AsyncMock(return_value=SimpleNamespace(id="comment-1")),
+        "_get_comment_with_card_in_scope",
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(id="comment-1"),
+                SimpleNamespace(id="card-1", board_id="board-1"),
+            )
+        ),
     )
 
     result = await McpRespondToChoiceUseCase().execute(

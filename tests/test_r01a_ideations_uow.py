@@ -114,6 +114,7 @@ async def test_update_ideation_200_and_404(client) -> None:
     ok = client.patch(f"{PREFIX}/ideations/{ideation_id}", json={"title": "Renamed"})
     assert ok.status_code == 200, ok.text
     assert ok.json()["title"] == "Renamed"
+    assert ok.json()["version"] == 2
     miss = client.patch(f"{PREFIX}/ideations/{_missing()}", json={"title": "y"})
     assert miss.status_code == 404
 

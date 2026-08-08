@@ -30,6 +30,14 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    entity_state,
+    transition_permission_requirement,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import SpecUpdate
@@ -272,7 +280,20 @@ class MoveSpecUseCase:
         self, command: MoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveSpecResult:
         service = uow.services.specs
-        await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+        existing = await _require_actor_board_spec(
+            uow, command.spec_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "spec",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
+        )
         spec = await service.move_spec(command.spec_id, actor.actor_id, command.data)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -931,21 +952,18 @@ class UnlinkTaskFromScenarioUseCase:
         card_service = uow.services.cards
         card = await _require_spec_board_card(uow.services, command.card_id, spec)
 
-        scenarios = [dict(item) for item in (spec.test_scenarios or [])]
-        found = False
-        for scenario in scenarios:
-            if scenario.get("id") == command.scenario_id:
-                task_ids = list(scenario.get("linked_task_ids") or [])
-                if command.card_id in task_ids:
-                    task_ids.remove(command.card_id)
-                scenario["linked_task_ids"] = task_ids
-                found = True
-                break
-        if not found:
+        if not any(
+            isinstance(scenario, dict)
+            and scenario.get("id") == command.scenario_id
+            for scenario in (spec.test_scenarios or [])
+        ):
             raise EntityNotFoundError("scenario", command.scenario_id)
 
-        await spec_service.update_spec(
-            command.spec_id, actor.actor_id, SpecUpdate(test_scenarios=scenarios)
+        await spec_service.remove_scenario_traceability_task_link(
+            command.spec_id,
+            actor.actor_id,
+            scenario_id=command.scenario_id,
+            card_id=command.card_id,
         )
 
         existing = list(card.test_scenario_ids or [])
@@ -1002,11 +1020,53 @@ class SetTestScenarioStatusUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> SetTestScenarioStatusResult:
+        from okto_pulse.core.services.test_scenario_lifecycle import (
+            VALID_SCENARIO_STATUSES,
+        )
+
+        if command.status not in VALID_SCENARIO_STATUSES:
+            raise ValueError(
+                f"status_not_valid: must be one of {list(VALID_SCENARIO_STATUSES)}"
+            )
         service = uow.services.specs
         try:
-            await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+            spec = await _require_actor_board_spec(
+                uow, command.spec_id, actor, write=True
+            )
         except EntityNotFoundError as exc:
             raise ValueError("scenario_not_found: spec not found") from exc
+        scenario = next(
+            (
+                item
+                for item in (spec.test_scenarios or [])
+                if isinstance(item, dict) and item.get("id") == command.scenario_id
+            ),
+            None,
+        )
+        if scenario is None:
+            raise ValueError(f"scenario_not_found: {command.scenario_id}")
+        current_status = str(scenario.get("status") or "draft")
+        requirement = (
+            PermissionRequirement(
+                "spec.tests.execute",
+                legacy_operation="specs:update",
+                entity="spec",
+                state=entity_state(spec),
+            )
+            if current_status == command.status
+            else transition_permission_requirement(
+                "test_scenario",
+                current_status,
+                command.status,
+                legacy_operation="specs:update",
+            )
+        )
+        await require_authorization(
+            actor,
+            requirement,
+            uow=uow,
+            board_id=spec.board_id,
+        )
         result = await service.set_test_scenario_status(
             command.spec_id,
             actor.actor_id,
@@ -1073,15 +1133,23 @@ class ExecuteTestScenarioEvidenceUseCase:
             compute_test_scenario_semantic_sha256,
         )
 
-        # Resolve authorization before validating replay inputs.  A caller that
-        # cannot write this Spec must observe the same not-found boundary for
-        # every otherwise well-formed command, and must never reach a trusted
-        # evidence issuer/verifier (or a scenario child lookup).
+        # Resolve the non-enumerable Spec scope before the permission decision.
+        # Foreign and missing resources therefore retain the same 404 boundary,
+        # while authorization still precedes child lookup and trusted providers.
         spec = await _require_actor_board_spec(
             uow,
             command.spec_id,
             actor,
             write=True,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.tests.execute",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=spec.board_id,
         )
         if command.status not in GATED_STATUSES:
             raise ValueError(
@@ -1371,16 +1439,16 @@ async def _require_actor_board_spec_qa(
     *,
     spec_id: str | None = None,
     write: bool = False,
-) -> Any:
+) -> tuple[Any, Any]:
     """Resolve path Spec before reading a globally-addressable Q&A child."""
     if spec_id is None:
         raise EntityNotFoundError("spec_qa", qa_id)
     services = scope.services if hasattr(scope, "services") else scope
-    await _require_actor_board_spec(scope, spec_id, actor, write=write)
+    spec = await _require_actor_board_spec(scope, spec_id, actor, write=write)
     qa = await services.spec_qa.get_question(qa_id)
     if qa is None or qa.spec_id != spec_id:
         raise EntityNotFoundError("spec_qa", qa_id)
-    return qa
+    return spec, qa
 
 
 # --- spec knowledge: list ---------------------------------------------------
@@ -1690,12 +1758,21 @@ class DeleteSpecQuestionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DeleteSpecQuestionResult:
-        await _require_actor_board_spec_qa(
+        spec, _qa = await _require_actor_board_spec_qa(
             uow,
             command.qa_id,
             actor,
             spec_id=command.spec_id,
             write=True,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.qa.delete",
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=spec.board_id,
         )
         deleted = await uow.services.spec_qa.delete_question(command.qa_id)
         if not deleted:

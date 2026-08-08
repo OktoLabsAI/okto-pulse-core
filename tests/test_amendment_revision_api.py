@@ -23,6 +23,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
+from okto_pulse.core.domain.permissions import ALL_FLAGS
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     ActivityLog,
@@ -286,7 +287,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "amendment api agent"
-        self.permissions = set()
+        self.permissions = list(ALL_FLAGS)
 
 
 async def _call(name: str, **kwargs) -> dict:
@@ -313,7 +314,7 @@ async def test_mcp_twin_create_list_get_associate():
         board_id=ids["board"], bug_id=ids["bug"], origin_task_ids=[ids["origin"]],
         regression_scenario_ids=["ts_a"],
     )
-    assert created["success"] is True
+    assert created.get("success") is True, created
     rev = created["amendment_revision"]
     assert rev["status"] == "draft" and rev["origin_bug_id"] == ids["bug"]
     amendment_id = rev["id"]
@@ -487,7 +488,7 @@ async def test_ts_b6d87391_blocked_missing_amendment_exposes_create_action():
         board_id=ids["board"], bug_id=ids["bug"],
         candidate_scenario_ids=[ids["foreign_scenario"]],
     )
-    assert "create_amendment_revision" in twin["safe_next_actions"]
+    assert "create_amendment_revision" in twin.get("safe_next_actions", []), twin
     assert any(
         r["reason"] == "missing_amendment_revision" for r in twin["rejected_scenarios"]
     )

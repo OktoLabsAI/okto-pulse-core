@@ -12,13 +12,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
 
 from mcp_runtime_testing import register_mcp_test_runtime
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import require_principal
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.design_systems import router as design_systems_router
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.design_system import DesignSystemService
+from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 from sqlalchemy_test_models import (
     Board,
     BoardDesignSystem,
@@ -31,10 +33,9 @@ PREFIX = "/api/v1"
 
 
 class _Ctx:
-    permissions: list = []
-
     def __init__(self, actor_id: str) -> None:
         self.agent_id = actor_id
+        self.permissions = registered_permission_flags()
 
 
 def _rest_client(actor_id: str) -> TestClient:
@@ -52,7 +53,12 @@ def _rest_client(actor_id: str) -> TestClient:
                 raise
 
     app.dependency_overrides[get_unit_of_work] = _override_uow
-    app.dependency_overrides[require_user] = lambda: actor_id
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=actor_id,
+        realm_id="local",
+        actor_kind="human",
+        claims={"permissions": registered_permission_flags()},
+    )
     return TestClient(app)
 
 

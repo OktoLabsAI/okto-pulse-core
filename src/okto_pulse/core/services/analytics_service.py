@@ -2498,6 +2498,7 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
         "spec_id": spec_id,
         "title": spec.title,
         "status": spec.status.value if hasattr(spec.status, "value") else str(spec.status),
+        "edition": int(getattr(spec, "edition", 1) or 1),
         "version": spec.version,
         "gate_status": {
             "current_validation_id": getattr(spec, "current_validation_id", None),

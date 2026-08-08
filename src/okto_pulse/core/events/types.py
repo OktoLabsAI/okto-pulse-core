@@ -15,7 +15,34 @@ import uuid
 from datetime import datetime, timezone
 from typing import ClassVar, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from okto_pulse.core.domain.guideline_impact import (
+    GUIDELINE_ADOPTION_EVENT_TYPE,
+    GUIDELINE_RETIREMENT_EVENT_TYPE,
+    GuidelineBindingChangeEvent,
+    GuidelineRetirementBoardEvent,
+)
+from okto_pulse.core.domain.guideline_policy import (
+    BoardGuidelineBinding,
+    GuidelineBindingProvenance,
+    GuidelineBindingState,
+    GuidelineEnforcement,
+    GUIDELINE_IMPACT_CONTRACT_VERSION,
+)
+
+POLICY_BINDING_MATERIALIZED_EVENT_TYPE = (
+    "board.semantic_policy_binding_materialized.v2"
+)
+POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION = (
+    "policy-binding-materialized/v2"
+)
+SEMANTIC_GUIDELINE_PROJECTION_EVENT_TYPE = (
+    "guideline.semantic_kg_projection_changed.v1"
+)
+SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION = (
+    "semantic-guideline-kg-projection/v1"
+)
 
 
 def _utcnow() -> datetime:
@@ -58,6 +85,396 @@ class DomainEvent(BaseModel):
                 "occurred_at",
             },
         )
+
+
+class PolicyAdoptionChanged(DomainEvent):
+    """Closed delivery companion for adoption and unlink evidence.
+
+    B08 persists the immutable pure-domain event.  This Pydantic companion is
+    the delivery boundary consumed by the event worker and derived KG
+    projection; its after-validator delegates semantic normalization to the
+    canonical domain value instead of reimplementing those invariants.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        frozen=True,
+    )
+
+    event_type: ClassVar[str] = GUIDELINE_ADOPTION_EVENT_TYPE
+    event_schema_version: Literal["guideline-impact/v2"]
+    actor_id: str
+    actor_type: Literal["agent", "user", "system"]
+    operation: Literal["adopt", "unlink"]
+    guideline_id: str
+    binding_id: str
+    previous_binding_revision: int | None
+    binding_revision: int
+    from_revision_id: str | None
+    from_semantic_version: str | None
+    from_revision_digest: str | None
+    to_revision_id: str | None
+    to_semantic_version: str | None
+    to_revision_digest: str | None
+    impact_receipt_id: str | None
+    impact_digest: str | None
+    binding_digest_before: str
+    binding_head_digest_before: str
+    binding_head_digest_after: str
+    policy_set_digest_before: str
+    policy_set_digest_after: str
+    policy_set_digest: str
+    added_metric_ids: tuple[str, ...] = ()
+    changed_metric_ids: tuple[str, ...] = ()
+    removed_metric_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_domain_evidence(self) -> PolicyAdoptionChanged:
+        if (
+            self.event_schema_version != GUIDELINE_IMPACT_CONTRACT_VERSION
+            or self.policy_set_digest != self.policy_set_digest_after
+        ):
+            raise ValueError("policy_adoption_event_evidence_invalid")
+        normalized = GuidelineBindingChangeEvent(
+            event_id=self.event_id,
+            event_type=self.event_type,
+            operation=self.operation,
+            board_id=self.board_id,
+            guideline_id=self.guideline_id,
+            binding_id=self.binding_id,
+            previous_binding_revision=self.previous_binding_revision,
+            binding_revision=self.binding_revision,
+            from_revision_id=self.from_revision_id,
+            from_semantic_version=self.from_semantic_version,
+            from_revision_digest=self.from_revision_digest,
+            to_revision_id=self.to_revision_id,
+            to_semantic_version=self.to_semantic_version,
+            to_revision_digest=self.to_revision_digest,
+            impact_receipt_id=self.impact_receipt_id,
+            impact_digest=self.impact_digest,
+            binding_digest_before=self.binding_digest_before,
+            binding_head_digest_before=self.binding_head_digest_before,
+            binding_head_digest_after=self.binding_head_digest_after,
+            policy_set_digest_before=self.policy_set_digest_before,
+            policy_set_digest_after=self.policy_set_digest_after,
+            added_metric_ids=self.added_metric_ids,
+            changed_metric_ids=self.changed_metric_ids,
+            removed_metric_ids=self.removed_metric_ids,
+            actor_id=self.actor_id,
+            actor_type=self.actor_type,
+            occurred_at=self.occurred_at,
+        )
+        for name in (
+            "operation",
+            "guideline_id",
+            "binding_id",
+            "previous_binding_revision",
+            "binding_revision",
+            "from_revision_id",
+            "from_semantic_version",
+            "from_revision_digest",
+            "to_revision_id",
+            "to_semantic_version",
+            "to_revision_digest",
+            "impact_receipt_id",
+            "impact_digest",
+            "binding_digest_before",
+            "binding_head_digest_before",
+            "binding_head_digest_after",
+            "policy_set_digest_before",
+            "policy_set_digest_after",
+            "added_metric_ids",
+            "changed_metric_ids",
+            "removed_metric_ids",
+            "actor_id",
+            "actor_type",
+            "occurred_at",
+        ):
+            object.__setattr__(self, name, getattr(normalized, name))
+        object.__setattr__(
+            self,
+            "policy_set_digest",
+            normalized.policy_set_digest_after,
+        )
+        return self
+
+    @property
+    def exact_revision_id(self) -> str:
+        """Revision represented by this materialized policy transition."""
+
+        value = (
+            self.to_revision_id
+            if self.operation == "adopt"
+            else self.from_revision_id
+        )
+        assert value is not None
+        return value
+
+
+class PolicyRetirementChanged(DomainEvent):
+    """Closed delivery companion for one board-policy retirement tombstone."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        frozen=True,
+    )
+
+    event_type: ClassVar[str] = GUIDELINE_RETIREMENT_EVENT_TYPE
+    event_schema_version: Literal["guideline-impact/v2"]
+    actor_id: str
+    actor_type: Literal["agent", "user", "system"]
+    operation: Literal["retire"]
+    guideline_id: str
+    retirement_id: str
+    retirement_status: Literal["retired", "superseded"]
+    superseded_by_guideline_id: str | None
+    binding_id: str
+    binding_revision: int
+    revision_id: str
+    revision_number: int
+    semantic_version: str
+    revision_digest: str
+    binding_digest_before: str
+    binding_head_digest_before: str
+    binding_head_digest_after: str
+    policy_set_digest_before: str
+    policy_set_digest_after: str
+    policy_set_digest: str
+    removed_metric_ids: tuple[str, ...] = ()
+    request_digest: str
+
+    @model_validator(mode="after")
+    def validate_domain_evidence(self) -> PolicyRetirementChanged:
+        if (
+            self.event_schema_version != GUIDELINE_IMPACT_CONTRACT_VERSION
+            or self.policy_set_digest != self.policy_set_digest_after
+        ):
+            raise ValueError("policy_retirement_event_evidence_invalid")
+        normalized = GuidelineRetirementBoardEvent(
+            event_id=self.event_id,
+            event_type=self.event_type,
+            operation=self.operation,
+            board_id=self.board_id,
+            guideline_id=self.guideline_id,
+            retirement_id=self.retirement_id,
+            retirement_status=self.retirement_status,
+            superseded_by_guideline_id=self.superseded_by_guideline_id,
+            binding_id=self.binding_id,
+            binding_revision=self.binding_revision,
+            revision_id=self.revision_id,
+            revision_number=self.revision_number,
+            semantic_version=self.semantic_version,
+            revision_digest=self.revision_digest,
+            binding_digest_before=self.binding_digest_before,
+            binding_head_digest_before=self.binding_head_digest_before,
+            binding_head_digest_after=self.binding_head_digest_after,
+            policy_set_digest_before=self.policy_set_digest_before,
+            policy_set_digest_after=self.policy_set_digest_after,
+            removed_metric_ids=self.removed_metric_ids,
+            actor_id=self.actor_id,
+            actor_type=self.actor_type,
+            occurred_at=self.occurred_at,
+            request_digest=self.request_digest,
+        )
+        for name in (
+            "operation",
+            "guideline_id",
+            "retirement_id",
+            "retirement_status",
+            "superseded_by_guideline_id",
+            "binding_id",
+            "binding_revision",
+            "revision_id",
+            "revision_number",
+            "semantic_version",
+            "revision_digest",
+            "binding_digest_before",
+            "binding_head_digest_before",
+            "binding_head_digest_after",
+            "policy_set_digest_before",
+            "policy_set_digest_after",
+            "removed_metric_ids",
+            "actor_id",
+            "actor_type",
+            "occurred_at",
+            "request_digest",
+        ):
+            object.__setattr__(self, name, getattr(normalized, name))
+        object.__setattr__(
+            self,
+            "policy_set_digest",
+            normalized.policy_set_digest_after,
+        )
+        return self
+
+    @property
+    def exact_revision_id(self) -> str:
+        return self.revision_id
+
+
+class PolicyBindingMaterialized(DomainEvent):
+    """Closed companion for an ACTIVE inline/default binding materialization."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        frozen=True,
+        strict=True,
+    )
+
+    event_type: ClassVar[str] = POLICY_BINDING_MATERIALIZED_EVENT_TYPE
+    event_id: str = Field(min_length=1, max_length=64)
+    event_schema_version: Literal["policy-binding-materialized/v2"]
+    actor_id: str
+    actor_type: Literal["agent", "user", "system"]
+    operation: Literal["adopt"]
+    guideline_id: str
+    binding_id: str
+    binding_revision: int
+    revision_id: str
+    semantic_version: str
+    revision_digest: str
+    source_kind: Literal["native", "default_materialization"]
+    enforcement: Literal["advisory", "blocking"]
+    minimum_confidence: int = Field(ge=0, le=100)
+    metric_threshold_overrides: dict[str, int]
+    priority: int
+
+    @model_validator(mode="after")
+    def validate_binding_evidence(self) -> PolicyBindingMaterialized:
+        if self.event_schema_version != (
+            POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION
+        ):
+            raise ValueError("policy_binding_materialized_evidence_invalid")
+        normalized = BoardGuidelineBinding(
+            binding_id=self.binding_id,
+            board_id=self.board_id,
+            guideline_id=self.guideline_id,
+            revision_id=self.revision_id,
+            semantic_version=self.semantic_version,
+            revision_digest=self.revision_digest,
+            priority=self.priority,
+            binding_revision=self.binding_revision,
+            adopted_by=self.actor_id,
+            adopted_at=self.occurred_at,
+            enforcement=GuidelineEnforcement(self.enforcement),
+            minimum_confidence=self.minimum_confidence,
+            metric_threshold_overrides=self.metric_threshold_overrides,
+            state=GuidelineBindingState.ACTIVE,
+            source_kind=GuidelineBindingProvenance(self.source_kind),
+        )
+        for name in (
+            "board_id",
+            "guideline_id",
+            "binding_id",
+            "binding_revision",
+            "revision_id",
+            "semantic_version",
+            "revision_digest",
+            "priority",
+            "actor_id",
+            "occurred_at",
+        ):
+            source_name = (
+                "adopted_by"
+                if name == "actor_id"
+                else "adopted_at"
+                if name == "occurred_at"
+                else name
+            )
+            object.__setattr__(
+                self,
+                name,
+                getattr(normalized, source_name),
+            )
+        object.__setattr__(
+            self,
+            "enforcement",
+            normalized.enforcement.value,
+        )
+        object.__setattr__(
+            self,
+            "minimum_confidence",
+            normalized.minimum_confidence,
+        )
+        object.__setattr__(
+            self,
+            "metric_threshold_overrides",
+            dict(normalized.metric_threshold_overrides),
+        )
+        object.__setattr__(
+            self,
+            "source_kind",
+            normalized.source_kind.value,
+        )
+        return self
+
+    @property
+    def exact_revision_id(self) -> str:
+        return self.revision_id
+
+
+class SemanticGuidelineProjectionChanged(DomainEvent):
+    """Durable board-KG projection intent for semantic guideline evidence.
+
+    Producers append this event and its handler execution in the same
+    relational unit of work as the authoritative mutation.  The dispatcher
+    can therefore observe it only after commit, while a rollback removes both
+    the authority and its projection intent.  ``entity_digest`` is the exact
+    immutable/head digest used by the edition adapter to fail closed before
+    reconciling the graph.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        frozen=True,
+        strict=True,
+    )
+
+    event_type: ClassVar[str] = SEMANTIC_GUIDELINE_PROJECTION_EVENT_TYPE
+    event_id: str = Field(min_length=1, max_length=64)
+    event_schema_version: Literal["semantic-guideline-kg-projection/v1"]
+    actor_id: str = Field(min_length=1, max_length=255)
+    actor_type: Literal["agent", "user", "system"]
+    entity_kind: Literal[
+        "revision",
+        "metric_definition",
+        "binding_configuration",
+        "assessment_receipt",
+        "metric_result",
+        "waiver",
+        "skip",
+    ]
+    causation_id: str = Field(min_length=1, max_length=255)
+    entity_id: str = Field(min_length=1, max_length=255)
+    entity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation: Literal["upsert", "terminate"]
+
+    @model_validator(mode="after")
+    def validate_projection_intent(self) -> SemanticGuidelineProjectionChanged:
+        if (
+            self.event_schema_version
+            != SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION
+        ):
+            raise ValueError("semantic_guideline_projection_evidence_invalid")
+        if self.occurred_at.tzinfo is None or self.occurred_at.utcoffset() is None:
+            raise ValueError("semantic_guideline_projection_time_invalid")
+        return self
+
+
+PolicyConstraintChanged = (
+    PolicyAdoptionChanged
+    | PolicyRetirementChanged
+    | PolicyBindingMaterialized
+    | SemanticGuidelineProjectionChanged
+)
 
 
 class ArtifactArchiveChanged(DomainEvent):
@@ -204,6 +621,81 @@ class RefinementMoved(DomainEvent):
     refinement_id: str
     from_status: str
     to_status: str
+
+
+class QualityAssessmentRecorded(DomainEvent):
+    """Version-bearing SK-A event staged with the relational assessment UoW."""
+
+    event_type: ClassVar[str] = "quality.assessment_recorded.v1"
+    event_schema_version: Literal[1] = 1
+    subject_type: Literal["ideation", "refinement", "spec"]
+    subject_id: str
+    subject_version: int = Field(..., ge=1)
+    assessment_kind: Literal[
+        "ambiguity",
+        "spec_validation",
+        "requirement_lint",
+    ]
+    receipt_id: str
+    input_digest: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    request_fingerprint: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    authority_digest: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    head_revision: int = Field(..., ge=1)
+
+
+class QualityClarificationChanged(DomainEvent):
+    """A subject Q&A mutation that may change assessment currentness."""
+
+    event_type: ClassVar[str] = "quality.clarification_changed.v1"
+    event_schema_version: Literal[1] = 1
+    subject_type: Literal["ideation", "refinement", "spec"]
+    subject_id: str
+    subject_version: int = Field(..., ge=1)
+    qa_id: str | None = None
+    operation: Literal["created", "answered", "deleted"]
+
+
+class ResearchDecisionChanged(DomainEvent):
+    """Common v1 payload for an append-only research-decision head change."""
+
+    event_schema_version: Literal[1] = 1
+    contract_version: Literal["research-decision-ledger/v1"] = (
+        "research-decision-ledger/v1"
+    )
+    refinement_id: str
+    refinement_version: int = Field(..., ge=1)
+    ledger_id: str
+    entry_id: str
+    head_revision: int = Field(..., ge=1)
+    status: Literal["open", "investigating", "resolved", "deferred"]
+
+
+class ResearchDecisionAppended(ResearchDecisionChanged):
+    """A new relational RDL head was appended for a Refinement."""
+
+    event_type: ClassVar[str] = "research_decision.appended"
+
+
+class ResearchDecisionSuperseded(ResearchDecisionChanged):
+    """An existing relational RDL head advanced to an immutable successor."""
+
+    event_type: ClassVar[str] = "research_decision.superseded"
+
+
+class ChecklistBindingChanged(DomainEvent):
+    """Append-only A3 governance audit staged with the binding transaction."""
+
+    event_type: ClassVar[str] = "checklist.binding_changed.v1"
+    event_schema_version: Literal[1] = 1
+    target_type: Literal["spec"] = "spec"
+    phase: Literal["spec_validation"] = "spec_validation"
+    template_version: Literal["/specify/v1"] = "/specify/v1"
+    mode: Literal["off", "advisory", "blocking"]
+    binding_version: int = Field(..., ge=1)
+    binding_digest: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    previous_mode: Literal["off", "advisory", "blocking"] | None = None
+    previous_binding_version: int | None = Field(default=None, ge=1)
+    change_source: Literal["board_bootstrap", "board_governance"]
 
 
 class CardLinkedToSpec(DomainEvent):
@@ -425,6 +917,10 @@ class KGDeliveryRedriveTick(DomainEvent):
 # Ordered list of all event_type strings known to the MVP. The dispatcher
 # uses this to resolve DomainEventRow → subclass during reconstruction.
 EVENT_TYPES: list[str] = [
+    PolicyAdoptionChanged.event_type,
+    PolicyRetirementChanged.event_type,
+    PolicyBindingMaterialized.event_type,
+    SemanticGuidelineProjectionChanged.event_type,
     ArtifactArchiveChanged.event_type,
     CardCreated.event_type,
     CardMoved.event_type,
@@ -442,6 +938,11 @@ EVENT_TYPES: list[str] = [
     StructuredSpecEntityRevoked.event_type,
     RefinementSemanticChanged.event_type,
     RefinementMoved.event_type,
+    QualityAssessmentRecorded.event_type,
+    QualityClarificationChanged.event_type,
+    ResearchDecisionAppended.event_type,
+    ResearchDecisionSuperseded.event_type,
+    ChecklistBindingChanged.event_type,
     SprintCreated.event_type,
     SprintMoved.event_type,
     SprintClosed.event_type,
@@ -463,6 +964,10 @@ EVENT_TYPES: list[str] = [
 
 
 _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
+    PolicyAdoptionChanged.event_type: PolicyAdoptionChanged,
+    PolicyRetirementChanged.event_type: PolicyRetirementChanged,
+    PolicyBindingMaterialized.event_type: PolicyBindingMaterialized,
+    SemanticGuidelineProjectionChanged.event_type: SemanticGuidelineProjectionChanged,
     ArtifactArchiveChanged.event_type: ArtifactArchiveChanged,
     CardCreated.event_type: CardCreated,
     CardMoved.event_type: CardMoved,
@@ -480,6 +985,11 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     StructuredSpecEntityRevoked.event_type: StructuredSpecEntityRevoked,
     RefinementSemanticChanged.event_type: RefinementSemanticChanged,
     RefinementMoved.event_type: RefinementMoved,
+    QualityAssessmentRecorded.event_type: QualityAssessmentRecorded,
+    QualityClarificationChanged.event_type: QualityClarificationChanged,
+    ResearchDecisionAppended.event_type: ResearchDecisionAppended,
+    ResearchDecisionSuperseded.event_type: ResearchDecisionSuperseded,
+    ChecklistBindingChanged.event_type: ChecklistBindingChanged,
     SprintCreated.event_type: SprintCreated,
     SprintMoved.event_type: SprintMoved,
     SprintClosed.event_type: SprintClosed,

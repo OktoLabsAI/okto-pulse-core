@@ -144,12 +144,12 @@ class RebuildSourceRow:
     disposition: str = DISPOSITION_CANONICAL
     reason_code: str = ""
     expires_at: str | None = None
-    # Spec manifest v2 (card 5ec8c75c / dec_c8e418e7): the v1-compatible content
-    # hash (spec rows only; "" otherwise). TRANSIENT — computed from the live
-    # source set, intentionally NOT in to_dict() so both the v2 source_set_hash
-    # and the persisted manifest JSON shape stay stable. Used only to PROVE a
-    # legacy schema-rebaseline at revalidate time.
+    # Manifest compatibility hashes are TRANSIENT live-read evidence. They are
+    # intentionally absent from ``to_dict`` and persisted manifests. V1 differs
+    # from V2 only for specs; V3 additionally binds current quality/RDL heads
+    # into their owning roots, so ideation/refinement/spec rows carry V2.
     content_hash_v1: str = ""
+    content_hash_v2: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -175,6 +175,14 @@ class RebuildSourceRow:
         d = self.to_dict()
         if self.content_hash_v1:
             d["content_hash"] = self.content_hash_v1
+        return d
+
+    def to_dict_v2(self) -> dict[str, Any]:
+        """Manifest-v2-compatible projection without persisting compat data."""
+
+        d = self.to_dict()
+        if self.content_hash_v2:
+            d["content_hash"] = self.content_hash_v2
         return d
 
 
@@ -302,9 +310,9 @@ class RebuildSourceManifest:
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
     created_at: str
-    # Spec source manifest schema version (card 5ec8c75c). 1 = legacy (spec
-    # hash without IR/OR); 2 = current (IR/OR included). Old manifests load
-    # as 1 so the first post-upgrade rebuild can rebaseline them.
+    # Source manifest schema version. 1 = legacy spec hash; 2 = IR/OR-aware
+    # spec hash; 3 = current quality/RDL head fingerprints bound into roots.
+    # Old manifests load as 1 and are revalidated against that exact schema.
     manifest_schema_version: int = 1
     working_sources: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
@@ -412,6 +420,7 @@ def _row_from_raw(
         reason_code=classification.reason_code,
         expires_at=classification.expires_at,
         content_hash_v1=str(row.get("content_hash_v1") or ""),
+        content_hash_v2=str(row.get("content_hash_v2") or ""),
     )
 
 
@@ -455,6 +464,7 @@ class RebuildSourceEnumerator:
     source_store: SourceStore
     working_ttl_days: int = DEFAULT_WORKING_TTL_DAYS
     cognitive_digest_provider: Callable[[str], dict[str, Any]] | None = None
+    now: datetime | None = None
 
     def enumerate(self, *, board_id: str) -> RebuildSourceSet:
         if not board_id:
@@ -499,6 +509,7 @@ class RebuildSourceEnumerator:
                     row,
                     default=self.working_ttl_days,
                 ),
+                now=self.now,
                 has_minimal_evidence=bool(row.get("has_minimal_evidence", True)),
                 # Path B amendment (spec 7ea1e4be): canonical only at done AND
                 # complete lineage. Defaults True so non-amendment sources are
@@ -743,6 +754,16 @@ def _compose_source_set_hash_v1(source_set: RebuildSourceSet) -> str:
     return _compose_source_set_hash_with(source_set, lambda r: r.to_dict_v1())
 
 
+def _compose_source_set_hash_v2(source_set: RebuildSourceSet) -> str:
+    """Reproduce the exact manifest-v2 source-set hash.
+
+    Compatibility fields never enter persisted JSON; they are consumed only
+    from the fresh, transactionally captured source set.
+    """
+
+    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict_v2())
+
+
 def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
     payload_dict = {
         "sources": [project(s) for s in source_set.sources],
@@ -785,6 +806,7 @@ class RevalidationResult:
     to_manifest_schema_version: int = 0
     hash_fields_v1: tuple[str, ...] = ()
     hash_fields_v2: tuple[str, ...] = ()
+    hash_fields_v3: tuple[str, ...] = ()
 
     @property
     def is_drift(self) -> bool:
@@ -798,6 +820,7 @@ class RevalidationResult:
             "to_manifest_schema_version": self.to_manifest_schema_version,
             "hash_fields_v1": list(self.hash_fields_v1),
             "hash_fields_v2": list(self.hash_fields_v2),
+            "hash_fields_v3": list(self.hash_fields_v3),
         }
 
 
@@ -1070,28 +1093,36 @@ class KGRebuildSourceManifest:
     ) -> RevalidationResult:
         """Classify the current source set against a stored manifest — KG-02.3
         calls this before mutation (IR ir_1959b2e1 run_validation contract),
-        extended for spec manifest v2 (card 5ec8c75c / dec_c8e418e7):
+        with exact manifest-v1/v2/v3 compatibility:
 
-        * EQUIVALENT — current v2 hash matches the stored hash.
-        * REBASELINE — the stored manifest is legacy (<v2) AND the
-          v1-compatible hash still matches it byte-for-byte, so the ONLY
-          difference is the v2 schema (IR/OR added to the spec hash). PROVEN,
-          not inferred from "hash changed". Permitted by rebuild_service with
-          audit + counter; never DLQ/canonical-debt.
-        * MANIFEST_DRIFT — real content change (or an already-v2 manifest).
-          Blocks, same as before.
+        * EQUIVALENT — a v3 manifest matches the current v3 hash.
+        * REBASELINE — a v1 or v2 manifest matches the corresponding transient
+          compatibility projection byte-for-byte. The only difference is the
+          governed schema upgrade to v3.
+        * MANIFEST_DRIFT — the hash for the manifest's exact schema differs, or
+          the schema version is unsupported. This always blocks.
         """
         from okto_pulse.core.kg.board_source_store import (
+            SOURCE_PROJECTION_HASH_FIELDS_V3,
             SPEC_SOURCE_MANIFEST_VERSION,
         )
 
-        current_hash = _compose_source_set_hash(current_source_set)
-        if current_hash == manifest.source_set_hash:
-            return RevalidationResult(SourceSetRevalidation.EQUIVALENT)
-
-        if manifest.manifest_schema_version < SPEC_SOURCE_MANIFEST_VERSION:
-            current_v1 = _compose_source_set_hash_v1(current_source_set)
-            if current_v1 == manifest.source_set_hash:
+        schema_version = manifest.manifest_schema_version
+        if schema_version == SPEC_SOURCE_MANIFEST_VERSION:
+            if _compose_source_set_hash(current_source_set) == manifest.source_set_hash:
+                return RevalidationResult(SourceSetRevalidation.EQUIVALENT)
+        elif schema_version in (1, 2):
+            compatibility_hash = (
+                _compose_source_set_hash_v1(current_source_set)
+                if schema_version == 1
+                else _compose_source_set_hash_v2(current_source_set)
+            )
+            if compatibility_hash == manifest.source_set_hash:
+                compatibility_field = (
+                    "content_hash_v1"
+                    if schema_version == 1
+                    else "content_hash_v2"
+                )
                 rebaselined = tuple(
                     row.source_ref
                     for partition in (
@@ -1102,7 +1133,10 @@ class KGRebuildSourceManifest:
                         current_source_set.legacy_unknown,
                     )
                     for row in partition
-                    if row.content_hash_v1 and row.content_hash != row.content_hash_v1
+                    if (
+                        getattr(row, compatibility_field)
+                        and row.content_hash != getattr(row, compatibility_field)
+                    )
                 )
                 from okto_pulse.core.kg.board_source_store import (
                     SPEC_CONTENT_COLUMNS_V1,
@@ -1112,10 +1146,11 @@ class KGRebuildSourceManifest:
                 result = RevalidationResult(
                     SourceSetRevalidation.REBASELINE,
                     rebaselined_source_refs=rebaselined,
-                    from_manifest_schema_version=manifest.manifest_schema_version,
+                    from_manifest_schema_version=schema_version,
                     to_manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
                     hash_fields_v1=SPEC_CONTENT_COLUMNS_V1,
                     hash_fields_v2=SPEC_CONTENT_COLUMNS_V2,
+                    hash_fields_v3=SOURCE_PROJECTION_HASH_FIELDS_V3,
                 )
                 _bump_rebaseline(board_id=manifest.board_id)
                 _append_spec_manifest_rebaseline_audit(
@@ -1130,16 +1165,25 @@ class KGRebuildSourceManifest:
                     "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
                     "from_version=%d to_version=%d rebaselined=%d",
                     manifest.board_id,
-                    manifest.manifest_schema_version,
+                    schema_version,
                     SPEC_SOURCE_MANIFEST_VERSION,
                     len(rebaselined),
                 )
                 return result
 
+        supported_versions = (1, 2, SPEC_SOURCE_MANIFEST_VERSION)
         _bump_enum(
             board_id=manifest.board_id,
-            outcome=EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value,
-            reason="manifest_drift",
+            outcome=(
+                EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value
+                if schema_version in supported_versions
+                else EnumerationOutcome.UNSUPPORTED_SCHEMA_VERSION.value
+            ),
+            reason=(
+                "manifest_drift"
+                if schema_version in supported_versions
+                else "unsupported_manifest_schema"
+            ),
         )
         return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
 

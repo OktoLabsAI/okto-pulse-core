@@ -630,6 +630,7 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
                 "title": "Draft spec",
                 "description": "Spec body",
                 "status": "draft",
+                "edition": 1,
                 "version": 4,
                     "assignee_id": "spec-owner",
                     "labels": ["golden"],

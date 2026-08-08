@@ -10,11 +10,12 @@ from okto_pulse.core.application.boundary.adapter_readiness_inventory import (
     REQUIRED_EVIDENCE,
     build_adapter_inventory,
 )
+from repository_checkout_testing import community_repo_for
 
 
 CORE_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = CORE_ROOT / "src"
-COMMUNITY_ROOT = CORE_ROOT.parents[0] / "okto_labs_pulse_community"
+COMMUNITY_ROOT = community_repo_for(CORE_ROOT)
 COMMUNITY_SRC_ROOT = COMMUNITY_ROOT / "src"
 CONTRACT_MODULE = "okto_pulse.core.application.rebuild_ports"
 

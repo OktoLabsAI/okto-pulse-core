@@ -5,6 +5,8 @@ version: "1.0"
 # Common Errors and How to Fix Them
 
 This table is the **single source of truth** for MCP-level errors. Before any ad hoc retry or workaround, consult this section and apply the canonical fix.
+Guideline-policy error semantics and retry actions are governed by
+`okto-pulse://reference/policy-compliance`.
 
 ## Resource Gate
 
@@ -54,6 +56,7 @@ is created.
 | `"N test scenario(s) still have status 'draft'"` / `"ready"` | Test card's linked scenarios not updated | Call `okto_pulse_update_test_scenario_status(status="passed")` for each linked scenario, then retry `okto_pulse_move_card`. If the spec is `validated` or `done`, make sure the scenario is already linked to this executable test card (`started`, `in_progress`, `validation`, or `done`); otherwise the scenario status call remains blocked by `status_not_mutable`. |
 | `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `okto_pulse_move_spec` (requires `okto_pulse_submit_spec_evaluation` with `recommendation=approve` on a `validated` spec). |
 | `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation` with the executor report, then `okto_pulse_submit_task_validation`. |
+| `"Card is not in 'validation' status"` | Validation was requested before the implementor successfully moved the card out of `in_progress` | The implementor must call `okto_pulse_move_card(status="validation", ...)` with the complete executor report and confirm that it succeeded. Only then can a validator submit. |
 | `reviewer_separation_required` | `reviewer_separation_mode="enforce"` and the task validator is also the card creator, current assignee, or executor-report author | This is an `action_required` outcome, not a transient retry. Follow remediation `request_independent_task_validator`: have a different authorized principal read `okto_pulse_get_task_context(..., profile="full", context_scope="gate")` and submit the validation. The blocked attempt persists neither a validation nor a status change. |
 
 If a persisted legacy board has no `reviewer_separation_mode` field, this error is intentionally not raised: the policy decision is `mode="off"`, `source="legacy_absent_compat"`. The accepted validation still records its conflicts and source for auditability.
@@ -128,6 +131,26 @@ Accepted shapes, the `detail` messages, and the structured `*_json` field rules 
 | `invalid_filter` | An unknown filter key for that `entity_type`, or a malformed `filters` JSON string, was passed to `okto_pulse_list_by_board`/`list_qa`/`list_knowledge` | Use only the keys in the response's `supported` field (`invalid_keys` echoes the rejected ones) — the per-`entity_type` filter table lives in `okto-pulse://reference/list_tools`. |
 | `unsupported_projection` | The requested `profile` is not supported by this tool (e.g. `detail` on the `copy_*_to_card` family) | Pick a profile from the returned `supported_profiles` list. Profile semantics and per-family variance: `okto-pulse://reference/projection-profiles`. |
 | `resource_lineage_resolution_failed` | The Resource Gate could not resolve the entity's resource lineage (broken/missing parent chain) — fail-closed, not a coverage verdict | Inspect `lineage_error_code`/`lineage_error_details` in the payload and repair the lineage (e.g. the card's spec or the spec's parent is missing/deleted); do not mark resources N/A to bypass. |
+
+## SK-A Quality, Research Decisions, and Checklist
+
+REST and MCP preserve one semantic code/envelope. Transport status may differ,
+but a client must not invent a surface-specific remediation.
+
+| Error code | Cause | Fix |
+|---|---|---|
+| `forbidden` | One side of the composed domain + SK-A leaf authority is absent | Refresh permissions; obtain both authorities. A leaf alone never grants a domain action. |
+| `version_conflict` | Subject version, head revision, execution revision, or another CAS fence changed | Re-read full context/current head and rebuild the request; keep the idempotency key only for an exact retry. |
+| `validation_failed` | Closed payload/taxonomy/anchor/state validation failed | Correct the reported safe reason. Do not retry unchanged. |
+| `question_budget_exceeded` | An assessment proposed more than five Q&A items | Split the work into another assessment run; each run permits at most five. |
+| `resolved_evidence_required` | A resolved RDL entry has neither evidence nor an explicit evidence-absence justification | Attach versioned evidence or state the bounded justification. |
+| `checklist_incomplete` | The checklist submission omitted, duplicated, or added an item | Submit every immutable template item exactly once. |
+| `checklist_binding_off` | Execution was attempted while the effective binding mode is `off` | Do not create an execution; a human may govern the binding in Board Config. There is no MCP binding mutator. |
+| `human_actor_required` | An agent attempted a human-only Refinement skip or checklist-binding governance action | Ask an authenticated human to perform the governed action; do not seek an agent permission alias. |
+| `invalid_pagination` | Offset/limit/cursor is primitive-, range-, menu-, or combination-invalid | REST uses non-negative offset and limit `25|50|100`; MCP uses limit `1..200` and an opaque cursor that cannot be combined with a non-zero offset. |
+
+Full operational protocol:
+`okto-pulse://reference/quality-assessments`.
 
 ## KG Graph Availability Errors
 

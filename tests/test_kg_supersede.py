@@ -13,6 +13,9 @@ Uses an injected fake Kùzu connection (store) — hermetic, no real graph.
 
 from __future__ import annotations
 
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    GraphNodePropertyBeforeImage,
+)
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
 
@@ -54,6 +57,28 @@ class _FakeConnection:
             **values,
         }))
 
+    def snapshot_node_properties(
+        self,
+        node_type,
+        node_id,
+        property_names,
+    ):
+        self.statements.append(("snapshot_node_properties", {
+            "node_type": node_type,
+            "node_id": node_id,
+            "property_names": property_names,
+        }))
+        return GraphNodePropertyBeforeImage(
+            node_type=node_type,
+            node_id=node_id,
+            attrs={name: "" for name in property_names},
+        )
+
+    def restore_node_properties(self, before_image):
+        self.statements.append(("restore_node_properties", {
+            "before_image": before_image,
+        }))
+
     def edge_exists(self, *args):
         self.statements.append(("edge_exists", {"args": args}))
         result = self.results.pop(0) if self.results else _FakeResult(False)
@@ -91,6 +116,7 @@ def test_supersede_decision_creates_node_marks_old_and_makes_edge():
     operations = [name for name, _ in conn.statements]
     assert operations == [
         "create_node",
+        "snapshot_node_properties",
         "mark_superseded",
         "edge_exists",
         "create_edge",
@@ -113,6 +139,7 @@ def test_supersede_cognitive_type_creates_universal_supersedes_edge():
     operations = [name for name, _ in conn.statements]
     assert operations == [
         "create_node",
+        "snapshot_node_properties",
         "mark_superseded",
         "edge_exists",
         "create_edge",

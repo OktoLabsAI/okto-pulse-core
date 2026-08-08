@@ -48,11 +48,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install ruff pyright build
+          pip install ruff pyright build pytest
 
       - name: Import smoke test
         run: |
           python -c "import okto_pulse.core; print('package imports cleanly')"
+
+      - name: MCP permission registry gate
+        run: |
+          python scripts/validate_mcp_permission_registry.py
+          python -m pytest -q \
+            tests/test_mcp_permission_registry.py \
+            tests/test_mcp_gap_core_authorization.py
 
       - name: Lint (ruff, advisory)
         # Advisory: there are ~145 pre-existing lint findings (mostly

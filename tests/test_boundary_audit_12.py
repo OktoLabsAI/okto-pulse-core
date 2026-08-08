@@ -199,6 +199,75 @@ def test_package_manifest_tools_loc_baseline_passes() -> None:
     assert report.evidence["tools_loc_observed"] == 0
     assert report.status == "passed"
     assert report.evidence["force_includes"], "force-includes must be enumerated"
+    assert report.evidence["missing_required_resources"] == []
+
+
+def test_package_manifest_missing_required_source_resource_fails_closed(
+    tmp_path,
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        '[tool.hatch.build.targets.wheel]\n'
+        'packages = ["src/okto_pulse"]\n'
+        '[tool.hatch.build.targets.wheel.force-include]\n'
+        '"src/required/release.json" = '
+        '"okto_pulse/core/required/release.json"\n',
+        encoding="utf-8",
+    )
+
+    report = PackageManifestGate().run(
+        PackageManifestGateInput(
+            source_root=tmp_path / "src",
+            pyproject_path=pyproject,
+            required_resource_paths=(),
+        )
+    )
+
+    assert report.status == "blocking"
+    assert report.evidence["error"] == "required_resource_missing"
+    assert report.evidence["missing_required_resources"] == [
+        "src/required/release.json"
+    ]
+
+
+def test_package_manifest_missing_required_wheel_resource_fails_closed(
+    tmp_path,
+) -> None:
+    source_resource = tmp_path / "src" / "required" / "release.json"
+    source_resource.parent.mkdir(parents=True)
+    source_resource.write_text("{}\n", encoding="utf-8")
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        '[tool.hatch.build.targets.wheel]\n'
+        'packages = ["src/okto_pulse"]\n'
+        '[tool.hatch.build.targets.wheel.force-include]\n'
+        '"src/required/release.json" = '
+        '"okto_pulse/core/required/release.json"\n',
+        encoding="utf-8",
+    )
+    record = tmp_path / "RECORD"
+    record.write_text(
+        "okto_pulse/core/app.py,sha256=abc,12\n"
+        "okto_pulse_core-0.3.1.dist-info/METADATA,sha256=def,100\n",
+        encoding="utf-8",
+    )
+
+    report = PackageManifestGate().run(
+        PackageManifestGateInput(
+            source_root=tmp_path / "src",
+            pyproject_path=pyproject,
+            wheel_record_path=record,
+            required_resource_paths=(),
+            verify_required_resources_in_wheel=True,
+        )
+    )
+
+    assert report.status == "blocking"
+    assert report.evidence["error"] == "required_resource_missing"
+    assert report.evidence["surface"] == "wheel_record"
+    assert report.evidence["missing_required_wheel_resources"] == [
+        "okto_pulse/core/required/release.json"
+    ]
 
 
 def test_package_manifest_loc_drift_blocks() -> None:
@@ -317,6 +386,34 @@ def test_package_manifest_missing_record_blocks_not_silently_passes(tmp_path) ->
     assert report.status == "blocking"
     assert report.evidence["error"] == "manifest_not_found"
     assert "wheel_files" not in report.evidence or report.evidence.get("wheel_files") is None
+
+
+def test_package_manifest_unreadable_record_blocks_when_wheel_verification_is_disabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    record = tmp_path / "RECORD"
+    record.write_text("okto_pulse/core/app.py,sha256=abc,12\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def read_text_or_raise(path: Path, *args, **kwargs) -> str:
+        if path == record:
+            raise PermissionError("RECORD is unreadable")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text_or_raise)
+
+    report = PackageManifestGate().run(
+        PackageManifestGateInput(
+            wheel_record_path=record,
+            verify_required_resources_in_wheel=False,
+        )
+    )
+
+    assert report.status == "blocking"
+    assert report.evidence["error"] == "manifest_not_found"
+    assert report.evidence["wheel_record_path"] == str(record)
+    assert "wheel_files" not in report.evidence
 
 
 def test_package_manifest_reads_record_and_reports_wheel_files(tmp_path) -> None:

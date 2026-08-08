@@ -9,15 +9,21 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from collections.abc import Iterable, Mapping
+from datetime import datetime, timezone
+from typing import Any, Final
 
 
-# Spec source manifest versioning (spec eaf185c9 / card 5ec8c75c). V2 adds
-# integration_requirements + observability_requirements to the spec content
-# hash. V1 is kept so a legacy board's stored baseline can be PROVEN
-# schema-rebaseline (the v1-compatible hash is unchanged) versus genuinely
-# drifted (real content change).
-SPEC_SOURCE_MANIFEST_VERSION = 2
+# Source manifest versioning. V2 added integration_requirements and
+# observability_requirements to the spec content hash. V3 binds only the
+# current quality/RDL heads into their owning root hashes; historical,
+# non-current rows deliberately do not participate. V1/V2 projections remain
+# byte-for-byte reproducible during revalidation.
+SPEC_SOURCE_MANIFEST_VERSION = 3
+# Historical root hashes are an immutable wire contract. Keep this version
+# independent from ``SPEC_SOURCE_MANIFEST_VERSION`` so a future manifest bump
+# cannot silently reinterpret bytes already persisted under the v3 schema.
+_PROJECTED_ROOT_CONTENT_HASH_SCHEMA_VERSION_V3: Final = 3
 _SPEC_CONTENT_COLUMNS_BASE: tuple[str, ...] = (
     "title",
     "description",
@@ -35,6 +41,64 @@ SPEC_CONTENT_COLUMNS_V1: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE
 SPEC_CONTENT_COLUMNS_V2: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE + (
     "integration_requirements",
     "observability_requirements",
+)
+SOURCE_PROJECTION_HASH_FIELDS_V3: tuple[str, ...] = (
+    "base_content_hash",
+    "quality_head_fingerprints",
+    "research_decision_head_fingerprints",
+)
+
+QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS: tuple[str, ...] = (
+    "board_id",
+    "subject_type",
+    "subject_id",
+    "subject_version",
+    "assessment_kind",
+    "receipt_id",
+    "head_revision",
+    "outcome",
+    "score",
+    "justification",
+    "scale_kind",
+    "scale_minimum",
+    "scale_maximum",
+    "scale_direction",
+    "content_digest",
+    "clarification_digest",
+    "ruleset_digest",
+    "taxonomy_digest",
+    "policy_digest",
+    "input_digest",
+    "canonicalization_version",
+    "ruleset_version",
+    "taxonomy_version",
+    "analyzer_version",
+    "policy_version",
+    "created_at",
+    "updated_at",
+)
+
+RESEARCH_DECISION_CURRENT_HEAD_FINGERPRINT_FIELDS: tuple[str, ...] = (
+    "board_id",
+    "refinement_id",
+    "refinement_version",
+    "ledger_id",
+    "entry_id",
+    "head_revision",
+    "predecessor_entry_id",
+    "unknown",
+    "status",
+    "anchor_type",
+    "anchor_ref",
+    "evidence_refs",
+    "alternatives",
+    "decision",
+    "rationale",
+    "confidence",
+    "evidence_absence_justification",
+    "created_by",
+    "created_at",
+    "updated_at",
 )
 
 STORY_CONTENT_COLUMNS: tuple[str, ...] = (
@@ -170,11 +234,130 @@ def canonical_content_hash(row: Any, columns: tuple[str, ...]) -> str:
     return _canonical_content_hash(row, columns)
 
 
-def _canonical_payload_hash(payload: dict[str, Any]) -> str:
+def _canonical_payload_hash(payload: Mapping[str, Any]) -> str:
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def canonical_projection_fingerprint(payload: Mapping[str, Any]) -> str:
+    """Fingerprint one current relational projection record.
+
+    Adapters supply an edition-owned payload assembled from the current head
+    and its immutable target. Keeping the canonical JSON/hash policy in Core
+    prevents the per-board and realm readers from drifting.
+    """
+
+    return _canonical_payload_hash(payload)
+
+
+def _projection_timestamp(value: Any, *, field_name: str) -> str:
+    """Normalize SQLAlchemy and raw-SQL timestamp representations identically."""
+
+    resolved: datetime
+    if isinstance(value, datetime):
+        resolved = value
+    elif isinstance(value, str) and value.strip():
+        candidate = value.strip()
+        if candidate.endswith("Z"):
+            candidate = f"{candidate[:-1]}+00:00"
+        try:
+            resolved = datetime.fromisoformat(candidate)
+        except ValueError as exc:
+            raise ValueError(f"projection_fingerprint_{field_name}_invalid") from exc
+    else:
+        raise ValueError(f"projection_fingerprint_{field_name}_invalid")
+    if resolved.tzinfo is None or resolved.utcoffset() is None:
+        resolved = resolved.replace(tzinfo=timezone.utc)
+    else:
+        resolved = resolved.astimezone(timezone.utc)
+    return resolved.isoformat()
+
+
+def _closed_projection_payload(
+    record: Mapping[str, Any],
+    *,
+    contract: str,
+    fields: tuple[str, ...],
+) -> dict[str, Any]:
+    if not isinstance(record, Mapping):
+        raise TypeError("projection_fingerprint_record_invalid")
+    missing = tuple(field for field in fields if field not in record)
+    if missing:
+        raise ValueError("projection_fingerprint_fields_missing:" + ",".join(missing))
+    payload = {
+        "projection_contract": contract,
+        **{field: record[field] for field in fields},
+    }
+    for field_name in ("created_at", "updated_at"):
+        payload[field_name] = _projection_timestamp(
+            payload[field_name],
+            field_name=field_name,
+        )
+    return payload
+
+
+def quality_current_head_fingerprint(record: Mapping[str, Any]) -> str:
+    """Hash exactly one ``CurrentQualityAssessmentSummary`` sans self-hash."""
+
+    return canonical_projection_fingerprint(
+        _closed_projection_payload(
+            record,
+            contract="quality-assessment-current/v1",
+            fields=QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS,
+        )
+    )
+
+
+def research_decision_current_head_fingerprint(
+    record: Mapping[str, Any],
+) -> str:
+    """Hash exactly one ``CurrentResearchDecisionSummary`` sans self-hash."""
+
+    payload = _closed_projection_payload(
+        record,
+        contract="research-decision-current/v1",
+        fields=RESEARCH_DECISION_CURRENT_HEAD_FINGERPRINT_FIELDS,
+    )
+    for field_name in ("evidence_refs", "alternatives"):
+        values = payload[field_name]
+        if not isinstance(values, Iterable) or isinstance(
+            values,
+            str | bytes | bytearray,
+        ):
+            raise ValueError(f"projection_fingerprint_{field_name}_invalid")
+        payload[field_name] = [str(value) for value in values]
+    return canonical_projection_fingerprint(payload)
+
+
+def projected_root_content_hash(
+    content_hash_v2: str,
+    *,
+    quality_head_fingerprints: Iterable[str] = (),
+    research_decision_head_fingerprints: Iterable[str] = (),
+) -> str:
+    """Return the manifest-v3 hash for an ideation/refinement/spec root.
+
+    The ordered inputs are fingerprints, not pseudo source rows. Empty current
+    sets are still bound so the v2→v3 schema transition is explicit and can be
+    proven through the transient v2 compatibility hash.
+    """
+
+    return _canonical_payload_hash(
+        {
+            "base_content_hash": str(content_hash_v2),
+            "projection_schema_version": (
+                _PROJECTED_ROOT_CONTENT_HASH_SCHEMA_VERSION_V3
+            ),
+            "quality_head_fingerprints": sorted(
+                {str(value) for value in quality_head_fingerprints}
+            ),
+            "research_decision_head_fingerprints": sorted(
+                {str(value) for value in research_decision_head_fingerprints}
+            ),
+        }
+    )
 
 
 def _to_iso(value: Any) -> str:
@@ -246,7 +429,9 @@ def _bug_has_minimal_evidence(row: Any) -> bool:
     if _card_artifact_type(row) != "bug":
         return True
     evidence_fields = ("observed_behavior", "expected_behavior", "steps_to_reproduce")
-    has_text = any(str(_row_value(row, field, "") or "").strip() for field in evidence_fields)
+    has_text = any(
+        str(_row_value(row, field, "") or "").strip() for field in evidence_fields
+    )
     linked_tests = _load_json_array(_row_value(row, "linked_test_task_ids"))
     conclusions = _load_json_array(_row_value(row, "conclusions"))
     return has_text and (bool(linked_tests) or bool(conclusions))
@@ -317,16 +502,23 @@ __all__ = [
     "AMENDMENT_CONTENT_COLUMNS",
     "CARD_CONTENT_COLUMNS",
     "IDEATION_CONTENT_COLUMNS",
+    "QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS",
     "REFINEMENT_CONTENT_COLUMNS",
+    "RESEARCH_DECISION_CURRENT_HEAD_FINGERPRINT_FIELDS",
     "SPEC_CONTENT_COLUMNS_V1",
     "SPEC_CONTENT_COLUMNS_V2",
     "SPEC_SOURCE_MANIFEST_VERSION",
+    "SOURCE_PROJECTION_HASH_FIELDS_V3",
     "SPRINT_CONTENT_COLUMNS",
     "STORY_CONTENT_COLUMNS",
     "bug_has_minimal_evidence",
     "canonical_content_hash",
+    "canonical_projection_fingerprint",
     "card_artifact_type",
     "decision_sources_from_spec",
+    "projected_root_content_hash",
+    "quality_current_head_fingerprint",
+    "research_decision_current_head_fingerprint",
     "row_status",
     "to_iso",
     "updated_at",

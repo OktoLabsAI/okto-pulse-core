@@ -24,6 +24,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from sqlalchemy_test_models import (
     Agent,
@@ -142,7 +143,7 @@ def db_factory():
     return get_session_factory()
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def seeded_board(db_factory):
     """Create a minimal board with one of every entity type we need.
 
@@ -225,6 +226,7 @@ async def seeded_board(db_factory):
                 title="Test spec",
                 description="desc",
                 status=SpecStatus.DRAFT,
+                edition=4,
                 created_by=AGENT_ID,
             )
         )
@@ -704,6 +706,7 @@ async def test_list_by_board_spec_structure(seeded_board):
             "title",
             "description",
             "status",
+            "edition",
             "version",
             "assignee_id",
             "labels",
@@ -711,6 +714,7 @@ async def test_list_by_board_spec_structure(seeded_board):
             "updated_at",
         }
         assert expected_keys <= set(data["items"][0].keys())
+        assert data["items"][0]["edition"] == 4
 
 
 @pytest.mark.asyncio

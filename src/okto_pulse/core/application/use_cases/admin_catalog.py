@@ -27,7 +27,15 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_any_authority,
+    require_authorization,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.services.default_board_configuration import (
+    guideline_ref_diff_has_changes,
+)
 
 
 class DataResult:
@@ -229,6 +237,15 @@ class CreateAmendmentRevisionUseCase:
             actor=actor,
             write=True,
         )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "amendment.revision.create",
+                legacy_operation="card.entity.edit_bug_fields",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.amendments.create(
             board_id=command.board_id,
             bug_id=command.bug_id,
@@ -250,6 +267,15 @@ class ListAmendmentRevisionsUseCase:
             actor=actor,
             write=False,
         )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "amendment.revision.read",
+                legacy_operation="card.entity.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             await uow.services.amendments.list_for_bug(
                 board_id=command.board_id, bug_id=command.bug_id
@@ -268,14 +294,22 @@ class GetAmendmentRevisionUseCase:
             actor=actor,
             write=False,
         )
-        return DataResult(
-            await _preflight_amendment(
-                uow,
-                board_id=command.board_id,
-                bug_id=command.bug_id,
-                amendment_id=command.amendment_id,
-            )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "amendment.revision.read",
+                legacy_operation="card.entity.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
+        amendment = await _preflight_amendment(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            amendment_id=command.amendment_id,
+        )
+        return DataResult(amendment)
 
 
 class AssociateAmendmentRevisionUseCase:
@@ -298,6 +332,15 @@ class AssociateAmendmentRevisionUseCase:
             board_id=command.board_id,
             bug_id=command.bug_id,
             amendment_id=command.amendment_id,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "amendment.revision.associate",
+                legacy_operation="card.entity.edit_bug_fields",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
         data = await uow.services.amendments.associate(
             board_id=command.board_id,
@@ -331,6 +374,15 @@ class TransitionAmendmentRevisionUseCase:
             bug_id=command.bug_id,
             amendment_id=command.amendment_id,
         )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "amendment.revision.transition",
+                legacy_operation="card.entity.edit_bug_fields",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.amendments.transition_lifecycle(
             board_id=command.board_id,
             bug_id=command.bug_id,
@@ -357,6 +409,15 @@ class GetActiveDefaultBoardConfigUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         return DataResult(await uow.services.default_board_config.get_active(scope=command.scope))
 
 
@@ -364,6 +425,15 @@ class ListDefaultBoardConfigVersionsUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         return DataResult(await uow.services.default_board_config.list_versions(scope=command.scope))
 
 
@@ -371,11 +441,33 @@ class CreateDefaultBoardConfigVersionUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        require_global_catalog_admin(actor)
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "default_board_config.create",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            roles=("admin", "operator"),
+            uow=uow,
+        )
+        payload = command.payload or {}
+        diff = await uow.services.default_board_config.preview_create_guideline_ref_diff(
+            scope=str(payload.get("scope") or command.scope or "global"),
+            guideline_default_refs=payload.get("guideline_default_refs"),
+        )
+        if guideline_ref_diff_has_changes(diff):
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "default_board_config.guidelines.edit",
+                    legacy_operation="guidelines.adoption.manage",
+                ),
+                uow=uow,
+            )
         data = await uow.services.default_board_config.create_version(
             actor=actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
-            **(command.payload or {}),
+            **payload,
         )
         await commit(uow)
         return DataResult(data)
@@ -385,7 +477,27 @@ class ActivateDefaultBoardConfigVersionUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        require_global_catalog_admin(actor)
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "default_board_config.activate",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            roles=("admin", "operator"),
+            uow=uow,
+        )
+        diff = await uow.services.default_board_config.preview_activate_guideline_ref_diff(
+            template_id=command.template_id,
+        )
+        if guideline_ref_diff_has_changes(diff):
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "default_board_config.guidelines.edit",
+                    legacy_operation="guidelines.adoption.manage",
+                ),
+                uow=uow,
+            )
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -399,7 +511,27 @@ class DeactivateDefaultBoardConfigVersionUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        require_global_catalog_admin(actor)
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "default_board_config.deactivate",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            roles=("admin", "operator"),
+            uow=uow,
+        )
+        diff = await uow.services.default_board_config.preview_deactivate_guideline_ref_diff(
+            template_id=command.template_id,
+        )
+        if guideline_ref_diff_has_changes(diff):
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "default_board_config.guidelines.edit",
+                    legacy_operation="guidelines.adoption.manage",
+                ),
+                uow=uow,
+            )
         data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -427,15 +559,35 @@ class GetBoardDefaultConfigDiffUseCase:
                 f"Board '{command.board_id}' was not found or is not accessible.",
                 404,
             )
-        return DataResult(
-            await uow.services.default_board_config.get_board_diff(board_id=command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.diff_read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
+        data = await uow.services.default_board_config.get_board_diff(
+            board_id=command.board_id,
+            uow=uow,
+        )
+        return DataResult(data)
 
 
 class ListDefaultGuidelineCandidatesUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.candidates_read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         data = await uow.services.default_board_config.list_default_candidates(
             scope=command.scope,
             template_id=command.template_id or None,
@@ -449,7 +601,14 @@ class UpdateDefaultGuidelineRefsUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        require_global_catalog_admin(actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.guidelines.edit",
+                legacy_operation="guidelines.adoption.manage",
+            ),
+            uow=uow,
+        )
         data = await uow.services.default_board_config.update_template_guidelines(
             template_id=command.template_id,
             guideline_default_refs=(command.payload or {}).get("guideline_default_refs"),
@@ -464,7 +623,15 @@ class SetDefaultDesignSystemUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        require_global_catalog_admin(actor)
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "default_board_config.set_design_system",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            roles=("admin", "operator"),
+            uow=uow,
+        )
         data = await uow.services.default_board_config.set_template_design_system(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -548,6 +715,7 @@ class CreateDesignSystemUseCase:
         )
 
         payload = command.payload or {}
+        board_id: str | None = None
         if (payload.get("scope") or "global") == "inline":
             board_id = payload.get("board_id")
             if not board_id:
@@ -560,6 +728,15 @@ class CreateDesignSystemUseCase:
                     actor,
                     write=True,
                 )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.create",
+                legacy_operation="spec.architecture.create",
+            ),
+            uow=uow,
+            board_id=board_id or None,
+        )
         item = await uow.services.design_systems.create_design_system(
             actor.actor_id,
             **payload,
@@ -589,6 +766,15 @@ class ListDesignSystemsUseCase:
                     actor,
                     write=False,
                 )
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "design_system.entity.read",
+                    legacy_operation="board.read",
+                ),
+                uow=uow,
+                board_id=command.board_id or None,
+            )
             items = await uow.services.design_systems.list_catalog(
                 scope=command.scope,
                 board_id=command.board_id or None,
@@ -610,6 +796,15 @@ class ListDesignSystemsUseCase:
                 actor,
                 write=False,
             )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         page = await uow.services.design_systems.list_catalog_page(
             scope=command.scope,
             board_id=command.board_id or None,
@@ -644,6 +839,15 @@ class GetDesignSystemUseCase:
             board_access_authorized=board_authorized,
             allow_owned_global_without_link=True,
         )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         return DataResult(
             serialize_design_system_profile(item, profile=command.profile or "full")
         )
@@ -666,6 +870,21 @@ class UpdateDesignSystemUseCase:
                 actor,
                 write=True,
             )
+        await uow.services.design_systems.require_authorized_design_system(
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id or None,
+            board_access_authorized=board_authorized,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.edit",
+                legacy_operation="spec.architecture.edit",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         item = await uow.services.design_systems.update_design_system(
             command.design_system_id,
             actor.actor_id,
@@ -691,6 +910,21 @@ class DeleteDesignSystemUseCase:
                 actor,
                 write=True,
             )
+        await uow.services.design_systems.require_authorized_design_system(
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id or None,
+            board_access_authorized=board_authorized,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.delete",
+                legacy_operation="spec.architecture.delete",
+            ),
+            uow=uow,
+            board_id=command.board_id or None,
+        )
         deleted = await uow.services.design_systems.delete_design_system(
             command.design_system_id,
             actor.actor_id,
@@ -713,6 +947,18 @@ class LinkBoardDesignSystemUseCase:
             actor,
             write=True,
         )
+        await uow.services.design_systems.require_design_system(
+            (command.payload or {})["design_system_id"]
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.board_link.create",
+                legacy_operation="spec.architecture.edit",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         link = await uow.services.design_systems.link_design_system_to_board(
             command.board_id,
             (command.payload or {})["design_system_id"],
@@ -734,6 +980,15 @@ class UnlinkBoardDesignSystemUseCase:
             actor,
             write=True,
         )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.board_link.delete",
+                legacy_operation="spec.architecture.edit",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         unlinked = await uow.services.design_systems.unlink_design_system_from_board(
             command.board_id
         )
@@ -752,6 +1007,15 @@ class GetBoardDesignSystemUseCase:
             command.board_id,
             actor,
             write=False,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.board_link.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
         from okto_pulse.core.services.design_system import (
             project_effective_design_system,

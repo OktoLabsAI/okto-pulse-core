@@ -38,6 +38,8 @@ HEADER = (
     "exact resource containing that tool's args, returns and examples.\n"
     "Required filters for the consolidated `list_*` tools:\n"
     "`okto-pulse://reference/list_tools`.\n"
+    "Semantic guideline protocol:\n"
+    "`okto-pulse://reference/policy-compliance`.\n"
 )
 
 # Ordered (section, tool-doc family or None, matcher) rules — FIRST match wins.
@@ -73,20 +75,37 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"^okto_pulse_.*default_board_config|^okto_pulse_get_board_default_config_diff$"),
     ("Design Systems", "board",
      r"design_system"),
+    ("Semantic Guideline Assessments & Exceptions", "guideline",
+     r"^okto_pulse_(record_semantic_guideline_assessment|"
+     r"list_semantic_guideline_assessments|"
+     r"get_semantic_guideline_assessment|"
+     r"get_current_semantic_guideline_assessment|"
+     r"list_semantic_guideline_findings|"
+     r"list_semantic_guideline_waivers|"
+     r"get_semantic_guideline_waiver|"
+     r"list_semantic_guideline_waiver_events|"
+     r"(request|review|revoke|revalidate)_semantic_guideline_waiver)$"),
     ("Guidelines", "guideline",
      r"guideline"),
     # --- SDLC entities ------------------------------------------------------
     ("Stories & Topics", "story",
      r"(story$|stories|topic)"),
+    ("Quality Assessments", "quality",
+     r"^okto_pulse_(record_ambiguity_assessment|"
+     r"get_current_quality_assessment|get_quality_assessment_receipt|"
+     r"list_quality_assessments|list_quality_findings)$"),
     ("Ideations", "ideation",
      r"ideation"),
     ("Refinements", "refinement",
-     r"refinement"),
+     r"refinement|research_decision"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
      r"get_spec_context|get_spec_history|derive_spec_from_ideation|"
      r"submit_spec_validation|list_spec_validations|submit_spec_evaluation|"
      r"get_spec_evaluation|list_spec_evaluations|delete_spec_evaluation|"
+     r"get_checklist_binding|"
+     r"start_checklist_execution|submit_checklist_execution|"
+     r"get_checklist_receipt|"
      r"migrate_spec_decisions|update_spec_entity|remove_spec_entity|"
      r"update_spec_api_contract|get_spec_knowledge|add_spec_knowledge|"
      r"delete_spec_knowledge|get_spec_snapshot)"),

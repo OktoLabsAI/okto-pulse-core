@@ -12,6 +12,8 @@ Tool schemas arrive lazily via MCP `tools/list`. Every entry links the
 exact resource containing that tool's args, returns and examples.
 Required filters for the consolidated `list_*` tools:
 `okto-pulse://reference/list_tools`.
+Semantic guideline protocol:
+`okto-pulse://reference/policy-compliance`.
 
 ## KG — Consolidation (write path)
 - `okto_pulse_kg_abort_consolidation` — docs: `okto-pulse://reference/tool-docs/kg`
@@ -127,13 +129,35 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_unlink_board_design_system` — docs: `okto-pulse://reference/tool-docs/board`
 - `okto_pulse_update_design_system` — docs: `okto-pulse://reference/tool-docs/misc`
 
+## Semantic Guideline Assessments & Exceptions
+- `okto_pulse_get_current_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_get_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_get_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_assessments` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_findings` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_waiver_events` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_semantic_guideline_waivers` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_record_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_request_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_revalidate_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_review_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_revoke_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
+
 ## Guidelines
+- `okto_pulse_adopt_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_create_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_create_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_delete_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_board_guidelines` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_get_guideline_impact` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_get_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_link_guideline_to_board` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_default_guideline_candidates` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_guideline_impact_items` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_list_guideline_revisions` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_guidelines` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_preview_guideline_impact` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_retire_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_unlink_guideline_from_board` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_update_board_guideline_priority` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_update_default_guideline_refs` — docs: `okto-pulse://reference/tool-docs/guideline`
@@ -155,6 +179,13 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_restore_topic` — docs: `okto-pulse://reference/tool-docs/topic`
 - `okto_pulse_update_story` — docs: `okto-pulse://reference/tool-docs/story`
 - `okto_pulse_update_topic` — docs: `okto-pulse://reference/tool-docs/topic`
+
+## Quality Assessments
+- `okto_pulse_get_current_quality_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_get_quality_assessment_receipt` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_list_quality_assessments` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_list_quality_findings` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_record_ambiguity_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
 
 ## Ideations
 - `okto_pulse_add_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
@@ -179,6 +210,7 @@ Required filters for the consolidated `list_*` tools:
 ## Refinements
 - `okto_pulse_add_refinement_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_answer_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
+- `okto_pulse_append_research_decision` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_ask_refinement_choice_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_ask_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_create_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
@@ -190,6 +222,7 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_get_refinement_context` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_get_refinement_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_get_refinement_snapshot` — docs: `okto-pulse://reference/tool-docs/refinement`
+- `okto_pulse_list_research_decisions` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_move_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_update_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 
@@ -199,6 +232,8 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_delete_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_get_checklist_binding` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_get_checklist_receipt` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_context` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
@@ -208,6 +243,8 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_migrate_spec_decisions` — docs: `okto-pulse://reference/tool-docs/decision`
 - `okto_pulse_move_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_remove_spec_entity` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_start_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_submit_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_submit_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_submit_spec_validation` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_update_spec` — docs: `okto-pulse://reference/tool-docs/spec`

@@ -23,11 +23,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import select
-
 from sqlalchemy_test_models import (
     Base,
-    BoardGuideline,
     DefaultBoardConfiguration,
     Guideline,
 )
@@ -43,13 +40,27 @@ pytestmark = pytest.mark.asyncio
 USER_ID = "dbc-forward-only-user"
 
 
-async def _global_guideline(db, title: str, version: int = 2) -> Guideline:
-    g = Guideline(
-        title=title, content="c", scope="global", board_id=None, owner_id=USER_ID, version=version
+async def _global_guideline(db, title: str) -> Guideline:
+    return await GuidelineService(db).create_guideline(
+        USER_ID,
+        GuidelineCreate(
+            title=title,
+            content="c",
+            scope="global",
+            board_id=None,
+        ),
     )
-    db.add(g)
-    await db.flush()
-    return g
+
+
+def _default_ref(guideline: Guideline, *, priority: int) -> dict:
+    return {
+        "guideline_id": guideline.id,
+        "priority": priority,
+        "revision_id": guideline.revision_id,
+        "revision_number": guideline.version,
+        "semantic_version": guideline.semantic_version,
+        "revision_digest": guideline.revision_digest,
+    }
 
 
 async def _active_global_template_with(db, refs):
@@ -69,23 +80,24 @@ async def _board(db, name: str | None = None):
 
 
 async def _link_gids(db, board_id) -> set:
-    return set(
-        (
-            await db.execute(
-                select(BoardGuideline.guideline_id).where(BoardGuideline.board_id == board_id)
-            )
-        ).scalars().all()
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
     )
+
+    bindings = await require_relational_application_adapter().guideline_policy(
+        db
+    ).list_bindings(board_id=board_id)
+    return {binding.guideline_id for binding in bindings}
 
 
 async def _get_link(db, board_id, gid):
-    return (
-        await db.execute(
-            select(BoardGuideline).where(
-                BoardGuideline.board_id == board_id, BoardGuideline.guideline_id == gid
-            )
-        )
-    ).scalar_one_or_none()
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+
+    return await require_relational_application_adapter().guideline_policy(
+        db
+    ).get_binding(board_id=board_id, guideline_id=gid)
 
 
 # ---------------------------------------------------------------------------
@@ -99,16 +111,14 @@ async def test_existing_links_survive_default_removal_and_new_board_excludes_it(
     async with get_session_factory()() as db:
         g1 = await _global_guideline(db, "G1")
         api = DefaultBoardConfigApiService(db)
-        await _active_global_template_with(
-            db, [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}]
-        )
+        await _active_global_template_with(db, [_default_ref(g1, priority=1)])
 
         # board A created while g1 is a default.
         board_a = await _board(db)
         before = await _link_gids(db, board_a.id)
         assert g1.id in before
         link_a = await _get_link(db, board_a.id, g1.id)
-        assert link_a.priority == 1 and link_a.template_version is not None
+        assert link_a.priority == 1
 
         # remove g1 from the active template (copy-on-write new version).
         active = (await api.get_active())["active"]
@@ -135,7 +145,7 @@ async def test_future_template_change_does_not_mutate_existing_links():
         g2 = await _global_guideline(db, "G2")
         api = DefaultBoardConfigApiService(db)
         await _active_global_template_with(
-            db, [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}]
+            db, [_default_ref(g1, priority=1)]
         )
         board_a = await _board(db)
 
@@ -144,8 +154,8 @@ async def test_future_template_change_does_not_mutate_existing_links():
         await api.update_template_guidelines(
             template_id=active["id"],
             guideline_default_refs=[
-                {"guideline_id": g1.id, "priority": 9, "guideline_version": g1.version},
-                {"guideline_id": g2.id, "priority": 2, "guideline_version": g2.version},
+                _default_ref(g1, priority=9),
+                _default_ref(g2, priority=2),
             ],
             actor=USER_ID,
         )
@@ -165,11 +175,13 @@ async def test_board_reads_effective_guidelines_via_links_and_inline():
     from okto_pulse.core.infra.database import get_session_factory
 
     async with get_session_factory()() as db:
-        await _active_global_template_with(db, [])  # no materialized defaults
+        linked = await _global_guideline(db, "Linked global")
+        await _active_global_template_with(
+            db,
+            [_default_ref(linked, priority=1)],
+        )
         board = await _board(db)
         gsvc = GuidelineService(db)
-        linked = await _global_guideline(db, "Linked global")
-        await gsvc.link_guideline_to_board(board.id, linked.id, priority=1)
         inline = await gsvc.create_guideline(
             USER_ID,
             GuidelineCreate(title="Inline", content="c", scope="inline", board_id=board.id),
@@ -219,9 +231,7 @@ async def test_default_state_is_derived_from_template_refs_not_a_flag():
         # flipping the template ref (the single source of truth) flips the state.
         await api.update_template_guidelines(
             template_id=tmpl.id,
-            guideline_default_refs=[
-                {"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}
-            ],
+            guideline_default_refs=[_default_ref(g1, priority=1)],
             actor=USER_ID,
         )
         cand2 = {

@@ -71,6 +71,7 @@ _BASELINE_CORE_SETTING_NAMES: tuple[str, ...] = (
     "kg_queue_stuck_age_seconds",
     "kg_queue_recovery_scan_interval_s",
     "cognitive_readiness_blocking_enabled",
+    "guideline_policy_cursor_signing_key",
     "kg_queue_dlq_auto_drain_backoff_s",
     "kg_queue_dlq_auto_drain_max_requeue_attempts",
     "kg_decay_tick_interval_minutes",
@@ -176,6 +177,10 @@ _CORE_CONTRACT_OWNERS: dict[str, tuple[str, str]] = {
     "cognitive_readiness_blocking_enabled": (
         "okto-pulse-core/cognitive-readiness",
         "global enforcement rollout flag",
+    ),
+    "guideline_policy_cursor_signing_key": (
+        "okto-pulse-core/inbound-policy",
+        "stable secret used to authenticate REST/MCP policy keyset cursors",
     ),
     "kg_queue_dlq_auto_drain_backoff_s": (
         "okto-pulse-core/kg",

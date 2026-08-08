@@ -35,6 +35,7 @@ from sqlalchemy_test_models import Board, BoardDesignSystem, DesignSystem
 from okto_pulse.core.models.schemas import BoardCreate, BoardSettings, BoardUpdate
 from okto_pulse.core.services.design_system import DesignSystemService
 from okto_pulse.core.services.main import BoardService
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 
 pytestmark = pytest.mark.asyncio
 
@@ -43,7 +44,7 @@ USER_ID = "ds-overview-user"
 
 class _Ctx:
     agent_id = USER_ID
-    permissions: list = []
+    permissions = registered_permission_flags()
 
 
 async def _call(name: str, **kwargs) -> dict:

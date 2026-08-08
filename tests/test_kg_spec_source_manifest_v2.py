@@ -1,4 +1,4 @@
-"""Behavioral tests for spec source manifest v2 + legacy rebaseline (spec eaf185c9, card 5ec8c75c).
+"""Behavioral tests for source manifest v1/v2 compatibility under schema v3.
 
 One test per spec test_scenario / board card, plus the validator/codex-mandated
 adversarial safety case:
@@ -15,19 +15,29 @@ Behavioral: exercises the real hash function / manifest revalidate / persisted a
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 
 import pytest
 
 from okto_pulse.core.kg.board_source_store import (
+    QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS,
+    RESEARCH_DECISION_CURRENT_HEAD_FINGERPRINT_FIELDS,
     SPEC_CONTENT_COLUMNS_V1,
     SPEC_CONTENT_COLUMNS_V2,
+    SPEC_SOURCE_MANIFEST_VERSION,
     _canonical_content_hash,
+)
+from okto_pulse.core.ports.consolidation import (
+    CurrentQualityAssessmentSummary,
+    CurrentResearchDecisionSummary,
 )
 from okto_pulse.core.kg.rebuild_sources import (
     KGRebuildSourceManifest,
     RebuildSourceEnumerator,
     SourceSetRevalidation,
     _compose_source_set_hash_v1,
+    _compose_source_set_hash_v2,
     get_spec_manifest_rebaseline_count,
     read_spec_manifest_rebaseline_audit,
     reset_spec_manifest_rebaseline_counter,
@@ -51,7 +61,13 @@ def _spec_row(**overrides) -> dict:
     return row
 
 
-def _spec_source(content_hash: str, content_hash_v1: str, *, id_: str = "s1") -> dict:
+def _spec_source(
+    content_hash: str,
+    content_hash_v2: str,
+    content_hash_v1: str,
+    *,
+    id_: str = "s1",
+) -> dict:
     """A spec entry of the enumerated source set (done → canonical partition)."""
     return {
         "artifact_type": "spec",
@@ -60,12 +76,26 @@ def _spec_source(content_hash: str, content_hash_v1: str, *, id_: str = "s1") ->
         "source_version": "1",
         "content_hash": content_hash,
         "content_hash_v1": content_hash_v1,
+        "content_hash_v2": content_hash_v2,
         "created_at": "2026-06-08T00:00:00+00:00",
         "updated_at": "2026-06-08T00:00:00+00:00",
         "status": "done",
         "source_artifact_status": "done",
         "has_minimal_evidence": True,
     }
+
+
+def test_projection_fingerprint_fields_match_current_head_dtos() -> None:
+    assert QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS == tuple(
+        field.name
+        for field in dataclasses.fields(CurrentQualityAssessmentSummary)
+        if field.name != "projection_fingerprint"
+    )
+    assert RESEARCH_DECISION_CURRENT_HEAD_FINGERPRINT_FIELDS == tuple(
+        field.name
+        for field in dataclasses.fields(CurrentResearchDecisionSummary)
+        if field.name != "projection_fingerprint"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -98,25 +128,32 @@ def test_ir_or_change_alters_spec_source_hash():
 # ---------------------------------------------------------------------------
 
 
-def _legacy_manifest_for(store, source_set):
-    """Build a real v2 manifest, then forge the legacy (v1) one a pre-upgrade
-    board would have on disk: manifest_schema_version=1, source_set_hash = the
-    v1-compatible hash of the same source set."""
-    manifest_v2 = store.build(source_set=source_set, preflight_hash="a" * 64)
-    v1_hash = _compose_source_set_hash_v1(source_set)
+def _manifest_for_schema(store, source_set, schema_version: int):
+    """Forge the exact immutable hash a v1/v2 installation persisted."""
+
+    manifest_v3 = store.build(source_set=source_set, preflight_hash="a" * 64)
+    compatibility_hash = (
+        _compose_source_set_hash_v1(source_set)
+        if schema_version == 1
+        else _compose_source_set_hash_v2(source_set)
+    )
     legacy = dataclasses.replace(
-        manifest_v2, manifest_schema_version=1, source_set_hash=v1_hash
+        manifest_v3,
+        manifest_schema_version=schema_version,
+        source_set_hash=compatibility_hash,
     )
     return legacy
 
 
 def test_legacy_board_rebaselines_without_dlq(tmp_path):
     enum = RebuildSourceEnumerator(
-        source_store=lambda _b: [_spec_source("hash_v2", "hash_v1")]
+        source_store=lambda _b: [
+            _spec_source("hash_v3", "hash_v2", "hash_v1")
+        ]
     )
     source_set = enum.enumerate(board_id="b-legacy")
     store = KGRebuildSourceManifest(base_dir=tmp_path)
-    legacy = _legacy_manifest_for(store, source_set)
+    legacy = _manifest_for_schema(store, source_set, 1)
 
     result = store.revalidate(manifest=legacy, current_source_set=source_set)
 
@@ -132,12 +169,14 @@ def test_legacy_board_rebaselines_without_dlq(tmp_path):
     assert len(records) == 1
     rec = records[0]
     assert rec["from_manifest_schema_version"] == 1
-    assert rec["to_manifest_schema_version"] == 2
+    assert rec["to_manifest_schema_version"] == 3
     # The auditable v1->v2 delta: IR/OR are absent from v1, present in v2.
     assert "integration_requirements" not in rec["hash_fields_v1"]
     assert "observability_requirements" not in rec["hash_fields_v1"]
     assert "integration_requirements" in rec["hash_fields_v2"]
     assert "observability_requirements" in rec["hash_fields_v2"]
+    assert "quality_head_fingerprints" in rec["hash_fields_v3"]
+    assert "research_decision_head_fingerprints" in rec["hash_fields_v3"]
     assert rec["outcome"] == "rebaseline"
     assert "spec:s1" in rec["rebaselined_source_refs"]
 
@@ -149,14 +188,22 @@ def test_legacy_with_real_v1_content_change_is_drift_not_rebaseline(tmp_path):
     # content drift and MUST block — the rebaseline must NOT mask it.
     store = KGRebuildSourceManifest(base_dir=tmp_path)
     enum_a = RebuildSourceEnumerator(
-        source_store=lambda _b: [_spec_source("hash_v2_A", "hash_v1_A")]
+        source_store=lambda _b: [
+            _spec_source("hash_v3_A", "hash_v2_A", "hash_v1_A")
+        ]
     )
     source_a = enum_a.enumerate(board_id="b-drift")
-    legacy = _legacy_manifest_for(store, source_a)
+    legacy = _manifest_for_schema(store, source_a, 1)
     reset_spec_manifest_rebaseline_counter()  # ignore the build/setup
 
     enum_b = RebuildSourceEnumerator(
-        source_store=lambda _b: [_spec_source("hash_v2_B", "hash_v1_B_CHANGED")]
+        source_store=lambda _b: [
+            _spec_source(
+                "hash_v3_B",
+                "hash_v2_B",
+                "hash_v1_B_CHANGED",
+            )
+        ]
     )
     source_b = enum_b.enumerate(board_id="b-drift")
 
@@ -170,23 +217,150 @@ def test_legacy_with_real_v1_content_change_is_drift_not_rebaseline(tmp_path):
     assert read_spec_manifest_rebaseline_audit(tmp_path, "b-drift") == []
 
 
-def test_already_v2_manifest_treats_ir_or_change_as_normal_drift(tmp_path):
-    # After the baseline is v2, IR/OR changes are NORMAL drift, never a second
-    # rebaseline (codex case 4).
+def test_v2_manifest_rebaselines_to_v3_from_exact_compatibility_hash(tmp_path):
     store = KGRebuildSourceManifest(base_dir=tmp_path)
     enum = RebuildSourceEnumerator(
-        source_store=lambda _b: [_spec_source("hash_v2", "hash_v1")]
+        source_store=lambda _b: [
+            _spec_source("hash_v3", "hash_v2", "hash_v1")
+        ]
     )
     source_set = enum.enumerate(board_id="b-v2")
-    manifest_v2 = store.build(source_set=source_set, preflight_hash="b" * 64)
-    assert manifest_v2.manifest_schema_version == 2
+    manifest_v2 = _manifest_for_schema(store, source_set, 2)
 
-    enum2 = RebuildSourceEnumerator(
-        source_store=lambda _b: [_spec_source("hash_v2_CHANGED", "hash_v1_CHANGED")]
+    result = store.revalidate(
+        manifest=manifest_v2,
+        current_source_set=source_set,
     )
-    changed = enum2.enumerate(board_id="b-v2")
-    result = store.revalidate(manifest=manifest_v2, current_source_set=changed)
+
+    assert result.outcome is SourceSetRevalidation.REBASELINE
+    assert result.from_manifest_schema_version == 2
+    assert result.to_manifest_schema_version == 3
+    assert result.rebaselined_source_refs == ("spec:s1",)
+
+
+def test_v2_and_v3_real_content_drift_are_never_rebaselined(tmp_path):
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    baseline = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _spec_source("hash_v3_A", "hash_v2_A", "hash_v1_A")
+        ]
+    ).enumerate(board_id="b-v2-drift")
+    manifest_v2 = _manifest_for_schema(store, baseline, 2)
+    changed = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _spec_source("hash_v3_B", "hash_v2_CHANGED", "hash_v1_A")
+        ]
+    ).enumerate(board_id="b-v2-drift")
+
+    result = store.revalidate(
+        manifest=manifest_v2,
+        current_source_set=changed,
+    )
     assert result.outcome is SourceSetRevalidation.MANIFEST_DRIFT
+
+    manifest_v3 = store.build(
+        source_set=baseline,
+        preflight_hash="b" * 64,
+    )
+    assert manifest_v3.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
+    projection_only_change = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _spec_source("hash_v3_CHANGED", "hash_v2_A", "hash_v1_A")
+        ]
+    ).enumerate(board_id="b-v2-drift")
+    assert (
+        store.revalidate(
+            manifest=manifest_v3,
+            current_source_set=projection_only_change,
+        ).outcome
+        is SourceSetRevalidation.MANIFEST_DRIFT
+    )
+
+
+def test_v3_manifest_json_never_persists_compatibility_hashes(tmp_path):
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    source_set = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _spec_source("hash_v3", "hash_v2", "hash_v1")
+        ]
+    ).enumerate(board_id="b-json")
+    manifest = store.build(
+        source_set=source_set,
+        preflight_hash="c" * 64,
+    )
+
+    payload = manifest.to_dict()
+    assert payload["manifest_schema_version"] == 3
+    assert all(
+        "content_hash_v1" not in row and "content_hash_v2" not in row
+        for row in payload["sources"]
+    )
+    loaded = store.load(manifest.manifest_ref)
+    assert loaded is not None
+    assert loaded.sources[0].content_hash_v1 == ""
+    assert loaded.sources[0].content_hash_v2 == ""
+
+
+def test_v1_and_v2_source_set_hashes_keep_the_legacy_json_composition():
+    source_set = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _spec_source("hash_v3", "hash_v2", "hash_v1")
+        ]
+    ).enumerate(board_id="b-byte-compat")
+    row = source_set.sources[0]
+
+    def independently_compose(content_hash: str) -> str:
+        source = row.to_dict()
+        source["content_hash"] = content_hash
+        payload = {
+            "sources": [source],
+            "working_sources": [],
+            "skipped_by_maturity": [],
+            "skipped_expired_working": [],
+            "legacy_unknown": [],
+            "skipped_cancelled_count": 0,
+            "source_partition_counts": source_set.source_partition_counts,
+        }
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    assert _compose_source_set_hash_v1(source_set) == independently_compose(
+        "hash_v1"
+    )
+    assert _compose_source_set_hash_v2(source_set) == independently_compose(
+        "hash_v2"
+    )
+
+
+def test_revalidation_rejects_unknown_schema_even_when_v3_hash_matches(
+    tmp_path,
+):
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    source_set = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _spec_source("hash_v3", "hash_v2", "hash_v1")
+        ]
+    ).enumerate(board_id="b-unknown-schema")
+    current = store.build(
+        source_set=source_set,
+        preflight_hash="d" * 64,
+    )
+    unsupported = dataclasses.replace(
+        current,
+        manifest_schema_version=4,
+    )
+
+    assert (
+        store.revalidate(
+            manifest=unsupported,
+            current_source_set=source_set,
+        ).outcome
+        is SourceSetRevalidation.MANIFEST_DRIFT
+    )
 
 
 # ---------------------------------------------------------------------------

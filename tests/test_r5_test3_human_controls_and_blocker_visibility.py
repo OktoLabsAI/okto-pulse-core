@@ -78,7 +78,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 test3 agent"
-        self.permissions = {"board:read"}
+        self.permissions = ["board.read", "kg.admin.settings_read"]
 
 
 async def _mcp(name: str, **kwargs) -> dict:

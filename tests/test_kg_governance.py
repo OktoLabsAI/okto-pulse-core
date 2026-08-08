@@ -7,6 +7,7 @@ import sys
 import tempfile
 
 import pytest
+import pytest_asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -36,7 +37,11 @@ from okto_pulse.core.kg.governance import (
 _initialized = False
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest_asyncio.fixture(
+    scope="module",
+    autouse=True,
+    loop_scope="module",
+)
 async def _db():
     global _initialized
     from okto_pulse.core.ports.relational_runtime import (

@@ -15,6 +15,7 @@ from mcp_runtime_testing import register_mcp_test_runtime
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
+    PermissionDeniedError,
 )
 from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
     McpAddScreenMockupUseCase,
@@ -1020,9 +1021,9 @@ async def test_actor_command_board_mismatch_fails_closed_before_any_payload(
         McpListScreenMockupsUseCase(),
         McpDeleteScreenMockupUseCase(),
     ):
-        with pytest.raises(EntityNotFoundError) as exc_info:
+        with pytest.raises(PermissionDeniedError) as exc_info:
             async with uow_factory(actor=actor) as uow:
                 await use_case.execute(screen_command, actor=actor, uow=uow)
-        assert exc_info.value.entity_type == "card"
+        assert json.loads(exc_info.value.message)["reason"] == "board_scope_mismatch"
 
     assert await _graph_state(db_factory, ids) == before

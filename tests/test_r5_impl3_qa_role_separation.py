@@ -697,7 +697,7 @@ async def test_mcp_card_qa_answer_returns_typed_self_answering_denial(db_factory
         agent_id=USER_ASKER,
         agent_name="self-answering-test-agent",
         board_id=board_id,
-        permissions=[],
+        permissions=["*"],
     )
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)

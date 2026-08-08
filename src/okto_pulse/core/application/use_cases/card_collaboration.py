@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from okto_pulse.core.application.use_cases.authorization import require_authorization
 from okto_pulse.core.application.use_cases.board_access import load_accessible_card
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
@@ -18,6 +19,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     UseCaseError,
     commit,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_requirement,
+    entity_state,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
@@ -275,7 +280,23 @@ class CreateCardCommentUseCase:
         uow: PulseUnitOfWork,
     ) -> CommentResult:
 
-        await _require_card_access(uow, command.card_id, actor, write=True)
+        card = await _require_card_access(uow, command.card_id, actor, write=True)
+        comment_type = getattr(command.data, "comment_type", "text") or "text"
+        operation = (
+            "card.comments.create_choice"
+            if comment_type in ("choice", "multi_choice")
+            else "card.comments.create"
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                operation,
+                state=entity_state(card),
+                legacy_operation="comments:create",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         comment = await uow.services.comments.create_comment(
             command.card_id, actor.actor_id, command.data
         )
@@ -309,12 +330,22 @@ class UpdateCardCommentUseCase:
         card_id = await uow.services.comment_card_id(command.comment_id)
         if card_id is None:
             raise CommentMutationNotFoundError(command.comment_id)
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             card_id,
             actor,
             write=True,
             denied_error=CommentMutationNotFoundError(command.comment_id),
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.edit",
+                state=entity_state(card),
+                legacy_operation="comments:update",
+            ),
+            uow=uow,
+            board_id=card.board_id,
         )
         comment = await uow.services.comments.update_comment(
             command.comment_id, actor.actor_id, command.data
@@ -348,12 +379,22 @@ class RespondToChoiceCommentUseCase:
         card_id = await uow.services.comment_card_id(command.comment_id)
         if card_id is None:
             raise ChoiceCommentNotFoundError(command.comment_id)
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             card_id,
             actor,
             write=True,
             denied_error=ChoiceCommentNotFoundError(command.comment_id),
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.respond_choice",
+                state=entity_state(card),
+                legacy_operation="comments:create",
+            ),
+            uow=uow,
+            board_id=card.board_id,
         )
         actor_name = await uow.services.resolve_choice_comment_actor_name(
             command.comment_id, actor.actor_id
@@ -386,12 +427,22 @@ class DeleteCardCommentUseCase:
         card_id = await uow.services.comment_card_id(command.comment_id)
         if card_id is None:
             raise CommentMutationNotFoundError(command.comment_id)
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             card_id,
             actor,
             write=True,
             denied_error=CommentMutationNotFoundError(command.comment_id),
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.comments.delete",
+                state=entity_state(card),
+                legacy_operation="comments:delete",
+            ),
+            uow=uow,
+            board_id=card.board_id,
         )
 
         deleted = await uow.services.comments.delete_comment(
@@ -419,7 +470,17 @@ class CreateCardQuestionUseCase:
         uow: PulseUnitOfWork,
     ) -> QAResult:
 
-        await _require_card_access(uow, command.card_id, actor, write=True)
+        card = await _require_card_access(uow, command.card_id, actor, write=True)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.qa.ask",
+                state=entity_state(card),
+                legacy_operation="qa:create",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
         qa = await uow.services.qa.create_question(
             command.card_id, actor.actor_id, command.data
         )
@@ -463,12 +524,22 @@ class AnswerCardQuestionUseCase:
         card_id = await uow.services.qa_card_id(command.qa_id)
         if card_id is None:
             raise QuestionNotFoundError(command.qa_id)
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             card_id,
             actor,
             write=True,
             denied_error=QuestionNotFoundError(command.qa_id),
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.qa.answer",
+                state=entity_state(card),
+                legacy_operation="qa:answer",
+            ),
+            uow=uow,
+            board_id=card.board_id,
         )
         try:
             qa = await uow.services.qa.answer_question(
@@ -519,12 +590,22 @@ class DeleteCardQuestionUseCase:
         card_id = await uow.services.qa_card_id(command.qa_id)
         if card_id is None:
             raise QuestionNotFoundError(command.qa_id)
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             card_id,
             actor,
             write=True,
             denied_error=QuestionNotFoundError(command.qa_id),
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.qa.delete",
+                state=entity_state(card),
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=card.board_id,
         )
 
         deleted = await uow.services.qa.delete_question(command.qa_id)
@@ -550,12 +631,22 @@ class UploadCardAttachmentUseCase:
         uow: PulseUnitOfWork,
     ) -> AttachmentResult:
 
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             command.card_id,
             actor,
             board_id=command.board_id,
             write=True,
+        )
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.attachments.upload",
+                state=entity_state(card),
+                legacy_operation="attachments:upload",
+            ),
+            uow=uow,
+            board_id=card.board_id,
         )
         filename = validate_attachment_filename(command.filename)
         service = uow.services.attachments
@@ -637,7 +728,7 @@ class DeleteCardAttachmentUseCase:
         uow: PulseUnitOfWork,
     ) -> None:
 
-        await _require_card_access(
+        card = await _require_card_access(
             uow,
             command.card_id,
             actor,
@@ -648,6 +739,16 @@ class DeleteCardAttachmentUseCase:
         attachment = await service.get_attachment(command.attachment_id)
         if not attachment or attachment.card_id != command.card_id:
             raise AttachmentNotFoundError(command.attachment_id)
+        await require_authorization(
+            actor,
+            card_requirement(
+                "card.attachments.delete",
+                state=entity_state(card),
+                legacy_operation="attachments:delete",
+            ),
+            uow=uow,
+            board_id=card.board_id,
+        )
 
         try:
             receipt = await service.delete_attachment(command.attachment_id)

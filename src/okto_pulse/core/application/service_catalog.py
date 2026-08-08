@@ -440,6 +440,47 @@ class CoreApplicationServiceCatalog:
         )
 
     @cached_property
+    def quality_assessments(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().quality_assessments(
+            self.__relational_context
+        )
+
+    @cached_property
+    def quality_assessment_lifecycle(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return (
+            require_relational_application_adapter()
+            .quality_assessment_lifecycle(self.__relational_context)
+        )
+
+    @cached_property
+    def checklists(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().checklists(
+            self.__relational_context
+        )
+
+    @cached_property
+    def research_decisions(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().research_decisions(
+            self.__relational_context
+        )
+
+    @cached_property
     def qa(self):  # noqa: ANN201
         from okto_pulse.core.services.main import QAService
 

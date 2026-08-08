@@ -40,7 +40,7 @@ class Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r3 scenario tester"
-        self.permissions = object()
+        self.permissions = ["*"]
 
 
 async def call_tool(name: str, **kwargs) -> dict:

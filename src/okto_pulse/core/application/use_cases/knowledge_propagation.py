@@ -381,6 +381,15 @@ class DeriveSpecKnowledgeV2UseCase:
                 preflight.command.target,
             )
         )
+        from okto_pulse.core.application.use_cases.research_decision_ledger import (
+            bind_research_decisions_to_spec,
+        )
+
+        await bind_research_decisions_to_spec(
+            refinement=refinement,
+            spec=spec,
+            uow=uow,
+        )
         receipt = await uow.services.knowledge_propagation.mutate(preflight)
         await commit(uow)
         return _mutation_result(uow.services, receipt)

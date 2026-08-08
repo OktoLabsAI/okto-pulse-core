@@ -9,7 +9,7 @@ from okto_pulse.core.ports.package_version import (
     ImportlibMetadataVersionProvider,
     PackageVersionProvider,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
@@ -99,6 +99,15 @@ class CoreSettings(BaseModel):
     # Even with the per-board policy set to "blocking", enforcement activates
     # ONLY when this global flag is True.
     cognitive_readiness_blocking_enabled: bool = Field(False)
+
+    # Shared REST/MCP key for authenticated policy-keyset/v1 cursors.  Core
+    # deliberately has no process-random or source-code fallback: an edition
+    # must inject one stable value (normally from a secret store or persisted
+    # local installation secret) before exposing a cursor-producing surface.
+    guideline_policy_cursor_signing_key: SecretStr | None = Field(
+        default=None,
+        min_length=32,
+    )
 
     # Spec R2c (FR5/TR5/TR6/TR7) — DLQ auto-drain opt-in defaults.
     # The feature is disabled by default (board-level flag controls opt-in).

@@ -34,6 +34,17 @@ from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 ACTOR = ActorContext("fu2-mcp-agent", "mcp")
 
 
+def _board_actor(board_id: str, *, write: bool = False) -> ActorContext:
+    return ActorContext(
+        ACTOR.actor_id,
+        "mcp",
+        board_id=board_id,
+        permissions=[
+            "kg.admin.settings_write" if write else "kg.admin.settings_read"
+        ],
+    )
+
+
 def _board() -> str:
     return f"board-fu2-{uuid.uuid4().hex[:8]}"
 
@@ -99,9 +110,10 @@ async def test_diagnose_parity_with_service() -> None:
     async with get_session_factory()() as db:
         baseline = await diagnose_connectivity_guard_dlq(db, board_id)
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         result = await DiagnoseConnectivityDlqUseCase().execute(
-            DiagnoseConnectivityDlqCommand(board_id), actor=ACTOR, uow=uow
+            DiagnoseConnectivityDlqCommand(board_id), actor=actor, uow=uow
         )
     assert json.loads(json.dumps(result.data, default=str)) == json.loads(
         json.dumps(baseline, default=str)
@@ -119,9 +131,10 @@ async def test_verify_parity_with_service() -> None:
     async with get_session_factory()() as db:
         baseline = await verify_connectivity_class_cleared(db, board_id, artifact_refs=None)
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         result = await VerifyConnectivityClassUseCase().execute(
-            VerifyConnectivityClassCommand(board_id), actor=ACTOR, uow=uow
+            VerifyConnectivityClassCommand(board_id), actor=actor, uow=uow
         )
     assert json.loads(json.dumps(result.data, default=str)) == json.loads(
         json.dumps(baseline, default=str)
@@ -137,9 +150,10 @@ async def test_connectivity_reprocess_blocked_selection_commits_nothing() -> Non
     the use case commits nothing — identical to the legacy conditional commit."""
     board_id = _board()
     await _seed_board(board_id)
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id, write=True)
+    async with _uowf()(actor=actor) as uow:
         result = await ReprocessConnectivityDlqUseCase().execute(
-            ReprocessConnectivityDlqCommand(board_id, []), actor=ACTOR, uow=uow
+            ReprocessConnectivityDlqCommand(board_id, []), actor=actor, uow=uow
         )
     assert result.data.get("blocked")  # fail-closed, nothing reprocessed
 
@@ -153,10 +167,11 @@ async def test_dead_letter_reprocess_persists_requeue() -> None:
     row_id = await _seed_dlq_row(board_id)
     assert await _dlq_exists(board_id, row_id)
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id, write=True)
+    async with _uowf()(actor=actor) as uow:
         result = await ReprocessDeadLetterRowsUseCase().execute(
             ReprocessDeadLetterRowsCommand(board_id, dead_letter_ids=[row_id], limit=50),
-            actor=ACTOR,
+            actor=actor,
             uow=uow,
         )
     assert isinstance(result.data, dict)
@@ -193,15 +208,62 @@ async def test_dead_letter_reprocess_rolls_back_on_mid_flow_failure() -> None:
         _failing,
     ):
         with pytest.raises(RuntimeError):
-            async with _uowf()(actor=ACTOR) as uow:
+            actor = _board_actor(board_id, write=True)
+            async with _uowf()(actor=actor) as uow:
                 await ReprocessDeadLetterRowsUseCase().execute(
                     ReprocessDeadLetterRowsCommand(board_id, dead_letter_ids=[marker_id]),
-                    actor=ACTOR,
+                    actor=actor,
                     uow=uow,
                 )
 
     # The partial write rolled back — the marker never persisted.
     assert not await _dlq_exists(board_id, marker_id)
+
+
+# --- MCP wrapper authorization --------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "okto_pulse_kg_dead_letter_reprocess",
+        "okto_pulse_kg_connectivity_dlq_reprocess",
+    ],
+)
+async def test_reprocess_wrappers_reject_obsolete_historical_authority_before_uow(
+    tool_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from okto_pulse.core.mcp import server as mcp_server
+
+    denied_ctx = mcp_server.AgentContext(
+        ACTOR.actor_id,
+        "FU2 MCP agent",
+        "board-a",
+        ["kg.admin.historical_consolidation"],
+    )
+
+    async def _ctx(_board_id: str):
+        return denied_ctx
+
+    monkeypatch.setattr(mcp_server, "_get_agent_ctx", _ctx)
+    monkeypatch.setattr(
+        mcp_server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: (_ for _ in ()).throw(AssertionError("UoW must not open")),
+    )
+    tool = await mcp_server.mcp.get_tool(tool_name)
+
+    raw = await tool.fn(
+        board_id="board-a",
+        dead_letter_ids=[],
+        process_now=False,
+    )
+
+    denial = json.loads(raw)
+    assert denial["error"] == "permission_denied"
+    assert denial["required_permission"] == "kg.operations.queue.reprocess"
 
 
 # --- AST strangler proof ---------------------------------------------------

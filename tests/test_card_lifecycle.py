@@ -454,9 +454,66 @@ class TestCardStatusTransitionMatrix:
             assert result["outcome"] == "success"
             assert persisted.status == CardStatus.DONE
             assert len(persisted.validations or []) == 1
+            assert persisted.validations[0]["resolved_thresholds"] == {
+                "required": False,
+                "min_confidence": 70,
+                "min_completeness": 80,
+                "max_drift": 50,
+                "resolved_from": "spec",
+                "resolved_sources": {
+                    "required": "spec",
+                    "min_confidence": "board",
+                    "min_completeness": "board",
+                    "max_drift": "board",
+                },
+            }
+            assert result["resolved_thresholds"] == persisted.validations[0][
+                "resolved_thresholds"
+            ]
             assert len(persisted.conclusions or []) == 1
             assert persisted.conclusions[0]["source"] == "move_to_validation"
             assert persisted.conclusions[0]["text"] == "Executor claim for validator review"
+
+    async def test_validation_config_tracks_mixed_override_sources(self, db_factory):
+        """Every independently resolved threshold retains accurate provenance."""
+        from types import SimpleNamespace
+
+        async with db_factory() as db:
+            config = CardService(db)._resolve_validation_config(
+                SimpleNamespace(),
+                SimpleNamespace(
+                    require_task_validation=False,
+                    validation_min_confidence=75,
+                    validation_min_completeness=None,
+                    validation_max_drift=30,
+                ),
+                SimpleNamespace(
+                    require_task_validation=None,
+                    validation_min_confidence=90,
+                    validation_min_completeness=88,
+                    validation_max_drift=None,
+                ),
+                {
+                    "require_task_validation": True,
+                    "min_confidence": 70,
+                    "min_completeness": 80,
+                    "max_drift": 50,
+                },
+            )
+
+        assert config == {
+            "required": False,
+            "min_confidence": 90,
+            "min_completeness": 88,
+            "max_drift": 30,
+            "resolved_from": "spec",
+            "resolved_sources": {
+                "required": "spec",
+                "min_confidence": "sprint",
+                "min_completeness": "sprint",
+                "max_drift": "spec",
+            },
+        }
 
     async def test_transition_validation_to_done_with_required_fields(self, db_factory):
         """validation → done remains available when task validation is disabled."""
@@ -1958,7 +2015,11 @@ class TestActivityLog:
             )
             await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
-            await db.execute(DomainEventRow.__table__.delete())
+            await db.execute(
+                DomainEventRow.__table__.delete().where(
+                    DomainEventRow.board_id == BOARD_ID
+                )
+            )
             result = await svc.submit_task_validation(
                 card.id,
                 "reviewer-1",

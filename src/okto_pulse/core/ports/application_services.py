@@ -18,6 +18,13 @@ if TYPE_CHECKING:
         EntityPageService,
     )
     from okto_pulse.core.ports.relational_application import PermissionPresetGateway
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistencePort,
+    )
+    from okto_pulse.core.ports.checklist import ChecklistPersistencePort
+    from okto_pulse.core.ports.research_decision_ledger import (
+        ResearchDecisionLedgerPersistencePort,
+    )
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiService,
     )
@@ -144,6 +151,15 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def permission_presets(self) -> "PermissionPresetGateway": ...
+
+    @property
+    def quality_assessments(self) -> "QualityAssessmentPersistencePort": ...
+
+    @property
+    def checklists(self) -> "ChecklistPersistencePort": ...
+
+    @property
+    def research_decisions(self) -> "ResearchDecisionLedgerPersistencePort": ...
 
     @property
     def qa(self) -> "QAService": ...

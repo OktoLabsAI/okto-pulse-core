@@ -40,6 +40,13 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    card_create_permission_requirement,
+)
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 
@@ -267,6 +274,15 @@ class UpdateBoardUseCase:
         self, command: UpdateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.admin.edit",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         service = uow.services.boards
         board = await service.update_board(
             command.board_id,
@@ -324,6 +340,16 @@ class DeleteBoardUseCase:
             # existence oracle for another actor.
             raise EntityNotFoundError("board", command.board_id)
 
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.admin.delete",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
+
         async def _terminal_erasure() -> None:
             async with uow.services.kg.board_erasure_scope(
                 command.board_id,
@@ -336,16 +362,23 @@ class DeleteBoardUseCase:
                     if getattr(current_job, "actor_id", None) != actor.actor_id:
                         raise EntityNotFoundError("board", command.board_id)
                 else:
+                    # Install the transaction-local board-erasure permit and
+                    # complete every governed relational purge before the
+                    # Board is marked for deletion.  ``delete_board`` schedules
+                    # ORM cascades and any later SELECT/flush may execute them;
+                    # protected C7 epoch/history rows therefore cannot be left
+                    # for the source cascade to discover without a permit.
+                    await uow.services.kg.stage_board_relational_erasure(
+                        command.board_id,
+                        actor_id=actor.actor_id,
+                    )
+                    erasure.ensure_owned()
                     deleted = await uow.services.boards.delete_board(
                         command.board_id, actor.actor_id
                     )
                     if not deleted:
                         raise EntityNotFoundError("board", command.board_id)
                     await uow.synchronize()
-                    await uow.services.kg.stage_board_relational_erasure(
-                        command.board_id,
-                        actor_id=actor.actor_id,
-                    )
                     erasure.ensure_owned()
                     # Source deletion, relational KG cleanup and the durable
                     # continuation are atomic.
@@ -465,6 +498,12 @@ class CreateCardInBoardUseCase:
         uow: PulseUnitOfWork,
     ) -> CreateCardInBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            card_create_permission_requirement(command.data),
+            uow=uow,
+            board_id=command.board_id,
+        )
         if getattr(command.data, "knowledge_propagation", None) is not None:
             from okto_pulse.core.application.use_cases.knowledge_propagation import (
                 CreateCardKnowledgeV2Command,
@@ -680,6 +719,15 @@ class ArchiveTreeUseCase:
         self, command: ArchiveTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ArchiveTreeResult:
         await _preflight_archive_root(uow, command, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.entity.archive",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         counts = await uow.services.archives.archive_tree(
             command.entity_type, command.entity_id
         )
@@ -731,6 +779,15 @@ class RestoreTreeUseCase:
         self, command: RestoreTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RestoreTreeResult:
         await _preflight_archive_root(uow, command, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.entity.restore",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         counts = await uow.services.archives.restore_tree(
             command.entity_type, command.entity_id
         )
@@ -777,6 +834,15 @@ class ShareBoardUseCase:
         self, command: ShareBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ShareBoardResult:
         await _require_readable_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.create",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         share = await uow.services.shares.share_board(
             command.board_id,
             actor.actor_id,
@@ -827,6 +893,15 @@ class ListBoardSharesUseCase:
         )
         if not perm:
             raise EntityNotFoundError("board", command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         return ListBoardSharesResult(await service.list_shares(command.board_id))
 
 
@@ -861,6 +936,15 @@ class UpdateBoardShareUseCase:
     ) -> UpdateBoardShareResult:
         await _require_readable_board(uow, command.board_id, actor)
         await _require_share_on_board(uow, command.board_id, command.share_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.edit",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         share = await uow.services.shares.update_share(
             command.share_id,
             actor.actor_id,
@@ -898,8 +982,20 @@ class RevokeBoardShareUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> RevokeBoardShareResult:
-        await _require_readable_board(uow, command.board_id, actor)
-        await _require_share_on_board(uow, command.board_id, command.share_id)
+        board = await _require_readable_board(uow, command.board_id, actor)
+        share = await _require_share_on_board(uow, command.board_id, command.share_id)
+        operation = (
+            "board.share.leave"
+            if getattr(share, "user_id", None) == actor.actor_id
+            and getattr(board, "owner_id", None) != actor.actor_id
+            else "board.share.revoke"
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(operation, legacy_operation="board.read"),
+            uow=uow,
+            board_id=command.board_id,
+        )
         revoked = await uow.services.shares.revoke_share(
             command.share_id,
             actor.actor_id,
