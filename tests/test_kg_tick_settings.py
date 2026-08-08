@@ -339,7 +339,10 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     principal = Principal(
         "test-user",
         realm_id=LOCAL_REALM_ID,
-        claims={"roles": ["admin"]},
+        claims={
+            "roles": ["admin"],
+            "permissions": ["kg.admin.settings_write"],
+        },
     )
 
     # First call: 202 success.

@@ -32,7 +32,16 @@ from okto_pulse.community.api import specs as specs_api
 from okto_pulse.community.api.specs import router as specs_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.core.domain.quality_canonicalization import (
+    semantic_content_digest_v1,
+)
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.ports.requirement_lint import (
+    register_requirement_lint_writer_hook,
+)
+from okto_pulse.core.services.requirement_lint_writer import (
+    spec_requirement_lint_payload,
+)
 from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 
 USER = "r01a-fu3c-s2-user"
@@ -389,9 +398,31 @@ async def test_unlink_task_from_scenario_200_bidirectional(client) -> None:
     # Seed the scenario with the real card id so the unlink removes it.
     async with get_session_factory()() as db:
         spec = await db.get(Spec, sid)
-        spec.test_scenarios = [{"id": "sc1", "title": "Scenario one", "linked_task_ids": [cid]}]
+        spec.test_scenarios = [
+            {
+                "id": "sc1",
+                "title": "Scenario one",
+                "scenario_type": "regression",
+                "linked_task_ids": [cid],
+            }
+        ]
         await db.commit()
 
+    before = await _get_spec(sid)
+    before_version = before.version
+    before_content_digest = semantic_content_digest_v1(
+        "spec",
+        spec_requirement_lint_payload(before),
+    )
+
+    class _ForbiddenRequirementLintHook:
+        async def stage_requirement_lint(self, context, command):
+            del context, command
+            raise AssertionError(
+                "traceability-only unlink must not stage a requirement-lint receipt"
+            )
+
+    register_requirement_lint_writer_hook(_ForbiddenRequirementLintHook())
     resp = client.post(f"{PREFIX}/specs/{sid}/scenarios/sc1/unlink-task/{cid}")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
@@ -402,6 +433,12 @@ async def test_unlink_task_from_scenario_200_bidirectional(client) -> None:
     }
     spec = await _get_spec(sid)
     assert cid not in spec.test_scenarios[0]["linked_task_ids"]
+    assert spec.test_scenarios[0]["scenario_type"] == "regression"
+    assert spec.version == before_version
+    assert semantic_content_digest_v1(
+        "spec",
+        spec_requirement_lint_payload(spec),
+    ) == before_content_digest
     card = await _get_card(cid)
     assert "sc1" not in (card.test_scenario_ids or [])
 

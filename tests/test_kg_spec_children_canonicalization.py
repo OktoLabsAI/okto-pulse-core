@@ -83,6 +83,15 @@ def _children(result) -> list:
     ]
 
 
+async def _ensure_relational_board(db_factory, board_id: str, owner_id: str) -> None:
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(Board(id=board_id, name=board_id, owner_id=owner_id))
+            await db.commit()
+
+
 def _count_api_implements_constraint(board_id: str, *, api_title: str, tr_title: str) -> int:
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -146,6 +155,7 @@ def test_spec_predone_children_are_working_only():
 async def test_commit_materializes_api_contract_implements_tr_constraint(
     board_id, db_factory, board_handle,
 ):
+    await _ensure_relational_board(db_factory, board_id, "system:layer1_worker")
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec = {
         "id": spec_id,
@@ -343,6 +353,7 @@ async def _read_decision_async(board_id, source_ref):
 
 
 async def _promote(board_id, agent_id, db_factory, *, source_ref, cand_id):
+    await _ensure_relational_board(db_factory, board_id, agent_id)
     # The real promotion is the Layer 1 deterministic worker re-emitting a
     # done spec's child as canonical; model that with a DETERMINISTIC candidate
     # carrying graph_layer=canonical (a cognitive add would be re-classified to

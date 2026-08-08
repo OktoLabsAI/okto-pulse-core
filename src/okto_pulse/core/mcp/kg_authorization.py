@@ -45,6 +45,11 @@ def kg_permission_error(
         # Canonical permission APIs deliberately retain this established
         # compatibility meaning for principals created before permission flags.
         return None
+    if "*" in permissions:
+        # Authenticated MCP/system principals use the wildcard as their trusted
+        # compatibility grant.  Keep KG edge checks aligned with the central
+        # authorization use case and the remaining MCP adapters.
+        return None
     if required_permission in permissions:
         return None
     if legacy_fallback is not None and legacy_fallback in permissions:

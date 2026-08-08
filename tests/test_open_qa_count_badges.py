@@ -39,6 +39,7 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import IdeationSummary, SpecSummary
+from okto_pulse.core.ports.authentication import Principal
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.services.main import IdeationService, SpecService
 
@@ -248,8 +249,12 @@ async def test_card_columns_open_qa_count():
         payload = await get_board_columns(
             board_id,
             request,
-            user_id=USER,
-            realm_id=LOCAL_REALM_ID,
+            principal=Principal(
+                subject=USER,
+                realm_id=LOCAL_REALM_ID,
+                claims={"permissions": ["board.read", "board:read"]},
+                actor_kind="human",
+            ),
             uow=SQLAlchemyUnitOfWork(db),
         )
 

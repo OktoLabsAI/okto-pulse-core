@@ -7,11 +7,14 @@ import dataclasses
 import pytest
 
 from okto_pulse.core.ports.kg_cognitive_source import (
+    CognitiveSourceAppendDecision,
     CognitiveSourceConflict,
     CognitiveSourceError,
+    CognitiveSourcePersistedRevision,
     CognitiveSourceRecord,
     CognitiveSourceStore,
     canonical_cognitive_source_fingerprint,
+    decide_cognitive_source_append,
     latest_cognitive_source_records,
     register_cognitive_source_store,
     require_cognitive_source_store,
@@ -43,6 +46,15 @@ class _FakeStore:
     ) -> tuple[str, ...]:
         del context
         return await self.append_many(records)
+
+    async def sealed_birth_payloads_in_context(
+        self,
+        context: object,
+        board_id: str,
+        keys: tuple[tuple[str, str, int], ...],
+    ) -> dict[tuple[str, str, int], dict[str, object]]:
+        del context, board_id, keys
+        return {}
 
     async def enumerate(self, board_id: str) -> tuple[CognitiveSourceRecord, ...]:
         return ()
@@ -217,6 +229,157 @@ def test_latest_records_accept_identical_retry_and_keep_board_scope():
     assert all(record.generation == 7 for record in selected)
 
 
+def test_append_authority_ignores_stale_projection_and_uses_durable_high_water():
+    persisted = (
+        CognitiveSourcePersistedRevision("base-id", 0, "a" * 64),
+        CognitiveSourcePersistedRevision("revision-1", 1, "b" * 64),
+        CognitiveSourcePersistedRevision("revision-2", 2, "c" * 64),
+    )
+
+    decision = decide_cognitive_source_append(
+        persisted_revisions=persisted,
+        incoming_fingerprint="d" * 64,
+    )
+
+    assert decision == CognitiveSourceAppendDecision(
+        outcome="append",
+        source_revision=3,
+        storage_id=None,
+    )
+
+
+def test_append_authority_resolves_semantic_replay_to_oldest_storage_id():
+    persisted = (
+        CognitiveSourcePersistedRevision("base-id", 0, "a" * 64),
+        CognitiveSourcePersistedRevision("oldest-match", 1, "b" * 64),
+        CognitiveSourcePersistedRevision("later-match", 4, "b" * 64),
+    )
+
+    decision = decide_cognitive_source_append(
+        persisted_revisions=persisted,
+        incoming_fingerprint="b" * 64,
+    )
+
+    assert decision == CognitiveSourceAppendDecision(
+        outcome="semantic_noop",
+        source_revision=1,
+        storage_id="oldest-match",
+    )
+
+
+def test_append_authority_allocates_stable_batch_revisions_and_deduplicates():
+    persisted = [CognitiveSourcePersistedRevision("base-id", 0, "a" * 64)]
+
+    first = decide_cognitive_source_append(
+        persisted_revisions=persisted,
+        incoming_fingerprint="b" * 64,
+    )
+    persisted.append(
+        CognitiveSourcePersistedRevision(
+            "new-b",
+            first.source_revision,
+            "b" * 64,
+        )
+    )
+    second = decide_cognitive_source_append(
+        persisted_revisions=persisted,
+        incoming_fingerprint="c" * 64,
+    )
+    persisted.append(
+        CognitiveSourcePersistedRevision(
+            "new-c",
+            second.source_revision,
+            "c" * 64,
+        )
+    )
+    replay = decide_cognitive_source_append(
+        persisted_revisions=persisted,
+        incoming_fingerprint="b" * 64,
+    )
+
+    assert (first.source_revision, second.source_revision) == (1, 2)
+    assert replay == CognitiveSourceAppendDecision(
+        outcome="semantic_noop",
+        source_revision=1,
+        storage_id="new-b",
+    )
+
+
+def test_append_authority_starts_new_identity_at_revision_zero_and_fails_closed():
+    assert (
+        decide_cognitive_source_append(
+            persisted_revisions=(),
+            incoming_fingerprint="a" * 64,
+        ).source_revision
+        == 0
+    )
+
+    with pytest.raises(CognitiveSourceConflict) as excinfo:
+        decide_cognitive_source_append(
+            persisted_revisions=(
+                CognitiveSourcePersistedRevision("one", 1, "a" * 64),
+                CognitiveSourcePersistedRevision("duplicate", 1, "b" * 64),
+            ),
+            incoming_fingerprint="a" * 64,
+        )
+    assert excinfo.value.failure_reason == "cognitive_source_revision_conflict"
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    (
+        (
+            lambda: CognitiveSourcePersistedRevision("", 0, "a" * 64),
+            "storage_id",
+        ),
+        (
+            lambda: CognitiveSourcePersistedRevision("id", -1, "a" * 64),
+            "non-negative",
+        ),
+        (
+            lambda: CognitiveSourcePersistedRevision("id", 0, "not-a-digest"),
+            "sha256",
+        ),
+        (
+            lambda: CognitiveSourceAppendDecision("bogus", 0, None),
+            "outcome",
+        ),
+        (
+            lambda: CognitiveSourceAppendDecision("append", -1, None),
+            "non-negative",
+        ),
+        (
+            lambda: CognitiveSourceAppendDecision("append", 0, "unexpected"),
+            "cannot carry",
+        ),
+        (
+            lambda: CognitiveSourceAppendDecision("semantic_noop", 0, None),
+            "require",
+        ),
+        (
+            lambda: decide_cognitive_source_append(
+                persisted_revisions=(),
+                incoming_fingerprint="not-a-digest",
+            ),
+            "sha256",
+        ),
+    ),
+    ids=(
+        "empty-storage-id",
+        "negative-persisted-revision",
+        "invalid-persisted-fingerprint",
+        "invalid-outcome",
+        "negative-decision-revision",
+        "append-with-storage-id",
+        "noop-without-storage-id",
+        "invalid-incoming-fingerprint",
+    ),
+)
+def test_append_authority_rejects_invalid_policy_values(factory, message):
+    with pytest.raises(ValueError, match=message):
+        factory()
+
+
 def test_error_carries_structured_context():
     err = CognitiveSourceError(
         "cognitive_source_append_failed",
@@ -240,3 +403,76 @@ def test_port_is_reexported_from_ports_package():
         is canonical_cognitive_source_fingerprint
     )
     assert ports.latest_cognitive_source_records is latest_cognitive_source_records
+    assert ports.decide_cognitive_source_append is decide_cognitive_source_append
+    assert ports.CognitiveSourceAppendDecision is CognitiveSourceAppendDecision
+    assert ports.CognitiveSourcePersistedRevision is CognitiveSourcePersistedRevision
+
+
+def test_fingerprint_v3_ignores_volatile_usage_statistics() -> None:
+    """Regression: read-side stats drift on every KG query without bumping
+    attestation_count/source_revision. Under fingerprint v1 that made an
+    identical knowledge replay diverge from its own stored revision and
+    poisoned consolidation with cognitive_source_replay_conflict (observed
+    live on decision_059d5828). v2 excluded the five query-side stats but
+    MISSED the commit-hook recompute stamps (last_recomputed_at,
+    pre_cancellation_relevance_score — the trio primitives protects at
+    kg scoring recompute), so the SAME node poisoned consolidation again
+    after every relevance recompute. Usage/derivation drift must not change
+    identity; a content change still must."""
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS,
+        canonical_cognitive_source_fingerprint,
+    )
+
+    base_payload = {
+        "title": "D-8 layout decision",
+        "content": "Keep max-w-lg; the block collapses with inner scroll.",
+        "attestation_count": 2,
+        "query_hits": 3,
+        "last_queried_at": "2026-08-01T16:00:00Z",
+        "relevance_score": 0.41,
+        "priority_boost": 0.0,
+        "last_attested_at": "2026-08-01T16:29:00Z",
+    }
+    identity = dict(
+        board_id="board-1",
+        node_id="decision_regression",
+        node_type="Decision",
+        generation=0,
+        evidence_refs=("spec:one:decision:dec_1",),
+    )
+    original = canonical_cognitive_source_fingerprint(
+        payload=base_payload, **identity
+    )
+
+    drifted = dict(base_payload)
+    drifted["query_hits"] = 99
+    drifted["last_queried_at"] = "2026-08-02T09:00:00Z"
+    drifted["relevance_score"] = 0.97
+    drifted["priority_boost"] = 1.5
+    drifted["last_attested_at"] = "2026-08-02T09:00:01Z"
+    drifted["last_recomputed_at"] = "2026-08-02T09:00:02Z"
+    drifted["pre_cancellation_relevance_score"] = 0.41
+    assert canonical_cognitive_source_fingerprint(
+        payload=drifted, **identity
+    ) == original
+
+    changed = dict(base_payload)
+    changed["content"] = "Different assertion content."
+    assert canonical_cognitive_source_fingerprint(
+        payload=changed, **identity
+    ) != original
+
+    # The volatile set is a closed contract: guard against silent widening.
+    assert COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS == frozenset(
+        {
+            "last_attested_at",
+            "last_queried_at",
+            "last_recomputed_at",
+            "pre_cancellation_relevance_score",
+            "priority_boost",
+            "query_hits",
+            "relevance_score",
+        }
+    )

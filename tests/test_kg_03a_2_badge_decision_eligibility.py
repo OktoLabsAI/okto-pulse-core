@@ -28,7 +28,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.router import api_router
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import require_principal
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.kg_cognitive_badges import router as badges_router
 from okto_pulse.core.kg.cognitive_badge_resolver import (
@@ -43,6 +43,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingMarker,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.core.ports.authentication import Principal
 
 
 BOARD = "board-kg03a-2"
@@ -65,8 +67,19 @@ def client() -> TestClient:
     app = FastAPI()
     app.include_router(api_router)
 
-    async def _fake_user() -> str:
-        return "user-kg03a-2-test"
+    async def _fake_principal() -> Principal:
+        return Principal(
+            "user-kg03a-2-test",
+            realm_id=LOCAL_REALM_ID,
+            claims={
+                "permissions": {
+                    "kg": {
+                        "operations": {"cognitive": {"read": True}},
+                        "admin": {"settings_read": True},
+                    }
+                }
+            },
+        )
 
     async def _fake_uow():
         async def _get_board(board_id: str):
@@ -79,7 +92,7 @@ def client() -> TestClient:
             boards=SimpleNamespace(get=_get_board),
         )
 
-    app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[require_principal] = _fake_principal
     app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 

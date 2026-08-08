@@ -523,12 +523,37 @@ normal re-consolidation; the graph is never modified. node_type optionally
 narrows to one table."""
         from okto_pulse.core.kg.provenance_drift import provenance_drift_report
 
-        _agent, _board_agent, auth_error = await _authorized_board_agent(
+        _agent, board_agent, auth_error = await _authorized_board_agent(
             board_id,
             "board.read",
         )
         if auth_error is not None:
             return auth_error
+
+        from okto_pulse.core.application.use_cases import (
+            AuthorizeOperationCommand,
+            AuthorizeOperationUseCase,
+        )
+        from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+        from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+        assert board_agent is not None
+        actor = MCPAdapterContract.actor(board_agent, board_id=board_id)
+        try:
+            await AuthorizeOperationUseCase().execute(
+                AuthorizeOperationCommand(
+                    "kg.operations.audit.read",
+                    legacy_operation="kg.admin.settings_read",
+                    board_id=board_id,
+                ),
+                actor=actor,
+            )
+        except PermissionDeniedError as exc:
+            return _err(
+                "permission_denied",
+                str(exc),
+                required_permission="kg.operations.audit.read",
+            )
         try:
             report = await asyncio.wait_for(
                 provenance_drift_report(

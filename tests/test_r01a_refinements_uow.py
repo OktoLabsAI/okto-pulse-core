@@ -244,8 +244,20 @@ async def test_update_refinement_200_persists_and_404(client) -> None:
     ok = client.patch(f"{PREFIX}/refinements/{rid}", json={"title": "renamed"})
     assert ok.status_code == 200, ok.text
     assert ok.json()["title"] == "renamed"
+    assert ok.json()["version"] == 2
+
+    scoped = client.patch(
+        f"{PREFIX}/refinements/{rid}",
+        json={"in_scope": ["included"], "out_of_scope": ["excluded"]},
+    )
+    assert scoped.status_code == 200, scoped.text
+    assert scoped.json()["version"] == 3
+    assert scoped.json()["in_scope"] == ["included"]
+    assert scoped.json()["out_of_scope"] == ["excluded"]
     # persisted across a fresh request
-    assert client.get(f"{PREFIX}/refinements/{rid}").json()["title"] == "renamed"
+    persisted = client.get(f"{PREFIX}/refinements/{rid}").json()
+    assert persisted["title"] == "renamed"
+    assert persisted["version"] == 3
 
     miss = client.patch(f"{PREFIX}/refinements/{_missing()}", json={"title": "x"})
     assert miss.status_code == 404

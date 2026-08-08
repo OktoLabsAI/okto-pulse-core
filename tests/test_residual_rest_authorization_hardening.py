@@ -11,7 +11,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.agents import router as agents_router
-from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import (
+    get_realm_id,
+    require_principal,
+    require_user,
+)
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.me import router as me_router
 from okto_pulse.community.api.resource_gate import router as resource_gate_router
@@ -46,6 +50,8 @@ from okto_pulse.core.application.use_cases.update_board_overrides import (
     UpdateBoardOverridesCommand,
     UpdateBoardOverridesUseCase,
 )
+from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 
 
 BOARD_A = "board-a"
@@ -155,6 +161,7 @@ def _actor(
         "rest",
         board_id=BOARD_A,
         realm_id=realm_id,
+        permissions=registered_permission_flags(),
     )
 
 
@@ -484,6 +491,12 @@ def _client(uow, *, realm_id: str = REALM_A) -> TestClient:
     app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[require_user] = lambda: USER_A
     app.dependency_overrides[get_realm_id] = lambda: realm_id
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=USER_A,
+        realm_id=realm_id,
+        actor_kind="human",
+        claims={"permissions": registered_permission_flags()},
+    )
     return TestClient(app)
 
 

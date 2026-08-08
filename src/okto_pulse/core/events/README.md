@@ -65,6 +65,7 @@ plug in exactly the same way — one decorator, one `handle()` method.
 | `spec.created` | `SpecService.create_spec` | `spec_id`, `source`, `origin_id` |
 | `spec.moved` | `SpecService.move_spec` | `spec_id`, `from_status`, `to_status` |
 | `spec.version_bumped` | `SpecService.update_spec` | `spec_id`, `old_version`, `new_version`, `changed_fields` |
+| `checklist.binding_changed.v1` | `CreateBoardUseCase` / `UpdateChecklistBindingUseCase` | mode, template, immutable binding version/digest, previous version, source |
 | `sprint.created` | `SprintService.create_sprint` | `sprint_id`, `spec_id` |
 | `sprint.moved` | `SprintService.move_sprint` | `sprint_id`, `from_status`, `to_status` |
 | `sprint.closed` | `SprintService.move_sprint` (→ closed) | `sprint_id` |

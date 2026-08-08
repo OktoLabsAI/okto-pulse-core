@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -72,10 +73,24 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
         async def get_user_permission(self, candidate_board_id, _user_id):
             return "editor" if candidate_board_id == board_id else None
 
+    async def _resolve_user_permissions(user_id, candidate_board_id):
+        if (
+            user_id != "user-lifecycle-test"
+            or candidate_board_id != board_id
+        ):
+            return []
+        return [
+            "kg.operations.rebuild.preflight",
+            "kg.operations.rebuild.confirm",
+        ]
+
     async def _fake_uow():
         yield SimpleNamespace(
             boards=_Boards(),
-            services=SimpleNamespace(shares=_Shares()),
+            services=SimpleNamespace(
+                shares=_Shares(),
+                resolve_user_permissions=_resolve_user_permissions,
+            ),
         )
 
     app = FastAPI()
@@ -389,7 +404,10 @@ def test_working_ttl_expiry_does_not_touch_canonical_sources():
             created_at="2026-06-12T00:00:00Z",
         ),
     ]
-    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    enum = RebuildSourceEnumerator(
+        source_store=lambda _b: rows,
+        now=datetime(2026, 6, 12, tzinfo=timezone.utc),
+    )
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["done-current"]
@@ -423,7 +441,10 @@ def test_working_ttl_override_keeps_recent_effective_working_source():
             created_at="2026-06-12T00:00:00Z",
         ),
     ]
-    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    enum = RebuildSourceEnumerator(
+        source_store=lambda _b: rows,
+        now=datetime(2026, 6, 12, tzinfo=timezone.utc),
+    )
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["done-current"]
@@ -982,8 +1003,8 @@ def _client_with_router(board_id: str = "b-life"):
     """Helper: live api_router app with auth + FR10/FR9 overrides.
 
     IMPL-2 added board scope (FR10) + real health probe (FR9).
-    Both gates need a DB session.  We override get_db to return a fake
-    session whose Board SELECT always succeeds and also patch get_kg_health
+    Both gates need a UoW.  We override it with a board-access and canonical-
+    permission fixture and also patch get_kg_health
     to return a healthy state so the admission gate never blocks.
     """
     import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
@@ -1243,7 +1264,7 @@ def test_post_rebuild_confirm_rejects_unsupported_operation():
     app = _make_rebuild_test_app(board_id="b1")
 
     async def _fake_user():
-        return "u"
+        return "user-lifecycle-test"
 
     app.dependency_overrides[require_user] = _fake_user
 

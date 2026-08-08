@@ -4,6 +4,9 @@ version: "1.0"
 
 # Tool docs — `spec`
 
+Validation and curated-checklist gate rules:
+`okto-pulse://reference/spec_gates`.
+
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
 ## `okto_pulse_remove_spec_entity`
@@ -253,7 +256,13 @@ Args:
         moving, or deriving cards. See okto-pulse://reference/projection-profiles.
 
 Returns:
-    JSON with complete spec context: all requirements + structured sections + artifacts + cards + sprints
+    JSON with complete spec context: all requirements + structured sections +
+    artifacts + cards + sprints. `gate_readiness.spec_checklist` always projects
+    the canonical curated-checklist mode, allowance, reason, currentness, stale
+    reasons, and follow-up tool names. In `draft` this readiness remains visible
+    without prematurely claiming an active transition gate; when an unsatisfied
+    blocking checklist applies to `approved` → `validated`, the same predicate
+    also appears in `gate_readiness.active_gates`.
 
 ## `okto_pulse_get_spec_evaluation`
 
@@ -286,6 +295,88 @@ Returns:
     - summary: human-readable summary
     - version: spec version at that point
     - created_at: when it happened
+
+## `okto_pulse_get_checklist_binding`
+
+Read the effective curated checklist binding for a board. A legacy board with
+no persisted binding is reported as effective `off`; this read never
+materializes or changes a binding.
+
+Args:
+    board_id: Board ID
+
+Returns:
+    JSON containing the binding identity/digest, immutable version,
+    `/specify/v1` template version, phase, and mode (`off`, `advisory`, or
+    `blocking`).
+
+Permissions:
+    Requires both board read authority and `spec.checklist.read`.
+
+## `okto_pulse_start_checklist_execution`
+
+Start a server-issued execution frozen to the current Spec version, semantic
+content/input digests, template version/digest, and binding version/digest.
+Mode `off` rejects the operation without creating an execution.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID
+    binding_id: Current binding digest returned by
+        `okto_pulse_get_checklist_binding`
+    expected_spec_version: Current Spec version
+    idempotency_key: Stable key for exact retries
+
+Returns:
+    JSON with execution ID, frozen identities, revision, status, `replayed`,
+    and the ten immutable template items in their normative order. Each item
+    includes `item_id`, English and Portuguese title/description, and
+    `allow_na`, so the subsequent submission is self-describing over MCP.
+
+Permissions:
+    Requires both Spec update authority and `spec.checklist.execute`.
+
+## `okto_pulse_submit_checklist_execution`
+
+Submit one outcome for every immutable `/specify/v1` item and issue a
+server-authored receipt. The ten items must be present exactly once. Each
+result requires a concrete Spec anchor; `not_applicable` also requires a
+rationale and is accepted only on items whose template allows it.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID
+    execution_id: Open execution ID
+    expected_execution_revision: Current execution revision
+    idempotency_key: Stable key for exact retries
+    results: Array of exactly ten objects with `item_id`, `outcome`
+        (`pass`, `fail`, or `not_applicable`), `anchor`, and optional
+        `rationale`
+
+Returns:
+    JSON with immutable receipt ID, aggregate `outcome` (`pass` unless any
+    item is `fail`), request digest, head revision, and `replayed`.
+
+Permissions:
+    Requires both Spec update authority and `spec.checklist.execute`.
+
+## `okto_pulse_get_checklist_receipt`
+
+Read an immutable checklist receipt and its ordered per-item results. A receipt
+is useful for a blocking gate only while all Spec/template/binding identities
+remain current and every result is non-failing.
+
+Args:
+    board_id: Board ID
+    receipt_id: Checklist receipt ID
+
+Returns:
+    JSON with the frozen identities, ordered results, source, head revision,
+    predecessor, aggregate `outcome` (`pass` or `fail`), and
+    `blocking_satisfied`.
+
+Permissions:
+    Requires both board read authority and `spec.checklist.read`.
 
 ## `okto_pulse_list_spec_evaluations`
 

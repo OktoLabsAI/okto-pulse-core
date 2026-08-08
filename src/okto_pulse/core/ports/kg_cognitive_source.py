@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Protocol, TypeVar, runtime_checkable
+from typing import Any, Iterable, Literal, Mapping, Protocol, TypeVar, runtime_checkable
 
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
@@ -40,16 +40,25 @@ from okto_pulse.core.runtime_context import (
 )
 
 __all__ = [
+    "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT",
+    "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3",
+    "COGNITIVE_SOURCE_SEALED_BIRTH_FIELDS",
+    "CognitiveSourceAppendDecision",
     "CognitiveSourceConflict",
     "CognitiveSourceError",
+    "CognitiveSourcePersistedRevision",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
+    "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
+    "cognitive_source_semantic_key",
+    "decide_cognitive_source_append",
     "latest_cognitive_source_records",
     "register_cognitive_source_store",
     "require_cognitive_source_store",
     "reset_cognitive_source_store_for_tests",
     "resolve_cognitive_source_store",
+    "restore_sealed_birth_fields",
 ]
 
 
@@ -93,6 +102,44 @@ class CognitiveSourceConflict(CognitiveSourceError):
     """
 
 
+# Immutable predecessor identity used by Community schema convergence.  Keep
+# historical contracts named: the moving head may advance, but an installed
+# trigger must always be compared with the exact SQL generated for its epoch.
+COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3 = "cognitive-source-fingerprint/v3"
+COGNITIVE_SOURCE_FINGERPRINT_CONTRACT = COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3
+
+#: Read-side usage statistics mutate without an attestation bump (every KG
+#: query touches ``query_hits``/``last_queried_at``/``relevance_score``).
+#: ``source_revision`` derives from ``attestation_count``, so including these
+#: fields in the fingerprint turned any stat drift into a permanent
+#: ``cognitive_source_replay_conflict`` poisoning the consolidation queue
+#: (observed live on decision_059d5828). They describe USAGE of the
+#: assertion, never the assertion itself; the stored payload keeps them for
+#: literal rebuild restoration — only the identity fingerprint ignores them.
+COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS: frozenset[str] = frozenset(
+    {
+        "last_attested_at",
+        "last_queried_at",
+        "last_recomputed_at",
+        "pre_cancellation_relevance_score",
+        "priority_boost",
+        "query_hits",
+        "relevance_score",
+    }
+)
+
+
+#: Payload fields that record WHEN the assertion was first made, not what it
+#: says. Consolidation re-derives a whole birth payload whenever it believes a
+#: node is new — a legitimate belief once the graph projection has lost the
+#: node (restore from an older copy, targeted removal, rebuild, DLQ replay).
+#: The durable ledger still holds that birth, and BR2 makes the ledger the
+#: source of truth, so its sealed value wins over the re-derived one. These
+#: stay INSIDE the fingerprint: a birth stamp is part of the assertion's
+#: identity, which is exactly why it may never be silently re-minted.
+COGNITIVE_SOURCE_SEALED_BIRTH_FIELDS: frozenset[str] = frozenset({"created_at"})
+
+
 def canonical_cognitive_source_fingerprint(
     *,
     board_id: str,
@@ -105,19 +152,29 @@ def canonical_cognitive_source_fingerprint(
     """Return the immutable semantic fingerprint for one source revision.
 
     Revision/session/timestamp/metadata are intentionally excluded: they
-    describe the append event, not the cognitive assertion. ``sort_keys``
-    makes nested mapping order irrelevant while evidence order remains part
-    of the literal evidence binding restored by replay.
+    describe the append event, not the cognitive assertion. Read-side usage
+    statistics (:data:`COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS`) are excluded
+    for the same reason — they drift on every KG read without advancing
+    ``attestation_count``/``source_revision``, and identity must be stable
+    across such drift. ``sort_keys`` makes nested mapping order irrelevant
+    while evidence order remains part of the literal evidence binding
+    restored by replay.
     """
 
     if not isinstance(payload, Mapping):
         raise ValueError("cognitive source payload must be a mapping")
+    identity_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS
+    }
     canonical = {
+        "contract": COGNITIVE_SOURCE_FINGERPRINT_CONTRACT,
         "board_id": str(board_id),
         "node_id": str(node_id),
         "node_type": str(node_type),
         "generation": int(generation),
-        "payload": dict(payload),
+        "payload": identity_payload,
         "evidence_refs": [str(ref) for ref in evidence_refs],
     }
     return hashlib.sha256(
@@ -174,6 +231,189 @@ class CognitiveSourceRecord:
         object.__setattr__(self, "source_revision", revision)
         object.__setattr__(self, "evidence_refs", evidence_refs)
         object.__setattr__(self, "record_fingerprint", fingerprint)
+
+
+@dataclass(frozen=True)
+class CognitiveSourcePersistedRevision:
+    """Storage-neutral identity of one already-durable ledger row.
+
+    Adapters project only these three immutable fields when asking Core for an
+    append decision. Payloads, SQL rows and transaction objects remain outside
+    the policy boundary.
+    """
+
+    storage_id: str
+    source_revision: int
+    record_fingerprint: str
+
+    def __post_init__(self) -> None:
+        storage_id = str(self.storage_id).strip()
+        revision = int(self.source_revision)
+        fingerprint = str(self.record_fingerprint).lower()
+        if not storage_id:
+            raise ValueError("cognitive source storage_id must be non-empty")
+        if revision < 0:
+            raise ValueError("cognitive source_revision must be non-negative")
+        if len(fingerprint) != 64 or any(
+            character not in "0123456789abcdef" for character in fingerprint
+        ):
+            raise ValueError(
+                "cognitive source record_fingerprint must be lowercase sha256"
+            )
+        object.__setattr__(self, "storage_id", storage_id)
+        object.__setattr__(self, "source_revision", revision)
+        object.__setattr__(self, "record_fingerprint", fingerprint)
+
+
+@dataclass(frozen=True)
+class CognitiveSourceAppendDecision:
+    """Pure outcome for one append proposal against durable history."""
+
+    outcome: Literal["append", "semantic_noop"]
+    source_revision: int
+    storage_id: str | None
+
+    def __post_init__(self) -> None:
+        revision = int(self.source_revision)
+        if self.outcome not in {"append", "semantic_noop"}:
+            raise ValueError("unsupported cognitive source append outcome")
+        if revision < 0:
+            raise ValueError("cognitive source_revision must be non-negative")
+        if self.outcome == "append" and self.storage_id is not None:
+            raise ValueError("append decisions cannot carry a storage_id")
+        if self.outcome == "semantic_noop" and not str(self.storage_id or ""):
+            raise ValueError("semantic no-op decisions require a storage_id")
+        object.__setattr__(self, "source_revision", revision)
+
+
+def decide_cognitive_source_append(
+    *,
+    persisted_revisions: Iterable[CognitiveSourcePersistedRevision],
+    incoming_fingerprint: str,
+) -> CognitiveSourceAppendDecision:
+    """Resolve replay or allocate ``durable_high_water + 1``.
+
+    The caller's projected ``source_revision`` is deliberately absent from
+    this API. Relational history is the sole revision authority: an existing
+    semantic fingerprint resolves to its oldest durable storage ID without a
+    write; otherwise a new identity starts at revision zero and an existing
+    identity advances monotonically from its highest durable revision.
+    """
+
+    fingerprint = str(incoming_fingerprint).lower()
+    if len(fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in fingerprint
+    ):
+        raise ValueError("incoming cognitive fingerprint must be lowercase sha256")
+
+    ordered = sorted(persisted_revisions, key=lambda item: item.source_revision)
+    seen_revisions: set[int] = set()
+    for item in ordered:
+        if item.source_revision in seen_revisions:
+            raise CognitiveSourceConflict(
+                "cognitive_source_revision_conflict",
+                remediation=(
+                    "Repair duplicate durable source revisions before appending."
+                ),
+            )
+        seen_revisions.add(item.source_revision)
+
+    for item in ordered:
+        if item.record_fingerprint == fingerprint:
+            return CognitiveSourceAppendDecision(
+                outcome="semantic_noop",
+                source_revision=item.source_revision,
+                storage_id=item.storage_id,
+            )
+
+    return CognitiveSourceAppendDecision(
+        outcome="append",
+        source_revision=(ordered[-1].source_revision + 1 if ordered else 0),
+        storage_id=None,
+    )
+
+
+SemanticNodeKey = tuple[str, str, int]
+
+
+def cognitive_source_semantic_key(record: Mapping[str, Any]) -> SemanticNodeKey:
+    """Return the ``(node_type, node_id, generation)`` key of a record draft.
+
+    Board scoping is implicit: one consolidation commit writes one board.
+    """
+
+    return (
+        str(record.get("node_type") or ""),
+        str(record.get("node_id") or ""),
+        int(record.get("generation") or 0),
+    )
+
+
+@dataclass(frozen=True)
+class SealedBirthRestoration:
+    """One re-derived birth field replaced by its sealed durable value."""
+
+    node_type: str
+    node_id: str
+    generation: int
+    field: str
+    rederived: Any
+    sealed: Any
+
+
+def restore_sealed_birth_fields(
+    records: Iterable[Mapping[str, Any]],
+    sealed_payloads: Mapping[SemanticNodeKey, Mapping[str, Any]],
+) -> tuple[tuple[dict[str, Any], ...], tuple[SealedBirthRestoration, ...]]:
+    """Re-seat re-derived birth fields on the values the ledger already sealed.
+
+    Consolidation builds a fresh birth payload for every node it materializes,
+    stamping ``created_at`` from the wall clock. That is right for a genuinely
+    new assertion and wrong for one the durable ledger already recorded: the
+    re-minted stamp changes the record fingerprint, so the append re-presents a
+    sealed immutable revision with divergent content and fails closed
+    (``cognitive_source_replay_conflict``), dead-lettering the consolidation.
+
+    Restoring the sealed value makes the append byte-identical to the record
+    already stored, so the existing idempotency path accepts it. Divergence in
+    the assertion itself still changes the fingerprint and still fails closed —
+    this narrows what counts as a replay, it does not weaken the guard.
+
+    Returns the reconciled drafts plus every restoration performed, so the
+    caller can log drift instead of healing it silently.
+    """
+
+    reconciled: list[dict[str, Any]] = []
+    restorations: list[SealedBirthRestoration] = []
+    for record in records:
+        draft = dict(record)
+        sealed = sealed_payloads.get(cognitive_source_semantic_key(draft))
+        if not sealed:
+            reconciled.append(draft)
+            continue
+        payload = dict(draft.get("payload") or {})
+        changed = False
+        for name in sorted(COGNITIVE_SOURCE_SEALED_BIRTH_FIELDS):
+            if name not in sealed or name not in payload:
+                continue
+            if payload[name] == sealed[name]:
+                continue
+            restorations.append(
+                SealedBirthRestoration(
+                    node_type=str(draft.get("node_type") or ""),
+                    node_id=str(draft.get("node_id") or ""),
+                    generation=int(draft.get("generation") or 0),
+                    field=name,
+                    rederived=payload[name],
+                    sealed=sealed[name],
+                )
+            )
+            payload[name] = sealed[name]
+            changed = True
+        if changed:
+            draft["payload"] = payload
+        reconciled.append(draft)
+    return tuple(reconciled), tuple(restorations)
 
 
 _CognitiveRecordT = TypeVar("_CognitiveRecordT")
@@ -291,12 +531,12 @@ class CognitiveSourceStore(Protocol):
     async def append(self, record: CognitiveSourceRecord) -> str:
         """Persist ``record`` and return its storage id.
 
-        MUST be idempotent per ``(node_id, generation, source_revision)`` only
-        for the same semantic record, so a commit retry after a transient
-        failure is safe. Divergent reuse raises
-        :class:`CognitiveSourceConflict`; store unavailability raises
-        :class:`CognitiveSourceError`. Callers abort the commit in both cases
-        (fail-closed, spec D5).
+        MUST resolve a fingerprint already durable for the same semantic
+        identity to its oldest storage id without growing the ledger. New
+        semantics allocate from durable high-water; the caller's projected
+        revision is advisory only. Store corruption raises
+        :class:`CognitiveSourceConflict`; unavailability raises
+        :class:`CognitiveSourceError`.
         """
         ...
 
@@ -305,10 +545,9 @@ class CognitiveSourceStore(Protocol):
     ) -> tuple[str, ...]:
         """Atomically persist a batch and return ids in input order.
 
-        A retry with the same ``(node_id, generation, source_revision)`` and
-        semantic content is idempotent. A divergent replay MUST raise
-        :class:`CognitiveSourceConflict`; partial batch persistence is
-        forbidden.
+        Semantic replays are no-ops even when their projected revision differs.
+        Distinct new fingerprints allocate consecutive durable revisions in
+        stable input order; partial batch persistence is forbidden.
         """
         ...
 
@@ -325,6 +564,26 @@ class CognitiveSourceStore(Protocol):
         outer UOW; transaction completion remains the caller's responsibility.
         A raised exception makes the complete outer UOW uncommittable by the
         consolidation contract, so partial batch publication is forbidden.
+        """
+        ...
+
+    async def sealed_birth_payloads_in_context(
+        self,
+        context: object,
+        board_id: str,
+        keys: tuple[SemanticNodeKey, ...],
+    ) -> Mapping[SemanticNodeKey, Mapping[str, Any]]:
+        """Return the EARLIEST sealed payload for each ``(type, id, generation)``.
+
+        The earliest record is the one that carries the assertion's birth, so
+        this is what :func:`restore_sealed_birth_fields` reconciles against.
+        Keys with no durable history are simply absent from the result — that
+        is a genuinely new node, not a failure.
+
+        Implementations MUST read through ``context`` for the same reason
+        :meth:`append_many_in_context` does: opening a second connection can
+        self-deadlock against the caller's SQLite snapshot/writer slot. This
+        operation never writes and never completes the outer UOW.
         """
         ...
 

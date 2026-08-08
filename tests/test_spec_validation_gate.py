@@ -335,7 +335,11 @@ class TestStateGuard:
         spec_id = str(uuid.uuid4())
         await _seed_board_with_ids(db_factory, board_id, spec_id)
         async with db_factory() as db:
-            await db.execute(DomainEventRow.__table__.delete())
+            await db.execute(
+                DomainEventRow.__table__.delete().where(
+                    DomainEventRow.board_id == board_id
+                )
+            )
             service = SpecService(db)
             result = await _submit_spec_validation(service, db,
                 spec_id=spec_id,

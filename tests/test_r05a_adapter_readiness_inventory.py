@@ -37,10 +37,19 @@ from okto_pulse.core.application.boundary.adapter_readiness_inventory import (
     evaluate_removal,
     run_deferred_reconciliation_gate,
 )
+from okto_pulse.core.application.boundary.repository_checkout import (
+    resolve_repository_checkout,
+)
 
 INV_PY = Path(_inv_mod.__file__).resolve()
 SRC_ROOT = INV_PY.parents[4]  # .../src
-COMMUNITY_SRC_ROOT = SRC_ROOT.parents[1] / "okto_labs_pulse_community" / "src"
+CORE_REPO = SRC_ROOT.parent
+_COMMUNITY_CHECKOUT = resolve_repository_checkout(
+    "community",
+    anchor_repo=CORE_REPO,
+)
+assert _COMMUNITY_CHECKOUT is not None
+COMMUNITY_SRC_ROOT = _COMMUNITY_CHECKOUT.source_root
 
 
 def _by_key(adapter_key: str):

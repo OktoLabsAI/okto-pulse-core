@@ -14,10 +14,15 @@ import pytest
 
 from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.application.use_cases import ActorContext
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
 
 CORE_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
+
+
+def _global_query_permissions() -> PermissionSet:
+    return PermissionSet({"kg": {"query": {"global": True}}})
 
 
 def _source(relative: str) -> str:
@@ -99,12 +104,15 @@ def test_rest_kg_board_routes_require_board_actor_dependency() -> None:
         assert (
             kg_routes.require_kg_board_actor in deps
             or kg_routes.require_kg_board_writer_actor in deps
-            or kg_routes.require_kg_admin_board_actor in deps
             or kg_routes.require_kg_stream_board_actor in deps
         ), path
 
     migrate_deps = route_dependencies["post_migrate_schema"]
-    assert kg_routes.require_kg_admin_board_actor in migrate_deps
+    assert kg_routes.require_kg_board_writer_actor in migrate_deps
+    assert kg_routes.get_unit_of_work in migrate_deps
+    cypher_deps = route_dependencies["cypher_query"]
+    assert kg_routes.require_kg_board_actor in cypher_deps
+    assert kg_routes.require_kg_board_writer_actor not in cypher_deps
     stream_deps = route_dependencies["stream_kg_events"]
     assert kg_routes.require_kg_stream_board_actor in stream_deps
 
@@ -153,7 +161,12 @@ async def test_global_search_passes_only_actor_visible_boards(monkeypatch) -> No
         )
         await db.commit()
 
-    actor = ActorContext(owner_id, "rest", realm_id=LOCAL_REALM_ID)
+    actor = ActorContext(
+        owner_id,
+        "rest",
+        realm_id=LOCAL_REALM_ID,
+        permissions=_global_query_permissions(),
+    )
     async with get_session_factory()() as db:
         result = await GlobalSearchUseCase().execute(
             GlobalSearchCommand(
@@ -208,7 +221,12 @@ async def test_global_search_with_zero_visible_boards_never_falls_back_to_all(
         )
         await db.commit()
 
-    actor = ActorContext(actor_id, "rest", realm_id=LOCAL_REALM_ID)
+    actor = ActorContext(
+        actor_id,
+        "rest",
+        realm_id=LOCAL_REALM_ID,
+        permissions=_global_query_permissions(),
+    )
     async with get_session_factory()() as db:
         result = await GlobalSearchUseCase().execute(
             GlobalSearchCommand(
@@ -224,6 +242,101 @@ async def test_global_search_with_zero_visible_boards_never_falls_back_to_all(
     assert captured["user_boards"] == []
     assert result.results == []
     assert forbidden_board not in captured["user_boards"]
+
+
+@pytest.mark.asyncio
+async def test_global_search_filters_board_scoped_permission_revocations(
+    monkeypatch,
+) -> None:
+    from okto_pulse.core.application.use_cases.kg_routes_crud import (
+        GlobalSearchCommand,
+        GlobalSearchUseCase,
+    )
+    from okto_pulse.core.services import application_kg
+
+    allowed_board = "board-af13-global-allowed"
+    denied_board = "board-af13-global-denied"
+    captured: dict[str, list[str]] = {}
+
+    class _Boards:
+        async def list_boards(self, *_args, **_kwargs):
+            return (
+                [SimpleNamespace(id=allowed_board), SimpleNamespace(id=denied_board)],
+                2,
+            )
+
+    class _Services:
+        boards = _Boards()
+
+        async def resolve_user_permissions(self, _actor_id: str, board_id: str):
+            return PermissionSet(
+                {
+                    "board": {"read": True},
+                    "kg": {"query": {"global": board_id == allowed_board}},
+                }
+            )
+
+    def _query_global(_query: str, *, user_boards: list[str], **_kwargs):
+        captured["user_boards"] = user_boards
+        return []
+
+    monkeypatch.setattr(application_kg, "query_global", _query_global)
+    actor = ActorContext(
+        "user-af13-global-filter",
+        "rest",
+        realm_id=LOCAL_REALM_ID,
+        permissions=_global_query_permissions(),
+    )
+
+    await GlobalSearchUseCase().execute(
+        GlobalSearchCommand(
+            q="scope",
+            limit=20,
+            min_similarity=0.3,
+            graph_layer="canonical",
+        ),
+        actor=actor,
+        uow=SimpleNamespace(services=_Services()),
+    )
+
+    assert captured["user_boards"] == [allowed_board]
+
+
+@pytest.mark.asyncio
+async def test_global_search_exact_denial_precedes_board_resolution() -> None:
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+    from okto_pulse.core.application.use_cases.kg_routes_crud import (
+        GlobalSearchCommand,
+        GlobalSearchUseCase,
+    )
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    async def _unexpected_board_resolution(*_args, **_kwargs):
+        raise AssertionError("board visibility must not resolve before authorization")
+
+    actor = ActorContext(
+        "user-af13-denied",
+        "rest",
+        realm_id=LOCAL_REALM_ID,
+        permissions=PermissionSet({"kg": {"query": {"global": False}}}),
+    )
+    uow = SimpleNamespace(
+        services=SimpleNamespace(
+            boards=SimpleNamespace(list_boards=_unexpected_board_resolution),
+        ),
+    )
+
+    with pytest.raises(PermissionDeniedError, match="kg.query.global"):
+        await GlobalSearchUseCase().execute(
+            GlobalSearchCommand(
+                q="denied",
+                limit=20,
+                min_similarity=0.3,
+                graph_layer="canonical",
+            ),
+            actor=actor,
+            uow=uow,
+        )
 
 
 @pytest.mark.asyncio
@@ -318,7 +431,13 @@ async def test_kg_boost_audit_uses_non_default_actor(monkeypatch) -> None:
         )
         await db.commit()
 
-    actor = ActorContext(actor_id, "mcp", realm_id=LOCAL_REALM_ID)
+    actor = ActorContext(
+        actor_id,
+        "mcp",
+        board_id=board_id,
+        realm_id=LOCAL_REALM_ID,
+        permissions=["kg.admin.settings_write"],
+    )
     async with SQLAlchemyUnitOfWorkFactory(get_session_factory())(actor=actor) as uow:
         result = await BoostNodeUseCase().execute(
             BoostNodeCommand(board_id, node_id),
@@ -350,7 +469,8 @@ def test_mcp_kg_inventory_uses_scope_and_admin_gates() -> None:
     query_global_fn = _function_source(query_tools_source, "okto_pulse_kg_query_global")
 
     assert "ActorScope.from_context" in migrate_fn
-    assert "kg.admin.historical_consolidation" in migrate_fn
+    assert "kg.operations.schema.migrate" in migrate_fn
+    assert "kg.admin.settings_write" in migrate_fn
     assert "allowed_board_ids=" in migrate_fn
     assert "svc.check_board_access(boards, board_id)" in query_global_fn
     assert _kg_tool_policy_violations(query_tools_source) == []
@@ -392,7 +512,8 @@ async def test_mcp_migrate_all_boards_denies_non_admin_before_listing(monkeypatc
         await mcp_server.okto_pulse_kg_migrate_schema.fn(all_boards=True)
     )
 
-    assert "kg.admin.historical_consolidation" in payload["error"]
+    assert payload["error"] == "permission_denied"
+    assert payload["required_permission"] == "kg.operations.schema.migrate"
 
 
 def _function_source(source: str, name: str) -> str:

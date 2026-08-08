@@ -11,9 +11,10 @@ import pytest
 from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.composition import RuntimeProviderMissing
 from okto_pulse.core.kg.rebuild_service import RebuildStepResult
+from repository_checkout_testing import community_repo_for
 
 CORE_ROOT = Path(__file__).resolve().parents[1]
-COMMUNITY_ROOT = CORE_ROOT.parents[0] / "okto_labs_pulse_community"
+COMMUNITY_ROOT = community_repo_for(CORE_ROOT)
 
 
 def test_rest_and_mcp_consumers_resolve_ingestion_through_registry() -> None:

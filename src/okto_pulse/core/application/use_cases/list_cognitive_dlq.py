@@ -15,6 +15,10 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.base import ActorContext
 
 
@@ -43,6 +47,15 @@ class ListCognitiveDlqUseCase:
     async def execute(
         self, command: ListCognitiveDlqCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCognitiveDlqResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.cognitive.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         total, rows = await uow.services.kg.list_cognitive_dlq_rows(
             command.board_id,
             limit=command.limit,

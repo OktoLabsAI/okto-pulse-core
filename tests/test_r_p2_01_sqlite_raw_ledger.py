@@ -11,12 +11,13 @@ from okto_pulse.core.application.boundary.adapter_readiness_inventory import (
 from okto_pulse.core.application.boundary.source_read_consumer_gate import (
     ALLOWED_INGESTION_SQLITE_SUFFIXES,
 )
+from repository_checkout_testing import community_repo_for
 
 _ADAPTER_KEY = "board_rebuild_ingestion_adapter"
 _CORE_MODULE = "okto_pulse/core/kg/board_rebuild_adapter.py"
 _COMMUNITY_MODULE = "okto_pulse/community/adapters/board_rebuild_ingestion.py"
 _CORE_SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
-_COMMUNITY_SRC_ROOT = _CORE_SRC_ROOT.parents[1] / "okto_labs_pulse_community" / "src"
+_COMMUNITY_SRC_ROOT = community_repo_for(_CORE_SRC_ROOT.parent) / "src"
 
 
 def _by_key(key: str):

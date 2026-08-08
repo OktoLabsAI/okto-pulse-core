@@ -5,6 +5,8 @@ version: "1.0"
 Knowledge Base placement and promotion are governed by
 `okto-pulse://reference/knowledge-governance`. Put consequential findings in
 the appropriate first-class artifact and retain only supporting evidence in KB.
+Semantic guideline assessment follows
+`okto-pulse://reference/policy-compliance`.
 
 # Refinements Workflow — Deep Investigation
 
@@ -26,6 +28,68 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Use Q&A** to clarify scope and decisions with the user. If investigation reveals two or more valid interpretations, ask before inferring; refinement assumptions become expensive rework in specs, tasks, mockups, Architecture Designs, tests, and validations.
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
 - **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`); `entity_type="sprint"` likewise requires `filters.spec_id`.
+
+## Receipt-Backed Ambiguity and Pinpointing
+
+Refinement ambiguity is a version-bound Quality assessment, separate from a
+general prose judgment. It is written only in `approved` and gates
+`approved → done` when the board enables
+`require_refinement_ambiguity_gate`.
+
+Use this sequence:
+
+1. Complete the deep investigation, RDL entries, semantic edits, and ordinary
+   Q&A in `draft`; resolve review feedback before returning to `approved`.
+2. Re-read the full Refinement context. Read the current Quality head with
+   `okto_pulse_get_current_quality_assessment(subject_type="refinement",
+   assessment_kind="ambiguity")`; use head revision 0 if none exists.
+3. Call `okto_pulse_record_ambiguity_assessment` with the current Refinement
+   version/head revision and a 1–5 lower-is-better score. Pinpoint every issue
+   to a stable field, structured-child ID, Q&A ID, or the whole artifact.
+   Mutable list positions are forbidden anchors.
+4. Proposed questions are created atomically with the receipt. If they are
+   answered or the Refinement changes, the clarification/content identity can
+   change: re-read context and record a successor assessment.
+5. Immediately before `done`, read the current assessment again. It must be
+   current and at or below `max_refinement_ambiguity` when the gate is
+   required. Use `okto_pulse_list_quality_findings` for the complete pinpoint
+   set; never infer freshness from "latest" alone.
+
+A missing, stale, or excessive assessment fails closed. The per-Refinement
+skip is human-owned; agents may report the blocker or request a human skip but
+cannot set it. Full contracts:
+`okto-pulse://reference/tool-docs/quality`.
+
+## Operational Research Decision Ledger
+
+Use the Refinement Research Decision Ledger (RDL) for investigated unknowns
+whose alternatives, evidence, and decision must remain auditable. It is not a
+replacement for Q&A: ask the user when authority or intent is missing; use RDL
+to preserve the research trail and resulting decision.
+
+- RDL writes are allowed only while the Refinement is in `draft`.
+  `okto_pulse_append_research_decision` creates a new thread with
+  `expected_head_revision=0`; omit `ledger_id` and
+  `supersedes_entry_id`.
+- Entries are immutable. To progress or revise a thread, append a successor
+  using its current `ledger_id`, `supersedes_entry_id`, and positive head
+  revision. Reuse the same idempotency key only for an exact retry.
+- Every append/supersede bumps the Refinement version. Refresh the full
+  context and pass the resulting `expected_refinement_version` before the
+  next write.
+- Anchor to a stable Functional Requirement, Acceptance Criterion, Technical
+  Requirement, or Q&A ID; never an array index. Progress through `open`,
+  `investigating`, `resolved`, or explicitly `deferred`.
+- A `resolved` entry requires a decision, rationale, confidence, and either
+  evidence references or an explicit evidence-absence justification.
+- Use `okto_pulse_list_research_decisions` with its opaque keyset cursor and
+  stable filters; do not decode the cursor or substitute offset pagination.
+
+Before moving to review, account for every material research unknown as
+`resolved` or deliberately `deferred` with rationale. At `done`, the current
+RDL heads are frozen into the Refinement snapshot. Spec derivation carries
+references to resolved heads without copying them into `Spec.decisions`, so
+keep the ledger provenance precise and independently readable.
 
 ### 2.2a Selective Knowledge propagation when deriving a spec
 

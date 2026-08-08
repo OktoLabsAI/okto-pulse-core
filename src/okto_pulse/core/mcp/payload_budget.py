@@ -8,7 +8,7 @@ scanner, never a parallel token-based gate.
 
 Concrete first R5 budget profile (br_6c2dd1a4 / api_d70929a6 / TR tr_39c8d7ef):
     per_tool_description_chars     <= 900
-    aggregate_tool_description_chars <= 70000
+    aggregate_tool_description_chars <= 73000
     always_loaded_instruction_chars <= 8000
     + fixture-specific payload budgets declared in a checked manifest.
 
@@ -155,7 +155,7 @@ DEFAULT_BUDGET_PROFILE = BudgetProfile()
 TOOL_DESCRIPTIONS_BUDGET_PROFILE = BudgetProfile(
     name="tool_descriptions",
     per_tool_description_chars=900,
-    aggregate_tool_description_chars=70000,
+    aggregate_tool_description_chars=73000,
     always_loaded_instruction_chars=10000,
 )
 

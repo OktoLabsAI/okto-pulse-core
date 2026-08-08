@@ -22,6 +22,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.models import AgentUpdate
 
 
@@ -59,6 +63,14 @@ class UpdateAgentUseCase:
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
 
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.entity.edit",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
         await service.update_agent(command.agent_id, command.data)
         await commit(uow)
         updated = await service.get_agent(command.agent_id)

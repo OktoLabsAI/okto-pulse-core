@@ -1257,7 +1257,15 @@ def test_mcp_orphan_report_returns_bounded_safe_samples_behavioral(monkeypatch) 
     import okto_pulse.core.mcp.server as mcp_server
 
     async def _fake_get_agent_ctx(_board_id: str):
-        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp-test"))
+        return SimpleNamespace(
+            agent_id="agent-mcp-test",
+            agent_name="orphan-report-test",
+            permissions=[
+                "board.read",
+                "kg.operations.integrity.read",
+                "kg.admin.settings_read",
+            ],
+        )
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_get_agent_ctx)
 

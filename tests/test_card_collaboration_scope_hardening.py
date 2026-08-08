@@ -33,7 +33,22 @@ from okto_pulse.core.application.use_cases.card_collaboration import (
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
 
-ACTOR = ActorContext("actor", "rest", realm_id=LOCAL_REALM_ID)
+ACTOR = ActorContext(
+    "actor",
+    "rest",
+    board_id="foreign-board",
+    realm_id=LOCAL_REALM_ID,
+    permissions=(
+        "qa:create",
+        "qa:answer",
+        "qa:delete",
+        "comments:create",
+        "comments:update",
+        "comments:delete",
+        "attachments:upload",
+        "attachments:delete",
+    ),
+)
 CARD_ID = "foreign-card"
 BOARD_ID = "foreign-board"
 COMMENT_ID = "foreign-comment"

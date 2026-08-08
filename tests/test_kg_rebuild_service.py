@@ -92,10 +92,24 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
         async def get_user_permission(self, candidate_board_id, _user_id):
             return "editor" if candidate_board_id == board_id else None
 
+    async def _resolve_user_permissions(_user_id, candidate_board_id):
+        if candidate_board_id != board_id:
+            return []
+        return [
+            "kg.operations.rebuild.preflight",
+            "kg.operations.rebuild.confirm",
+            "kg.operations.rebuild.run",
+            "kg.admin.settings_read",
+            "kg.admin.settings_write",
+        ]
+
     async def _fake_uow():
         yield SimpleNamespace(
             boards=_Boards(),
-            services=SimpleNamespace(shares=_Shares()),
+            services=SimpleNamespace(
+                shares=_Shares(),
+                resolve_user_permissions=_resolve_user_permissions,
+            ),
         )
 
     app = FastAPI()

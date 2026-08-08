@@ -8,6 +8,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- Transport-neutral authorization through `AuthorizeOperationUseCase`, so REST
+  and MCP adapters can enforce the same operation policy.
+- Canonical namespaces for agent, board administration and sharing, permission
+  presets, default board configuration, design system, runtime, metrics,
+  amendments and Knowledge Graph operations.
+- A fail-closed CI registry validator requiring every live MCP action to have a
+  canonical policy or an explicit human-only exemption.
+
+### Changed
+
+- Mutable MCP handlers now authorize with operation-specific canonical flags,
+  retaining legacy aliases only as controlled compatibility fallbacks.
+- SDLC transition permissions are generated directly from `SDLC_REGISTRY`.
+- Permission resolution now preserves explicit denial ahead of legacy fallback
+  and role-based authorization.
+
+### Fixed
+
+- Authenticated MCP wildcard authorization now has parity in direct Knowledge
+  Graph helpers.
+- Nullable unit-of-work session gates no longer reject valid authorization
+  paths.
+
+### Validation
+
+- The MCP registry closes at 312 live tools, 309 canonical policy entries and
+  three explicit human-only exemptions.
+- Registry, Ruff and 182 focused authorization and policy regression tests pass
+  after reconciliation with `develop`.
+
+## [0.3.1] - 2026-07-27
+
+### Added
+
+- Receipt-backed ambiguity assessments with pinpoint findings, currentness,
+  version fences and governed Q&A proposals for ideations and refinements.
+- Append-only research decision ledger entries for refinements and curated,
+  version-bound checklist execution receipts for Specs.
+- Agent resources, permission policies and deterministic manifests covering all
+  11 SK-A MCP tools and their documentation contracts.
+
+### Changed
+
+- Refinement completion now supports the same configurable ambiguity-gate model
+  as ideation, including a human-only audited skip.
+- Test-scenario types are closed across domain, API and MCP, with `negative`
+  promoted to a supported first-class type.
+- The MCP catalog ratchet is 292 total tools, 284 canonical tools and 8 aliases.
+
 ## [0.3.0] - 2026-07-14
 
 Version 0.3.0 turns `okto-pulse-core` into the edition-neutral application and

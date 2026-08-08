@@ -25,6 +25,7 @@ _DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
 _GLOBAL_OUTBOX_DLQ_TOOL = "okto_pulse_kg_global_outbox_dead_letter_list"
 _DEBT_TOOL = "okto_pulse_kg_canonical_debt_list"
 _HEALTH_TOOL = "okto_pulse_kg_health"
+_POLICY_PROJECTION_DLQ_SIGNAL = "policy_constraint_projection_dlq"
 
 VALID_PROFILES = ("summary", "full", "legacy")
 
@@ -64,12 +65,31 @@ def build_technical_signal_counters(health: dict) -> dict[str, int]:
     )
     cdebt_open = int((health.get("canonical_debt") or {}).get("open_count") or 0)
     active_queue = int((domains.get("active_queue") or {}).get("count") or 0)
+    policy_projection = domains.get("policy_constraint_projection") or {}
     return {
+        # Established values retain their exact meanings.  Policy
+        # projection delivery has dedicated counters and is never folded into
+        # consolidation/global-outbox DLQ or active queue.
         "dead_letter_count": dlq,
         "global_outbox_dead_letter_count": global_outbox_dlq,
         "technical_dlq_count": dlq + global_outbox_dlq,
         "canonical_debt_open_count": cdebt_open,
         "active_queue_count": active_queue,
+        "policy_constraint_projection_pending_count": int(
+            policy_projection.get("pending_count") or 0
+        ),
+        "policy_constraint_projection_processing_count": int(
+            policy_projection.get("processing_count") or 0
+        ),
+        "policy_constraint_projection_retry_scheduled_count": int(
+            policy_projection.get("retry_scheduled_count") or 0
+        ),
+        "policy_constraint_projection_dlq_count": int(
+            policy_projection.get("dlq_count") or 0
+        ),
+        "policy_constraint_projection_max_attempt_count": int(
+            policy_projection.get("max_attempt_count") or 0
+        ),
     }
 
 
@@ -177,6 +197,34 @@ async def _non_maskable_items(
             it for it in items
             if artifact_ref in (it["artifact_ref"], it["source_ref"])
         ]
+    policy_projection = (
+        (health.get("operational_domains") or {}).get(
+            "policy_constraint_projection"
+        )
+        or {}
+    )
+    policy_dlq_count = int(policy_projection.get("dlq_count") or 0)
+    if policy_dlq_count > 0:
+        # Aggregate board-scoped evidence is intentional: the health snapshot
+        # exposes no raw handler error or event payload.  Add this after the
+        # artifact filter so a board-level governance delivery failure cannot
+        # be masked by an artifact-scoped readiness request.
+        items.append(
+            {
+                "artifact_ref": f"board:{board_id}",
+                "source_ref": f"board:{board_id}",
+                "signal": _POLICY_PROJECTION_DLQ_SIGNAL,
+                "count": policy_dlq_count,
+                "oldest_at": policy_projection.get("oldest_dlq_at"),
+                "classification": policy_projection.get("classification"),
+                "next_action": "inspect_policy_constraint_projection_dlq",
+                "remediation": (
+                    "diagnose the policy-constraint event delivery failure "
+                    "before replaying the handler execution"
+                ),
+                "drill_down_tool": _HEALTH_TOOL,
+            }
+        )
     return items
 
 
@@ -225,6 +273,7 @@ async def build_health_readiness(
     present, _ = _persistence_present(health)
     blocking = bool(
         counters["technical_dlq_count"] > 0
+        or counters["policy_constraint_projection_dlq_count"] > 0
         or counters["canonical_debt_open_count"] > 0
         or present
     )
@@ -236,6 +285,8 @@ async def build_health_readiness(
         reasons_set.add("technical_dlq")
     if counters["global_outbox_dead_letter_count"] > 0:
         reasons_set.add("global_outbox_dead_letter")
+    if counters["policy_constraint_projection_dlq_count"] > 0:
+        reasons_set.add(_POLICY_PROJECTION_DLQ_SIGNAL)
     if counters["canonical_debt_open_count"] > 0:
         reasons_set.add("canonical_debt_open")
     if present:

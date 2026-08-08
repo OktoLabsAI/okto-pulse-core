@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.kg.schemas import KGEdgeType
+from repository_checkout_testing import community_repo_for
 
 
 REPO_ROOT = Path(__file__).parents[1]
 CORE_SRC = REPO_ROOT / "src" / "okto_pulse" / "core"
-COMMUNITY_ROOT = REPO_ROOT.parent / "okto_labs_pulse_community"
+COMMUNITY_ROOT = community_repo_for(REPO_ROOT)
 COMMUNITY_ADAPTERS = COMMUNITY_ROOT / "src" / "okto_pulse" / "community" / "adapters"
 
 
@@ -138,8 +139,9 @@ def _assert_core_readme_live_counters(readme: str) -> None:
 def _require_community_repo() -> None:
     if not (COMMUNITY_ROOT / "README.md").exists() or not COMMUNITY_ADAPTERS.exists():
         pytest.skip(
-            "Community sibling repo not available; set up okto_labs_pulse_community next to core "
-            "to validate the Community README source map."
+            "Community sibling repo not available; set OKTO_PULSE_COMMUNITY_REPO "
+            "or check out okto-pulse next to Core "
+            "to validate the Community architecture source map."
         )
 
 
@@ -173,11 +175,13 @@ def test_api_route_module_counter_documents_infrastructure_exclusions() -> None:
 
 def test_historical_counters_do_not_drive_live_counters() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    release_notes = (REPO_ROOT / "docs" / "RELEASE-NOTES.md").read_text(
+        encoding="utf-8"
+    )
 
-    assert "26+1 SQLAlchemy models" in readme
-
-    mutated_history_readme = readme.replace("26+1 SQLAlchemy models", "999+1 SQLAlchemy models")
-    _assert_core_readme_live_counters(mutated_history_readme)
+    assert "26+1 SQLAlchemy models" in release_notes
+    assert "26+1 SQLAlchemy models" not in readme
+    assert "**0 SQLAlchemy models**" in _markdown_section(readme, "What's inside")
 
 
 def test_guard_requires_live_section_not_historical_counters() -> None:
@@ -212,7 +216,9 @@ def test_community_readme_live_mcp_count_and_source_map_match_filesystem() -> No
     _require_community_repo()
     readme = (COMMUNITY_ROOT / "README.md").read_text(encoding="utf-8")
     platform = _markdown_section(readme, "Platform Surface")
-    adapters = _markdown_section(readme, "Architecture")
+    adapters = (COMMUNITY_ROOT / "docs" / "ARCHITECTURE.md").read_text(
+        encoding="utf-8"
+    )
     adapter_files = _community_adapter_files()
     mcp_tool_count = asyncio.run(_mcp_tool_count())
 
@@ -250,8 +256,12 @@ def test_community_readme_live_mcp_count_and_source_map_match_filesystem() -> No
 
 def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> None:
     _require_community_repo()
-    core_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    community_readme = (COMMUNITY_ROOT / "README.md").read_text(encoding="utf-8")
+    core_architecture = (
+        REPO_ROOT / "docs" / "ARCHITECTURE-OVERVIEW.md"
+    ).read_text(encoding="utf-8")
+    community_architecture = (
+        COMMUNITY_ROOT / "docs" / "ARCHITECTURE.md"
+    ).read_text(encoding="utf-8")
 
     for marker in (
         "Core exposes `build_mcp_asgi_app()` and `mount_mcp()`",
@@ -262,7 +272,7 @@ def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> N
         "`McpAuthenticator`",
         "`McpTraceSink`",
     ):
-        assert marker in core_readme
+        assert marker in core_architecture
 
     for marker in (
         "Community declares `fastmcp`, `uvicorn[standard]` and\n`wsproto` directly",
@@ -273,4 +283,4 @@ def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> N
         "`JsonlMcpTraceSink`",
         "`okto_pulse.core.ports.McpTraceSink`",
     ):
-        assert marker in community_readme
+        assert marker in community_architecture

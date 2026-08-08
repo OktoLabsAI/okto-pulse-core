@@ -29,15 +29,18 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from sqlalchemy_test_models import (
     Board,
-    BoardGuideline,
     DefaultBoardConfigurationAudit,
-    Guideline,
 )
-from okto_pulse.core.models.schemas import BoardCreate, BoardSettings
+from okto_pulse.core.models.schemas import (
+    BoardCreate,
+    BoardSettings,
+    GuidelineCreate,
+    GuidelineUpdate,
+)
 from okto_pulse.core.services.default_board_configuration import (
     EVENT_GUIDELINE_APPLIED_TO_BOARD,
     DefaultBoardConfigurationError,
@@ -50,13 +53,25 @@ pytestmark = pytest.mark.asyncio
 USER_ID = "dbc-materialize-user"
 
 
-async def _global_guideline(db, title: str, version: int = 3) -> Guideline:
-    g = Guideline(
-        title=title, content="c", scope="global", board_id=None, owner_id=USER_ID, version=version
+async def _global_guideline(db, title: str, version: int = 3):
+    service = GuidelineService(db)
+    guideline = await service.create_guideline(
+        USER_ID,
+        GuidelineCreate(
+            title=title,
+            content="c-1",
+            scope="global",
+            board_id=None,
+        ),
     )
-    db.add(g)
-    await db.flush()
-    return g
+    for revision_number in range(2, version + 1):
+        guideline = await service.update_guideline(
+            guideline.id,
+            USER_ID,
+            GuidelineUpdate(content=f"c-{revision_number}"),
+        )
+        assert guideline is not None
+    return guideline
 
 
 async def _active_global_template_with(db, refs):
@@ -68,6 +83,7 @@ async def _active_global_template_with(db, refs):
         scope="global",
         guideline_default_refs=refs,
         activate=True,
+        compatibility_import=True,
     )
 
 
@@ -78,26 +94,46 @@ async def _board(db, name: str | None = None) -> Board:
 
 
 # ---------------------------------------------------------------------------
-# criterion 1 — nullable provenance, no backfill for manual links
+# criterion 1 — direct manual links fail closed before provenance is persisted
 # ---------------------------------------------------------------------------
 
 
-async def test_manual_link_keeps_null_provenance():
+async def test_manual_link_requires_impact_preview_and_persists_nothing():
     from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.ports.guideline_policy import (
+        GuidelinePolicyBindingConflict,
+    )
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     async with get_session_factory()() as db:
-        await _active_global_template_with(db, [])  # empty defaults -> create_board links nothing
+        await _active_global_template_with(
+            db, []
+        )  # empty defaults -> create_board links nothing
         g = await _global_guideline(db, "Manual")
         board = await _board(db)
-        link = await GuidelineService(db).link_guideline_to_board(board.id, g.id, priority=2)
-        await db.commit()
-        link = await db.get(BoardGuideline, link.id)
-        # the migration added the columns (else this would error) and they are NULL
-        # for a manually-linked guideline — forward-only, no backfill (TR5).
-        assert link.priority == 2
-        assert link.template_id is None
-        assert link.template_version is None
-        assert link.guideline_version is None
+        with pytest.raises(
+            GuidelinePolicyBindingConflict,
+            match="guideline_impact_preview_required",
+        ) as exc:
+            await GuidelineService(db).link_guideline_to_board(
+                board.id,
+                g.id,
+                priority=2,
+            )
+
+        assert dict(exc.value.details) == {
+            "board_id": board.id,
+            "guideline_id": g.id,
+            "remediation": "preview_then_adopt",
+        }
+        persisted = (
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .get_binding(board_id=board.id, guideline_id=g.id)
+        )
+        assert persisted is None
 
 
 # ---------------------------------------------------------------------------
@@ -107,26 +143,35 @@ async def test_manual_link_keeps_null_provenance():
 
 async def test_board_creation_materializes_links_with_provenance():
     from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     async with get_session_factory()() as db:
         g1 = await _global_guideline(db, "G1", version=4)
         g2 = await _global_guideline(db, "G2", version=7)
-        tmpl = await _active_global_template_with(db, [
-            {"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version},
-            {"guideline_id": g2.id, "priority": 5, "guideline_version": g2.version},
-        ])
+        await _active_global_template_with(
+            db,
+            [
+                {"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version},
+                {"guideline_id": g2.id, "priority": 5, "guideline_version": g2.version},
+            ],
+        )
         board = await _board(db)
 
         links = (
-            await db.execute(select(BoardGuideline).where(BoardGuideline.board_id == board.id))
-        ).scalars().all()
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .list_bindings(board_id=board.id)
+        )
         by_gid = {link.guideline_id: link for link in links}
         assert set(by_gid) == {g1.id, g2.id}  # exactly two, no duplicate
         assert by_gid[g1.id].priority == 1 and by_gid[g2.id].priority == 5  # preserved
-        for gid, gver in ((g1.id, g1.version), (g2.id, g2.version)):
-            assert by_gid[gid].template_id == tmpl.id
-            assert by_gid[gid].template_version == tmpl.version
-            assert by_gid[gid].guideline_version == gver
+        for guideline in (g1, g2):
+            binding = by_gid[guideline.id]
+            assert binding.revision_id == guideline.revision_id
+            assert binding.semantic_version == guideline.semantic_version
+            assert binding.revision_digest == guideline.revision_digest
 
 
 # ---------------------------------------------------------------------------
@@ -140,18 +185,24 @@ async def test_applied_to_board_audit_is_queryable():
     async with get_session_factory()() as db:
         g1 = await _global_guideline(db, "G1")
         tmpl = await _active_global_template_with(
-            db, [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}]
+            db,
+            [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}],
         )
         board = await _board(db)
 
         rows = (
-            await db.execute(
-                select(DefaultBoardConfigurationAudit).where(
-                    DefaultBoardConfigurationAudit.event_type == EVENT_GUIDELINE_APPLIED_TO_BOARD,
-                    DefaultBoardConfigurationAudit.template_id == tmpl.id,
+            (
+                await db.execute(
+                    select(DefaultBoardConfigurationAudit).where(
+                        DefaultBoardConfigurationAudit.event_type
+                        == EVENT_GUIDELINE_APPLIED_TO_BOARD,
+                        DefaultBoardConfigurationAudit.template_id == tmpl.id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         row = rows[0]
         assert row.template_version == tmpl.version
@@ -167,16 +218,22 @@ async def test_applied_to_board_audit_is_queryable():
 
 async def test_forced_apply_failure_aborts_transactionally():
     from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     async with get_session_factory()() as db:
         g1 = await _global_guideline(db, "G1")
         tmpl = await _active_global_template_with(
-            db, [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}]
+            db,
+            [{"guideline_id": g1.id, "priority": 1, "guideline_version": g1.version}],
         )
         name = f"b-{uuid.uuid4().hex[:8]}"
 
         with patch.object(
-            GuidelineService, "apply_default_guidelines", side_effect=RuntimeError("boom")
+            GuidelineService,
+            "apply_default_guidelines",
+            side_effect=RuntimeError("boom"),
         ):
             with pytest.raises(DefaultBoardConfigurationError) as exc:
                 await _board(db, name)
@@ -191,17 +248,15 @@ async def test_forced_apply_failure_aborts_transactionally():
         # criterion 3: clean-session rollback — no partial board, no orphan links.
         await db.rollback()
         boards = (
-            await db.execute(select(Board).where(Board.name == name))
-        ).scalars().all()
+            (await db.execute(select(Board).where(Board.name == name))).scalars().all()
+        )
         assert boards == []
-        orphans = (
-            await db.execute(
-                select(func.count()).select_from(BoardGuideline).where(
-                    BoardGuideline.template_id == tmpl.id
-                )
-            )
-        ).scalar()
-        assert orphans == 0
+        assert (
+            await require_relational_application_adapter()
+            .guideline_policy(db)
+            .list_bindings(board_id=d["board_id"])
+            == ()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +266,9 @@ async def test_forced_apply_failure_aborts_transactionally():
 
 async def test_apply_default_guidelines_idempotent_and_dedups():
     from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
 
     async with get_session_factory()() as db:
         await _active_global_template_with(db, [])  # create_board links nothing
@@ -221,7 +279,11 @@ async def test_apply_default_guidelines_idempotent_and_dedups():
 
         refs = [
             {"guideline_id": g1.id, "priority": 1, "guideline_version": 1},
-            {"guideline_id": g1.id, "priority": 9, "guideline_version": 9},  # intra-batch dup
+            {
+                "guideline_id": g1.id,
+                "priority": 9,
+                "guideline_version": 9,
+            },  # intra-batch dup
             {"guideline_id": g2.id, "priority": 2, "guideline_version": 2},
         ]
         created = await gsvc.apply_default_guidelines(
@@ -238,19 +300,13 @@ async def test_apply_default_guidelines_idempotent_and_dedups():
             board.id, refs, template_id="t2", template_version=8
         )
         assert again == []
-        total = (
-            await db.execute(
-                select(func.count()).select_from(BoardGuideline).where(
-                    BoardGuideline.board_id == board.id
-                )
-            )
-        ).scalar()
-        assert total == 2  # uq_board_guideline upheld; no duplicate, provenance unchanged
-        preserved = (
-            await db.execute(
-                select(BoardGuideline).where(
-                    BoardGuideline.board_id == board.id, BoardGuideline.guideline_id == g1.id
-                )
-            )
-        ).scalar_one()
-        assert preserved.template_id == "t1" and preserved.priority == 1  # untouched
+        policy = require_relational_application_adapter().guideline_policy(db)
+        bindings = await policy.list_bindings(board_id=board.id)
+        assert len(bindings) == 2
+        preserved = await policy.get_binding(
+            board_id=board.id,
+            guideline_id=g1.id,
+        )
+        assert preserved is not None
+        assert preserved.priority == 1
+        assert preserved.binding_revision == 1

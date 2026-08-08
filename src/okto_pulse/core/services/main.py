@@ -53,6 +53,7 @@ from okto_pulse.core.domain.sdlc_registry import (
     is_transition_allowed,
     transition_contracts,
     transition_map,
+    transition_requires_policy_compliance,
 )
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.ports.application_persistence import (
@@ -120,6 +121,14 @@ from okto_pulse.core.models.schemas import (
     SprintUpdate,
     TopicCreate,
     TopicUpdate,
+)
+from okto_pulse.core.services.application_schemas import (
+    PersistedTestScenarioSpecUpdate,
+)
+from okto_pulse.core.services.ambiguity_assessment import (
+    AmbiguityGateError as AmbiguityGateError,
+    AmbiguityGateService,
+    resolve_ambiguity_gate_configuration,
 )
 from okto_pulse.core.services.activity_log import (
     activity_log_changes,
@@ -193,7 +202,17 @@ from okto_pulse.core.services.sprint_scope import (
     SprintScopeResolver,
     completion_blockers,
 )
-from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
+from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
+from okto_pulse.core.domain.quality_canonicalization import (
+    SEMANTIC_FIELD_MANIFEST_V1,
+)
+from okto_pulse.core.services.requirement_lint_writer import (
+    stage_spec_requirement_lint,
+)
+from okto_pulse.core.services.spec_entity_canonicalization import (
+    canonicalize_fr_ac as canonicalize_fr_ac,  # noqa: F401 - compatibility
+    canonicalize_spec_requirement_fields,
+)
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
 )
@@ -204,12 +223,176 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     compute_test_scenario_semantic_sha256,
     evidence_invalidated_by_semantic_edit,
     reexecutable_evidence_reference,
+    require_test_scenario_status_transition,
     require_test_scenario_status_mutable,
+    resolve_scenario_types_for_whole_list_write,
+    scenario_has_authenticated_required_evidence,
     scenario_has_required_evidence,
     validate_scenario_type,
     validate_scenario_types_for_write,
     validate_test_scenario_evidence,
 )
+
+
+async def _purge_quality_assessment_subject(
+    db: Any,
+    *,
+    board_id: str,
+    subject_type: str,
+    subject_id: str,
+) -> None:
+    """Purge one SK-A relational slice inside the caller-owned transaction."""
+
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentSubjectType,
+    )
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+    from okto_pulse.core.services.quality_assessment_lifecycle import (
+        QualityAssessmentLifecycleService,
+    )
+
+    service = QualityAssessmentLifecycleService()
+    plan = service.prepare_subject_purge(
+        board_id=board_id,
+        subject_type=AssessmentSubjectType(subject_type),
+        subject_id=subject_id,
+    )
+    persistence = require_relational_application_adapter().quality_assessment_lifecycle(
+        db
+    )
+    postcondition = await persistence.apply_purge_plan(plan)
+    service.validate_purge_postcondition(
+        plan=plan,
+        postcondition=postcondition,
+    )
+
+
+async def _apply_quality_assessment_lifecycle_transition(
+    db: Any,
+    *,
+    board_id: str,
+    subject_type: str,
+    subject_id: str,
+    before_version: int,
+    before_status: str,
+    before_archived: bool,
+    after_version: int,
+    after_status: str,
+    after_archived: bool,
+    action: str,
+    actor_id: str,
+) -> None:
+    """Reconcile assessment heads and audit one subject lifecycle change."""
+
+    from okto_pulse.core.domain.quality_assessment import (
+        AssessmentSubjectRef,
+        AssessmentSubjectType,
+    )
+    from okto_pulse.core.domain.quality_assessment_lifecycle import (
+        AssessmentLifecycleAction,
+        AssessmentLifecycleCurrentInput,
+        AssessmentLifecycleSubjectSnapshot,
+        AssessmentLifecycleTransition,
+    )
+    from okto_pulse.core.domain.quality_canonicalization import (
+        canonical_sha256,
+    )
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+    from okto_pulse.core.services.quality_assessment_lifecycle import (
+        QualityAssessmentLifecycleService,
+    )
+
+    resolved_subject_type = AssessmentSubjectType(subject_type)
+    persistence = require_relational_application_adapter().quality_assessment_lifecycle(
+        db
+    )
+    heads, receipts = await persistence.load_lifecycle_state(
+        board_id=board_id,
+        subject_type=resolved_subject_type.value,
+        subject_id=subject_id,
+    )
+    latest_by_kind = {}
+    for receipt in receipts:
+        current = latest_by_kind.get(receipt.assessment_kind)
+        if current is None or (
+            receipt.created_at,
+            receipt.receipt_id,
+        ) > (
+            current.created_at,
+            current.receipt_id,
+        ):
+            latest_by_kind[receipt.assessment_kind] = receipt
+    current_inputs = tuple(
+        AssessmentLifecycleCurrentInput(
+            assessment_kind=kind,
+            input_digest=receipt.input_digest,
+        )
+        for kind, receipt in sorted(
+            latest_by_kind.items(),
+            key=lambda item: item[0].value,
+        )
+    )
+    before_subject = AssessmentSubjectRef(
+        board_id=board_id,
+        subject_type=resolved_subject_type,
+        subject_id=subject_id,
+        subject_version=before_version,
+    )
+    after_subject = AssessmentSubjectRef(
+        board_id=board_id,
+        subject_type=resolved_subject_type,
+        subject_id=subject_id,
+        subject_version=after_version,
+    )
+    occurred_at = datetime.now(timezone.utc)
+    idempotency_digest = canonical_sha256(
+        {
+            "contract": "quality-assessment-lifecycle-hook/v1",
+            "board_id": board_id,
+            "subject_type": resolved_subject_type.value,
+            "subject_id": subject_id,
+            "action": action,
+            "before": {
+                "version": before_version,
+                "status": before_status,
+                "archived": before_archived,
+            },
+            "after": {
+                "version": after_version,
+                "status": after_status,
+                "archived": after_archived,
+            },
+            "occurred_at": occurred_at.isoformat(),
+        }
+    )
+    transition = AssessmentLifecycleTransition(
+        action=AssessmentLifecycleAction(action),
+        before=AssessmentLifecycleSubjectSnapshot(
+            subject=before_subject,
+            status=before_status,
+            archived=before_archived,
+            current_inputs=current_inputs,
+        ),
+        after=AssessmentLifecycleSubjectSnapshot(
+            subject=after_subject,
+            status=after_status,
+            archived=after_archived,
+            current_inputs=current_inputs,
+        ),
+        idempotency_key=f"quality-lifecycle:{idempotency_digest}",
+        actor_id=actor_id,
+        occurred_at=occurred_at,
+    )
+    plan = QualityAssessmentLifecycleService().prepare_transition(
+        transition,
+        heads=heads,
+        receipts=receipts,
+    )
+    await persistence.apply_lifecycle_plan(plan)
 
 
 def _claims_test_evidence_v2(evidence: object) -> bool:
@@ -257,55 +440,6 @@ def _require_trusted_test_evidence_v2_write(
     )
     if not verification.verified:
         raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))
-
-
-def scenario_has_authenticated_required_evidence(
-    *,
-    board_id: str,
-    spec_id: str,
-    scenario: dict[str, Any],
-    acceptance_criteria: list[object],
-) -> bool:
-    """Consumer-side evidence gate with edition authentication for V2.
-
-    Non-V2 evidence keeps the established structural rules. Any Evidence V2
-    claim must additionally resolve to a receipt in the registered concrete
-    ledger and must bind the scenario's current semantic digest. There is no
-    actor match here: downstream card/sprint reviewers may consume proof issued
-    by another actor; actor equality is enforced when evidence itself is written.
-    """
-
-    if not scenario_has_required_evidence(scenario):
-        return False
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
-    if not _claims_test_evidence_v2(evidence):
-        return True
-    from okto_pulse.core.ports.test_evidence import (
-        resolve_test_evidence_write_verifier,
-    )
-
-    verifier = resolve_test_evidence_write_verifier()
-    if verifier is None or not isinstance(evidence, dict):
-        return False
-    try:
-        scenario_sha256 = compute_test_scenario_semantic_sha256(
-            board_id=board_id,
-            spec_id=spec_id,
-            scenario=scenario,
-            acceptance_criteria=acceptance_criteria,
-        )
-        verification = verifier.verify(
-            board_id=board_id,
-            spec_id=spec_id,
-            scenario_id=str(scenario.get("id") or ""),
-            scenario_sha256=scenario_sha256,
-            status=str(scenario.get("status") or ""),
-            actor_id=None,
-            evidence=evidence,
-        )
-    except (TypeError, ValueError):
-        return False
-    return verification.verified
 
 
 # Preserve the service API's aggregate names without coupling annotations to
@@ -856,7 +990,7 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
     board_overrides: dict | None = None
 
     if agent is not None:
-        if isinstance(agent.permission_flags, dict) and agent.permission_flags:
+        if isinstance(agent.permission_flags, dict):
             agent_flags = agent.permission_flags
         elif isinstance(agent.permissions, list) and agent.permissions:
             agent_flags = map_legacy_permissions(agent.permissions)
@@ -867,7 +1001,7 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
                 "permission_preset",
                 agent.preset_id,
             )
-            if preset and preset.flags:
+            if preset and preset.flags is not None:
                 preset_flags = preset.flags
 
         if board_id:
@@ -1055,6 +1189,48 @@ async def _authorize_qa_answer_or_raise(
             emit_governance_metric(details, raise_on_violation=False)
             await _application_flush(db)
         raise
+
+
+async def _publish_quality_clarification_changed(
+    db: Any,
+    *,
+    subject: ApplicationRecord,
+    subject_type: str,
+    qa_id: object,
+    operation: str,
+    actor_id: str | None,
+    actor_type: str = "user",
+) -> None:
+    """Stage the Q&A invalidation signal in the caller-owned transaction."""
+
+    from okto_pulse.core.events import publish as event_publish
+    from okto_pulse.core.events.types import QualityClarificationChanged
+
+    subject_id = str(getattr(subject, "id", "") or "").strip()
+    board_id = str(getattr(subject, "board_id", "") or "").strip()
+    subject_version = getattr(subject, "version", None)
+    if (
+        not subject_id
+        or not board_id
+        or not isinstance(subject_version, int)
+        or isinstance(subject_version, bool)
+        or subject_version < 1
+    ):
+        raise RuntimeError("quality_clarification_subject_invalid")
+    normalized_qa_id = str(qa_id or "").strip() or None
+    await event_publish(
+        QualityClarificationChanged(
+            board_id=board_id,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            subject_version=subject_version,
+            qa_id=normalized_qa_id,
+            operation=operation,
+        ),
+        session=db,
+    )
 
 
 async def _record_critical_context_decision(
@@ -2253,7 +2429,11 @@ class BoardService:
         # adapter failure raises default_materialization_failed so the whole
         # create_board reverts (no partial board/link/snapshot); no active
         # template -> no-op.
-        await _config_service.apply_default_config_to_board(board.id, actor=user_id)
+        await _config_service.apply_default_config_to_board(
+            board.id,
+            actor=user_id,
+            template_snapshot=snapshot_meta,
+        )
         # Eagerly bootstrap the per-board graph backend graph. This keeps board
         # creation on the slow path (~1-2s) so subsequent consolidation /
         # MCP query paths stay on the hot path.
@@ -2275,6 +2455,61 @@ class BoardService:
                 exc,
             )
         return board
+
+    async def record_checklist_binding_change(
+        self,
+        *,
+        board_id: str,
+        actor_id: str,
+        binding: Any,
+        previous_binding: Any | None,
+        change_source: str,
+    ) -> None:
+        """Stage the A3 activity history and durable event in this transaction."""
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import ChecklistBindingChanged
+
+        actor_name = await resolve_actor_name(self.db, actor_id, board_id)
+        details = {
+            "target_type": binding.target_type.value,
+            "phase": binding.phase.value,
+            "template_version": binding.template_version,
+            "mode": binding.mode.value,
+            "binding_version": binding.version,
+            "binding_digest": binding.digest,
+            "previous_mode": (
+                None if previous_binding is None else previous_binding.mode.value
+            ),
+            "previous_binding_version": (
+                None if previous_binding is None else previous_binding.version
+            ),
+            "change_source": change_source,
+        }
+        await self._log_activity(
+            board_id=board_id,
+            action="spec_checklist_binding_changed",
+            actor_type="user",
+            actor_id=actor_id,
+            actor_name=actor_name,
+            details=details,
+        )
+        await event_publish(
+            ChecklistBindingChanged(
+                board_id=board_id,
+                actor_id=actor_id,
+                target_type=binding.target_type.value,
+                phase=binding.phase.value,
+                template_version=binding.template_version,
+                mode=binding.mode.value,
+                binding_version=binding.version,
+                binding_digest=binding.digest,
+                previous_mode=details["previous_mode"],
+                previous_binding_version=details["previous_binding_version"],
+                change_source=change_source,
+            ),
+            session=self.db,
+        )
 
     async def get_board(
         self,
@@ -3704,7 +3939,10 @@ class CardService:
     ) -> dict:
         """Resolve validation gate config from hierarchy: sprint → spec → board.
 
-        Returns dict with: required (bool), min_confidence, min_completeness, max_drift, resolved_from.
+        Returns the effective values plus both the legacy ``resolved_from``
+        value (the source of ``required``) and per-field ``resolved_sources``.
+        Threshold overrides are independent, so a single provenance label
+        cannot accurately describe a mixed sprint/spec/board configuration.
         """
         # Defaults from board settings
         board_required = board_settings.get("require_task_validation", True)
@@ -3736,32 +3974,56 @@ class CardService:
             getattr(sprint, "validation_max_drift", None) if sprint else None
         )
 
-        # Resolve with null-coalescing: sprint ?? spec ?? board
-        def _coalesce(*vals, default):
-            for v in vals:
-                if v is not None:
-                    return v
-            return default
+        # Resolve with null-coalescing: sprint ?? spec ?? board, retaining the
+        # source for every independently overridable value.
+        def _resolve_with_source(sprint_value, spec_value, board_value, *, default):
+            if sprint_value is not None:
+                return sprint_value, "sprint"
+            if spec_value is not None:
+                return spec_value, "spec"
+            if board_value is not None:
+                return board_value, "board"
+            return default, "default"
 
-        required = _coalesce(spr_required, spec_required, board_required, default=False)
-        resolved_from = "board"
-        if spr_required is not None:
-            resolved_from = "sprint"
-        elif spec_required is not None:
-            resolved_from = "spec"
+        required, required_source = _resolve_with_source(
+            spr_required,
+            spec_required,
+            board_required,
+            default=False,
+        )
+        min_confidence, min_confidence_source = _resolve_with_source(
+            spr_min_conf,
+            spec_min_conf,
+            board_min_conf,
+            default=70,
+        )
+        min_completeness, min_completeness_source = _resolve_with_source(
+            spr_min_comp,
+            spec_min_comp,
+            board_min_comp,
+            default=80,
+        )
+        max_drift, max_drift_source = _resolve_with_source(
+            spr_max_drift,
+            spec_max_drift,
+            board_max_drift,
+            default=50,
+        )
 
         return {
             "required": bool(required),
-            "min_confidence": _coalesce(
-                spr_min_conf, spec_min_conf, board_min_conf, default=70
-            ),
-            "min_completeness": _coalesce(
-                spr_min_comp, spec_min_comp, board_min_comp, default=80
-            ),
-            "max_drift": _coalesce(
-                spr_max_drift, spec_max_drift, board_max_drift, default=50
-            ),
-            "resolved_from": resolved_from,
+            "min_confidence": min_confidence,
+            "min_completeness": min_completeness,
+            "max_drift": max_drift,
+            # Backwards-compatible aggregate: historically this represented
+            # the layer that supplied require_task_validation.
+            "resolved_from": required_source,
+            "resolved_sources": {
+                "required": required_source,
+                "min_confidence": min_confidence_source,
+                "min_completeness": min_completeness_source,
+                "max_drift": max_drift_source,
+            },
         }
 
     async def submit_task_validation(
@@ -3882,6 +4144,13 @@ class CardService:
 
         if outcome == "success":
             await self._validate_cognitive_done(card, board)
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=card.board_id,
+                entity_type="card",
+                subject_id=card.id,
+                from_status=old_status.value,
+                to_status=CardStatus.DONE.value,
+            )
 
         # Build validation entry.
         # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
@@ -3918,6 +4187,10 @@ class CardService:
             "outcome": outcome,
             "verdict": "pass" if outcome == "success" else "fail",
             "threshold_violations": violations,
+            # Persist the effective threshold snapshot with the append-only
+            # record. Historical UI must not reinterpret an old validation
+            # against board/spec/sprint settings changed later.
+            "resolved_thresholds": dict(config),
             "reviewer_separation": reviewer_separation.to_dict(),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -4127,9 +4400,7 @@ class CardService:
                         "validation_id": validation_id,
                         "card_status": card.status.value,
                         "successful_validations": successful_validations,
-                        "validation_required_from": validation_config[
-                            "resolved_from"
-                        ],
+                        "validation_required_from": validation_config["resolved_from"],
                     },
                 )
 
@@ -4141,6 +4412,7 @@ class CardService:
     async def confirm_amendment_coverage(
         self,
         *,
+        expected_board_id: str | None = None,
         amendment_id: str,
         regression_test_task_id: str,
         regression_scenario_id: str,
@@ -4165,6 +4437,10 @@ class CardService:
         svc = AmendmentRevisionService(self.db)
         amendment = await svc.get(amendment_id)
         if amendment is None:
+            raise ValueError(f"Amendment '{amendment_id}' not found")
+        if expected_board_id is not None and amendment.board_id != expected_board_id:
+            # Keep cross-board identifiers indistinguishable from missing ones and,
+            # critically, fail before validator checks or any attestation write.
             raise ValueError(f"Amendment '{amendment_id}' not found")
 
         # 1. binding: the artifact MUST be declared by THIS amendment.
@@ -5210,16 +5486,16 @@ class CardService:
                             }
                         )
                         continue
-                    if (
-                        scenario.get("status") in ("draft", "ready")
-                        or not scenario_has_authenticated_required_evidence(
-                            board_id=card.board_id,
-                            spec_id=card.spec_id,
-                            scenario=scenario,
-                            acceptance_criteria=list(
-                                spec_for_test_scenarios.acceptance_criteria or []
-                            ),
-                        )
+                    if scenario.get("status") in (
+                        "draft",
+                        "ready",
+                    ) or not scenario_has_authenticated_required_evidence(
+                        board_id=card.board_id,
+                        spec_id=card.spec_id,
+                        scenario=scenario,
+                        acceptance_criteria=list(
+                            spec_for_test_scenarios.acceptance_criteria or []
+                        ),
                     ):
                         stale.append(
                             {
@@ -5346,11 +5622,8 @@ class CardService:
                 eligible_scenarios_count = (
                     len(eligibility.eligible_scenarios) if eligibility else 0
                 )
-                workflow_remediation = (
-                    BugWorkflowRemediationMessageBuilder()
-                    .build_missing_regression_test_task(
-                        eligible_scenarios_count=eligible_scenarios_count,
-                    )
+                workflow_remediation = BugWorkflowRemediationMessageBuilder().build_missing_regression_test_task(
+                    eligible_scenarios_count=eligible_scenarios_count,
                 )
                 if eligible_scenarios_count:
                     message = (
@@ -5697,6 +5970,19 @@ class CardService:
         if data.status == CardStatus.DONE:
             await self._validate_cognitive_done(card, board)
 
+        # Policy Compliance is a forward aggregate gate.  Recompute it in this
+        # mutation UoW before appending the execution report, publishing its
+        # event, or resequencing the card.  Free recovery/cancellation edges
+        # short-circuit inside the service without touching the resolver.
+        if old_status != data.status:
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=card.board_id,
+                entity_type="card",
+                subject_id=card.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            )
+
         report_target = None
         if data.status == CardStatus.DONE:
             report_target = "Done"
@@ -5757,24 +6043,88 @@ class CardService:
                     "Explain what caused the deviation from the original plan."
                 )
 
+            # SK-B2-S1 (FR-6): impact_evidence enforcement lives EXACTLY
+            # inside the existing report_target block, inheriting its real
+            # exemptions (test cards; submit_task_validation->DONE never
+            # passes through here).
+            from okto_pulse.core.services.impact_evidence import (
+                resolve_impact_evidence_mode,
+            )
+
+            impact_mode, _impact_mode_source = resolve_impact_evidence_mode(
+                board
+            )
+            impact_block = data.impact_evidence
+            impact_populated = (
+                impact_block is not None
+                and impact_block.is_minimally_populated()
+            )
+            if impact_mode == "require" and not impact_populated:
+                raise CardOperationError(
+                    "impact_evidence_required",
+                    "This board requires declared impact evidence on the "
+                    f"execution report before moving to {report_target}: "
+                    "include impact_evidence with at least one populated "
+                    "section (files, symbols, surfaces or tests).",
+                    remediation=(
+                        "Re-enumerate what the execution touched and resubmit "
+                        "the move with impact_evidence (schema_version=1): "
+                        "changed files (repo+path+change_kind), key symbols "
+                        "(name+kind+action+file), affected surfaces "
+                        "(kind+identifier) and authored tests. The block is a "
+                        "claim - the validator still diffs reality."
+                    ),
+                    facts={
+                        "card_id": card_id,
+                        "impact_evidence_mode": impact_mode,
+                        "target_status": data.status.value,
+                    },
+                )
+            if impact_mode == "advisory" and not impact_populated:
+                # AC-17: exact advisory payload - action name, card scope and
+                # {mode, target_status, author_id} details; no entry in the
+                # off/require modes.
+                await self._log_activity(
+                    board_id=card.board_id,
+                    action="impact_evidence_missing",
+                    actor_type="user",
+                    actor_id=user_id,
+                    actor_name=actor_name
+                    or await resolve_actor_name(
+                        self.db, user_id, card.board_id
+                    ),
+                    card_id=card.id,
+                    details={
+                        "mode": "advisory",
+                        "target_status": data.status.value,
+                        "author_id": user_id,
+                    },
+                )
+
             report_source = (
                 "move_to_validation"
                 if data.status == CardStatus.VALIDATION
                 else "move_to_done"
             )
             conclusions = list(card.conclusions or [])
-            conclusions.append(
-                {
-                    "text": data.conclusion.strip(),
-                    "author_id": user_id,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "completeness": data.completeness,
-                    "completeness_justification": data.completeness_justification.strip(),
-                    "drift": data.drift,
-                    "drift_justification": data.drift_justification.strip(),
-                    "source": report_source,
-                }
-            )
+            conclusion_entry: dict[str, Any] = {
+                "text": data.conclusion.strip(),
+                "author_id": user_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "completeness": data.completeness,
+                "completeness_justification": data.completeness_justification.strip(),
+                "drift": data.drift,
+                "drift_justification": data.drift_justification.strip(),
+                "source": report_source,
+            }
+            if impact_block is not None:
+                # FR-1: the block persists next to the conclusion in the
+                # append-only JSON; omitted optional fields stay omitted so
+                # the stored shape round-trips the submitted one (AC-2).
+                conclusion_entry["impact_evidence"] = impact_block.model_dump(
+                    mode="json", exclude_none=True
+                )
+            conclusions.append(conclusion_entry)
             card.conclusions = conclusions
             card.mark_dirty("conclusions")
 
@@ -6136,26 +6486,24 @@ class AgentService:
     ) -> tuple[ApplicationRecord, str]:
         """Create a new global agent (no board_id).
 
-        If preset_id is provided, agent.permission_flags is initialised from
-        that preset's flags so the agent immediately reflects the preset.
-        Otherwise, permission_flags defaults to a deep copy of the full
-        registry (all True), giving new agents full access by default.
+        ``permission_flags`` is the direct override layer, never a materialized
+        preset snapshot.  Selecting a preset with no explicit overrides stores
+        an empty delta; no preset and no direct layer stores ``None``, the
+        trusted Full Control sentinel.
         """
         import copy
-
-        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
 
         reveal_once_secret = self.generate_api_key()
         key_hash = self.hash_api_key(reveal_once_secret)
 
-        flags: dict | None = data.permission_flags
+        flags: dict | None = (
+            copy.deepcopy(data.permission_flags)
+            if data.permission_flags is not None
+            else None
+        )
         preset_id = data.preset_id
         if preset_id and flags is None:
-            preset = await _application_get(self.db, "permission_preset", preset_id)
-            if preset and preset.flags:
-                flags = copy.deepcopy(preset.flags)
-        if flags is None:
-            flags = copy.deepcopy(PERMISSION_REGISTRY)
+            flags = {}
 
         agent = _new_application_record(
             "agent",
@@ -6220,7 +6568,7 @@ class AgentService:
             "agent_board",
             filters=(_apf("board_id", "eq", board_id),),
         )
-        return (
+        agents = (
             await _application_list(
                 self.db,
                 "agent",
@@ -6230,6 +6578,14 @@ class AgentService:
             if grants
             else []
         )
+        grants_by_agent = {grant.agent_id: grant for grant in grants}
+        for agent in agents:
+            grant = grants_by_agent.get(agent.id)
+            agent.attach(
+                "permission_overrides",
+                getattr(grant, "permission_overrides", None),
+            )
+        return agents
 
     async def list_agents(self, board_id: str) -> list[ApplicationRecord]:
         """Backward-compat alias for list_agents_for_board."""
@@ -6319,16 +6675,10 @@ class AgentService:
 
         Special handling:
         - If `preset_id` is set (and `permission_flags` is NOT in the same
-          payload), agent.permission_flags is reset from the preset's flags.
-          This makes selecting a preset in the UI behave intuitively: the
-          agent's effective permissions immediately match the preset.
-        - If `preset_id` is explicitly cleared (None), permission_flags is
-          reset to the full registry (all True) — i.e. "Full Control".
+          payload), agent.permission_flags becomes an empty direct delta.
+        - If `preset_id` is explicitly cleared, permission_flags becomes
+          ``None`` — the trusted Full Control sentinel.
         """
-        import copy
-
-        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
-
         agent = await self.get_agent(agent_id)
         if not agent:
             return None
@@ -6344,15 +6694,10 @@ class AgentService:
         if preset_id_in_payload and not flags_in_payload:
             new_preset_id = update_data.get("preset_id")
             if new_preset_id:
-                preset = await _application_get(
-                    self.db, "permission_preset", new_preset_id
-                )
-                if preset and preset.flags:
-                    agent.permission_flags = copy.deepcopy(preset.flags)
-                    agent.mark_dirty("permission_flags")
+                agent.permission_flags = {}
             else:
-                agent.permission_flags = copy.deepcopy(PERMISSION_REGISTRY)
-                agent.mark_dirty("permission_flags")
+                agent.permission_flags = None
+            agent.mark_dirty("permission_flags")
         elif flags_in_payload:
             agent.mark_dirty("permission_flags")
 
@@ -7007,6 +7352,66 @@ class SpecService:
             _build_default_cognitive_readiness_service
         )
 
+    async def _validate_test_scenario_subject_identities(
+        self,
+        *,
+        board_id: str,
+        scenarios: list[dict[str, Any]],
+        current_spec_id: str | None = None,
+    ) -> None:
+        """Enforce the board-scoped identity used by Policy Compliance.
+
+        A test scenario is a first-class policy subject, so its public id must
+        identify exactly one scenario inside a board.  Keep this invariant at
+        the aggregate write boundary (including import/create and whole-list
+        updates) instead of letting the transition resolver pick an arbitrary
+        duplicate later.
+        """
+
+        candidate_ids = [
+            str(item.get("id")).strip()
+            for item in scenarios
+            if isinstance(item, dict)
+            and item.get("id") is not None
+            and str(item.get("id")).strip()
+        ]
+        duplicate_ids = sorted(
+            {
+                scenario_id
+                for scenario_id in candidate_ids
+                if candidate_ids.count(scenario_id) > 1
+            }
+        )
+        if duplicate_ids:
+            raise ValueError(
+                "test_scenario_identity_conflict: duplicate scenario id(s) "
+                f"inside the spec: {', '.join(duplicate_ids)}"
+            )
+        if not candidate_ids:
+            return
+
+        candidate_set = set(candidate_ids)
+        board_specs = await _application_list(
+            self.db,
+            "spec",
+            filters=(_apf("board_id", "eq", board_id),),
+        )
+        conflicts: set[str] = set()
+        for existing_spec in board_specs:
+            if current_spec_id is not None and existing_spec.id == current_spec_id:
+                continue
+            for existing in existing_spec.test_scenarios or ():
+                if not isinstance(existing, dict):
+                    continue
+                existing_id = existing.get("id")
+                if existing_id is not None and str(existing_id) in candidate_set:
+                    conflicts.add(str(existing_id))
+        if conflicts:
+            raise ValueError(
+                "test_scenario_identity_conflict: scenario id(s) already exist "
+                f"in this board: {', '.join(sorted(conflicts))}"
+            )
+
     async def _validate_lineage(
         self,
         board_id: str,
@@ -7094,10 +7499,7 @@ class SpecService:
                 if ideation is None:
                     raise SpecLineagePreflightError(
                         "spec_ideation_not_found",
-                        (
-                            "The requested refinement's parent ideation does "
-                            "not exist."
-                        ),
+                        ("The requested refinement's parent ideation does not exist."),
                         facts={
                             "board_id": board_id,
                             "ideation_id": ancestor_ideation_id,
@@ -7294,6 +7696,9 @@ class SpecService:
         query_scope: QueryScope | None = None,
         target_id: str | None = None,
         knowledge_propagation_v2: bool = False,
+        requirement_lint_writer: RequirementLintWriter = (
+            RequirementLintWriter.BULK_CREATE
+        ),
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
         if (target_id is None) != (not knowledge_propagation_v2):
@@ -7322,10 +7727,33 @@ class SpecService:
         # is a new write — reject an unsupported type before insert/flush, never
         # normalize.
         if data.test_scenarios:
+            initial_scenarios = [s.model_dump() for s in data.test_scenarios]
             validate_scenario_types_for_write(
-                [s.model_dump() for s in data.test_scenarios], None
+                initial_scenarios,
+                None,
+            )
+            for scenario in initial_scenarios:
+                initial_status = str(scenario.get("status") or "draft")
+                if initial_status in GATED_STATUSES:
+                    raise ValueError(
+                        "test_scenario_status_requires_scoped_update: "
+                        f"new scenario {scenario.get('id') or '(new)'} cannot "
+                        f"be created as '{initial_status}' with its parent spec; "
+                        "create it as draft/ready, then use "
+                        "set_test_scenario_status."
+                    )
+            await self._validate_test_scenario_subject_identities(
+                board_id=board_id,
+                scenarios=initial_scenarios,
             )
 
+        canonical_requirements = canonicalize_spec_requirement_fields(
+            {
+                "functional_requirements": data.functional_requirements,
+                "technical_requirements": data.technical_requirements,
+                "acceptance_criteria": data.acceptance_criteria,
+            }
+        )
         spec = _new_application_record(
             "spec",
             **({"id": target_id} if target_id is not None else {}),
@@ -7333,13 +7761,9 @@ class SpecService:
             title=data.title,
             description=data.description,
             context=data.context,
-            functional_requirements=canonicalize_fr_ac(
-                "functional_requirement", data.functional_requirements
-            ),
-            technical_requirements=data.technical_requirements,
-            acceptance_criteria=canonicalize_fr_ac(
-                "acceptance_criterion", data.acceptance_criteria
-            ),
+            functional_requirements=canonical_requirements["functional_requirements"],
+            technical_requirements=canonical_requirements["technical_requirements"],
+            acceptance_criteria=canonical_requirements["acceptance_criteria"],
             test_scenarios=[s.model_dump() for s in data.test_scenarios]
             if data.test_scenarios
             else None,
@@ -7364,6 +7788,7 @@ class SpecService:
             if data.decisions
             else None,
             status=data.status,
+            edition=1,
             assignee_id=data.assignee_id,
             created_by=user_id,
             labels=data.labels,
@@ -7428,7 +7853,12 @@ class SpecService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"title": data.title, "spec_id": spec.id},
+            details={
+                "title": data.title,
+                "spec_id": spec.id,
+                "edition": 1,
+                "technical_revision": 1,
+            },
         )
         await self._record_history(
             spec_id=spec.id,
@@ -7501,6 +7931,21 @@ class SpecService:
                     else []
                 ),
             ],
+        )
+        await stage_spec_requirement_lint(
+            self.db,
+            spec,
+            actor_id=user_id,
+            writer=requirement_lint_writer,
+            changed_fields=tuple(
+                field_name
+                for field_name in SEMANTIC_FIELD_MANIFEST_V1["spec"]
+                if field_name
+                in (
+                    getattr(data, "model_fields_set", None)
+                    or getattr(data, "__fields_set__", set())
+                )
+            ),
         )
         return spec
 
@@ -7649,7 +8094,10 @@ class SpecService:
             }
 
         updated = await self.update_spec(
-            spec_id, user_id, SpecUpdate(test_scenarios=scenarios)
+            spec_id,
+            user_id,
+            PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
+            requirement_lint_writer=(RequirementLintWriter.SCENARIO_BODY_UPDATE),
         )
         new_target = next(
             (
@@ -7720,8 +8168,15 @@ class SpecService:
         if len(remaining) == len(scenarios):
             raise ValueError(f"scenario_not_found: {scenario_id}")
 
-        spec.test_scenarios = remaining
-        spec.mark_dirty("test_scenarios")
+        updated_spec = await self.update_spec(
+            spec_id,
+            user_id,
+            PersistedTestScenarioSpecUpdate.from_iterable(remaining),
+            requirement_lint_writer=RequirementLintWriter.SCENARIO_DELETE,
+        )
+        if updated_spec is None:  # defensive: the Spec was resolved above
+            raise ValueError("scenario_not_found: spec not found")
+        spec = updated_spec
 
         # Cascade: drop the scenario id from every card that references it, in
         # the SAME transaction → all-or-nothing, no orphan in Card.test_scenario_ids.
@@ -7819,6 +8274,8 @@ class SpecService:
         )
         if target_scenario is None:
             raise ValueError(f"scenario_not_found: {scenario_id}")
+        existing_status = str(target_scenario.get("status") or "draft")
+        require_test_scenario_status_transition(existing_status, status)
         scenario_sha256 = compute_test_scenario_semantic_sha256(
             board_id=spec.board_id,
             spec_id=spec_id,
@@ -7874,6 +8331,30 @@ class SpecService:
                 raise ValueError(f"evidence_required: {', '.join(missing)}")
             if status in GATED_STATUSES:
                 evidence_verification_status = "verified"
+
+        # Exact operational replay is a semantic no-op.  Avoid marking the
+        # JSON column dirty so the internal test-scenario policy epoch remains
+        # stable and existing evidence is not needlessly rewritten.
+        existing_evidence = target_scenario.get("evidence")
+        if existing_status == status and (
+            evidence is None or existing_evidence == evidence
+        ):
+            return {
+                "scenario_id": scenario_id,
+                "old_status": existing_status,
+                "new_status": status,
+                "evidence_provided": evidence is not None,
+                "evidence_gate_skipped": skip,
+                "evidence_verification_status": (evidence_verification_status),
+            }
+
+        await GuidelineService(self.db).enforce_policy_transition(
+            board_id=spec.board_id,
+            entity_type="test_scenario",
+            subject_id=scenario_id,
+            from_status=existing_status,
+            to_status=status,
+        )
 
         old_status = None
         found = False
@@ -8128,15 +8609,23 @@ class SpecService:
             )
 
     async def update_spec(
-        self, spec_id: str, user_id: str, data: SpecUpdate
+        self,
+        spec_id: str,
+        user_id: str,
+        data: SpecUpdate | PersistedTestScenarioSpecUpdate,
+        *,
+        requirement_lint_writer: RequirementLintWriter = (
+            RequirementLintWriter.BULK_UPDATE
+        ),
     ) -> Spec | None:
         """Update a spec. Bumps version on content changes. Records field-level diffs.
 
         Enforces the Spec Validation Gate content lock: if the spec has an active
         validation with outcome='success', raises SpecLockedError. All content tools
         (business rules, contracts, scenarios, mockups, knowledge) flow
-        through this method via SpecUpdate, so applying the lock check here covers
-        the whole surface in one place.
+        through this method via the public ``SpecUpdate`` or the narrow internal
+        persisted-scenario carrier, so applying the lock check here covers the
+        whole surface in one place.
 
         Also enforces referential integrity for `linked_*` fields: any
         `linked_criteria`/`linked_requirements`/`linked_rules`/`linked_task_ids`
@@ -8183,9 +8672,11 @@ class SpecService:
             refinement_id=next_refinement_id,
         )
         content_fields = {
+            "title",
             "functional_requirements",
             "technical_requirements",
             "acceptance_criteria",
+            "test_scenarios",
             "context",
             "description",
             # Legacy bulk writers participate in the same optimistic
@@ -8195,6 +8686,10 @@ class SpecService:
             "integration_requirements",
             "observability_requirements",
             "decisions",
+            "require_task_validation",
+            "validation_min_confidence",
+            "validation_min_completeness",
+            "validation_max_drift",
         }
         # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields.
         # Some also bump version through content_fields so bulk and structured
@@ -8257,26 +8752,109 @@ class SpecService:
                     for s in update_data[json_list_field]
                 ]
 
-        # Canonicalize FR/AC to structured dicts with stable ids, preserving
-        # text + existing ids (spec 9d66847f). Runs BEFORE
-        # _validate_spec_linked_refs so the validator sees canonical ids; the
-        # text is preserved, so text-based linked refs keep resolving (no
-        # breaking change).
-        if "functional_requirements" in update_data:
-            update_data["functional_requirements"] = canonicalize_fr_ac(
-                "functional_requirement",
-                update_data["functional_requirements"],
-                existing_items=spec.functional_requirements,
+        if update_data.get("test_scenarios") is not None:
+            update_data["test_scenarios"] = resolve_scenario_types_for_whole_list_write(
+                update_data["test_scenarios"],
+                spec.test_scenarios,
             )
-        if "acceptance_criteria" in update_data:
-            update_data["acceptance_criteria"] = canonicalize_fr_ac(
-                "acceptance_criterion",
-                update_data["acceptance_criteria"],
-                existing_items=spec.acceptance_criteria,
+            # B10 policy-transition fence: a public whole-list replacement is
+            # a content API, never an alternate scenario lifecycle writer.
+            # Existing status changes and newly-imported terminal/execution
+            # states must use ``set_test_scenario_status`` so transition
+            # legality, evidence and Policy Compliance are evaluated against
+            # exactly one board-scoped subject under the same transaction.
+            #
+            # The narrow internal carrier remains available to trusted
+            # read-modify-write workflows (for example semantic edits that
+            # invalidate evidence and regress one scenario to ``ready``).
+            if isinstance(data, SpecUpdate):
+                old_scenarios_by_id = {
+                    str(item.get("id")): item
+                    for item in (spec.test_scenarios or ())
+                    if isinstance(item, dict) and item.get("id") is not None
+                }
+                for scenario in update_data["test_scenarios"]:
+                    if not isinstance(scenario, dict):
+                        continue
+                    scenario_id = scenario.get("id")
+                    raw_next_status = scenario.get("status") or "draft"
+                    next_status = str(
+                        getattr(raw_next_status, "value", raw_next_status)
+                    ).lower()
+                    previous = (
+                        old_scenarios_by_id.get(str(scenario_id))
+                        if scenario_id is not None
+                        else None
+                    )
+                    if previous is not None:
+                        raw_previous_status = previous.get("status") or "draft"
+                        previous_status = str(
+                            getattr(
+                                raw_previous_status,
+                                "value",
+                                raw_previous_status,
+                            )
+                        ).lower()
+                        if next_status != previous_status:
+                            raise ValueError(
+                                "test_scenario_status_requires_scoped_update: "
+                                f"scenario {scenario_id} cannot move from "
+                                f"'{previous_status}' to '{next_status}' through "
+                                "update_spec; use set_test_scenario_status."
+                            )
+                    elif next_status in GATED_STATUSES:
+                        raise ValueError(
+                            "test_scenario_status_requires_scoped_update: "
+                            f"new scenario {scenario_id or '(new)'} cannot be "
+                            f"created as '{next_status}' through update_spec; "
+                            "create it as draft/ready, then use "
+                            "set_test_scenario_status."
+                        )
+            await self._validate_test_scenario_subject_identities(
+                board_id=spec.board_id,
+                scenarios=update_data["test_scenarios"],
+                current_spec_id=spec.id,
             )
 
+        # Canonicalize explicitly patched FR/TR/AC collections with stable IDs.
+        # The complete final namespace participates in collision validation, but
+        # omitted collections remain byte-identical: partial updates must not
+        # silently materialize legacy requirements or migrate their linked refs.
+        # Runs BEFORE _validate_spec_linked_refs so explicit requirement writes
+        # are validated against their canonical ids while title/description and
+        # other unrelated patches preserve lossless PATCH semantics.
+        _explicit_requirement_fields = {
+            field_name
+            for field_name in (
+                "functional_requirements",
+                "technical_requirements",
+                "acceptance_criteria",
+            )
+            if field_name in update_data
+        }
+        if _explicit_requirement_fields:
+            _existing_requirement_fields = {
+                "functional_requirements": spec.functional_requirements,
+                "technical_requirements": spec.technical_requirements,
+                "acceptance_criteria": spec.acceptance_criteria,
+            }
+            _final_requirement_fields = {
+                field_name: (
+                    update_data[field_name]
+                    if field_name in update_data
+                    else current_value
+                )
+                for field_name, current_value in _existing_requirement_fields.items()
+            }
+            _canonical_requirement_fields = canonicalize_spec_requirement_fields(
+                _final_requirement_fields,
+                existing_fields=_existing_requirement_fields,
+            )
+            for _field_name in _explicit_requirement_fields:
+                update_data[_field_name] = _canonical_requirement_fields[_field_name]
+
         # FR5 — lazy ref migration (spec c61569b2, IMPL-4).
-        # When FR/AC lists are materialised by canonicalize_fr_ac above,
+        # When explicit FR/AC lists are materialised by canonicalization above,
         # rewrite any index/text refs in downstream fields to the newly
         # assigned fr_/ac_ ids.  This runs on-touch only: specs not passed
         # through update_spec keep resolving via the permanent read-tolerant
@@ -8477,7 +9055,9 @@ class SpecService:
             actor_name=actor_name,
             details={
                 "spec_id": spec_id,
+                "edition": int(getattr(spec, "edition", 1) or 1),
                 "version": spec.version,
+                "technical_revision": spec.version,
                 "fields": list(update_data.keys()),
             },
         )
@@ -8498,6 +9078,14 @@ class SpecService:
                 spec_id=spec.id,
                 actor_id=user_id,
                 trigger="spec_mockups_changed",
+            )
+        if bumps_version:
+            await stage_spec_requirement_lint(
+                self.db,
+                spec,
+                actor_id=user_id,
+                writer=requirement_lint_writer,
+                changed_fields=tuple(sorted(content_fields & update_data.keys())),
             )
         return spec
 
@@ -8628,6 +9216,104 @@ class SpecService:
             )
         return spec, changed, task_ids
 
+    async def remove_scenario_traceability_task_link(
+        self,
+        spec_id: str,
+        user_id: str,
+        *,
+        scenario_id: str,
+        card_id: str,
+    ) -> tuple[Spec | None, bool, list[str]]:
+        """Remove one scenario backlink without treating it as authored content.
+
+        ``linked_task_ids`` is traceability metadata excluded from the SK-A
+        semantic snapshot.  This narrow path deliberately preserves the Spec
+        version and does not invoke the requirement-lint writer, while retaining
+        the same event/history/audit visibility as the locked append path.
+        """
+
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            return None, False, []
+        if getattr(spec, "archived", False):
+            raise ValueError(
+                "This spec is archived. Restore it first before unlinking tasks."
+            )
+
+        scenarios = [
+            dict(item) if isinstance(item, dict) else item
+            for item in (spec.test_scenarios or [])
+        ]
+        target = next(
+            (
+                item
+                for item in scenarios
+                if isinstance(item, dict) and item.get("id") == scenario_id
+            ),
+            None,
+        )
+        if target is None:
+            raise ValueError(f"test_scenario '{scenario_id}' not found in spec")
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        old_task_ids = list(task_ids)
+        changed = card_id in task_ids
+        if changed:
+            task_ids.remove(card_id)
+            target["linked_task_ids"] = task_ids
+            spec.test_scenarios = scenarios
+            spec.mark_dirty("test_scenarios")
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecSemanticChanged
+
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    changed_fields=["test_scenarios"],
+                ),
+                session=self.db,
+            )
+
+        actor_name = await resolve_actor_name(self.db, user_id, spec.board_id)
+        await self._log_activity(
+            board_id=spec.board_id,
+            action="spec_traceability_unlinked",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={
+                "spec_id": spec.id,
+                "target_field": "test_scenarios",
+                "target_id": scenario_id,
+                "card_id": card_id,
+                "traceability_only": True,
+                "changed": changed,
+            },
+        )
+        if changed:
+            await self._record_history(
+                spec_id=spec.id,
+                action="traceability_unlinked",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=[
+                    {
+                        "field": "test_scenarios.linked_task_ids",
+                        "old": old_task_ids,
+                        "new": task_ids,
+                    }
+                ],
+                version=spec.version,
+                summary=(
+                    "Traceability-only task link removed from "
+                    f"test scenario {scenario_id}"
+                ),
+            )
+        return spec, changed, task_ids
+
     # ---- Spec state machine ----
     # Direct APPROVED→DRAFT and VALIDATED→DRAFT transitions added for the Spec
     # Validation Gate: editing a validated spec requires one click/call, not three
@@ -8644,6 +9330,59 @@ class SpecService:
     _SPEC_EDITABLE_STATUSES = frozenset(
         {SpecStatus.DRAFT, SpecStatus.REVIEW, SpecStatus.APPROVED}
     )
+
+    async def _enforce_spec_checklist_gate(
+        self,
+        spec: Spec,
+        *,
+        surface: str,
+    ) -> None:
+        """Apply the shared A3 predicate without transport-specific shortcuts."""
+
+        import logging
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.checklist import ChecklistService
+
+        persistence = require_relational_application_adapter().checklists(self.db)
+        decision = await ChecklistService().evaluate_spec_gate(
+            board_id=spec.board_id,
+            spec_id=spec.id,
+            persistence=persistence,
+        )
+        stale_reasons = (
+            tuple(reason.value for reason in decision.currentness.stale_reasons)
+            if decision.currentness is not None
+            else ()
+        )
+        # This structured operational record survives a transaction rollback,
+        # unlike a staged Activity row on a blocking attempt. It contains only
+        # bounded identities and canonical reasons, never checklist bodies.
+        logging.getLogger("okto_pulse.core.spec_checklist_gate").info(
+            "spec_checklist_gate_attempt board_id=%s spec_id=%s "
+            "surface=%s mode=%s allowed=%s reason=%s stale_reasons=%s",
+            spec.board_id,
+            spec.id,
+            surface,
+            decision.mode.value,
+            decision.allowed,
+            decision.reason,
+            ",".join(stale_reasons),
+        )
+        if not decision.allowed:
+            from okto_pulse.core.services.gate_contracts import (
+                spec_checklist_gate_error,
+            )
+
+            raise spec_checklist_gate_error(
+                spec_id=spec.id,
+                current_status=spec.status.value,
+                reason=decision.reason,
+                mode=decision.mode.value,
+                stale_reasons=stale_reasons,
+            )
 
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
@@ -8764,6 +9503,11 @@ class SpecService:
                     spec_id=spec.id,
                     current_status=spec.status.value,
                 )
+
+            await self._enforce_spec_checklist_gate(
+                spec,
+                surface="move_spec",
+            )
 
             resource_gate = ResourceGateService(self.db)
             await resource_gate.validate_or_raise_spec_architecture_validation_resource(
@@ -8956,14 +9700,29 @@ class SpecService:
                 phase="spec_done",
             )
 
+        await GuidelineService(self.db).enforce_policy_transition(
+            board_id=spec.board_id,
+            entity_type="spec",
+            subject_id=spec.id,
+            from_status=spec.status.value,
+            to_status=data.status.value,
+        )
+
         old_status = spec.status
+        old_edition = int(getattr(spec, "edition", 1) or 1)
         old_version = spec.version
+
+        # ``edition`` is the human-facing lifecycle counter. It advances only
+        # when a Spec enters draft from a non-draft state; content mutations
+        # continue to advance the independent technical ``version`` token.
+        if data.status == SpecStatus.DRAFT and old_status != SpecStatus.DRAFT:
+            spec.edition = old_edition + 1
 
         # Reopening a terminal Spec starts a fresh editable iteration, matching
         # the lifecycle registry contract and the ideation/refinement behavior.
-        if (
-            data.status == SpecStatus.DRAFT
-            and old_status in (SpecStatus.DONE, SpecStatus.CANCELLED)
+        if data.status == SpecStatus.DRAFT and old_status in (
+            SpecStatus.DONE,
+            SpecStatus.CANCELLED,
         ):
             spec.version += 1
 
@@ -8989,6 +9748,32 @@ class SpecService:
             and getattr(spec, "current_validation_id", None) is not None
         ):
             spec.current_validation_id = None
+
+        lifecycle_action = (
+            "cancel"
+            if data.status == SpecStatus.CANCELLED
+            else "reopen"
+            if (
+                data.status == SpecStatus.DRAFT
+                and old_status in (SpecStatus.DONE, SpecStatus.CANCELLED)
+            )
+            else None
+        )
+        if lifecycle_action is not None:
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=spec.board_id,
+                subject_type="spec",
+                subject_id=spec.id,
+                before_version=old_version,
+                before_status=old_status.value,
+                before_archived=False,
+                after_version=spec.version,
+                after_status=spec.status.value,
+                after_archived=False,
+                action=lifecycle_action,
+                actor_id=user_id,
+            )
 
         if old_status != data.status:
             from okto_pulse.core.events import publish as event_publish
@@ -9031,16 +9816,27 @@ class SpecService:
                 "spec_id": spec_id,
                 "from_status": old_status.value,
                 "to_status": data.status.value,
+                "edition": int(getattr(spec, "edition", old_edition)),
+                "technical_revision": spec.version,
             },
         )
+        history_changes = [
+            {"field": "status", "old": old_status.value, "new": data.status.value}
+        ]
+        if int(getattr(spec, "edition", old_edition)) != old_edition:
+            history_changes.append(
+                {
+                    "field": "edition",
+                    "old": old_edition,
+                    "new": int(spec.edition),
+                }
+            )
         await self._record_history(
             spec_id=spec_id,
             action="status_changed",
             actor_id=user_id,
             actor_name=resolved_name,
-            changes=[
-                {"field": "status", "old": old_status.value, "new": data.status.value}
-            ],
+            changes=history_changes,
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=spec.version,
         )
@@ -9124,6 +9920,12 @@ class SpecService:
                 artifact_id=spec_id,
             ),
             descendant_deletions=tuple(descendant_deletions),
+        )
+        await _purge_quality_assessment_subject(
+            self.db,
+            board_id=board_id,
+            subject_type="spec",
+            subject_id=spec_id,
         )
         await _application_delete(self.db, spec)
 
@@ -9342,6 +10144,10 @@ class SpecService:
             phase="spec_validation",
             enabled=resource_gate.is_spec_resource_task_coverage_required(board),
         )
+        await self._enforce_spec_checklist_gate(
+            spec,
+            surface="submit_spec_validation",
+        )
 
         # Extract and validate inputs
         completeness = int(data["completeness"])
@@ -9379,6 +10185,15 @@ class SpecService:
             outcome = "failed"
         else:
             outcome = "success"
+
+        if outcome == "success":
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=spec.board_id,
+                entity_type="spec",
+                subject_id=spec.id,
+                from_status=spec.status.value,
+                to_status=SpecStatus.VALIDATED.value,
+            )
 
         # Build validation record (id <= 32 chars: "val_" + 8 hex = 12 chars)
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
@@ -9685,6 +10500,14 @@ class SpecQAService:
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=spec,
+            subject_type="spec",
+            qa_id=getattr(qa, "id", None),
+            operation="created",
+            actor_id=user_id,
+        )
         return qa
 
     async def answer_question(
@@ -9737,6 +10560,17 @@ class SpecQAService:
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
+        if spec is None:
+            raise RuntimeError("quality_clarification_subject_missing")
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=spec,
+            subject_type="spec",
+            qa_id=qa.id,
+            operation="answered",
+            actor_id=user_id,
+            actor_type=actor_type,
+        )
         return qa
 
     async def list_qa(self, spec_id: str) -> list[ApplicationRecord]:
@@ -9753,7 +10587,18 @@ class SpecQAService:
         qa = await _application_get(self.db, "spec_qa_item", qa_id)
         if not qa:
             return False
+        spec = await _application_get(self.db, "spec", qa.spec_id)
+        if spec is None:
+            raise RuntimeError("quality_clarification_subject_missing")
         await _application_delete(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=spec,
+            subject_type="spec",
+            qa_id=qa_id,
+            operation="deleted",
+            actor_id=None,
+        )
         return True
 
 
@@ -10704,8 +11549,13 @@ class StoryService:
                 "This story is archived. Restore it before changing status."
             )
         old_status = story.status
+        # A lifecycle no-op is a read, not a mutation. Returning before the
+        # activity/event path prevents callers from manufacturing audit rows
+        # without holding any ``story.move.*`` capability.
+        if data.status == old_status:
+            return story
         allowed = self._STORY_TRANSITIONS.get(old_status, [])
-        if data.status not in allowed and data.status != old_status:
+        if data.status not in allowed:
             allowed_str = (
                 ", ".join(status.value for status in allowed) if allowed else "none"
             )
@@ -10984,14 +11834,23 @@ class StoryService:
         return propagated
 
 
-class AmbiguityGateError(ValueError):
-    """Raised when the Max ambiguity gate blocks an evaluating -> done transition.
+def _build_default_ambiguity_gate_service(db: Any) -> AmbiguityGateService:
+    """Resolve the edition-owned assessment source of truth for one UoW."""
 
-    A ValueError subclass (spec 2485780b, BR4) so the MCP move tool's existing
-    ``except ValueError`` surfaces the actionable detail unchanged, while REST
-    callers catch it specifically to return HTTP 400 without altering the
-    behavior of unrelated move errors.
-    """
+    from okto_pulse.core.ports.relational_application import (
+        require_relational_application_adapter,
+    )
+
+    persistence = require_relational_application_adapter().quality_assessments(db)
+    return AmbiguityGateService(persistence)
+
+
+@dataclass(frozen=True, slots=True)
+class RefinementAmbiguityGateSkipResult:
+    refinement: ApplicationRecord
+    activity_id: str
+    skipped: bool
+    version: int
 
 
 class IdeationService:
@@ -10999,6 +11858,9 @@ class IdeationService:
 
     def __init__(self, db: Any):
         self.db = db
+        self._ambiguity_gate_service_factory: Callable[[Any], AmbiguityGateService] = (
+            _build_default_ambiguity_gate_service
+        )
 
     _STATUS_ORDER = {
         IdeationStatus.DRAFT: 0,
@@ -11242,6 +12104,7 @@ class IdeationService:
 
         update_data = data.model_dump(exclude_unset=True)
         content_fields = {
+            "title",
             "description",
             "problem_statement",
             "proposed_approach",
@@ -11412,44 +12275,26 @@ class IdeationService:
         return value
 
     async def _enforce_ambiguity_gate(self, ideation: Ideation) -> None:
-        """Enforce the Max ambiguity gate on an evaluating -> done transition.
+        """Enforce the canonical receipt-backed Ideation ambiguity predicate."""
 
-        Spec 2485780b (TR6/TR8/TR9, BR2/BR4/BR6): only acts when the board gate
-        is enabled and the ideation has not explicitly skipped it. Blocks the
-        transition when the evaluated ambiguity is missing, non-numeric, or
-        greater than the configured threshold, raising AmbiguityGateError with
-        an actionable detail. Reads board settings through the shared
-        normalization path and never touches evaluation/KG/cognitive/resource
-        subsystems. The caller invokes this BEFORE ResourceGate so ambiguity
-        errors take precedence.
-        """
         board = await _application_get(self.db, "board", ideation.board_id)
-        config = self._resolve_ideation_ambiguity_config(board)
-        if not config["require_ideation_ambiguity_gate"]:
+        board_settings = getattr(board, "settings", None) or {}
+        configuration = resolve_ambiguity_gate_configuration(
+            "ideation",
+            board_settings,
+        )
+        if not configuration.required or bool(
+            getattr(ideation, "skip_ambiguity_gate", False)
+        ):
             return
-        if bool(getattr(ideation, "skip_ambiguity_gate", False)):
-            return
-
-        threshold = config["max_ideation_ambiguity"]
-        scope = ideation.scope_assessment or {}
-        score = self._parse_ambiguity_score(scope.get("ambiguity"))
-        if score is None:
-            raise AmbiguityGateError(
-                "Max ambiguity gate failed: ambiguity has not been evaluated. "
-                "Evaluate the ideation's ambiguity (e.g. via Q&A). Skipping the gate "
-                "for this ideation is a human decision applied through the authorized "
-                "UI/REST control — an agent cannot apply the skip and should request a "
-                "human decision."
-            )
-        if score > threshold:
-            raise AmbiguityGateError(
-                f"Max ambiguity gate failed: ambiguity score {score} exceeds "
-                f"configured max {threshold}. Reduce ambiguity through Q&A, or raise "
-                f"the threshold / disable the board gate. Skipping the gate for this "
-                f"ideation is a human decision applied through the authorized UI/REST "
-                f"control — an agent cannot apply the skip and should request a human "
-                f"decision."
-            )
+        await self._ambiguity_gate_service_factory(self.db).evaluate(
+            board_id=ideation.board_id,
+            subject_type="ideation",
+            subject=ideation,
+            board_settings=board_settings,
+            qa_items=list(getattr(ideation, "qa_items", None) or ()),
+            skipped=bool(getattr(ideation, "skip_ambiguity_gate", False)),
+        )
 
     async def move_ideation(
         self,
@@ -11513,6 +12358,13 @@ class IdeationService:
                 ideation.id,
                 phase="ideation_done",
             )
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=ideation.board_id,
+                entity_type="ideation",
+                subject_id=ideation.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            )
             await self._create_snapshot(ideation, user_id)
 
         # Reopening a terminal ideation starts a fresh editable iteration.
@@ -11536,6 +12388,36 @@ class IdeationService:
         )
 
         ideation.status = data.status
+
+        lifecycle_action = (
+            "cancel"
+            if data.status == IdeationStatus.CANCELLED
+            else "reopen"
+            if (
+                data.status == IdeationStatus.DRAFT
+                and old_status in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
+            )
+            else None
+        )
+        if lifecycle_action is not None:
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=ideation.board_id,
+                subject_type="ideation",
+                subject_id=ideation.id,
+                before_version=(
+                    ideation.version - 1
+                    if lifecycle_action == "reopen"
+                    else ideation.version
+                ),
+                before_status=old_status.value,
+                before_archived=False,
+                after_version=ideation.version,
+                after_status=ideation.status.value,
+                after_archived=False,
+                action=lifecycle_action,
+                actor_id=user_id,
+            )
 
         # Persist the transition and publish its durable outbox event in the
         # same unit of work.  ConsolidationEnqueuer consumes this event so
@@ -11571,9 +12453,9 @@ class IdeationService:
         summary = f"Status: {old_status.value} → {data.status.value}"
         if data.status == IdeationStatus.DONE:
             summary += f" (snapshot v{ideation.version} created)"
-        elif (
-            data.status == IdeationStatus.DRAFT
-            and old_status in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
+        elif data.status == IdeationStatus.DRAFT and old_status in (
+            IdeationStatus.DONE,
+            IdeationStatus.CANCELLED,
         ):
             summary += f" (new iteration v{ideation.version})"
 
@@ -11708,6 +12590,12 @@ class IdeationService:
                 artifact_id=ideation_id,
             ),
             descendant_deletions=tuple(descendant_deletions),
+        )
+        await _purge_quality_assessment_subject(
+            self.db,
+            board_id=board_id,
+            subject_type="ideation",
+            subject_id=ideation_id,
         )
         await _application_delete(self.db, ideation)
 
@@ -11899,6 +12787,7 @@ class IdeationService:
             spec_data,
             skip_ownership_check=skip_ownership_check,
             query_scope=query_scope,
+            requirement_lint_writer=RequirementLintWriter.DERIVE_IDEATION,
         )
         if spec:
             # Propagate mockups and Q&A from ideation to spec
@@ -12001,6 +12890,14 @@ class IdeationQAService:
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=ideation,
+            subject_type="ideation",
+            qa_id=getattr(qa, "id", None),
+            operation="created",
+            actor_id=user_id,
+        )
         return qa
 
     async def answer_question(
@@ -12063,6 +12960,17 @@ class IdeationQAService:
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
+        if ideation is None:
+            raise RuntimeError("quality_clarification_subject_missing")
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=ideation,
+            subject_type="ideation",
+            qa_id=qa.id,
+            operation="answered",
+            actor_id=user_id,
+            actor_type=actor_type,
+        )
         return qa
 
     async def list_qa(self, ideation_id: str) -> list[IdeationQAItem]:
@@ -12079,7 +12987,22 @@ class IdeationQAService:
         qa = await _application_get(self.db, "ideation_qa_item", qa_id)
         if not qa:
             return False
+        ideation = await _application_get(
+            self.db,
+            "ideation",
+            qa.ideation_id,
+        )
+        if ideation is None:
+            raise RuntimeError("quality_clarification_subject_missing")
         await _application_delete(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=ideation,
+            subject_type="ideation",
+            qa_id=qa_id,
+            operation="deleted",
+            actor_id=None,
+        )
         return True
 
 
@@ -12094,6 +13017,9 @@ class RefinementService:
 
     def __init__(self, db: Any):
         self.db = db
+        self._ambiguity_gate_service_factory: Callable[[Any], AmbiguityGateService] = (
+            _build_default_ambiguity_gate_service
+        )
         # Cognitive closeout must run BEFORE snapshot/status mutation.
         # Keep the historical attribute name so existing tests and callers
         # that inject a fake guard continue to work.
@@ -12124,6 +13050,33 @@ class RefinementService:
             entity=refinement,
             target_label="refinement",
             resolve_graph_state=True,
+        )
+
+    async def _enforce_ambiguity_gate(
+        self,
+        refinement: ApplicationRecord,
+        board: ApplicationRecord | None = None,
+    ) -> None:
+        """Evaluate the same receipt-backed predicate used by readiness."""
+
+        if board is None:
+            board = await _application_get(self.db, "board", refinement.board_id)
+        board_settings = getattr(board, "settings", None) or {}
+        configuration = resolve_ambiguity_gate_configuration(
+            "refinement",
+            board_settings,
+        )
+        if not configuration.required or bool(
+            getattr(refinement, "skip_ambiguity_gate", False)
+        ):
+            return
+        await self._ambiguity_gate_service_factory(self.db).evaluate(
+            board_id=refinement.board_id,
+            subject_type="refinement",
+            subject=refinement,
+            board_settings=board_settings,
+            qa_items=list(getattr(refinement, "qa_items", None) or ()),
+            skipped=bool(getattr(refinement, "skip_ambiguity_gate", False)),
         )
 
     _STATUS_ORDER = {
@@ -12462,7 +13415,14 @@ class RefinementService:
             )
 
         update_data = data.model_dump(exclude_unset=True)
-        content_fields = {"description", "scope", "analysis", "decisions"}
+        content_fields = {
+            "title",
+            "description",
+            "in_scope",
+            "out_of_scope",
+            "analysis",
+            "decisions",
+        }
         # Spec eaf78891 (Ideação #2): refinement_semantic_fields cover all
         # update_data keys that affect KG extraction. Refinements have a much
         # smaller surface than specs, so any update is treated as semantic.
@@ -12548,6 +13508,82 @@ class RefinementService:
             )
         return refinement
 
+    async def set_ambiguity_gate_skip(
+        self,
+        refinement_id: str,
+        user_id: str,
+        skip: bool,
+        *,
+        reason: str,
+        expected_refinement_version: int,
+        source: str,
+        actor_name: str | None = None,
+    ) -> RefinementAmbiguityGateSkipResult | None:
+        """Apply/remove the human-only Refinement ambiguity skip.
+
+        The override is governance metadata, not semantic content: it is
+        version-fenced but does not bump the Refinement version or stale an
+        otherwise current assessment.  It bypasses only the ambiguity
+        predicate; Resource and Cognitive gates still execute.
+        """
+
+        if source not in {"rest", "ui"}:
+            raise ValueError("human_actor_required")
+        if not isinstance(skip, bool):
+            raise ValueError("skip_ambiguity_gate_invalid")
+        normalized_reason = reason.strip() if isinstance(reason, str) else ""
+        if not normalized_reason:
+            raise ValueError("ambiguity_gate_skip_reason_required")
+        if (
+            not isinstance(expected_refinement_version, int)
+            or isinstance(expected_refinement_version, bool)
+            or expected_refinement_version < 1
+        ):
+            raise ValueError("expected_refinement_version_invalid")
+
+        refinement = await self.get_refinement(refinement_id)
+        if refinement is None:
+            return None
+        if bool(getattr(refinement, "archived", False)):
+            raise ValueError("refinement_archived")
+        if refinement.status != RefinementStatus.APPROVED:
+            raise ValueError("refinement_ambiguity_skip_status_conflict")
+        if refinement.version != expected_refinement_version:
+            raise ValueError("version_conflict")
+
+        old_value = bool(getattr(refinement, "skip_ambiguity_gate", False))
+        refinement.skip_ambiguity_gate = skip
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db,
+            user_id,
+            refinement.board_id,
+        )
+        activity = _new_application_record(
+            "activity_log",
+            board_id=refinement.board_id,
+            action="refinement.ambiguity_gate_skip_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            details={
+                "refinement_id": refinement.id,
+                "source": source,
+                "reason": normalized_reason,
+                "old_value": old_value,
+                "new_value": skip,
+                "state_changed": old_value != skip,
+                "expected_refinement_version": expected_refinement_version,
+                "refinement_version": refinement.version,
+            },
+        )
+        await _application_add(self.db, activity)
+        return RefinementAmbiguityGateSkipResult(
+            refinement=refinement,
+            activity_id=activity.id,
+            skipped=skip,
+            version=refinement.version,
+        )
+
     # Allowed refinement transitions:
     # Draft → Review, Cancelled
     # Review → Draft, Approved, Cancelled
@@ -12621,28 +13657,32 @@ class RefinementService:
             actor_name=resolved_name,
         )
 
-        # Fail-closed cognitive closeout gate. This MUST run BEFORE
-        # ResourceGateService, snapshot creation, activity logging, or status
-        # mutation. A blocked response preserves the refinement in its current
-        # status with no snapshot/history/activity changes.
+        # One ordered completion predicate across preview and mutation:
+        # Ambiguity -> Resource -> Cognitive.  Every gate runs before snapshot,
+        # history, activity, event or status mutation.
         if data.status == RefinementStatus.DONE:
             board = await _application_get(self.db, "board", refinement.board_id)
-            await self._validate_cognitive_done(refinement, board)
-
-        # Snapshot on done
-        if data.status == RefinementStatus.DONE:
+            await self._enforce_ambiguity_gate(refinement, board)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 refinement.board_id,
                 "refinement",
                 refinement.id,
                 phase="refinement_done",
             )
+            await self._validate_cognitive_done(refinement, board)
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=refinement.board_id,
+                entity_type="refinement",
+                subject_id=refinement.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            )
             await self._create_snapshot(refinement, user_id)
 
         # Reopening a terminal refinement starts a fresh editable iteration.
-        if (
-            data.status == RefinementStatus.DRAFT
-            and old_status in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
+        if data.status == RefinementStatus.DRAFT and old_status in (
+            RefinementStatus.DONE,
+            RefinementStatus.CANCELLED,
         ):
             refinement.version += 1
 
@@ -12658,6 +13698,35 @@ class RefinementService:
         )
 
         refinement.status = data.status
+        lifecycle_action = (
+            "cancel"
+            if data.status == RefinementStatus.CANCELLED
+            else "reopen"
+            if (
+                data.status == RefinementStatus.DRAFT
+                and old_status in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
+            )
+            else None
+        )
+        if lifecycle_action is not None:
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=refinement.board_id,
+                subject_type="refinement",
+                subject_id=refinement.id,
+                before_version=(
+                    refinement.version - 1
+                    if lifecycle_action == "reopen"
+                    else refinement.version
+                ),
+                before_status=old_status.value,
+                before_archived=False,
+                after_version=refinement.version,
+                after_status=refinement.status.value,
+                after_archived=False,
+                action=lifecycle_action,
+                actor_id=user_id,
+            )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import (
             RefinementMoved,
@@ -12817,6 +13886,12 @@ class RefinementService:
             ),
             descendant_deletions=tuple(descendant_deletions),
         )
+        await _purge_quality_assessment_subject(
+            self.db,
+            board_id=board_id,
+            subject_type="refinement",
+            subject_id=refinement_id,
+        )
         await _application_delete(self.db, refinement)
 
         await self._log_activity(
@@ -12951,6 +14026,7 @@ class RefinementService:
             query_scope=query_scope,
             target_id=target_id,
             knowledge_propagation_v2=knowledge_propagation_v2,
+            requirement_lint_writer=RequirementLintWriter.DERIVE_REFINEMENT,
         )
         if spec:
             # Propagate artifacts using pre-flush snapshots
@@ -13055,6 +14131,14 @@ class RefinementQAService:
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=refinement,
+            subject_type="refinement",
+            qa_id=getattr(qa, "id", None),
+            operation="created",
+            actor_id=user_id,
+        )
         return qa
 
     async def answer_question(
@@ -13109,6 +14193,17 @@ class RefinementQAService:
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
+        if refinement is None:
+            raise RuntimeError("quality_clarification_subject_missing")
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=refinement,
+            subject_type="refinement",
+            qa_id=qa.id,
+            operation="answered",
+            actor_id=user_id,
+            actor_type=actor_type,
+        )
         return qa
 
     async def list_qa(self, refinement_id: str) -> list[RefinementQAItem]:
@@ -13125,7 +14220,22 @@ class RefinementQAService:
         qa = await _application_get(self.db, "refinement_qa_item", qa_id)
         if not qa:
             return False
+        refinement = await _application_get(
+            self.db,
+            "refinement",
+            qa.refinement_id,
+        )
+        if refinement is None:
+            raise RuntimeError("quality_clarification_subject_missing")
         await _application_delete(self.db, qa)
+        await _publish_quality_clarification_changed(
+            self.db,
+            subject=refinement,
+            subject_type="refinement",
+            qa_id=qa_id,
+            operation="deleted",
+            actor_id=None,
+        )
         return True
 
 
@@ -13211,6 +14321,208 @@ class GuidelineService:
     def __init__(self, db: Any):
         self.db = db
 
+    def policy_persistence(self):
+        """Expose the transaction-bound immutable policy authority to use cases.
+
+        Import/export, REST and MCP must share the same persistence contract.
+        Keeping this resolver on the Core-owned service catalog lets those
+        transport-free use cases obtain the edition adapter without extracting
+        or depending on the concrete relational session.
+        """
+
+        return self._policy()
+
+    def _policy(self):
+        """Resolve the edition-owned immutable guideline authority."""
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().guideline_policy(self.db)
+
+    def semantic_policy_persistence(self):
+        """Expose the transaction-bound semantic evidence authority."""
+
+        return self._semantic_policy()
+
+    def _semantic_policy(self):
+        """Resolve the edition-owned append-only semantic evidence authority."""
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().semantic_guideline_assessments(
+            self.db
+        )
+
+    async def preview_policy_transition(
+        self,
+        *,
+        board_id: str,
+        entity_type: str,
+        subject_id: str,
+        from_status: str,
+        to_status: str,
+    ) -> Any | None:
+        """Evaluate one frozen Policy Compliance edge without mutating status.
+
+        Lifecycle legality remains owned by the canonical SDLC registry.  Free
+        recovery/cancellation/regression edges return before the persistence
+        adapter is even resolved, so an unavailable evaluator can never strand
+        a subject outside a forward enforcement point.
+        """
+
+        normalized_entity_type = str(entity_type).strip().lower()
+        normalized_from_status = str(from_status).strip()
+        normalized_to_status = str(to_status).strip()
+        if not transition_requires_policy_compliance(
+            normalized_entity_type,
+            normalized_from_status,
+            normalized_to_status,
+        ):
+            return None
+
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.guideline_policy_transition import (
+            evaluate_policy_transition,
+        )
+
+        policy = self._policy()
+        snapshot = await policy.resolve_transition_snapshot(
+            board_id=board_id,
+            entity_type=PolicyEntityType(normalized_entity_type),
+            subject_id=subject_id,
+            expected_from_status=normalized_from_status,
+        )
+        return evaluate_policy_transition(snapshot, normalized_to_status)
+
+    async def enforce_policy_transition(
+        self,
+        *,
+        board_id: str,
+        entity_type: str,
+        subject_id: str,
+        from_status: str,
+        to_status: str,
+    ) -> Any | None:
+        """Recompute and enforce the canonical gate in the mutation UoW."""
+
+        decision = await self.preview_policy_transition(
+            board_id=board_id,
+            entity_type=entity_type,
+            subject_id=subject_id,
+            from_status=from_status,
+            to_status=to_status,
+        )
+        if decision is None:
+            return None
+
+        from okto_pulse.core.domain.guideline_policy_transition import (
+            raise_for_policy_transition,
+        )
+
+        raise_for_policy_transition(decision)
+        return decision
+
+    @staticmethod
+    def _guideline_projection(
+        identity: Any,
+        revision: Any,
+        *,
+        updated_at: datetime,
+    ) -> ApplicationRecord:
+        """Project the authoritative immutable snapshot on the legacy shape."""
+
+        return _new_application_record(
+            "guideline",
+            id=identity.guideline_id,
+            title=revision.title,
+            content=revision.content,
+            tags=list(revision.tags),
+            scope=identity.scope.value,
+            board_id=identity.board_id,
+            owner_id=identity.owner_id,
+            created_at=identity.created_at,
+            updated_at=updated_at,
+            version=revision.revision_number,
+            semantic_version=revision.semantic_version,
+            revision_id=revision.revision_id,
+            revision_digest=revision.revision_digest,
+            context_scope=identity.context_scope.value,
+        )
+
+    @staticmethod
+    def _binding_projection(
+        binding: Any,
+        *,
+        template_id: str | None = None,
+        template_version: int | None = None,
+        guideline_version: int | None = None,
+    ) -> ApplicationRecord:
+        """Project an append-only binding revision on the legacy link shape."""
+
+        return _new_application_record(
+            "board_guideline",
+            id=binding.binding_id,
+            board_id=binding.board_id,
+            guideline_id=binding.guideline_id,
+            priority=binding.priority,
+            guideline_version=guideline_version,
+            template_id=template_id,
+            template_version=template_version,
+            binding_revision=binding.binding_revision,
+            revision_id=binding.revision_id,
+            semantic_version=binding.semantic_version,
+            revision_digest=binding.revision_digest,
+            enforcement=binding.enforcement.value,
+            minimum_confidence=binding.minimum_confidence,
+            metric_threshold_overrides=dict(
+                binding.metric_threshold_overrides
+            ),
+            state=binding.state.value,
+        )
+
+    async def _authoritative_snapshot(
+        self,
+        guideline_id: str,
+        *,
+        include_retired: bool = False,
+    ) -> tuple[Any, Any, Any, Any | None] | None:
+        """Load identity, head and exact revision, failing closed on drift."""
+
+        policy = self._policy()
+        identity = await policy.get_guideline(guideline_id=guideline_id)
+        if identity is None:
+            return None
+        retirement = await policy.get_retirement(guideline_id=guideline_id)
+        if retirement is not None and not include_retired:
+            return None
+        head = await policy.get_head(guideline_id=guideline_id)
+        if head is None:
+            raise RuntimeError("guideline_authority_head_missing")
+        revision = await policy.get_revision(
+            guideline_id=guideline_id,
+            revision_id=head.revision_id,
+        )
+        if (
+            revision is None
+            or revision.revision_number != head.revision_number
+            or revision.semantic_version != head.semantic_version
+        ):
+            raise RuntimeError("guideline_authority_revision_mismatch")
+        return identity, head, revision, retirement
+
+    @staticmethod
+    def _next_event_time(previous: datetime | None = None) -> datetime:
+        """Return a UTC event time strictly after an optional prior event."""
+
+        occurred_at = datetime.now(timezone.utc)
+        if previous is not None and occurred_at <= previous:
+            occurred_at = previous + timedelta(microseconds=1)
+        return occurred_at
+
     async def _board_visible(
         self,
         board_id: str,
@@ -13228,26 +14540,462 @@ class GuidelineService:
             return False
         return bool(await _application_run(self.db, query))
 
+    async def _build_guideline_impact_plan(
+        self,
+        *,
+        board_id: str,
+        guideline_id: str,
+        impact_receipt_id: str,
+        proposed_priority: int,
+        proposed_enforcement: Any,
+        proposed_minimum_confidence: int,
+        proposed_metric_threshold_overrides: Any,
+        requested_by: str,
+        requested_at: datetime,
+        idempotency_key: str,
+        to_revision_id: str | None = None,
+    ) -> Any:
+        """Resolve every server-owned fence used by a B08 impact preview."""
+
+        from okto_pulse.core.domain.guideline_impact import (
+            GuidelineImpactPreviewCommand,
+            plan_guideline_impact_preview,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineEnforcement,
+            GuidelineScope,
+        )
+
+        if not isinstance(
+            proposed_enforcement,
+            GuidelineEnforcement,
+        ):
+            raise ValueError("guideline_impact_enforcement_invalid")
+        policy = self._policy()
+        identity = await policy.get_guideline(guideline_id=guideline_id)
+        if (
+            identity is None
+            or identity.scope is not GuidelineScope.GLOBAL
+            or identity.board_id is not None
+        ):
+            raise ValueError("guideline_impact_global_guideline_required")
+        head = await policy.get_head(guideline_id=guideline_id)
+        if head is None:
+            raise RuntimeError("guideline_authority_head_missing")
+        target_id = to_revision_id or head.revision_id
+        target = await policy.get_revision(
+            guideline_id=guideline_id,
+            revision_id=target_id,
+        )
+        if target is None:
+            raise ValueError("guideline_impact_target_revision_not_found")
+        current = await policy.get_binding(
+            board_id=board_id,
+            guideline_id=guideline_id,
+        )
+        before = (
+            await policy.get_revision(
+                guideline_id=guideline_id,
+                revision_id=current.revision_id,
+            )
+            if current is not None
+            else None
+        )
+        if current is not None and before is None:
+            raise RuntimeError("guideline_binding_revision_mismatch")
+        active_bindings = await policy.list_bindings(board_id=board_id)
+        active_revisions = []
+        for binding in active_bindings:
+            revision = await policy.get_revision(
+                guideline_id=binding.guideline_id,
+                revision_id=binding.revision_id,
+            )
+            if revision is None:
+                raise RuntimeError("guideline_binding_revision_mismatch")
+            active_revisions.append(revision)
+        semantic_policy = self._semantic_policy()
+        semantic_waivers = []
+        waiver_cursor = None
+        seen_waiver_cursors = set()
+        while True:
+            waiver_page, next_waiver_cursor = (
+                await semantic_policy.list_board_semantic_waivers(
+                    board_id=board_id,
+                    evaluated_at=requested_at,
+                    guideline_id=guideline_id,
+                    after=waiver_cursor,
+                    limit=50,
+                )
+            )
+            semantic_waivers.extend(waiver_page)
+            if next_waiver_cursor is None:
+                break
+            if next_waiver_cursor in seen_waiver_cursors:
+                raise RuntimeError("semantic_waiver_cursor_repeated")
+            seen_waiver_cursors.add(next_waiver_cursor)
+            waiver_cursor = next_waiver_cursor
+
+        return plan_guideline_impact_preview(
+            GuidelineImpactPreviewCommand(
+                impact_receipt_id=impact_receipt_id,
+                board_id=board_id,
+                guideline_id=guideline_id,
+                head=head,
+                to_revision=target,
+                current_binding=current,
+                from_revision=before,
+                active_bindings=active_bindings,
+                active_revisions=tuple(active_revisions),
+                subjects=await policy.list_policy_subjects(board_id=board_id),
+                waivers=tuple(semantic_waivers),
+                proposed_priority=proposed_priority,
+                proposed_enforcement=proposed_enforcement,
+                proposed_minimum_confidence=proposed_minimum_confidence,
+                proposed_metric_threshold_overrides=(
+                    proposed_metric_threshold_overrides
+                ),
+                requested_by=requested_by,
+                created_at=requested_at,
+                idempotency_key=idempotency_key,
+                requested_to_revision_id=to_revision_id,
+            ),
+            retirement=await policy.get_retirement(guideline_id=guideline_id),
+        )
+
+    async def preview_guideline_revision_impact(
+        self,
+        *,
+        board_id: str,
+        guideline_id: str,
+        proposed_priority: int,
+        proposed_enforcement: Any,
+        proposed_minimum_confidence: int,
+        proposed_metric_threshold_overrides: Any,
+        requested_by: str,
+        idempotency_key: str,
+        to_revision_id: str | None = None,
+        requested_at: datetime | None = None,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> Any:
+        """Persist an effect-free, sealed and replayable impact receipt."""
+
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelineImpactPreviewReplay,
+            GuidelinePolicyIdempotencyConflict,
+        )
+        from okto_pulse.core.domain.guideline_impact import (
+            guideline_impact_preview_request_digest_v1,
+        )
+
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            raise ValueError("guideline_impact_board_not_visible")
+        policy = self._policy()
+        replay = await policy.get_impact_receipt_by_idempotency(
+            board_id=board_id,
+            idempotency_key=idempotency_key,
+        )
+        if replay is not None:
+            expected_request_digest = guideline_impact_preview_request_digest_v1(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                proposed_priority=proposed_priority,
+                proposed_enforcement=proposed_enforcement,
+                proposed_minimum_confidence=proposed_minimum_confidence,
+                proposed_metric_threshold_overrides=(
+                    proposed_metric_threshold_overrides
+                ),
+                requested_by=requested_by,
+                requested_to_revision_id=to_revision_id,
+            )
+            if not isinstance(replay, GuidelineImpactPreviewReplay):
+                raise GuidelinePolicyIdempotencyConflict(
+                    "guideline_impact_idempotency_evidence_missing"
+                )
+            if replay.request_digest != expected_request_digest:
+                raise GuidelinePolicyIdempotencyConflict(
+                    "guideline_impact_idempotency_payload_mismatch"
+                )
+            return replay.receipt
+        impact_receipt_id = str(
+            uuid.uuid5(
+                uuid.UUID("ba53bf34-b3fe-5e18-a8fb-32eff21d454c"),
+                f"{board_id}:{idempotency_key}",
+            )
+        )
+        plan = await self._build_guideline_impact_plan(
+            board_id=board_id,
+            guideline_id=guideline_id,
+            impact_receipt_id=impact_receipt_id,
+            proposed_priority=proposed_priority,
+            proposed_enforcement=proposed_enforcement,
+            proposed_minimum_confidence=proposed_minimum_confidence,
+            proposed_metric_threshold_overrides=(
+                proposed_metric_threshold_overrides
+            ),
+            requested_by=requested_by,
+            requested_at=requested_at or self._next_event_time(),
+            idempotency_key=idempotency_key,
+            to_revision_id=to_revision_id,
+        )
+        return await policy.save_impact_preview(plan=plan)
+
+    async def adopt_guideline_revision(
+        self,
+        *,
+        board_id: str,
+        guideline_id: str,
+        impact_receipt_id: str,
+        impact_digest: str,
+        actor_id: str,
+        actor_type: str,
+        idempotency_key: str,
+        occurred_at: datetime | None = None,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> tuple[Any, Any]:
+        """Consume one current receipt into exactly one audited adoption."""
+
+        from okto_pulse.core.domain.guideline_impact import (
+            GuidelineImpactError,
+            impact_fence_from_receipt,
+            plan_guideline_adoption,
+        )
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyCasConflict,
+            GuidelinePolicyDigestConflict,
+            GuidelinePolicyIdempotencyConflict,
+        )
+
+        normalized_text: dict[str, str] = {}
+        for field_name, value in (
+            ("board_id", board_id),
+            ("guideline_id", guideline_id),
+            ("impact_receipt_id", impact_receipt_id),
+            ("actor_id", actor_id),
+            ("actor_type", actor_type),
+            ("idempotency_key", idempotency_key),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"guideline_adoption_{field_name}_required")
+            normalized_text[field_name] = value.strip()
+        board_id = normalized_text["board_id"]
+        guideline_id = normalized_text["guideline_id"]
+        impact_receipt_id = normalized_text["impact_receipt_id"]
+        actor_id = normalized_text["actor_id"]
+        actor_type = normalized_text["actor_type"]
+        idempotency_key = normalized_text["idempotency_key"]
+        if actor_type not in {"agent", "user", "system"}:
+            raise ValueError("guideline_adoption_actor_type_invalid")
+        if (
+            not isinstance(impact_digest, str)
+            or len(impact_digest.strip()) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in impact_digest.strip().lower()
+            )
+        ):
+            raise ValueError("guideline_impact_digest_invalid")
+        impact_digest = impact_digest.strip().lower()
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            raise ValueError("guideline_adoption_board_not_visible")
+        policy = self._policy()
+        replay = await policy.get_adoption_result_by_idempotency(
+            board_id=board_id,
+            idempotency_key=idempotency_key,
+        )
+        if replay is not None:
+            if (
+                replay.receipt.guideline_id != guideline_id
+                or replay.receipt.impact_receipt_id != impact_receipt_id
+                or replay.receipt.impact_digest != impact_digest
+                or replay.binding.adopted_by != actor_id
+                or replay.actor_type != actor_type
+            ):
+                raise GuidelinePolicyIdempotencyConflict(
+                    "guideline_adoption_idempotency_payload_mismatch"
+                )
+            return replay.binding, replay.receipt
+        receipt = await policy.get_impact_receipt(
+            board_id=board_id,
+            impact_receipt_id=impact_receipt_id,
+        )
+        if receipt is None or receipt.guideline_id != guideline_id:
+            raise ValueError("guideline_impact_receipt_not_found")
+        if receipt.impact_digest != impact_digest:
+            raise GuidelinePolicyDigestConflict("guideline_impact_digest_mismatch")
+        event_at = occurred_at or self._next_event_time()
+        event_id = str(
+            uuid.uuid5(
+                uuid.UUID("6a16175a-35b5-545e-aecc-73fecaf970b3"),
+                f"{board_id}:{idempotency_key}",
+            )
+        )
+        try:
+            current_plan = await self._build_guideline_impact_plan(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                impact_receipt_id=impact_receipt_id,
+                proposed_priority=receipt.proposed_priority,
+                proposed_enforcement=receipt.proposed_enforcement,
+                proposed_minimum_confidence=(
+                    receipt.proposed_minimum_confidence
+                ),
+                proposed_metric_threshold_overrides=(
+                    receipt.proposed_metric_threshold_overrides
+                ),
+                requested_by=receipt.requested_by,
+                requested_at=event_at,
+                idempotency_key=f"currentness:{idempotency_key}",
+                to_revision_id=receipt.to_revision_id,
+            )
+            current_binding = await policy.get_binding(
+                board_id=board_id,
+                guideline_id=guideline_id,
+            )
+            mutation = plan_guideline_adoption(
+                receipt=receipt,
+                current_snapshot=impact_fence_from_receipt(current_plan.receipt),
+                current_binding=current_binding,
+                retirement=await policy.get_retirement(guideline_id=guideline_id),
+                actor_id=actor_id,
+                actor_type=actor_type,
+                occurred_at=event_at,
+                event_id=event_id,
+                idempotency_key=idempotency_key,
+            )
+        except GuidelineImpactError as exc:
+            details = (
+                (
+                    (
+                        "stale_reasons",
+                        ",".join(
+                            reason.value for reason in exc.currentness_reasons
+                        ),
+                    ),
+                )
+                if exc.currentness_reasons
+                else ()
+            )
+            raise GuidelinePolicyCasConflict(
+                exc.code,
+                details=details,
+            ) from exc
+        return await policy.adopt_revision_cas(mutation=mutation)
+
     async def create_guideline(
         self,
         owner_id: str,
         data: GuidelineCreate,
         *,
         query_scope: QueryScope | None = None,
+        actor_type: str = "user",
     ) -> Guideline:
-        """Create a new guideline."""
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = _new_application_record(
-            "guideline",
-            title=data.title,
-            content=data.content,
-            tags=data.tags,
-            scope=data.scope,
-            board_id=data.board_id,
-            owner_id=scoped_owner_id,
+        """Create identity, ``1.0.0`` revision and head atomically.
+
+        Inline guidelines additionally receive a real exact-revision binding
+        in the same caller-owned transaction.  The legacy mutable tables are
+        never a second writer after the identity row is established.
+        """
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelineBindingTransitionCommand,
+            GuidelineCreateCommand,
+            GuidelineBindingApplied,
+            plan_guideline_binding_transition,
+            plan_guideline_creation,
         )
-        await _application_add(self.db, guideline)
-        return guideline
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineBindingState,
+            GuidelineEnforcement,
+            GuidelineScope,
+        )
+
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        try:
+            scope = GuidelineScope(str(data.scope))
+        except ValueError as exc:
+            raise ValueError("guideline_scope_invalid") from exc
+        if scope is GuidelineScope.INLINE and (
+            not data.board_id
+            or not await self._board_visible(
+                data.board_id,
+                scoped_owner_id,
+                query_scope,
+            )
+        ):
+            raise ValueError("inline_guideline_board_not_visible")
+
+        guideline_id = str(uuid.uuid4())
+        revision_id = str(uuid.uuid4())
+        occurred_at = self._next_event_time()
+        create = plan_guideline_creation(
+            GuidelineCreateCommand(
+                guideline_id=guideline_id,
+                revision_id=revision_id,
+                owner_id=scoped_owner_id,
+                scope=scope,
+                board_id=data.board_id,
+                title=data.title,
+                content=data.content,
+                tags=tuple(data.tags or ()),
+                metrics=(),
+                created_by=scoped_owner_id,
+                created_at=occurred_at,
+                idempotency_key=f"legacy:create:{guideline_id}",
+            )
+        )
+        policy = self._policy()
+        identity, revision, head = await policy.create_guideline(
+            guideline=create.guideline,
+            initial_revision=create.revision,
+            initial_head=create.head,
+            idempotency_key=create.idempotency_key,
+            request_digest=create.request_digest,
+        )
+
+        if scope is GuidelineScope.INLINE:
+            binding_plan = plan_guideline_binding_transition(
+                GuidelineBindingTransitionCommand(
+                    binding_id=str(uuid.uuid4()),
+                    board_id=identity.board_id,
+                    guideline_id=identity.guideline_id,
+                    state=GuidelineBindingState.ACTIVE,
+                    revision_id=revision.revision_id,
+                    semantic_version=revision.semantic_version,
+                    revision_digest=revision.revision_digest,
+                    priority=int(getattr(data, "priority", 0) or 0),
+                    enforcement=GuidelineEnforcement.ADVISORY,
+                    minimum_confidence=70,
+                    metric_threshold_overrides={},
+                    actor_id=scoped_owner_id,
+                    occurred_at=occurred_at,
+                    idempotency_key=(f"legacy:inline-binding:{identity.guideline_id}"),
+                    expected_binding_revision=None,
+                ),
+                current=None,
+            )
+            if not isinstance(binding_plan, GuidelineBindingApplied):
+                raise RuntimeError("inline_guideline_binding_not_applied")
+            await policy.append_binding_cas(
+                binding=binding_plan.binding,
+                expected_binding_revision=None,
+                idempotency_key=binding_plan.idempotency_key,
+                request_digest=binding_plan.request_digest,
+                actor_type=actor_type,
+            )
+        return self._guideline_projection(
+            identity,
+            revision,
+            updated_at=head.updated_at,
+        )
 
     async def get_guideline(
         self,
@@ -13262,18 +15010,17 @@ class GuidelineService:
         internal lookups only; inbound adapters must pass an explicit scope.
         """
         scoped_owner_id = _scope_actor_id(owner_id, query_scope)
-        if scoped_owner_id is None:
-            return await _application_get(self.db, "guideline", guideline_id)
-        rows = await _application_list(
-            self.db,
-            "guideline",
-            filters=(
-                _apf("id", "eq", guideline_id),
-                _apf("owner_id", "eq", scoped_owner_id),
-            ),
-            limit=1,
+        snapshot = await self._authoritative_snapshot(guideline_id)
+        if snapshot is None:
+            return None
+        identity, head, revision, _retirement = snapshot
+        if scoped_owner_id is not None and identity.owner_id != scoped_owner_id:
+            return None
+        return self._guideline_projection(
+            identity,
+            revision,
+            updated_at=head.updated_at,
         )
-        return rows[0] if rows else None
 
     async def list_guidelines(
         self,
@@ -13284,22 +15031,44 @@ class GuidelineService:
         *,
         query_scope: QueryScope | None = None,
     ) -> list[Guideline]:
-        """List global guidelines for an owner, optionally filtered by tag."""
+        """List authoritative global heads, optionally filtered by current tag."""
         scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        filters = [
-            _apf("owner_id", "eq", scoped_owner_id),
-            _apf("scope", "eq", "global"),
-        ]
-        if tag:
-            filters.append(_apf("tags", "json_member", tag))
-        return await _application_list(
+        identities = await _application_list(
             self.db,
             "guideline",
-            filters=tuple(filters),
+            filters=(
+                _apf("owner_id", "eq", scoped_owner_id),
+                _apf("scope", "eq", "global"),
+            ),
             order_by=(("created_at", True),),
-            offset=offset,
-            limit=limit,
+            limit=None,
         )
+        policy = self._policy()
+        projected: list[Guideline] = []
+        for legacy_identity in identities:
+            retirement = await policy.get_retirement(guideline_id=legacy_identity.id)
+            if retirement is not None:
+                continue
+            head = await policy.get_head(guideline_id=legacy_identity.id)
+            identity = await policy.get_guideline(guideline_id=legacy_identity.id)
+            if head is None or identity is None:
+                raise RuntimeError("guideline_authority_head_missing")
+            revision = await policy.get_revision(
+                guideline_id=identity.guideline_id,
+                revision_id=head.revision_id,
+            )
+            if revision is None:
+                raise RuntimeError("guideline_authority_revision_mismatch")
+            if tag is not None and tag not in revision.tags:
+                continue
+            projected.append(
+                self._guideline_projection(
+                    identity,
+                    revision,
+                    updated_at=head.updated_at,
+                )
+            )
+        return projected[offset : offset + limit]
 
     async def update_guideline(
         self,
@@ -13309,48 +15078,108 @@ class GuidelineService:
         *,
         query_scope: QueryScope | None = None,
     ) -> Guideline | None:
-        """Update a guideline."""
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = await self.get_guideline(
-            guideline_id,
-            owner_id=scoped_owner_id,
-            query_scope=query_scope,
+        """Append a canonical immutable revision and advance the head by CAS."""
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelinePatchApplied,
+            GuidelinePatchCommand,
+            GuidelinePatchNoop,
+            GuidelineRevisionPatch,
+            execute_guideline_patch,
         )
-        if not guideline:
+
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        snapshot = await self._authoritative_snapshot(guideline_id)
+        if snapshot is None:
             return None
-        changed = False
-        if data.title is not None and data.title != guideline.title:
-            guideline.title = data.title
-            changed = True
-        if data.content is not None and data.content != guideline.content:
-            guideline.content = data.content
-            changed = True
-        if data.tags is not None:
-            guideline.tags = data.tags
-            guideline.mark_dirty("tags")
-            changed = True
-        if changed and guideline.scope == "global":
-            guideline.version = (guideline.version or 1) + 1
-        await _application_flush(self.db)
-        return guideline
+        identity, head, current, retirement = snapshot
+        if identity.owner_id != scoped_owner_id:
+            return None
+        patch_id = str(uuid.uuid4())
+        result = execute_guideline_patch(
+            GuidelinePatchCommand(
+                current_revision=current,
+                current_head=head,
+                patch=GuidelineRevisionPatch(
+                    title=data.title,
+                    content=data.content,
+                    tags=(tuple(data.tags) if data.tags is not None else None),
+                ),
+                next_revision_id=patch_id,
+                actor_id=scoped_owner_id,
+                occurred_at=self._next_event_time(head.updated_at),
+                idempotency_key=f"legacy:patch:{patch_id}",
+            ),
+            retirement=retirement,
+        )
+        if isinstance(result, GuidelinePatchNoop):
+            return self._guideline_projection(
+                identity,
+                current,
+                updated_at=head.updated_at,
+            )
+        if not isinstance(result, GuidelinePatchApplied):
+            raise ValueError(result.code)
+        revision, next_head = await self._policy().append_revision_cas(
+            revision=result.revision,
+            next_head=result.head,
+            expected_head_revision=result.expected_head_revision,
+            idempotency_key=result.idempotency_key,
+            request_digest=result.request_digest,
+        )
+        return self._guideline_projection(
+            identity,
+            revision,
+            updated_at=next_head.updated_at,
+        )
 
     async def delete_guideline(
         self,
         guideline_id: str,
         owner_id: str,
         *,
+        actor_type: str = "user",
         query_scope: QueryScope | None = None,
     ) -> bool:
-        """Delete a guideline."""
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = await self.get_guideline(
-            guideline_id,
-            owner_id=scoped_owner_id,
-            query_scope=query_scope,
+        """Logically retire a guideline while retaining its complete history."""
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelineRetirementCommand,
+            plan_guideline_retirement,
         )
-        if not guideline:
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineLifecycleStatus,
+        )
+
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        snapshot = await self._authoritative_snapshot(
+            guideline_id,
+            include_retired=True,
+        )
+        if snapshot is None:
             return False
-        await _application_delete(self.db, guideline)
+        identity, head, revision, retirement = snapshot
+        if identity.owner_id != scoped_owner_id or retirement is not None:
+            return False
+        retirement_id = str(uuid.uuid4())
+        plan = plan_guideline_retirement(
+            GuidelineRetirementCommand(
+                current_revision=revision,
+                current_head=head,
+                retirement_id=retirement_id,
+                status=GuidelineLifecycleStatus.RETIRED,
+                reason="Retired through the legacy guideline façade.",
+                actor_id=scoped_owner_id,
+                occurred_at=self._next_event_time(head.updated_at),
+                idempotency_key=f"legacy:retire:{retirement_id}",
+            ),
+            current_retirement=None,
+        )
+        await self._policy().retire_guideline_cas(
+            retirement=plan.retirement,
+            expected_head_revision=plan.expected_head_revision,
+            idempotency_key=plan.idempotency_key,
+            request_digest=plan.request_digest,
+            actor_type=actor_type,
+        )
         return True
 
     async def get_board_guidelines(
@@ -13361,94 +15190,64 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> list[dict]:
-        """Get all guidelines for a board — linked globals + inline, sorted by priority."""
+        """Project active exact-revision bindings for a board."""
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return []
-        links = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(_apf("board_id", "eq", board_id),),
-        )
-        linked_ids = [link.guideline_id for link in links]
-        linked_guidelines = (
-            await _application_list(
-                self.db,
-                "guideline",
-                filters=(_apf("id", "in", linked_ids),),
-            )
-            if linked_ids
-            else []
-        )
-        guidelines_by_id = {item.id: item for item in linked_guidelines}
-
-        # Inline (board-scoped) guidelines
-        inline_rows = await _application_list(
-            self.db,
-            "guideline",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("scope", "eq", "inline"),
-            ),
-            order_by=(("created_at", False),),
-        )
-
+        policy = self._policy()
+        bindings = await policy.list_bindings(board_id=board_id)
         items: list[dict] = []
-        for link in links:
-            guideline = guidelines_by_id.get(link.guideline_id)
-            if guideline is None:
-                continue
-            items.append(
-                {
-                    "id": guideline.id,
-                    "guideline": {
-                        "id": guideline.id,
-                        "title": guideline.title,
-                        "content": guideline.content,
-                        "tags": guideline.tags,
-                        "scope": guideline.scope,
-                        "board_id": guideline.board_id,
-                        "owner_id": guideline.owner_id,
-                        "created_at": guideline.created_at.isoformat()
-                        if guideline.created_at
-                        else None,
-                        "version": guideline.version or 1,
-                        "updated_at": guideline.updated_at.isoformat()
-                        if guideline.updated_at
-                        else None,
-                    },
-                    "priority": link.priority,
-                    "scope": guideline.scope,
-                }
+        for binding in bindings:
+            identity = await policy.get_guideline(guideline_id=binding.guideline_id)
+            retirement = await policy.get_retirement(guideline_id=binding.guideline_id)
+            revision = await policy.get_revision(
+                guideline_id=binding.guideline_id,
+                revision_id=binding.revision_id,
             )
-        for guideline in inline_rows:
+            if identity is None or retirement is not None:
+                continue
+            if (
+                revision is None
+                or revision.semantic_version != binding.semantic_version
+                or revision.revision_digest != binding.revision_digest
+            ):
+                raise RuntimeError("guideline_binding_revision_mismatch")
             items.append(
                 {
-                    "id": guideline.id,
+                    "id": identity.guideline_id,
                     "guideline": {
-                        "id": guideline.id,
-                        "title": guideline.title,
-                        "content": guideline.content,
-                        "tags": guideline.tags,
-                        "scope": guideline.scope,
-                        "board_id": guideline.board_id,
-                        "owner_id": guideline.owner_id,
-                        "created_at": guideline.created_at.isoformat()
-                        if guideline.created_at
-                        else None,
-                        "updated_at": guideline.updated_at.isoformat()
-                        if guideline.updated_at
-                        else None,
+                        "id": identity.guideline_id,
+                        "title": revision.title,
+                        "content": revision.content,
+                        "tags": list(revision.tags),
+                        "scope": identity.scope.value,
+                        "board_id": identity.board_id,
+                        "owner_id": identity.owner_id,
+                        "created_at": identity.created_at.isoformat(),
+                        "version": revision.revision_number,
+                        "semantic_version": revision.semantic_version,
+                        "revision_id": revision.revision_id,
+                        "revision_digest": revision.revision_digest,
+                        "updated_at": revision.created_at.isoformat(),
                     },
-                    "priority": 0,
-                    "scope": "inline",
+                    "priority": binding.priority,
+                    "scope": identity.scope.value,
+                    "binding_id": binding.binding_id,
+                    "binding_revision": binding.binding_revision,
+                    "enforcement": binding.enforcement.value,
+                    "minimum_confidence": binding.minimum_confidence,
+                    "metric_threshold_overrides": dict(
+                        binding.metric_threshold_overrides
+                    ),
+                    "binding_state": binding.state.value,
+                    "source_kind": binding.source_kind.value,
                 }
             )
 
-        items.sort(key=lambda x: x["priority"])
+        items.sort(key=lambda item: (item["priority"], item["id"]))
         if not items:
             details = build_board_missing_context_warning_details(
                 board_id=board_id,
@@ -13467,50 +15266,102 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> BoardGuideline | None:
-        """Link a global guideline to a board."""
+        """Fail closed: global links require preview then explicit adoption."""
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyBindingConflict,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return None
-        link = _new_application_record(
-            "board_guideline",
-            board_id=board_id,
-            guideline_id=guideline_id,
-            priority=priority,
+        snapshot = await self._authoritative_snapshot(guideline_id)
+        if snapshot is None:
+            return None
+        del priority
+        raise GuidelinePolicyBindingConflict(
+            "guideline_impact_preview_required",
+            details=(
+                ("board_id", board_id),
+                ("guideline_id", guideline_id),
+                ("remediation", "preview_then_adopt"),
+            ),
         )
-        await _application_add(self.db, link)
-        return link
 
     async def unlink_guideline_from_board(
         self,
         board_id: str,
         guideline_id: str,
         *,
+        actor_type: str = "user",
+        idempotency_key: str | None = None,
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> bool:
-        """Unlink a guideline from a board."""
+        """Append one audited UNLINKED revision without deleting history."""
+        from okto_pulse.core.domain.guideline_impact import (
+            plan_guideline_unlink,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineBindingState,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return False
-        rows = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("guideline_id", "eq", guideline_id),
-            ),
-            limit=1,
+        policy = self._policy()
+        current = await policy.get_binding(
+            board_id=board_id,
+            guideline_id=guideline_id,
         )
-        link = rows[0] if rows else None
-        if not link:
+        if current is None or current.state is not GuidelineBindingState.ACTIVE:
             return False
-        await _application_delete(self.db, link)
+        retirement = await policy.get_retirement(guideline_id=guideline_id)
+        current_revision = await policy.get_revision(
+            guideline_id=guideline_id,
+            revision_id=current.revision_id,
+        )
+        if current_revision is None:
+            raise RuntimeError("guideline_binding_revision_mismatch")
+        active_bindings = await policy.list_bindings(board_id=board_id)
+        active_revisions = []
+        for active_binding in active_bindings:
+            active_revision = await policy.get_revision(
+                guideline_id=active_binding.guideline_id,
+                revision_id=active_binding.revision_id,
+            )
+            if active_revision is None:
+                raise RuntimeError("guideline_binding_revision_mismatch")
+            active_revisions.append(active_revision)
+        resolved_key = (
+            idempotency_key.strip()
+            if isinstance(idempotency_key, str) and idempotency_key.strip()
+            else f"legacy:unlink:{uuid.uuid4()}"
+        )
+        event_id = str(
+            uuid.uuid5(
+                uuid.UUID("18c3f17c-b1a5-5f2a-bdd4-3c84390fd347"),
+                f"{board_id}:{resolved_key}",
+            )
+        )
+        mutation = plan_guideline_unlink(
+            current_binding=current,
+            current_revision=current_revision,
+            active_bindings=active_bindings,
+            active_revisions=tuple(active_revisions),
+            retirement=retirement,
+            actor_id=owner_id or current.adopted_by,
+            actor_type=actor_type,
+            occurred_at=self._next_event_time(current.adopted_at),
+            event_id=event_id,
+            idempotency_key=resolved_key,
+        )
+        await policy.unlink_binding_cas(mutation=mutation)
         return True
 
     async def update_priority(
@@ -13522,28 +15373,26 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> bool:
-        """Update the priority of a linked guideline."""
+        """Fail closed: priority changes alter policy and require a preview."""
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyBindingConflict,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return False
-        rows = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("guideline_id", "eq", guideline_id),
+        del priority
+        raise GuidelinePolicyBindingConflict(
+            "guideline_impact_preview_required",
+            details=(
+                ("board_id", board_id),
+                ("guideline_id", guideline_id),
+                ("remediation", "preview_then_adopt"),
             ),
-            limit=1,
         )
-        link = rows[0] if rows else None
-        if not link:
-            return False
-        link.priority = priority
-        await _application_flush(self.db)
-        return True
 
     async def apply_default_guidelines(
         self,
@@ -13556,47 +15405,206 @@ class GuidelineService:
         owner_id: str | None = None,
         query_scope: QueryScope | None = None,
     ) -> list[BoardGuideline]:
-        """Materialize a new board's default guideline links from the active default
-        template's resolved refs (spec 8a2fad91 / card 2803c136 / FR3). Each created
-        link records the priority + the template provenance (template_id,
-        template_version) + the guideline_version captured in the ref. Runs in the
-        CALLER's transaction (TR3 — no commit here), so any failure aborts the whole
-        ``create_board`` with no partial board / orphan links. Idempotent per
-        ``uq_board_guideline``: an existing board/guideline link is preserved untouched;
-        intra-batch duplicate guideline_ids are de-duped first-wins, so the resulting
-        priority/provenance is deterministic and never duplicated (TR4). The umbrella
-        owns resolution + fail-closed validation; this is purely the writer (it is the
-        single materialization point and the ts_a48e70ee failure-injection target)."""
+        """Materialize exact immutable pins from a default template.
+
+        The caller owns the transaction. Existing binding lineages are left
+        untouched and intra-template duplicates remain first-wins.
+        """
+        from okto_pulse.core.domain.guideline_lifecycle import (
+            GuidelineBindingApplied,
+            GuidelineBindingTransitionCommand,
+            plan_guideline_binding_transition,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            GuidelineBindingProvenance,
+            GuidelineBindingState,
+            GuidelineEnforcement,
+            GuidelineScope,
+        )
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelineDefaultMaterializationProof,
+        )
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelineRevisionListQuery,
+        )
+
         if query_scope is not None and not await self._board_visible(
             board_id,
             owner_id,
             query_scope,
         ):
             return []
-        existing = await _application_list(
-            self.db,
-            "board_guideline",
-            filters=(_apf("board_id", "eq", board_id),),
-        )
-        already_linked = {link.guideline_id for link in existing}
+        policy = self._policy()
         created: list[BoardGuideline] = []
         seen: set[str] = set()
         for ref in refs or []:
             guideline_id = ref["guideline_id"]
-            if guideline_id in seen or guideline_id in already_linked:
-                continue  # uq_board_guideline + intra-template de-dup (first wins)
+            priority = ref.get("priority", 0)
+            if type(priority) is not int or priority < 0:
+                raise ValueError("default_guideline_priority_invalid")
+            if guideline_id in seen:
+                continue
             seen.add(guideline_id)
-            link = _new_application_record(
-                "board_guideline",
+            current = await policy.get_binding(
                 board_id=board_id,
                 guideline_id=guideline_id,
-                priority=int(ref.get("priority", 0) or 0),
-                template_id=template_id,
-                template_version=template_version,
-                guideline_version=ref.get("guideline_version"),
             )
-            await _application_add(self.db, link)
-            created.append(link)
+            if current is not None:
+                continue
+            identity = await policy.get_guideline(guideline_id=guideline_id)
+            retirement = await policy.get_retirement(guideline_id=guideline_id)
+            if identity is None:
+                raise ValueError("default_guideline_not_found")
+            if retirement is not None:
+                raise ValueError("default_guideline_retired")
+            if (
+                identity.scope is not GuidelineScope.GLOBAL
+                or identity.board_id is not None
+            ):
+                raise ValueError("default_guideline_not_global")
+            revision_id = ref.get("revision_id")
+            requested_number = ref.get("revision_number")
+            if requested_number is None and revision_id is None:
+                requested_number = ref.get("guideline_version")
+            if revision_id:
+                revision = await policy.get_revision(
+                    guideline_id=guideline_id,
+                    revision_id=revision_id,
+                )
+            else:
+                revision = None
+                cursor = None
+                if requested_number is not None:
+                    if type(requested_number) is not int:
+                        raise ValueError("default_guideline_revision_invalid")
+                    if requested_number < 1:
+                        raise ValueError("default_guideline_revision_invalid")
+                while requested_number is not None:
+                    page = await policy.list_revisions(
+                        GuidelineRevisionListQuery(
+                            guideline_id=guideline_id,
+                            limit=200,
+                            cursor=cursor,
+                        )
+                    )
+                    revision = next(
+                        (
+                            candidate
+                            for candidate in page.items
+                            if candidate.revision_number == int(requested_number)
+                        ),
+                        None,
+                    )
+                    if revision is not None or not page.has_more:
+                        break
+                    cursor = page.next_cursor
+                if revision is None and requested_number is None:
+                    head = await policy.get_head(guideline_id=guideline_id)
+                    revision = (
+                        await policy.get_revision(
+                            guideline_id=guideline_id,
+                            revision_id=head.revision_id,
+                        )
+                        if head is not None
+                        else None
+                    )
+            if revision is None:
+                raise ValueError("default_guideline_revision_not_found")
+            declared_semver = ref.get("semantic_version")
+            declared_digest = ref.get("revision_digest")
+            declared_number = ref.get("revision_number")
+            legacy_number = ref.get("guideline_version")
+            legacy_unresolvable = ref.get("legacy_version_unresolvable", False)
+            if not isinstance(legacy_unresolvable, bool):
+                raise ValueError("default_guideline_revision_invalid")
+            if (
+                isinstance(declared_number, bool)
+                or isinstance(legacy_number, bool)
+                or (declared_number is not None and type(declared_number) is not int)
+                or (legacy_number is not None and type(legacy_number) is not int)
+            ):
+                raise ValueError("default_guideline_revision_invalid")
+            normalized_declared_number = declared_number
+            normalized_legacy_number = legacy_number
+            complete_legacy_pin = bool(
+                legacy_unresolvable
+                and revision_id
+                and declared_semver
+                and declared_digest
+                and legacy_number is not None
+                and ref.get("legacy_version") is not None
+            )
+            legacy_number_exempt = bool(
+                complete_legacy_pin and ref.get("legacy_version") == legacy_number
+            )
+            if (
+                (
+                    declared_semver is not None
+                    and declared_semver != revision.semantic_version
+                )
+                or (
+                    declared_digest is not None
+                    and declared_digest != revision.revision_digest
+                )
+                or (
+                    normalized_declared_number is not None
+                    and normalized_declared_number != revision.revision_number
+                )
+                or (
+                    normalized_legacy_number is not None
+                    and normalized_legacy_number != revision.revision_number
+                    and not legacy_number_exempt
+                )
+                or (legacy_unresolvable and not complete_legacy_pin)
+            ):
+                raise ValueError("default_guideline_pin_mismatch")
+            event_id = str(uuid.uuid4())
+            plan = plan_guideline_binding_transition(
+                GuidelineBindingTransitionCommand(
+                    binding_id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    guideline_id=guideline_id,
+                    state=GuidelineBindingState.ACTIVE,
+                    revision_id=revision.revision_id,
+                    semantic_version=revision.semantic_version,
+                    revision_digest=revision.revision_digest,
+                    priority=priority,
+                    enforcement=GuidelineEnforcement.ADVISORY,
+                    minimum_confidence=70,
+                    metric_threshold_overrides={},
+                    source_kind=(GuidelineBindingProvenance.DEFAULT_MATERIALIZATION),
+                    actor_id=actor,
+                    occurred_at=self._next_event_time(),
+                    idempotency_key=f"default-binding:{event_id}",
+                    expected_binding_revision=None,
+                ),
+                current=None,
+                retirement=retirement,
+            )
+            if not isinstance(plan, GuidelineBindingApplied):
+                raise RuntimeError("default_guideline_binding_not_applied")
+            binding = await policy.append_binding_cas(
+                binding=plan.binding,
+                expected_binding_revision=None,
+                idempotency_key=plan.idempotency_key,
+                request_digest=plan.request_digest,
+                materialization_proof=(
+                    GuidelineDefaultMaterializationProof(
+                        template_id=template_id,
+                        template_version=template_version,
+                        guideline_revision_number=(revision.revision_number),
+                    )
+                ),
+                actor_type="system",
+            )
+            created.append(
+                self._binding_projection(
+                    binding,
+                    template_id=template_id,
+                    template_version=template_version,
+                    guideline_version=revision.revision_number,
+                )
+            )
         return created
 
 
@@ -13772,39 +15780,73 @@ class ArchiveService:
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
+        quality_lifecycle_changes: list[tuple[str, Any, int, str, bool]] = []
 
         for ideation in tree["ideations"]:
             if not ideation.archived:
-                ideation.pre_archive_status = (
+                before_status = (
                     ideation.status.value
                     if hasattr(ideation.status, "value")
                     else str(ideation.status)
                 )
+                before_version = int(ideation.version)
+                ideation.pre_archive_status = before_status
                 ideation.archived = True
                 counts["ideations"] += 1
                 changed_artifacts.append(("ideation", ideation))
+                quality_lifecycle_changes.append(
+                    (
+                        "ideation",
+                        ideation,
+                        before_version,
+                        before_status,
+                        False,
+                    )
+                )
 
         for refinement in tree["refinements"]:
             if not refinement.archived:
-                refinement.pre_archive_status = (
+                before_status = (
                     refinement.status.value
                     if hasattr(refinement.status, "value")
                     else str(refinement.status)
                 )
+                before_version = int(refinement.version)
+                refinement.pre_archive_status = before_status
                 refinement.archived = True
                 counts["refinements"] += 1
                 changed_artifacts.append(("refinement", refinement))
+                quality_lifecycle_changes.append(
+                    (
+                        "refinement",
+                        refinement,
+                        before_version,
+                        before_status,
+                        False,
+                    )
+                )
 
         for spec in tree["specs"]:
             if not spec.archived:
-                spec.pre_archive_status = (
+                before_status = (
                     spec.status.value
                     if hasattr(spec.status, "value")
                     else str(spec.status)
                 )
+                before_version = int(spec.version)
+                spec.pre_archive_status = before_status
                 spec.archived = True
                 counts["specs"] += 1
                 changed_artifacts.append(("spec", spec))
+                quality_lifecycle_changes.append(
+                    (
+                        "spec",
+                        spec,
+                        before_version,
+                        before_status,
+                        False,
+                    )
+                )
 
         for sprint in tree["sprints"]:
             if not sprint.archived:
@@ -13855,6 +15897,32 @@ class ArchiveService:
                 ops,
                 records=card_records[affected_board_id],
             )
+        for (
+            artifact_type,
+            artifact,
+            before_version,
+            before_status,
+            before_archived,
+        ) in quality_lifecycle_changes:
+            status = (
+                artifact.status.value
+                if hasattr(artifact.status, "value")
+                else str(artifact.status)
+            )
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=artifact.board_id,
+                subject_type=artifact_type,
+                subject_id=artifact.id,
+                before_version=before_version,
+                before_status=before_status,
+                before_archived=before_archived,
+                after_version=int(artifact.version),
+                after_status=status,
+                after_archived=True,
+                action="archive",
+                actor_id="system:archive-tree",
+            )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import ArtifactArchiveChanged
 
@@ -13890,9 +15958,16 @@ class ArchiveService:
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
+        quality_lifecycle_changes: list[tuple[str, Any, int, str, bool]] = []
 
         for ideation in tree["ideations"]:
             if ideation.archived:
+                before_status = (
+                    ideation.status.value
+                    if hasattr(ideation.status, "value")
+                    else str(ideation.status)
+                )
+                before_version = int(ideation.version)
                 if ideation.pre_archive_status:
                     try:
                         ideation.status = IdeationStatus(ideation.pre_archive_status)
@@ -13902,9 +15977,24 @@ class ArchiveService:
                 ideation.pre_archive_status = None
                 counts["ideations"] += 1
                 changed_artifacts.append(("ideation", ideation))
+                quality_lifecycle_changes.append(
+                    (
+                        "ideation",
+                        ideation,
+                        before_version,
+                        before_status,
+                        True,
+                    )
+                )
 
         for refinement in tree["refinements"]:
             if refinement.archived:
+                before_status = (
+                    refinement.status.value
+                    if hasattr(refinement.status, "value")
+                    else str(refinement.status)
+                )
+                before_version = int(refinement.version)
                 if refinement.pre_archive_status:
                     try:
                         refinement.status = RefinementStatus(
@@ -13916,9 +16006,24 @@ class ArchiveService:
                 refinement.pre_archive_status = None
                 counts["refinements"] += 1
                 changed_artifacts.append(("refinement", refinement))
+                quality_lifecycle_changes.append(
+                    (
+                        "refinement",
+                        refinement,
+                        before_version,
+                        before_status,
+                        True,
+                    )
+                )
 
         for spec in tree["specs"]:
             if spec.archived:
+                before_status = (
+                    spec.status.value
+                    if hasattr(spec.status, "value")
+                    else str(spec.status)
+                )
+                before_version = int(spec.version)
                 if spec.pre_archive_status:
                     try:
                         spec.status = SpecStatus(spec.pre_archive_status)
@@ -13928,6 +16033,15 @@ class ArchiveService:
                 spec.pre_archive_status = None
                 counts["specs"] += 1
                 changed_artifacts.append(("spec", spec))
+                quality_lifecycle_changes.append(
+                    (
+                        "spec",
+                        spec,
+                        before_version,
+                        before_status,
+                        True,
+                    )
+                )
 
         for sprint in tree["sprints"]:
             if sprint.archived:
@@ -13982,6 +16096,32 @@ class ArchiveService:
                 affected_board_id,
                 ops,
                 records=card_records[affected_board_id],
+            )
+        for (
+            artifact_type,
+            artifact,
+            before_version,
+            before_status,
+            before_archived,
+        ) in quality_lifecycle_changes:
+            status = (
+                artifact.status.value
+                if hasattr(artifact.status, "value")
+                else str(artifact.status)
+            )
+            await _apply_quality_assessment_lifecycle_transition(
+                self.db,
+                board_id=artifact.board_id,
+                subject_type=artifact_type,
+                subject_id=artifact.id,
+                before_version=before_version,
+                before_status=before_status,
+                before_archived=before_archived,
+                after_version=int(artifact.version),
+                after_status=status,
+                after_archived=False,
+                action="restore",
+                actor_id="system:restore-tree",
             )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import ArtifactArchiveChanged
@@ -14600,6 +16740,10 @@ class SprintService:
             "skip_rules_coverage",
             "skip_qualitative_validation",
             "validation_threshold",
+            "require_task_validation",
+            "validation_min_confidence",
+            "validation_min_completeness",
+            "validation_max_drift",
         }
         bumps_version = bool(content_fields & update_data.keys())
 
@@ -15001,6 +17145,14 @@ class SprintService:
                             "threshold": threshold,
                         },
                     )
+
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=sprint.board_id,
+                entity_type="sprint",
+                subject_id=sprint.id,
+                from_status=sprint.status.value,
+                to_status=data.status.value,
+            )
 
         old_status = sprint.status
 

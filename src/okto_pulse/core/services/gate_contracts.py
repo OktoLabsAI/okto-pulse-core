@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 # gate_type vocabulary (structured contract field, NOT a persisted enum).
 GATE_SPEC_VALIDATION = "spec_validation"
+GATE_SPEC_CHECKLIST = "spec_checklist"
 GATE_SPEC_QUALITATIVE_EVALUATION = "spec_qualitative_evaluation"
 GATE_TEST_CARD_COMPLETION = "test_card_completion"
 GATE_RESOURCE = "resource_gate"
@@ -153,6 +154,52 @@ def spec_validation_gate_error(*, spec_id: str, current_status: str) -> GateCont
         },
         enforcement_mode="enforced",
         enforcement_active=True,
+    )
+
+
+def spec_checklist_gate_error(
+    *,
+    spec_id: str,
+    current_status: str,
+    reason: str,
+    mode: str,
+    stale_reasons: tuple[str, ...] = (),
+) -> GateContractError:
+    """Block Spec validation when the effective A3 binding is unsatisfied."""
+
+    return GateContractError(
+        code="spec_checklist_gate_required",
+        message=(
+            "The blocking Spec checklist is not satisfied for the current "
+            "Spec version. Complete and pass the current /specify checklist "
+            "before validating the Spec."
+        ),
+        gate_type=GATE_SPEC_CHECKLIST,
+        entity_type="spec",
+        entity_id=spec_id,
+        current_status=current_status,
+        blocked_transition=f"{current_status}->validated",
+        required_status="validated",
+        required_tool="okto_pulse_submit_checklist_execution",
+        follow_up_tool="okto_pulse_submit_spec_validation",
+        operator_action=(
+            "Resolve the current checklist binding, start an execution, submit "
+            "all ten item results, and retry Spec validation."
+        ),
+        next_action={
+            "tool": "okto_pulse_get_checklist_binding",
+            "params": {"spec_id": spec_id},
+            "hint": (
+                "Inspect the effective binding and current receipt before "
+                "starting a new checklist execution."
+            ),
+        },
+        enforcement_mode=mode,
+        enforcement_active=True,
+        extra_details={
+            "checklist_reason": reason,
+            "stale_reasons": list(stale_reasons),
+        },
     )
 
 
@@ -445,8 +492,16 @@ def operational_flow_for_test_card(
                 "status": "missing",
             }
         ]
-    would_block_done = bool(pending)
-    if would_block_done:
+    already_done = str(current_status or "").strip().lower() == "done"
+    would_block_done = bool(pending) and not already_done
+    follow_up_tool = None if already_done else "okto_pulse_move_card"
+    if already_done:
+        operator_action = (
+            "The test card is already done; no completion transition is required."
+        )
+        required_tool = None
+        next_action = None
+    elif would_block_done:
         has_linkage_failure = any(
             str(item.get("status") or "") == "missing" for item in pending
         )
@@ -499,7 +554,7 @@ def operational_flow_for_test_card(
         "linked_scenarios": scenarios,
         "pending_scenarios": pending,
         "required_tool": required_tool,
-        "follow_up_tool": "okto_pulse_move_card",
+        "follow_up_tool": follow_up_tool,
         "operator_action": operator_action,
         "next_action": next_action,
         "mutation_allowed": False,
@@ -543,6 +598,11 @@ def spec_gate_readiness(
     spec_status: str,
     require_spec_validation: bool,
     cognitive_enforcement_active: bool,
+    checklist_mode: str | None = None,
+    checklist_allowed: bool | None = None,
+    checklist_reason: str | None = None,
+    checklist_current: bool | None = None,
+    checklist_stale_reasons: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Read-only gate/readiness summary for a spec context (R4-IMP4).
 
@@ -573,24 +633,66 @@ def spec_gate_readiness(
             }
         )
 
-    # consistency: the surfaced spec_validation gate presence MUST equal the
-    # independently-recomputed predicate. A future refactor that diverged the two
-    # derivations would surface here instead of silently misleading the operator.
-    present = any(g["gate_type"] == GATE_SPEC_VALIDATION for g in active_gates)
-    if present != spec_validation_applicable:
+    checklist_stale_reasons = tuple(checklist_stale_reasons)
+    checklist_gate_applicable = (
+        spec_status == "approved"
+        and checklist_mode == "blocking"
+        and checklist_allowed is False
+    )
+    if checklist_gate_applicable:
+        assert checklist_reason is not None
+        details = spec_checklist_gate_error(
+            spec_id=spec_id,
+            current_status=spec_status,
+            reason=checklist_reason,
+            mode=checklist_mode,
+            stale_reasons=checklist_stale_reasons,
+        ).details
+        active_gates.append(
+            {
+                "gate_type": details["gate_type"],
+                "blocked_transition": details["blocked_transition"],
+                "required_status": details["required_status"],
+                "required_tool": details["required_tool"],
+                "follow_up_tool": details["follow_up_tool"],
+                "operator_action": details["operator_action"],
+                "next_action": details["next_action"],
+                "enforcement_mode": details["enforcement_mode"],
+                "enforcement_active": details["enforcement_active"],
+                "checklist_reason": details["checklist_reason"],
+                "stale_reasons": details["stale_reasons"],
+            }
+        )
+
+    # Consistency: surfaced gate presence MUST equal both independently
+    # recomputed predicates. A future refactor that diverges from either
+    # canonical gate surfaces the mismatch instead of misleading the operator.
+    observed = {
+        "spec_validation_gate": any(
+            gate["gate_type"] == GATE_SPEC_VALIDATION for gate in active_gates
+        ),
+        "spec_checklist_gate": any(
+            gate["gate_type"] == GATE_SPEC_CHECKLIST for gate in active_gates
+        ),
+    }
+    expected = {
+        "spec_validation_gate": spec_validation_applicable,
+        "spec_checklist_gate": checklist_gate_applicable,
+    }
+    if observed != expected:
         consistency = _consistency_mismatch(
-            expected={"spec_validation_gate": spec_validation_applicable},
-            observed={"spec_validation_gate": present},
+            expected=expected,
+            observed=observed,
             reason=(
-                "spec_validation gate presence diverged from "
-                "(status=='approved' and require_spec_validation)"
+                "Spec gate presence diverged from the canonical validation "
+                "and curated-checklist predicates."
             ),
             source="gate_contracts",
         )
     else:
         consistency = _consistency_ok(source="gate_contracts")
 
-    return {
+    readiness = {
         "cognitive_enforcement_active": bool(cognitive_enforcement_active),
         "cognitive_enforcement_mode": (
             "enforced" if cognitive_enforcement_active else "advisory"
@@ -604,6 +706,19 @@ def spec_gate_readiness(
         "mutation_allowed": False,
         "consistency": consistency,
     }
+    if checklist_mode is not None:
+        readiness["spec_checklist"] = {
+            "mode": checklist_mode,
+            "allowed": bool(checklist_allowed),
+            "reason": checklist_reason,
+            "current": checklist_current,
+            "stale_reasons": list(checklist_stale_reasons),
+            "enforcement_active": checklist_mode == "blocking",
+            "binding_tool": "okto_pulse_get_checklist_binding",
+            "execution_tool": "okto_pulse_start_checklist_execution",
+            "receipt_tool": "okto_pulse_get_checklist_receipt",
+        }
+    return readiness
 
 
 def task_gate_readiness(
@@ -632,14 +747,19 @@ def task_gate_readiness(
         # transition is derived from the flow's own current_status ("<status>->done")
         # so the context exposes the actionable transition, not just the gate type.
         flow_status = operational_flow.get("current_status")
-        active_gate = {
-            "gate_type": operational_flow.get("gate_type"),
-            "blocked_transition": f"{flow_status}->done" if flow_status else None,
-            "required_status": "done",
-            "required_tool": operational_flow.get("required_tool"),
-            "follow_up_tool": operational_flow.get("follow_up_tool"),
-            "would_block_done": bool(operational_flow.get("would_block_done")),
-        }
+        terminal = any(
+            str(value or "").strip().lower() == "done"
+            for value in (card_status, flow_status)
+        )
+        if not terminal:
+            active_gate = {
+                "gate_type": operational_flow.get("gate_type"),
+                "blocked_transition": f"{flow_status}->done" if flow_status else None,
+                "required_status": "done",
+                "required_tool": operational_flow.get("required_tool"),
+                "follow_up_tool": operational_flow.get("follow_up_tool"),
+                "would_block_done": bool(operational_flow.get("would_block_done")),
+            }
     elif cognitive_verdict and cognitive_verdict.get("would_block_done"):
         active_gate = {
             "gate_type": GATE_COGNITIVE_READINESS,
@@ -771,6 +891,7 @@ def spec_evaluation_success_envelope(
 __all__ = [
     "GATE_COGNITIVE_READINESS",
     "GATE_RESOURCE",
+    "GATE_SPEC_CHECKLIST",
     "GATE_SPEC_QUALITATIVE_EVALUATION",
     "GATE_SPEC_VALIDATION",
     "GATE_STATE_TRANSITION",
@@ -782,6 +903,7 @@ __all__ = [
     "incomplete_test_card_completion_error",
     "operational_flow_for_test_card",
     "spec_evaluation_success_envelope",
+    "spec_checklist_gate_error",
     "spec_gate_readiness",
     "spec_validation_gate_error",
     "task_gate_readiness",

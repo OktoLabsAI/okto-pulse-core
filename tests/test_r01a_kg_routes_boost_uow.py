@@ -76,7 +76,16 @@ def client():
             yield session
 
     async def _override_user():
-        return {"sub": ACTOR, "roles": ["admin"]}
+        return {
+            "sub": ACTOR,
+            "roles": ["admin"],
+            "permissions": {
+                "kg": {
+                    "operations": {"node": {"boost": True}},
+                    "admin": {"settings_write": True},
+                }
+            },
+        }
 
     def _override_user_id():
         return ACTOR
@@ -417,7 +426,12 @@ async def test_boost_holds_one_writer_fence_through_durability_and_audit_commit(
         services=SimpleNamespace(kg=_KG()),
         rollback=_rollback,
     )
-    actor = crud.ActorContext("actor-1", "rest")
+    actor = crud.ActorContext(
+        "actor-1",
+        "rest",
+        board_id="board-1",
+        permissions=["kg.admin.settings_write"],
+    )
 
     result = await crud.BoostNodeUseCase().execute(
         crud.BoostNodeCommand("board-1", "node-1"),
@@ -487,7 +501,12 @@ async def test_boost_lifecycle_failure_never_commits_or_acknowledges(
     with pytest.raises(GuardedWriteError, match="injected lifecycle failure"):
         await crud.BoostNodeUseCase().execute(
             crud.BoostNodeCommand("board-1", "node-1"),
-            actor=crud.ActorContext("actor-1", "rest"),
+                actor=crud.ActorContext(
+                    "actor-1",
+                    "rest",
+                    board_id="board-1",
+                    permissions=["kg.admin.settings_write"],
+                ),
             uow=uow,
         )
 
@@ -539,7 +558,12 @@ async def test_boost_possible_autocommit_runs_lifecycle_before_error_escapes(
     with pytest.raises(RuntimeError, match="result materialization failed"):
         await crud.BoostNodeUseCase().execute(
             crud.BoostNodeCommand("board-1", "node-1"),
-            actor=crud.ActorContext("actor-1", "rest"),
+                actor=crud.ActorContext(
+                    "actor-1",
+                    "rest",
+                    board_id="board-1",
+                    permissions=["kg.admin.settings_write"],
+                ),
             uow=uow,
         )
 

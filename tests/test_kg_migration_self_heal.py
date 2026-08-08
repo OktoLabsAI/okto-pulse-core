@@ -227,8 +227,7 @@ def test_ts5_mcp_rest_payload_parity(fresh_board):
 
 
 def test_ts6_compensate_sync_warning_with_guidance(caplog, monkeypatch):
-    """AC6: `_compensate_graph_writes` failure logs at WARNING level with
-    `migrate-schema` guidance and NO destructive message."""
+    """Compensation setup failures propagate without acknowledging rollback."""
     from okto_pulse.core.kg.interfaces import get_kg_registry
 
     class _BrokenGraphTransaction:
@@ -241,23 +240,10 @@ def test_ts6_compensate_sync_warning_with_guidance(caplog, monkeypatch):
         _BrokenGraphTransaction(),
     )
     with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.primitives"):
-        primitives_mod._compensate_graph_writes("board-x", "session-x", [])
+        with pytest.raises(RuntimeError, match="simulated_lock_contention"):
+            primitives_mod._compensate_graph_writes("board-x", "session-x", [])
 
-    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-    msgs = [r.getMessage() for r in warnings]
-    assert any("kg.compensate_sync.failed" in m for m in msgs), msgs
-    # The remediation reference can be either `kg_migrate_schema` (the
-    # Python module name shipped in IMPL-A) or the MCP tool name. Both
-    # are valid — the key invariant is that there's an actionable pointer.
-    assert any(
-        "kg_migrate_schema" in m or "migrate-schema" in m for m in msgs
-    ), msgs
-    # No errors emitted (downgraded to warning).
-    errors = [r for r in caplog.records if r.levelname == "ERROR"]
-    assert not any("kg.compensate_sync.failed" in r.getMessage() for r in errors)
-    # No destructive guidance.
-    all_msgs = " ".join(msgs)
-    assert "Delete graph.kuzu" not in all_msgs
+    assert not caplog.records
 
 
 # ---------------------------------------------------------------------------

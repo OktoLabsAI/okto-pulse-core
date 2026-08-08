@@ -344,6 +344,33 @@ async def test_story_lifecycle_filters_and_archive(db_factory):
         assert moved is not None
         assert moved.status == StoryStatus.READY
 
+        moved_activity_count = await db.scalar(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(
+                ActivityLog.board_id == board_id,
+                ActivityLog.action == "story_moved",
+            )
+        )
+        same_state = await service.move_story(
+            story.id,
+            actor_id,
+            StoryMove(status=StoryStatus.READY),
+        )
+        assert same_state is not None
+        assert same_state.status == StoryStatus.READY
+        assert (
+            await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(
+                    ActivityLog.board_id == board_id,
+                    ActivityLog.action == "story_moved",
+                )
+            )
+            == moved_activity_count
+        )
+
         with pytest.raises(ValueError):
             await service.move_story(story.id, actor_id, StoryMove(status=StoryStatus.CONVERTED))
 
@@ -665,11 +692,31 @@ async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory)
     denied_ctx = _stub_ctx(board_id, owner_id)
     denied_ctx.permissions = ["board:read"]
     mcp_cases = [
-        ("okto_pulse_update_topic", {"topic_id": "topic", "name": "x"}, "topic.entity.edit_fields"),
-        ("okto_pulse_archive_topic", {"topic_id": "topic"}, "topic.entity.archive"),
-        ("okto_pulse_restore_topic", {"topic_id": "topic"}, "topic.entity.restore"),
-        ("okto_pulse_delete_topic", {"topic_id": "topic"}, "topic.entity.delete"),
-        ("okto_pulse_merge_topics", {"source_topic_id": "source", "target_topic_id": "target"}, "topic.entity.merge"),
+        (
+            "okto_pulse_update_topic",
+            {"topic_id": target.id, "name": "x"},
+            "topic.entity.edit_fields",
+        ),
+        (
+            "okto_pulse_archive_topic",
+            {"topic_id": target.id},
+            "topic.entity.archive",
+        ),
+        (
+            "okto_pulse_restore_topic",
+            {"topic_id": topic.id},
+            "topic.entity.restore",
+        ),
+        (
+            "okto_pulse_delete_topic",
+            {"topic_id": target.id},
+            "topic.entity.delete",
+        ),
+        (
+            "okto_pulse_merge_topics",
+            {"source_topic_id": topic.id, "target_topic_id": target.id},
+            "topic.entity.merge",
+        ),
         ("okto_pulse_update_story", {"story_id": permission_story_id, "title": "x"}, "story.entity.edit_fields"),
         ("okto_pulse_archive_story", {"story_id": permission_story_id}, "story.entity.archive"),
         ("okto_pulse_restore_story", {"story_id": permission_story_id}, "story.entity.restore"),

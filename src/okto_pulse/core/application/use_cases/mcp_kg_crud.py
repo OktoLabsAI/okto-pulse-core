@@ -29,6 +29,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
@@ -76,6 +80,15 @@ class ListCanonicalDebtUseCase:
         validate_canonical_debt_filters(
             artifact_type=command.artifact_type,
             state=command.state,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.integrity.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
         data = await uow.services.kg.list_canonical_debt(
             board_id=command.board_id,
@@ -140,6 +153,15 @@ class ListCanonicalPartitionIntegrityUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListCanonicalPartitionIntegrityResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.integrity.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.kg.list_canonical_partition_integrity(
             board_id=command.board_id,
             reason_code=command.reason_code,
@@ -183,6 +205,15 @@ class ListDigestLayerMismatchUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListDigestLayerMismatchResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.integrity.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.kg.list_digest_layer_mismatches(
             board_id=command.board_id,
             limit=command.limit,
@@ -226,6 +257,15 @@ class ReconcileDigestLayerUseCase:
         board = await load_accessible_board(uow, command.board_id, actor)
         if board is None:
             raise EntityNotFoundError("Board", command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.integrity.reconcile",
+                legacy_operation="kg.admin.settings_write",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         try:
             data = await uow.services.kg.enqueue_digest_layer_reconciliation(
@@ -280,7 +320,15 @@ class AuditOriginatesFromContractUseCase:
             audit_originates_from_contract,
         )
 
-        _ = actor
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.audit.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = audit_originates_from_contract(
             command.board_id,
             limit=command.limit,
@@ -343,6 +391,25 @@ class RebuildAdmissionGateUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> RebuildAdmissionGateResult:
+        operation = (
+            "kg.operations.rebuild.preflight"
+            if command.include_health
+            else "kg.operations.rebuild.run"
+        )
+        historical_authority = (
+            "kg.admin.settings_read"
+            if command.include_health
+            else "kg.admin.settings_write"
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                operation,
+                legacy_operation=historical_authority,
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         refusal = await uow.services.kg.invoke_rebuild_admission(
             command.refuse_fn,
             command.board_id,

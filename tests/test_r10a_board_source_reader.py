@@ -17,14 +17,20 @@ from okto_pulse.core.application.boundary.source_read_consumer_gate import (
     SourceReadConsumerGate,
 )
 from okto_pulse.core.kg.board_source_store import (
+    REFINEMENT_CONTENT_COLUMNS,
     SPEC_CONTENT_COLUMNS_V1,
     SPEC_CONTENT_COLUMNS_V2,
     SPEC_SOURCE_MANIFEST_VERSION,
     _canonical_content_hash,
+    projected_root_content_hash,
 )
 from okto_pulse.core.kg.interfaces.board_source_reader import (
     BoardSourceSnapshot,
     SourceReadError,
+)
+from okto_pulse.core.services.quality_projection_currentness import (
+    legacy_spec_validation_digest_set_v1,
+    legacy_spec_validation_versions_v1,
 )
 
 _board_source_reader = pytest.importorskip(
@@ -32,6 +38,7 @@ _board_source_reader = pytest.importorskip(
     reason="AF-04 Community integration test requires the Community board source reader.",
 )
 CommunityBoardSourceReader = _board_source_reader.CommunityBoardSourceReader
+read_realm_source_snapshot = _board_source_reader.read_realm_source_snapshot
 
 
 def _source_db(tmp_path: Path) -> Path:
@@ -146,9 +153,11 @@ def test_community_reader_preserves_source_contract_fields(tmp_path: Path) -> No
     assert spec["content_hash_v1"] == _canonical_content_hash(
         _spec_hash_row(), SPEC_CONTENT_COLUMNS_V1
     )
-    assert spec["content_hash"] == _canonical_content_hash(
+    content_hash_v2 = _canonical_content_hash(
         _spec_hash_row(), SPEC_CONTENT_COLUMNS_V2
     )
+    assert spec["content_hash_v2"] == content_hash_v2
+    assert spec["content_hash"] == projected_root_content_hash(content_hash_v2)
 
     decision = next(row for row in rows if row["artifact_type"] == "decision")
     assert decision["source_ref"] == "decision:s1:dec1"
@@ -181,6 +190,267 @@ def _spec_hash_row() -> dict[str, object]:
         "integration_requirements": '[ { "id" : "ir1" } ]',
         "observability_requirements": '[{"id":"or1"}]',
     }
+
+
+def _insert_mapping(
+    connection: sqlite3.Connection,
+    table_name: str,
+    values: dict[str, object],
+) -> None:
+    columns = tuple(values)
+    quoted_columns = ", ".join(f'"{column}"' for column in columns)
+    placeholders = ", ".join("?" for _ in columns)
+    connection.execute(
+        f'INSERT INTO "{table_name}" ({quoted_columns}) '
+        f"VALUES ({placeholders})",
+        tuple(values[column] for column in columns),
+    )
+
+
+def _seed_current_projection_heads(
+    connection: sqlite3.Connection,
+) -> None:
+    quality_subject = {
+        field_name: (
+            json.loads(value)
+            if isinstance(value, str)
+            and value.lstrip().startswith(("[", "{"))
+            else value
+        )
+        for field_name, value in _spec_hash_row().items()
+    }
+    quality_digests = legacy_spec_validation_digest_set_v1(
+        subject=quality_subject,
+        qa_items=(),
+    )
+    quality_versions = legacy_spec_validation_versions_v1()
+    refinement = {
+        column: None for column in REFINEMENT_CONTENT_COLUMNS
+    }
+    refinement.update(
+        {
+            "id": "r1",
+            "board_id": "b1",
+            "created_at": "2026-06-07T00:00:00Z",
+            "updated_at": "2026-06-07T00:00:00Z",
+            "archived": 0,
+            "title": "Refinement",
+            "description": "Refinement description",
+            "in_scope": '["scope"]',
+            "out_of_scope": "[]",
+            "analysis": "Analysis",
+            "decisions": "[]",
+            "status": "done",
+            "version": 2,
+            "labels": "[]",
+        }
+    )
+    _insert_mapping(connection, "refinements", refinement)
+
+    for receipt_id, subject_type, subject_id, score in (
+        ("quality-current", "spec", "s1", 2.0),
+        ("quality-history", "spec", "s1", 3.0),
+    ):
+        _insert_mapping(
+            connection,
+            "quality_assessment_receipts",
+            {
+                "id": receipt_id,
+                "board_id": "b1",
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "subject_version": 2,
+                "assessment_kind": "spec_validation",
+                "origin": "legacy_import",
+                "source": "legacy_migration",
+                "channel": "legacy_import",
+                "outcome": "recorded",
+                "scale_kind": "percentage",
+                "scale_minimum": 0.0,
+                "scale_maximum": 100.0,
+                "scale_direction": "lower_better",
+                "score": score,
+                "justification": f"Receipt {receipt_id}",
+                "content_digest": quality_digests.content_digest,
+                "clarification_digest": quality_digests.clarification_digest,
+                "ruleset_digest": quality_digests.ruleset_digest,
+                "taxonomy_digest": quality_digests.taxonomy_digest,
+                "policy_digest": quality_digests.policy_digest,
+                "input_digest": quality_digests.input_digest,
+                "canonicalization_version": (
+                    quality_digests.canonicalization_version
+                ),
+                "ruleset_version": quality_versions.ruleset_version,
+                "taxonomy_version": quality_versions.taxonomy_version,
+                "analyzer_version": quality_versions.analyzer_version,
+                "policy_version": quality_versions.policy_version,
+                "run_identity_digest": "1" * 64,
+                "authority_digest": "2" * 64,
+                "created_by": "agent",
+                "created_at": "2026-06-08T00:00:00Z",
+                "predecessor_receipt_id": None,
+                "contract_version": "quality-assessment/v1",
+                "head_revision": (
+                    1 if receipt_id == "quality-current" else 2
+                ),
+            },
+        )
+    _insert_mapping(
+        connection,
+        "quality_assessment_heads",
+        {
+            "board_id": "b1",
+            "subject_type": "spec",
+            "subject_id": "s1",
+            "assessment_kind": "spec_validation",
+            "receipt_id": "quality-current",
+            "revision": 1,
+            "updated_at": "2026-06-08T00:00:00Z",
+        },
+    )
+
+    for entry_id, rationale in (
+        ("rdl-current", "Current rationale"),
+        ("rdl-history", "Historical rationale"),
+    ):
+        _insert_mapping(
+            connection,
+            "research_decision_entries",
+            {
+                "id": entry_id,
+                "ledger_id": "ledger-1",
+                "board_id": "b1",
+                "refinement_id": "r1",
+                "refinement_version": 2,
+                "predecessor_entry_id": None,
+                "unknown": "Which retry strategy?",
+                "status": "resolved",
+                "anchor_type": "functional_requirement",
+                "anchor_ref": "fr_retry",
+                "evidence_refs": '["evidence:1"]',
+                "alternatives": '["bounded", "fixed"]',
+                "decision": "bounded",
+                "rationale": rationale,
+                "confidence": 0.9,
+                "evidence_absence_justification": None,
+                "created_by": "agent",
+                "created_at": "2026-06-08T00:00:00Z",
+            },
+        )
+    _insert_mapping(
+        connection,
+        "research_decision_heads",
+        {
+            "ledger_id": "ledger-1",
+            "board_id": "b1",
+            "refinement_id": "r1",
+            "current_entry_id": "rdl-current",
+            "revision": 1,
+            "refinement_version": 2,
+            "status": "resolved",
+            "updated_by": "agent",
+            "updated_at": "2026-06-08T00:00:00Z",
+        },
+    )
+
+
+def test_current_heads_bind_roots_without_pseudo_rows_and_readers_match(
+    tmp_path: Path,
+) -> None:
+    db_path = _source_db(tmp_path)
+    with sqlite3.connect(db_path) as connection:
+        _seed_current_projection_heads(connection)
+        connection.commit()
+
+    per_board = CommunityBoardSourceReader(db_path).fetch("b1")
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        statements: list[str] = []
+        connection.set_trace_callback(statements.append)
+        _boards, realm_rows = read_realm_source_snapshot(
+            connection,
+            realm_id="local",
+        )
+
+    assert per_board.complete is True
+    assert tuple(per_board.rows) == realm_rows["b1"]
+    assert sum(
+        "FROM quality_assessment_heads AS head" in statement
+        for statement in statements
+    ) == 1
+    assert sum(
+        "FROM research_decision_heads AS head" in statement
+        for statement in statements
+    ) == 1
+    assert not any(
+        row["artifact_type"]
+        in {"quality_assessment", "research_decision"}
+        for row in per_board.rows
+    )
+
+    baseline = {
+        row["source_ref"]: row["content_hash"]
+        for row in per_board.rows
+        if row["source_ref"] in {"spec:s1", "refinement:r1"}
+    }
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE quality_assessment_receipts SET score = 4 "
+            "WHERE id = 'quality-history'"
+        )
+        connection.execute(
+            "UPDATE research_decision_entries SET rationale = 'Changed history' "
+            "WHERE id = 'rdl-history'"
+        )
+        connection.commit()
+    history_only = {
+        row["source_ref"]: row["content_hash"]
+        for row in CommunityBoardSourceReader(db_path).fetch("b1").rows
+        if row["source_ref"] in baseline
+    }
+    assert history_only == baseline
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE quality_assessment_heads "
+            "SET receipt_id = 'quality-history', revision = 2 "
+            "WHERE board_id = 'b1' AND subject_type = 'spec' "
+            "AND subject_id = 's1' "
+            "AND assessment_kind = 'spec_validation'"
+        )
+        connection.execute(
+            "UPDATE research_decision_heads "
+            "SET current_entry_id = 'rdl-history', revision = 2 "
+            "WHERE ledger_id = 'ledger-1'"
+        )
+        connection.commit()
+    promoted = {
+        row["source_ref"]: row["content_hash"]
+        for row in CommunityBoardSourceReader(db_path).fetch("b1").rows
+        if row["source_ref"] in baseline
+    }
+    assert promoted["spec:s1"] != baseline["spec:s1"]
+    assert promoted["refinement:r1"] != baseline["refinement:r1"]
+
+
+def test_projection_catalog_is_required_for_board_and_realm_reads(
+    tmp_path: Path,
+) -> None:
+    db_path = _source_db(tmp_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("DROP TABLE quality_assessment_heads")
+        connection.commit()
+
+    snapshot = CommunityBoardSourceReader(db_path).fetch("b1")
+    assert snapshot.complete is False
+    assert snapshot.cause == "table_missing"
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        with pytest.raises(
+            sqlite3.DatabaseError,
+            match="source catalog is incomplete",
+        ):
+            read_realm_source_snapshot(connection, realm_id="local")
 
 
 def test_community_reader_translates_sqlite_errors_to_structured_source_error(

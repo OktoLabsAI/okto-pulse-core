@@ -38,6 +38,10 @@ from okto_pulse.core.ports.structured_spec import (
     StructuredSpecRecord,
     get_structured_spec_store,
 )
+from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
+from okto_pulse.core.services.requirement_lint_writer import (
+    stage_spec_requirement_lint,
+)
 from okto_pulse.core.services.main import (
     SpecLockedError,
     SpecService,
@@ -49,6 +53,9 @@ from okto_pulse.core.services.main import (
 # (spec 9d66847f) so SpecService.create_spec/update_spec can import the
 # canonicalizer without an import cycle. Re-exported here for existing callers.
 from okto_pulse.core.services.spec_entity_canonicalization import (  # noqa: F401
+    SPEC_REQUIREMENT_FIELDS,
+    canonicalize_spec_children,
+    canonicalize_spec_requirement_fields,
     spec_child_id,
     spec_child_text,
 )
@@ -119,6 +126,7 @@ _TECHNICAL_REQUIREMENT_FIELDS = {
     "id",
     "text",
     "title",
+    "locale",
     "linked_task_ids",
     "status",
     "notes",
@@ -601,6 +609,95 @@ class StructuredSpecEntityService:
                 current_items=current_items,
             )
             update_data = {field_name: new_items, **related_updates}
+
+            # Every structured semantic writer crosses the same final-state
+            # FR/TR/AC canonicalization boundary as bulk create/update. This
+            # also lazily materializes untouched legacy collections and
+            # validates cross-collection ID uniqueness before any mutation.
+            requirement_fields_before = {
+                requirement_field: copy.deepcopy(
+                    getattr(spec, requirement_field, None)
+                )
+                for requirement_field, _ in SPEC_REQUIREMENT_FIELDS
+            }
+            requirement_fields_final = {
+                requirement_field: (
+                    update_data[requirement_field]
+                    if requirement_field in update_data
+                    else current_value
+                )
+                for (
+                    requirement_field,
+                    current_value,
+                ) in requirement_fields_before.items()
+            }
+            canonical_requirements = canonicalize_spec_requirement_fields(
+                requirement_fields_final,
+                existing_fields=requirement_fields_before,
+            )
+            for requirement_field, canonical_value in (
+                canonical_requirements.items()
+            ):
+                if (
+                    requirement_field in update_data
+                    or canonical_value
+                    != requirement_fields_before[requirement_field]
+                ):
+                    update_data[requirement_field] = canonical_value
+
+            if command.operation == "create" and field_name in canonical_requirements:
+                created = canonical_requirements[field_name] or []
+                entity_id = spec_child_id(created[-1]) if created else entity_id
+
+            old_frs = list(
+                requirement_fields_before["functional_requirements"] or []
+            )
+            new_frs = list(
+                canonical_requirements["functional_requirements"] or []
+            )
+            if old_frs != new_frs:
+                fr_dependencies = {
+                    dependent_field: list(
+                        update_data.get(
+                            dependent_field,
+                            getattr(spec, dependent_field, None) or [],
+                        )
+                        or []
+                    )
+                    for dependent_field in (
+                        "business_rules",
+                        "api_contracts",
+                        "integration_requirements",
+                        "observability_requirements",
+                        "decisions",
+                    )
+                }
+                update_data.update(
+                    migrate_legacy_fr_refs(
+                        old_frs,
+                        new_frs,
+                        fr_dependencies,
+                    )
+                )
+
+            old_acs = list(
+                requirement_fields_before["acceptance_criteria"] or []
+            )
+            new_acs = list(canonical_requirements["acceptance_criteria"] or [])
+            if old_acs != new_acs:
+                migrated_scenarios = migrate_legacy_ac_refs(
+                    old_acs,
+                    new_acs,
+                    list(
+                        update_data.get(
+                            "test_scenarios",
+                            getattr(spec, "test_scenarios", None) or [],
+                        )
+                        or []
+                    ),
+                )
+                if migrated_scenarios is not None:
+                    update_data["test_scenarios"] = migrated_scenarios
             await _validate_spec_linked_refs(self.db, spec, update_data)
         except UnsupportedSpecEntityOperation as exc:
             return self._failure(command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION, str(exc))
@@ -616,7 +713,6 @@ class StructuredSpecEntityService:
 
         old_version = spec.version
         old_values = {field_name: copy.deepcopy(getattr(spec, field_name, None) or [])}
-        update_data = {field_name: new_items, **related_updates}
         for changed_field, value in update_data.items():
             old_values.setdefault(changed_field, copy.deepcopy(getattr(spec, changed_field, None) or []))
             setattr(spec, changed_field, value)
@@ -705,6 +801,13 @@ class StructuredSpecEntityService:
             self.db,
             spec,
             changed_fields=changed_fields,
+        )
+        await stage_spec_requirement_lint(
+            self.db,
+            spec,
+            actor_id=command.actor_id,
+            writer=RequirementLintWriter.STRUCTURED_CRUD,
+            changed_fields=tuple(changed_fields),
         )
 
         result = StructuredSpecEntityResult(
@@ -1004,6 +1107,14 @@ class StructuredSpecEntityService:
         operation = command.operation
         if operation == "create":
             item = self._validate_payload_for_create(command.entity_type, command.payload)
+            if command.entity_type in _LEGACY_MATERIALIZED_ENTITY_TYPES:
+                canonical = canonicalize_spec_children(
+                    command.entity_type,
+                    [*current_items, item],
+                    existing_items=current_items,
+                )
+                assert canonical is not None
+                item = canonical[-1]
             entity_id = self._entity_id(command.entity_type, item)
             self._reject_duplicate_id(command.entity_type, current_items, entity_id)
             return [*current_items, item], entity_id or str(len(current_items))
@@ -1035,19 +1146,34 @@ class StructuredSpecEntityService:
     def _validate_payload_for_create(self, entity_type: str, payload: dict[str, Any]) -> Any:
         payload = copy.deepcopy(payload or {})
         if entity_type in _TEXT_ENTITY_TYPES:
-            self._ensure_only_keys(payload, {"text", "title", "id", "status", "notes", "linked_task_ids"})
+            self._ensure_only_keys(
+                payload,
+                {
+                    "text",
+                    "title",
+                    "id",
+                    "locale",
+                    "status",
+                    "notes",
+                    "linked_task_ids",
+                },
+            )
             text = str(payload.get("text") or payload.get("title") or "").strip()
             if not text:
                 raise ValueError("text is required.")
             return {
-                "id": payload.get("id") or self._new_id(entity_type),
+                **({"id": payload["id"]} if payload.get("id") else {}),
                 "text": text,
                 "status": payload.get("status") or "active",
+                **(
+                    {"locale": payload["locale"]}
+                    if payload.get("locale") is not None
+                    else {}
+                ),
                 **({"notes": payload["notes"]} if payload.get("notes") is not None else {}),
                 **({"linked_task_ids": payload["linked_task_ids"]} if payload.get("linked_task_ids") is not None else {}),
             }
         if entity_type == "technical_requirement":
-            payload.setdefault("id", self._new_id(entity_type))
             self._validate_technical_requirement_payload(payload, creating=True)
             return payload
 
@@ -1071,13 +1197,23 @@ class StructuredSpecEntityService:
         if entity_type in _TEXT_ENTITY_TYPES:
             item_dict = self._as_dict(item)
             payload.pop("id", None)
-            self._ensure_only_keys(payload, {"text", "title", "status", "notes", "linked_task_ids"})
+            self._ensure_only_keys(
+                payload,
+                {
+                    "text",
+                    "title",
+                    "locale",
+                    "status",
+                    "notes",
+                    "linked_task_ids",
+                },
+            )
             if "text" in payload or "title" in payload:
                 text = str(payload.get("text") or payload.get("title") or "").strip()
                 if not text:
                     raise ValueError("text is required.")
                 item_dict["text"] = text
-            for key in ("status", "notes", "linked_task_ids"):
+            for key in ("locale", "status", "notes", "linked_task_ids"):
                 if key in payload:
                     item_dict[key] = payload[key]
             if "linked_task_ids" in item_dict and item_dict["linked_task_ids"] is not None:
@@ -1150,26 +1286,13 @@ class StructuredSpecEntityService:
         entity_type: str,
         items: list[Any],
     ) -> tuple[list[Any], list[dict[str, str]]]:
-        materialized: list[Any] = []
-        mappings: list[dict[str, str]] = []
-        for index, item in enumerate(items):
-            if isinstance(item, dict):
-                if not item.get("id"):
-                    item = {**item, "id": self._new_id(entity_type)}
-                materialized.append(item)
-                continue
-            entity_id = (
-                f"tr_legacy_{index}"
-                if entity_type == "technical_requirement"
-                else self._new_id(entity_type)
-            )
-            text = spec_child_text(item)
-            entry = {"id": entity_id, "text": text, "status": "active"}
-            if entity_type == "technical_requirement":
-                entry["linked_task_ids"] = None
-            materialized.append(entry)
-            mappings.append({"index": str(index), "text": text, "id": entity_id})
-        return materialized, mappings
+        canonical = canonicalize_spec_children(
+            entity_type,
+            items,
+            existing_items=items,
+        )
+        assert canonical is not None
+        return canonical, _build_materialization_mappings(items, canonical)
 
     def _migrate_materialized_legacy_refs(
         self,
@@ -1257,7 +1380,7 @@ class StructuredSpecEntityService:
 
     def _validate_technical_requirement_payload(self, payload: dict[str, Any], *, creating: bool) -> None:
         self._ensure_only_keys(payload, _TECHNICAL_REQUIREMENT_FIELDS)
-        if not str(payload.get("id") or "").strip():
+        if not creating and not str(payload.get("id") or "").strip():
             raise ValueError("id is required.")
         text = str(payload.get("text") or payload.get("title") or "").strip()
         if not text:

@@ -19,6 +19,7 @@ Domains (``BOOTSTRAP_DOMAINS``):
   * ``permissions``       — agent permission-flag reconcile.
   * ``discovery_intents`` — discovery-intent seed catalog bootstrap.
   * ``knowledge_propagation`` — resumable selective-propagation data backfill.
+  * ``quality_assessment`` — one-shot durable legacy assessment import.
 
 Failure semantics are fail-closed: a missing bootstrapper, an invalid plan or a
 failing step yields a structured failure carrying ``step_id`` / ``domain`` /
@@ -47,6 +48,7 @@ BootstrapDomain = Literal[
     "permissions",
     "discovery_intents",
     "knowledge_propagation",
+    "quality_assessment",
 ]
 #: Canonical domains the data-bootstrap fatia covers.
 BOOTSTRAP_DOMAINS: tuple[BootstrapDomain, ...] = (
@@ -54,6 +56,7 @@ BOOTSTRAP_DOMAINS: tuple[BootstrapDomain, ...] = (
     "permissions",
     "discovery_intents",
     "knowledge_propagation",
+    "quality_assessment",
 )
 
 #: Top-level bootstrap outcome. ``partial`` is a NON-SUCCESS diagnostic state.

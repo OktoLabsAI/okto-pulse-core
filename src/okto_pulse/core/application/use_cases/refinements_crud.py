@@ -47,16 +47,23 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
+    ConflictError,
     EntityNotFoundError,
+    PermissionDeniedError,
     commit,
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.mutation_permissions import (
+    transition_permission_requirement,
+)
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.application.history_pagination import (
     history_page_metadata,
     validate_history_window,
     validate_snapshot_version,
 )
+from okto_pulse.core.domain.enums import RefinementStatus
 
 
 _WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -379,16 +386,115 @@ class MoveRefinementUseCase:
         self, command: MoveRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveRefinementResult:
         service = uow.services.refinements
-        await _require_accessible_refinement(
+        existing = await _require_accessible_refinement(
             uow, command.refinement_id, actor, write=True
+        )
+        await require_authorization(
+            actor,
+            transition_permission_requirement(
+                "refinement",
+                existing.status,
+                command.data.status,
+                legacy_operation="specs:move",
+            ),
+            uow=uow,
+            board_id=existing.board_id,
         )
         refinement = await service.move_refinement(
             command.refinement_id, actor.actor_id, command.data
         )
         if not refinement:
             raise EntityNotFoundError("refinement", command.refinement_id)
+        if refinement.status == RefinementStatus.DONE:
+            from okto_pulse.core.application.use_cases.research_decision_ledger import (
+                ensure_research_decision_snapshot,
+            )
+
+            await ensure_research_decision_snapshot(
+                refinement=refinement,
+                uow=uow,
+            )
         await commit(uow)
         return MoveRefinementResult(await service.get_refinement(command.refinement_id))
+
+
+# --- human-only ambiguity-gate skip ----------------------------------------
+
+
+class SetRefinementAmbiguityGateSkipCommand:
+    __slots__ = (
+        "refinement_id",
+        "skip",
+        "reason",
+        "expected_refinement_version",
+    )
+
+    def __init__(
+        self,
+        refinement_id: str,
+        *,
+        skip: bool,
+        reason: str,
+        expected_refinement_version: int,
+    ) -> None:
+        self.refinement_id = refinement_id
+        self.skip = skip
+        self.reason = reason
+        self.expected_refinement_version = expected_refinement_version
+
+
+class SetRefinementAmbiguityGateSkipResult:
+    __slots__ = ("skipped", "activity_id", "version")
+
+    def __init__(self, *, skipped: bool, activity_id: str, version: int) -> None:
+        self.skipped = skipped
+        self.activity_id = activity_id
+        self.version = version
+
+
+class SetRefinementAmbiguityGateSkipUseCase:
+    """Apply/remove the narrowly-scoped human governance override."""
+
+    async def execute(
+        self,
+        command: SetRefinementAmbiguityGateSkipCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> SetRefinementAmbiguityGateSkipResult:
+        if actor.source != "rest":
+            raise PermissionDeniedError("human_actor_required")
+        await _require_accessible_refinement(
+            uow,
+            command.refinement_id,
+            actor,
+            write=True,
+        )
+        try:
+            result = await uow.services.refinements.set_ambiguity_gate_skip(
+                command.refinement_id,
+                actor.actor_id,
+                command.skip,
+                reason=command.reason,
+                expected_refinement_version=command.expected_refinement_version,
+                source="rest",
+                actor_name=actor.actor_name,
+            )
+        except ValueError as exc:
+            if str(exc) == "version_conflict":
+                raise ConflictError(
+                    "refinement_version",
+                    command.refinement_id,
+                ) from exc
+            raise
+        if result is None:
+            raise EntityNotFoundError("refinement", command.refinement_id)
+        await commit(uow)
+        return SetRefinementAmbiguityGateSkipResult(
+            skipped=result.skipped,
+            activity_id=result.activity_id,
+            version=result.version,
+        )
 
 
 # --- delete -----------------------------------------------------------------
@@ -490,6 +596,15 @@ class DeriveSpecFromRefinementUseCase:
         )
         if not spec:
             raise EntityNotFoundError("refinement", command.refinement_id)
+        from okto_pulse.core.application.use_cases.research_decision_ledger import (
+            bind_research_decisions_to_spec,
+        )
+
+        await bind_research_decisions_to_spec(
+            refinement=refinement,
+            spec=spec,
+            uow=uow,
+        )
         await commit(uow)
         return DeriveSpecFromRefinementResult(await uow.services.specs.get_spec(spec.id))
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from okto_pulse.core.application.boundary.core_test_suite_import_gate import (
     CoreTestCommunityImportClassification,
@@ -13,6 +16,7 @@ from okto_pulse.core.application.boundary.core_test_suite_import_gate import (
     run_core_test_community_import_gate,
     scan_core_test_community_imports,
 )
+from repository_checkout_testing import community_repo_for
 
 
 CORE_REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -206,12 +210,30 @@ def test_af04_runtime_dependency_skip_reason_is_core_only_and_explicit():
     )
 
 
-def test_af04_conftest_no_longer_injects_community_sibling_path():
+def test_af04_conftest_prefers_checked_out_edition_source_trees():
     source = (CORE_REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
 
-    assert "okto_labs_pulse_community" not in source
-    assert "_COMMUNITY_SRC" not in source
-    assert "sys.path.insert(0, str(_CORE_SRC))" in source
+    assert "activate_repository_checkout_paths" in source
+    assert "anchor_repo=_CORE_SRC.parent" in source
+    assert "required=False" in source
+    assert "sys.path.insert(0, _core_source_text)" in source
+
+
+def test_af04_checked_out_core_and_community_modules_win_over_site_packages():
+    try:
+        community_src = community_repo_for(CORE_REPO_ROOT) / "src"
+    except RuntimeError:
+        pytest.skip("Community sibling source tree is not checked out")
+
+    core_config = importlib.import_module("okto_pulse.core.infra.config")
+    community_config = importlib.import_module("okto_pulse.community.config")
+    core_origin = Path(core_config.__file__).resolve()
+    community_origin = Path(community_config.__file__).resolve()
+
+    assert core_origin.is_relative_to(CORE_REPO_ROOT / "src"), core_origin
+    assert community_origin.is_relative_to(community_src), community_origin
+    assert "site-packages" not in str(core_origin).lower()
+    assert "site-packages" not in str(community_origin).lower()
 
 
 def test_af04_boundary_gate_import_smoke_does_not_load_community_package():

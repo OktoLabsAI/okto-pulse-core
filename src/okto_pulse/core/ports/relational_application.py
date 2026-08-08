@@ -7,13 +7,29 @@ time. This keeps application services from reaching into a concrete adapter.
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from .mcp_auth import AgentAuthSession
+
+if TYPE_CHECKING:
+    from .checklist import ChecklistPersistencePort
+    from .guideline_policy import (
+        GuidelinePolicyPersistencePort,
+        SemanticGuidelineAssessmentPersistencePort,
+    )
+    from .quality_assessment import QualityAssessmentPersistencePort
+    from .quality_assessment_lifecycle import (
+        QualityAssessmentLifecyclePersistencePort,
+    )
+    from .research_decision_ledger import ResearchDecisionLedgerPersistencePort
 
 
 class RelationalApplicationAdapterMissing(RuntimeError):
@@ -27,6 +43,8 @@ class EffectivePermissions:
     board_id: str
     preset_name: str | None
     flags: dict[str, Any]
+    owner_review_required: bool = False
+    review_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +58,8 @@ class PermissionPresetView:
     is_builtin: bool
     base_preset_id: str | None
     flags: dict[str, Any] | None
+    owner_review_required: bool = False
+    review_reason: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -63,6 +83,8 @@ class PermissionPresetGateway(Protocol):
 
     async def list_presets(self, *, user_id: str) -> list[PermissionPresetView]: ...
 
+    async def get_preset(self, *, preset_id: str) -> PermissionPresetView | None: ...
+
     async def create_preset(
         self,
         *,
@@ -70,6 +92,7 @@ class PermissionPresetGateway(Protocol):
         name: str,
         description: str,
         flags: dict[str, Any] | None,
+        preset_id: str | None = None,
     ) -> PermissionPresetView: ...
 
     async def clone_preset(
@@ -90,6 +113,7 @@ class PermissionPresetGateway(Protocol):
         name: str | None,
         description: str | None,
         flags: dict[str, Any] | None,
+        replace: bool = False,
     ) -> PermissionPresetView | None: ...
 
     async def delete_preset(self, *, preset_id: str, user_id: str) -> bool: ...
@@ -118,6 +142,47 @@ class RelationalApplicationAdapter(Protocol):
 
     def permission_presets(self, session: Any) -> PermissionPresetGateway: ...
 
+    def quality_assessments(
+        self,
+        session: Any,
+    ) -> "QualityAssessmentPersistencePort":
+        """Return the transaction-bound SK-A assessment persistence port."""
+        ...
+
+    def quality_assessment_lifecycle(
+        self,
+        session: Any,
+    ) -> "QualityAssessmentLifecyclePersistencePort":
+        """Return the transaction-bound SK-A lifecycle and purge port."""
+        ...
+
+    def checklists(self, session: Any) -> "ChecklistPersistencePort":
+        """Return the transaction-bound A3 checklist persistence port."""
+        ...
+
+    def research_decisions(
+        self,
+        session: Any,
+    ) -> "ResearchDecisionLedgerPersistencePort":
+        """Return the transaction-bound SK-A RDL persistence port."""
+        ...
+
+    def guideline_policy(
+        self,
+        session: Any,
+    ) -> "GuidelinePolicyPersistencePort":
+        """Return the transaction-bound SK-B guideline policy authority."""
+
+        ...
+
+    def semantic_guideline_assessments(
+        self,
+        session: Any,
+    ) -> "SemanticGuidelineAssessmentPersistencePort":
+        """Return the transaction-bound SK-B3 evidence authority."""
+
+        ...
+
     def amendment_revision_backend(self, session: Any) -> Any: ...
 
     def agent_authentication(self, session: Any) -> AgentAuthenticationGateway: ...
@@ -126,7 +191,9 @@ class RelationalApplicationAdapter(Protocol):
 _RUNTIME_KEY = "ports.relational_application.adapter"
 
 
-def register_relational_application_adapter(adapter: RelationalApplicationAdapter) -> None:
+def register_relational_application_adapter(
+    adapter: RelationalApplicationAdapter,
+) -> None:
     """Register the relational adapter bundle selected by the edition."""
 
     register_runtime_value(_RUNTIME_KEY, adapter)

@@ -32,13 +32,49 @@ version: "1.0"
 **Test card naming convention:** Prefix with `[TEST]`:
 Example: `[TEST] E2E — Valid OAuth2 token grants access`
 
-Evidence gate for `okto_pulse_update_test_scenario_status` (NC-9, active unless `skip_test_evidence_global=true`):
+### Evidence gate (NC-9)
+
+For `okto_pulse_update_test_scenario_status`, active unless
+`skip_test_evidence_global=true`:
 
 - `draft`, `ready` — evidence optional.
 - `automated` — requires `evidence.test_file_path` + `test_function`.
 - `passed`, `failed` — requires an explicit `evidence_class` with its required fields, OR complete unclassed run-log evidence: `last_run_at` AND (`output_snippet` OR `test_run_id`) AND `expected_output_snapshot` AND `non_replayable_justification`.
 
 Canonical contract (evidence classes, replay rules, skip audit): `okto-pulse://reference/tool-docs/test-scenario`. Pass evidence as a JSON string in the `evidence` parameter.
+
+### Impact evidence on test cards — reference-first
+
+When a conclusion carries the optional `impact_evidence` block
+(SK-B2-S1, `schema_version=1`), test cards follow the **reference-first**
+rule:
+
+- `tests.added` / `tests.updated` entries declare **authored artifacts**
+  (the test files/functions you wrote or changed) — never scenario
+  outcomes. Scenario outcomes are owned by
+  `okto_pulse_update_test_scenario_status` and are **never re-declared**
+  inside the block.
+- `evidence_refs` point at scenario ids **always** — recommended format
+  `ts_<id>` (e.g. `ts_a1b2c3d4`). Receipts/manifests enter
+  `evidence_refs` **only when the scenario carries Evidence V2**; without
+  Evidence V2 the scenario id alone is the reference (graceful
+  degradation: scenario ids always; receipts only with Evidence V2).
+- `tests[].scenario_id` is the OPTIONAL back-reference from an authored
+  test artifact to the scenario it covers; it never replaces the
+  `evidence_refs` entry, which stays mandatory for every covered scenario.
+- The block is **claim-only**: it never substitutes the NC-9 evidence gate
+  (see **Evidence gate (NC-9)** above), and it is explicitly distinct from
+  the authenticated `guideline_impact_evidence` family (below).
+
+### `impact_evidence` vs `guideline_impact_evidence`
+
+These are different constructs and must not be conflated:
+`impact_evidence` (this block) is a **declared, unauthenticated claim**
+recorded by the conclusion author and later diffed against reality by the
+validator. `guideline_impact_evidence` is the **authenticated** flow owned
+by the semantic guideline machinery (receipts sealed by Pulse with
+digests and fences). Declaring one never satisfies the other. For the
+authenticated family, see `okto-pulse://reference/policy-compliance`.
 
 ## Bug Card Rules
 

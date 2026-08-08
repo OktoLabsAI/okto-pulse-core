@@ -9,7 +9,10 @@ identity provider without importing FastAPI or Community code.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Literal, Mapping, Protocol, runtime_checkable
+
+
+PrincipalKind = Literal["human", "agent", "system", "unknown"]
 
 
 class AuthenticationError(Exception):
@@ -52,14 +55,17 @@ class Credential:
 class Principal:
     """Authenticated identity consumed by application policies.
 
-    Claims remain adapter-provided data.  The Core only relies on ``subject``
-    and the optional ``realm_id``; REST compatibility can project claims at the
-    edge without leaking a framework or provider-specific object inward.
+    Claims remain adapter-provided data.  The Core relies on ``subject``, the
+    optional ``realm_id`` and the closed ``actor_kind`` identity assertion;
+    REST compatibility can project claims at the edge without leaking a
+    framework or provider-specific object inward.  ``unknown`` deliberately
+    fails closed for operations reserved to an explicitly authenticated human.
     """
 
     subject: str
     realm_id: str | None = None
     claims: Mapping[str, Any] = field(default_factory=dict)
+    actor_kind: PrincipalKind = "unknown"
 
     def legacy_user(self) -> dict[str, Any]:
         """Return the historical REST user mapping without sharing mutable state."""
@@ -95,4 +101,5 @@ __all__ = [
     "InvalidCredential",
     "MissingCredential",
     "Principal",
+    "PrincipalKind",
 ]

@@ -107,6 +107,7 @@ from okto_pulse.core.application.processors.deterministic_kg import (
     DeterministicWorker,
     EmittedEdge,
     EmittedNode,
+    RelationalProjectionActiveSetIntent,
     WORKER_VERSION,
     WorkerResult,
     _spec_child_ref,
@@ -1106,17 +1107,34 @@ def _worker_edge_to_candidate(edge: EmittedEdge) -> EdgeCandidate:
 
 
 def _run_deterministic_worker(
-    entry: ConsolidationQueueRecord, artifact: Any
+    entry: ConsolidationQueueRecord,
+    artifact: Any,
+    projection_inputs: Any | None = None,
 ) -> WorkerResult:
     worker = DeterministicWorker()
+    quality_assessments = [
+        item.to_worker_dict()
+        for item in getattr(projection_inputs, "quality_assessments", ())
+    ]
+    research_decisions = [
+        item.to_worker_dict()
+        for item in getattr(projection_inputs, "research_decisions", ())
+    ]
     if entry.artifact_type == "story":
         return worker.process_story(_story_to_dict(artifact))
     if entry.artifact_type == "ideation":
-        return worker.process_ideation(_ideation_to_dict(artifact))
+        payload = _ideation_to_dict(artifact)
+        payload["quality_assessments"] = quality_assessments
+        return worker.process_ideation(payload)
     if entry.artifact_type == "refinement":
-        return worker.process_refinement(_refinement_to_dict(artifact))
+        payload = _refinement_to_dict(artifact)
+        payload["quality_assessments"] = quality_assessments
+        payload["research_decisions"] = research_decisions
+        return worker.process_refinement(payload)
     if entry.artifact_type == "spec":
-        return worker.process_spec(_spec_to_dict(artifact))
+        payload = _spec_to_dict(artifact)
+        payload["quality_assessments"] = quality_assessments
+        return worker.process_spec(payload)
     if entry.artifact_type == "sprint":
         return worker.process_sprint(_sprint_to_dict(artifact))
     if entry.artifact_type == "card":
@@ -2130,7 +2148,8 @@ async def _process_queue_entry(
     }:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
         return False
-    artifact = await get_consolidation_persistence_port().load_artifact(
+    persistence = get_consolidation_persistence_port()
+    artifact = await persistence.load_artifact(
         db,
         artifact_type=entry.artifact_type,
         artifact_id=entry.artifact_id,
@@ -2188,20 +2207,51 @@ async def _process_queue_entry(
                 "artifact_status": str(artifact_status or ""),
             },
         )
-        return True
-
-    worker_result = _run_deterministic_worker(entry, artifact)
-    worker_result = await _materialize_lineage_endpoint_nodes(
-        db,
-        entry,
-        artifact,
-        worker_result,
-    )
-    worker_result = await _resolve_missing_link_candidates(
-        db,
-        entry.board_id,
-        worker_result,
-    )
+        if entry.artifact_type != "refinement":
+            return True
+        # A cancelled Refinement still owns an RDL projection namespace. Run
+        # an empty replacement so its relationally-derived children converge
+        # without re-materializing the cancelled root.
+        worker_result = WorkerResult(
+            raw_content=(
+                "relational-projection-cleanup:"
+                f"refinement:{entry.artifact_id}:cancelled"
+            ),
+            relational_projection_active_set_intent=(
+                RelationalProjectionActiveSetIntent(
+                    owner_type="refinement",
+                    owner_id=entry.artifact_id,
+                    namespace="rdl",
+                    active_refs=(),
+                )
+            ),
+        )
+    else:
+        projection_inputs = None
+        if entry.artifact_type in {"ideation", "refinement", "spec"}:
+            projection_inputs = await persistence.load_projection_inputs(
+                db,
+                board_id=entry.board_id,
+                artifact_type=entry.artifact_type,
+                artifact_id=entry.artifact_id,
+                artifact=artifact,
+            )
+        worker_result = _run_deterministic_worker(
+            entry,
+            artifact,
+            projection_inputs,
+        )
+        worker_result = await _materialize_lineage_endpoint_nodes(
+            db,
+            entry,
+            artifact,
+            worker_result,
+        )
+        worker_result = await _resolve_missing_link_candidates(
+            db,
+            entry.board_id,
+            worker_result,
+        )
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content
@@ -2216,7 +2266,10 @@ async def _process_queue_entry(
         len(worker_result.missing_link_candidates),
     )
 
-    if not node_candidates:
+    if (
+        not node_candidates
+        and worker_result.relational_projection_active_set_intent is None
+    ):
         return True  # nothing to do, but not a failure
 
     # 1. begin_consolidation (db=None to skip dedup — historical is forced re-processing)
@@ -2235,6 +2288,12 @@ async def _process_queue_entry(
             worker_result,
             "spec_lineage_parent_intent",
             SpecLineageParentIntent.PRESERVE,
+        ),
+        relational_projection_candidate_ids=frozenset(
+            worker_result.relational_projection_candidate_ids
+        ),
+        relational_projection_active_set_intent=(
+            worker_result.relational_projection_active_set_intent
         ),
     )
     session_id = begin_resp.session_id

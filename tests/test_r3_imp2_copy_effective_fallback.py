@@ -50,7 +50,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r3 tester"
-        self.permissions = object()
+        self.permissions = ["*"]
 
 
 def test_architecture_fallback_refs_dedupe_by_source_design_identity():

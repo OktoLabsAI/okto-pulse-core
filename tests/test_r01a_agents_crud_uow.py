@@ -22,9 +22,11 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import agents as agents_api
 from okto_pulse.community.api.agents import router as agents_router
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import require_principal
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 
 USER = "r01a-fu1-user"
 OTHER = "r01a-fu1-other"
@@ -51,8 +53,12 @@ def _client(user: str = USER) -> TestClient:
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[require_user] = lambda: user
-    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=user,
+        realm_id=LOCAL_REALM_ID,
+        actor_kind="human",
+        claims={"permissions": registered_permission_flags()},
+    )
     return TestClient(app)
 
 
@@ -142,6 +148,31 @@ async def test_list_agents_for_board_owned_200() -> None:
     resp = _client().get(f"/api/v1/agents/board/{board_id}")
     assert resp.status_code == 200, resp.text
     assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_list_agents_for_board_projects_direct_delta_and_raw_ceiling_separately() -> None:
+    agent_id = await _seed_agent()
+    board_id = await _seed_board()
+    client = _client()
+    grant = client.post(f"/api/v1/agents/{agent_id}/boards/{board_id}")
+    assert grant.status_code == 201, grant.text
+
+    ceiling = {
+        "board": {"read": False},
+        "spec": {"quality": {"read": True}},
+    }
+    updated = client.patch(
+        f"/api/v1/agents/{agent_id}/boards/{board_id}",
+        json={"permission_overrides": ceiling},
+    )
+    assert updated.status_code == 200, updated.text
+
+    response = client.get(f"/api/v1/agents/board/{board_id}")
+    assert response.status_code == 200, response.text
+    projected = next(item for item in response.json() if item["id"] == agent_id)
+    assert projected["permission_flags"] is None
+    assert projected["permission_overrides"] == ceiling
 
 
 # --- regenerate-key / delete (write) ----------------------------------------

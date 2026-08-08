@@ -16,10 +16,13 @@ from typing import Any
 
 from okto_pulse.core.ports.mcp_auth import AgentAuthSession
 from okto_pulse.core.ports.permission_policy import (
+    PermissionPresetLineageNode,
     builtin_preset_name,
+    explicit_permission_overrides,
     flatten_permission_flags,
     get_permission_flag,
     resolve_effective_permissions,
+    resolve_preset_lineage,
     set_permission_flag,
 )
 from okto_pulse.core.ports.relational_application import (
@@ -48,7 +51,7 @@ class _FakePreset:
     description: str | None
     is_builtin: bool
     base_preset_id: str | None
-    flags: dict[str, Any] | None
+    flags: Any
     created_at: datetime
     updated_at: datetime
 
@@ -57,7 +60,26 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _preset_view(preset: _FakePreset) -> PermissionPresetView:
+def _lineage_nodes(
+    presets: list[_FakePreset] | tuple[_FakePreset, ...],
+) -> tuple[PermissionPresetLineageNode, ...]:
+    return tuple(
+        PermissionPresetLineageNode(
+            id=preset.id,
+            base_preset_id=preset.base_preset_id,
+            flags=copy.deepcopy(preset.flags),
+        )
+        for preset in presets
+    )
+
+
+def _preset_view(
+    preset: _FakePreset,
+    *,
+    flags: dict[str, Any] | None = None,
+    owner_review_required: bool = False,
+    review_reason: str | None = None,
+) -> PermissionPresetView:
     return PermissionPresetView(
         id=preset.id,
         owner_id=preset.owner_id,
@@ -65,7 +87,15 @@ def _preset_view(preset: _FakePreset) -> PermissionPresetView:
         description=preset.description,
         is_builtin=preset.is_builtin,
         base_preset_id=preset.base_preset_id,
-        flags=copy.deepcopy(preset.flags) if preset.flags is not None else None,
+        flags=(
+            copy.deepcopy(flags)
+            if flags is not None
+            else copy.deepcopy(preset.flags)
+            if preset.flags is not None
+            else None
+        ),
+        owner_review_required=owner_review_required,
+        review_reason=review_reason,
         created_at=preset.created_at,
         updated_at=preset.updated_at,
     )
@@ -79,16 +109,30 @@ class _FakePermissionPresetGateway:
         self, *, user_id: str, board_id: str
     ) -> EffectivePermissions:
         agent = self._adapter._agents.get(user_id)
-        agent_flags = agent.permissions if isinstance(getattr(agent, "permissions", None), dict) else None
-        preset = (
-            self._adapter._presets.get(agent.preset_id)
-            if agent is not None and agent.preset_id
+        agent_flags = (
+            agent.permissions
+            if isinstance(getattr(agent, "permissions", None), dict)
             else None
         )
+        preset = None
+        preset_flags = None
+        owner_review_required = False
+        review_reason = None
+        if agent is not None and agent.preset_id:
+            preset = self._adapter._presets.get(agent.preset_id)
+            lineage = resolve_preset_lineage(
+                agent.preset_id,
+                _lineage_nodes(list(self._adapter._presets.values())),
+            )
+            preset_flags = lineage.flags
+            owner_review_required = lineage.owner_review_required
+            review_reason = lineage.review_reason
         resolved = resolve_effective_permissions(
             agent_flags,
-            preset.flags if preset is not None else None,
+            preset_flags,
             None,
+            owner_review_required=owner_review_required,
+            review_reason=review_reason,
         )
         return EffectivePermissions(
             board_id=board_id,
@@ -98,6 +142,8 @@ class _FakePermissionPresetGateway:
                 else builtin_preset_name(resolved.flags)
             ),
             flags=copy.deepcopy(resolved.flags),
+            owner_review_required=resolved.owner_review_required,
+            review_reason=resolved.review_reason,
         )
 
     async def list_presets(self, *, user_id: str) -> list[PermissionPresetView]:
@@ -107,7 +153,23 @@ class _FakePermissionPresetGateway:
             if preset.is_builtin or preset.owner_id == user_id
         ]
         presets.sort(key=lambda preset: (not preset.is_builtin, preset.name))
-        return [_preset_view(preset) for preset in presets]
+        nodes = _lineage_nodes(list(self._adapter._presets.values()))
+        views: list[PermissionPresetView] = []
+        for preset in presets:
+            lineage = resolve_preset_lineage(preset.id, nodes)
+            views.append(
+                _preset_view(
+                    preset,
+                    flags=lineage.flags,
+                    owner_review_required=lineage.owner_review_required,
+                    review_reason=lineage.review_reason,
+                )
+            )
+        return views
+
+    async def get_preset(self, *, preset_id: str) -> PermissionPresetView | None:
+        preset = self._adapter._presets.get(preset_id)
+        return _preset_view(preset) if preset is not None else None
 
     async def create_preset(
         self,
@@ -116,21 +178,26 @@ class _FakePermissionPresetGateway:
         name: str,
         description: str,
         flags: dict[str, Any] | None,
+        preset_id: str | None = None,
     ) -> PermissionPresetView:
         created_at = _now()
         preset = _FakePreset(
-            id=str(uuid.uuid4()),
+            id=preset_id or str(uuid.uuid4()),
             owner_id=user_id,
             name=name,
             description=description or None,
             is_builtin=False,
             base_preset_id=None,
-            flags=copy.deepcopy(flags) if flags is not None else None,
+            flags=copy.deepcopy(flags) if flags is not None else {},
             created_at=created_at,
             updated_at=created_at,
         )
         self._adapter._presets[preset.id] = preset
-        return _preset_view(preset)
+        lineage = resolve_preset_lineage(
+            preset.id,
+            _lineage_nodes([preset]),
+        )
+        return _preset_view(preset, flags=lineage.flags)
 
     async def clone_preset(
         self,
@@ -144,12 +211,20 @@ class _FakePermissionPresetGateway:
         source = self._adapter._presets.get(source_preset_id)
         if source is None:
             return None
-        cloned_flags = copy.deepcopy(source.flags) if source.flags is not None else {}
-        if flags:
+        source_lineage = resolve_preset_lineage(
+            source.id,
+            _lineage_nodes(list(self._adapter._presets.values())),
+        )
+        desired_flags = copy.deepcopy(source_lineage.flags)
+        if flags is not None:
             for path in flatten_permission_flags(flags):
                 value = get_permission_flag(flags, path)
                 if value is not None:
-                    set_permission_flag(cloned_flags, path, value)
+                    set_permission_flag(desired_flags, path, value)
+        cloned_flags = explicit_permission_overrides(
+            source_lineage.flags,
+            desired_flags,
+        )
         created_at = _now()
         preset = _FakePreset(
             id=str(uuid.uuid4()),
@@ -163,7 +238,16 @@ class _FakePermissionPresetGateway:
             updated_at=created_at,
         )
         self._adapter._presets[preset.id] = preset
-        return _preset_view(preset)
+        lineage = resolve_preset_lineage(
+            preset.id,
+            _lineage_nodes(list(self._adapter._presets.values())),
+        )
+        return _preset_view(
+            preset,
+            flags=lineage.flags,
+            owner_review_required=lineage.owner_review_required,
+            review_reason=lineage.review_reason,
+        )
 
     async def update_preset(
         self,
@@ -173,6 +257,7 @@ class _FakePermissionPresetGateway:
         name: str | None,
         description: str | None,
         flags: dict[str, Any] | None,
+        replace: bool = False,
     ) -> PermissionPresetView | None:
         preset = self._adapter._presets.get(preset_id)
         if preset is None:
@@ -183,12 +268,31 @@ class _FakePermissionPresetGateway:
             raise PermissionError("You can only modify your own presets")
         if name is not None:
             preset.name = name
-        if description is not None:
+        if replace or description is not None:
             preset.description = description
-        if flags is not None:
-            preset.flags = copy.deepcopy(flags)
+        if replace or flags is not None:
+            if preset.base_preset_id is None:
+                preset.flags = copy.deepcopy(flags)
+            else:
+                base_lineage = resolve_preset_lineage(
+                    preset.base_preset_id,
+                    _lineage_nodes(list(self._adapter._presets.values())),
+                )
+                preset.flags = explicit_permission_overrides(
+                    base_lineage.flags,
+                    flags,
+                )
         preset.updated_at = _now()
-        return _preset_view(preset)
+        lineage = resolve_preset_lineage(
+            preset.id,
+            _lineage_nodes(list(self._adapter._presets.values())),
+        )
+        return _preset_view(
+            preset,
+            flags=lineage.flags,
+            owner_review_required=lineage.owner_review_required,
+            review_reason=lineage.review_reason,
+        )
 
     async def delete_preset(self, *, preset_id: str, user_id: str) -> bool:
         preset = self._adapter._presets.get(preset_id)
@@ -226,7 +330,9 @@ class _FakeAgentAuthenticationGateway:
 
     async def agent_has_board_access(self, agent_id: str, board_id: str) -> bool:
         agent = self._adapter._agents.get(agent_id)
-        return bool(agent is not None and agent.is_active and board_id in agent.board_ids)
+        return bool(
+            agent is not None and agent.is_active and board_id in agent.board_ids
+        )
 
     async def resolve_agent_permission_context(
         self, agent_id: str, *, board_id: str | None = None
@@ -236,11 +342,23 @@ class _FakeAgentAuthenticationGateway:
             return None
         if board_id is not None and board_id not in agent.board_ids:
             return None
-        preset = self._adapter._presets.get(agent.preset_id) if agent.preset_id else None
+        preset_flags = None
+        owner_review_required = False
+        review_reason = None
+        if agent.preset_id:
+            lineage = resolve_preset_lineage(
+                agent.preset_id,
+                _lineage_nodes(list(self._adapter._presets.values())),
+            )
+            preset_flags = lineage.flags
+            owner_review_required = lineage.owner_review_required
+            review_reason = lineage.review_reason
         permissions = resolve_effective_permissions(
             agent.permissions if isinstance(agent.permissions, dict) else None,
-            preset.flags if preset is not None else None,
+            preset_flags,
             None,
+            owner_review_required=owner_review_required,
+            review_reason=review_reason,
         )
         return AgentPermissionContext(
             agent_id=agent.agent_id,
@@ -282,6 +400,64 @@ class FakeSaaSRelationalApplicationAdapter:
     def permission_presets(self, session: Any) -> _FakePermissionPresetGateway:
         _ = session
         return self._permission_gateway
+
+    def quality_assessments(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.quality_assessment import (
+            QualityAssessmentAdapterMissing,
+        )
+
+        raise QualityAssessmentAdapterMissing(
+            "The SaaS fake does not model quality-assessment persistence."
+        )
+
+    def quality_assessment_lifecycle(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.quality_assessment_lifecycle import (
+            AssessmentLifecycleAdapterMissing,
+        )
+
+        raise AssessmentLifecycleAdapterMissing(
+            "The SaaS fake does not model quality lifecycle persistence."
+        )
+
+    def research_decisions(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.research_decision_ledger import (
+            ResearchDecisionAdapterMissing,
+        )
+
+        raise ResearchDecisionAdapterMissing(
+            "The SaaS fake does not model research-decision persistence."
+        )
+
+    def checklists(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.checklist import ChecklistAdapterMissing
+
+        raise ChecklistAdapterMissing(
+            "The SaaS fake does not model checklist persistence."
+        )
+
+    def guideline_policy(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyAdapterMissing,
+        )
+
+        raise GuidelinePolicyAdapterMissing(
+            "The SaaS fake does not model guideline-policy persistence."
+        )
+
+    def semantic_guideline_assessments(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.guideline_policy import (
+            GuidelinePolicyAdapterMissing,
+        )
+
+        raise GuidelinePolicyAdapterMissing(
+            "The SaaS fake does not model semantic-guideline persistence."
+        )
 
     def amendment_revision_backend(self, session: Any) -> Any:
         _ = session

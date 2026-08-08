@@ -20,6 +20,14 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from okto_pulse.core.application.use_cases.authorize_operation import (
+    AuthorizeOperationCommand,
+    AuthorizeOperationUseCase,
+)
+from okto_pulse.core.application.use_cases.base import (
+    ActorContext,
+    PermissionDeniedError,
+)
 from okto_pulse.core.kg.guarded_write import (
     GuardedWriteError,
     guarded_board_write,
@@ -667,6 +675,29 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
         )
         if access_error is not None:
             return access_error
+        operation = "kg.operations.cognitive.read"
+        actor = ActorContext(
+            principal_id(_board_agent),
+            "mcp",
+            actor_kind="agent",
+            board_id=board_id,
+            permissions=getattr(_board_agent, "permissions", None),
+        )
+        try:
+            await AuthorizeOperationUseCase().execute(
+                AuthorizeOperationCommand(
+                    operation,
+                    legacy_operation="kg.admin.settings_read",
+                    board_id=board_id,
+                ),
+                actor=actor,
+            )
+        except PermissionDeniedError as exc:
+            return _err(
+                "permission_denied",
+                str(exc),
+                required_permission=operation,
+            )
 
         if status_present and effective_status not in _VALID_LIST_STATUS_FILTERS:
             _emit_list_sample(

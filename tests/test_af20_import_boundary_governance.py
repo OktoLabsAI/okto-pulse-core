@@ -12,6 +12,7 @@ from okto_pulse.core.application.boundary import (
 from okto_pulse.core.application.boundary.gates import (
     IMPORT_BOUNDARY_BASELINE_LEDGER,
 )
+from repository_checkout_testing import community_repo_for
 
 
 _RELATIONAL_CATEGORIES = {"sqlalchemy", "aiosqlite", "asyncpg"}
@@ -106,18 +107,22 @@ def test_ts4_core_ports_resolves_as_real_pure_layer() -> None:
 
 def test_ts5_readmes_document_core_community_baseline_policy() -> None:
     core_root = Path(__file__).resolve().parents[1]
-    community_root = core_root.parent / "okto_labs_pulse_community"
-    core_readme = (core_root / "README.md").read_text(encoding="utf-8")
-    community_readme = (community_root / "README.md").read_text(encoding="utf-8")
+    community_root = community_repo_for(core_root)
+    core_architecture = (
+        core_root / "docs" / "ARCHITECTURE-OVERVIEW.md"
+    ).read_text(encoding="utf-8")
+    community_architecture = (
+        community_root / "docs" / "ARCHITECTURE.md"
+    ).read_text(encoding="utf-8")
 
-    assert "IMPORT_BOUNDARY_BASELINE_LEDGER" in core_readme
-    assert "RUNTIME_SINGLETON_BASELINE_LEDGER" in core_readme
-    assert "non-relational import-boundary" in core_readme
-    assert "removal criterion" in core_readme
-    assert "okto_pulse/core/ports" in core_readme
+    assert "IMPORT_BOUNDARY_BASELINE_LEDGER" in core_architecture
+    assert "RUNTIME_SINGLETON_BASELINE_LEDGER" in core_architecture
+    assert "non-relational import-boundary" in core_architecture
+    assert "removal criterion" in core_architecture
+    assert "okto_pulse/core/ports" in core_architecture
 
-    assert "IMPORT_BOUNDARY_BASELINE_LEDGER" in community_readme
-    assert "adapter-specific debt" in community_readme
-    assert "local-first adapters" in community_readme
-    assert "removal criterion" in community_readme
-    assert "okto_pulse/core/ports" in community_readme
+    assert "IMPORT_BOUNDARY_BASELINE_LEDGER" in community_architecture
+    assert "adapter-specific debt" in community_architecture
+    assert "local-first adapters" in community_architecture
+    assert "removal criterion" in community_architecture
+    assert "okto_pulse/core/ports" in community_architecture

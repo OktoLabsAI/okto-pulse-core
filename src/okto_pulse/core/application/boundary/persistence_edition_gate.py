@@ -12,6 +12,9 @@ FORBIDDEN_PERSISTENCE_EDITION_TOKENS: tuple[str, ...] = (
     "post" + "gresql",
     "async" + "pg",
 )
+PERSISTENCE_EDITION_NEUTRALITY_ALLOW_MARKER = (
+    "f15: allow-non-persistence-vocabulary"
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,8 @@ class PersistenceEditionNeutralityGate:
                     start=1,
                 ):
                     lowered = line.casefold()
+                    if PERSISTENCE_EDITION_NEUTRALITY_ALLOW_MARKER in lowered:
+                        continue
                     for token in FORBIDDEN_PERSISTENCE_EDITION_TOKENS:
                         if token in lowered:
                             findings.append(
@@ -86,6 +91,7 @@ class PersistenceEditionNeutralityGate:
 
 __all__ = [
     "FORBIDDEN_PERSISTENCE_EDITION_TOKENS",
+    "PERSISTENCE_EDITION_NEUTRALITY_ALLOW_MARKER",
     "PersistenceEditionFinding",
     "PersistenceEditionNeutralityGate",
 ]

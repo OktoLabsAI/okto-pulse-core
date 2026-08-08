@@ -136,6 +136,7 @@ def test_rest_card_response_projects_inline_knowledge_governance() -> None:
             "description": None,
             "details": None,
             "status": "in_progress",
+            "subject_version": 1,
             "priority": "medium",
             "position": 0,
             "assignee_id": None,

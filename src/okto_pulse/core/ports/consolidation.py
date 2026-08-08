@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, Sequence
+
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    require_runtime_value,
+    reset_runtime_values,
+)
 
 
 @dataclass(slots=True)
@@ -38,6 +42,132 @@ class ConsolidationPoisonRow:
     attempts: int
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentQualityAssessmentSummary:
+    """Current quality head joined to its immutable receipt."""
+
+    board_id: str
+    subject_type: str
+    subject_id: str
+    subject_version: int
+    assessment_kind: str
+    receipt_id: str
+    head_revision: int
+    outcome: str
+    score: float
+    justification: str
+    scale_kind: str
+    scale_minimum: float
+    scale_maximum: float
+    scale_direction: str
+    content_digest: str
+    clarification_digest: str
+    ruleset_digest: str
+    taxonomy_digest: str
+    policy_digest: str
+    input_digest: str
+    canonicalization_version: str
+    ruleset_version: str
+    taxonomy_version: str
+    analyzer_version: str
+    policy_version: str
+    created_at: datetime
+    updated_at: datetime
+    projection_fingerprint: str
+
+    def to_worker_dict(self) -> dict[str, Any]:
+        """Return the bounded root-summary shape consumed by the pure worker."""
+
+        return {
+            "board_id": self.board_id,
+            "subject_type": self.subject_type,
+            "subject_id": self.subject_id,
+            "subject_version": self.subject_version,
+            "assessment_kind": self.assessment_kind,
+            "receipt_id": self.receipt_id,
+            "head_revision": self.head_revision,
+            "outcome": self.outcome,
+            "score": self.score,
+            "justification": self.justification,
+            "scale_kind": self.scale_kind,
+            "scale_minimum": self.scale_minimum,
+            "scale_maximum": self.scale_maximum,
+            "scale_direction": self.scale_direction,
+            "input_digest": self.input_digest,
+            "ruleset_version": self.ruleset_version,
+            "taxonomy_version": self.taxonomy_version,
+            "analyzer_version": self.analyzer_version,
+            "policy_version": self.policy_version,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "projection_fingerprint": self.projection_fingerprint,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentResearchDecisionSummary:
+    """Current RDL head joined to its immutable entry."""
+
+    board_id: str
+    refinement_id: str
+    refinement_version: int
+    ledger_id: str
+    entry_id: str
+    head_revision: int
+    predecessor_entry_id: str | None
+    unknown: str
+    status: str
+    anchor_type: str
+    anchor_ref: str
+    evidence_refs: tuple[str, ...]
+    alternatives: tuple[str, ...]
+    decision: str | None
+    rationale: str | None
+    confidence: float | None
+    evidence_absence_justification: str | None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    projection_fingerprint: str
+
+    def to_worker_dict(self) -> dict[str, Any]:
+        """Return the current-head shape consumed by the pure worker."""
+
+        return {
+            "board_id": self.board_id,
+            "refinement_id": self.refinement_id,
+            "refinement_version": self.refinement_version,
+            "ledger_id": self.ledger_id,
+            "entry_id": self.entry_id,
+            "head_revision": self.head_revision,
+            "predecessor_entry_id": self.predecessor_entry_id,
+            "unknown": self.unknown,
+            "status": self.status,
+            "anchor_type": self.anchor_type,
+            "anchor_ref": self.anchor_ref,
+            "evidence_refs": list(self.evidence_refs),
+            "alternatives": list(self.alternatives),
+            "decision": self.decision,
+            "rationale": self.rationale,
+            "confidence": self.confidence,
+            "evidence_absence_justification": (
+                self.evidence_absence_justification
+            ),
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "projection_fingerprint": self.projection_fingerprint,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationProjectionInputs:
+    """Bounded relational projections loaded alongside one source artifact."""
+
+    quality_assessments: tuple[CurrentQualityAssessmentSummary, ...] = ()
+    research_decisions: tuple[CurrentResearchDecisionSummary, ...] = ()
+
+
 class ConsolidationPersistencePort(Protocol):
     async def load_artifact(
         self,
@@ -46,6 +176,19 @@ class ConsolidationPersistencePort(Protocol):
         artifact_type: str,
         artifact_id: str,
     ) -> Any | None: ...
+
+    async def load_projection_inputs(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        artifact: Any,
+    ) -> ConsolidationProjectionInputs:
+        """Load current relational heads for an already-loaded artifact."""
+
+        ...
 
     async def list_artifacts(
         self,
@@ -169,7 +312,10 @@ def reset_consolidation_persistence_port_for_tests() -> None:
 __all__ = [
     "ConsolidationPersistencePort",
     "ConsolidationPoisonRow",
+    "ConsolidationProjectionInputs",
     "ConsolidationQueueRecord",
+    "CurrentQualityAssessmentSummary",
+    "CurrentResearchDecisionSummary",
     "get_consolidation_persistence_port",
     "register_consolidation_persistence_port",
     "reset_consolidation_persistence_port_for_tests",

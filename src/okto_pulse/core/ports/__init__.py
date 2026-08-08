@@ -67,6 +67,7 @@ from .authentication import (
     InvalidCredential,
     MissingCredential,
     Principal,
+    PrincipalKind,
 )
 from .mcp_instructions import (
     McpInstructionProvider,
@@ -150,11 +151,16 @@ from .kg_events import (
     reset_kg_events_reader_port_for_tests,
 )
 from .kg_cognitive_source import (
+    COGNITIVE_SOURCE_FINGERPRINT_CONTRACT,
+    COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3,
+    CognitiveSourceAppendDecision,
     CognitiveSourceConflict,
     CognitiveSourceError,
+    CognitiveSourcePersistedRevision,
     CognitiveSourceRecord,
     CognitiveSourceStore,
     canonical_cognitive_source_fingerprint,
+    decide_cognitive_source_append,
     latest_cognitive_source_records,
     register_cognitive_source_store,
     require_cognitive_source_store,
@@ -291,6 +297,8 @@ from .telemetry import (
 )
 
 __all__ = [
+    "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT",
+    "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3",
     "HEALTH_REPORT_FIELDS",
     "PRODUCT_AGGREGATE_FAMILIES",
     "PRODUCT_METRIC_KEYS",
@@ -315,6 +323,7 @@ __all__ = [
     "PackageVersionProvider",
     "ProductState",
     "Principal",
+    "PrincipalKind",
     "PublishHealthSource",
     "TelemetryPort",
     "TelemetryResult",
@@ -364,11 +373,14 @@ __all__ = [
     "DataBootstrapStep",
     "DataBootstrapStepResult",
     "DataBootstrapper",
+    "CognitiveSourceAppendDecision",
     "CognitiveSourceConflict",
     "CognitiveSourceError",
+    "CognitiveSourcePersistedRevision",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
     "canonical_cognitive_source_fingerprint",
+    "decide_cognitive_source_append",
     "latest_cognitive_source_records",
     "EquivalenceLedger",
     "EquivalenceLedgerError",
@@ -523,9 +535,37 @@ __all__ = [
     "sanitize_message",
     "set_permission_flag",
     "HISTORICAL_PROGRESS_SETTINGS_KEY",
+    "POLICY_CONSTRAINT_GUIDELINE_RETIRED_REASON",
+    "POLICY_CONSTRAINT_GUIDELINE_SUPERSEDED_REASON",
+    "POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS",
+    "POLICY_CONSTRAINT_REBUILD_NOT_ADOPTED_REASON",
+    "POLICY_CONSTRAINT_RULE_REMOVED_REASON",
+    "POLICY_CONSTRAINT_UNLINKED_REASON",
+    "PolicyConstraintProjectionOperation",
+    "PolicyConstraintProjectionPort",
+    "PolicyConstraintProjectionResult",
+    "get_policy_constraint_projection_port",
+    "register_policy_constraint_projection_port",
+    "reset_policy_constraint_projection_port_for_tests",
 ]
 
-_LAZY_EXPORTS = {}
+_LAZY_EXPORTS = {
+    name: "okto_pulse.core.ports.policy_constraint_projection"
+    for name in (
+        "POLICY_CONSTRAINT_GUIDELINE_RETIRED_REASON",
+        "POLICY_CONSTRAINT_GUIDELINE_SUPERSEDED_REASON",
+        "POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS",
+        "POLICY_CONSTRAINT_REBUILD_NOT_ADOPTED_REASON",
+        "POLICY_CONSTRAINT_RULE_REMOVED_REASON",
+        "POLICY_CONSTRAINT_UNLINKED_REASON",
+        "PolicyConstraintProjectionOperation",
+        "PolicyConstraintProjectionPort",
+        "PolicyConstraintProjectionResult",
+        "get_policy_constraint_projection_port",
+        "register_policy_constraint_projection_port",
+        "reset_policy_constraint_projection_port_for_tests",
+    )
+}
 
 
 def __getattr__(name: str):

@@ -39,6 +39,16 @@ def _require_real_community_graph(_kg_registry_test_fakes):
     configure_real_graph_test_kg_registry()
 
 
+@pytest.fixture(autouse=True)
+async def _seed_relational_board(db_factory, board_id):
+    """The real persister health guard requires both graph and SQL authority."""
+
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(Board(id=board_id, name="rkg03", owner_id="rkg03-owner"))
+            await db.commit()
+
+
 async def _seed_node(
     board_id: str,
     node_type: str,

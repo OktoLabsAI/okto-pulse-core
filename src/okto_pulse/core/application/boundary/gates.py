@@ -41,6 +41,13 @@ from .report import GateException, GateReport, GateStatus, enforce_exception_pol
 #: ``okto_pulse.tools`` is edition-owned and must not ship in the Core package.
 TOOLS_LOC_BASELINE = 0
 
+#: Release-critical, generated review artifacts that must exist in source and,
+#: when the RECORD proof is requested, in the installed Core distribution.
+DEFAULT_REQUIRED_CORE_RESOURCES: tuple[str, ...] = (
+    "src/okto_pulse/core/mcp/resources/ska_resource_manifest.json",
+    "src/okto_pulse/core/mcp/resources/ska_tool_manifest.json",
+)
+
 #: Core must never import an edition implementation, including underneath
 #: ``TYPE_CHECKING``.  This is deliberately matched only on AST Import and
 #: ImportFrom nodes; prose, docstrings and example string literals are inert.
@@ -486,6 +493,8 @@ class PackageManifestGateInput:
     source_root: Path | None = None
     tools_loc_baseline: int = TOOLS_LOC_BASELINE
     wheel_record_path: Path | None = None
+    required_resource_paths: tuple[str, ...] | None = None
+    verify_required_resources_in_wheel: bool = False
     exception: GateException | None = None
     today: date | None = None
 
@@ -516,8 +525,60 @@ class PackageManifestGate:
         wheel = (
             data.get("tool", {}).get("hatch", {}).get("build", {}).get("targets", {}).get("wheel", {})
         )
-        force_includes = sorted((wheel.get("force-include") or {}).keys())
+        raw_force_includes = wheel.get("force-include") or {}
+        force_include_map = {
+            str(source): str(destination)
+            for source, destination in raw_force_includes.items()
+        }
+        force_includes = sorted(force_include_map)
         packages = wheel.get("packages") or []
+        configured_required_resources = (
+            DEFAULT_REQUIRED_CORE_RESOURCES
+            if gate_input.required_resource_paths is None
+            else gate_input.required_resource_paths
+        )
+        required_resource_map = dict(force_include_map)
+        for source in configured_required_resources:
+            normalized_source = str(source).replace("\\", "/")
+            required_resource_map.setdefault(
+                normalized_source,
+                normalized_source.removeprefix("src/"),
+            )
+        required_resource_map = dict(sorted(required_resource_map.items()))
+        manifest_root = pyproject.parent.resolve()
+        missing_required_sources = [
+            source
+            for source in required_resource_map
+            if not (
+                Path(source)
+                if Path(source).is_absolute()
+                else manifest_root / source
+            ).is_file()
+        ]
+        resource_evidence = {
+            "required_resources": required_resource_map,
+            "missing_required_resources": missing_required_sources,
+        }
+        if missing_required_sources:
+            return GateReport(
+                gate_id=self.gate_id,
+                subject="core required package resources",
+                status="blocking",
+                severity="high",
+                owner="okto-pulse-core/release",
+                evidence={
+                    "error": "required_resource_missing",
+                    "pyproject_path": str(pyproject),
+                    "force_includes": force_includes,
+                    **resource_evidence,
+                },
+                observed_value=missing_required_sources,
+                expected_value=[],
+                remediation_hint=(
+                    "Restore or regenerate every required Core package resource "
+                    "before building the release artifact."
+                ),
+            )
         # tr_a711faf8 / ac_9d655671: read the installed wheel's dist-info/RECORD
         # when supplied, list the included files and flag unexpected runtime files.
         # A requested-but-unreadable RECORD fails closed, never silent pass.
@@ -525,7 +586,11 @@ class PackageManifestGate:
         unexpected: list[str] = []
         if gate_input.wheel_record_path is not None:
             record = Path(gate_input.wheel_record_path)
-            if not record.exists():
+            try:
+                if not record.exists():
+                    raise FileNotFoundError(record)
+                wheel_files = self._parse_record(record)
+            except OSError:
                 return GateReport(
                     gate_id=self.gate_id,
                     subject="core wheel RECORD",
@@ -539,8 +604,40 @@ class PackageManifestGate:
                     observed_value=str(record),
                     remediation_hint="dist-info/RECORD of the installed wheel could not be read.",
                 )
-            wheel_files = self._parse_record(record)
             unexpected = self._unexpected_runtime_files(wheel_files)
+            if gate_input.verify_required_resources_in_wheel:
+                installed_files = {
+                    entry.replace("\\", "/")
+                    for entry in wheel_files
+                }
+                missing_from_wheel = sorted(
+                    destination.replace("\\", "/")
+                    for destination in required_resource_map.values()
+                    if destination.replace("\\", "/") not in installed_files
+                )
+                if missing_from_wheel:
+                    return GateReport(
+                        gate_id=self.gate_id,
+                        subject="installed Core required package resources",
+                        status="blocking",
+                        severity="high",
+                        owner="okto-pulse-core/release",
+                        evidence={
+                            "error": "required_resource_missing",
+                            "surface": "wheel_record",
+                            "wheel_record_path": str(record),
+                            "force_includes": force_includes,
+                            "wheel_files": wheel_files,
+                            "missing_required_wheel_resources": missing_from_wheel,
+                            **resource_evidence,
+                        },
+                        observed_value=missing_from_wheel,
+                        expected_value=[],
+                        remediation_hint=(
+                            "Rebuild the Core wheel so every required resource "
+                            "is present in dist-info/RECORD."
+                        ),
+                    )
         tools_dir = root / "okto_pulse" / "tools"
         observed_loc, tools_files = self._count_loc(tools_dir)
         expected = gate_input.tools_loc_baseline
@@ -553,6 +650,7 @@ class PackageManifestGate:
             "tools_loc_expected": expected,
             "wheel_record_audited": wheel_files is not None,
             "wheel_files": wheel_files,
+            **resource_evidence,
         }
         if unexpected:
             return GateReport(
@@ -623,13 +721,10 @@ class PackageManifestGate:
     def _parse_record(record: Path) -> list[str]:
         """Parse a wheel ``dist-info/RECORD`` (CSV ``path,hash,size``) -> paths."""
         files: list[str] = []
-        try:
-            for raw in record.read_text(encoding="utf-8").splitlines():
-                line = raw.strip()
-                if line:
-                    files.append(line.split(",", 1)[0])
-        except OSError:
-            return []
+        for raw in record.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if line:
+                files.append(line.split(",", 1)[0])
         return sorted(files)
 
     @staticmethod

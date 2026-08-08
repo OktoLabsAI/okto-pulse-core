@@ -112,6 +112,25 @@ class MissingLinkCandidate:
     artifact_ref: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class RelationalProjectionActiveRef:
+    """Exact relationally-owned node identity retained by active-set cleanup."""
+
+    node_type: str
+    candidate_id: str
+    source_artifact_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class RelationalProjectionActiveSetIntent:
+    """Exact desired set for one relational projection namespace."""
+
+    owner_type: str
+    owner_id: str
+    namespace: str
+    active_refs: tuple[RelationalProjectionActiveRef, ...]
+
+
 @dataclass
 class WorkerResult:
     nodes: list[EmittedNode] = field(default_factory=list)
@@ -122,6 +141,12 @@ class WorkerResult:
     spec_lineage_parent_intent: SpecLineageParentIntent = (
         SpecLineageParentIntent.PRESERVE
     )
+    # Relational projections are tracked explicitly so graph cleanup never
+    # guesses ownership from candidate-id or source-ref prefixes.
+    relational_projection_candidate_ids: set[str] = field(default_factory=set)
+    relational_projection_active_set_intent: (
+        RelationalProjectionActiveSetIntent | None
+    ) = None
     content_hash: str = ""
     raw_content: str = ""
 
@@ -412,6 +437,334 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _projection_records(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list | tuple):
+        raise ValueError("relational_projection_records_invalid")
+    if any(not isinstance(item, dict) for item in value):
+        raise ValueError("relational_projection_record_invalid")
+    return [dict(item) for item in value]
+
+
+def _projection_raw(label: str, records: list[dict[str, Any]]) -> str:
+    normalized_records: list[dict[str, Any]] = []
+    for item in records:
+        normalized = dict(item)
+        if label == "research_decisions":
+            alternatives = normalized.get("alternatives")
+            if isinstance(alternatives, list | tuple):
+                normalized["alternatives"] = sorted(
+                    (_one_line(value) for value in alternatives),
+                    key=lambda value: (value.casefold(), value),
+                )
+            evidence_refs = normalized.get("evidence_refs")
+            if isinstance(evidence_refs, list | tuple):
+                normalized["evidence_refs"] = sorted(
+                    str(value) for value in evidence_refs
+                )
+        normalized_records.append(normalized)
+    if label == "quality_assessments":
+        normalized_records.sort(
+            key=lambda row: (
+                str(row.get("assessment_kind") or ""),
+                str(row.get("receipt_id") or ""),
+            )
+        )
+    elif label == "research_decisions":
+        normalized_records.sort(
+            key=lambda row: (
+                str(row.get("ledger_id") or ""),
+                str(row.get("entry_id") or ""),
+            )
+        )
+    return json.dumps(
+        {label: normalized_records},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _one_line(value: Any) -> str:
+    rendered = "" if value is None else str(value)
+    return re.sub(r"\s+", " ", rendered).strip()
+
+
+def _quality_context_block(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return ""
+    lines = ["Quality assessments (current heads):"]
+    for item in sorted(
+        records,
+        key=lambda row: (
+            str(row.get("assessment_kind") or ""),
+            str(row.get("receipt_id") or ""),
+        ),
+    ):
+        kind = _one_line(item.get("assessment_kind")) or "unknown"
+        score = _one_line(item.get("score"))
+        scale = _one_line(item.get("scale_kind"))
+        direction = _one_line(item.get("scale_direction"))
+        outcome = _one_line(item.get("outcome"))
+        justification = _one_line(item.get("justification"))
+        version = _one_line(item.get("subject_version"))
+        revision = _one_line(item.get("head_revision"))
+        lines.append(
+            f"- {kind}: score={score} scale={scale} direction={direction} "
+            f"outcome={outcome} subject_version={version} "
+            f"head_revision={revision}; {justification}"
+        )
+    return "\n".join(lines)
+
+
+def _research_decision_context_block(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return ""
+    lines = ["Research decisions (current heads):"]
+    for item in sorted(
+        records,
+        key=lambda row: (
+            str(row.get("ledger_id") or ""),
+            str(row.get("entry_id") or ""),
+        ),
+    ):
+        ledger_id = _one_line(item.get("ledger_id"))
+        status = _one_line(item.get("status"))
+        unknown = _one_line(item.get("unknown"))
+        decision = _one_line(item.get("decision"))
+        summary = f"unknown={unknown}"
+        if decision:
+            summary += f"; decision={decision}"
+        lines.append(f"- ledger={ledger_id} status={status}; {summary}")
+    return "\n".join(lines)
+
+
+def _join_context(*parts: str) -> str:
+    return "\n\n".join(part.strip() for part in parts if part and part.strip())
+
+
+def _relational_projection_candidate_id(source_artifact_ref: str) -> str:
+    return f"relproj_{_sha256(source_artifact_ref)[:32]}"
+
+
+def _relational_projection_edge_id(
+    edge_type: str,
+    from_candidate_id: str,
+    to_candidate_id: str,
+) -> str:
+    identity = f"{edge_type}:{from_candidate_id}:{to_candidate_id}"
+    return f"relproj_edge_{_sha256(identity)[:32]}"
+
+
+def _normalized_alternative(value: Any) -> tuple[str, str]:
+    rendered = _one_line(value)
+    if not rendered:
+        raise ValueError("research_decision_projection_alternative_invalid")
+    identity = rendered.casefold()
+    return rendered, _sha256(identity)
+
+
+def _project_research_decisions(
+    *,
+    refinement_id: str,
+    refinement_candidate_id: str,
+    records: list[dict[str, Any]],
+    result: WorkerResult,
+) -> None:
+    active_refs: list[RelationalProjectionActiveRef] = []
+    for item in sorted(
+        records,
+        key=lambda row: (
+            str(row.get("ledger_id") or ""),
+            str(row.get("entry_id") or ""),
+        ),
+    ):
+        ledger_id = _one_line(item.get("ledger_id"))
+        entry_id = _one_line(item.get("entry_id"))
+        status = _one_line(item.get("status"))
+        if not ledger_id or not entry_id or not status:
+            raise ValueError("research_decision_projection_identity_invalid")
+        if status != "resolved":
+            continue
+
+        decision = _one_line(item.get("decision"))
+        rationale = _one_line(item.get("rationale"))
+        if not decision or not rationale:
+            raise ValueError("research_decision_projection_resolved_content_invalid")
+        alternatives = item.get("alternatives") or []
+        if not isinstance(alternatives, list | tuple):
+            raise ValueError("research_decision_projection_alternatives_invalid")
+
+        decision_ref = (
+            f"refinement:{refinement_id}:rdl:{ledger_id}:decision"
+        )
+        decision_cid = _relational_projection_candidate_id(decision_ref)
+        evidence_refs = item.get("evidence_refs") or []
+        if not isinstance(evidence_refs, list | tuple):
+            raise ValueError("research_decision_projection_evidence_invalid")
+        decision_context = _join_context(
+            f"ledger_id={ledger_id}\nentry_id={entry_id}\nstatus=resolved",
+            (
+                f"anchor={_one_line(item.get('anchor_type'))}:"
+                f"{_one_line(item.get('anchor_ref'))}"
+            ),
+            f"confidence={_one_line(item.get('confidence'))}",
+            "evidence_refs="
+            + json.dumps(
+                sorted(str(value) for value in evidence_refs),
+                ensure_ascii=False,
+            ),
+        )
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=decision_cid,
+                node_type="Decision",
+                title=decision[:120],
+                content=_join_context(
+                    decision,
+                    f"Rationale: {rationale}",
+                    f"Unknown: {_one_line(item.get('unknown'))}",
+                ),
+                context=decision_context,
+                source_artifact_ref=decision_ref,
+                source_confidence=1.0,
+            )
+        )
+        result.edges.extend(
+            (
+                EmittedEdge(
+                    candidate_id=_relational_projection_edge_id(
+                        "belongs_to",
+                        decision_cid,
+                        refinement_candidate_id,
+                    ),
+                    edge_type="belongs_to",
+                    from_candidate_id=decision_cid,
+                    to_candidate_id=refinement_candidate_id,
+                    confidence=1.0,
+                    rule_id=(
+                        f"belongs_to/relational_rdl_decision@{WORKER_VERSION}"
+                    ),
+                ),
+                # A resolved RDL entry is valid without alternatives.  Decision
+                # connectivity nevertheless requires a judgement edge in
+                # addition to deterministic ownership.  Ground the projection
+                # in its Refinement Entity through the existing, schema-valid
+                # ``mentions`` taxonomy instead of weakening the generic
+                # Decision guard or inventing a new edge type.
+                EmittedEdge(
+                    candidate_id=_relational_projection_edge_id(
+                        "mentions",
+                        decision_cid,
+                        refinement_candidate_id,
+                    ),
+                    edge_type="mentions",
+                    from_candidate_id=decision_cid,
+                    to_candidate_id=refinement_candidate_id,
+                    confidence=1.0,
+                    rule_id=f"mentions/relational_rdl_owner@{WORKER_VERSION}",
+                ),
+            )
+        )
+        result.relational_projection_candidate_ids.add(decision_cid)
+        active_refs.append(
+            RelationalProjectionActiveRef(
+                node_type="Decision",
+                candidate_id=decision_cid,
+                source_artifact_ref=decision_ref,
+            )
+        )
+
+        normalized_alternatives = {
+            alternative_hash: rendered
+            for rendered, alternative_hash in (
+                _normalized_alternative(value) for value in alternatives
+            )
+        }
+        for alternative_hash, alternative in sorted(
+            normalized_alternatives.items()
+        ):
+            alternative_ref = (
+                f"refinement:{refinement_id}:rdl:{ledger_id}:"
+                f"alternative:{alternative_hash}"
+            )
+            alternative_cid = _relational_projection_candidate_id(
+                alternative_ref
+            )
+            result.nodes.append(
+                EmittedNode(
+                    candidate_id=alternative_cid,
+                    node_type="Alternative",
+                    title=alternative[:120],
+                    content=alternative,
+                    context=f"ledger_id={ledger_id}\nentry_id={entry_id}",
+                    source_artifact_ref=alternative_ref,
+                    source_confidence=1.0,
+                )
+            )
+            result.edges.extend(
+                (
+                    EmittedEdge(
+                        candidate_id=_relational_projection_edge_id(
+                            "belongs_to",
+                            alternative_cid,
+                            refinement_candidate_id,
+                        ),
+                        edge_type="belongs_to",
+                        from_candidate_id=alternative_cid,
+                        to_candidate_id=refinement_candidate_id,
+                        confidence=1.0,
+                        rule_id=(
+                            "belongs_to/relational_rdl_alternative"
+                            f"@{WORKER_VERSION}"
+                        ),
+                    ),
+                    EmittedEdge(
+                        candidate_id=_relational_projection_edge_id(
+                            "relates_to",
+                            decision_cid,
+                            alternative_cid,
+                        ),
+                        edge_type="relates_to",
+                        from_candidate_id=decision_cid,
+                        to_candidate_id=alternative_cid,
+                        confidence=1.0,
+                        rule_id=(
+                            "relates_to/relational_rdl_alternative"
+                            f"@{WORKER_VERSION}"
+                        ),
+                    ),
+                )
+            )
+            result.relational_projection_candidate_ids.add(alternative_cid)
+            active_refs.append(
+                RelationalProjectionActiveRef(
+                    node_type="Alternative",
+                    candidate_id=alternative_cid,
+                    source_artifact_ref=alternative_ref,
+                )
+            )
+
+    result.relational_projection_active_set_intent = (
+        RelationalProjectionActiveSetIntent(
+            owner_type="refinement",
+            owner_id=refinement_id,
+            namespace="rdl",
+            active_refs=tuple(
+                sorted(
+                    active_refs,
+                    key=lambda value: (
+                        value.node_type,
+                        value.source_artifact_ref,
+                    ),
+                )
+            ),
+        )
+    )
+
+
 def _ref_token(value: Any) -> str:
     token = str(value).strip()
     if not token:
@@ -620,6 +973,9 @@ class DeterministicWorker:
         prefix = f"spec_{spec_id[:8]}"
         artifact_ref = f"spec:{spec_id}"
         result = WorkerResult(raw_content="")
+        quality_assessments = _projection_records(
+            spec.get("quality_assessments")
+        )
         if not spec.get("refinement_id") and not spec.get("ideation_id"):
             result.spec_lineage_parent_intent = SpecLineageParentIntent.CLEAR
         raw_parts: list[str] = [
@@ -627,6 +983,13 @@ class DeterministicWorker:
             spec.get("description") or "",
             spec.get("context") or "",
         ]
+        if "quality_assessments" in spec:
+            raw_parts.append(
+                _projection_raw(
+                    "quality_assessments",
+                    quality_assessments,
+                )
+            )
 
         # 1. Spec entity (anchor node) — used by hierarchy edges on caller.
         spec_entity_id = f"{prefix}_entity"
@@ -635,7 +998,10 @@ class DeterministicWorker:
             node_type="Entity",
             title=spec.get("title") or f"Spec {spec_id}",
             content=spec.get("description") or "",
-            context=spec.get("context") or "",
+            context=_join_context(
+                spec.get("context") or "",
+                _quality_context_block(quality_assessments),
+            ),
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
         ))
@@ -1256,6 +1622,9 @@ class DeterministicWorker:
         prefix = f"ideation_{iid[:8]}"
         artifact_ref = f"ideation:{iid}"
         result = WorkerResult()
+        quality_assessments = _projection_records(
+            ideation.get("quality_assessments")
+        )
         raw_parts = [
             ideation.get("title") or "",
             ideation.get("description") or "",
@@ -1264,6 +1633,13 @@ class DeterministicWorker:
             json.dumps(ideation.get("scope_assessment") or {}, ensure_ascii=False, sort_keys=True),
             json.dumps(ideation.get("labels") or [], ensure_ascii=False, sort_keys=True),
         ]
+        if "quality_assessments" in ideation:
+            raw_parts.append(
+                _projection_raw(
+                    "quality_assessments",
+                    quality_assessments,
+                )
+            )
         content = "\n\n".join(
             p for p in (
                 ideation.get("description"),
@@ -1278,7 +1654,13 @@ class DeterministicWorker:
             node_type="Entity",
             title=ideation.get("title") or f"Ideation {iid}",
             content=content or ideation.get("title") or "",
-            context=f"Status: {ideation.get('status') or ''}\nComplexity: {ideation.get('complexity') or ''}".strip(),
+            context=_join_context(
+                (
+                    f"Status: {ideation.get('status') or ''}\n"
+                    f"Complexity: {ideation.get('complexity') or ''}"
+                ).strip(),
+                _quality_context_block(quality_assessments),
+            ),
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
         ))
@@ -1332,6 +1714,12 @@ class DeterministicWorker:
         prefix = f"refinement_{rid[:8]}"
         artifact_ref = f"refinement:{rid}"
         result = WorkerResult()
+        quality_assessments = _projection_records(
+            refinement.get("quality_assessments")
+        )
+        research_decisions = _projection_records(
+            refinement.get("research_decisions")
+        )
         raw_parts = [
             refinement.get("title") or "",
             refinement.get("description") or "",
@@ -1341,6 +1729,20 @@ class DeterministicWorker:
             json.dumps(refinement.get("decisions") or [], ensure_ascii=False, sort_keys=True),
             json.dumps(refinement.get("labels") or [], ensure_ascii=False, sort_keys=True),
         ]
+        if "quality_assessments" in refinement:
+            raw_parts.append(
+                _projection_raw(
+                    "quality_assessments",
+                    quality_assessments,
+                )
+            )
+        if "research_decisions" in refinement:
+            raw_parts.append(
+                _projection_raw(
+                    "research_decisions",
+                    research_decisions,
+                )
+            )
         content = "\n\n".join(
             p for p in (
                 refinement.get("description"),
@@ -1354,7 +1756,11 @@ class DeterministicWorker:
             node_type="Entity",
             title=refinement.get("title") or f"Refinement {rid}",
             content=content or refinement.get("title") or "",
-            context=f"Status: {refinement.get('status') or ''}",
+            context=_join_context(
+                f"Status: {refinement.get('status') or ''}",
+                _quality_context_block(quality_assessments),
+                _research_decision_context_block(research_decisions),
+            ),
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
         ))
@@ -1375,6 +1781,13 @@ class DeterministicWorker:
             child_candidate_id=refinement_cid,
             rule_slot="refinement",
         )
+        if "research_decisions" in refinement:
+            _project_research_decisions(
+                refinement_id=rid,
+                refinement_candidate_id=refinement_cid,
+                records=research_decisions,
+                result=result,
+            )
 
         raw = "\n---\n".join(p for p in raw_parts if p and p not in ("[]",))
         result.raw_content = raw

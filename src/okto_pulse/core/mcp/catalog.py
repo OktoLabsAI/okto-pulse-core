@@ -54,6 +54,14 @@ class CoreMcpResourceManager:
         self._resources: dict[str, CoreMcpResource] = {}
 
 
+class DuplicateMcpToolNameError(ValueError):
+    """Raised instead of silently replacing an existing command registration."""
+
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+        super().__init__(f"duplicate MCP tool registration: {tool_name}")
+
+
 def _json_schema_for(annotation: Any) -> dict[str, Any]:
     """Return the client-facing JSON schema for one function parameter.
 
@@ -130,6 +138,12 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
         properties[parameter.name] = schema
 
     result: dict[str, Any] = {"type": "object", "properties": properties}
+    if getattr(fn, "__mcp_closed_schema__", False):
+        # New governed surfaces opt in to an explicitly closed root object.
+        # Python would reject an unknown keyword at invocation time anyway,
+        # but publishing ``additionalProperties: false`` makes that contract
+        # discoverable before a client sends a request.
+        result["additionalProperties"] = False
     if required:
         result["required"] = required
     return result
@@ -180,6 +194,8 @@ class CoreMcpCatalog:
         **_metadata: Any,
     ) -> CoreMcpTool:
         tool_name = name or fn.__name__
+        if tool_name in self._tool_manager._tools:
+            raise DuplicateMcpToolNameError(tool_name)
         tool = CoreMcpTool(
             name=tool_name,
             fn=fn,
@@ -281,4 +297,5 @@ __all__ = [
     "CoreMcpCatalog",
     "CoreMcpResource",
     "CoreMcpTool",
+    "DuplicateMcpToolNameError",
 ]

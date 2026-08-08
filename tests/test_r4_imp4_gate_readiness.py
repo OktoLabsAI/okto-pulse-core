@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.mcp.projection_envelope import _stable_payload_bytes
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -37,6 +38,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.services.gate_contracts import (
     GATE_COGNITIVE_READINESS,
+    GATE_SPEC_CHECKLIST,
     GATE_SPEC_VALIDATION,
     GATE_TEST_CARD_COMPLETION,
     operational_flow_for_test_card,
@@ -58,13 +60,22 @@ class _Ctx:
         self.permissions = set()
 
 
-async def _call(name: str, **kwargs) -> dict:
+async def _call(
+    name: str,
+    *,
+    _granular_permission_error: str | None = None,
+    **kwargs,
+) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
     register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
-         patch.object(mcp_server, "_mcp_check_permission", return_value=None):
+         patch.object(
+             mcp_server,
+             "_mcp_check_permission",
+             return_value=_granular_permission_error,
+         ):
         tool = await mcp_server.mcp.get_tool(name)
         raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -251,6 +262,55 @@ def test_spec_validation_gate_absent_when_not_approved():
         assert block["active_gates"] == [], status
 
 
+def test_spec_checklist_readiness_is_visible_in_draft_without_a_premature_gate():
+    block = spec_gate_readiness(
+        spec_id="s1",
+        spec_status="draft",
+        require_spec_validation=True,
+        cognitive_enforcement_active=False,
+        checklist_mode="blocking",
+        checklist_allowed=False,
+        checklist_reason="checklist_receipt_required",
+    )
+
+    assert block["active_gates"] == []
+    assert block["spec_checklist"] == {
+        "mode": "blocking",
+        "allowed": False,
+        "reason": "checklist_receipt_required",
+        "current": None,
+        "stale_reasons": [],
+        "enforcement_active": True,
+        "binding_tool": "okto_pulse_get_checklist_binding",
+        "execution_tool": "okto_pulse_start_checklist_execution",
+        "receipt_tool": "okto_pulse_get_checklist_receipt",
+    }
+    assert block["consistency"]["mismatch"] is False
+
+
+def test_spec_checklist_gate_is_active_when_approved_blocking_and_unsatisfied():
+    block = spec_gate_readiness(
+        spec_id="s1",
+        spec_status="approved",
+        require_spec_validation=False,
+        cognitive_enforcement_active=False,
+        checklist_mode="blocking",
+        checklist_allowed=False,
+        checklist_reason="checklist_receipt_stale",
+        checklist_current=False,
+        checklist_stale_reasons=("spec_version_changed",),
+    )
+
+    assert len(block["active_gates"]) == 1
+    gate = block["active_gates"][0]
+    assert gate["gate_type"] == GATE_SPEC_CHECKLIST
+    assert gate["checklist_reason"] == "checklist_receipt_stale"
+    assert gate["stale_reasons"] == ["spec_version_changed"]
+    assert gate["next_action"]["tool"] == "okto_pulse_get_checklist_binding"
+    assert block["spec_checklist"]["current"] is False
+    assert block["consistency"]["mismatch"] is False
+
+
 def test_spec_does_not_aggregate_card_cognitive_verdicts():
     # No field/path in the spec block ever exposes a per-card cognitive verdict.
     block = spec_gate_readiness(
@@ -292,6 +352,9 @@ async def test_get_spec_context_exposes_spec_validation_gate(db_factory):
     assert gr["mutation_allowed"] is False
     assert [g["gate_type"] for g in gr["active_gates"]] == [GATE_SPEC_VALIDATION]
     assert gr["active_gates"][0]["required_tool"] == "okto_pulse_submit_spec_validation"
+    assert gr["spec_checklist"]["mode"] == "off"
+    assert gr["spec_checklist"]["allowed"] is True
+    assert gr["spec_checklist"]["reason"] == "checklist_off"
     # Q1: no per-card cognitive aggregation in the spec context.
     assert "cognitive_readiness" not in gr
     assert gr["consistency"]["mismatch"] is False
@@ -305,6 +368,40 @@ async def test_get_spec_context_no_gate_when_validation_disabled(db_factory):
     result = await _call("okto_pulse_get_spec_context", board_id=board_id,
                          spec_id=spec_id, profile="summary")
     assert result["gate_readiness"]["active_gates"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_spec_context_counts_checklist_readiness_in_summary_payload(
+    db_factory,
+):
+    board_id, spec_id = await _seed_spec(db_factory, status="draft")
+
+    result = await _call(
+        "okto_pulse_get_spec_context",
+        board_id=board_id,
+        spec_id=spec_id,
+        profile="summary",
+    )
+
+    assert result["gate_readiness"]["spec_checklist"]["mode"] == "off"
+    assert result["projection"]["payload_bytes"] == _stable_payload_bytes(result)
+
+
+@pytest.mark.asyncio
+async def test_get_spec_context_omits_checklist_readiness_without_leaf_permission(
+    db_factory,
+):
+    board_id, spec_id = await _seed_spec(db_factory, status="draft")
+
+    result = await _call(
+        "okto_pulse_get_spec_context",
+        board_id=board_id,
+        spec_id=spec_id,
+        profile="full",
+        _granular_permission_error="spec.checklist.read denied",
+    )
+
+    assert "spec_checklist" not in result["gate_readiness"]
 
 
 @pytest.mark.asyncio

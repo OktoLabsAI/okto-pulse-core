@@ -219,7 +219,7 @@ async def test_enforce_fails_closed_before_validation_or_status_mutation(
 class _Ctx:
     agent_id = REVIEWER_ID
     agent_name = "Task Reviewer"
-    permissions: set[str] = set()
+    permissions = ["card.validation.submit"]
 
 
 async def _call_tool(name: str, db_factory, **kwargs) -> dict:
@@ -328,3 +328,8 @@ def test_mcp_resources_describe_task_reviewer_separation_contract() -> None:
     for text in (cards, errors, gates):
         assert "reviewer_separation_required" in text
         assert "legacy_absent_compat" in text
+    assert "ready for validation only after the move succeeds" in cards
+    assert "the implementor has not completed the handoff" in cards
+    for coupling in ("notify", "notification", "nexus", "messaging"):
+        assert coupling not in cards.lower()
+    assert "\"Card is not in 'validation' status\"" in errors

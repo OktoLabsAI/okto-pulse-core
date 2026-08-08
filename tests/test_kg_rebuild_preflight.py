@@ -287,7 +287,8 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
             self.services = SimpleNamespace(
                 shares=SimpleNamespace(
                     get_user_permission=self._get_user_permission
-                )
+                ),
+                resolve_user_permissions=self._resolve_user_permissions,
             )
 
         async def _get_board(self, board_id):
@@ -297,6 +298,10 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
             if board_id == "b-test" and user_id == "user-rebuild-test":
                 return "owner"
             return None
+
+        async def _resolve_user_permissions(self, board_id, user_id):
+            del board_id, user_id
+            return ["kg.admin.settings_read"]
 
         async def __aenter__(self):
             return self

@@ -41,6 +41,7 @@ from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     ConsolidationQueue,
+    DomainEventHandlerExecution,
     DomainEventRow,
     Ideation,
     Refinement,
@@ -261,8 +262,39 @@ async def _board_write_snapshot(board_id: str) -> dict[str, int]:
         }
 
 
-async def _drain_domain_events() -> None:
-    processor = build_test_event_processor(get_session_factory())
+class _BoardScopedEventClaimRepository:
+    """Keep lineage delivery assertions isolated from other boards' backlog."""
+
+    def __init__(self, board_id: str) -> None:
+        self._board_id = board_id
+
+    async def claim_domain_event_executions(self, session, *, limit: int, now):
+        result = await session.execute(
+            select(
+                DomainEventHandlerExecution.id,
+                DomainEventHandlerExecution.event_id,
+            )
+            .join(
+                DomainEventRow,
+                DomainEventRow.id == DomainEventHandlerExecution.event_id,
+            )
+            .where(
+                DomainEventRow.board_id == self._board_id,
+                DomainEventHandlerExecution.status == "pending",
+                (DomainEventHandlerExecution.next_attempt_at.is_(None))
+                | (DomainEventHandlerExecution.next_attempt_at <= now),
+            )
+            .order_by(DomainEventRow.occurred_at.asc(), DomainEventRow.id.asc())
+            .limit(limit)
+        )
+        return list(result.all())
+
+
+async def _drain_domain_events(board_id: str) -> None:
+    processor = build_test_event_processor(
+        get_session_factory(),
+        claim_repository=_BoardScopedEventClaimRepository(board_id),
+    )
     await processor.recover_orphans()
     for _ in range(5):
         if not await processor.process_batch():
@@ -359,6 +391,7 @@ async def test_create_spec_valid_parent_matrix_persists(lineage_graph, case):
     result = await _create_spec(board_id, **parent_args)
 
     assert result.spec is not None
+    assert result.spec.edition == 1
     assert result.spec.ideation_id == parent_args.get("ideation_id")
     assert result.spec.refinement_id == parent_args.get("refinement_id")
     assert await _spec_count(board_id) == before + 1
@@ -776,7 +809,7 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
     # Drain the create event first, then make its one queue row terminal. The
     # relink event must reopen that same effective row rather than insert a
     # duplicate or rely on the original pending enqueue.
-    await _drain_domain_events()
+    await _drain_domain_events(board_id)
     async with get_session_factory()() as db:
         queue_rows = (
             (
@@ -838,7 +871,7 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
         for edge in after_parent_edges
     )
 
-    await _drain_domain_events()
+    await _drain_domain_events(board_id)
     async with get_session_factory()() as db:
         semantic_events = (
             (

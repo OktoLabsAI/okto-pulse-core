@@ -15,6 +15,7 @@ from okto_pulse.core.application.processors.consolidation import (
     _process_queue_entry,
 )
 from okto_pulse.core.ports.consolidation import (
+    ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
     get_consolidation_persistence_port,
     register_consolidation_persistence_port,
@@ -95,6 +96,9 @@ class _MemoryConsolidationStore:
     async def load_artifact(self, _context, *, artifact_type, artifact_id):
         self.load_calls.append((artifact_type, artifact_id))
         return SimpleNamespace(title="Legacy spec")
+
+    async def load_projection_inputs(self, _context, **_identity):
+        return ConsolidationProjectionInputs()
 
     async def count_pending(self, _context) -> int:
         return sum(entry.status == "pending" for entry in self.entries.values())
@@ -419,6 +423,8 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
         edges=[],
         missing_link_candidates=[],
         raw_content="legacy spec body",
+        relational_projection_candidate_ids=(),
+        relational_projection_active_set_intent=None,
     )
 
     def _extract(*_args, **_kwargs):

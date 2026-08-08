@@ -168,7 +168,9 @@ class TestSemanticGraphStore:
         assert len(results) == 1
         assert results[0]["node_id"] == "d1"
 
-    def test_source_deleted_tombstone_is_not_active_or_vector_searchable(self):
+    def test_active_reads_exclude_all_source_tombstones_even_with_history_opt_in(
+        self,
+    ):
         store = InMemoryGraphStore()
         store.bootstrap("b1")
         source_ref = "spec:deleted:decision:d1"
@@ -182,25 +184,35 @@ class TestSemanticGraphStore:
                 "embedding": [1.0, 0.0],
                 "graph_layer": "working",
                 "maturity_status": "working_immature",
+                "source_confidence": 0.9,
                 "relevance_score": 0.8,
                 "generation": 1,
             },
         )
-        store.create_node(
-            "b1",
-            "Decision",
-            "deleted",
-            {
-                "title": "Deleted assertion",
-                "source_artifact_ref": source_ref,
-                "embedding": [1.0, 0.0],
-                "graph_layer": "working",
-                "maturity_status": "working_stale",
-                "revocation_reason": "source_deleted",
-                "relevance_score": 0.0,
-                "generation": 2,
-            },
-        )
+        for generation, (node_id, reason) in enumerate(
+            (
+                ("deleted", "source_deleted"),
+                ("projection-removed", "source_projection_removed"),
+            ),
+            start=2,
+        ):
+            store.create_node(
+                "b1",
+                "Decision",
+                node_id,
+                {
+                    "title": f"Tombstoned assertion {node_id}",
+                    "source_artifact_ref": source_ref,
+                    "embedding": [1.0, 0.0],
+                    "graph_layer": "working",
+                    "maturity_status": "working_stale",
+                    "revocation_reason": reason,
+                    "superseded_by": "active",
+                    "source_confidence": 0.9,
+                    "relevance_score": 0.8,
+                    "generation": generation,
+                },
+            )
 
         hits = store.vector_search(
             "b1",
@@ -212,10 +224,20 @@ class TestSemanticGraphStore:
             graph_layer="all",
         )
         exact = store.find_active_by_source_ref("b1", "Decision", source_ref)
+        filters = QueryFilters(include_superseded=True)
+        topic_rows = store.find_by_topic(
+            "b1",
+            "Decision",
+            "assertion",
+            filters,
+        )
+        artifact_rows = store.find_by_artifact("b1", source_ref, filters)
 
         assert [hit["node_id"] for hit in hits] == ["active"]
         assert exact is not None
         assert exact["node_id"] == "active"
+        assert [row[0] for row in topic_rows] == ["active"]
+        assert [row[0] for row in artifact_rows] == ["active"]
 
     def test_delete_nodes_by_session(self):
         store = InMemoryGraphStore()

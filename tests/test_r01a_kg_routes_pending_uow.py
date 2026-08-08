@@ -57,7 +57,21 @@ def client():
             yield session
 
     async def _override_user():
-        return {"sub": ACTOR, "roles": ["admin"]}
+        return {
+            "sub": ACTOR,
+            "roles": ["admin"],
+            "permissions": {
+                "kg": {
+                    "operations": {
+                        "queue": {"read": True, "reprocess": True},
+                    },
+                    "admin": {
+                        "settings_read": True,
+                        "settings_write": True,
+                    },
+                }
+            },
+        }
 
     def _override_user_id():
         return ACTOR

@@ -210,7 +210,7 @@ async def test_uow_typed_catalog_powers_spec09_use_case(db_factory):
     async with factory() as uow:
         result = await CreateBoardUseCase().execute(
             CreateBoardCommand(BoardCreate(name="Bridge04")),
-            actor=ActorContext(ACTOR, "rest"),
+            actor=ActorContext(ACTOR, "rest", permissions=["board.read"]),
             uow=uow,
         )
         board_id = result.board.id

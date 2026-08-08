@@ -15,26 +15,35 @@ from okto_pulse.core.application.boundary.distribution_dependency_ownership impo
     audit_distribution_dependencies,
     build_distribution_dependency_ledger,
 )
+from okto_pulse.core.application.boundary.repository_checkout import (
+    resolve_repository_checkout,
+)
 from okto_pulse.core.ports.f14 import EditionPort
 
 
 CORE_REPO = Path(__file__).resolve().parents[1]
-COMMUNITY_REPO = CORE_REPO.parent / "okto_labs_pulse_community"
-CORE_WHEEL = CORE_REPO / "dist" / "okto_pulse_core-0.3.0-py3-none-any.whl"
+_COMMUNITY_CHECKOUT = resolve_repository_checkout(
+    "community",
+    anchor_repo=CORE_REPO,
+)
+assert _COMMUNITY_CHECKOUT is not None
+COMMUNITY_REPO = _COMMUNITY_CHECKOUT.repo_root
+CORE_WHEEL = CORE_REPO / "dist" / "okto_pulse_core-0.3.1-py3-none-any.whl"
 COMMUNITY_WHEEL = (
-    COMMUNITY_REPO / "dist" / "okto_pulse-0.3.0-py3-none-any.whl"
+    COMMUNITY_REPO / "dist" / "okto_pulse-0.3.1-py3-none-any.whl"
 )
 
 
 def _write_core_wheel(path: Path, members: dict[str, str]) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
-            "okto_pulse_core-0.3.0.dist-info/METADATA",
+            "okto_pulse_core-0.3.1.dist-info/METADATA",
             "Metadata-Version: 2.3\n"
             "Name: okto-pulse-core\n"
-            "Version: 0.3.0\n"
-            "Requires-Dist: pydantic>=2.5,<2.14\n"
+            "Version: 0.3.1\n"
+            "Requires-Dist: pydantic>=2.12,<2.14\n"
             "Requires-Dist: pydantic-core>=2.14.1,<3\n"
+            "Requires-Dist: typing-extensions>=4.14.1,<5\n"
             "Requires-Dist: PyYAML>=6,<7\n",
         )
         for member, content in members.items():
@@ -55,6 +64,7 @@ def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
         "pydantic",
         "pydantic-core",
         "pyyaml",
+        "typing-extensions",
     )
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == report.observed[
         CORE_DISTRIBUTION
@@ -154,7 +164,7 @@ def test_f14_dependency_graph_rejects_core_to_community_edge(
 def test_f14_tampered_core_wheel_rejects_community_package_member(
     tmp_path: Path,
 ) -> None:
-    wheel = tmp_path / "okto_pulse_core-0.3.0-py3-none-any.whl"
+    wheel = tmp_path / "okto_pulse_core-0.3.1-py3-none-any.whl"
     _write_core_wheel(
         wheel,
         {
@@ -185,7 +195,7 @@ def test_f14_tampered_core_wheel_rejects_community_package_member(
 def test_f14_tampered_core_wheel_ast_rejects_imports_but_not_literals(
     tmp_path: Path,
 ) -> None:
-    wheel = tmp_path / "okto_pulse_core-0.3.0-py3-none-any.whl"
+    wheel = tmp_path / "okto_pulse_core-0.3.1-py3-none-any.whl"
     _write_core_wheel(
         wheel,
         {
@@ -249,7 +259,7 @@ def test_core_wheel_imports_in_clean_environment_without_edition_runtimes(
             "install",
             "--python",
             str(python),
-            "pydantic>=2.5,<2.14",
+            "pydantic>=2.12,<2.14",
             "PyYAML>=6,<7",
         ],
         check=True,

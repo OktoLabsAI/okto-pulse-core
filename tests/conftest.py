@@ -34,7 +34,33 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # ---------------------------------------------------------------------------
 
 _CORE_SRC = (Path(__file__).parent / ".." / "src").resolve()
-sys.path.insert(0, str(_CORE_SRC))
+_WORKSPACE_ROOT = _CORE_SRC.parent.parent
+
+# Bootstrap the current Core tree before importing the shared checkout resolver.
+# The resolver then owns paired-edition precedence and removes stale okto_labs
+# roots from both sys.path and PYTHONPATH, so multiprocessing spawn children
+# inherit the same authoritative source trees.
+_core_source_text = str(_CORE_SRC)
+while _core_source_text in sys.path:
+    sys.path.remove(_core_source_text)
+sys.path.insert(0, _core_source_text)
+
+from okto_pulse.core.application.boundary.repository_checkout import (  # noqa: E402
+    activate_repository_checkout_paths,
+)
+
+_REPOSITORY_PATHS = activate_repository_checkout_paths(
+    anchor_repo=_CORE_SRC.parent,
+    required=False,
+)
+_COMMUNITY_SRC = next(
+    (
+        checkout.source_root
+        for checkout in _REPOSITORY_PATHS.checkouts
+        if checkout.edition == "community"
+    ),
+    None,
+)
 
 # ---------------------------------------------------------------------------
 # Test logging infrastructure (must be imported early)
@@ -69,18 +95,60 @@ os.environ["KG_EMBEDDING_MODE"] = "stub"
 # Application imports
 # ---------------------------------------------------------------------------
 
+from okto_pulse.core.infra import config as _core_config_module  # noqa: E402
 from okto_pulse.core.infra.config import CoreSettings, configure_settings  # noqa: E402
+from okto_pulse.core.infra.auth import configure_auth  # noqa: E402
+from okto_pulse.core.ports.authentication import (  # noqa: E402
+    Credential,
+    Principal,
+)
+
+
+def _require_source_origin(module, source_root: Path, *, edition: str) -> None:
+    origin = Path(module.__file__).resolve()
+    if not origin.is_relative_to(source_root):
+        raise RuntimeError(
+            f"{edition} test module resolved outside its local source tree: "
+            f"{origin} (expected under {source_root})"
+        )
+
+
+_require_source_origin(_core_config_module, _CORE_SRC, edition="Core")
 
 try:
+    from okto_pulse.community import config as _community_config_module  # noqa: E402
     from okto_pulse.community.config import CommunitySettings  # noqa: E402
 except ModuleNotFoundError:
+    if _COMMUNITY_SRC is not None:
+        raise
     _initial_settings = CoreSettings()
 else:
+    if _COMMUNITY_SRC is not None:
+        _require_source_origin(
+            _community_config_module,
+            _COMMUNITY_SRC,
+            edition="Community",
+        )
     # Real Community adapters require their edition-owned operational fields.
     # Pure-Core runs without the Community package keep the policy-only model.
     _initial_settings = CommunitySettings()
 
 configure_settings(_initial_settings)
+
+
+class _CoreTestAuthentication:
+    """Local human principal for Community REST adapters exercised by Core tests."""
+
+    async def authenticate(self, credential: Credential | None) -> Principal:
+        return Principal(
+            subject="core-test-user",
+            realm_id="local",
+            claims={"roles": ["admin"], "permissions": ("*",)},
+            actor_kind="human",
+        )
+
+
+configure_auth(_CoreTestAuthentication())
 
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db  # noqa: E402
 from okto_pulse.core.infra import database as _database_mod  # noqa: E402
@@ -302,6 +370,15 @@ class _CoreTestSchemaLifecycle:
     async def initialize_schema(self) -> None:
         async with _database_mod.get_engine().begin() as conn:
             await conn.run_sync(_models.Base.metadata.create_all)
+            if _COMMUNITY_SRC is not None:
+                from okto_pulse.community.adapters.sqlalchemy_base import (
+                    Base as CommunityBase,
+                )
+
+                # SK-B's immutable policy authority is an edition extension.
+                # Cross-repo integration runs compose it explicitly while
+                # pure-Core runs remain independent of Community.
+                await conn.run_sync(CommunityBase.metadata.create_all)
 
 
 class _CoreTestRelationalEffects(RelationalEffectsPort):
@@ -473,6 +550,10 @@ class _CoreTestPermissionPresetGateway:
             map_legacy_permissions,
             resolve_permissions,
         )
+        from okto_pulse.core.ports.permission_policy import (
+            PermissionPresetLineageNode,
+            resolve_preset_lineage,
+        )
 
         result = await self._session.execute(
             select(Agent).where(Agent.created_by == user_id).limit(1)
@@ -481,21 +562,60 @@ class _CoreTestPermissionPresetGateway:
         agent_flags = None
         preset_flags = None
         preset_name = None
+        owner_review_required = False
+        review_reason = None
         if agent is not None:
             if isinstance(agent.permission_flags, dict) and agent.permission_flags:
                 agent_flags = agent.permission_flags
             elif isinstance(agent.permissions, list) and agent.permissions:
                 agent_flags = map_legacy_permissions(agent.permissions)
             if agent.preset_id:
-                preset = await self._session.get(PermissionPreset, agent.preset_id)
-                if preset is not None and preset.flags:
-                    preset_flags = preset.flags
+                preset_rows = list(
+                    (
+                        await self._session.execute(
+                            select(PermissionPreset).order_by(PermissionPreset.id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                lineage = resolve_preset_lineage(
+                    agent.preset_id,
+                    tuple(
+                        PermissionPresetLineageNode(
+                            id=preset.id,
+                            base_preset_id=preset.base_preset_id,
+                            flags=copy.deepcopy(preset.flags),
+                        )
+                        for preset in preset_rows
+                    ),
+                )
+                preset_flags = lineage.flags
+                owner_review_required = lineage.owner_review_required
+                review_reason = lineage.review_reason
+                preset = next(
+                    (
+                        candidate
+                        for candidate in preset_rows
+                        if candidate.id == agent.preset_id
+                    ),
+                    None,
+                )
+                if preset is not None:
                     preset_name = preset.name
-        effective = resolve_permissions(agent_flags, preset_flags, None)
+        effective = resolve_permissions(
+            agent_flags,
+            preset_flags,
+            None,
+            owner_review_required=owner_review_required,
+            review_reason=review_reason,
+        )
         return EffectivePermissions(
             board_id=board_id,
             preset_name=preset_name or _match_builtin_preset_name(effective.flags),
             flags=effective.flags,
+            owner_review_required=effective.owner_review_required,
+            review_reason=effective.review_reason,
         )
 
     async def list_presets(self, *, user_id):
@@ -509,9 +629,15 @@ class _CoreTestPermissionPresetGateway:
         )
         return [_test_preset_view(row) for row in result.scalars().all()]
 
-    async def create_preset(self, *, user_id, name, description, flags):
+    async def get_preset(self, *, preset_id):
+        preset = await self._session.get(PermissionPreset, preset_id)
+        return _test_preset_view(preset) if preset is not None else None
+
+    async def create_preset(
+        self, *, user_id, name, description, flags, preset_id=None
+    ):
         preset = PermissionPreset(
-            id=str(uuid.uuid4()),
+            id=preset_id or str(uuid.uuid4()),
             owner_id=user_id,
             name=name,
             description=description or None,
@@ -555,7 +681,9 @@ class _CoreTestPermissionPresetGateway:
         await self._session.refresh(preset)
         return _test_preset_view(preset)
 
-    async def update_preset(self, *, preset_id, user_id, name, description, flags):
+    async def update_preset(
+        self, *, preset_id, user_id, name, description, flags, replace=False
+    ):
         preset = await self._session.get(PermissionPreset, preset_id)
         if preset is None:
             return None
@@ -565,9 +693,9 @@ class _CoreTestPermissionPresetGateway:
             raise PermissionError("You can only modify your own presets")
         if name is not None:
             preset.name = name
-        if description is not None:
+        if replace or description is not None:
             preset.description = description
-        if flags is not None:
+        if replace or flags is not None:
             preset.flags = copy.deepcopy(flags)
         await self._session.flush()
         await self._session.refresh(preset)
@@ -759,6 +887,132 @@ class _CoreTestRelationalApplicationAdapter:
 
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
+
+    def quality_assessments(self, session):
+        _ = session
+        from okto_pulse.core.ports.quality_assessment import (
+            QualityAssessmentAdapterMissing,
+        )
+
+        raise QualityAssessmentAdapterMissing(
+            "The Core test adapter has no quality-assessment persistence."
+        )
+
+    def quality_assessment_lifecycle(self, session):
+        _ = session
+
+        class _QualityAssessmentLifecycleStub:
+            async def load_lifecycle_state(self, **_kwargs):
+                return (), ()
+
+            async def apply_lifecycle_plan(self, _plan):
+                return None
+
+            async def apply_purge_plan(self, plan):
+                from datetime import datetime, timezone
+
+                from okto_pulse.core.domain.quality_assessment_lifecycle import (
+                    AssessmentPurgePostcondition,
+                    AssessmentPurgeResidual,
+                )
+
+                return AssessmentPurgePostcondition(
+                    target=plan.target,
+                    residuals=tuple(
+                        AssessmentPurgeResidual(resource=resource, count=0)
+                        for resource in plan.deletion_order
+                    ),
+                    zero_orphans=True,
+                    projections_reconciled=True,
+                    outbox_reconciled=True,
+                    epoch_consistency_preserved=True,
+                    verified_at=datetime.now(timezone.utc),
+                )
+
+        return _QualityAssessmentLifecycleStub()
+
+    def research_decisions(self, session):
+        """Empty RDL port for Core scenarios that do not seed ledger entries."""
+
+        _ = session
+
+        class _ResearchDecisionLedgerStub:
+            async def get_snapshot_for_version(self, **_kwargs):
+                return None
+
+            async def list_current_entries_with_heads(self, **_kwargs):
+                return ()
+
+            async def save_snapshot(self, snapshot):
+                return snapshot
+
+            async def save_derivation(self, derivation):
+                return derivation
+
+        return _ResearchDecisionLedgerStub()
+
+    def checklists(self, session):
+        class _CreateBoardChecklistStub:
+            async def apply_binding_cas(
+                self,
+                binding,
+                *,
+                expected_version,
+                expected_digest,
+            ):
+                assert expected_version == 0
+                assert expected_digest is None
+                return binding
+
+            async def get_spec_snapshot(self, *, board_id, spec_id):
+                from okto_pulse.core.domain.checklist import ChecklistSpecSnapshot
+
+                spec = await session.get(Spec, spec_id)
+                if spec is None or spec.board_id != board_id:
+                    return None
+                return ChecklistSpecSnapshot(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    spec_version=spec.version,
+                    content_digest="0" * 64,
+                    input_digest="1" * 64,
+                    status=spec.status.value,
+                    archived=bool(spec.archived),
+                )
+
+            async def get_binding(self, **_kwargs):
+                return None
+
+            async def get_current(self, **_kwargs):
+                return None
+
+        return _CreateBoardChecklistStub()
+
+    def guideline_policy(self, session):
+        """Use the real Community authority for SK-B integration scenarios."""
+
+        from okto_pulse.community.adapters.sqlalchemy_guideline_policy import (
+            CommunitySqlAlchemyGuidelinePolicy,
+        )
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+
+        return CommunitySqlAlchemyGuidelinePolicy(
+            session,
+            transition_snapshot_resolver=(
+                CommunitySqlAlchemySemanticGuidelineAssessment(session)
+            ),
+        )
+
+    def semantic_guideline_assessments(self, session):
+        """Use the real Community SK-B3 evidence authority."""
+
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+
+        return CommunitySqlAlchemySemanticGuidelineAssessment(session)
 
     def amendment_revision_backend(self, session):
         return _CoreTestAmendmentRevisionApiBackend(session)
@@ -2060,6 +2314,32 @@ def _structured_spec_test_store():
 
 
 @pytest.fixture(autouse=True)
+def _requirement_lint_writer_hook():
+    from okto_pulse.core.ports.requirement_lint import (
+        RequirementLintWriteResult,
+        register_requirement_lint_writer_hook,
+        reset_requirement_lint_writer_hook_for_tests,
+    )
+
+    class _ContractTestRequirementLintHook:
+        async def stage_requirement_lint(self, context, command):  # noqa: ANN001
+            del context
+            return RequirementLintWriteResult(
+                receipt_id=(
+                    f"qar_test_{command.spec_id}_{command.spec_version}_"
+                    f"{command.writer.value}"
+                ),
+                head_revision=command.spec_version,
+                evaluated_rule_count=1,
+                finding_count=0,
+            )
+
+    register_requirement_lint_writer_hook(_ContractTestRequirementLintHook())
+    yield
+    reset_requirement_lint_writer_hook_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _effective_resource_test_port():
     from okto_pulse.core.ports.effective_resource import (
         register_effective_resource_persistence_port,
@@ -2578,11 +2858,18 @@ async def _register_test_kg_events_reader_port():
     """Compose the test-only KG event reader and drain pollers between tests."""
 
     from okto_pulse.core.application.kg_events_hub import (
+        _RUNTIME_KEY as _KG_HUB_RUNTIME_KEY,
         configure_kg_events_hub,
         shutdown_kg_events_hub,
     )
+    from okto_pulse.core.runtime_context import reset_runtime_values
 
     await shutdown_kg_events_hub()
+    # Drop the hub binding entirely: configure_kg_events_hub reuses a live
+    # (non-closed) hub, and a hub built under a previous test's loop can hold
+    # streams whose tasks belong to that dead loop. A fresh hub per test keeps
+    # every poller on the current loop.
+    reset_runtime_values(_KG_HUB_RUNTIME_KEY)
     reset_kg_events_reader_port_for_tests()
     reader = _CoreTestKGEventsReader(get_session_factory())
     register_kg_events_reader_port(reader)

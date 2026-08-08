@@ -7,10 +7,9 @@ invalid ``lane_type`` never leaks the raw Pydantic surface (no
 transports answer with identical semantics.
 
 This is the transport/adapter layer (it may name request-shape concerns); the
-service layer stays transport-neutral and never imports it. The mapping is
-intentionally bounded — only ``lane_type`` (→ ``SprintLaneType``) is normalized
-today; everything else returns ``None`` so the caller keeps the framework's
-default validation behavior unchanged.
+service layer stays transport-neutral and never imports it. Each normalizer is
+intentionally bounded to its named field, leaving unrelated validation errors
+on the framework's default path.
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from okto_pulse.core.domain.enums import SprintLaneType
+from okto_pulse.core.domain.test_scenarios import VALID_SCENARIO_TYPES
 
 # Bounded registry of request fields whose enum-validation failure is rendered as
 # a canonical envelope. Add a row to extend; an unlisted field returns ``None`` so
@@ -67,3 +67,42 @@ def canonical_enum_error(errors: list[dict[str, Any]]) -> dict[str, Any] | None:
             continue
         return _envelope(field, err.get("input"))
     return None
+
+
+def invalid_scenario_type_envelope(value: Any) -> dict[str, Any]:
+    """Return the frozen API17 scenario-type rejection shape."""
+
+    allowed = list(VALID_SCENARIO_TYPES)
+    return {
+        "error": "invalid_scenario_type",
+        "value": value,
+        "allowed": allowed,
+        "message": (
+            f"Invalid scenario_type {value!r}. "
+            f"Allowed values: {', '.join(allowed)}."
+        ),
+        "mutated": False,
+    }
+
+
+def canonical_scenario_type_error(
+    errors: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Map only a Literal failure on ``scenario_type`` to API17."""
+
+    for error in errors:
+        location = error.get("loc") or ()
+        if (
+            location
+            and str(location[-1]) == "scenario_type"
+            and error.get("type") == "literal_error"
+        ):
+            return invalid_scenario_type_envelope(error.get("input"))
+    return None
+
+
+__all__ = [
+    "canonical_enum_error",
+    "canonical_scenario_type_error",
+    "invalid_scenario_type_envelope",
+]

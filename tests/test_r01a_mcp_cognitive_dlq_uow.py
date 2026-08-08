@@ -23,6 +23,15 @@ from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 ACTOR = ActorContext("fu3b-mcp-agent", "mcp")
 
 
+def _board_actor(board_id: str) -> ActorContext:
+    return ActorContext(
+        ACTOR.actor_id,
+        "mcp",
+        board_id=board_id,
+        permissions=["kg.admin.settings_read"],
+    )
+
+
 def _uowf():
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -71,9 +80,10 @@ async def test_list_cognitive_dlq_use_case_matches_reader() -> None:
             db, board_id, limit=50, offset=0
         )
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         result = await ListCognitiveDlqUseCase().execute(
-            ListCognitiveDlqCommand(board_id, limit=50, offset=0), actor=ACTOR, uow=uow
+            ListCognitiveDlqCommand(board_id, limit=50, offset=0), actor=actor, uow=uow
         )
 
     assert result.total == base_total == 3
@@ -85,9 +95,10 @@ async def test_list_cognitive_dlq_use_case_paginates() -> None:
     board_id = f"board-fu3b-{uuid.uuid4().hex[:8]}"
     await _seed_dlq(board_id, 5)
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         page = await ListCognitiveDlqUseCase().execute(
-            ListCognitiveDlqCommand(board_id, limit=2, offset=0), actor=ACTOR, uow=uow
+            ListCognitiveDlqCommand(board_id, limit=2, offset=0), actor=actor, uow=uow
         )
     assert page.total == 5
     assert len(page.rows) == 2

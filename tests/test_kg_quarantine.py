@@ -670,6 +670,7 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
         return primary
 
     runtime = get_kg_registry().global_discovery_runtime
+    monkeypatch.setattr(runtime, "_legacy_global_graph_path", lambda: primary)
     monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
     monkeypatch.setattr(runtime, "close", lambda: None)
     monkeypatch.setattr(runtime, "bootstrap", fake_bootstrap)

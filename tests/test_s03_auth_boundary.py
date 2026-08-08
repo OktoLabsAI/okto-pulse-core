@@ -58,6 +58,7 @@ import sys
 from okto_pulse.core.ports.authentication import Credential, Principal
 assert Credential('secret').value == 'secret'
 assert Principal('user').subject == 'user'
+assert Principal('user').actor_kind == 'unknown'
 blocked = ('fastapi', 'starlette', 'sqlalchemy', 'okto_pulse.community')
 assert not any(name == item or name.startswith(item + '.') for name in sys.modules for item in blocked)
 """
@@ -141,6 +142,7 @@ def test_rest_and_mcp_principals_feed_the_same_actor_policy_contract() -> None:
         Principal(
             "user-01",
             realm_id="tenant-01",
+            actor_kind="human",
             claims={"name": "User", "roles": ["admin"], "permissions": {"x": True}},
         ),
         source="rest",
@@ -166,11 +168,13 @@ def test_rest_and_mcp_principals_feed_the_same_actor_policy_contract() -> None:
         "tenant-01",
         ("admin",),
     )
+    assert rest_actor.actor_kind == "human"
     assert (mcp_actor.actor_id, mcp_actor.actor_name, mcp_actor.source) == (
         "agent-01",
         "Agent",
         "mcp",
     )
+    assert mcp_actor.actor_kind == "agent"
 
 
 @pytest.mark.asyncio

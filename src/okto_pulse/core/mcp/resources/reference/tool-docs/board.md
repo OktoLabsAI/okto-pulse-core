@@ -28,6 +28,8 @@ Returns:
 
 List all members of the board (owner + agents).
 
+Requires `board.share.read`.
+
 Args:
     board_id: Board ID
 
@@ -37,6 +39,8 @@ Returns:
 ## `okto_pulse_get_active_default_board_config`
 
 Read the active default board configuration template.
+
+Requires `default_board_config.read`.
 
 Use this to understand which gates and settings new boards inherit when they are
 created from the global default configuration.
@@ -52,6 +56,8 @@ Returns:
 List default board-configuration template versions for a scope, plus the
 active template id (admin read). REST twin: GET /default-board-config/versions.
 
+Requires `default_board_config.read`.
+
 Args:
     board_id: Board ID used for authentication.
     scope: Template scope (default `global`).
@@ -65,16 +71,24 @@ Returns:
 Compare a board's current settings against the active default board
 configuration snapshot applied at creation.
 
+Requires `default_board_config.diff_read`.
+
 Args:
     board_id: Board ID.
 
 Returns:
     JSON with field-level differences and applied default snapshot metadata.
+    The diff also compares the board's current curated Spec checklist binding
+    with the mode captured in that snapshot.
 
 ## `okto_pulse_create_default_board_config_version`
 
 Create a new default board-configuration template version (admin write).
-REST twin: POST /default-board-config/versions. Perm: SPECS_UPDATE.
+REST twin: POST /default-board-config/versions. Requires
+`default_board_config.create`;
+when the exact guideline pins differ from the active baseline, it additionally
+requires `guidelines.adoption.manage`. A settings-only version with equivalent
+pins does not require that additional capability.
 
 Use this to define the gate/settings defaults that future boards should
 inherit. Creating a version does not activate it unless `activate=true`
@@ -84,13 +98,18 @@ that is the intended policy. Historical boards/templates with the field absent
 are not backfilled and resolve through `legacy_absent_compat`.
 The same `enforce` default is materialized when a new board is created before
 any active template exists; an explicitly supplied `warn`/`off` is preserved.
+The curated Spec checklist default is human-owned and is intentionally not an
+argument of this MCP tool. A new version inherits the active template's mode;
+when no value exists, it resolves to `advisory`.
 
 Args:
     board_id: Board ID used for authentication.
     settings_payload: Settings dict — validated as BoardSettings.
     scope: Template scope (default `global`).
-    guideline_default_refs: Optional list of default guideline refs — must
-        reference GLOBAL catalog guidelines.
+    guideline_default_refs: Optional ordered list of GLOBAL guideline pins.
+        Each native ref contains `guideline_id`, `revision_id`,
+        `revision_number`, `semantic_version`, `revision_digest`, and optional
+        non-negative `priority`.
     design_system_default_ref: Optional default Design System ref dict — its
         gate_mode must be valid.
     activate: When true, activates the new version (default false).
@@ -102,7 +121,9 @@ Returns:
 
 Activate a default board-configuration template version (admin write);
 deactivates every other active version in the scope. REST twin:
-POST /default-board-config/versions/{template_id}/activate. Perm: SPECS_UPDATE.
+POST /default-board-config/versions/{template_id}/activate. Requires
+`default_board_config.activate`; if the target changes the active exact guideline pins, it also
+requires `guidelines.adoption.manage`.
 
 Args:
     board_id: Board ID used for authentication.
@@ -111,11 +132,17 @@ Args:
 Returns:
     JSON with the activated version and prior active version, if any.
 
+Agent activation is rejected with `human_control_required` when it would change
+the human-owned curated Spec checklist default. A human can make that change in
+Menu → Board → Global Default.
+
 ## `okto_pulse_deactivate_default_board_config_version`
 
 Deactivate a default board-configuration template version (admin write).
 REST twin: POST /default-board-config/versions/{template_id}/deactivate.
-Perm: SPECS_UPDATE.
+Requires `default_board_config.deactivate`; removing effective guideline pins also requires
+`guidelines.adoption.manage`. Deactivating an already inactive version or an
+active version without guideline pins does not require the additional leaf.
 
 Args:
     board_id: Board ID used for authentication.
@@ -123,6 +150,9 @@ Args:
 
 Returns:
     JSON with updated active/default state.
+
+Agent deactivation is rejected with `human_control_required` when removing the
+active version would change the human-owned curated Spec checklist default.
 
 ## `okto_pulse_link_board_design_system`
 

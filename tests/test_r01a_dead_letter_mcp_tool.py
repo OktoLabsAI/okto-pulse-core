@@ -30,7 +30,11 @@ def _stub_ctx():
     return type(
         "Ctx",
         (),
-        {"agent_id": USER_ID, "agent_name": "dlq-mcp-agent", "permissions": ["board.read"]},
+        {
+            "agent_id": USER_ID,
+            "agent_name": "dlq-mcp-agent",
+            "permissions": ["board.read", "kg.admin.settings_read"],
+        },
     )()
 
 

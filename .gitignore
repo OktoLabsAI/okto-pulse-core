@@ -37,6 +37,7 @@ cli_output.log
 tests/.cache/
 htmlcov/
 .coverage
+/.tmp/
 
 # SQLite
 *.db

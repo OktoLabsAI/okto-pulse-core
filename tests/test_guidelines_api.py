@@ -10,6 +10,7 @@ from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.infra.database import get_session_factory
+from okto_pulse.core.ports.authentication import Principal
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import Board
 
@@ -20,7 +21,7 @@ USER_ID = "guidelines-api-user"
 @pytest_asyncio.fixture
 async def _client_and_board():
     db_factory = get_session_factory()
-    board_id = f"guidelines-board-{uuid.uuid4()}"
+    board_id = str(uuid.uuid4())
 
     async with db_factory() as db:
         db.add(
@@ -47,6 +48,12 @@ async def _client_and_board():
 
     app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.require_principal] = lambda: Principal(
+        subject=USER_ID,
+        realm_id="local",
+        claims={"roles": ["admin"], "permissions": ("*",)},
+        actor_kind="human",
+    )
     app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
 
     return TestClient(app), board_id
@@ -76,7 +83,7 @@ def test_create_inline_board_guideline(_client_and_board):
     assert body[0]["guideline"]["board_id"] == board_id
 
 
-def test_link_global_board_guideline_still_works(_client_and_board):
+def test_link_global_board_guideline_requires_governed_preview(_client_and_board):
     client, board_id = _client_and_board
 
     global_resp = client.post(
@@ -96,6 +103,7 @@ def test_link_global_board_guideline_still_works(_client_and_board):
         json={"guideline_id": guideline_id, "priority": 2},
     )
 
-    assert linked.status_code == 201, linked.text
-    assert linked.json()["guideline_id"] == guideline_id
-    assert linked.json()["priority"] == 2
+    assert linked.status_code == 409, linked.text
+    detail = linked.json()["detail"]
+    assert detail["error_code"] == "guideline_impact_preview_required"
+    assert detail["next_action"] == "preview_then_adopt"

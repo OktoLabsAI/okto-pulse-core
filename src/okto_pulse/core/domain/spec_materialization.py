@@ -1,4 +1,4 @@
-"""Pure planning for legacy FR/AC materialization."""
+"""Pure planning for legacy FR/TR/AC materialization."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from typing import Any
 
 from okto_pulse.core.services.spec_entity_canonicalization import (
     DuplicateSpecChildIdError,
-    canonicalize_fr_ac,
+    SPEC_REQUIREMENT_FIELDS,
+    canonicalize_spec_requirement_fields,
 )
 
 
-FR_AC_FIELDS: tuple[tuple[str, str], ...] = (
-    ("functional_requirements", "functional_requirement"),
-    ("acceptance_criteria", "acceptance_criterion"),
-)
+# Backward-compatible name retained for command/import callers. Its value is
+# intentionally widened to the SK-A FR/TR/AC contract.
+FR_AC_FIELDS = SPEC_REQUIREMENT_FIELDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +36,7 @@ class SpecMaterializationPlan:
         return len(self.changes)
 
 
-def plan_legacy_fr_ac_materialization(
+def plan_legacy_spec_requirement_materialization(
     specs: Sequence[object],
 ) -> SpecMaterializationPlan:
     changes: list[SpecFieldMaterialization] = []
@@ -44,14 +44,21 @@ def plan_legacy_fr_ac_materialization(
     errors = 0
     for spec in specs:
         try:
+            current_fields = {
+                # Older adapter/test records predate the TR column. Treat an
+                # absent collection exactly like a stored NULL so widening
+                # the governed materializer remains backwards compatible.
+                field_name: getattr(spec, field_name, None)
+                for field_name, _ in SPEC_REQUIREMENT_FIELDS
+            }
+            canonical_fields = canonicalize_spec_requirement_fields(
+                current_fields,
+                existing_fields=current_fields,
+            )
             pending: list[tuple[str, list[Any]]] = []
-            for field_name, entity_type in FR_AC_FIELDS:
-                current = getattr(spec, field_name)
-                canonical = canonicalize_fr_ac(
-                    entity_type,
-                    current,
-                    existing_items=current,
-                )
+            for field_name, _ in SPEC_REQUIREMENT_FIELDS:
+                current = current_fields[field_name]
+                canonical = canonical_fields[field_name]
                 if canonical != current:
                     pending.append((field_name, canonical))
         except DuplicateSpecChildIdError:
@@ -69,9 +76,18 @@ def plan_legacy_fr_ac_materialization(
     )
 
 
+def plan_legacy_fr_ac_materialization(
+    specs: Sequence[object],
+) -> SpecMaterializationPlan:
+    """Compatibility alias for the widened FR/TR/AC materializer."""
+
+    return plan_legacy_spec_requirement_materialization(specs)
+
+
 __all__ = [
     "FR_AC_FIELDS",
     "SpecFieldMaterialization",
     "SpecMaterializationPlan",
     "plan_legacy_fr_ac_materialization",
+    "plan_legacy_spec_requirement_materialization",
 ]

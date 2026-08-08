@@ -23,6 +23,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.ports.consolidation import (
     ConsolidationPoisonRow,
+    ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
 )
 from okto_pulse.core.ports.reconcile_intent import (
@@ -104,6 +105,18 @@ class TestSqlAlchemyConsolidationPersistence:
         elif artifact_type == "card":
             statement = statement.options(selectinload(Card.architecture_designs))
         return (await context.execute(statement)).scalars().first()
+
+    async def load_projection_inputs(
+        self,
+        context,
+        *,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        artifact: Any,
+    ) -> ConsolidationProjectionInputs:
+        del context, board_id, artifact_type, artifact_id, artifact
+        return ConsolidationProjectionInputs()
 
     async def list_artifacts(
         self,

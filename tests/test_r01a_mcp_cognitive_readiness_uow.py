@@ -29,6 +29,16 @@ from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 ACTOR = ActorContext("fu3-mcp-agent", "mcp", realm_id=LOCAL_REALM_ID)
 
 
+def _board_actor(board_id: str) -> ActorContext:
+    return ActorContext(
+        ACTOR.actor_id,
+        "mcp",
+        board_id=board_id,
+        realm_id=LOCAL_REALM_ID,
+        permissions=["kg.admin.settings_read"],
+    )
+
+
 def _board() -> str:
     return f"board-fu3-{uuid.uuid4().hex[:8]}"
 
@@ -89,10 +99,11 @@ async def test_evaluate_cognitive_readiness_parity() -> None:
         )
         baseline_enf = await cognitive_enforcement_active(db, board_id)
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         result = await EvaluateCognitiveReadinessUseCase().execute(
             EvaluateCognitiveReadinessCommand(board_id, source_ref=source_ref),
-            actor=ACTOR, uow=uow,
+            actor=actor, uow=uow,
         )
     assert result.verdict.to_api() == baseline.to_api()
     assert result.enforcement_active == baseline_enf
@@ -115,9 +126,10 @@ async def test_list_cognitive_readiness_items_parity() -> None:
         )
         baseline_enf = await cognitive_enforcement_active(db, board_id)
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         result = await ListCognitiveReadinessItemsUseCase().execute(
-            ListCognitiveReadinessItemsCommand(board_id), actor=ACTOR, uow=uow
+            ListCognitiveReadinessItemsCommand(board_id), actor=actor, uow=uow
         )
     assert result.result == baseline
     assert result.enforcement_active == baseline_enf
@@ -158,10 +170,11 @@ async def test_evaluate_bug_cognitive_closure_context_aware_fail_closed() -> Non
 
     register_bug_cognitive_context_assembler(_AbsentContextAssembler())
 
-    async with _uowf()(actor=ACTOR) as uow:
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
         result = await EvaluateBugCognitiveClosureUseCase().execute(
             EvaluateBugCognitiveClosureCommand(board_id, bug_id),
-            actor=ACTOR,
+            actor=actor,
             uow=uow,
         )
 
