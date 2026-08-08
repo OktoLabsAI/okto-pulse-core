@@ -63,6 +63,17 @@ def test_flat_permissions_allow_granular_and_explicit_legacy_tokens() -> None:
     assert decide_authorization(_actor(("board:read",)), requirement).allowed is True
 
 
+def test_introduced_leaf_accepts_bounded_flat_token_for_historical_authority() -> None:
+    requirement = PermissionRequirement(
+        "agent.entity.read",
+        legacy_operation="board.read",
+    )
+    assert decide_authorization(_actor(["agent.entity.read"]), requirement).allowed
+    assert decide_authorization(_actor(["board.read"]), requirement).allowed
+    assert decide_authorization(_actor(["board:read"]), requirement).allowed
+    assert not decide_authorization(_actor(["cards:update"]), requirement).allowed
+
+
 def test_none_is_trusted_full_access_but_unknown_flag_fails_closed() -> None:
     actor = _actor(None)
     assert decide_authorization(actor, PermissionRequirement("board.read")).allowed
@@ -171,6 +182,101 @@ async def test_role_bypass_only_happens_for_explicit_accepted_roles() -> None:
         roles=("admin",),
     )
     assert decision == decision.allow("role:admin")
+
+
+@pytest.mark.asyncio
+async def test_explicit_permission_denial_precedes_accepted_role() -> None:
+    actor = _actor(
+        PermissionSet({"board": {"read": False}}),
+        roles=("admin",),
+    )
+
+    with pytest.raises(PermissionDeniedError) as exc_info:
+        await require_any_authority(
+            actor,
+            PermissionRequirement("board.read"),
+            roles=("admin",),
+        )
+
+    detail = json.loads(str(exc_info.value))
+    assert detail["required_permission"] == "board.read"
+
+
+@pytest.mark.asyncio
+async def test_explicit_mapping_override_denial_precedes_accepted_role() -> None:
+    actor = _actor([], roles=("admin",))
+
+    with pytest.raises(PermissionDeniedError):
+        await require_any_authority(
+            actor,
+            PermissionRequirement("board.read"),
+            roles=("admin",),
+            permissions={"board": {"read": False}},
+        )
+
+
+@pytest.mark.asyncio
+async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> None:
+    actor = _actor(
+        PermissionSet({"kg": {"admin": {"settings_read": False}}}),
+        roles=("operator",),
+    )
+
+    with pytest.raises(PermissionDeniedError):
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "runtime.settings.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            roles=("operator",),
+        )
+
+
+@pytest.mark.asyncio
+async def test_role_does_not_bypass_missing_historical_authority() -> None:
+    actor = _actor(
+        PermissionSet({"runtime": {"settings": {"read": True}}}),
+        roles=("operator",),
+    )
+
+    with pytest.raises(PermissionDeniedError):
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "runtime.settings.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            roles=("operator",),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "requirement",
+    (
+        PermissionRequirement("not.registered"),
+        PermissionRequirement("board.read", entity="board"),
+    ),
+    ids=("unknown-permission", "invalid-context"),
+)
+@pytest.mark.parametrize(
+    "permissions",
+    (PermissionSet({}), [], None, ["board:read"]),
+    ids=("permission-set", "empty-legacy", "trusted-legacy", "flat-legacy"),
+)
+async def test_role_never_bypasses_invalid_permission_requirement(
+    requirement: PermissionRequirement,
+    permissions,
+) -> None:
+    actor = _actor(permissions, roles=("admin",))
+
+    with pytest.raises(PermissionDeniedError):
+        await require_any_authority(
+            actor,
+            requirement,
+            roles=("admin",),
+        )
 
 
 @pytest.mark.asyncio

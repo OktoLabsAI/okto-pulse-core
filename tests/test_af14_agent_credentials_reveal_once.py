@@ -17,12 +17,12 @@ from okto_pulse.core.application.boundary.agent_secret_surface_gate import (
 )
 from okto_pulse.community.api.auth_deps import (
     get_current_principal,
-    require_user,
 )
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import AgentCreate, AgentResponse, AgentRevealResponse
 from okto_pulse.core.ports.mcp_auth import McpCredential, mcp_credential_from_sources
 from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 from okto_pulse.core.services import AgentService
 
 USER = "af14-user"
@@ -57,11 +57,11 @@ def _client() -> TestClient:
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[require_user] = lambda: USER
     app.dependency_overrides[get_current_principal] = lambda: Principal(
         subject=USER,
         realm_id="local",
         actor_kind="human",
+        claims={"permissions": registered_permission_flags()},
     )
     return TestClient(app)
 

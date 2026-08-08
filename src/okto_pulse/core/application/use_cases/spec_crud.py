@@ -1133,15 +1133,23 @@ class ExecuteTestScenarioEvidenceUseCase:
             compute_test_scenario_semantic_sha256,
         )
 
-        # Resolve authorization before validating replay inputs.  A caller that
-        # cannot write this Spec must observe the same not-found boundary for
-        # every otherwise well-formed command, and must never reach a trusted
-        # evidence issuer/verifier (or a scenario child lookup).
+        # Resolve the non-enumerable Spec scope before the permission decision.
+        # Foreign and missing resources therefore retain the same 404 boundary,
+        # while authorization still precedes child lookup and trusted providers.
         spec = await _require_actor_board_spec(
             uow,
             command.spec_id,
             actor,
             write=True,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.tests.execute",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=spec.board_id,
         )
         if command.status not in GATED_STATUSES:
             raise ValueError(
@@ -1431,16 +1439,16 @@ async def _require_actor_board_spec_qa(
     *,
     spec_id: str | None = None,
     write: bool = False,
-) -> Any:
+) -> tuple[Any, Any]:
     """Resolve path Spec before reading a globally-addressable Q&A child."""
     if spec_id is None:
         raise EntityNotFoundError("spec_qa", qa_id)
     services = scope.services if hasattr(scope, "services") else scope
-    await _require_actor_board_spec(scope, spec_id, actor, write=write)
+    spec = await _require_actor_board_spec(scope, spec_id, actor, write=write)
     qa = await services.spec_qa.get_question(qa_id)
     if qa is None or qa.spec_id != spec_id:
         raise EntityNotFoundError("spec_qa", qa_id)
-    return qa
+    return spec, qa
 
 
 # --- spec knowledge: list ---------------------------------------------------
@@ -1750,12 +1758,21 @@ class DeleteSpecQuestionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DeleteSpecQuestionResult:
-        await _require_actor_board_spec_qa(
+        spec, _qa = await _require_actor_board_spec_qa(
             uow,
             command.qa_id,
             actor,
             spec_id=command.spec_id,
             write=True,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.qa.delete",
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=spec.board_id,
         )
         deleted = await uow.services.spec_qa.delete_question(command.qa_id)
         if not deleted:

@@ -389,6 +389,9 @@ def _full_done_spec() -> dict:
 
 async def _commit_worker_result(db_factory, board_id, agent_id, result):
     async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(Board(id=board_id, name=board_id, owner_id=agent_id))
+            await db.commit()
         begin = await begin_consolidation(
             BeginConsolidationRequest(
                 board_id=board_id,

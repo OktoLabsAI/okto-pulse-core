@@ -19,7 +19,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
-from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     card_requirement,
     entity_state,
@@ -427,6 +430,15 @@ class McpAddScreenMockupUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.mockups.create",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         from okto_pulse.core.services.design_system import (
             DesignSystemError,
             normalize_design_system_ref,
@@ -500,6 +512,15 @@ class McpUpdateScreenMockupUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.mockups.edit",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         from okto_pulse.core.services.design_system import (
             DesignSystemError,
             normalize_design_system_ref,
@@ -571,6 +592,15 @@ class McpAnnotateMockupUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.mockups.annotate",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         entity, service, update_class = await _load_entity_mockups(
             uow.services,
             command.entity_type,
@@ -615,6 +645,15 @@ class McpListScreenMockupsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.mockups.read",
+                legacy_operation="board:read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         entity, _service, _update_class = await _load_entity_mockups(
             uow.services,
             command.entity_type,
@@ -655,6 +694,15 @@ class McpDeleteScreenMockupUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.mockups.delete",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         entity, service, update_class = await _load_entity_mockups(
             uow.services,
             command.entity_type,

@@ -15,9 +15,15 @@ from okto_pulse.community.api import presets as presets_api
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.me import router as me_router
 from okto_pulse.community.api.presets import router as presets_router
-from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import (
+    get_realm_id,
+    require_principal,
+    require_user,
+)
+from okto_pulse.core.domain.permissions import get_builtin_presets
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.ports.authentication import Principal
 
 USER = "fcc01c-user"
 OTHER = "fcc01c-other"
@@ -35,8 +41,19 @@ def client() -> TestClient:
         async with session_factory() as session:
             yield session
 
+    full_control = next(
+        preset["flags"]
+        for preset in get_builtin_presets()
+        if preset["name"] == "Full Control"
+    )
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=USER,
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"], "permissions": full_control},
+        actor_kind="human",
+    )
     app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 

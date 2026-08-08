@@ -112,6 +112,11 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
     resolve_actor_permissions,
 )
+from okto_pulse.core.application.use_cases.authorize_operation import (
+    AuthorizeOperationCommand,
+    AuthorizeOperationResult,
+    AuthorizeOperationUseCase,
+)
 from okto_pulse.core.application.use_cases.card_traceability import (
     LinkCardTraceabilityCommand,
     LinkCardTraceabilityResult,
@@ -604,6 +609,11 @@ from okto_pulse.core.application.use_cases.guidelines_crud import (
     UpdateGuidelineCommand,
     UpdateGuidelineResult,
     UpdateGuidelineUseCase,
+)
+from okto_pulse.core.application.use_cases.confirm_amendment_coverage import (
+    ConfirmAmendmentCoverageCommand,
+    ConfirmAmendmentCoverageResult,
+    ConfirmAmendmentCoverageUseCase,
 )
 from okto_pulse.core.application.use_cases.policy_governance import (
     AdoptGuidelineRevisionCommand,
@@ -1112,6 +1122,14 @@ __all__ = [
     "PermissionDeniedError",
     "PermissionRequirement",
     "commit",
+    # registered operational authorization
+    "AuthorizeOperationCommand",
+    "AuthorizeOperationResult",
+    "AuthorizeOperationUseCase",
+    # amendment coverage
+    "ConfirmAmendmentCoverageCommand",
+    "ConfirmAmendmentCoverageResult",
+    "ConfirmAmendmentCoverageUseCase",
     # selective Knowledge propagation v2
     "CreateCardKnowledgeV2Command",
     "CreateCardKnowledgeV2UseCase",

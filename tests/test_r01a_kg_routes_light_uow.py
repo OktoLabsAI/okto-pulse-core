@@ -69,8 +69,19 @@ def client():
                 "kg": {
                     "admin": {
                         "historical_consolidation": True,
+                        "settings_read": True,
                         "wipe_board": True,
-                    }
+                    },
+                    "operations": {
+                        "audit": {"read": True},
+                        "settings": {"read": True},
+                        "historical": {
+                            "read": True,
+                            "start": True,
+                            "cancel": True,
+                        },
+                        "board": {"erase": True},
+                    },
                 }
             },
         }

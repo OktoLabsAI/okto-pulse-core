@@ -48,7 +48,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r4 tester"
-        self.permissions = object()
+        self.permissions = ["*"]
 
 
 async def _call(name: str, **kwargs) -> dict:

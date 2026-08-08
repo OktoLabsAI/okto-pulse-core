@@ -31,6 +31,10 @@ from okto_pulse.core.application.history_pagination import (
     validate_snapshot_version,
 )
 from okto_pulse.core.application.ideation_scope import merge_scope_assessment
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 
 
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
@@ -381,6 +385,16 @@ class McpAddIdeationKnowledgeUseCase:
         self, command: McpAddIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddIdeationKnowledgeResult:
 
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "ideation.knowledge.create",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
+
         ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not _in_board_scope(ideation, command.board_id, actor):
             raise EntityNotFoundError("ideation", command.ideation_id)
@@ -414,6 +428,16 @@ class McpDeleteIdeationKnowledgeUseCase:
     async def execute(
         self, command: McpDeleteIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationKnowledgeResult:
+
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "ideation.knowledge.delete",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not _in_board_scope(ideation, command.board_id, actor):
@@ -602,6 +626,15 @@ class McpDeleteIdeationQuestionUseCase:
     async def execute(
         self, command: McpDeleteIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationQuestionResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "ideation.qa.delete",
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         service = uow.services.ideation_qa
         qa_item = await service.get_question(command.qa_id)
         if not qa_item or qa_item.ideation_id != command.ideation_id:

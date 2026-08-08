@@ -24,7 +24,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
-from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     transition_permission_requirement,
 )
@@ -689,6 +692,15 @@ class McpDeleteRefinementQuestionUseCase:
     async def execute(
         self, command: McpDeleteRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementQuestionResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "refinement.qa.delete",
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         service = uow.services.refinement_qa
         qa_item = await service.get_question(command.qa_id)
         if not qa_item or qa_item.refinement_id != command.refinement_id:

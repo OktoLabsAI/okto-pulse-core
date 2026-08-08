@@ -19,6 +19,10 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from typing import Any
 
 from okto_pulse.core.application.errors import BoardNotFoundError
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.ports.scheduler import SchedulerControl
@@ -64,6 +68,15 @@ class GetKgHealthUseCase:
         self, command: GetKgHealthCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetKgHealthResult:
         await _require_health_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.health.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.kg.health(
             command.board_id,
             scheduler_control=command.scheduler_control,
@@ -115,6 +128,15 @@ class GetKgHealthReadinessUseCase:
         self, command: GetKgHealthReadinessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetKgHealthReadinessResult:
         await _require_health_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.health.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.kg.health_readiness(
             command.board_id,
             profile=command.profile,

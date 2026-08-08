@@ -17,7 +17,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from okto_pulse.community.api.boards import router as boards_router
 from okto_pulse.community.api import auth_deps as _auth_mod
+from okto_pulse.core.domain.permissions import get_builtin_presets
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.ports.authentication import Principal
 from sqlalchemy_test_models import Board
 from okto_pulse.core.models.schemas import BoardSettings
 from okto_pulse.core.services.main import IdeationService
@@ -181,9 +184,20 @@ async def _board_client():
         async with df() as session:
             yield session
 
+    full_control = next(
+        preset["flags"]
+        for preset in get_builtin_presets()
+        if preset["name"] == "Full Control"
+    )
     app.dependency_overrides[get_db] = _odb
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
-    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
+    app.dependency_overrides[_auth_mod.require_principal] = lambda: Principal(
+        subject=USER_ID,
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"], "permissions": full_control},
+        actor_kind="human",
+    )
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app), board_id
 
 

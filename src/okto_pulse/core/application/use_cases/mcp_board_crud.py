@@ -31,6 +31,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.policy_governance import (
     ADOPTION_MANAGE,
@@ -149,7 +153,15 @@ class McpListBoardMembersUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpListBoardMembersResult:
-
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         board = await uow.services.boards.get_board(command.board_id)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
@@ -186,6 +198,14 @@ class McpGetActiveDefaultBoardConfigUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         data = await uow.services.default_board_config.get_active(scope=command.scope)
         return _DataResult(data)
 
@@ -207,6 +227,14 @@ class McpListDefaultBoardConfigVersionsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         data = await uow.services.default_board_config.list_versions(
             scope=command.scope
         )
@@ -231,6 +259,15 @@ class McpGetBoardDefaultConfigDiffUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.diff_read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.default_board_config.get_board_diff(
             board_id=command.board_id,
             uow=uow,
@@ -278,6 +315,14 @@ class McpCreateDefaultBoardConfigVersionUseCase:
         uow: PulseUnitOfWork,
     ) -> _DataResult:
         service = uow.services.default_board_config
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.create",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            uow=uow,
+        )
         query_scope = _query_scope_for_actor(actor)
         settings_payload = await _preserve_mcp_human_only_default_settings(
             service, command.settings_payload, command.scope
@@ -287,7 +332,14 @@ class McpCreateDefaultBoardConfigVersionUseCase:
             guideline_default_refs=command.guideline_default_refs,
         )
         if guideline_ref_diff_has_changes(diff):
-            require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "default_board_config.guidelines.edit",
+                    legacy_operation="guidelines.adoption.manage",
+                ),
+                uow=uow,
+            )
         data = await service.create_version(
             actor=actor.actor_id,
             settings_payload=settings_payload,
@@ -340,6 +392,14 @@ class McpActivateDefaultBoardConfigVersionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.activate",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            uow=uow,
+        )
         query_scope = _query_scope_for_actor(actor)
         diff = (
             await uow.services.default_board_config.preview_activate_guideline_ref_diff(
@@ -347,7 +407,14 @@ class McpActivateDefaultBoardConfigVersionUseCase:
             )
         )
         if guideline_ref_diff_has_changes(diff):
-            require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "default_board_config.guidelines.edit",
+                    legacy_operation="guidelines.adoption.manage",
+                ),
+                uow=uow,
+            )
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -374,13 +441,28 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.deactivate",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            uow=uow,
+        )
         diff = (
             await uow.services.default_board_config.preview_deactivate_guideline_ref_diff(
                 template_id=command.template_id,
             )
         )
         if guideline_ref_diff_has_changes(diff):
-            require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "default_board_config.guidelines.edit",
+                    legacy_operation="guidelines.adoption.manage",
+                ),
+                uow=uow,
+            )
         data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id, actor=actor.actor_id
         )
@@ -553,6 +635,16 @@ class McpLinkBoardDesignSystemUseCase:
         uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
+        await uow.services.design_systems.require_design_system(command.design_system_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.board_link.create",
+                legacy_operation="spec.architecture.edit",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         link = await uow.services.design_systems.link_design_system_to_board(
             command.board_id,
             command.design_system_id,
@@ -582,6 +674,15 @@ class McpUnlinkBoardDesignSystemUseCase:
         uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.board_link.delete",
+                legacy_operation="spec.architecture.edit",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         unlinked = await uow.services.design_systems.unlink_design_system_from_board(
             command.board_id
         )
@@ -608,6 +709,15 @@ class McpGetBoardDesignSystemUseCase:
         uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.board_link.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         from okto_pulse.core.services.design_system import (
             project_effective_design_system,
         )

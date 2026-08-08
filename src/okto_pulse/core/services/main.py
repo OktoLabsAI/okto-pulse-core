@@ -4412,6 +4412,7 @@ class CardService:
     async def confirm_amendment_coverage(
         self,
         *,
+        expected_board_id: str | None = None,
         amendment_id: str,
         regression_test_task_id: str,
         regression_scenario_id: str,
@@ -4436,6 +4437,10 @@ class CardService:
         svc = AmendmentRevisionService(self.db)
         amendment = await svc.get(amendment_id)
         if amendment is None:
+            raise ValueError(f"Amendment '{amendment_id}' not found")
+        if expected_board_id is not None and amendment.board_id != expected_board_id:
+            # Keep cross-board identifiers indistinguishable from missing ones and,
+            # critically, fail before validator checks or any attestation write.
             raise ValueError(f"Amendment '{amendment_id}' not found")
 
         # 1. binding: the artifact MUST be declared by THIS amendment.

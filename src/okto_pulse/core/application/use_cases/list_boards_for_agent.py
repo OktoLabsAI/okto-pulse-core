@@ -13,6 +13,10 @@ from __future__ import annotations
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.base import ActorContext, commit
 
 
@@ -40,7 +44,14 @@ class ListBoardsForAgentUseCase:
     async def execute(
         self, command: ListBoardsForAgentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListBoardsForAgentResult:
-
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.board_access.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         boards = await uow.services.agents.list_boards_for_agent(command.agent_id)
         await commit(uow)
         return ListBoardsForAgentResult(board_ids=[b.id for b in boards])

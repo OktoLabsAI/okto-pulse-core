@@ -18,6 +18,7 @@ import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import pytest
@@ -27,6 +28,7 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_layer_"))
 
 import okto_pulse.core.mcp.kg_query_tools as qt
 from okto_pulse.community.api.kg_routes import get_subgraph
+from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from global_graph_testing import (
     bootstrap_global_discovery,
@@ -83,6 +85,15 @@ async def _subgraph(board_id, **kw):
     otherwise inject as ``Query(...)`` default objects."""
     params = {"depth": 2, "limit": 100, "cursor": "", "min_relevance": 0.0,
               "type": ""}
+    params.update(
+        actor=ActorContext(
+            "kg-layer-test",
+            "rest",
+            board_id=board_id,
+            permissions=["board:read"],
+        ),
+        uow=SimpleNamespace(),
+    )
     params.update(kw)
     return await get_subgraph(board_id, **params)
 

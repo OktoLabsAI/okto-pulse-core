@@ -52,6 +52,7 @@ BOARD = "board-kg03-2"
 @dataclass
 class _FakeAgent:
     id: str = "agent-test-001"
+    permissions: Any = None
 
 
 class _MCPRegistryDouble:
@@ -114,7 +115,15 @@ def _register_tool(get_agent_impl: Callable[[], Any]) -> Callable[..., Any]:
 @pytest.fixture
 def list_tool(isolated_base_dir: Path) -> Callable[..., Any]:
     async def _get_agent() -> _FakeAgent:
-        return _FakeAgent()
+        return _FakeAgent(
+            permissions={
+                "board": {"read": True},
+                "kg": {
+                    "operations": {"cognitive": {"read": True}},
+                    "admin": {"settings_read": True},
+                },
+            }
+        )
 
     tool, tools = _register_tool(_get_agent)
     # tr_e6b6356b — existing 7 primitives remain registered.
@@ -594,6 +603,35 @@ def test_unauthorized_short_circuits_before_storage_read(
     response = _invoke(unauthorized_list_tool, board_id=BOARD)
     assert "error" in response
     assert response["error"]["code"] == "unauthorized"
+
+
+def test_exact_permission_denial_short_circuits_before_storage_read(
+    isolated_base_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _get_agent() -> _FakeAgent:
+        return _FakeAgent(
+            permissions=["board.read", "kg.admin.historical_consolidation"]
+        )
+
+    def _unexpected_store():
+        raise AssertionError("artifact store must not open before authorization")
+
+    from okto_pulse.core.mcp import kg_tools
+
+    monkeypatch.setattr(
+        kg_tools,
+        "require_rebuild_audit_artifact_store",
+        _unexpected_store,
+    )
+    tool, _ = _register_tool(_get_agent)
+
+    response = _invoke(tool, board_id=BOARD)
+
+    assert response["error"]["code"] == "permission_denied"
+    assert response["error"]["required_permission"] == (
+        "kg.operations.cognitive.read"
+    )
     assert get_list_event_count() == 0
 
 

@@ -82,7 +82,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r6 imp2 agent"
-        self.permissions = {"board:read"}
+        self.permissions = ["*"]
 
 
 async def _call(name: str, **kwargs) -> dict:

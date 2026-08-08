@@ -83,18 +83,10 @@ def normalize_permission_input(
     return ()
 
 
-def decide_authorization(
+def _normalize_decision_permissions(
     actor: ActorContext,
-    requirement: PermissionRequirement,
-    permissions: PermissionOverride = _UNSET,
-    policy: PermissionPolicyPort | None = None,
-) -> PermissionDecision:
-    """Make a synchronous decision from actor-carried or explicit permissions."""
-
-    invalid_context = _validate_requirement_context(requirement)
-    if invalid_context is not None:
-        return invalid_context
-
+    permissions: PermissionOverride,
+) -> NormalizedPermissionInput:
     if permissions is _UNSET:
         raw_permissions = actor.permissions
     elif permissions is None and actor.permissions is not None:
@@ -114,6 +106,22 @@ def decide_authorization(
         normalized = None
     if normalized is None and actor.source not in ("mcp", "system"):
         normalized = ()
+    return normalized
+
+
+def decide_authorization(
+    actor: ActorContext,
+    requirement: PermissionRequirement,
+    permissions: PermissionOverride = _UNSET,
+    policy: PermissionPolicyPort | None = None,
+) -> PermissionDecision:
+    """Make a synchronous decision from actor-carried or explicit permissions."""
+
+    invalid_context = _validate_requirement_context(requirement)
+    if invalid_context is not None:
+        return invalid_context
+
+    normalized = _normalize_decision_permissions(actor, permissions)
     evaluator = policy or DefaultPermissionPolicy()
     return evaluator.evaluate(
         PermissionContext(
@@ -249,6 +257,68 @@ def _raise_if_denied(decision: PermissionDecision) -> PermissionDecision:
     return decision
 
 
+def _permission_value_presence(
+    permissions: PermissionSet,
+    operation: str,
+) -> tuple[bool, Any]:
+    cursor: Any = permissions.flags
+    for part in operation.split("."):
+        if not isinstance(cursor, Mapping) or part not in cursor:
+            return False, None
+        cursor = cursor[part]
+    return True, cursor
+
+
+def _blocks_role_fallback(
+    permissions: NormalizedPermissionInput,
+    requirement: PermissionRequirement,
+    decision: PermissionDecision,
+) -> bool:
+    """Return whether a denial is authoritative rather than legacy absence."""
+
+    try:
+        reason = json.loads(decision.reason or "")
+    except (TypeError, ValueError):
+        reason = None
+    if isinstance(reason, Mapping) and reason.get("reason") in {
+        "unknown_permission",
+        "invalid_permission_context",
+    }:
+        return True
+
+    if not isinstance(permissions, PermissionSet):
+        return False
+    if permissions.owner_review_required:
+        return True
+
+    canonical_present, _canonical_value = _permission_value_presence(
+        permissions,
+        requirement.operation,
+    )
+    if canonical_present:
+        # This helper is evaluated only for denied decisions. A present
+        # canonical leaf therefore means a supplemental requirement (for
+        # example historical authority or interact_in state) denied it, and a
+        # compatibility role must not erase that policy result.
+        return True
+
+    paths = [requirement.operation]
+    if requirement.legacy_operation is not None:
+        paths.append(requirement.legacy_operation)
+    if requirement.entity is not None and requirement.state is not None:
+        paths.append(f"{requirement.entity}.interact_in.{requirement.state}")
+    if isinstance(reason, Mapping):
+        denied_path = reason.get("required_permission")
+        if isinstance(denied_path, str):
+            paths.append(denied_path)
+
+    for path in dict.fromkeys(paths):
+        present, value = _permission_value_presence(permissions, path)
+        if present and value is not True:
+            return True
+    return False
+
+
 def _precheck_board_scope(actor: ActorContext, board_id: str | None) -> None:
     """Deny non-REST actors targeting a board outside their authenticated scope."""
 
@@ -329,20 +399,32 @@ async def require_any_authority(
     actor_roles = {
         str(role).strip().casefold() for role in actor.roles if str(role).strip()
     }
-    matched_roles = accepted_roles.intersection(actor_roles)
-    if matched_roles:
-        return PermissionDecision.allow(f"role:{sorted(matched_roles)[0]}")
-
     effective_permissions = permissions
     if effective_permissions is _UNSET:
         effective_permissions = await resolve_actor_permissions(actor, uow, board_id)
+    normalized_permissions = _normalize_decision_permissions(
+        actor,
+        effective_permissions,
+    )
     decisions = tuple(
         decide_authorization(actor, requirement, effective_permissions, policy)
         for requirement in requirements
     )
+    matched_roles = accepted_roles.intersection(actor_roles)
+    explicit_denials = tuple(
+        decision
+        for requirement, decision in zip(requirements, decisions, strict=True)
+        if not decision.allowed
+        and _blocks_role_fallback(normalized_permissions, requirement, decision)
+    )
+    if matched_roles and (any(decision.allowed for decision in decisions) or not explicit_denials):
+        return PermissionDecision.allow(f"role:{sorted(matched_roles)[0]}")
     for decision in decisions:
         if decision.allowed:
             return decision
+
+    if explicit_denials:
+        raise PermissionDeniedError(_structured_denial(explicit_denials[0]))
 
     if decisions:
         raise PermissionDeniedError(_structured_denial(decisions[0]))

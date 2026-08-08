@@ -12,6 +12,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_any_authority,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -29,6 +34,32 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 @dataclass(frozen=True)
 class DataResult:
     data: Any
+
+
+_KG_COGNITIVE_READ = PermissionRequirement(
+    "kg.operations.cognitive.read",
+    legacy_operation="kg.admin.settings_read",
+)
+_KG_COGNITIVE_SKIP = PermissionRequirement(
+    "kg.operations.cognitive.skip",
+    legacy_operation="kg.admin.settings_write",
+)
+_KG_COGNITIVE_CLEAR = PermissionRequirement(
+    "kg.operations.cognitive.clear",
+    legacy_operation="kg.admin.settings_write",
+)
+_KG_INTEGRITY_READ = PermissionRequirement(
+    "kg.operations.integrity.read",
+    legacy_operation="kg.admin.settings_read",
+)
+_KG_INTEGRITY_BACKFILL = PermissionRequirement(
+    "kg.operations.integrity.backfill",
+    legacy_operation="kg.admin.settings_write",
+)
+_KG_QUEUE_REPROCESS = PermissionRequirement(
+    "kg.operations.queue.reprocess",
+    legacy_operation="kg.admin.settings_write",
+)
 
 
 class BoardNotFoundError(EntityNotFoundError):
@@ -81,45 +112,31 @@ async def _require_resource_gate_entity(
     return entity
 
 
-_RUNTIME_SETTINGS_WRITE_PERMISSIONS = (
-    "runtime.settings.write",
-    "settings.runtime.write",
-)
-
-
-def _permission_enabled(permissions: Any, required: str) -> bool:
-    if isinstance(permissions, Mapping):
-        if permissions.get("*") is True or permissions.get(required) is True:
-            return True
-        cursor: Any = permissions
-        for part in required.split("."):
-            if not isinstance(cursor, Mapping) or part not in cursor:
-                return False
-            cursor = cursor[part]
-        return cursor is True
-    checker = getattr(permissions, "check", None)
-    if callable(checker):
-        try:
-            return checker(required) is None
-        except Exception:
-            return False
-    if isinstance(permissions, (list, tuple, set, frozenset)):
-        return required in permissions or "*" in permissions
-    return False
-
-
-def _require_runtime_settings_admin(actor: ActorContext) -> None:
-    roles = {str(role).lower() for role in actor.roles}
-    if roles.intersection({"admin", "operator"}):
-        return
-    if any(
-        _permission_enabled(actor.permissions, permission)
-        for permission in _RUNTIME_SETTINGS_WRITE_PERMISSIONS
-    ):
-        return
-    raise PermissionDeniedError(
-        "Runtime settings write requires an admin or operator capability"
+async def _require_runtime_settings_authority(
+    actor: ActorContext,
+    uow: PulseUnitOfWork,
+    operation: str,
+) -> None:
+    legacy_operation = (
+        "kg.admin.settings_read"
+        if operation == "runtime.settings.read"
+        else "kg.admin.settings_write"
     )
+    try:
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                operation,
+                legacy_operation=legacy_operation,
+            ),
+            roles=("admin", "operator"),
+            uow=uow,
+        )
+    except PermissionDeniedError as exc:
+        action = "read" if operation.endswith(".read") else "write"
+        raise PermissionDeniedError(
+            f"Runtime settings {action} requires an admin or operator capability"
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -424,6 +441,11 @@ class GetRuntimeSettingsUseCase:
     async def execute(
         self, command: GetRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        await _require_runtime_settings_authority(
+            actor,
+            uow,
+            "runtime.settings.read",
+        )
         return DataResult(await uow.services.get_runtime_settings())
 
 
@@ -431,7 +453,11 @@ class PutRuntimeSettingsUseCase:
     async def execute(
         self, command: PutRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        _require_runtime_settings_admin(actor)
+        await _require_runtime_settings_authority(
+            actor,
+            uow,
+            "runtime.settings.write",
+        )
         return DataResult(
             await uow.services.put_runtime_settings(
                 command.values,
@@ -554,6 +580,12 @@ class RecordCognitiveSkipUseCase:
             actor,
             allowed_share_permissions={"editor", "admin"},
         )
+        await require_authorization(
+            actor,
+            _KG_COGNITIVE_SKIP,
+            uow=uow,
+            board_id=command.board_id,
+        )
         service = self._readiness_service()
         item = await uow.services.kg.record_cognitive_skip(
             service,
@@ -606,6 +638,12 @@ class ClearCognitiveSkipUseCase:
             command.board_id,
             actor,
             allowed_share_permissions={"editor", "admin"},
+        )
+        await require_authorization(
+            actor,
+            _KG_COGNITIVE_CLEAR,
+            uow=uow,
+            board_id=command.board_id,
         )
         service = self._readiness_service()
         item = await uow.services.kg.clear_cognitive_skip(
@@ -661,6 +699,12 @@ class GetCognitiveReadinessMetricsUseCase:
         uow: PulseUnitOfWork,
     ) -> DataResult:
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_COGNITIVE_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             await uow.services.kg.cognitive_readiness_metrics(
                 self._readiness_service(),
@@ -688,6 +732,12 @@ class GetCognitiveEffectivenessInventoryUseCase:
         uow: PulseUnitOfWork,
     ) -> DataResult:
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_COGNITIVE_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         health = await uow.services.kg.health(
             command.board_id,
             scheduler_control=command.scheduler_control,
@@ -732,6 +782,12 @@ class ListCanonicalDebtUseCase:
             state=command.state,
         )
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_INTEGRITY_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             await uow.services.kg.list_canonical_debt(
                 board_id=command.board_id,
@@ -752,6 +808,12 @@ class RetryCanonicalDebtUseCase:
             command.board_id,
             actor,
             allowed_share_permissions={"editor", "admin"},
+        )
+        await require_authorization(
+            actor,
+            _KG_QUEUE_REPROCESS,
+            uow=uow,
+            board_id=command.board_id,
         )
         health = await uow.services.kg.health(
             command.board_id,
@@ -796,6 +858,12 @@ class ListCanonicalPartitionIntegrityUseCase:
         uow: PulseUnitOfWork,
     ) -> DataResult:
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_INTEGRITY_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             await uow.services.kg.list_canonical_partition_integrity(
                 board_id=command.board_id,
@@ -819,6 +887,12 @@ class GetCanonicalPartitionIntegrityDetailUseCase:
         uow: PulseUnitOfWork,
     ) -> DataResult:
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_INTEGRITY_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             await uow.services.kg.canonical_partition_integrity_detail(
                 board_id=command.board_id,
@@ -843,6 +917,12 @@ class ListDigestLayerMismatchUseCase:
         uow: PulseUnitOfWork,
     ) -> DataResult:
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_INTEGRITY_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             await uow.services.kg.list_digest_layer_mismatches(
                 board_id=command.board_id,
@@ -878,6 +958,12 @@ class GetOrphanIntegrityReportUseCase:
         uow: PulseUnitOfWork,
     ) -> DataResult:
         await _require_board_access(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            _KG_INTEGRITY_READ,
+            uow=uow,
+            board_id=command.board_id,
+        )
         return DataResult(
             self._scanner().scan(
                 board_id=command.board_id,
@@ -937,6 +1023,12 @@ class RunOrphanBackfillUseCase:
             command.board_id,
             actor,
             allowed_share_permissions={"editor", "admin"},
+        )
+        await require_authorization(
+            actor,
+            _KG_INTEGRITY_BACKFILL,
+            uow=uow,
+            board_id=command.board_id,
         )
         health = await self._get_health(command, uow.services.kg)
         state = str(health.get("overall_state") or health.get("graph_state") or "")

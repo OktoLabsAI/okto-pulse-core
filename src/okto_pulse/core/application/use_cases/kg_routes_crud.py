@@ -34,7 +34,9 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
+    decide_authorization,
     require_authorization,
+    resolve_actor_permissions,
 )
 from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.kg.async_bridge import run_async_blocking
@@ -80,6 +82,28 @@ async def _visible_board_ids(
     return sorted(scoped.allowed_board_ids or ())
 
 
+async def _authorized_global_query_board_ids(
+    uow: PulseUnitOfWork,
+    actor: ActorContext,
+) -> list[str]:
+    """Filter visible boards through the same compound policy used by MCP."""
+
+    visible_board_ids = await _visible_board_ids(uow.services, actor)
+    authorized: list[str] = []
+    requirements = (
+        PermissionRequirement("board.read", legacy_operation="board:read"),
+        PermissionRequirement("kg.query.global", legacy_operation="board:read"),
+    )
+    for board_id in visible_board_ids:
+        permissions = await resolve_actor_permissions(actor, uow, board_id)
+        if all(
+            decide_authorization(actor, requirement, permissions).allowed
+            for requirement in requirements
+        ):
+            authorized.append(board_id)
+    return authorized
+
+
 # --- list audit (reader) ----------------------------------------------------
 
 
@@ -109,6 +133,15 @@ class ListAuditUseCase:
     ) -> ListAuditResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.audit.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         entries = await uow.services.kg.list_consolidation_audit(command.board_id, limit=command.limit
         )
         return ListAuditResult(entries)
@@ -158,7 +191,15 @@ class GlobalSearchUseCase:
             query_global,
         )
 
-        user_board_ids = await _visible_board_ids(uow.services, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.query.global",
+                legacy_operation="board:read",
+            ),
+            uow=uow,
+        )
+        user_board_ids = await _authorized_global_query_board_ids(uow, actor)
         layer = normalize_graph_layer(command.graph_layer)
         results = query_global(
             command.q,
@@ -200,7 +241,10 @@ class StartHistoricalUseCase:
         await _require_board_access(uow.services, actor, command.board_id)
         await require_authorization(
             actor,
-            PermissionRequirement("kg.admin.historical_consolidation"),
+            PermissionRequirement(
+                "kg.operations.historical.start",
+                legacy_operation="kg.admin.historical_consolidation",
+            ),
             uow=uow,
             board_id=command.board_id,
         )
@@ -238,7 +282,10 @@ class CancelHistoricalUseCase:
         await _require_board_access(uow.services, actor, command.board_id)
         await require_authorization(
             actor,
-            PermissionRequirement("kg.admin.historical_consolidation"),
+            PermissionRequirement(
+                "kg.operations.historical.cancel",
+                legacy_operation="kg.admin.historical_consolidation",
+            ),
             uow=uow,
             board_id=command.board_id,
         )
@@ -274,6 +321,15 @@ class GetHistoricalProgressUseCase:
     ) -> GetHistoricalProgressResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.historical.read",
+                legacy_operation="kg.admin.historical_consolidation",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         progress = await uow.services.kg.get_historical_progress(command.board_id)
         return GetHistoricalProgressResult(progress)
 
@@ -308,7 +364,10 @@ class DeleteBoardKgUseCase:
         await _require_board_access(uow.services, actor, command.board_id)
         await require_authorization(
             actor,
-            PermissionRequirement("kg.admin.wipe_board"),
+            PermissionRequirement(
+                "kg.operations.board.erase",
+                legacy_operation="kg.admin.wipe_board",
+            ),
             uow=uow,
             board_id=command.board_id,
         )
@@ -351,6 +410,15 @@ class ListPendingUseCase:
     ) -> ListPendingResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.queue.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         entries = await uow.services.kg.list_pending_entries(command.board_id)
         return ListPendingResult(entries)
 
@@ -384,6 +452,15 @@ class ListPendingTreeUseCase:
     ) -> ListPendingTreeResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.queue.read",
+                legacy_operation="kg.admin.settings_read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         payload = await uow.services.kg.build_pending_tree(command.board_id, depth=command.depth
         )
         return ListPendingTreeResult(payload)
@@ -423,6 +500,15 @@ class RetryPendingEntryUseCase:
     ) -> RetryPendingEntryResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.queue.reprocess",
+                legacy_operation="kg.admin.settings_write",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         payload = await uow.services.kg.retry_pending_entry(command.board_id,
             command.queue_entry_id,
             recursive=command.recursive,
@@ -571,6 +657,15 @@ class BoostNodeUseCase:
         from okto_pulse.core.kg.guarded_write import guarded_board_write
 
         await _require_board_access(uow.services, actor, command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "kg.operations.node.boost",
+                legacy_operation="kg.admin.settings_write",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         handle = _BoostFenceHandle()
         try:
             mutation = await run_blocking_graph_io(

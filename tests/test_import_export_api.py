@@ -29,6 +29,7 @@ from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.community.api.presets import router as presets_router
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import Board
 
@@ -71,7 +72,7 @@ def _client(
     if permissions is not None:
         claims["permissions"] = permissions
     elif "admin" in roles:
-        claims["permissions"] = ("*",)
+        claims["permissions"] = registered_permission_flags()
     app.dependency_overrides[require_principal] = lambda: Principal(
         subject=user_id,
         realm_id="local",
@@ -499,7 +500,11 @@ def test_presets_import_dry_run_and_invalid_item():
 
 def test_board_config_global_writes_require_real_admin_principal():
     user = _uid("impexp-dbc-denied")
-    client = _client(user, roles=())
+    client = _client(
+        user,
+        roles=(),
+        permissions=["default_board_config.read"],
+    )
     before = len(
         client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
     )
@@ -539,7 +544,7 @@ def test_board_config_global_writes_require_real_admin_principal():
     for url, kwargs in calls:
         denied = client.post(url, **kwargs)
         assert denied.status_code == 403, denied.text
-        assert "admin or operator capability" in denied.json()["detail"]
+        assert "permission_denied" in denied.json()["detail"]
 
     after = len(
         client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
@@ -549,7 +554,7 @@ def test_board_config_global_writes_require_real_admin_principal():
     capability_client = _client(
         _uid("impexp-dbc-capability"),
         roles=(),
-        permissions={"admin": {"catalog": {"write": True}}},
+        permissions=["default_board_config.create"],
     )
     allowed = capability_client.post(
         f"{PREFIX}/default-board-config/versions",

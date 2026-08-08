@@ -31,6 +31,7 @@ from okto_pulse.community.api.auth_deps import (
     require_principal,
     require_user,
 )
+from okto_pulse.core.domain.permissions import get_builtin_presets
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import GuidelineCreate, GuidelineUpdate
@@ -118,10 +119,16 @@ def client() -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    full_control = next(
+        preset["flags"]
+        for preset in get_builtin_presets()
+        if preset["name"] == "Full Control"
+    )
     app.dependency_overrides[require_principal] = lambda: Principal(
         subject=USER,
         realm_id=LOCAL_REALM_ID,
-        claims={"roles": ["admin"], "permissions": ["*"]},
+        claims={"roles": ["admin"], "permissions": full_control},
+        actor_kind="human",
     )
     app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)

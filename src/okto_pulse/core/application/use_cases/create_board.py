@@ -17,6 +17,10 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.domain.checklist import (
     SPECIFY_CHECKLIST_TEMPLATE_VERSION,
     ChecklistContractError,
@@ -91,6 +95,14 @@ class CreateBoardUseCase:
         self, command: CreateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateBoardResult:
         service = uow.services.boards
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.admin.create",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         board = await service.create_board(
             actor.actor_id, command.data, realm_id=actor.realm_id
         )

@@ -27,7 +27,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
-from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     entity_state,
     sprint_requirement,
@@ -569,12 +572,22 @@ class McpDeleteSprintQuestionUseCase:
     """Delete a sprint Q&A item + atomic ``sprint_question_deleted`` activity log. A
     falsy delete short-circuits BEFORE the log and BEFORE the commit -> ``qa_not_found``
     -> "Q&A item not found". On success the log + commit run ATOMICALLY in the SAME
-    transaction (``BoardService._log_activity``). The ``QA_DELETE`` permission gate
-    stays in the adapter (present here, unlike the answer tool)."""
+    transaction (``BoardService._log_activity``). Authorization is owned by Core so
+    every inbound adapter evaluates the same canonical operation."""
 
     async def execute(
         self, command: McpDeleteSprintQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteSprintQuestionResult:
+
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "sprint.qa.delete",
+                legacy_operation="qa:delete",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         qa = await uow.services.sprint_qa.get_question(command.qa_id)
         if not qa or qa.sprint_id != command.sprint_id:

@@ -49,7 +49,12 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r4 test2"
-        self.permissions = ["card.validation.submit"]
+        self.permissions = [
+            "card.validation.submit",
+            "card.move.in_progress_to_done",
+            "card.interact_in.in_progress",
+            "cards:move",
+        ]
 
 
 async def _call(name: str, **kwargs) -> dict:

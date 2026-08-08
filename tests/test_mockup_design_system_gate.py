@@ -54,7 +54,7 @@ USER_ID = "mockup-gate-user"
 
 class _Ctx:
     agent_id = USER_ID
-    permissions: list = []
+    permissions = ["spec.mockups.create", "specs:update"]
 
 
 async def _call(name: str, **kwargs) -> dict:

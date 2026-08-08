@@ -243,10 +243,10 @@ async def test_board_config_import_is_the_only_explicit_compatibility_seam():
         "rest",
         realm_id=LOCAL_REALM_ID,
         roles=("admin",),
-        permissions={
-            "spec": {"entity": {"edit_fields": True}},
-            "guidelines": {"adoption": {"manage": True}},
-        },
+        permissions=[
+            "spec.entity.edit_fields",
+            "guidelines.adoption.manage",
+        ],
     )
     result = await ImportBoardConfigUseCase().execute(
         ImportBoardConfigCommand(

@@ -25,6 +25,7 @@ from okto_pulse.core.application.use_cases.spec_crud import (
     DeleteSpecCommand,
     DeleteSpecUseCase,
 )
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.services.main import GovernedArtifactDeletionReceipt
@@ -45,7 +46,15 @@ def _mcp_ctx() -> object:
     return SimpleNamespace(
         agent_id="takedown-reader",
         agent_name="Takedown Reader",
-        permissions=["board:read"],
+        permissions=PermissionSet(
+            {
+                "board": {"read": True},
+                "kg": {
+                    "operations": {"audit": {"read": True}},
+                    "admin": {"settings_read": True},
+                },
+            }
+        ),
         realm_id=LOCAL_REALM_ID,
     )
 
@@ -395,7 +404,9 @@ async def test_parent_delete_use_cases_return_governed_takedown(
     get_name: str,
     delete_name: str,
 ) -> None:
-    artifact_id = command.ideation_id if service_name == "ideations" else command.refinement_id
+    artifact_id = (
+        command.ideation_id if service_name == "ideations" else command.refinement_id
+    )
     receipt_payload = {
         "board_id": "board-takedown",
         "artifact_type": service_name.removesuffix("s"),

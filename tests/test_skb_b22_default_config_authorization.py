@@ -44,23 +44,29 @@ _CHANGED = {"added": ["guideline-1"], "removed": [], "reordered": []}
 
 
 def _actor(*, granted: bool = False, source: str = "rest") -> ActorContext:
-    permissions: dict[str, Any] = {}
+    permissions: dict[str, Any] = {
+        "default_board_config": {
+            "create": True,
+            "activate": True,
+            "deactivate": True,
+        },
+        "spec": {
+            "entity": {
+                "edit_fields": True,
+            }
+        },
+    }
     if granted:
-        permissions = {
-            "spec": {
-                "entity": {
-                    "edit_fields": True,
-                }
-            },
-            "guidelines": {
-                "adoption": {
-                    "manage": True,
-                }
+        permissions["default_board_config"]["guidelines"] = {"edit": True}
+        permissions["guidelines"] = {
+            "adoption": {
+                "manage": True,
             }
         }
     return ActorContext(
         "actor-1",
         source,  # type: ignore[arg-type]
+        board_id="board-1" if source == "mcp" else None,
         realm_id=LOCAL_REALM_ID,
         permissions=permissions,
         roles=("admin",),
@@ -169,7 +175,10 @@ async def test_rest_default_config_diff_denies_before_mutation(
     )
     uow = _Uow(service)
 
-    with pytest.raises(PermissionDeniedError, match="guidelines.adoption.manage"):
+    with pytest.raises(
+        PermissionDeniedError,
+        match="default_board_config.guidelines.edit",
+    ):
         await use_case.execute(command, actor=_actor(), uow=uow)
 
     assert service.preview_calls == [preview_name]
@@ -215,7 +224,10 @@ async def test_mcp_default_config_diff_denies_before_mutation(
     )
     uow = _Uow(service)
 
-    with pytest.raises(PermissionDeniedError, match="guidelines.adoption.manage"):
+    with pytest.raises(
+        PermissionDeniedError,
+        match="default_board_config.guidelines.edit",
+    ):
         await use_case.execute(command, actor=_actor(source="mcp"), uow=uow)
 
     assert service.preview_calls == [preview_name]
@@ -273,7 +285,10 @@ async def test_explicit_default_guideline_update_always_requires_adoption_manage
     service = _DefaultConfigSpy()
     uow = _Uow(service)
 
-    with pytest.raises(PermissionDeniedError, match="guidelines.adoption.manage"):
+    with pytest.raises(
+        PermissionDeniedError,
+        match="default_board_config.guidelines.edit",
+    ):
         await use_case.execute(command, actor=_actor(source=source), uow=uow)
 
     assert service.preview_calls == []
@@ -284,7 +299,10 @@ async def test_import_preflights_every_ref_delta_before_first_staged_create() ->
     service = _DefaultConfigSpy(create_diff=_CHANGED)
     uow = _Uow(service)
 
-    with pytest.raises(PermissionDeniedError, match="guidelines.adoption.manage"):
+    with pytest.raises(
+        PermissionDeniedError,
+        match="default_board_config.guidelines.edit",
+    ):
         await ImportBoardConfigUseCase().execute(
             ImportBoardConfigCommand(
                 items=[
@@ -324,37 +342,41 @@ async def test_adoption_grant_allows_changed_refs_and_commits() -> None:
     assert uow.commit_calls == 1
 
 
-async def test_mcp_explicit_ref_update_denial_is_json_and_precedes_uow(
+async def test_mcp_explicit_ref_update_denial_is_json_and_precedes_writer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.mcp import server
 
     calls = {"provider": 0}
 
-    class Permissions:
-        def check(self, capability: str) -> str | None:
-            if capability == "guidelines.adoption.manage":
-                return f"Permission denied: requires '{capability}'"
-            return None
-
     async def get_agent(_board_id: str) -> object:
         return SimpleNamespace(
             agent_id="agent-1",
             agent_name="Agent",
             realm_id=LOCAL_REALM_ID,
-            permissions=Permissions(),
+            permissions=["spec.entity.edit_fields"],
         )
 
-    def forbidden_provider() -> object:
+    service = _DefaultConfigSpy()
+    uow = _Uow(service)
+
+    class _Manager:
+        async def __aenter__(self) -> _Uow:
+            return uow
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+    def provider() -> object:
         calls["provider"] += 1
-        raise AssertionError("denied update resolved a UoW")
+        return lambda *, actor: _Manager()
 
     monkeypatch.setattr(server, "_get_agent_ctx", get_agent)
     monkeypatch.setattr(server, "check_permission", lambda *_args: None)
     monkeypatch.setattr(
         server,
         "get_unit_of_work_factory_for_mcp",
-        forbidden_provider,
+        provider,
     )
 
     raw = await server.mcp._tool_manager._tools[
@@ -366,5 +388,7 @@ async def test_mcp_explicit_ref_update_denial_is_json_and_precedes_uow(
     )
 
     payload = json.loads(raw)
-    assert "guidelines.adoption.manage" in payload["error"]
-    assert calls == {"provider": 0}
+    assert "default_board_config.guidelines.edit" in payload["error"]
+    assert calls == {"provider": 1}
+    assert service.mutations == []
+    assert uow.commit_calls == 0

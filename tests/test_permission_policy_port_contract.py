@@ -54,7 +54,7 @@ def test_all_core_ports_are_free_of_infra_imports() -> None:
     assert violations == []
 
 
-def test_permission_domain_module_has_only_stdlib_and_canonical_sdlc_imports() -> None:
+def test_permission_domain_module_has_only_stdlib_and_canonical_domain_imports() -> None:
     imports = _imported_modules(CORE_ROOT / "domain" / "permissions.py")
     assert imports <= {
         "__future__",
@@ -62,6 +62,7 @@ def test_permission_domain_module_has_only_stdlib_and_canonical_sdlc_imports() -
         "dataclasses",
         "json",
         "logging",
+        "okto_pulse.core.domain.mcp_permission_registry",
         "okto_pulse.core.domain.sdlc_registry",
         "typing",
     }

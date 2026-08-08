@@ -71,7 +71,7 @@ class RecordingFactory:
         return uow
 
 
-async def _authorized():
+async def _authorized(*_args):
     return SimpleNamespace(agent_id="dlq-operator"), None
 
 

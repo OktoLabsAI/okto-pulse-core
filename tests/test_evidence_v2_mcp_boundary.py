@@ -16,6 +16,7 @@ from okto_pulse.core.application.use_cases.spec_crud import (
     SetTestScenarioStatusUseCase,
 )
 from okto_pulse.core.domain.enums import SpecStatus
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.ports.test_evidence import (
     TestEvidenceExecutionResult as EvidenceExecutionResult,
     TestEvidenceWriteVerification as EvidenceWriteVerification,
@@ -28,6 +29,19 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     compute_test_scenario_semantic_sha256,
 )
 from okto_pulse.core.mcp import server as mcp_server
+
+
+def _evidence_execute_permissions() -> PermissionSet:
+    return PermissionSet(
+        {
+            "spec": {
+                "tests": {
+                    "execute": True,
+                    "update_status": True,
+                }
+            }
+        }
+    )
 
 
 class _Issuer:
@@ -154,7 +168,12 @@ async def test_rest_execution_rejects_foreign_spec_before_trusted_runtime() -> N
             ExecuteTestScenarioEvidenceCommand(
                 "spec-1", "scenario-1", "passed", "about.json"
             ),
-            actor=ActorContext("foreign-user", "rest", realm_id="local"),
+            actor=ActorContext(
+                "foreign-user",
+                "rest",
+                realm_id="local",
+                permissions=_evidence_execute_permissions(),
+            ),
             uow=uow,
         )
 
@@ -323,7 +342,7 @@ async def test_mcp_evidence_adapter_routes_inline_replay_without_filesystem_inpu
             agent_id="agent",
             agent_name="Agent",
             realm_id=None,
-            permissions=(),
+            permissions=_evidence_execute_permissions(),
         )
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", get_context)

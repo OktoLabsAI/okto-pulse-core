@@ -25,7 +25,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
-from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     transition_permission_requirement,
 )
@@ -1953,6 +1956,15 @@ class McpUpdateTestScenarioUseCase:
     async def execute(
         self, command: McpUpdateTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateTestScenarioResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.tests.edit",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=actor.board_id,
+        )
         service = uow.services.specs
         await _require_actor_board_scenario_spec(service, command.spec_id, actor)
         result = await service.update_test_scenario(
@@ -1995,6 +2007,15 @@ class McpDeleteTestScenarioUseCase:
     async def execute(
         self, command: McpDeleteTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteTestScenarioResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.tests.delete",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=actor.board_id,
+        )
         service = uow.services.specs
         await _require_actor_board_scenario_spec(service, command.spec_id, actor)
         result = await service.delete_test_scenario(

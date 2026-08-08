@@ -40,7 +40,10 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
-from okto_pulse.core.application.use_cases.authorization import require_authorization
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     card_create_permission_requirement,
 )
@@ -271,6 +274,15 @@ class UpdateBoardUseCase:
         self, command: UpdateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.admin.edit",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         service = uow.services.boards
         board = await service.update_board(
             command.board_id,
@@ -327,6 +339,16 @@ class DeleteBoardUseCase:
             # A continuation must not turn an erased board identifier into an
             # existence oracle for another actor.
             raise EntityNotFoundError("board", command.board_id)
+
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.admin.delete",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
 
         async def _terminal_erasure() -> None:
             async with uow.services.kg.board_erasure_scope(
@@ -697,6 +719,15 @@ class ArchiveTreeUseCase:
         self, command: ArchiveTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ArchiveTreeResult:
         await _preflight_archive_root(uow, command, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.entity.archive",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         counts = await uow.services.archives.archive_tree(
             command.entity_type, command.entity_id
         )
@@ -748,6 +779,15 @@ class RestoreTreeUseCase:
         self, command: RestoreTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RestoreTreeResult:
         await _preflight_archive_root(uow, command, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                f"{command.entity_type}.entity.restore",
+                legacy_operation="specs:update",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         counts = await uow.services.archives.restore_tree(
             command.entity_type, command.entity_id
         )
@@ -794,6 +834,15 @@ class ShareBoardUseCase:
         self, command: ShareBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ShareBoardResult:
         await _require_readable_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.create",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         share = await uow.services.shares.share_board(
             command.board_id,
             actor.actor_id,
@@ -844,6 +893,15 @@ class ListBoardSharesUseCase:
         )
         if not perm:
             raise EntityNotFoundError("board", command.board_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         return ListBoardSharesResult(await service.list_shares(command.board_id))
 
 
@@ -878,6 +936,15 @@ class UpdateBoardShareUseCase:
     ) -> UpdateBoardShareResult:
         await _require_readable_board(uow, command.board_id, actor)
         await _require_share_on_board(uow, command.board_id, command.share_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "board.share.edit",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         share = await uow.services.shares.update_share(
             command.share_id,
             actor.actor_id,
@@ -915,8 +982,20 @@ class RevokeBoardShareUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> RevokeBoardShareResult:
-        await _require_readable_board(uow, command.board_id, actor)
-        await _require_share_on_board(uow, command.board_id, command.share_id)
+        board = await _require_readable_board(uow, command.board_id, actor)
+        share = await _require_share_on_board(uow, command.board_id, command.share_id)
+        operation = (
+            "board.share.leave"
+            if getattr(share, "user_id", None) == actor.actor_id
+            and getattr(board, "owner_id", None) != actor.actor_id
+            else "board.share.revoke"
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(operation, legacy_operation="board.read"),
+            uow=uow,
+            board_id=command.board_id,
+        )
         revoked = await uow.services.shares.revoke_share(
             command.share_id,
             actor.actor_id,

@@ -16,6 +16,16 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, TypeAlias
 
+from okto_pulse.core.domain.mcp_permission_registry import (
+    HUMAN_ONLY_MCP_TOOL_EXEMPTIONS,
+    MAX_HUMAN_ONLY_TOOL_EXEMPTIONS,
+    MCP_TOOL_PERMISSION_POLICIES,
+    HumanOnlyToolExemption,
+    McpPermissionRegistryError,
+    McpPermissionRegistryReport,
+    McpToolPermissionPolicy,
+    build_mcp_permission_registry_report,
+)
 from okto_pulse.core.domain.sdlc_registry import (
     SDLC_REGISTRY,
     lifecycle_state_permission_registry,
@@ -2075,6 +2085,24 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
     "self:update": ["profile.update"],
 }
 
+# Use cases express their transitional authority as the pre-introduction
+# canonical leaf (for example ``board.read``). Persisted permission documents
+# can evaluate that leaf directly, while pre-migration MCP agents still carry
+# flat tokens such as ``board:read``. Keep that compatibility translation in
+# the policy itself so every inbound adapter gets the same bounded fallback.
+_CANONICAL_TO_LEGACY_TOKENS: dict[str, tuple[str, ...]] = {
+    canonical: tuple(
+        legacy
+        for legacy, mapped in LEGACY_PERMISSION_MAP.items()
+        if canonical in mapped
+    )
+    for canonical in {
+        canonical
+        for mapped in LEGACY_PERMISSION_MAP.values()
+        for canonical in mapped
+    }
+}
+
 
 def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
     """Map legacy flat permissions to new granular flag structure.
@@ -3692,25 +3720,38 @@ def generate_role_summary(permissions: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def validate_registry_vs_tools(tool_names: list[str]) -> None:
-    """Validate PERMISSION_REGISTRY against registered MCP tools. Logs warnings."""
+def registry_vs_tools_report(tool_names: list[str]) -> McpPermissionRegistryReport:
+    """Return the pure, deterministic MCP permission inventory comparison."""
+
+    return build_mcp_permission_registry_report(tool_names, all_flags=ALL_FLAGS)
+
+
+def validate_registry_vs_tools(
+    tool_names: list[str],
+    *,
+    strict: bool = False,
+) -> McpPermissionRegistryReport:
+    """Validate the exact MCP permission manifest.
+
+    The default keeps the historical runtime logging behavior.  CI and other
+    fail-closed boundaries pass ``strict=True`` to raise on any drift.
+    """
     import logging
 
     logger = logging.getLogger("okto_pulse.permissions")
-
-    # Build expected tool name patterns from flag paths
-    # Flags like "spec.tests.create" map to tools like "okto_pulse_add_test_scenario"
-    # This is a loose validation — just checks for orphan flags and unmapped tools
-    registry_flags = set(ALL_FLAGS)
-    okto_tools = {t for t in tool_names if t.startswith("okto_pulse_")}
-
-    if not okto_tools:
-        return
-
-    logger.info(
-        f"Permission registry: {len(registry_flags)} flags, "
-        f"{len(okto_tools)} MCP tools registered."
-    )
+    report = registry_vs_tools_report(tool_names)
+    if strict:
+        report.assert_valid()
+    elif not report.is_valid:
+        logger.warning("MCP permission registry drift: %s", report.render())
+    else:
+        logger.info(
+            "Permission registry: %d flags, %d MCP tools, %d human-only exemptions.",
+            len(ALL_FLAGS),
+            len(report.live_tools),
+            report.exemption_count,
+        )
+    return report
 
 
 def _perm_error_detailed(
@@ -3819,6 +3860,17 @@ def evaluate_permission(context: PermissionContext) -> PermissionDecision:
             context.legacy_operation,
             state_aware=False,
         )
+        if reason and isinstance(permissions, (list, tuple)):
+            # A flat pre-migration principal cannot carry canonical tree paths.
+            # Resolve only the explicit inverse edges declared by
+            # LEGACY_PERMISSION_MAP; no wildcard or inferred widening occurs.
+            for legacy_token in _CANONICAL_TO_LEGACY_TOKENS.get(
+                context.legacy_operation,
+                (),
+            ):
+                reason = _reason_for(legacy_token, state_aware=False)
+                if reason is None:
+                    break
 
     if reason is None:
         return PermissionDecision.allow(operation)
@@ -3853,6 +3905,7 @@ __all__ = [
     "ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1",
     "ALL_FLAGS",
     "DefaultPermissionPolicy",
+    "HUMAN_ONLY_MCP_TOOL_EXEMPTIONS",
     "GUIDELINE_ADOPTION_MANAGE",
     "GUIDELINE_ASSESSMENTS_READ",
     "GUIDELINE_ASSESSMENTS_RECORD",
@@ -3864,7 +3917,13 @@ __all__ = [
     "InvalidPermissionContext",
     "LEGACY_PERMISSION_MAP",
     "KG_OPERATIONS_PERMISSION_INTRODUCTION_V1",
+    "MAX_HUMAN_ONLY_TOOL_EXEMPTIONS",
+    "MCP_TOOL_PERMISSION_POLICIES",
     "MCP_GAPS_PERMISSION_INTRODUCTION_V1",
+    "HumanOnlyToolExemption",
+    "McpPermissionRegistryError",
+    "McpPermissionRegistryReport",
+    "McpToolPermissionPolicy",
     "OPERATIONAL_PERMISSION_INTRODUCTION_V1",
     "PERMISSION_REGISTRY",
     "PermissionContext",
@@ -3894,6 +3953,7 @@ __all__ = [
     "permission_flag_overrides",
     "resolve_permission_preset_lineage",
     "resolve_permissions",
+    "registry_vs_tools_report",
     "structured_spec_entity_permission_flags",
     "validate_strict_permission_flags",
     "validate_registry_vs_tools",

@@ -93,37 +93,61 @@ _WRITERS = (
     (
         StartHistoricalUseCase,
         StartHistoricalCommand,
+        "kg.operations.historical.start",
         "kg.admin.historical_consolidation",
         "start",
     ),
     (
         CancelHistoricalUseCase,
         CancelHistoricalCommand,
+        "kg.operations.historical.cancel",
         "kg.admin.historical_consolidation",
         "cancel",
     ),
-    (DeleteBoardKgUseCase, DeleteBoardKgCommand, "kg.admin.wipe_board", "delete"),
+    (
+        DeleteBoardKgUseCase,
+        DeleteBoardKgCommand,
+        "kg.operations.board.erase",
+        "kg.admin.wipe_board",
+        "delete",
+    ),
 )
 
 
-def _permission_set(operation: str, *, allowed: bool) -> PermissionSet:
-    leaf = operation.rsplit(".", 1)[-1]
-    return PermissionSet(
-        {
-            "board": {"read": True},
-            "kg": {"admin": {leaf: allowed}},
-        }
-    )
+def _permission_set(
+    operation: str,
+    historical_authority: str,
+    *,
+    allowed: bool,
+) -> PermissionSet:
+    document: dict[str, object] = {"board": {"read": True}}
+    for path in (operation, historical_authority):
+        cursor = document
+        parts = path.split(".")
+        for part in parts[:-1]:
+            value = cursor.setdefault(part, {})
+            assert isinstance(value, dict)
+            cursor = value
+        cursor[parts[-1]] = allowed
+    return PermissionSet(document)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("use_case_type", "command_type", "operation", "writer_name"), _WRITERS
+    (
+        "use_case_type",
+        "command_type",
+        "operation",
+        "historical_authority",
+        "writer_name",
+    ),
+    _WRITERS,
 )
 async def test_kg_writer_denial_happens_after_lookup_and_before_writer_or_commit(
     use_case_type: type,
     command_type: type,
     operation: str,
+    historical_authority: str,
     writer_name: str,
 ) -> None:
     events: list[str] = []
@@ -133,7 +157,11 @@ async def test_kg_writer_denial_happens_after_lookup_and_before_writer_or_commit
         "rest",
         board_id=BOARD_ID,
         realm_id=LOCAL_REALM_ID,
-        permissions=_permission_set(operation, allowed=False),
+        permissions=_permission_set(
+            operation,
+            historical_authority,
+            allowed=False,
+        ),
     )
 
     with pytest.raises(PermissionDeniedError) as exc_info:
@@ -152,16 +180,27 @@ async def test_kg_writer_denial_happens_after_lookup_and_before_writer_or_commit
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("use_case_type", "command_type", "operation", "writer_name"), _WRITERS
+    (
+        "use_case_type",
+        "command_type",
+        "operation",
+        "historical_authority",
+        "writer_name",
+    ),
+    _WRITERS,
 )
 async def test_kg_writer_uses_rest_permissions_resolved_for_target_board(
     use_case_type: type,
     command_type: type,
     operation: str,
+    historical_authority: str,
     writer_name: str,
 ) -> None:
     events: list[str] = []
-    uow = _Uow(events, _permission_set(operation, allowed=True))
+    uow = _Uow(
+        events,
+        _permission_set(operation, historical_authority, allowed=True),
+    )
     actor = ActorContext(
         "actor-kg",
         "rest",
@@ -185,12 +224,20 @@ async def test_kg_writer_uses_rest_permissions_resolved_for_target_board(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("use_case_type", "command_type", "operation", "writer_name"), _WRITERS
+    (
+        "use_case_type",
+        "command_type",
+        "operation",
+        "historical_authority",
+        "writer_name",
+    ),
+    _WRITERS,
 )
 async def test_kg_writer_rejects_cross_board_actor_before_writer(
     use_case_type: type,
     command_type: type,
     operation: str,
+    historical_authority: str,
     writer_name: str,
 ) -> None:
     events: list[str] = []
@@ -200,7 +247,11 @@ async def test_kg_writer_rejects_cross_board_actor_before_writer(
         "mcp",
         board_id="board-other",
         realm_id=LOCAL_REALM_ID,
-        permissions=_permission_set(operation, allowed=True),
+        permissions=_permission_set(
+            operation,
+            historical_authority,
+            allowed=True,
+        ),
     )
 
     with pytest.raises(PermissionDeniedError) as exc_info:
@@ -213,4 +264,42 @@ async def test_kg_writer_rejects_cross_board_actor_before_writer(
     assert json.loads(str(exc_info.value))["reason"] == "board_scope_mismatch"
     assert events == [f"lookup:{BOARD_ID}"]
     assert f"writer:{writer_name}:{BOARD_ID}" not in events
+    uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    (
+        "use_case_type",
+        "command_type",
+        "operation",
+        "historical_authority",
+        "writer_name",
+    ),
+    _WRITERS,
+)
+async def test_kg_writer_accepts_flat_historical_authority_during_migration(
+    use_case_type: type,
+    command_type: type,
+    operation: str,
+    historical_authority: str,
+    writer_name: str,
+) -> None:
+    events: list[str] = []
+    uow = _Uow(events)
+    actor = ActorContext(
+        "actor-kg",
+        "rest",
+        board_id=BOARD_ID,
+        realm_id=LOCAL_REALM_ID,
+        permissions=[historical_authority],
+    )
+
+    await use_case_type().execute(
+        command_type(BOARD_ID),
+        actor=actor,
+        uow=uow,
+    )
+
+    assert events == [f"lookup:{BOARD_ID}", f"writer:{writer_name}:{BOARD_ID}"]
     uow.commit.assert_not_awaited()

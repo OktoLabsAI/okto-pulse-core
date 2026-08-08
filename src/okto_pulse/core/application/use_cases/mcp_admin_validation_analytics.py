@@ -19,9 +19,9 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
-from okto_pulse.core.application.use_cases.policy_governance import (
-    ADOPTION_MANAGE,
-    require_policy_governance_capabilities,
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
 )
 from okto_pulse.core.services.analytics_contract import parse_analytics_datetime
 
@@ -124,6 +124,15 @@ class McpListDefaultGuidelineCandidatesUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.candidates_read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.default_board_config.list_default_candidates(
             scope=command.scope,
             template_id=command.template_id,
@@ -156,7 +165,15 @@ class McpUpdateDefaultGuidelineRefsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
-        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.guidelines.edit",
+                legacy_operation="guidelines.adoption.manage",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         data = await uow.services.default_board_config.update_template_guidelines(
             template_id=command.template_id,
             guideline_default_refs=command.guideline_default_refs,
@@ -191,6 +208,14 @@ class McpSetDefaultDesignSystemUseCase:
         self, command: McpSetDefaultDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
 
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.set_design_system",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            uow=uow,
+        )
         data = await uow.services.default_board_config.set_template_design_system(
             template_id=command.template_id,
             design_system_id=command.design_system_id,
@@ -265,6 +290,15 @@ class McpListDesignSystemsUseCase:
                 "Catalog lists support only profile='summary'; use get_design_system for the full payload.",
                 422,
             )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         page = await uow.services.design_systems.list_catalog_page(
             scope=command.scope,
             board_id=command.board_id,
@@ -311,6 +345,15 @@ class McpGetDesignSystemUseCase:
             board_access_authorized=True,
             allow_owned_global_without_link=True,
         )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         return _DataResult(
             serialize_design_system_profile(item, profile=command.profile)
         )
@@ -347,6 +390,15 @@ class McpCreateDesignSystemUseCase:
             uow,
             command.board_id,
             actor,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.create",
+                legacy_operation="spec.architecture.create",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
         item = await uow.services.design_systems.create_design_system(
             actor.actor_id,
@@ -393,6 +445,22 @@ class McpUpdateDesignSystemUseCase:
             actor,
             design_system_id=command.design_system_id,
         )
+        await uow.services.design_systems.require_authorized_design_system(
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id,
+            board_access_authorized=True,
+            allow_owned_global_without_link=True,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.edit",
+                legacy_operation="spec.architecture.edit",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         kwargs = {
             key: value
             for key, value in (
@@ -431,6 +499,22 @@ class McpDeleteDesignSystemUseCase:
             command.board_id,
             actor,
             design_system_id=command.design_system_id,
+        )
+        await uow.services.design_systems.require_authorized_design_system(
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id,
+            board_access_authorized=True,
+            allow_owned_global_without_link=True,
+        )
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.entity.delete",
+                legacy_operation="spec.architecture.delete",
+            ),
+            uow=uow,
+            board_id=command.board_id,
         )
         deleted = await uow.services.design_systems.delete_design_system(
             command.design_system_id,

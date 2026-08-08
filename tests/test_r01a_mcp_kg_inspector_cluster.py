@@ -34,7 +34,7 @@ DRILL_TOOL = "okto_pulse_kg_queue_drilldown"
 MIGRATED_TOOLS = (STALE_TOOL, DRILL_TOOL)
 
 
-def _stub_ctx(permissions=("board:read",)):
+def _stub_ctx(permissions=("board:read", "kg.admin.settings_read")):
     return type(
         "Ctx",
         (),

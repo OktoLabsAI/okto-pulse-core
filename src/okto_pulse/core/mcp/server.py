@@ -1401,6 +1401,34 @@ def _kg_direct_permission_denied(
     )
 
 
+async def _authorize_kg_operation(
+    actor: Any,
+    *,
+    operation: str,
+    legacy_operation: str,
+    board_id: str | None = None,
+) -> str | None:
+    """Authorize one canonical KG operation before adapter-owned work."""
+
+    from okto_pulse.core.application.use_cases import (
+        AuthorizeOperationCommand,
+        AuthorizeOperationUseCase,
+    )
+
+    try:
+        await AuthorizeOperationUseCase().execute(
+            AuthorizeOperationCommand(
+                operation,
+                legacy_operation=legacy_operation,
+                board_id=board_id,
+            ),
+            actor=actor,
+        )
+    except PermissionDeniedError as exc:
+        return _kg_direct_permission_denied(operation, str(exc))
+    return None
+
+
 def _refuse_human_control(
     *,
     board_id: str,
@@ -2075,7 +2103,31 @@ async def okto_pulse_get_publish_health() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
+    from okto_pulse.core.application.use_cases import ActorContext
+    from okto_pulse.core.application.use_cases.authorize_operation import (
+        AuthorizeOperationCommand,
+        AuthorizeOperationUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
+
+    actor = ActorContext(
+        agent.id,
+        "mcp",
+        actor_name=agent.name,
+        actor_kind="agent",
+        permissions=agent.permissions,
+    )
+    try:
+        await AuthorizeOperationUseCase().execute(
+            AuthorizeOperationCommand(
+                "metrics.publish_health.read",
+                legacy_operation="board.read",
+            ),
+            actor=actor,
+        )
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
     result = get_telemetry_port(get_settings()).publish_health()
     return json.dumps(result, default=str)
@@ -2400,24 +2452,25 @@ async def okto_pulse_list_agents(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases.mcp_profile_activity import (
         McpListAgentsCommand,
         McpListAgentsUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.infra.permissions import generate_role_summary
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await McpListAgentsUseCase().execute(
-            McpListAgentsCommand(board_id),
-            actor=actor,
-            uow=uow,
-        )
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpListAgentsUseCase().execute(
+                McpListAgentsCommand(board_id),
+                actor=actor,
+                uow=uow,
+            )
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
+    else:
         return json.dumps(
             [
                 {
@@ -2446,15 +2499,14 @@ async def okto_pulse_list_board_members(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases import (
         McpListBoardMembersCommand,
         McpListBoardMembersUseCase,
     )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.base import (
+        EntityNotFoundError,
+        PermissionDeniedError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -2465,6 +2517,8 @@ async def okto_pulse_list_board_members(board_id: str) -> str:
             )
         except EntityNotFoundError:
             return json.dumps({"error": "Board not found"})
+        except PermissionDeniedError as exc:
+            return _perm_error(str(exc))
         board = _r.board
         board_agents = _r.agents
 
@@ -6719,10 +6773,6 @@ async def okto_pulse_add_ideation_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     resolved_content, err = await _resolve_text_content(
         content=content, content_reference=content_reference
     )
@@ -6784,10 +6834,6 @@ async def okto_pulse_delete_ideation_knowledge(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases import (
         McpDeleteIdeationKnowledgeCommand,
@@ -10190,10 +10236,6 @@ async def okto_pulse_execute_test_scenario_evidence(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases import (
         EntityNotFoundError,
         ExecuteTestScenarioEvidenceCommand,
@@ -10391,10 +10433,6 @@ async def okto_pulse_update_test_scenario(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     clear_fields = parse_multi_value(clear) if clear else None
     lc = parse_multi_value(linked_criteria) if linked_criteria else None
 
@@ -10473,10 +10511,6 @@ async def okto_pulse_delete_test_scenario(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases import (
         McpDeleteTestScenarioCommand,
         McpDeleteTestScenarioUseCase,
@@ -14520,22 +14554,6 @@ def _validate_screen_mockup_entity_type(entity_type: str) -> str | None:
     return f"Invalid entity_type '{entity_type}'. Must be one of: {allowed}"
 
 
-def _mcp_check_screen_mockup_permission(
-    permissions: Any,
-    entity_type: str,
-    action: Literal["create", "edit", "annotate", "delete"],
-) -> str | None:
-    # Deferred until the canonical registry gains ``story.mockups.*``. Do not
-    # pretend a semantically different story leaf governs these mutations.
-    if entity_type == "story":
-        return check_permission(permissions, Permissions.SPECS_UPDATE)
-    return _mcp_check_permission(
-        permissions,
-        f"{entity_type}.mockups.{action}",
-        Permissions.SPECS_UPDATE,
-    )
-
-
 def _sanitize_html(html: str) -> str:
     import re
 
@@ -14584,14 +14602,6 @@ async def okto_pulse_add_screen_mockup(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_screen_mockup_permission(
-        ctx.permissions,
-        entity_type,
-        "create",
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
@@ -14658,14 +14668,6 @@ async def okto_pulse_update_screen_mockup(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_screen_mockup_permission(
-        ctx.permissions,
-        entity_type,
-        "edit",
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
@@ -14724,14 +14726,6 @@ async def okto_pulse_annotate_mockup(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_screen_mockup_permission(
-        ctx.permissions,
-        entity_type,
-        "annotate",
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
@@ -14837,14 +14831,6 @@ async def okto_pulse_delete_screen_mockup(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_screen_mockup_permission(
-        ctx.permissions,
-        entity_type,
-        "delete",
-    )
-    if perm_err:
-        return _perm_error(perm_err)
-
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
@@ -17283,10 +17269,10 @@ async def okto_pulse_delete_spec_question(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
-    if perm_err:
-        return _perm_error(perm_err)
-
+    from okto_pulse.core.application.use_cases import (
+        AuthorizeOperationCommand,
+        AuthorizeOperationUseCase,
+    )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
     from okto_pulse.core.application.use_cases.spec_crud import (
         _require_actor_board_spec_qa,
@@ -17294,6 +17280,14 @@ async def okto_pulse_delete_spec_question(
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    await AuthorizeOperationUseCase().execute(
+        AuthorizeOperationCommand(
+            "spec.qa.delete",
+            legacy_operation="qa:delete",
+            board_id=board_id,
+        ),
+        actor=actor,
+    )
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         service = uow.services.spec_qa
         try:
@@ -17333,10 +17327,6 @@ async def okto_pulse_delete_ideation_question(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases import (
         McpDeleteIdeationQuestionCommand,
         McpDeleteIdeationQuestionUseCase,
@@ -17368,10 +17358,6 @@ async def okto_pulse_delete_refinement_question(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
-    if perm_err:
-        return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases import (
         McpDeleteRefinementQuestionCommand,
@@ -17405,10 +17391,6 @@ async def okto_pulse_delete_sprint_question(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
-    if perm_err:
-        return _perm_error(perm_err)
-
     from okto_pulse.core.application.use_cases import (
         McpDeleteSprintQuestionCommand,
         McpDeleteSprintQuestionUseCase,
@@ -17417,7 +17399,7 @@ async def okto_pulse_delete_sprint_question(
 
     # MCP-FU6 strangler (sprint delete Q&A, VARIANT): the sprint_question_deleted log +
     # commit run ATOMICALLY in the use case; a falsy delete short-circuits (no log/
-    # commit). The QA_DELETE gate stays in the adapter (above).
+    # commit). The canonical authorization gate is owned by the Core use case.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         _r = await McpDeleteSprintQuestionUseCase().execute(
@@ -17589,40 +17571,44 @@ async def okto_pulse_confirm_amendment_coverage(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    from okto_pulse.core.application.use_cases.confirm_amendment_coverage import (
+        ConfirmAmendmentCoverageCommand,
+        ConfirmAmendmentCoverageUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    perm_err = check_permission(ctx.permissions, "card.validation.submit")
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        card_service = uow.services.cards
-        try:
-            result = await card_service.confirm_amendment_coverage(
-                amendment_id=amendment_id,
-                regression_test_task_id=regression_test_task_id,
-                regression_scenario_id=regression_scenario_id,
-                reviewer_id=ctx.agent_id,
-                reviewer_name=ctx.agent_name,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ConfirmAmendmentCoverageUseCase().execute(
+                ConfirmAmendmentCoverageCommand(
+                    board_id=board_id,
+                    amendment_id=amendment_id,
+                    regression_test_task_id=regression_test_task_id,
+                    regression_scenario_id=regression_scenario_id,
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await uow.commit()
-            return json.dumps(
-                {"success": True, "coverage_confirmation": result}, default=str
-            )
-        except CardOperationError as e:
-            # BUG-03: preserve the STRUCTURED fail-closed error (e.g.
-            # coverage_not_gate_consumable with bounded facts: amendment_id,
-            # bug_id, original_spec_id, regression_test_task_id,
-            # regression_scenario_id, scenario_spec_id, routed_path,
-            # resolver_reason, coverage_state, missing_links). Must precede the
-            # ValueError arm — CardOperationError subclasses ValueError — so it
-            # never degrades to a textual {"error": str(e)}.
-            return json.dumps({"error": e.code, **e.to_dict()})
-        except GateContractError as e:
-            return json.dumps(e.to_dict())
-        except ResourceGateError as e:
-            return _resource_gate_error_response(e)
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+        return json.dumps(
+            {
+                "success": True,
+                "coverage_confirmation": result.coverage_confirmation,
+            },
+            default=str,
+        )
+    except PermissionDeniedError as e:
+        return _perm_error(str(e))
+    except CardOperationError as e:
+        # BUG-03: preserve the STRUCTURED fail-closed error. This must precede
+        # ValueError because CardOperationError subclasses it.
+        return json.dumps({"error": e.code, **e.to_dict()})
+    except GateContractError as e:
+        return json.dumps(e.to_dict())
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
 
 @mcp.tool()
@@ -17652,34 +17638,42 @@ async def okto_pulse_create_amendment_revision(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
+    from okto_pulse.core.application.use_cases.admin_catalog import (
+        CreateAmendmentRevisionCommand,
+        CreateAmendmentRevisionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiError,
     )
 
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        try:
-            result = await uow.services.amendments.create(
-                board_id=board_id,
-                bug_id=bug_id,
-                author=ctx.agent_id,
-                original_spec_id=original_spec_id or None,
-                revision_spec_id=revision_spec_id or None,
-                origin_task_ids=origin_task_ids,
-                affected_task_ids=affected_task_ids,
-                regression_scenario_ids=regression_scenario_ids,
-                regression_test_task_ids=regression_test_task_ids,
-                automated_regression_refs=automated_regression_refs,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await CreateAmendmentRevisionUseCase().execute(
+                CreateAmendmentRevisionCommand(
+                    board_id,
+                    bug_id,
+                    {
+                        "original_spec_id": original_spec_id or None,
+                        "revision_spec_id": revision_spec_id or None,
+                        "origin_task_ids": origin_task_ids,
+                        "affected_task_ids": affected_task_ids,
+                        "regression_scenario_ids": regression_scenario_ids,
+                        "regression_test_task_ids": regression_test_task_ids,
+                        "automated_regression_refs": automated_regression_refs,
+                    },
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await uow.commit()
-            return json.dumps(
-                {"success": True, "amendment_revision": result}, default=str
-            )
-        except AmendmentRevisionApiError as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(
+            {"success": True, "amendment_revision": result.data}, default=str
+        )
+    except PermissionDeniedError as e:
+        return _perm_error(str(e))
+    except AmendmentRevisionApiError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -17693,22 +17687,28 @@ async def okto_pulse_list_amendment_revisions(board_id: str, bug_id: str) -> str
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
+    from okto_pulse.core.application.use_cases.admin_catalog import (
+        ListAmendmentRevisionsCommand,
+        ListAmendmentRevisionsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiError,
     )
 
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        try:
-            result = await uow.services.amendments.list_for_bug(
-                board_id=board_id, bug_id=bug_id
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListAmendmentRevisionsUseCase().execute(
+                ListAmendmentRevisionsCommand(board_id, bug_id),
+                actor=actor,
+                uow=uow,
             )
-            return json.dumps(result, default=str)
-        except AmendmentRevisionApiError as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(result.data, default=str)
+    except PermissionDeniedError as e:
+        return _perm_error(str(e))
+    except AmendmentRevisionApiError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -17723,22 +17723,28 @@ async def okto_pulse_get_amendment_revision(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
+    from okto_pulse.core.application.use_cases.admin_catalog import (
+        GetAmendmentRevisionCommand,
+        GetAmendmentRevisionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiError,
     )
 
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        try:
-            result = await uow.services.amendments.get(
-                board_id=board_id, bug_id=bug_id, amendment_id=amendment_id
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetAmendmentRevisionUseCase().execute(
+                GetAmendmentRevisionCommand(board_id, bug_id, amendment_id),
+                actor=actor,
+                uow=uow,
             )
-            return json.dumps({"amendment_revision": result}, default=str)
-        except AmendmentRevisionApiError as e:
-            return json.dumps(e.to_dict())
+        return json.dumps({"amendment_revision": result.data}, default=str)
+    except PermissionDeniedError as e:
+        return _perm_error(str(e))
+    except AmendmentRevisionApiError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -17759,31 +17765,39 @@ async def okto_pulse_associate_amendment_revision_artifacts(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
+    from okto_pulse.core.application.use_cases.admin_catalog import (
+        AssociateAmendmentRevisionCommand,
+        AssociateAmendmentRevisionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiError,
     )
 
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        try:
-            result = await uow.services.amendments.associate(
-                board_id=board_id,
-                bug_id=bug_id,
-                amendment_id=amendment_id,
-                actor=ctx.agent_id,
-                regression_scenario_ids=regression_scenario_ids,
-                regression_test_task_ids=regression_test_task_ids,
-                automated_regression_refs=automated_regression_refs,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await AssociateAmendmentRevisionUseCase().execute(
+                AssociateAmendmentRevisionCommand(
+                    board_id,
+                    bug_id,
+                    amendment_id,
+                    {
+                        "regression_scenario_ids": regression_scenario_ids,
+                        "regression_test_task_ids": regression_test_task_ids,
+                        "automated_regression_refs": automated_regression_refs,
+                    },
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await uow.commit()
-            return json.dumps(
-                {"success": True, "amendment_revision": result}, default=str
-            )
-        except AmendmentRevisionApiError as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(
+            {"success": True, "amendment_revision": result.data}, default=str
+        )
+    except PermissionDeniedError as e:
+        return _perm_error(str(e))
+    except AmendmentRevisionApiError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -17807,30 +17821,35 @@ async def okto_pulse_transition_amendment_revision(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
+    from okto_pulse.core.application.use_cases.admin_catalog import (
+        TransitionAmendmentRevisionCommand,
+        TransitionAmendmentRevisionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiError,
     )
 
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        try:
-            result = await uow.services.amendments.transition_lifecycle(
-                board_id=board_id,
-                bug_id=bug_id,
-                amendment_id=amendment_id,
-                actor=ctx.agent_id,
-                status=status or None,
-                lineage_state=lineage_state or None,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await TransitionAmendmentRevisionUseCase().execute(
+                TransitionAmendmentRevisionCommand(
+                    board_id,
+                    bug_id,
+                    amendment_id,
+                    {"status": status or None, "lineage_state": lineage_state or None},
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await uow.commit()
-            return json.dumps(
-                {"success": True, "amendment_revision": result}, default=str
-            )
-        except AmendmentRevisionApiError as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(
+            {"success": True, "amendment_revision": result.data}, default=str
+        )
+    except PermissionDeniedError as e:
+        return _perm_error(str(e))
+    except AmendmentRevisionApiError as e:
+        return json.dumps(e.to_dict())
 
 
 def _default_board_config_imports():
@@ -17942,13 +17961,10 @@ async def okto_pulse_get_active_default_board_config(
 ) -> str:
     """Get the active default board-configuration template for a scope (admin read,
     spec 9df814bc / FR7). REST twin: GET /default-board-config/active. Returns
-    {scope, active|null}. board_id anchors the agent permission context."""
+    {scope, active|null}."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpGetActiveDefaultBoardConfigCommand,
         McpGetActiveDefaultBoardConfigUseCase,
@@ -17957,6 +17973,7 @@ async def okto_pulse_get_active_default_board_config(
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -17967,6 +17984,8 @@ async def okto_pulse_get_active_default_board_config(
         return json.dumps(result.data, default=str)
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
 
 @mcp.tool()
@@ -17981,9 +18000,6 @@ async def okto_pulse_list_default_board_config_versions(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
     window_err = _invalid_window_error(offset, limit)
     if window_err is not None:
         return window_err
@@ -17996,6 +18012,7 @@ async def okto_pulse_list_default_board_config_versions(
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -18023,6 +18040,8 @@ async def okto_pulse_list_default_board_config_versions(
         return json.dumps(data, default=str)
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
 
 @mcp.tool()
@@ -18034,9 +18053,6 @@ async def okto_pulse_get_board_default_config_diff(board_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpGetBoardDefaultConfigDiffCommand,
         McpGetBoardDefaultConfigDiffUseCase,
@@ -18045,6 +18061,7 @@ async def okto_pulse_get_board_default_config_diff(board_id: str) -> str:
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -18055,6 +18072,8 @@ async def okto_pulse_get_board_default_config_diff(board_id: str) -> str:
         return json.dumps(result.data, default=str)
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
 
 @mcp.tool()
@@ -18072,16 +18091,11 @@ async def okto_pulse_create_default_board_config_version(
     revision_id, revision_number, semantic_version, and revision_digest (priority
     defaults to zero). This native tool rejects guideline_version/legacy_*; those
     aliases are reserved for versioned import/migration, not head selection.
-    design_system gate_mode must be valid.
-    activate=True activates it (single-active enforced). Requires SPECS_UPDATE;
-    a change from the active exact guideline pins additionally requires
-    guidelines.adoption.manage."""
+    design_system gate_mode must be valid. activate=True activates it
+    (single-active enforced). Pin changes also need guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     if (
         isinstance(settings_payload, dict)
         and "skip_task_requirement_link_gate_global" in settings_payload
@@ -18129,15 +18143,11 @@ async def okto_pulse_activate_default_board_config_version(
 ) -> str:
     """Activate a default board-configuration template version (admin write);
     deactivates every other active version in the scope. REST twin: POST
-    /default-board-config/versions/{template_id}/activate. Requires SPECS_UPDATE;
-    changing the active exact guideline pins also requires
+    /default-board-config/versions/{template_id}/activate. Pin changes also need
     guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpActivateDefaultBoardConfigVersionCommand,
         McpActivateDefaultBoardConfigVersionUseCase,
@@ -18178,15 +18188,11 @@ async def okto_pulse_deactivate_default_board_config_version(
     board_id: str, template_id: str
 ) -> str:
     """Deactivate a default board-configuration template version (admin write).
-    REST twin: POST /default-board-config/versions/{template_id}/deactivate.
-    Requires SPECS_UPDATE; removing effective guideline pins also requires
-    guidelines.adoption.manage."""
+    REST twin: POST /default-board-config/versions/{template_id}/deactivate. Pin
+    changes also need guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpDeactivateDefaultBoardConfigVersionCommand,
         McpDeactivateDefaultBoardConfigVersionUseCase,
@@ -18286,32 +18292,17 @@ async def okto_pulse_update_default_guideline_refs(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = _mcp_check_permission(
-        ctx.permissions,
-        "guidelines.adoption.manage",
-        Permissions.SPECS_UPDATE,
-    )
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpUpdateDefaultGuidelineRefsCommand,
         McpUpdateDefaultGuidelineRefsUseCase,
     )
     from okto_pulse.core.application.use_cases.base import PermissionDeniedError
-    from okto_pulse.core.application.use_cases.policy_governance import (
-        ADOPTION_MANAGE,
-        require_policy_governance_capabilities,
-    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
     )
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
-    except PermissionDeniedError as exc:
-        return _perm_error(str(exc))
     # AF23 scope marker: ActorScope.from_context(actor).query_scope; query_scope=query_scope.
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -18344,17 +18335,15 @@ async def okto_pulse_set_default_design_system(
     (spec 3a006f65 / FR3, admin write). REST twin: POST
     /default-board-configurations/{template_id}/design-system. The design_system_id must
     be a real global active DesignSystem (inline/synthetic rejected fail-closed). An
-    active template is copy-on-write (new version). Perm: SPECS_UPDATE."""
+    active template is copy-on-write (new version)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpSetDefaultDesignSystemCommand,
         McpSetDefaultDesignSystemUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.default_board_configuration import (
         DefaultBoardConfigurationError,
@@ -18375,6 +18364,8 @@ async def okto_pulse_set_default_design_system(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DefaultBoardConfigurationError as e:
         return json.dumps(e.to_dict())
 
@@ -18399,19 +18390,17 @@ async def okto_pulse_list_design_systems(
 ) -> str:
     """List Design Systems (spec 3a006f65 / FR2, admin read). scope='global' lists the
     global catalog; scope='inline' lists THIS board's inline Design Systems. REST twin:
-    GET /design-systems. Perm: BOARD_READ."""
+    GET /design-systems."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpListDesignSystemsCommand,
         McpListDesignSystemsUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -18430,6 +18419,8 @@ async def okto_pulse_list_design_systems(
         return json.dumps(result.data, default=str)
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
 
 @mcp.tool()
@@ -18438,20 +18429,17 @@ async def okto_pulse_get_design_system(
     design_system_id: str,
     profile: str = "full",
 ) -> str:
-    """Get a Design System by id (admin read). REST twin: GET /design-systems/{id}.
-    Perm: BOARD_READ."""
+    """Get a Design System by id (admin read). REST twin: GET /design-systems/{id}."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpGetDesignSystemCommand,
         McpGetDesignSystemUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -18468,6 +18456,8 @@ async def okto_pulse_get_design_system(
         return json.dumps(result.data, default=str)
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
 
 @mcp.tool()
@@ -18480,17 +18470,15 @@ async def okto_pulse_create_design_system(
 ) -> str:
     """Create a Design System (spec 3a006f65 / FR1, admin write). scope='global' = a
     catalog entry; scope='inline' = bound to THIS board (board_id). Inline can never be
-    a global default. REST twin: POST /design-systems. Perm: SPECS_UPDATE."""
+    a global default. REST twin: POST /design-systems."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpCreateDesignSystemCommand,
         McpCreateDesignSystemUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
 
@@ -18509,6 +18497,8 @@ async def okto_pulse_create_design_system(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
 
@@ -18522,17 +18512,15 @@ async def okto_pulse_update_design_system(
     status: str | None = None,
 ) -> str:
     """Update a Design System (admin write); a title/payload change bumps version.
-    REST twin: PATCH /design-systems/{id}. Perm: SPECS_UPDATE."""
+    REST twin: PATCH /design-systems/{id}."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpUpdateDesignSystemCommand,
         McpUpdateDesignSystemUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
 
@@ -18551,24 +18539,23 @@ async def okto_pulse_update_design_system(
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
 
 
 @mcp.tool()
 async def okto_pulse_delete_design_system(board_id: str, design_system_id: str) -> str:
-    """Delete a Design System (admin write). REST twin: DELETE /design-systems/{id}.
-    Perm: SPECS_UPDATE."""
+    """Delete a Design System (admin write). REST twin: DELETE /design-systems/{id}."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
         McpDeleteDesignSystemCommand,
         McpDeleteDesignSystemUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
 
@@ -18581,6 +18568,8 @@ async def okto_pulse_delete_design_system(board_id: str, design_system_id: str) 
                 uow=uow,
             )
         return json.dumps(result.data, default=str)
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
 
@@ -18590,18 +18579,15 @@ async def okto_pulse_link_board_design_system(
     board_id: str, design_system_id: str
 ) -> str:
     """Set the board's single effective Design System (admin write). REST twin: POST
-    /boards/{board_id}/design-system. Inline systems can only link to their own board.
-    Perm: SPECS_UPDATE."""
+    /boards/{board_id}/design-system. Inline systems can only link to their own board."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpLinkBoardDesignSystemCommand,
         McpLinkBoardDesignSystemUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
 
@@ -18622,6 +18608,8 @@ async def okto_pulse_link_board_design_system(
                 },
                 default=str,
             )
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
 
@@ -18629,17 +18617,15 @@ async def okto_pulse_link_board_design_system(
 @mcp.tool()
 async def okto_pulse_unlink_board_design_system(board_id: str) -> str:
     """Remove the board's effective Design System link (admin write). REST twin: DELETE
-    /boards/{board_id}/design-system. Perm: SPECS_UPDATE."""
+    /boards/{board_id}/design-system."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpUnlinkBoardDesignSystemCommand,
         McpUnlinkBoardDesignSystemUseCase,
     )
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
 
@@ -18650,6 +18636,8 @@ async def okto_pulse_unlink_board_design_system(board_id: str) -> str:
                 McpUnlinkBoardDesignSystemCommand(board_id), actor=actor, uow=uow
             )
         return json.dumps({"unlinked": result.data})
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
 
@@ -18658,19 +18646,17 @@ async def okto_pulse_unlink_board_design_system(board_id: str) -> str:
 async def okto_pulse_get_board_design_system(board_id: str) -> str:
     """Resolve the board's EFFECTIVE Design System from real persisted state (admin
     read) — explicit board link else umbrella default snapshot, or null. REST twin: GET
-    /boards/{board_id}/design-system. Perm: BOARD_READ."""
+    /boards/{board_id}/design-system."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases import (
         McpGetBoardDesignSystemCommand,
         McpGetBoardDesignSystemUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.design_system import DesignSystemError
+    from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -18681,6 +18667,8 @@ async def okto_pulse_get_board_design_system(board_id: str) -> str:
         return json.dumps({"board_id": board_id, **result.data}, default=str)
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
+    except PermissionDeniedError as exc:
+        return _perm_error(str(exc))
 
 
 @mcp.tool()
@@ -19337,7 +19325,8 @@ async def okto_pulse_kg_digest_layer_reconcile(
     board independently only after source revalidation and a post-flush
     fresh-handle proof of one stable digest and one correct inbound Board edge.
     Repeated calls are idempotent by effect.
-    Requires ``kg.admin.historical_consolidation``.
+    Requires ``kg.operations.integrity.reconcile`` under the canonical
+    introduction contract (historical ceiling: ``kg.admin.settings_write``).
     Docs: okto-pulse://reference/tool-docs/kg.
     """
     ctx = await _get_agent_ctx(board_id)
@@ -19347,13 +19336,22 @@ async def okto_pulse_kg_digest_layer_reconcile(
             message="Authentication failed or board access denied",
         )
 
-    permission = "kg.admin.historical_consolidation"
-    perm_err = check_permission(ctx.permissions, permission)
-    if perm_err:
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    operation = "kg.operations.integrity.reconcile"
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation=operation,
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
+    )
+    if authorization_error is not None:
+        payload = json.loads(authorization_error)
         return McpToolOutcome.error(
             code="permission_denied",
-            message=perm_err,
-            details={"required_permission": permission},
+            message=str(payload["message"]),
+            details={"required_permission": operation},
         )
 
     from okto_pulse.core.application.use_cases import (
@@ -19362,9 +19360,6 @@ async def okto_pulse_kg_digest_layer_reconcile(
         ReconcileDigestLayerCommand,
         ReconcileDigestLayerUseCase,
     )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await ReconcileDigestLayerUseCase().execute(
@@ -19511,6 +19506,18 @@ async def okto_pulse_kg_takedown_status(
     if perm_err:
         return _kg_direct_permission_denied("board.read", perm_err)
 
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.audit.read",
+        legacy_operation="kg.admin.settings_read",
+        board_id=board_id,
+    )
+    if authorization_error is not None:
+        return authorization_error
+
     event_selector = str(delete_event_id or "").strip() or None
     delivery_selector = str(delivery_key or "").strip() or None
     if (event_selector is None) == (delivery_selector is None):
@@ -19522,9 +19529,6 @@ async def okto_pulse_kg_takedown_status(
             }
         )
 
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         result = await uow.services.kg.query_takedown_telemetry(
             board_id=board_id,
@@ -20062,6 +20066,18 @@ async def okto_pulse_kg_orphan_report(
     if perm_err:
         return _kg_direct_permission_denied("board.read", perm_err)
 
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.integrity.read",
+        legacy_operation="kg.admin.settings_read",
+        board_id=board_id,
+    )
+    if authorization_error is not None:
+        return authorization_error
+
     from okto_pulse.core.kg.orphan_integrity import (
         DEFAULT_ORPHAN_SAMPLE_LIMIT,
         MAX_ORPHAN_SAMPLE_LIMIT,
@@ -20117,16 +20133,18 @@ async def okto_pulse_kg_orphan_backfill(
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
-    required_permission = (
-        "board.read" if dry_run else "kg.admin.historical_consolidation"
+
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.integrity.backfill",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
     )
-    perm_err = kg_permission_error(
-        ctx,
-        required_permission,
-        legacy_fallback=(Permissions.BOARD_READ if dry_run else None),
-    )
-    if perm_err:
-        return _kg_direct_permission_denied(required_permission, perm_err)
+    if authorization_error is not None:
+        return authorization_error
 
     try:
         parsed_node_ids = coerce_to_list_str(node_ids) or None
@@ -20316,9 +20334,17 @@ async def okto_pulse_kg_dead_letter_reprocess(
     if ctx is None:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, "kg.admin.historical_consolidation")
-    if perm_err:
-        return _perm_error(perm_err)
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.queue.reprocess",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
+    )
+    if authorization_error is not None:
+        return authorization_error
 
     try:
         ids = coerce_to_list_str(dead_letter_ids) if dead_letter_ids else []
@@ -20329,13 +20355,10 @@ async def okto_pulse_kg_dead_letter_reprocess(
         ReprocessDeadLetterRowsCommand,
         ReprocessDeadLetterRowsUseCase,
     )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
     # Spec R01A MCP-FU2 (MCP strangler): requeue DLQ rows via the transport-free use
     # case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
     # explicit commit is preserved inside the use case; the process_now worker
     # signalling below is unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         result = await ReprocessDeadLetterRowsUseCase().execute(
             ReprocessDeadLetterRowsCommand(
@@ -20426,9 +20449,17 @@ async def okto_pulse_kg_connectivity_dlq_reprocess(
     if ctx is None:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, "kg.admin.historical_consolidation")
-    if perm_err:
-        return _perm_error(perm_err)
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.queue.reprocess",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
+    )
+    if authorization_error is not None:
+        return authorization_error
 
     try:
         ids = coerce_to_list_str(dead_letter_ids) if dead_letter_ids else []
@@ -20439,14 +20470,11 @@ async def okto_pulse_kg_connectivity_dlq_reprocess(
         ReprocessConnectivityDlqCommand,
         ReprocessConnectivityDlqUseCase,
     )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
     # Spec R01A MCP-FU2 (MCP strangler): fail-closed reprocess via the transport-free
     # use case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
     # use case commits ONLY when the service did not block (a blocked selection
     # removes no DLQ and must not commit) — identical to the legacy tool. The
     # process_now worker signalling below is unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         result = await ReprocessConnectivityDlqUseCase().execute(
             ReprocessConnectivityDlqCommand(board_id, ids), actor=actor, uow=uow
@@ -20541,19 +20569,20 @@ async def okto_pulse_kg_migrate_schema(
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    schema_manager = get_kg_registry().graph_schema_manager
-
     if all_boards:
         ctx = await _get_global_agent_ctx()
         if ctx is None:
             return _auth_error()
         actor = MCPAdapterContract.actor(ctx)
-        actor_scope = ActorScope.from_context(actor)
-        perm_err = check_permission(
-            actor_scope.permissions, "kg.admin.historical_consolidation"
+        authorization_error = await _authorize_kg_operation(
+            actor,
+            operation="kg.operations.schema.migrate",
+            legacy_operation="kg.admin.settings_write",
         )
-        if perm_err:
-            return _perm_error(perm_err)
+        if authorization_error is not None:
+            return authorization_error
+        actor_scope = ActorScope.from_context(actor)
+        schema_manager = get_kg_registry().graph_schema_manager
 
         from okto_pulse.core.ports.application_persistence import ApplicationQuery
 
@@ -20590,6 +20619,14 @@ async def okto_pulse_kg_migrate_schema(
     if ctx is None:
         return _auth_error()
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.schema.migrate",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
+    )
+    if authorization_error is not None:
+        return authorization_error
     actor_scope = ActorScope.from_context(actor)
     query_scope = actor_scope.query_scope(
         target_board_id=board_id,
@@ -20598,11 +20635,7 @@ async def okto_pulse_kg_migrate_schema(
     )
     if not query_scope.allows_board_id(board_id):
         return _perm_error("Permission denied: board outside query scope")
-    perm_err = check_permission(
-        actor_scope.permissions, "kg.admin.historical_consolidation"
-    )
-    if perm_err:
-        return _perm_error(perm_err)
+    schema_manager = get_kg_registry().graph_schema_manager
     summary = await schema_manager.migrate(board_id)
     return json.dumps(summary, default=str)
 
@@ -20645,16 +20678,18 @@ async def okto_pulse_kg_tick_run_now(
         ctx = await _get_global_agent_ctx()
         if ctx is None:
             return _auth_error()
-    perm_err = kg_permission_error(
-        ctx,
-        "kg.admin.historical_consolidation",
-        legacy_fallback=None,
+
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id or None)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.tick.run",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id or None,
     )
-    if perm_err:
-        return _kg_direct_permission_denied(
-            "kg.admin.historical_consolidation",
-            perm_err,
-        )
+    if authorization_error is not None:
+        return authorization_error
     triggered_by = getattr(ctx, "agent_id", None) or (
         ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
     )
@@ -20838,13 +20873,24 @@ _global_recovery_logger = logging.getLogger("okto_pulse.mcp.global_discovery_rec
 _GLOBAL_RECOVERY_PREFLIGHT_TIMEOUT_SECONDS = 2.0
 
 
-async def _global_recovery_authorize():
+async def _global_recovery_authorize(
+    operation: str = "kg.operations.global_recovery.read",
+    legacy_operation: str = "kg.admin.settings_read",
+):
     ctx = await _get_global_agent_ctx()
     if ctx is None:
         return None, _auth_error()
-    perm_err = check_permission(ctx.permissions, "kg.admin.historical_consolidation")
-    if perm_err:
-        return None, _perm_error(perm_err)
+
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation=operation,
+        legacy_operation=legacy_operation,
+    )
+    if authorization_error is not None:
+        return None, authorization_error
     return ctx, None
 
 
@@ -21093,7 +21139,10 @@ async def okto_pulse_kg_global_outbox_dead_letter_list(
 ) -> str:
     """KG docs."""
 
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_outbox.read",
+        "kg.admin.settings_read",
+    )
     if error is not None:
         return error
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -21119,7 +21168,10 @@ async def okto_pulse_kg_global_outbox_dead_letter_reprocess(
 ) -> str:
     """KG docs."""
 
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_outbox.reprocess",
+        "kg.admin.settings_write",
+    )
     if error is not None:
         return error
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -21160,7 +21212,10 @@ async def okto_pulse_kg_global_outbox_dead_letter_verify(
 ) -> str:
     """KG docs."""
 
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_outbox.verify",
+        "kg.admin.settings_read",
+    )
     if error is not None:
         return error
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -21179,7 +21234,10 @@ async def okto_pulse_kg_global_outbox_dead_letter_verify(
 @mcp.tool()
 async def okto_pulse_kg_global_discovery_recovery_preflight() -> str:
     """See KG docs."""
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_recovery.preflight",
+        "kg.admin.settings_read",
+    )
     if error is not None:
         return error
     from okto_pulse.core.kg.global_discovery_recovery import (
@@ -21244,7 +21302,10 @@ async def okto_pulse_kg_global_discovery_recovery_confirm(
     preflight_hash: str,
 ) -> str:
     """See KG docs."""
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_recovery.confirm",
+        "kg.admin.settings_write",
+    )
     if error is not None:
         return error
     from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -21281,7 +21342,10 @@ async def okto_pulse_kg_global_discovery_recovery_confirm(
 async def okto_pulse_kg_global_discovery_recovery_status(run_id: str) -> str:
     """See KG docs."""
 
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_recovery.read",
+        "kg.admin.settings_read",
+    )
     if error is not None:
         return error
     from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -21322,7 +21386,10 @@ async def okto_pulse_kg_global_discovery_recovery_cancel(
 ) -> str:
     """See KG docs."""
 
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_recovery.cancel",
+        "kg.admin.settings_write",
+    )
     if error is not None:
         return error
     from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -21371,7 +21438,10 @@ async def okto_pulse_kg_global_discovery_recovery_resume(
 ) -> str:
     """See KG docs."""
 
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_recovery.resume",
+        "kg.admin.settings_write",
+    )
     if error is not None:
         return error
     from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -21417,7 +21487,10 @@ async def okto_pulse_kg_global_discovery_recovery_run(
     ],
 ) -> str:
     """See KG docs."""
-    ctx, error = await _global_recovery_authorize()
+    ctx, error = await _global_recovery_authorize(
+        "kg.operations.global_recovery.run",
+        "kg.admin.settings_write",
+    )
     if error is not None:
         return error
     from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -21508,13 +21581,6 @@ async def okto_pulse_kg_rebuild_preflight(
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
-    perm_err = kg_permission_error(
-        ctx,
-        "kg.admin.wipe_board",
-        legacy_fallback=None,
-    )
-    if perm_err:
-        return _kg_direct_permission_denied("kg.admin.wipe_board", perm_err)
 
     from okto_pulse.core.application.kg_rebuild import (
         build_source_store as _build_source_store,
@@ -21669,13 +21735,18 @@ async def okto_pulse_kg_rebuild_confirm(
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
-    perm_err = kg_permission_error(
-        ctx,
-        "kg.admin.wipe_board",
-        legacy_fallback=None,
+
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.rebuild.confirm",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
     )
-    if perm_err:
-        return _kg_direct_permission_denied("kg.admin.wipe_board", perm_err)
+    if authorization_error is not None:
+        return authorization_error
 
     actor_id = getattr(ctx, "agent_id", None) or (
         ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
@@ -21845,13 +21916,6 @@ async def okto_pulse_kg_rebuild_run(
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
-    perm_err = kg_permission_error(
-        ctx,
-        "kg.admin.wipe_board",
-        legacy_fallback=None,
-    )
-    if perm_err:
-        return _kg_direct_permission_denied("kg.admin.wipe_board", perm_err)
 
     actor_id = getattr(ctx, "agent_id", None) or (
         ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
@@ -22067,13 +22131,17 @@ async def okto_pulse_kg_quarantine_restore(
     global_ctx = await _get_global_agent_ctx()
     if global_ctx is None:
         return _auth_error()
-    perm_err = kg_permission_error(
-        global_ctx,
-        "kg.admin.wipe_board",
-        legacy_fallback=None,
+
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    global_actor = MCPAdapterContract.actor(global_ctx)
+    authorization_error = await _authorize_kg_operation(
+        global_actor,
+        operation="kg.operations.quarantine.restore",
+        legacy_operation="kg.admin.settings_write",
     )
-    if perm_err:
-        return _kg_direct_permission_denied("kg.admin.wipe_board", perm_err)
+    if authorization_error is not None:
+        return authorization_error
 
     from okto_pulse.core.composition import RuntimeProviderMissing
     from okto_pulse.core.kg.interfaces import get_kg_registry
@@ -22106,13 +22174,16 @@ async def okto_pulse_kg_quarantine_restore(
     ctx = await _get_agent_ctx(plan.board_id)
     if ctx is None:
         return _auth_error()
-    perm_err = kg_permission_error(
-        ctx,
-        "kg.admin.wipe_board",
-        legacy_fallback=None,
+
+    actor = MCPAdapterContract.actor(ctx, board_id=plan.board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.quarantine.restore",
+        legacy_operation="kg.admin.settings_write",
+        board_id=plan.board_id,
     )
-    if perm_err:
-        return _kg_direct_permission_denied("kg.admin.wipe_board", perm_err)
+    if authorization_error is not None:
+        return authorization_error
 
     plan_payload = plan.to_payload()
     if not apply:

@@ -300,7 +300,7 @@ async def test_archive_tree_permission_denial_precedes_mutation():
     from sqlalchemy import select
 
     board_id, spec_id, _card_id = await _seed_archive_tree()
-    with patch.object(mcp_server, "check_permission", return_value="denied"):
+    with patch.object(mcp_server, "_mcp_check_permission", return_value="denied"):
         payload = await _call(
             "okto_pulse_archive_tree",
             board_id=board_id,

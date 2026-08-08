@@ -26,6 +26,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_authorization,
+)
 
 
 async def _require_owned_board(
@@ -70,6 +74,14 @@ class CreateAgentUseCase:
         self, command: CreateAgentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateAgentResult:
         service = uow.services.agents
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.entity.create",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
         agent, reveal_once_secret = await service.create_agent(actor.actor_id, command.data)
         await commit(uow)
         refetched = await service.get_agent(agent.id)
@@ -97,6 +109,14 @@ class ListAgentsForUserUseCase:
         self, command: ListAgentsForUserCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListAgentsForUserResult:
         service = uow.services.agents
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         return ListAgentsForUserResult(await service.list_agents_for_user(actor.actor_id))
 
 
@@ -127,6 +147,15 @@ class ListAgentsForBoardUseCase:
         self, command: ListAgentsForBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListAgentsForBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.board_access.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         agents = await uow.services.agents.list_agents_for_board(command.board_id)
         return ListAgentsForBoardResult(agents)
 
@@ -159,6 +188,14 @@ class GetAgentUseCase:
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.entity.read",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         return GetAgentResult(agent)
 
 
@@ -190,6 +227,14 @@ class RegenerateAgentKeyUseCase:
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.api_key.rotate",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
         updated, reveal_once_secret = await service.regenerate_key(command.agent_id)
         await commit(uow)
         return RegenerateAgentKeyResult(agent=updated, reveal_once_secret=reveal_once_secret)
@@ -220,6 +265,14 @@ class DeleteAgentUseCase:
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.entity.delete",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
         await service.delete_agent(command.agent_id)
         await commit(uow)
         return DeleteAgentResult()
@@ -260,6 +313,15 @@ class GrantBoardAccessUseCase:
             raise EntityNotFoundError("agent", command.agent_id)
         if await service.agent_has_board_access(command.agent_id, command.board_id):
             raise ConflictError("agent_board", f"{command.agent_id}:{command.board_id}")
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.board_access.grant",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         grant = await service.grant_board_access(
             command.agent_id, command.board_id, actor.actor_id
         )
@@ -296,6 +358,15 @@ class RevokeBoardAccessUseCase:
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "agent.board_access.revoke",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+            board_id=command.board_id,
+        )
         revoked = await service.revoke_board_access(command.agent_id, command.board_id)
         if not revoked:
             raise EntityNotFoundError("access", f"{command.agent_id}:{command.board_id}")

@@ -44,10 +44,31 @@ class _KGOperations:
         return await reader(board_id, None, scheduler_control=scheduler_control)
 
 
+async def _resolve_user_permissions(_user_id: str, _board_id: str):
+    return {
+        "kg": {
+            "operations": {
+                "integrity": {
+                    "read": True,
+                    "backfill": True,
+                }
+            },
+            "admin": {
+                "settings_read": True,
+                "settings_write": True,
+            },
+        }
+    }
+
+
 async def _fake_uow():
     yield SimpleNamespace(
         boards=_Boards(),
-        services=SimpleNamespace(shares=_Shares(), kg=_KGOperations()),
+        services=SimpleNamespace(
+            shares=_Shares(),
+            kg=_KGOperations(),
+            resolve_user_permissions=_resolve_user_permissions,
+        ),
     )
 
 

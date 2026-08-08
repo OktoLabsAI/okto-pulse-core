@@ -35,3 +35,18 @@ def test_f02_gate_rejects_every_escape_shape(tmp_path: Path) -> None:
     assert "uow.session" in symbols
     assert "getattr(uow, session)" in symbols
     assert "session_of" in symbols
+
+
+def test_f02_gate_accepts_optional_pulse_uow_port(tmp_path: Path) -> None:
+    target = tmp_path / "src" / "okto_pulse" / "core" / "application" / "use_cases"
+    target.mkdir(parents=True)
+    (target / "valid.py").write_text(
+        "from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork\n"
+        "async def run(uow: PulseUnitOfWork | None = None):\n"
+        "    return uow\n",
+        encoding="utf-8",
+    )
+
+    report = UowSessionBoundaryGate().run(source_root=tmp_path)
+
+    assert report.status == "passed", report.evidence

@@ -35,6 +35,7 @@ from okto_pulse.core.services.default_board_configuration import (
 )
 from okto_pulse.core.services.design_system import DesignSystemError, DesignSystemService
 from okto_pulse.core.services.main import BoardService
+from okto_pulse.core.domain.permissions import ALL_FLAGS
 
 pytestmark = pytest.mark.asyncio
 
@@ -43,7 +44,7 @@ USER_ID = "ds-catalog-user"
 
 class _Ctx:
     agent_id = USER_ID
-    permissions: list = []
+    permissions: list = list(ALL_FLAGS)
 
 
 async def _call(name: str, **kwargs) -> dict:

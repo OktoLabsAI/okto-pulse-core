@@ -218,6 +218,7 @@ async def test_screen_mockup_foreign_parent_stops_before_gate_and_entity_writer(
 async def test_design_system_import_normalizes_inline_source_without_board_access():
     catalog = SimpleNamespace(
         list_catalog=AsyncMock(return_value=[]),
+        get_design_system=AsyncMock(return_value=None),
         create_design_system=AsyncMock(),
     )
     uow = _uow(
@@ -245,7 +246,12 @@ async def test_design_system_import_normalizes_inline_source_without_board_acces
                 },
             ]
         ),
-        actor=ActorContext("attacker", "rest", realm_id="local"),
+        actor=ActorContext(
+            "attacker",
+            "rest",
+            realm_id="local",
+            permissions=["spec.architecture.import"],
+        ),
         uow=uow,
     )
 
@@ -309,7 +315,13 @@ async def test_default_config_diff_reuses_authenticated_request_uow():
 
     result = await GetBoardDefaultConfigDiffUseCase().execute(
         DefaultBoardConfigCommand(board_id="owned-board"),
-        actor=ActorContext("owner", "rest", realm_id="local"),
+        actor=ActorContext(
+            "owner",
+            "rest",
+            board_id="owned-board",
+            realm_id="local",
+            permissions=["default_board_config.diff_read"],
+        ),
         uow=uow,
     )
 

@@ -58,8 +58,12 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_any_authority,
+    require_authorization,
+)
 from okto_pulse.core.application.use_cases.policy_governance import (
-    ADOPTION_MANAGE,
     REVISIONS_CREATE,
     REVISIONS_READ,
     require_policy_governance_capabilities,
@@ -327,6 +331,15 @@ class ExportDesignSystemsUseCase:
                         404,
                         {"design_system_id": command.design_system_id},
                     ) from None
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "design_system.export",
+                    legacy_operation="spec.architecture.read",
+                ),
+                uow=uow,
+                board_id=command.board_id,
+            )
             serialized = [
                 serialize_design_system(
                     await service.require_authorized_design_system(
@@ -338,6 +351,14 @@ class ExportDesignSystemsUseCase:
                 )
             ]
         else:
+            await require_authorization(
+                actor,
+                PermissionRequirement(
+                    "design_system.export",
+                    legacy_operation="spec.architecture.read",
+                ),
+                uow=uow,
+            )
             serialized = [
                 serialize_design_system(item)
                 for item in await service.list_catalog(
@@ -372,6 +393,32 @@ class ImportDesignSystemsUseCase:
         )
 
         service = uow.services.design_systems
+        preflight_existing: list[Any | None] = []
+        for index, item in enumerate(command.items):
+            design_system_id = item.get("id")
+            existing = (
+                await service.get_design_system(design_system_id)
+                if design_system_id
+                else None
+            )
+            preflight_existing.append(existing)
+            if existing is not None and existing.owner_id != actor.actor_id:
+                error = DesignSystemError(
+                    "design_system_not_found",
+                    f"Design System '{design_system_id}' was not found.",
+                    404,
+                    {"design_system_id": design_system_id},
+                )
+                raise ImportItemError(index, error.to_dict()) from error
+
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "design_system.import",
+                legacy_operation="spec.architecture.import",
+            ),
+            uow=uow,
+        )
         result = ImportResult()
         imported_by_id: dict[str, Any] = {}
         for index, item in enumerate(command.items):
@@ -383,7 +430,7 @@ class ImportDesignSystemsUseCase:
                     else None
                 )
                 if design_system_id and existing is None:
-                    existing = await service.get_design_system(design_system_id)
+                    existing = preflight_existing[index]
                 if existing is not None:
                     if existing.owner_id != actor.actor_id:
                         raise DesignSystemError(
@@ -443,6 +490,14 @@ class ExportPresetsUseCase:
     async def execute(
         self, command: ExportPresetsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.export",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         gateway = uow.services.permission_presets
         presets = await gateway.list_presets(user_id=actor.actor_id)
         if command.preset_id:
@@ -481,14 +536,11 @@ class ImportPresetsUseCase:
         self, command: ImportPresetsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
         gateway = uow.services.permission_presets
-        result = ImportResult()
         visible = await gateway.list_presets(user_id=actor.actor_id)
         existing_by_id = {preset.id: preset for preset in visible}
         existing_names = {_norm_key(preset.name) for preset in visible}
         for index, item in enumerate(command.items):
             preset_id = _item_value(item, "id")
-            name = _item_value(item, "name")
-            name_key = _norm_key(name)
             existing = existing_by_id.get(preset_id) if preset_id else None
             if preset_id and existing is None and await gateway.get_preset(preset_id=preset_id):
                 raise ImportItemError(
@@ -499,6 +551,21 @@ class ImportPresetsUseCase:
                         "id": preset_id,
                     },
                 )
+
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "permission_preset.import",
+                legacy_operation="profile.update",
+            ),
+            uow=uow,
+        )
+        result = ImportResult()
+        for index, item in enumerate(command.items):
+            preset_id = _item_value(item, "id")
+            name = _item_value(item, "name")
+            name_key = _norm_key(name)
+            existing = existing_by_id.get(preset_id) if preset_id else None
             if existing is not None:
                 if existing.is_builtin:
                     result.skipped.append(
@@ -570,7 +637,14 @@ class ExportBoardConfigUseCase:
     async def execute(
         self, command: ExportBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
-
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "default_board_config.export",
+                legacy_operation="board.read",
+            ),
+            uow=uow,
+        )
         data = await uow.services.default_board_config.list_versions(
             scope=command.scope
         )
@@ -616,14 +690,19 @@ class ImportBoardConfigUseCase:
         # Keep the import path aligned with every other global template writer.
         # This check deliberately precedes both validation reads and the first
         # staged create so denied callers have zero downstream mutations.
-        from okto_pulse.core.application.use_cases.admin_catalog import (
-            require_global_catalog_admin,
-        )
         from okto_pulse.core.services.default_board_configuration import (
             DefaultBoardConfigurationError,
         )
 
-        require_global_catalog_admin(actor)
+        await require_any_authority(
+            actor,
+            PermissionRequirement(
+                "default_board_config.import",
+                legacy_operation="spec.entity.edit_fields",
+            ),
+            roles=("admin", "operator"),
+            uow=uow,
+        )
         service = uow.services.default_board_config
         result = ImportResult()
         query_scope = _query_scope_for_actor(actor)
@@ -637,7 +716,14 @@ class ImportBoardConfigUseCase:
                 compatibility_import=True,
             )
             if guideline_ref_diff_has_changes(diff):
-                require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
+                await require_authorization(
+                    actor,
+                    PermissionRequirement(
+                        "default_board_config.guidelines.edit",
+                        legacy_operation="guidelines.adoption.manage",
+                    ),
+                    uow=uow,
+                )
                 break
         for index, item in enumerate(command.items):
             try:

@@ -33,9 +33,11 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.community.api.router import api_router
 from okto_pulse.community.api import auth_deps as _auth_mod
-from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.router import api_router
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.kg.candidate_decision_store import (
     CandidateDecisionAction,
     CandidateDecisionOutcome,
@@ -52,12 +54,14 @@ from okto_pulse.core.kg.rebuild_audit import (
     require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
+from okto_pulse.core.ports.authentication import Principal
 from sqlalchemy_test_models import (
     Board,
     Ideation,
     Spec,
     SpecStatus,
 )
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.services.main import SpecService
 
 
@@ -117,13 +121,26 @@ async def _client_and_entities():
     app = FastAPI()
     app.include_router(api_router)
 
-    async def _override_db():
+    async def _override_uow():
         async with db_factory() as session:
-            yield session
+            yield SQLAlchemyUnitOfWork(session)
 
-    app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
-    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
+    async def _override_principal() -> Principal:
+        return Principal(
+            USER_ID,
+            realm_id=LOCAL_REALM_ID,
+            claims={
+                "permissions": [
+                    "kg.session.commit",
+                    "spec.structured_entity.decision.create",
+                    "spec.structured_entity.decision.supersede",
+                ]
+            },
+            actor_kind="human",
+        )
+
+    app.dependency_overrides[get_unit_of_work] = _override_uow
+    app.dependency_overrides[_auth_mod.require_principal] = _override_principal
 
     client = TestClient(app)
     store = CandidateDecisionStore(artifact_store=artifact_store)

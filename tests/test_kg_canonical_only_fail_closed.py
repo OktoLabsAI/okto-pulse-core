@@ -26,6 +26,7 @@ import os
 import sys
 import tempfile
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,6 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_failclosed_"))
 
 from okto_pulse.community.api.kg_routes import get_subgraph
+from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.cypher_templates import (
     layer_filter_clause,
@@ -102,6 +104,15 @@ def _neighbor_titles(rows: list[dict]) -> set[str]:
 
 async def _subgraph(board_id: str, **kw):
     params = {"depth": 2, "limit": 100, "cursor": "", "min_relevance": 0.0, "type": ""}
+    params.update(
+        actor=ActorContext(
+            "kg-layer-test",
+            "rest",
+            board_id=board_id,
+            permissions=["board:read"],
+        ),
+        uow=SimpleNamespace(),
+    )
     params.update(kw)
     return await get_subgraph(board_id, **params)
 

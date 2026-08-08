@@ -28,6 +28,8 @@ Returns:
 
 List all members of the board (owner + agents).
 
+Requires `board.share.read`.
+
 Args:
     board_id: Board ID
 
@@ -37,6 +39,8 @@ Returns:
 ## `okto_pulse_get_active_default_board_config`
 
 Read the active default board configuration template.
+
+Requires `default_board_config.read`.
 
 Use this to understand which gates and settings new boards inherit when they are
 created from the global default configuration.
@@ -52,6 +56,8 @@ Returns:
 List default board-configuration template versions for a scope, plus the
 active template id (admin read). REST twin: GET /default-board-config/versions.
 
+Requires `default_board_config.read`.
+
 Args:
     board_id: Board ID used for authentication.
     scope: Template scope (default `global`).
@@ -65,6 +71,8 @@ Returns:
 Compare a board's current settings against the active default board
 configuration snapshot applied at creation.
 
+Requires `default_board_config.diff_read`.
+
 Args:
     board_id: Board ID.
 
@@ -76,7 +84,8 @@ Returns:
 ## `okto_pulse_create_default_board_config_version`
 
 Create a new default board-configuration template version (admin write).
-REST twin: POST /default-board-config/versions. Requires `SPECS_UPDATE`;
+REST twin: POST /default-board-config/versions. Requires
+`default_board_config.create`;
 when the exact guideline pins differ from the active baseline, it additionally
 requires `guidelines.adoption.manage`. A settings-only version with equivalent
 pins does not require that additional capability.
@@ -113,7 +122,7 @@ Returns:
 Activate a default board-configuration template version (admin write);
 deactivates every other active version in the scope. REST twin:
 POST /default-board-config/versions/{template_id}/activate. Requires
-`SPECS_UPDATE`; if the target changes the active exact guideline pins, it also
+`default_board_config.activate`; if the target changes the active exact guideline pins, it also
 requires `guidelines.adoption.manage`.
 
 Args:
@@ -131,7 +140,7 @@ Menu → Board → Global Default.
 
 Deactivate a default board-configuration template version (admin write).
 REST twin: POST /default-board-config/versions/{template_id}/deactivate.
-Requires `SPECS_UPDATE`; removing effective guideline pins also requires
+Requires `default_board_config.deactivate`; removing effective guideline pins also requires
 `guidelines.adoption.manage`. Deactivating an already inactive version or an
 active version without guideline pins does not require the additional leaf.
 

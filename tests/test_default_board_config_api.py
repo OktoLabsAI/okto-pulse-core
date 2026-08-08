@@ -34,6 +34,7 @@ from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationService,
 )
 from okto_pulse.core.services.main import BoardService
+from okto_pulse.core.domain.permissions import ALL_FLAGS
 
 pytestmark = pytest.mark.asyncio
 
@@ -42,7 +43,7 @@ USER_ID = "dbc-api-user"
 
 class _Ctx:
     agent_id = USER_ID
-    permissions: list = []
+    permissions: list = list(ALL_FLAGS)
     realm_id = "local"
 
 

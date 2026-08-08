@@ -47,7 +47,11 @@ def _norm_board(board) -> dict:
 
 async def _rest_full_path_create_board(uow_factory, *, name: str, user_id: str):
     """Thin adapter → use case → UnitOfWorkFactory → SQLAlchemyUnitOfWork → adapter."""
-    actor = ActorContext(user_id, "rest")
+    actor = ActorContext(
+        user_id,
+        "rest",
+        permissions=["board.admin.create", "board:read"],
+    )
     async with uow_factory(actor=actor) as uow:
         return await CreateBoardUseCase().execute(
             CreateBoardCommand(BoardCreate(name=name)), actor=actor, uow=uow
