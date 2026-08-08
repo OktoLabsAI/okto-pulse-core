@@ -48,7 +48,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install ruff pyright build pytest pytest-asyncio
+          pip install ruff pyright build pytest
 
       - name: Import smoke test
         run: |
@@ -57,7 +57,7 @@ jobs:
       - name: MCP permission registry gate
         run: |
           python scripts/validate_mcp_permission_registry.py
-          python -m pytest -q \
+          python -m pytest --noconftest -q \
             tests/test_mcp_permission_registry.py \
             tests/test_mcp_gap_core_authorization.py
 
