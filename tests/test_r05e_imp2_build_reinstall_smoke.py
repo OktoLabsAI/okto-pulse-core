@@ -14,7 +14,7 @@ other:
        ``metadata:`` source = fail-closed). ``test_core_auditor_fails_closed_*``
        ties the green to that fail-closed contract (not a false negative).
      * Community wheel: real METADATA / ``Requires-Dist`` (depends on
-       ``okto-pulse-core>=0.3.1``; no ``asyncpg``) + the ``okto-pulse`` console
+       ``okto-pulse-core>=0.3.2``; no ``asyncpg``) + the ``okto-pulse`` console
        entrypoint, plus content inspection.
      * clean wheel install: the core wheel installs into a fresh venv offline +
        imports with ``asyncpg`` absent; the Community wheel is a runnable artifact
@@ -297,7 +297,7 @@ class TestArtifactDistributionContract:
     # ---- Community wheel: METADATA + entrypoint + content ------------------- #
     def test_community_wheel_metadata_entrypoint_and_content(self, community_wheel: BuiltWheel) -> None:
         requires = _wheel_requires_dist(community_wheel.wheel_path)
-        # depends on the cleaned core (>=0.3.1); never re-declares the removed token.
+        # depends on the cleaned core (>=0.3.2); never re-declares the removed token.
         assert any("okto-pulse-core" in r.lower() for r in requires), requires
         assert not any(_REMOVED_TOKEN in r.lower() for r in requires), (
             f"{_REMOVED_TOKEN} unexpectedly declared by the Community wheel: {requires}"
@@ -444,7 +444,7 @@ class TestArtifactDistributionContract:
                     "from okto_pulse.community.cli import main  # noqa\n"
                     "assert u.find_spec('asyncpg') is None, 'asyncpg installed into the combined venv'\n"
                     "assert m.version('sentence-transformers'), 'ML closure (sentence-transformers) missing'\n"
-                    "assert m.version('okto-pulse-core') == '0.3.1', m.version('okto-pulse-core')\n"
+                    "assert m.version('okto-pulse-core') == '0.3.2', m.version('okto-pulse-core')\n"
                     "print('COMBINED_INSTALL_OK')\n"
                 )
                 run = subprocess.run((str(venv_py), "-c", probe), capture_output=True, text=True, timeout=180)
@@ -529,7 +529,7 @@ class TestArtifactDistributionContract:
             "from okto_pulse.community.cli import main  # noqa\n"
             "assert u.find_spec('asyncpg') is None, 'asyncpg installed from the wheelhouse'\n"
             "assert m.version('sentence-transformers'), 'ML closure missing from the wheelhouse install'\n"
-            "assert m.version('okto-pulse-core') == '0.3.1', m.version('okto-pulse-core')\n"
+            "assert m.version('okto-pulse-core') == '0.3.2', m.version('okto-pulse-core')\n"
             "print('WHEELHOUSE_INSTALL_OK')\n"
         )
         run = subprocess.run((str(venv_py), "-c", probe), capture_output=True, text=True, timeout=180)
@@ -554,8 +554,8 @@ def _community_smoke_evidence(now: datetime) -> dict[str, object]:
         "artifact_name": "community_runtime_smoke_evidence.json",
         "generated_at": now.isoformat(),
         "max_age_seconds": 3600,
-        "core_version": "0.3.1",
-        "community_version": "0.3.1",
+        "core_version": "0.3.2",
+        "community_version": "0.3.2",
         "core_commit": "core-sha",
         "community_commit": "community-sha",
         "wheel_hashes": {"core": "sha256:core", "community": "sha256:community"},

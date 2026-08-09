@@ -76,7 +76,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Design Systems", "board",
      r"design_system"),
     ("Semantic Guideline Assessments & Exceptions", "guideline",
-     r"^okto_pulse_(record_semantic_guideline_assessment|"
+     r"^okto_pulse_(record_semantic_guideline_assessment(?:_v2)?|"
      r"list_semantic_guideline_assessments|"
      r"get_semantic_guideline_assessment|"
      r"get_current_semantic_guideline_assessment|"

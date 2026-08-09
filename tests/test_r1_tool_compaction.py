@@ -76,9 +76,9 @@ def test_tool_names_stable_after_compaction():
     # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
     # tools entraram); o delta exato agora é nomeado por
     # test_mcp_tools_catalog_drift.py.
-    # 2026-07-29: reviewed SK-B surface is 312 tools. Twenty additive policy
-    # governance commands expose revisions, impact, compliance and waivers.
-    assert len(names) == 312
+    # 2026-08-09: reviewed SK-B3.1 surface is 313 tools. The v2 semantic writer
+    # joins the governance commands for revisions, impact, compliance and waivers.
+    assert len(names) == 313
     assert all(n.startswith("okto_pulse_") for n in names)
 
 

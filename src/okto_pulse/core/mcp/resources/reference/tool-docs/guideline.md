@@ -309,6 +309,33 @@ Args:
 Returns:
     Outcome with one atomically sealed receipt and all metric results.
 
+## `okto_pulse_record_semantic_guideline_assessment_v2`
+
+Record an actionable semantic assessment using the explicit `v2` contract.
+The server resolves and authorizes every anchor, snapshots a human-readable
+label/excerpt, computes digests and persists the assessment atomically. The
+readers-first capability gate must be active before either REST or MCP admits
+the write.
+
+Args:
+    board_id: Authenticated board scope.
+    contract_version: Required literal `v2` discriminator.
+    subject_type, subject_id: Exact governed subject.
+    expected_subject_version: Exact current subject version fence.
+    binding_id, expected_binding_revision: Exact adopted binding fences.
+    guideline_revision_id: Exact adopted guideline revision fence.
+    idempotency_key: Retry-stable client key.
+    confidence: Compulsory whole-assessment confidence, 0 through 100.
+    metric_results: Complete v2 metric evidence. Every metric and pinpoint has
+        a `v2` discriminator; each pinpoint includes stable key, kind, title,
+        detail, optional severity/remediation, and one authorized anchor.
+    model_id: Optional assessor model identifier.
+
+Returns:
+    A `v2` receipt with server-owned snapshots, findings and metric results.
+    Disabled writer returns `unsupported_contract_version`; requested writer
+    with incomplete prerequisites returns `v2_writer_not_ready`.
+
 ## `okto_pulse_list_semantic_guideline_assessments`
 
 Page immutable semantic assessment receipts with derived currentness.

@@ -18,8 +18,8 @@ def test_manifest_count_hash_and_aliases_match_live_catalog():
     inventory = manifest["tool_inventory"]
 
     assert manifest["manifest_version"] == "1.0"
-    assert manifest["server"]["version"] == "0.3.1"
-    assert inventory["count"] == len(document["tools"]) == 312
+    assert manifest["server"]["version"] == "0.3.2"
+    assert inventory["count"] == len(document["tools"]) == 313
     assert inventory["tools"] == document["tools"]
     assert "okto_pulse_execute_test_scenario_evidence" in inventory["tools"]
     assert inventory["sha256"] == tool_inventory_sha256(document)

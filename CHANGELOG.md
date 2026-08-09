@@ -8,8 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-09
+
 ### Added
 
+- A transport-neutral semantic-guideline assessment v2 domain and application
+  contract with immutable receipts, metric evidence and actionable pinpoints.
+- Canonical subject-projection ports and MCP examples for recording and reading
+  current v2 assessments.
 - Transport-neutral authorization through `AuthorizeOperationUseCase`, so REST
   and MCP adapters can enforce the same operation policy.
 - Canonical namespaces for agent, board administration and sharing, permission
@@ -20,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
+- Policy Compliance MCP resources now describe human-readable anchor snapshots,
+  exact version fences and v2 idempotency semantics.
 - Mutable MCP handlers now authorize with operation-specific canonical flags,
   retaining legacy aliases only as controlled compatibility fallbacks.
 - SDLC transition permissions are generated directly from `SDLC_REGISTRY`.
@@ -28,6 +36,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- Policy validation errors now retain stable transport-neutral error envelopes
+  across REST and MCP adapters.
 - Authenticated MCP wildcard authorization now has parity in direct Knowledge
   Graph helpers.
 - Nullable unit-of-work session gates no longer reject valid authorization
@@ -35,7 +45,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Validation
 
-- The MCP registry closes at 312 live tools, 309 canonical policy entries and
+- The MCP registry closes at 313 live tools, 310 canonical policy entries and
   three explicit human-only exemptions.
 - Registry, Ruff and 182 focused authorization and policy regression tests pass
   after reconciliation with `develop`.

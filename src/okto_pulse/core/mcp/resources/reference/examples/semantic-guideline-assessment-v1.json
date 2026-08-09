@@ -1,0 +1,34 @@
+{
+  "binding_id": "binding-id",
+  "board_id": "board-id",
+  "confidence": 95,
+  "entity_type": "spec",
+  "expected_binding_revision": 2,
+  "expected_subject_version": 7,
+  "guideline_revision_id": "guideline-revision-id",
+  "idempotency_key": "semantic-assessment-example-1",
+  "metric_results": [
+    {
+      "evidence_refs": [
+        {
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source_id": "spec-id",
+          "source_type": "spec",
+          "source_version": 7
+        }
+      ],
+      "metric_id": "metric-architecture",
+      "pinpoints": [
+        {
+          "anchor_ref": "technical_requirements",
+          "anchor_type": "field",
+          "excerpt_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "rationale": "The boundary remains implicit.",
+      "score": 72
+    }
+  ],
+  "model_id": "review-model",
+  "subject_id": "spec-id"
+}

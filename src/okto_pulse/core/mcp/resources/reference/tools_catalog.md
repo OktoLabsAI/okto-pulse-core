@@ -138,6 +138,7 @@ Semantic guideline protocol:
 - `okto_pulse_list_semantic_guideline_waiver_events` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_semantic_guideline_waivers` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_record_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_record_semantic_guideline_assessment_v2` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_request_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_revalidate_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_review_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`

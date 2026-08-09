@@ -46,6 +46,11 @@ from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicySubjectConflict,
     GuidelinePolicyVersionConflict,
 )
+from okto_pulse.core.ports.semantic_subject_projection import (
+    SemanticAssessmentV2WriterUnavailable,
+    SemanticSubjectProjectionError,
+    SemanticSubjectProjectionFailure,
+)
 
 
 class GuidelinePolicyErrorCategory(str, Enum):
@@ -55,6 +60,7 @@ class GuidelinePolicyErrorCategory(str, Enum):
     PERMISSION_DENIED = "permission_denied"
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
+    UNPROCESSABLE_ENTITY = "unprocessable_entity"
     SERVICE_UNAVAILABLE = "service_unavailable"
 
 
@@ -66,6 +72,7 @@ GUIDELINE_POLICY_HTTP_STATUS_BY_CATEGORY: dict[
     GuidelinePolicyErrorCategory.PERMISSION_DENIED: 403,
     GuidelinePolicyErrorCategory.NOT_FOUND: 404,
     GuidelinePolicyErrorCategory.CONFLICT: 409,
+    GuidelinePolicyErrorCategory.UNPROCESSABLE_ENTITY: 422,
     GuidelinePolicyErrorCategory.SERVICE_UNAVAILABLE: 503,
 }
 
@@ -110,6 +117,12 @@ _PUBLIC_BY_CATEGORY: dict[
         True,
         "refresh_and_retry",
     ),
+    GuidelinePolicyErrorCategory.UNPROCESSABLE_ENTITY: (
+        "semantic_anchor_missing",
+        "The semantic anchor could not be resolved on the current subject.",
+        False,
+        "refresh_subject_and_pinpoint",
+    ),
     GuidelinePolicyErrorCategory.SERVICE_UNAVAILABLE: (
         "service_unavailable",
         "Guideline policy service is unavailable.",
@@ -124,6 +137,28 @@ def project_guideline_policy_error(error: Exception) -> dict[str, Any]:
 
     category, reason_code, extra_details = _classify(error)
     code, message, retryable, next_action = _PUBLIC_BY_CATEGORY[category]
+    if isinstance(error, SemanticSubjectProjectionError):
+        if error.reason is SemanticSubjectProjectionFailure.FORBIDDEN:
+            code = "semantic_anchor_forbidden"
+            message = "The semantic anchor is not accessible to this actor."
+            next_action = "request_authority"
+        elif error.reason is SemanticSubjectProjectionFailure.MALFORMED:
+            code = "semantic_assessment_contract_invalid"
+            message = "The semantic assessment anchor contract is invalid."
+            next_action = "fix_input"
+    if isinstance(error, SemanticAssessmentV2WriterUnavailable):
+        code = error.code
+        message = (
+            "Semantic assessment v2 writes are disabled."
+            if error.code == "unsupported_contract_version"
+            else "Semantic assessment v2 writer prerequisites are not ready."
+        )
+        retryable = error.code == "v2_writer_not_ready"
+        next_action = (
+            "enable_contract_version"
+            if error.code == "unsupported_contract_version"
+            else "complete_readers_first_rollout"
+        )
     if isinstance(error, GuidelineRevisionUnderBump):
         code = "under_bump"
         message = "The declared semantic version is below the required minimum."
@@ -199,6 +234,25 @@ def _classify(
     if reason_code is None and isinstance(error, ValueError):
         reason_code = _safe_reason_code(str(error))
 
+    if isinstance(error, SemanticSubjectProjectionError):
+        if error.reason is SemanticSubjectProjectionFailure.FORBIDDEN:
+            return (
+                GuidelinePolicyErrorCategory.PERMISSION_DENIED,
+                "semantic_anchor_forbidden",
+                {},
+            )
+        if error.reason is SemanticSubjectProjectionFailure.MISSING:
+            return (
+                GuidelinePolicyErrorCategory.UNPROCESSABLE_ENTITY,
+                "semantic_anchor_missing",
+                {},
+            )
+        return (
+            GuidelinePolicyErrorCategory.INVALID_ARGUMENT,
+            "semantic_assessment_contract_invalid",
+            {},
+        )
+
     if isinstance(error, GuidelinePolicyCursorConflict) or reason_code == (
         "invalid_cursor"
     ):
@@ -258,6 +312,12 @@ def _classify(
                 if stale_reasons:
                     details["stale_reasons"] = ",".join(stale_reasons)
         return GuidelinePolicyErrorCategory.CONFLICT, reason_code, details
+    if isinstance(error, SemanticAssessmentV2WriterUnavailable):
+        return (
+            GuidelinePolicyErrorCategory.SERVICE_UNAVAILABLE,
+            error.code,
+            dict(error.details),
+        )
     if isinstance(
         error,
         (

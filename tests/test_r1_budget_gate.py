@@ -142,9 +142,9 @@ def test_callable_names_and_schema_keys_stable():
     # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
     # al. +6). Set-level drift is now ALSO guarded by
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
-    # 2026-07-29: reviewed SK-B surface is 312 tools. Twenty additive policy
-    # governance commands expose revisions, impact, compliance and waivers.
-    assert len(tools) == 312
+    # 2026-08-09: reviewed SK-B3.1 surface is 313 tools. The v2 semantic writer
+    # joins the governance commands for revisions, impact, compliance and waivers.
+    assert len(tools) == 313
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

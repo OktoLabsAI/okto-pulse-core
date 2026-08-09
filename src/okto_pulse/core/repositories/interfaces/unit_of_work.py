@@ -21,6 +21,12 @@ if TYPE_CHECKING:
     # Type-only import to keep the persistence port free of a runtime dependency
     # on the application layer (which depends on persistence) — avoids a cycle.
     from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.ports.semantic_subject_projection import (
+        SemanticAssessmentV2PersistencePort,
+        SemanticAssessmentV2ReadPort,
+        SemanticAssessmentV2CapabilityPort,
+        SemanticSubjectProjectionPort,
+    )
 
 
 @runtime_checkable
@@ -34,6 +40,10 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
 
     services: ApplicationServiceCatalog
     realm_scope: RealmScope
+    semantic_subject_projection: "SemanticSubjectProjectionPort"
+    semantic_assessment_v2: "SemanticAssessmentV2PersistencePort"
+    semantic_assessment_v2_reader: "SemanticAssessmentV2ReadPort"
+    semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 

@@ -13,14 +13,14 @@ Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okt
 - **40 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
 - **0 API route modules** — Core owns application contracts and use cases, not concrete FastAPI routers. The count scans `core/api/*.py`; Community owns the REST adapter and route modules.
 - **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
-- **312 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
+- **313 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
   - 62 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, board rebuild and global discovery recovery preflight/confirm/run)
-  - Community runtime exposure: 312 core MCP tools, 0 community-only MCP tools
+  - Community runtime exposure: 313 core MCP tools, 0 community-only MCP tools
 - **Application composition contracts** — edition-neutral runtime, auth, storage, persistence, graph, telemetry and transport ports; concrete app construction belongs to the edition
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **13 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; the concrete LadybugDB/Kuzu board and global graph runtimes are supplied by the active edition
@@ -87,12 +87,11 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-**Current: 0.3.1** — the quality-governance release. Core now provides
-receipt-backed ambiguity assessments and pinpoint findings, refinement research
-decision ledgers, curated Spec checklists, strict scenario-type contracts and
-their governed MCP/resource surfaces.
+**Current: 0.3.2** — the actionable semantic-guidelines release. Core now
+defines sealed v2 assessments with human-readable pinpoints, canonical subject
+projections, immutable evidence snapshots and transport-neutral policy errors.
 
-**→ [Full release notes](docs/RELEASE-NOTES.md)** — 0.3.1 and 0.3.0 changesets, plus 0.2.6, 0.2.5,
+**→ [Full release notes](docs/RELEASE-NOTES.md)** — 0.3.2, 0.3.1 and 0.3.0 changesets, plus 0.2.6, 0.2.5,
 0.2.3, 0.2.2, 0.2.1, 0.2.0 and the 0.1.x line.
 
 ## SaaS Closure Audit

@@ -62,8 +62,13 @@ from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyCasConflict,
     GuidelinePolicyInvalidCursor,
 )
+from okto_pulse.core.ports.semantic_subject_projection import (
+    SemanticSubjectProjectionError,
+    SemanticSubjectProjectionFailure,
+)
 from okto_pulse.core.services.governance_observability import (
     METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION,
+    METRIC_SEMANTIC_ASSESSMENT_WRITES,
     get_governance_metric_samples,
     reset_governance_metric_samples,
 )
@@ -79,6 +84,7 @@ NEW_TOOL_NAMES = (
     "okto_pulse_list_guideline_impact_items",
     "okto_pulse_adopt_guideline_revision",
     "okto_pulse_record_semantic_guideline_assessment",
+    "okto_pulse_record_semantic_guideline_assessment_v2",
     "okto_pulse_list_semantic_guideline_assessments",
     "okto_pulse_get_semantic_guideline_assessment",
     "okto_pulse_get_current_semantic_guideline_assessment",
@@ -116,6 +122,26 @@ def test_mcp_projects_version_bump_as_closed_wire_literal(
     wire_value: str,
 ) -> None:
     assert _native(bump) == wire_value
+
+
+@pytest.mark.parametrize(
+    ("reason", "code", "http_status"),
+    (
+        (SemanticSubjectProjectionFailure.MALFORMED, "semantic_assessment_contract_invalid", 400),
+        (SemanticSubjectProjectionFailure.FORBIDDEN, "semantic_anchor_forbidden", 403),
+        (SemanticSubjectProjectionFailure.MISSING, "semantic_anchor_missing", 422),
+    ),
+)
+def test_v2_anchor_errors_share_closed_rest_mcp_projection(
+    reason,
+    code,
+    http_status,
+) -> None:
+    projection = project_guideline_policy_error(
+        SemanticSubjectProjectionError(reason)
+    )
+    assert projection["code"] == code
+    assert projection["http_status"] == http_status
 
 
 def _registered_catalog(
@@ -265,6 +291,7 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
     }
     assert binding_surfaces == {
         "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_record_semantic_guideline_assessment_v2",
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_current_semantic_guideline_assessment",
         "okto_pulse_list_semantic_guideline_findings",
@@ -585,7 +612,12 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
     assert calls == {"settings": 0, "provider": 0}
     assert uow_factory.factory_calls == uow_factory.enter_calls == 0
     samples = get_governance_metric_samples()
-    assert len(samples) == 1
+    expected_count = (
+        2
+        if tool_name == "okto_pulse_record_semantic_guideline_assessment"
+        else 1
+    )
+    assert len(samples) == expected_count
     assert samples[0]["metric_name"] == (
         METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION
     )
@@ -600,6 +632,15 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
     ]
     assert "board-1" not in repr(samples)
     assert "agent-1" not in repr(samples)
+    if expected_count == 2:
+        assert samples[1]["metric_name"] == METRIC_SEMANTIC_ASSESSMENT_WRITES
+        assert samples[1]["labels"] == {
+            "surface": "mcp",
+            "contract_version": "v1",
+            "outcome": "error",
+            "capability_state": "legacy_v1",
+            "reason_code": "permission_denied",
+        }
 
 
 @pytest.mark.asyncio

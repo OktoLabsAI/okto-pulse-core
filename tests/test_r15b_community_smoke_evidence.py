@@ -23,8 +23,8 @@ def _valid_payload(now: datetime) -> dict[str, object]:
         "artifact_name": "community_runtime_smoke_evidence.json",
         "generated_at": now.isoformat(),
         "max_age_seconds": 3600,
-        "core_version": "0.3.1",
-        "community_version": "0.3.1",
+        "core_version": "0.3.2",
+        "community_version": "0.3.2",
         "core_commit": "core-sha",
         "community_commit": "community-sha",
         "wheel_hashes": {"core": "sha256:core", "community": "sha256:community"},
@@ -98,7 +98,7 @@ def test_core_contract_imports_without_community_runtime(tmp_path: Path) -> None
         "  'schema_version': '1', 'producer': 'okto-pulse-community',\n"
         "  'artifact_name': 'community_runtime_smoke_evidence.json',\n"
         "  'generated_at': '2026-07-01T00:00:00+00:00', 'max_age_seconds': 3600,\n"
-        "  'core_version': '0.3.1', 'community_version': '0.3.1',\n"
+        "  'core_version': '0.3.2', 'community_version': '0.3.2',\n"
         "  'core_commit': 'c', 'community_commit': 'k',\n"
         "  'wheel_hashes': {'core': 'sha256:c', 'community': 'sha256:k'},\n"
         "  'artifact_paths': {'runner': 'scripts/r05e_community_preservation_smoke.py'},\n"

@@ -3,7 +3,21 @@
 Changeset per version, newest first.
 
 
-### 0.3.1 — current
+### 0.3.2 — current
+
+This release introduces the transport-neutral semantic-guideline assessment v2
+contract. Assessments now seal actionable human-readable pinpoints, immutable
+anchor snapshots and metric evidence against exact subject and binding fences.
+
+- Canonical subject projection ports keep Core independent of edition storage.
+- Domain and application contracts validate v2 metrics, anchors, digests,
+  idempotency and currentness before producing a receipt.
+- MCP resources and examples document the new writer and current-assessment
+  reader without exposing opaque identifiers as the primary user evidence.
+- Policy error envelopes and governance observability cover the v2 lifecycle.
+
+
+### 0.3.1
 
 This is the **quality-governance release**: receipt-backed ambiguity assessments
 with pinpoint findings now cover ideations and refinements, refinements gain an

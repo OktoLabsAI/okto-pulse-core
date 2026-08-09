@@ -87,6 +87,33 @@ assessor identity.
    record again with refreshed fences and a new stable idempotency key. Never
    reuse or edit the stale receipt.
 
+<!-- semantic-assessment-rollout:start -->
+## Semantic assessment contract rollout
+
+The legacy writer remains available as contract v1. The explicit v2 writer is
+`okto_pulse_record_semantic_guideline_assessment_v2`; its REST twin is
+`POST /boards/{board_id}/semantic-guideline-assessments/v2`. Current reads are
+dual-read and return the newest live-current receipt with an outer v1/v2
+discriminator. Versioned request examples ship at
+`reference/examples/semantic-guideline-assessment-v1.json` and
+`reference/examples/semantic-guideline-assessment-v2.json`.
+
+Roll out forward-only, in this order:
+
+1. deploy dual-read readers;
+2. apply the idempotent v2 tables and immutability/idempotency triggers;
+3. deploy both v2 transports;
+4. set `SEMANTIC_ASSESSMENT_V2_READERS_READY=true`;
+5. set `SEMANTIC_ASSESSMENT_V2_WRITER_ENABLED=true`.
+
+The writer activates only when both flags and all runtime probes agree. A
+disabled writer fails with `unsupported_contract_version`. A requested writer
+with a missing reader, table, trigger, REST or MCP capability fails with
+`v2_writer_not_ready`. Operational rollback disables only the writer flag;
+schema and readers remain forward-compatible. Never drop v2 data or triggers
+as a rollback action.
+<!-- semantic-assessment-rollout:end -->
+
 ## Gate and currentness
 
 - Evidence presence is mandatory regardless of enforcement: every applicable
