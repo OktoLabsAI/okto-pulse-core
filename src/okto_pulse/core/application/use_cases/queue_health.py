@@ -23,6 +23,9 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
 )
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+    EvaluateCodeTraceabilityKGReadAccessUseCase,
+)
 
 
 class QueueBoardNotFoundError(EntityNotFoundError):
@@ -101,6 +104,16 @@ class GetQueueDrilldownUseCase:
                 uow=uow,
                 board_id=command.board_id,
             )
-        return GetQueueDrilldownResult(
-            data=await uow.services.kg.queue_drilldown(command.board_id)
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id or actor.board_id,
+            uow=uow,
         )
+        if ct_access.allowed:
+            data = await uow.services.kg.queue_drilldown(command.board_id)
+        else:
+            data = await uow.services.kg.queue_drilldown(
+                command.board_id,
+                include_code_traceability=False,
+            )
+        return GetQueueDrilldownResult(data=data)

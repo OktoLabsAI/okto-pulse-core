@@ -675,9 +675,18 @@ async def test_get_task_context_default_summary_and_full_passthrough():
         )
         await db.commit()
 
+    traceability_projection = AsyncMock(
+        return_value={"subject_type": "card", "subject_id": card_id}
+    )
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(mcp_server, "check_permission", return_value=None):
+    ), patch.object(
+        mcp_server, "check_permission", return_value=None
+    ), patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        traceability_projection,
+    ):
         # default → summary
         default = await _call("okto_pulse_get_task_context", board_id=board_id, card_id=card_id)
         full = await _call(
@@ -708,6 +717,12 @@ async def test_get_task_context_default_summary_and_full_passthrough():
             profile="full",
             include_knowledge="false",
         )
+        legacy = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="legacy",
+        )
 
     # default is summary with R5 canonical metadata
     assert default["projection"]["profile"] == "summary"
@@ -737,6 +752,16 @@ async def test_get_task_context_default_summary_and_full_passthrough():
 
     # include_knowledge=false honored even under the full profile
     assert no_kb["resolved_references"].get("knowledge_bases") == []
+
+    # AC20: the additive block is available to every modern profile, while the
+    # explicit legacy passthrough keeps its historical payload shape.
+    assert default["code_traceability"]["subject_id"] == card_id
+    assert full["code_traceability"]["subject_id"] == card_id
+    assert "code_traceability" not in legacy
+    assert all(
+        call.kwargs["profile"] != "legacy"
+        for call in traceability_projection.await_args_list
+    )
 
 
 # ===========================================================================
@@ -967,15 +992,30 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
         )
         await db.commit()
 
+    traceability_projection = AsyncMock(
+        return_value={"subject_type": "spec", "subject_id": spec_id}
+    )
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(mcp_server, "check_permission", return_value=None):
+    ), patch.object(
+        mcp_server, "check_permission", return_value=None
+    ), patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        traceability_projection,
+    ):
         default = await _call("okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id)
         full = await _call(
             "okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id, profile="full"
         )
         bad = await _call(
             "okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id, profile="nope"
+        )
+        legacy = await _call(
+            "okto_pulse_get_spec_context",
+            board_id=board_id,
+            spec_id=spec_id,
+            profile="legacy",
         )
 
     # default → summary with R5 canonical metadata + unique requirement content kept
@@ -991,6 +1031,13 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert full["functional_requirements"][0]["text"] == "FR text"
     assert full["edition"] == 5
     assert full["version"] == 1
+    assert default["code_traceability"]["subject_id"] == spec_id
+    assert full["code_traceability"]["subject_id"] == spec_id
+    assert "code_traceability" not in legacy
+    assert all(
+        call.kwargs["profile"] != "legacy"
+        for call in traceability_projection.await_args_list
+    )
 
     # unsupported profile → structured error, no silent fallback
     assert bad["error_code"] == "unsupported_projection"

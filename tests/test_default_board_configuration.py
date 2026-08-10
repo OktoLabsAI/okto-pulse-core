@@ -30,6 +30,7 @@ from okto_pulse.core.models.schemas import (
     BoardCreate,
     BoardResponse,
     BoardSettings,
+    CodeTraceabilitySettings,
     GuidelineCreate,
 )
 from okto_pulse.core.services.board_governance import BoardGovernanceService
@@ -96,6 +97,9 @@ async def test_create_board_without_template_uses_defaults_no_snapshot():
         # Forward-safe new-board default; NO snapshot and no error.
         expected = BoardSettings().model_dump(mode="json")
         expected["reviewer_separation_mode"] = "enforce"
+        expected["code_traceability"] = CodeTraceabilitySettings(
+            mode="advisory"
+        ).model_dump(mode="json")
         assert board.settings == expected
         assert board.default_config_snapshot is None
         # board-scoped fallback audit recorded.
@@ -464,6 +468,9 @@ async def test_ts_3312f7bd_bootstrap_fallback_no_template_no_error():
         )
         expected = BoardSettings().model_dump(mode="json")
         expected["reviewer_separation_mode"] = "enforce"
+        expected["code_traceability"] = CodeTraceabilitySettings(
+            mode="advisory"
+        ).model_dump(mode="json")
         assert board.settings == expected
         assert board.default_config_snapshot is None
         assert BOARD_EVENT_FALLBACK in await _activity_actions(db, board.id)

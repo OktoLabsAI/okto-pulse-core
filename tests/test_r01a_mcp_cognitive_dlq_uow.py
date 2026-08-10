@@ -65,6 +65,30 @@ async def _seed_dlq(board_id: str, n: int) -> list[str]:
     return ids
 
 
+async def _seed_code_traceability_dlq(board_id: str) -> str:
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy_test_models import Board, ConsolidationDeadLetter
+
+    row_id = f"dlq-fu3b-ct-{uuid.uuid4().hex[:8]}"
+    async with get_session_factory()() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(Board(id=board_id, name="fu3b", owner_id="fu3b-owner"))
+            await db.flush()
+        db.add(
+            ConsolidationDeadLetter(
+                id=row_id,
+                board_id=board_id,
+                artifact_type="code_evidence",
+                artifact_id=f"evidence-{uuid.uuid4().hex[:6]}",
+                original_queue_id="q-ct",
+                attempts=3,
+                errors=[],
+            )
+        )
+        await db.commit()
+    return row_id
+
+
 @pytest.mark.asyncio
 async def test_list_cognitive_dlq_use_case_matches_reader() -> None:
     from okto_pulse.core.infra.database import get_session_factory
@@ -102,6 +126,44 @@ async def test_list_cognitive_dlq_use_case_paginates() -> None:
         )
     assert page.total == 5
     assert len(page.rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_cognitive_dlq_filters_code_traceability_before_count_and_page() -> None:
+    from okto_pulse.core.domain.code_traceability_kg import (
+        CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+    )
+
+    board_id = f"board-fu3b-ct-{uuid.uuid4().hex[:8]}"
+    legacy_ids = await _seed_dlq(board_id, 1)
+    ct_id = await _seed_code_traceability_dlq(board_id)
+
+    actor = _board_actor(board_id)
+    async with _uowf()(actor=actor) as uow:
+        filtered = await ListCognitiveDlqUseCase().execute(
+            ListCognitiveDlqCommand(board_id, limit=50, offset=0),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert filtered.total == 1
+    assert [row.id for row in filtered.rows] == legacy_ids
+
+    privileged_actor = ActorContext(
+        "fu3b-ct-reader",
+        "mcp",
+        board_id=board_id,
+        permissions=["kg.admin.settings_read", *CODE_TRACEABILITY_KG_READ_PERMISSIONS],
+    )
+    async with _uowf()(actor=privileged_actor) as uow:
+        visible = await ListCognitiveDlqUseCase().execute(
+            ListCognitiveDlqCommand(board_id, limit=50, offset=0),
+            actor=privileged_actor,
+            uow=uow,
+        )
+
+    assert visible.total == 2
+    assert {row.id for row in visible.rows} == {*legacy_ids, ct_id}
 
 
 def test_migrated_dlq_tool_has_no_inline_sql() -> None:

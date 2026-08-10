@@ -46,6 +46,13 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     StoryStatus,
 )
+from okto_pulse.core.domain.code_traceability import (
+    CodeInvestigationCurrentnessUnknown,
+    CodeTraceabilityContextScope,
+    CodeTraceabilityLifecycleStatus,
+    CodeTraceabilityProjectionProfile,
+    CodeTraceabilitySubjectType,
+)
 from okto_pulse.core.domain.knowledge_governance import (
     normalize_knowledge_governance_metadata,
 )
@@ -170,6 +177,18 @@ from okto_pulse.core.services.cancellation import apply_cancellation_policy
 from okto_pulse.core.services.card_traceability import (
     TraceabilityTargetNotFoundError,
     link_card_traceability,
+)
+from okto_pulse.core.ports.code_traceability import (
+    CodeEvidenceQuery,
+    CodeTraceabilityAdapterMissing,
+    CodeTraceabilityProjectionQuery,
+)
+from okto_pulse.core.services.code_traceability_gate import (
+    CodeTraceabilityGateEvaluation,
+    CodeTraceabilityProjectionService,
+    extract_code_evidence_references,
+    phases_for_transition,
+    resolve_code_traceability_settings,
 )
 from okto_pulse.core.services.critical_context_guard import (
     CRITICAL_CONTEXT_DECISION_ACTION,
@@ -393,6 +412,126 @@ async def _apply_quality_assessment_lifecycle_transition(
         receipts=receipts,
     )
     await persistence.apply_lifecycle_plan(plan)
+
+
+async def evaluate_code_traceability_transition(
+    db: Any,
+    *,
+    board: object | None,
+    subject: object,
+    subject_type: CodeTraceabilitySubjectType,
+    from_status: str,
+    to_status: str,
+    enforce: bool = False,
+) -> CodeTraceabilityGateEvaluation | None:
+    """Evaluate one SDLC edge from Pulse relational attestations only.
+
+    Legacy/off policies short-circuit before adapter resolution.  Community is
+    solely the materializer; all coverage, freshness, overlap and waiver rules
+    are evaluated here in Core.
+    """
+
+    phases = phases_for_transition(subject_type, from_status, to_status)
+    if not phases:
+        return None
+    settings = resolve_code_traceability_settings(
+        getattr(board, "settings", None) if board is not None else None
+    )
+    if settings.mode == "off":
+        return None
+    board_id = getattr(subject, "board_id", None)
+    subject_id = getattr(subject, "id", None)
+    version_field = "policy_version" if subject_type is CodeTraceabilitySubjectType.CARD else "version"
+    subject_version = getattr(subject, version_field, None)
+    if subject_version is None and subject_type is CodeTraceabilitySubjectType.CARD:
+        subject_version = getattr(subject, "version", None)
+    if (
+        not isinstance(board_id, str)
+        or not board_id
+        or not isinstance(subject_id, str)
+        or not subject_id
+        or type(subject_version) is not int
+        or subject_version < 1
+    ):
+        raise CodeInvestigationCurrentnessUnknown(
+            details={
+                "reason": "subject_version_unavailable",
+                "subject_type": subject_type.value,
+            }
+        )
+    try:
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        read_port = require_relational_application_adapter().code_traceability_read(
+            db
+        )
+    except (AttributeError, RuntimeError) as exc:
+        if settings.mode != "blocking":
+            return None
+        raise CodeInvestigationCurrentnessUnknown(
+            details={"reason": "code_traceability_read_adapter_unavailable"}
+        ) from exc
+    query = CodeTraceabilityProjectionQuery(
+        board_id=board_id,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        subject_version=subject_version,
+        profile=CodeTraceabilityProjectionProfile.FULL,
+        context_scope=CodeTraceabilityContextScope.GATE,
+    )
+    projection_service = CodeTraceabilityProjectionService()
+    context = await projection_service.load_context(query, read_port=read_port)
+    card_type = "normal"
+    dependency_card_ids: tuple[str, ...] = ()
+    blocking_card_ids: tuple[str, ...] = ()
+    if subject_type is CodeTraceabilitySubjectType.CARD:
+        raw_card_type = getattr(subject, "card_type", None)
+        card_type = str(getattr(raw_card_type, "value", raw_card_type or "normal"))
+        dependencies = await _application_list(
+            db,
+            "card_dependency",
+            filters=(_apf("card_id", "eq", subject_id),),
+        )
+        dependency_card_ids = tuple(
+            sorted(
+                item.depends_on_id
+                for item in dependencies
+                if isinstance(getattr(item, "depends_on_id", None), str)
+            )
+        )
+        external_card_ids = {
+            item.card_id for item in context.targets if item.card_id != subject_id
+        }
+        blocking: list[str] = []
+        for card_id in sorted(external_card_ids):
+            external = await _application_get(db, "card", card_id)
+            status = getattr(external, "status", None)
+            if str(getattr(status, "value", status)).lower() in {
+                "started",
+                "in_progress",
+                "validation",
+            }:
+                blocking.append(card_id)
+        blocking_card_ids = tuple(blocking)
+    evaluation = projection_service.evaluate_transition_context(
+        context,
+        settings,
+        from_status=from_status,
+        to_status=to_status,
+        card_type=card_type,
+        dependency_card_ids=dependency_card_ids,
+        blocking_card_ids=blocking_card_ids,
+        referenced_evidence_ids=(
+            extract_code_evidence_references(getattr(subject, "analysis", None))
+            if subject_type is CodeTraceabilitySubjectType.REFINEMENT
+            else ()
+        ),
+    )
+    if enforce:
+        projection_service.validate_or_raise(evaluation)
+    return evaluation
 
 
 def _claims_test_evidence_v2(evidence: object) -> bool:
@@ -5954,6 +6093,16 @@ class CardService:
                 spec_id=card.spec_id,
             )
 
+        await evaluate_code_traceability_transition(
+            self.db,
+            board=board,
+            subject=card,
+            subject_type=CodeTraceabilitySubjectType.CARD,
+            from_status=old_status.value,
+            to_status=data.status.value,
+            enforce=True,
+        )
+
         await _authorize_critical_context_or_raise(
             self.db,
             board_id=card.board_id,
@@ -9413,6 +9562,16 @@ class SpecService:
 
         # Load board for settings
         board = await _application_get(self.db, "board", spec.board_id)
+
+        await evaluate_code_traceability_transition(
+            self.db,
+            board=board,
+            subject=spec,
+            subject_type=CodeTraceabilitySubjectType.SPEC,
+            from_status=spec.status.value,
+            to_status=data.status.value,
+            enforce=True,
+        )
 
         # A done spec is one of the two eligibility anchors for a hotfix lane.
         # Reopening it must not silently invalidate lanes that have no valid,
@@ -13644,6 +13803,16 @@ class RefinementService:
         resolved_name = actor_name or await resolve_actor_name(
             self.db, user_id, refinement.board_id
         )
+        board = await _application_get(self.db, "board", refinement.board_id)
+        await evaluate_code_traceability_transition(
+            self.db,
+            board=board,
+            subject=refinement,
+            subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+            from_status=old_status.value,
+            to_status=data.status.value,
+            enforce=True,
+        )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -13661,7 +13830,6 @@ class RefinementService:
         # Ambiguity -> Resource -> Cognitive.  Every gate runs before snapshot,
         # history, activity, event or status mutation.
         if data.status == RefinementStatus.DONE:
-            board = await _application_get(self.db, "board", refinement.board_id)
             await self._enforce_ambiguity_gate(refinement, board)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 refinement.board_id,
@@ -13806,6 +13974,71 @@ class RefinementService:
                 }
             )
 
+        code_evidence_manifest: list[dict[str, str]] = []
+        try:
+            from okto_pulse.core.ports.relational_application import (
+                RelationalApplicationAdapterMissing,
+                require_relational_application_adapter,
+            )
+
+            relational_adapter = require_relational_application_adapter()
+            traceability_factory = getattr(
+                relational_adapter,
+                "code_traceability",
+                None,
+            )
+            if not callable(traceability_factory):
+                raise RelationalApplicationAdapterMissing(
+                    "The composed relational adapter does not expose the "
+                    "code-traceability store."
+                )
+            traceability_store = traceability_factory(self.db)
+            cursor = None
+            evidence_count = 0
+            while True:
+                page = await traceability_store.list_evidence(
+                    CodeEvidenceQuery(
+                        board_id=refinement.board_id,
+                        parent_type=CodeTraceabilitySubjectType.REFINEMENT,
+                        parent_id=refinement.id,
+                        lifecycle_status=CodeTraceabilityLifecycleStatus.ACTIVE,
+                        cursor=cursor,
+                        limit=200,
+                    )
+                )
+                for evidence in page.items:
+                    if evidence.parent_version <= refinement.version:
+                        code_evidence_manifest.append(
+                            {
+                                "evidence_id": evidence.id,
+                                "content_sha256": evidence.content_sha256,
+                                "lifecycle_status": evidence.lifecycle_status.value,
+                            }
+                        )
+                evidence_count += len(page.items)
+                if evidence_count > 2_000:
+                    raise CodeInvestigationCurrentnessUnknown(
+                        details={"reason": "snapshot_evidence_manifest_limit"}
+                    )
+                cursor = page.next_cursor
+                if cursor is None:
+                    break
+        except (
+            CodeTraceabilityAdapterMissing,
+            RelationalApplicationAdapterMissing,
+        ) as exc:
+            # Legacy/off boards predate the adapter and deliberately snapshot an
+            # empty manifest. Enabled boards fail closed; persistence/runtime
+            # failures are intentionally not swallowed by this narrow branch.
+            board = await _application_get(self.db, "board", refinement.board_id)
+            if resolve_code_traceability_settings(
+                getattr(board, "settings", None) if board else None
+            ).mode != "off":
+                raise CodeInvestigationCurrentnessUnknown(
+                    details={"reason": "snapshot_traceability_adapter_unavailable"}
+                ) from exc
+        code_evidence_manifest.sort(key=lambda item: item["evidence_id"])
+
         snapshot = _new_application_record(
             "refinement_snapshot",
             refinement_id=refinement.id,
@@ -13818,6 +14051,7 @@ class RefinementService:
             decisions=refinement.decisions,
             labels=refinement.labels,
             qa_snapshot=qa_snapshot if qa_snapshot else None,
+            code_evidence_manifest=code_evidence_manifest,
             created_by=user_id,
         )
         await _application_add(self.db, snapshot)
@@ -13941,6 +14175,24 @@ class RefinementService:
             ideation_id=refinement.ideation_id,
             refinement_id=refinement.id,
         )
+        source_snapshot = await self.get_snapshot(
+            refinement.id,
+            refinement.version,
+        )
+        if source_snapshot is None:
+            raise SpecLineagePreflightError(
+                "spec_refinement_snapshot_required",
+                (
+                    "A Spec derived from a Refinement must pin the immutable "
+                    "snapshot for the current Refinement version."
+                ),
+                facts={
+                    "refinement_id": refinement.id,
+                    "refinement_version": refinement.version,
+                },
+            )
+        source_snapshot_id = source_snapshot.id
+        source_snapshot_version = source_snapshot.version
 
         # Compile rich context from refinement data plus the parent ideation
         # intent. Existing refinements created before parent context was
@@ -14029,6 +14281,8 @@ class RefinementService:
             requirement_lint_writer=RequirementLintWriter.DERIVE_REFINEMENT,
         )
         if spec:
+            spec.source_refinement_snapshot_id = source_snapshot_id
+            spec.source_refinement_version = source_snapshot_version
             # Propagate artifacts using pre-flush snapshots
             artifact_counts = await propagate_artifacts(
                 db=self.db,

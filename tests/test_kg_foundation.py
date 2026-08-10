@@ -195,6 +195,7 @@ class TestBootstrapSchema:
             "0.3.10",
             "0.3.11",
             "0.3.12",
+            "0.4.0",
         }
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):

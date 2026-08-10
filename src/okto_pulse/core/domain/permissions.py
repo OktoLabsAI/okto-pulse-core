@@ -16,6 +16,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, TypeAlias
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+)
 from okto_pulse.core.domain.mcp_permission_registry import (
     HUMAN_ONLY_MCP_TOOL_EXEMPTIONS,
     MAX_HUMAN_ONLY_TOOL_EXEMPTIONS,
@@ -64,6 +67,7 @@ class PermissionIntroductionManifest:
     preset_grants: tuple[tuple[str, tuple[str, ...]], ...]
     historical_authorities: tuple[tuple[str, str], ...]
     recover_all_false_materialization: bool = False
+    legacy_compatible: bool = False
 
     def __post_init__(self) -> None:
         if not self.version.strip():
@@ -405,6 +409,7 @@ _ADMIN_CATALOG_READ_GRANTS: tuple[str, ...] = (
 
 ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="ADMIN-CATALOG/v1",
+    legacy_compatible=True,
     leaves=_ADMIN_CATALOG_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _ADMIN_CATALOG_PERMISSION_LEAVES,
@@ -504,6 +509,7 @@ _OPERATIONAL_READ_GRANTS: tuple[str, ...] = (
 
 OPERATIONAL_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="OPERATIONAL/v1",
+    legacy_compatible=True,
     leaves=_OPERATIONAL_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _OPERATIONAL_PERMISSION_LEAVES,
@@ -569,6 +575,7 @@ _MCP_GAPS_PERMISSION_LEAVES: tuple[str, ...] = (
 
 MCP_GAPS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="MCP-GAPS/v1",
+    legacy_compatible=True,
     leaves=_MCP_GAPS_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _MCP_GAPS_PERMISSION_LEAVES,
@@ -684,6 +691,7 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
 
 KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="KG-OPERATIONS/v1",
+    legacy_compatible=True,
     leaves=_KG_OPERATIONS_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(_KG_OPERATIONS_PERMISSION_LEAVES, {}),
     historical_authorities=(
@@ -914,6 +922,7 @@ def _introduced_sdlc_grants(*flags: str) -> tuple[str, ...]:
 
 SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="SDLC-TRANSITIONS/v1",
+    legacy_compatible=True,
     leaves=_SDLC_TRANSITION_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _SDLC_TRANSITION_PERMISSION_LEAVES,
@@ -945,6 +954,128 @@ SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
+_CODE_TRACEABILITY_PERMISSION_LEAVES: tuple[str, ...] = (
+    "code_traceability.investigation.start",
+    "code_traceability.investigation.read",
+    "code_traceability.investigation.receipt_submit",
+    "code_traceability.investigation.revoke",
+    "code_traceability.evidence.read",
+    "code_traceability.evidence.submit",
+    "code_traceability.evidence.supersede",
+    "code_traceability.evidence.revoke",
+    "code_traceability.spec_link.create",
+    "code_traceability.spec_link.delete",
+    "code_traceability.spec_link.set_disposition",
+    "code_traceability.spec_link.rebase",
+    "code_traceability.target.read",
+    "code_traceability.target.suggest",
+    "code_traceability.target.create",
+    "code_traceability.target.edit",
+    "code_traceability.target.resolution_submit",
+    "code_traceability.target.execution_submit",
+    "code_traceability.overlap.read",
+    "code_traceability.overlap.acknowledge",
+    "code_traceability.waiver.create",
+    "code_traceability.waiver.clear",
+)
+
+_CODE_TRACEABILITY_READ_GRANTS = CODE_TRACEABILITY_KG_READ_PERMISSIONS
+
+CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="CODE-TRACEABILITY/v1",
+    leaves=_CODE_TRACEABILITY_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(
+        _CODE_TRACEABILITY_PERMISSION_LEAVES,
+        {
+            "Executor": (
+                *_CODE_TRACEABILITY_READ_GRANTS,
+                "code_traceability.investigation.start",
+                "code_traceability.investigation.receipt_submit",
+                "code_traceability.evidence.submit",
+                "code_traceability.evidence.supersede",
+                "code_traceability.target.suggest",
+                "code_traceability.target.create",
+                "code_traceability.target.edit",
+                "code_traceability.target.resolution_submit",
+                "code_traceability.target.execution_submit",
+            ),
+            "Validator": _CODE_TRACEABILITY_READ_GRANTS,
+            "QA": _CODE_TRACEABILITY_READ_GRANTS,
+            "Reporter": _CODE_TRACEABILITY_READ_GRANTS,
+            "Sprint Manager": (
+                *_CODE_TRACEABILITY_READ_GRANTS,
+                "code_traceability.overlap.acknowledge",
+                "code_traceability.waiver.create",
+                "code_traceability.waiver.clear",
+            ),
+            "Spec": (
+                *_CODE_TRACEABILITY_READ_GRANTS,
+                "code_traceability.investigation.revoke",
+                "code_traceability.evidence.revoke",
+                "code_traceability.spec_link.create",
+                "code_traceability.spec_link.delete",
+                "code_traceability.spec_link.set_disposition",
+                "code_traceability.spec_link.rebase",
+                "code_traceability.target.create",
+                "code_traceability.target.edit",
+                "code_traceability.overlap.acknowledge",
+                "code_traceability.waiver.create",
+                "code_traceability.waiver.clear",
+            ),
+        },
+    ),
+    historical_authorities=tuple(
+        (leaf, authority)
+        for authority, leaves in (
+            (
+                "board.read",
+                {
+                    "code_traceability.investigation.read",
+                    "code_traceability.evidence.read",
+                    "code_traceability.target.read",
+                    "code_traceability.overlap.read",
+                },
+            ),
+            (
+                "spec.entity.edit_fields",
+                {
+                    "code_traceability.investigation.revoke",
+                    "code_traceability.evidence.revoke",
+                    "code_traceability.spec_link.create",
+                    "code_traceability.spec_link.delete",
+                    "code_traceability.spec_link.set_disposition",
+                    "code_traceability.spec_link.rebase",
+                },
+            ),
+            (
+                "card.entity.edit_fields",
+                {
+                    "code_traceability.target.suggest",
+                    "code_traceability.target.create",
+                    "code_traceability.target.edit",
+                    "code_traceability.overlap.acknowledge",
+                    "code_traceability.waiver.create",
+                    "code_traceability.waiver.clear",
+                },
+            ),
+            (
+                "agent.entity.read",
+                {
+                    "code_traceability.investigation.start",
+                    "code_traceability.investigation.receipt_submit",
+                    "code_traceability.evidence.submit",
+                    "code_traceability.evidence.supersede",
+                    "code_traceability.target.resolution_submit",
+                    "code_traceability.target.execution_submit",
+                },
+            ),
+        )
+        for leaf in _CODE_TRACEABILITY_PERMISSION_LEAVES
+        if leaf in leaves
+    ),
+)
+
+
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
@@ -955,6 +1086,7 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     MCP_GAPS_PERMISSION_INTRODUCTION_V1,
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
+    CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
 )
 
 
@@ -999,7 +1131,8 @@ _FAIL_CLOSED_INTRODUCED_FLAGS = frozenset(_INTRODUCED_PERMISSION_LEAVES)
 # permission documents are reconciled to the new canonical leaves.
 _LEGACY_COMPATIBLE_INTRODUCED_FLAGS = frozenset(
     leaf
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS[2:]
+    for manifest in PERMISSION_INTRODUCTION_MANIFESTS
+    if manifest.legacy_compatible
     for leaf in manifest.leaves
 )
 
@@ -1600,6 +1733,45 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "tests": {"read": True, "link": True, "update_status": True},
         "conclusion": {"read": True, "write": True},
         "activity_read": True,
+    },
+    # ---- Agent-attested Code Traceability ----
+    # These leaves authorize ledger operations only.  They never authorize
+    # Pulse or Community to open, clone, probe, search, or resolve a source.
+    "code_traceability": {
+        "investigation": {
+            "start": True,
+            "read": True,
+            "receipt_submit": True,
+            "revoke": True,
+        },
+        "evidence": {
+            "read": True,
+            "submit": True,
+            "supersede": True,
+            "revoke": True,
+        },
+        "spec_link": {
+            "create": True,
+            "delete": True,
+            "set_disposition": True,
+            "rebase": True,
+        },
+        "target": {
+            "read": True,
+            "suggest": True,
+            "create": True,
+            "edit": True,
+            "resolution_submit": True,
+            "execution_submit": True,
+        },
+        "overlap": {
+            "read": True,
+            "acknowledge": True,
+        },
+        "waiver": {
+            "create": True,
+            "clear": True,
+        },
     },
     # ---- Knowledge Graph ----
     "kg": {
@@ -3904,6 +4076,7 @@ class DefaultPermissionPolicy:
 __all__ = [
     "ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1",
     "ALL_FLAGS",
+    "CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1",
     "DefaultPermissionPolicy",
     "HUMAN_ONLY_MCP_TOOL_EXEMPTIONS",
     "GUIDELINE_ADOPTION_MANAGE",

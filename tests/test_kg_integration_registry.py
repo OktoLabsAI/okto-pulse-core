@@ -280,5 +280,6 @@ class TestBackwardCompat:
             "0.3.10",
             "0.3.11",
             "0.3.12",
+            "0.4.0",
         }
         assert get_embedding_provider() is not None

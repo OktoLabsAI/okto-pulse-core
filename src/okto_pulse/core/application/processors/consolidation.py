@@ -1044,6 +1044,21 @@ def _worker_node_to_candidate(node: EmittedNode) -> NodeCandidate:
         maturity_status=node.maturity_status,
         source_confidence=node.source_confidence,
         priority_boost=node.priority_boost,
+        kind_of=node.kind_of,
+        investigation_receipt_id=node.investigation_receipt_id,
+        source_ref=node.source_ref,
+        attestor_actor_id=node.attestor_actor_id,
+        declared_revision=node.declared_revision,
+        workspace_state_id=node.workspace_state_id,
+        code_path=node.code_path,
+        symbol_qualified_name=node.symbol_qualified_name,
+        symbol_kind=node.symbol_kind,
+        selector_kind=node.selector_kind,
+        selector_fingerprint=node.selector_fingerprint,
+        resolution_state=node.resolution_state,
+        source_span_start=node.source_span_start,
+        source_span_end=node.source_span_end,
+        source_content_hash=node.source_content_hash,
     )
 
 
@@ -1141,6 +1156,14 @@ def _run_deterministic_worker(
         return worker.process_card(_card_to_dict(artifact))
     if entry.artifact_type == "amendment_hotfix_revision":
         return worker.process_amendment(_amendment_to_dict(artifact))
+    if entry.artifact_type in {
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
+    }:
+        if not isinstance(artifact, Mapping):
+            raise ValueError("code_traceability_relational_projection_invalid")
+        return worker.process_artifact(entry.artifact_type, dict(artifact))
     raise ValueError(f"unknown artifact_type: {entry.artifact_type}")
 
 
@@ -2145,6 +2168,9 @@ async def _process_queue_entry(
         "sprint",
         "card",
         "amendment_hotfix_revision",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     }:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
         return False
@@ -2167,9 +2193,17 @@ async def _process_queue_entry(
         # clear the connectivity class (stale legacy entries included).
         return False
 
-    artifact_status = getattr(artifact, "status", None)
+    artifact_status = (
+        artifact.get("status") or artifact.get("lifecycle_status")
+        if isinstance(artifact, Mapping)
+        else getattr(artifact, "status", None)
+    )
     artifact_status = getattr(artifact_status, "value", artifact_status)
-    if bool(getattr(artifact, "archived", False)):
+    if bool(
+        artifact.get("archived", False)
+        if isinstance(artifact, Mapping)
+        else getattr(artifact, "archived", False)
+    ):
         artifact_status = "archived"
     maturity_artifact_type = entry.artifact_type
     if entry.artifact_type == "card":
@@ -2338,7 +2372,7 @@ async def _process_queue_entry(
         summary_text=(
             "Historical consolidation of "
             f"{entry.artifact_type} "
-            f"'{getattr(artifact, 'title', entry.artifact_id)}'"
+            f"'{artifact.get('title', entry.artifact_id) if isinstance(artifact, Mapping) else getattr(artifact, 'title', entry.artifact_id)}'"
         ),
         db=db,
         blocking_execution=blocking_execution,
@@ -2402,6 +2436,9 @@ async def _classify_queue_entry_source_for_debt(
         "refinement",
         "spec",
         "sprint",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     }:
         return None
     artifact = await get_consolidation_persistence_port().load_artifact(
@@ -2411,13 +2448,18 @@ async def _classify_queue_entry_source_for_debt(
     )
     if artifact is None:
         return None
-    return classify_source_for_kg(
-        artifact_type=entry.artifact_type,
-        artifact_status=getattr(
+    artifact_status = (
+        artifact.get("status") or artifact.get("lifecycle_status")
+        if isinstance(artifact, Mapping)
+        else getattr(
             getattr(artifact, "status", None),
             "value",
             getattr(artifact, "status", None),
-        ),
+        )
+    )
+    return classify_source_for_kg(
+        artifact_type=entry.artifact_type,
+        artifact_status=artifact_status,
         content_hash="consolidation-failure",
     )
 

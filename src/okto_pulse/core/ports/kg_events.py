@@ -60,6 +60,7 @@ class KGEventsReaderPort(Protocol):
         after: datetime,
         limit: int,
         after_event_id: str | None = None,
+        include_code_traceability: bool = True,
     ) -> KGEventsPoll:
         """Return events after the stable composite cursor.
 
@@ -77,6 +78,7 @@ class KGEventsReaderPort(Protocol):
         after: datetime,
         limit: int,
         after_event_id: str | None = None,
+        include_code_traceability: bool = True,
     ) -> Sequence[KGOutboxEvent]:
         """Return deterministically ordered events after the composite cursor."""
 

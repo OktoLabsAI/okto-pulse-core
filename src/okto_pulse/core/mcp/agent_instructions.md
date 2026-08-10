@@ -24,6 +24,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Navigate spec validation/evaluation gates | `okto-pulse://reference/spec_gates` |
 | Record/read Quality assessments or pinpoint findings | `okto-pulse://reference/quality-assessments` |
 | Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
+| Submit agent-attested code evidence, link it to specs, or submit task target resolutions | `okto-pulse://reference/code-traceability` |
 | Move a card / sprint / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |

@@ -444,3 +444,17 @@ Args:
 
 Returns:
     JSON with the EFFECTIVE template and its design_system_default_ref.
+
+## Code Traceability investigation receipts
+
+`okto_pulse_start_code_investigation` creates a bounded, version-fenced request
+with a single-use challenge. It does not contact a provider or schedule local
+work. The authenticated external agent checks real access/capabilities and
+investigates in its own environment, then submits `accessible`, `partial`, or
+`unavailable` with `okto_pulse_submit_code_investigation_receipt`.
+`okto_pulse_get_code_investigation_receipt` reads the immutable receipt and its
+computed currentness.
+
+Pulse Core governs the contract; Community only persists and projects accepted
+records. Neither surface accesses a repository. Canonical protocol:
+`okto-pulse://reference/code-traceability`.

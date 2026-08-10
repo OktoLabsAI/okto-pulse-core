@@ -1170,13 +1170,25 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         *,
         board_id: str,
         limit: int,
+        include_code_traceability: bool = True,
     ) -> list[dict]:
+        predicates = [
+            ConsolidationAudit.board_id == board_id,
+            ConsolidationAudit.committed_at.is_not(None),
+        ]
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            predicates.append(
+                ConsolidationAudit.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         query = (
             select(ConsolidationAudit)
-            .where(
-                ConsolidationAudit.board_id == board_id,
-                ConsolidationAudit.committed_at.is_not(None),
-            )
+            .where(*predicates)
             .order_by(ConsolidationAudit.committed_at.desc())
             .limit(limit)
         )
@@ -1203,13 +1215,27 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         result = await context.execute(select(Board).limit(limit))
         return [b.id for b in result.scalars().all()]
 
-    async def list_pending_entries(self, context, *, board_id: str) -> list[dict]:
-        query = (
-            select(ConsolidationQueue)
-            .where(ConsolidationQueue.board_id == board_id)
-            .order_by(ConsolidationQueue.triggered_at.desc())
-            .limit(100)
+    async def list_pending_entries(
+        self,
+        context,
+        *,
+        board_id: str,
+        include_code_traceability: bool = True,
+    ) -> list[dict]:
+        query = select(ConsolidationQueue).where(
+            ConsolidationQueue.board_id == board_id
         )
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            query = query.where(
+                ConsolidationQueue.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
+        query = query.order_by(ConsolidationQueue.triggered_at.desc()).limit(100)
         rows = (await context.execute(query)).scalars().all()
         return [
             {
@@ -1576,10 +1602,22 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         *,
         board_id: str,
         limit: int = 100,
+        include_code_traceability: bool = True,
     ):
+        predicates = [ConsolidationDeadLetter.board_id == board_id]
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            predicates.append(
+                ConsolidationDeadLetter.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         result = await context.execute(
             select(ConsolidationDeadLetter)
-            .where(ConsolidationDeadLetter.board_id == board_id)
+            .where(*predicates)
             .order_by(ConsolidationDeadLetter.dead_lettered_at.desc())
             .limit(limit)
         )
@@ -1592,12 +1630,24 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         board_id: str,
         limit: int,
         offset: int,
+        include_code_traceability: bool = True,
     ):
+        predicates = [ConsolidationDeadLetter.board_id == board_id]
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            predicates.append(
+                ConsolidationDeadLetter.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         total = int(
             await context.scalar(
                 select(func.count())
                 .select_from(ConsolidationDeadLetter)
-                .where(ConsolidationDeadLetter.board_id == board_id)
+                .where(*predicates)
             )
             or 0
         )
@@ -1605,7 +1655,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             (
                 await context.execute(
                     select(ConsolidationDeadLetter)
-                    .where(ConsolidationDeadLetter.board_id == board_id)
+                    .where(*predicates)
                     .order_by(ConsolidationDeadLetter.id)
                     .limit(limit)
                     .offset(offset)
@@ -1624,8 +1674,15 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         dead_letter_ids,
         limit: int,
     ):
+        from okto_pulse.core.domain.code_traceability_kg import (
+            CODE_TRACEABILITY_KG_SUBTYPES,
+        )
+
         query = select(ConsolidationDeadLetter).where(
-            ConsolidationDeadLetter.board_id == board_id
+            ConsolidationDeadLetter.board_id == board_id,
+            ConsolidationDeadLetter.artifact_type.not_in(
+                CODE_TRACEABILITY_KG_SUBTYPES
+            ),
         )
         if dead_letter_ids:
             query = query.where(ConsolidationDeadLetter.id.in_(dead_letter_ids))
@@ -1705,6 +1762,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         board_id: str,
         queue_entry_id: str,
         recursive: bool = False,
+        include_code_traceability: bool = True,
     ):
         from okto_pulse.community.adapters.kg_operational import (
             CommunitySqlAlchemyKGWorkerQueue,
@@ -1715,6 +1773,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             board_id=board_id,
             queue_entry_id=queue_entry_id,
             recursive=recursive,
+            include_code_traceability=include_code_traceability,
         )
 
 

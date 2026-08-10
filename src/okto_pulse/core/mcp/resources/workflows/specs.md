@@ -160,3 +160,25 @@ Every tool that feeds into a coverage gate **automatically returns a `coverage` 
 - `skip_test_coverage = true` → AC coverage is tracked but not enforced
 
 **FR coverage source:** `fr_coverage_pct` is computed from `business_rules[].linked_requirements`. Direct links on `functional_requirements[].linked_task_ids` are useful task traceability, but they do not satisfy the FR→BR coverage gate.
+
+## 2.3d Agent-mediated Code Traceability
+
+When Code Traceability is enabled, the Spec remains normative and Code
+Evidence remains factual, immutable, and historical. Before moving a Spec to
+`review`:
+
+1. Read `inherited_code_evidence` from the full Spec context.
+2. Formalize the applicable FR, TR, BR, Decision, and Contract entities.
+3. Link every inherited Evidence item to each entity it supports.
+4. Record an explicit disposition for every inherited item that is not
+   applicable to this Spec version.
+5. Confirm `evidence_disposition_coverage_pct = 100`.
+
+Do not move to `review` while inherited Evidence is pending. A link or
+disposition never rewrites the Evidence snapshot, its accepted agent receipt,
+or its observed source state. Pulse Core and Pulse Community do not inspect a
+repository to establish these facts. An authenticated external agent first
+performs the capability/access preflight and deterministic investigation in its
+own environment, then submits the bounded receipt and Evidence.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

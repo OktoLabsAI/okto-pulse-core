@@ -242,6 +242,67 @@ def register_kg_tools(
             return None, access_error
         return session, None
 
+    async def _guard_session_code_traceability_read(
+        agent,
+        session,
+    ) -> str | None:
+        """Deny graph-searching session tools before their provider access."""
+
+        if get_board_agent is None:
+            return _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        try:
+            board_agent = await get_board_agent(session.board_id)
+        except Exception:
+            logger.warning(
+                "kg.mcp.ct_acl_resolution_failed board=%s",
+                session.board_id,
+                exc_info=True,
+            )
+            return _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if (
+            board_agent is None
+            or principal_id(agent) != principal_id(board_agent)
+        ):
+            return _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+
+        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+            EvaluateCodeTraceabilityKGReadAccessUseCase,
+        )
+        from okto_pulse.core.domain.code_traceability_kg import (
+            CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+        )
+        from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+        access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=MCPAdapterContract.actor(
+                board_agent,
+                board_id=session.board_id,
+            ),
+            board_id=session.board_id,
+        )
+        if access.allowed:
+            return None
+        return _err(
+            "permission_denied",
+            "complete Code Traceability KG read authority is required",
+            reason=(
+                "code_traceability_kg_authority_unresolved"
+                if not access.authority_resolved
+                else "code_traceability_kg_read_permissions_missing"
+            ),
+            required_permissions=list(CODE_TRACEABILITY_KG_READ_PERMISSIONS),
+            missing_permissions=list(access.missing_permissions),
+        )
+
     @mcp.tool()
     async def okto_pulse_kg_begin_consolidation(
         board_id: str,
@@ -393,13 +454,20 @@ def register_kg_tools(
             )
         except ValidationError as e:
             return _err("invalid_candidate", _validation_message(e))
-        _session, access_error = await _authorized_session(
+        session, access_error = await _authorized_session(
             req.session_id,
             agent,
             required_permission="kg.session.get_similar",
         )
         if access_error is not None:
             return access_error
+        assert session is not None
+        ct_access_error = await _guard_session_code_traceability_read(
+            agent,
+            session,
+        )
+        if ct_access_error is not None:
+            return ct_access_error
         try:
             resp = await get_similar_nodes(req, agent_id=agent.id)
             return _ok(resp)
@@ -422,13 +490,20 @@ def register_kg_tools(
             req = ProposeReconciliationRequest(session_id=session_id)
         except ValidationError as e:
             return _err("invalid_candidate", _validation_message(e))
-        _session, access_error = await _authorized_session(
+        session, access_error = await _authorized_session(
             req.session_id,
             agent,
             required_permission="kg.session.propose",
         )
         if access_error is not None:
             return access_error
+        assert session is not None
+        ct_access_error = await _guard_session_code_traceability_read(
+            agent,
+            session,
+        )
+        if ct_access_error is not None:
+            return ct_access_error
         # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
         # UnitOfWorkFactory (get_uow) instead of a raw get_db() session.
         from okto_pulse.core.application.use_cases import (
@@ -483,6 +558,12 @@ def register_kg_tools(
         if access_error is not None:
             return access_error
         assert session is not None
+        ct_access_error = await _guard_session_code_traceability_read(
+            agent,
+            session,
+        )
+        if ct_access_error is not None:
+            return ct_access_error
         # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
         # UnitOfWorkFactory. The outer guarded boundary owns the real per-board
         # writer fence and keeps it through graph durability, relational commit,

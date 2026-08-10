@@ -47,6 +47,25 @@ _DERIVED_EVENTS = {
     "refinement.derived_to_spec",
 }
 _BUG_REGRESSION_DECISION_EVENT = "bug_regression_scenario_reuse_decision"
+_CODE_INVESTIGATION_RECEIPT_EVENTS = {
+    "code_investigation.receipt_submitted",
+    "code_investigation.receipt_revoked",
+}
+_CODE_EVIDENCE_EVENTS = {
+    "code_evidence.created",
+    "code_evidence.superseded",
+    "code_evidence.revoked",
+    "code_evidence.linked",
+    "code_evidence.unlinked",
+    "code_evidence.disposition_changed",
+}
+_IMPLEMENTATION_TARGET_EVENTS = {
+    "implementation_target.created",
+    "implementation_target.updated",
+    "implementation_target.revoked",
+    "implementation_target.resolution_submitted",
+    "implementation_target.execution_receipt_submitted",
+}
 
 # Spec eaf78891 (Ideação #2): card.linked_to_spec / card.unlinked_from_spec
 # re-enqueue the SPEC, not the card. The card extractor in
@@ -97,6 +116,23 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "story.moved",
     "story.linked_to_ideation",
     "bug_regression_scenario_reuse_decision",
+    "code_investigation.requested",
+    "code_investigation.receipt_submitted",
+    "code_investigation.receipt_revoked",
+    "code_evidence.created",
+    "code_evidence.superseded",
+    "code_evidence.revoked",
+    "code_evidence.linked",
+    "code_evidence.unlinked",
+    "code_evidence.disposition_changed",
+    "implementation_target.created",
+    "implementation_target.updated",
+    "implementation_target.revoked",
+    "implementation_target.resolution_submitted",
+    "implementation_target.execution_receipt_submitted",
+    "implementation_overlap.acknowledged",
+    "code_traceability.waiver_created",
+    "code_traceability.waiver_cleared",
 )
 class ConsolidationEnqueuer:
     """Maps domain events to ConsolidationQueue rows with dedup + priority."""
@@ -252,6 +288,41 @@ class ConsolidationEnqueuer:
         """
         et = event.event_type
         targets: list[tuple[str, str]] = []
+
+        # Code Traceability events contain only bounded identifiers/states/
+        # digests/counts.  Queue targets are relational Pulse artifacts; this
+        # handler never receives, opens or resolves a code locator.
+        if et in _CODE_INVESTIGATION_RECEIPT_EVENTS:
+            receipt_id = getattr(event, "investigation_receipt_id", None)
+            if receipt_id:
+                targets.append(("code_investigation_receipt", receipt_id))
+            return targets
+        if et in _CODE_EVIDENCE_EVENTS:
+            for attr in ("evidence_id", "superseded_evidence_id", "superseding_evidence_id"):
+                evidence_id = getattr(event, attr, None)
+                target = ("code_evidence", evidence_id)
+                if evidence_id and target not in targets:
+                    targets.append(target)
+            return targets
+        if et in _IMPLEMENTATION_TARGET_EVENTS:
+            target_id = getattr(event, "target_id", None)
+            if target_id:
+                targets.append(("implementation_target", target_id))
+            return targets
+        if et == "implementation_overlap.acknowledged":
+            for attr in ("target_a_id", "target_b_id"):
+                target_id = getattr(event, attr, None)
+                if target_id:
+                    targets.append(("implementation_target", target_id))
+            return targets
+        if et in {
+            "code_investigation.requested",
+            "code_traceability.waiver_created",
+            "code_traceability.waiver_cleared",
+        }:
+            # Requests and waivers remain relational authorities by design;
+            # they do not materialize KG nodes.
+            return targets
 
         if et == "artifact.archive_changed":
             # Archive is handled synchronously by the reversible KG tombstone

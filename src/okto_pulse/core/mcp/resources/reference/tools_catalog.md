@@ -164,6 +164,27 @@ Semantic guideline protocol:
 - `okto_pulse_update_default_guideline_refs` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_update_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 
+## Code Traceability
+- `okto_pulse_acknowledge_implementation_overlap` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_clear_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_create_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_implementation_overlaps` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_link_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_list_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_list_implementation_targets` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_mark_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_set_code_evidence_disposition` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_start_code_investigation` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_implementation_target_execution_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_implementation_target_resolution` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_supersede_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_unlink_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_update_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+
 ## Stories & Topics
 - `okto_pulse_archive_story` — docs: `okto-pulse://reference/tool-docs/story`
 - `okto_pulse_archive_topic` — docs: `okto-pulse://reference/tool-docs/topic`

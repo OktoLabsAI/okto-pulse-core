@@ -184,6 +184,7 @@ _TRUNCATION_SUFFIX = "…[truncated]"
 _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
     "test_card_operational_flow",
     "gate_readiness",
+    "code_traceability",
 )
 
 _GATE_CARD_KEYS = (
@@ -768,6 +769,7 @@ def _project_task_gate_context(
         "reviewer_separation",
         "test_card_operational_flow",
         "gate_readiness",
+        "code_traceability",
     ):
         if key in source:
             projected[key] = source[key]
@@ -822,6 +824,7 @@ def _project_task_gate_context(
                 "reviewer_separation",
                 "test_card_operational_flow",
                 "gate_readiness",
+                "code_traceability",
                 "validation_history",
             )
             if key in projected

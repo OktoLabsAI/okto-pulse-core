@@ -2,7 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict
+
+
+class CodeTraceabilityReportSummary(TypedDict):
+    evidence_total: int
+    evidence_linked: int
+    targets_total: int
+    targets_resolved: int
+    targets_outdated: int
+    high_overlaps: int
+
+
+class TraceabilityReport(TypedDict, total=False):
+    """Open report envelope with a stable Code Traceability extension."""
+
+    board_id: str
+    filters: dict[str, Any]
+    summary: dict[str, int]
+    ideations: list[dict[str, Any]]
+    orphan_specs: list[dict[str, Any]]
+    code_traceability: CodeTraceabilityReportSummary
 
 
 class TraceabilityReadError(Exception):
@@ -24,7 +44,7 @@ class TraceabilityReadPort(Protocol):
         ideation_id: str = "",
         spec_id: str = "",
         include_artifacts: bool = True,
-    ) -> dict[str, Any]: ...
+    ) -> TraceabilityReport: ...
 
     async def build_lineage_graph(
         self,
@@ -37,4 +57,9 @@ class TraceabilityReadPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
-__all__ = ["TraceabilityReadError", "TraceabilityReadPort"]
+__all__ = [
+    "CodeTraceabilityReportSummary",
+    "TraceabilityReadError",
+    "TraceabilityReadPort",
+    "TraceabilityReport",
+]

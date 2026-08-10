@@ -179,3 +179,25 @@ The `resolved_from` field in `validation_config` tells you which level provided 
 - `okto_pulse_get_spec_evaluation(board_id, spec_id, evaluation_id)` — single evaluation detail.
 - `okto_pulse_list_spec_validations(board_id, spec_id)` — validation gate history.
 - `okto_pulse_list_task_validations(board_id, card_id)` — task-level validation history.
+
+## Code Evidence disposition gate
+
+When `code_traceability.mode="blocking"`, a Spec cannot leave authoring with
+inherited Code Evidence still pending. The deterministic gate requires:
+
+- every inherited Evidence item to resolve from the current Spec lineage;
+- each item to have at least one current link to an applicable FR, TR, BR,
+  Decision, or Contract, or one explicit disposition for this Spec version;
+- `evidence_disposition_coverage_pct = 100`;
+- any receipt required by policy to be accepted, current, non-revoked, and
+  conflict-free.
+
+Evidence remains a factual historical snapshot. The Spec remains the normative
+artifact, and linking or disposition does not rewrite either artifact. In
+`advisory` mode the same findings are returned without independently blocking;
+in `off` mode this gate is skipped. An authenticated external agent performs
+source access checks and deterministic investigation before submission. Pulse
+Core validates the receipt and Community persists/projects it; neither reads a
+repository to satisfy the gate.
+
+Read `okto-pulse://reference/code-traceability` before operating this domain.

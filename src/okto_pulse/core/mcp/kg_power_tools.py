@@ -213,6 +213,33 @@ def register_kg_power_tools(
                 )
         return agent, board_agent, None
 
+    async def _guard_arbitrary_code_traceability_query(
+        board_id: str,
+        board_agent: Any,
+    ) -> str | None:
+        from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+            EvaluateCodeTraceabilityKGReadAccessUseCase,
+            require_code_traceability_safe_arbitrary_query,
+        )
+        from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+        access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=MCPAdapterContract.actor(board_agent, board_id=board_id),
+            board_id=board_id,
+        )
+        if access.allowed:
+            return None
+        try:
+            require_code_traceability_safe_arbitrary_query(access)
+        except PermissionDeniedError as exc:
+            return _err(
+                "permission_denied",
+                str(exc),
+                required_permissions=list(access.missing_permissions),
+            )
+        return None
+
     @mcp.tool()
     async def okto_pulse_kg_query_cypher(
         board_id: str,
@@ -229,13 +256,20 @@ normalize, auto-LIMIT, variable-length paths bounded to *..20, timeout 5s defaul
 rows bounded to an agent-safe page, numeric scores rounded. max_rows: 0=agent-safe
 default (50), 1..1000 explicit, >1000 rejected. Full args/returns:
 okto-pulse://reference/tool-docs/kg."""
-        agent, _board_agent, auth_error = await _authorized_board_agent(
+        agent, board_agent, auth_error = await _authorized_board_agent(
             board_id,
             "kg.power.cypher",
         )
         if auth_error is not None:
             return auth_error
         assert agent is not None
+        assert board_agent is not None
+        ct_guard_error = await _guard_arbitrary_code_traceability_query(
+            board_id,
+            board_agent,
+        )
+        if ct_guard_error is not None:
+            return ct_guard_error
         logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%d",
                      board_id, len(cypher), max_rows, timeout_ms)
         try:
@@ -312,13 +346,20 @@ okto-pulse://reference/tool-docs/kg."""
         metadata/legacy_unknown never count as canonical/working leakage.
         Docs: okto-pulse://reference/tool-docs/kg.
         """
-        agent, _board_agent, auth_error = await _authorized_board_agent(
+        agent, board_agent, auth_error = await _authorized_board_agent(
             board_id,
             "kg.power.natural",
         )
         if auth_error is not None:
             return auth_error
         assert agent is not None
+        assert board_agent is not None
+        ct_guard_error = await _guard_arbitrary_code_traceability_query(
+            board_id,
+            board_agent,
+        )
+        if ct_guard_error is not None:
+            return ct_guard_error
         logger.debug("[KG] kg_query_natural called: board_id=%s query=%r limit=%d",
                      board_id, nl_query[:80], limit)
         try:
@@ -554,6 +595,12 @@ narrows to one table."""
                 str(exc),
                 required_permission="kg.operations.audit.read",
             )
+        ct_guard_error = await _guard_arbitrary_code_traceability_query(
+            board_id,
+            board_agent,
+        )
+        if ct_guard_error is not None:
+            return ct_guard_error
         try:
             report = await asyncio.wait_for(
                 provenance_drift_report(
@@ -584,13 +631,20 @@ narrows to one table."""
         critic output, no progress, exhausted budget/deadline and provider
         failures. ``graph_layer`` is canonical|working|all (default canonical).
         """
-        agent, _board_agent, auth_error = await _authorized_board_agent(
+        agent, board_agent, auth_error = await _authorized_board_agent(
             board_id,
             "kg.power.natural",
         )
         if auth_error is not None:
             return auth_error
         assert agent is not None
+        assert board_agent is not None
+        ct_guard_error = await _guard_arbitrary_code_traceability_query(
+            board_id,
+            board_agent,
+        )
+        if ct_guard_error is not None:
+            return ct_guard_error
         try:
             from okto_pulse.core.kg.interfaces import get_kg_registry
             from okto_pulse.core.kg.kg_service import (

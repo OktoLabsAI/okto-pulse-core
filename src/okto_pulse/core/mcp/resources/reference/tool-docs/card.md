@@ -365,3 +365,16 @@ routed through **Path B** and consumable only when the candidate attestation dri
 `path_b_ready`. An inert tuple fails closed with `coverage_not_gate_consumable`
 (see `reference/errors.md`), distinct from `coverage_pending`. Until a consumable
 attestation is recorded, the bug stays `coverage_pending`.
+
+## Agent-attested implementation targets
+
+For governed implementation, create semantic intent with
+`okto_pulse_create_implementation_target`, then have the authenticated external
+agent perform a Card preflight and submit each Target resolution. Read current
+overlaps, create a dependency or current acknowledgement where policy permits,
+and submit an Execution Disposition before validation/completion. Re-run the
+external preflight whenever dependencies or observed source state change.
+
+These commands validate and persist attestations; Pulse and Community do not
+locate or resolve code. Canonical order and states:
+`okto-pulse://reference/code-traceability`.

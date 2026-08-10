@@ -358,6 +358,36 @@ class CoreApplicationServiceCatalog:
         return CommentService(self.__relational_context)
 
     @cached_property
+    def code_investigations(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().code_investigations(
+            self.__relational_context
+        )
+
+    @cached_property
+    def code_traceability(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().code_traceability(
+            self.__relational_context
+        )
+
+    @cached_property
+    def code_traceability_read(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().code_traceability_read(
+            self.__relational_context
+        )
+
+    @cached_property
     def entity_pages(self):  # noqa: ANN201
         from okto_pulse.core.application.use_cases.entity_pagination import (
             EntityPageService,

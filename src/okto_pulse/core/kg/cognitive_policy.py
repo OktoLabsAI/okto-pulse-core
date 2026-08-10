@@ -34,6 +34,11 @@ DETERMINISTIC_EDGE_TYPES: Final[frozenset[str]] = frozenset({
     "mentions",
     "originates_from",
     "covered_by",
+    # Code Traceability relationships are derived exclusively from persisted
+    # Evidence/Target link and resolution records.  The cognitive agent never
+    # infers them and Pulse never inspects an external repository for them.
+    "supports",
+    "overlaps",
     # Hierarchy backbone — Spec ⇄ Sprint ⇄ Card and child artifacts (Req,
     # Constraint, Criterion, TestScenario, APIContract, Decision, Bug) →
     # parent Spec entity. Layer 1 owns this; cognitive agent must not emit.

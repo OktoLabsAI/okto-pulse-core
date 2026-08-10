@@ -325,7 +325,7 @@ async def test_clean_tables_preserves_restricted_events_from_other_boards(
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_forty_three_events():
+def test_registry_has_sixty_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -341,7 +341,8 @@ def test_registry_has_forty_three_events():
     SK-A research-decision append/supersede events = 38. The closed
     clarification-currentness signal brings the registry to 39. Three closed
     SK-B policy-constraint companions bring the registry to 42. The semantic-
-    guideline KG projection outbox envelope brings it to 43.
+    guideline KG projection outbox envelope brings it to 43. Code
+    Traceability adds 17 bounded metadata-only events, bringing it to 60.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -350,7 +351,7 @@ def test_registry_has_forty_three_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 43
+    assert len(EVENT_TYPES) == 60
     non_consolidation_events = {
         "kg.hit_flushed",
         "card.priority_changed",
@@ -1768,6 +1769,7 @@ def test_human_curated_column_declared_in_schema():
         "0.3.10",
         "0.3.11",
         "0.3.12",
+        "0.4.0",
     }
 
 

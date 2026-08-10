@@ -517,3 +517,14 @@ Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC, I
 
 API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
 payload shape remains explicit while still delegating to StructuredSpecEntityService.
+
+## Code Evidence links and dispositions
+
+Read inherited Evidence from full Spec context. Use
+`okto_pulse_link_code_evidence` and `okto_pulse_unlink_code_evidence` for
+version-fenced normative links, and `okto_pulse_set_code_evidence_disposition`
+for an explicit non-applicable outcome. Every inherited item needs a current
+link or final disposition before review in blocking mode. Evidence is an
+immutable factual snapshot and never becomes Spec text.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

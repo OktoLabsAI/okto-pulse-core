@@ -6,6 +6,9 @@ from sqlalchemy import and_, func, select
 
 from sqlalchemy_test_models import CanonicalDebt
 from okto_pulse.core.ports.canonical_debt import CanonicalDebtRecord
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_SUBTYPES,
+)
 
 
 def _record(row: CanonicalDebt) -> CanonicalDebtRecord:
@@ -25,11 +28,24 @@ def _apply(row: CanonicalDebt, record: CanonicalDebtRecord) -> None:
 class TestSqlAlchemyCanonicalDebtStore:
     __test__ = False
 
-    async def counts_by_state(self, context, *, board_id: str):  # noqa: ANN001, ANN201
+    async def counts_by_state(
+        self,
+        context,
+        *,
+        board_id: str,
+        include_code_traceability: bool = True,
+    ):  # noqa: ANN001, ANN201
+        predicates = [CanonicalDebt.board_id == board_id]
+        if not include_code_traceability:
+            predicates.append(
+                CanonicalDebt.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         rows = (
             await context.execute(
                 select(CanonicalDebt.canonical_state, func.count())
-                .where(CanonicalDebt.board_id == board_id)
+                .where(*predicates)
                 .group_by(CanonicalDebt.canonical_state)
             )
         ).all()
@@ -44,12 +60,19 @@ class TestSqlAlchemyCanonicalDebtStore:
         state,
         limit,
         offset,
+        include_code_traceability=True,
     ):  # noqa: ANN001, ANN201
         predicates = [CanonicalDebt.board_id == board_id]
         if artifact_type:
             predicates.append(CanonicalDebt.artifact_type == artifact_type)
         if state:
             predicates.append(CanonicalDebt.canonical_state == state)
+        if not include_code_traceability:
+            predicates.append(
+                CanonicalDebt.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         where = and_(*predicates)
         total = int(
             await context.scalar(
@@ -91,8 +114,26 @@ class TestSqlAlchemyCanonicalDebtStore:
         ).scalar_one_or_none()
         return _record(row) if row is not None else None
 
-    async def get(self, context, *, debt_id: str):  # noqa: ANN001, ANN201
-        row = await context.get(CanonicalDebt, debt_id)
+    async def get(
+        self,
+        context,
+        *,
+        debt_id: str,
+        include_code_traceability: bool = True,
+    ):  # noqa: ANN001, ANN201
+        if include_code_traceability:
+            row = await context.get(CanonicalDebt, debt_id)
+        else:
+            row = (
+                await context.execute(
+                    select(CanonicalDebt).where(
+                        CanonicalDebt.id == debt_id,
+                        CanonicalDebt.artifact_type.not_in(
+                            CODE_TRACEABILITY_KG_SUBTYPES
+                        ),
+                    )
+                )
+            ).scalar_one_or_none()
         return _record(row) if row is not None else None
 
     async def find_open_by_evidence(

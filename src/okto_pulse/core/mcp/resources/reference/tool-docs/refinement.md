@@ -258,3 +258,15 @@ Args:
 
 Returns:
     JSON with updated refinement details
+
+## Code Evidence for Refinements
+
+Use `okto_pulse_start_code_investigation`, let the authenticated external agent
+perform the capability/access check and source investigation in its own
+environment, then call `okto_pulse_submit_code_investigation_receipt` followed
+by `okto_pulse_submit_code_evidence`. Correct historical Evidence only through
+`okto_pulse_supersede_code_evidence`; never replace a snapshot in place.
+
+Pulse and Community do not open, clone, search, or resolve the repository.
+Full procedure and typed outcomes:
+`okto-pulse://reference/code-traceability`.

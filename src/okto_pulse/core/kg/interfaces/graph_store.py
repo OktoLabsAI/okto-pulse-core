@@ -39,7 +39,13 @@ class SemanticGraphStore(Protocol):
     ) -> list[list]: ...
 
     def find_by_artifact(
-        self, board_id: str, artifact_id: str, filters: QueryFilters
+        self,
+        board_id: str,
+        artifact_id: str,
+        filters: QueryFilters,
+        *,
+        graph_layer: str = "all",
+        include_code_traceability: bool = True,
     ) -> list[list]: ...
 
     def traverse_supersedence(

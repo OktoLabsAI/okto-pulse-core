@@ -356,6 +356,8 @@ from okto_pulse.core.kg.memory_pressure import (
     MemoryPressureStatus,
 )
 from okto_pulse.core.kg.schema_contract import (
+    CODE_TRACEABILITY_COLUMNS,
+    CODE_TRACEABILITY_ENTITY_SUBTYPES,
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     NODE_TYPES,
@@ -669,6 +671,8 @@ __all__ = [
     "STEP_FSYNC",
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
+    "CODE_TRACEABILITY_COLUMNS",
+    "CODE_TRACEABILITY_ENTITY_SUBTYPES",
     "NODE_TYPES",
     "REL_TYPES",
     "VECTOR_INDEX_TYPES",

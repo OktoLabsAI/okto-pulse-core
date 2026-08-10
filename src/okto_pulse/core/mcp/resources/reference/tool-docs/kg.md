@@ -214,16 +214,23 @@ Prose covered by the live tool description. Delta:
 
 Args:
     board_id: Board UUID.
-    dead_letter_ids: Optional multi-value DLQ row IDs
-        (formats: okto-pulse://reference/multivalue). Empty means "oldest
-        rows for this board up to limit".
+    dead_letter_ids: Multi-value DLQ row IDs
+        (formats: okto-pulse://reference/multivalue). For `scope=generic`,
+        empty means "oldest non-Code-Traceability rows for this board up to
+        limit". For `scope=code_traceability`, exact IDs are required.
     limit: Max DLQ rows to requeue (1-200, default 50).
     process_now: "true" to immediately run one consolidation worker batch
         after requeueing; "false" to only mark rows pending.
+    scope: `generic` (default) or `code_traceability`. The CT scope is
+        all-or-nothing, board-scoped, requires all four Code Traceability read
+        permissions, and only requeues persisted CT artifacts. It never reads
+        a repository, filesystem, provider, or runtime from Community.
 
 Returns:
-    JSON with selected/requeued/already_queued counts and, when
-    process_now is true, the worker batch processed count.
+    JSON with scope, selected/requeued/already_queued counts and, when a row
+    mutated and process_now is true, the worker batch processed count. An
+    invalid CT selection returns `blocked=true`, `mutated=false`, and removes
+    no DLQ row.
 
 ## `okto_pulse_kg_connectivity_dlq_diagnose`
 

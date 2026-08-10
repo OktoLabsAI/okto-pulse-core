@@ -12,6 +12,9 @@ from okto_pulse.core.runtime_context import register_runtime_value, reset_runtim
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Protocol, Sequence, runtime_checkable
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    KGDeadLetterReprocessScope,
+)
 
 KGRecoveryClass = Literal["connectivity", "invalid_payload", "true_drift"]
 
@@ -132,6 +135,7 @@ class KGOperationalReadModelPort(Protocol):
         *,
         board_id: str,
         limit: int,
+        include_code_traceability: bool = True,
     ) -> Sequence[Mapping[str, Any]]:
         ...
 
@@ -148,6 +152,7 @@ class KGOperationalReadModelPort(Protocol):
         context: Any,
         *,
         board_id: str,
+        include_code_traceability: bool = True,
     ) -> Sequence[Mapping[str, Any]]:
         ...
 
@@ -267,6 +272,7 @@ class KGWorkerQueuePort(Protocol):
         *,
         board_id: str,
         limit: int = 100,
+        include_code_traceability: bool = True,
     ) -> Sequence[Any]:
         ...
 
@@ -277,6 +283,7 @@ class KGWorkerQueuePort(Protocol):
         board_id: str,
         limit: int,
         offset: int,
+        include_code_traceability: bool = True,
     ) -> tuple[int, Sequence[Any]]:
         ...
 
@@ -287,6 +294,7 @@ class KGWorkerQueuePort(Protocol):
         board_id: str,
         dead_letter_ids: Sequence[str],
         limit: int,
+        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
     ) -> Mapping[str, Any]:
         ...
 
@@ -297,6 +305,7 @@ class KGWorkerQueuePort(Protocol):
         board_id: str,
         queue_entry_id: str,
         recursive: bool = False,
+        include_code_traceability: bool = True,
     ) -> Mapping[str, Any] | None:
         ...
 

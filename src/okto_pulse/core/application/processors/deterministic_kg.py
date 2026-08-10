@@ -33,6 +33,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_INVESTIGATION_RECEIPT_KG_STATUSES,
+    CodeInvestigationReceiptKGStatus,
+)
 from okto_pulse.core.kg.interfaces.graph_transaction import (
     SpecLineageParentIntent,
 )
@@ -76,6 +80,21 @@ class EmittedNode:
     # Non-zero only on the root node emitted from a Card — belongs_to child
     # nodes (FR/TR/AC per Spec) stay at 0.0. Cap +0.2 (CRITICAL).
     priority_boost: float = 0.0
+    kind_of: str | None = None
+    investigation_receipt_id: str | None = None
+    source_ref: str | None = None
+    attestor_actor_id: str | None = None
+    declared_revision: str | None = None
+    workspace_state_id: str | None = None
+    code_path: str | None = None
+    symbol_qualified_name: str | None = None
+    symbol_kind: str | None = None
+    selector_kind: str | None = None
+    selector_fingerprint: str | None = None
+    resolution_state: str | None = None
+    source_span_start: int | None = None
+    source_span_end: int | None = None
+    source_content_hash: str | None = None
 
 
 @dataclass
@@ -944,6 +963,161 @@ def _append_architecture_designs(
                 ("Description", diagram.get("description")),
                 ("Content hash", diagram.get("content_hash")),
             ))
+
+
+_CODE_TRACEABILITY_SPEC_ENDPOINTS: dict[str, tuple[str, str]] = {
+    "spec": ("Entity", ""),
+    "functional_requirement": ("Requirement", "fr"),
+    "technical_requirement": ("Constraint", "tr"),
+    "acceptance_criterion": ("Criterion", "ac"),
+    "business_rule": ("Constraint", "business_rule"),
+    "api_contract": ("APIContract", "api_contract"),
+    "integration_requirement": ("Requirement", "integration_requirement"),
+    "observability_requirement": ("Constraint", "observability_requirement"),
+    "decision": ("Decision", "decision"),
+    "test_scenario": ("TestScenario", "test_scenario"),
+}
+
+
+def _required_traceability_string(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    max_length: int,
+) -> str:
+    value = str(payload.get(key) or "").strip()
+    if not value or len(value) > max_length:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return value
+
+
+def _required_traceability_choice(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    allowed: frozenset[str],
+    value: Any | None = None,
+) -> str:
+    normalized = str(payload.get(key) if value is None else value).strip()
+    if normalized not in allowed:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return normalized
+
+
+def _optional_traceability_string(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    max_length: int,
+) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized or len(normalized) > max_length:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return normalized
+
+
+def _reject_traceability_unexpected_fields(
+    payload: dict[str, Any],
+    allowed_fields: frozenset[str],
+) -> None:
+    """Fail closed before relational projection data reaches the graph.
+
+    The Community adapter owns the explicit row-to-dict contract.  Rejecting
+    additions here keeps transport secrets, excerpts and other accidental
+    columns out of raw-content hashes and graph properties.
+    """
+
+    if set(payload).difference(allowed_fields):
+        raise ValueError("code_traceability_projection_fields_invalid")
+
+
+def _required_traceability_digest(
+    payload: dict[str, Any],
+    key: str,
+) -> str:
+    value = _required_traceability_string(payload, key, max_length=64)
+    if re.fullmatch(r"[0-9a-fA-F]{64}", value) is None:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return value
+
+
+def _optional_traceability_digest(
+    payload: dict[str, Any],
+    key: str,
+) -> str | None:
+    value = _optional_traceability_string(payload, key, max_length=64)
+    if value is not None and re.fullmatch(r"[0-9a-fA-F]{64}", value) is None:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return value
+
+
+def _traceability_sequence(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    limit: int,
+) -> tuple[dict[str, Any], ...]:
+    value = payload.get(key, ())
+    if value is None:
+        return ()
+    if not isinstance(value, list | tuple) or len(value) > limit:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    if any(not isinstance(item, dict) for item in value):
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return tuple(dict(item) for item in value)
+
+
+def _traceability_id_sequence(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    limit: int,
+) -> tuple[str, ...]:
+    value = payload.get(key, ())
+    if value is None:
+        return ()
+    if not isinstance(value, list | tuple) or len(value) > limit:
+        raise ValueError(f"code_traceability_{key}_invalid")
+    normalized = tuple(str(item or "").strip() for item in value)
+    if any(not item or len(item) > 255 for item in normalized):
+        raise ValueError(f"code_traceability_{key}_invalid")
+    return tuple(dict.fromkeys(normalized))
+
+
+def _traceability_raw(payload: dict[str, Any], fields: tuple[str, ...]) -> str:
+    """Hash input contains only the explicit relational projection allowlist."""
+
+    return json.dumps(
+        {key: payload.get(key) for key in fields},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _source_ref_endpoint(node_type: str, source_artifact_ref: str) -> str:
+    return f"kgref:{node_type}:{source_artifact_ref}"
+
+
+def _spec_link_endpoint(link: dict[str, Any]) -> tuple[str, str]:
+    spec_id = _required_traceability_string(link, "spec_id", max_length=255)
+    entity_type = _required_traceability_string(
+        link,
+        "entity_type",
+        max_length=64,
+    )
+    endpoint = _CODE_TRACEABILITY_SPEC_ENDPOINTS.get(entity_type)
+    if endpoint is None:
+        raise ValueError("code_traceability_spec_entity_type_invalid")
+    node_type, section = endpoint
+    if not section:
+        return node_type, f"spec:{spec_id}"
+    entity_id = _required_traceability_string(link, "entity_id", max_length=255)
+    return node_type, f"spec:{spec_id}:{section}:{_ref_token(entity_id)}"
 
 
 class DeterministicWorker:
@@ -2210,6 +2384,648 @@ class DeterministicWorker:
         return result
 
     # ------------------------------------------------------------------
+    # Code Traceability relational projections
+    # ------------------------------------------------------------------
+
+    def process_code_investigation_receipt(
+        self,
+        receipt: dict[str, Any],
+    ) -> WorkerResult:
+        """Materialize one persisted external-agent receipt as Entity."""
+
+        _reject_traceability_unexpected_fields(
+            receipt,
+            frozenset(
+                {
+                    "id",
+                    "board_id",
+                    "status",
+                    "acceptance_status",
+                    "investigation_source_ref",
+                    "attestor_actor_id",
+                    "declared_revision",
+                    "workspace_state_id",
+                    "trust_level",
+                    "outcome",
+                    "generation",
+                    "payload_sha256",
+                    "content_hash",
+                }
+            ),
+        )
+        receipt_id = _required_traceability_string(receipt, "id", max_length=255)
+        board_id = _required_traceability_string(
+            receipt,
+            "board_id",
+            max_length=255,
+        )
+        investigation_source_ref = _required_traceability_string(
+            receipt,
+            "investigation_source_ref",
+            max_length=512,
+        )
+        attestor_actor_id = _required_traceability_string(
+            receipt,
+            "attestor_actor_id",
+            max_length=255,
+        )
+        outcome = _required_traceability_choice(
+            receipt,
+            "outcome",
+            allowed=frozenset({"accessible", "partial", "unavailable"}),
+        )
+        trust_level = _required_traceability_choice(
+            receipt,
+            "trust_level",
+            allowed=frozenset(
+                {"single_attestation", "corroborated", "conflicted"}
+            ),
+        )
+        status = CodeInvestigationReceiptKGStatus(
+            _required_traceability_choice(
+                receipt,
+                "status",
+                value=receipt.get("status") or receipt.get("acceptance_status"),
+                allowed=CODE_INVESTIGATION_RECEIPT_KG_STATUSES,
+            )
+        )
+        generation = int(receipt.get("generation") or 0)
+        if generation < 1:
+            raise ValueError("code_traceability_generation_invalid")
+        payload_sha256 = _required_traceability_digest(receipt, "payload_sha256")
+        content_hash = _optional_traceability_digest(receipt, "content_hash")
+        safe_payload = {
+            "id": receipt_id,
+            "board_id": board_id,
+            "status": status.value,
+            "investigation_source_ref": investigation_source_ref,
+            "attestor_actor_id": attestor_actor_id,
+            "declared_revision": receipt.get("declared_revision"),
+            "workspace_state_id": receipt.get("workspace_state_id"),
+            "trust_level": trust_level,
+            "outcome": outcome,
+            "generation": generation,
+            "payload_sha256": payload_sha256,
+        }
+        raw_content = _traceability_raw(safe_payload, tuple(safe_payload))
+        candidate_id = f"code_receipt_{_ref_token(receipt_id)}_entity"
+        result = WorkerResult(raw_content=raw_content)
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=candidate_id,
+                node_type="Entity",
+                title=f"Code investigation receipt {receipt_id}",
+                content=f"outcome={outcome}\ntrust_level={trust_level}",
+                source_artifact_ref=f"code_investigation_receipt:{receipt_id}",
+                kind_of="code_investigation_receipt",
+                investigation_receipt_id=receipt_id,
+                source_ref=investigation_source_ref,
+                attestor_actor_id=attestor_actor_id,
+                declared_revision=_optional_traceability_string(
+                    receipt,
+                    "declared_revision",
+                    max_length=255,
+                ),
+                workspace_state_id=_optional_traceability_string(
+                    receipt,
+                    "workspace_state_id",
+                    max_length=255,
+                ),
+                source_content_hash=content_hash or payload_sha256,
+            )
+        )
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=candidate_id,
+            rule_slot="code_traceability_receipt",
+        )
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "code_investigation_receipt",
+            status.value,
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
+        result.content_hash = _sha256(raw_content)
+        return result
+
+    def process_code_evidence(self, evidence: dict[str, Any]) -> WorkerResult:
+        """Materialize immutable Evidence plus persisted links/supersedence."""
+
+        _reject_traceability_unexpected_fields(
+            evidence,
+            frozenset(
+                {
+                    "id",
+                    "board_id",
+                    "lifecycle_status",
+                    "investigation_receipt_id",
+                    "investigation_source_ref",
+                    "declared_revision",
+                    "workspace_state_id",
+                    "relative_path",
+                    "qualified_symbol",
+                    "symbol_kind",
+                    "selector_kind",
+                    "snapshot_line_start",
+                    "snapshot_line_end",
+                    "declared_source_content_sha256",
+                    "evidence_type",
+                    "claim",
+                    "supersedes_evidence_id",
+                    "content_hash",
+                    "spec_links",
+                }
+            ),
+        )
+        evidence_id = _required_traceability_string(evidence, "id", max_length=255)
+        board_id = _required_traceability_string(
+            evidence,
+            "board_id",
+            max_length=255,
+        )
+        receipt_id = _required_traceability_string(
+            evidence,
+            "investigation_receipt_id",
+            max_length=255,
+        )
+        investigation_source_ref = _required_traceability_string(
+            evidence,
+            "investigation_source_ref",
+            max_length=512,
+        )
+        claim = _required_traceability_string(evidence, "claim", max_length=16_384)
+        evidence_type = _required_traceability_string(
+            evidence,
+            "evidence_type",
+            max_length=64,
+        )
+        lifecycle_status = _required_traceability_string(
+            evidence,
+            "lifecycle_status",
+            max_length=32,
+        )
+        selector_kind = _required_traceability_string(
+            evidence,
+            "selector_kind",
+            max_length=32,
+        )
+        source_content_hash = _required_traceability_digest(
+            evidence,
+            "declared_source_content_sha256",
+        )
+        _optional_traceability_digest(evidence, "content_hash")
+        spec_links = _traceability_sequence(evidence, "spec_links", limit=200)
+        safe_links = tuple(
+            {
+                "id": link.get("id"),
+                "spec_id": link.get("spec_id"),
+                "entity_type": link.get("entity_type"),
+                "entity_id": link.get("entity_id"),
+                "relation_type": link.get("relation_type"),
+            }
+            for link in spec_links
+        )
+        safe_payload = {
+            "id": evidence_id,
+            "board_id": board_id,
+            "investigation_receipt_id": receipt_id,
+            "investigation_source_ref": investigation_source_ref,
+            "declared_revision": evidence.get("declared_revision"),
+            "workspace_state_id": evidence.get("workspace_state_id"),
+            "relative_path": evidence.get("relative_path"),
+            "qualified_symbol": evidence.get("qualified_symbol"),
+            "symbol_kind": evidence.get("symbol_kind"),
+            "selector_kind": selector_kind,
+            "snapshot_line_start": evidence.get("snapshot_line_start"),
+            "snapshot_line_end": evidence.get("snapshot_line_end"),
+            "declared_source_content_sha256": source_content_hash,
+            "evidence_type": evidence_type,
+            "claim": claim,
+            "lifecycle_status": lifecycle_status,
+            "supersedes_evidence_id": evidence.get("supersedes_evidence_id"),
+            "spec_links": safe_links,
+        }
+        raw_content = _traceability_raw(safe_payload, tuple(safe_payload))
+        candidate_id = f"code_evidence_{_ref_token(evidence_id)}_entity"
+        result = WorkerResult(raw_content=raw_content)
+        line_start = evidence.get("snapshot_line_start")
+        line_end = evidence.get("snapshot_line_end")
+        if line_start is not None:
+            line_start = int(line_start)
+        if line_end is not None:
+            line_end = int(line_end)
+        if (line_start is None) != (line_end is None) or (
+            line_start is not None and (line_start < 1 or line_end < line_start)
+        ):
+            raise ValueError("code_traceability_snapshot_span_invalid")
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=candidate_id,
+                node_type="Entity",
+                title=claim[:120],
+                content=claim,
+                source_artifact_ref=f"code_evidence:{evidence_id}",
+                kind_of="code_evidence",
+                investigation_receipt_id=receipt_id,
+                source_ref=investigation_source_ref,
+                declared_revision=_optional_traceability_string(
+                    evidence,
+                    "declared_revision",
+                    max_length=255,
+                ),
+                workspace_state_id=_optional_traceability_string(
+                    evidence,
+                    "workspace_state_id",
+                    max_length=255,
+                ),
+                code_path=_optional_traceability_string(
+                    evidence,
+                    "relative_path",
+                    max_length=1024,
+                ),
+                symbol_qualified_name=_optional_traceability_string(
+                    evidence,
+                    "qualified_symbol",
+                    max_length=2048,
+                ),
+                symbol_kind=_optional_traceability_string(
+                    evidence,
+                    "symbol_kind",
+                    max_length=128,
+                ),
+                selector_kind=selector_kind,
+                source_span_start=line_start,
+                source_span_end=line_end,
+                source_content_hash=source_content_hash,
+            )
+        )
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=candidate_id,
+            rule_slot="code_traceability_evidence",
+        )
+        for index, link in enumerate(safe_links):
+            relation_type = str(link.get("relation_type") or "").strip()
+            if relation_type != "supports":
+                continue
+            node_type, source_artifact_ref = _spec_link_endpoint(link)
+            link_id = str(link.get("id") or index)
+            result.edges.append(
+                EmittedEdge(
+                    candidate_id=(
+                        f"code_evidence_{_ref_token(evidence_id)}_supports_"
+                        f"{_ref_token(link_id)}"
+                    ),
+                    edge_type="supports",
+                    from_candidate_id=candidate_id,
+                    to_candidate_id=_source_ref_endpoint(
+                        node_type,
+                        source_artifact_ref,
+                    ),
+                    confidence=1.0,
+                    rule_id=f"supports/code_traceability_spec_link@{WORKER_VERSION}",
+                )
+            )
+        superseded_id = _optional_traceability_string(
+            evidence,
+            "supersedes_evidence_id",
+            max_length=255,
+        )
+        if superseded_id is not None:
+            result.edges.append(
+                EmittedEdge(
+                    candidate_id=(
+                        f"code_evidence_{_ref_token(evidence_id)}_supersedes_"
+                        f"{_ref_token(superseded_id)}"
+                    ),
+                    edge_type="supersedes",
+                    from_candidate_id=candidate_id,
+                    to_candidate_id=_source_ref_endpoint(
+                        "Entity",
+                        f"code_evidence:{superseded_id}",
+                    ),
+                    confidence=1.0,
+                    rule_id=(
+                        f"supersedes/code_traceability_evidence@{WORKER_VERSION}"
+                    ),
+                )
+            )
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "code_evidence",
+            lifecycle_status,
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
+        result.content_hash = _sha256(raw_content)
+        return result
+
+    def process_implementation_target(
+        self,
+        target: dict[str, Any],
+    ) -> WorkerResult:
+        """Materialize Target intent and its current relational resolution."""
+
+        _reject_traceability_unexpected_fields(
+            target,
+            frozenset(
+                {
+                    "id",
+                    "board_id",
+                    "card_id",
+                    "card_node_type",
+                    "investigation_source_ref",
+                    "selector_kind",
+                    "relative_path_hint",
+                    "qualified_symbol",
+                    "symbol_kind",
+                    "role",
+                    "intent",
+                    "lifecycle_status",
+                    "revision",
+                    "baseline_evidence_id",
+                    "resolution_state",
+                    "investigation_receipt_id",
+                    "declared_revision",
+                    "workspace_state_id",
+                    "selector_fingerprint",
+                    "resolved_relative_path",
+                    "resolved_qualified_symbol",
+                    "resolved_symbol_kind",
+                    "resolved_line_start",
+                    "resolved_line_end",
+                    "payload_sha256",
+                    "content_hash",
+                    "evidence_links",
+                    "overlap_target_ids",
+                }
+            ),
+        )
+        target_id = _required_traceability_string(target, "id", max_length=255)
+        board_id = _required_traceability_string(target, "board_id", max_length=255)
+        card_id = _required_traceability_string(target, "card_id", max_length=255)
+        investigation_source_ref = _required_traceability_string(
+            target,
+            "investigation_source_ref",
+            max_length=512,
+        )
+        intent = _required_traceability_string(target, "intent", max_length=16_384)
+        role = _required_traceability_string(target, "role", max_length=32)
+        lifecycle_status = _required_traceability_string(
+            target,
+            "lifecycle_status",
+            max_length=32,
+        )
+        selector_kind = _required_traceability_string(
+            target,
+            "selector_kind",
+            max_length=32,
+        )
+        selector_fingerprint = _optional_traceability_digest(
+            target,
+            "selector_fingerprint",
+        )
+        payload_sha256 = _optional_traceability_digest(target, "payload_sha256")
+        content_hash = _optional_traceability_digest(target, "content_hash")
+        card_node_type = str(target.get("card_node_type") or "Entity").strip()
+        if card_node_type not in {"Entity", "Bug"}:
+            raise ValueError("code_traceability_card_node_type_invalid")
+        evidence_links = _traceability_sequence(target, "evidence_links", limit=200)
+        overlap_target_ids = _traceability_id_sequence(
+            target,
+            "overlap_target_ids",
+            limit=200,
+        )
+        safe_evidence_links = tuple(
+            {
+                "id": link.get("id"),
+                "evidence_id": link.get("evidence_id"),
+                "relation_type": link.get("relation_type"),
+            }
+            for link in evidence_links
+        )
+        safe_payload = {
+            "id": target_id,
+            "board_id": board_id,
+            "card_id": card_id,
+            "card_node_type": card_node_type,
+            "investigation_source_ref": investigation_source_ref,
+            "selector_kind": selector_kind,
+            "relative_path_hint": target.get("relative_path_hint"),
+            "qualified_symbol": target.get("qualified_symbol"),
+            "symbol_kind": target.get("symbol_kind"),
+            "role": role,
+            "intent": intent,
+            "lifecycle_status": lifecycle_status,
+            "revision": target.get("revision"),
+            "resolution_state": target.get("resolution_state"),
+            "investigation_receipt_id": target.get("investigation_receipt_id"),
+            "declared_revision": target.get("declared_revision"),
+            "workspace_state_id": target.get("workspace_state_id"),
+            "selector_fingerprint": target.get("selector_fingerprint"),
+            "resolved_relative_path": target.get("resolved_relative_path"),
+            "resolved_qualified_symbol": target.get(
+                "resolved_qualified_symbol"
+            ),
+            "resolved_symbol_kind": target.get("resolved_symbol_kind"),
+            "resolved_line_start": target.get("resolved_line_start"),
+            "resolved_line_end": target.get("resolved_line_end"),
+            "baseline_evidence_id": target.get("baseline_evidence_id"),
+            "evidence_links": safe_evidence_links,
+            "overlap_target_ids": overlap_target_ids,
+        }
+        raw_content = _traceability_raw(safe_payload, tuple(safe_payload))
+        candidate_id = f"implementation_target_{_ref_token(target_id)}_entity"
+        result = WorkerResult(raw_content=raw_content)
+        resolved_line_start = target.get("resolved_line_start")
+        resolved_line_end = target.get("resolved_line_end")
+        if resolved_line_start is not None:
+            resolved_line_start = int(resolved_line_start)
+        if resolved_line_end is not None:
+            resolved_line_end = int(resolved_line_end)
+        if (resolved_line_start is None) != (resolved_line_end is None) or (
+            resolved_line_start is not None
+            and (
+                resolved_line_start < 1
+                or resolved_line_end < resolved_line_start
+            )
+        ):
+            raise ValueError("code_traceability_resolution_span_invalid")
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=candidate_id,
+                node_type="Entity",
+                title=f"{role}: {intent}"[:120],
+                content=intent,
+                source_artifact_ref=f"implementation_target:{target_id}",
+                kind_of="implementation_target",
+                investigation_receipt_id=_optional_traceability_string(
+                    target,
+                    "investigation_receipt_id",
+                    max_length=255,
+                ),
+                source_ref=investigation_source_ref,
+                declared_revision=_optional_traceability_string(
+                    target,
+                    "declared_revision",
+                    max_length=255,
+                ),
+                workspace_state_id=_optional_traceability_string(
+                    target,
+                    "workspace_state_id",
+                    max_length=255,
+                ),
+                code_path=(
+                    _optional_traceability_string(
+                        target,
+                        "resolved_relative_path",
+                        max_length=1024,
+                    )
+                    or _optional_traceability_string(
+                        target,
+                        "relative_path_hint",
+                        max_length=1024,
+                    )
+                ),
+                symbol_qualified_name=(
+                    _optional_traceability_string(
+                        target,
+                        "resolved_qualified_symbol",
+                        max_length=2048,
+                    )
+                    or _optional_traceability_string(
+                        target,
+                        "qualified_symbol",
+                        max_length=2048,
+                    )
+                ),
+                symbol_kind=(
+                    _optional_traceability_string(
+                        target,
+                        "resolved_symbol_kind",
+                        max_length=128,
+                    )
+                    or _optional_traceability_string(
+                        target,
+                        "symbol_kind",
+                        max_length=128,
+                    )
+                ),
+                selector_kind=selector_kind,
+                selector_fingerprint=selector_fingerprint,
+                resolution_state=_optional_traceability_string(
+                    target,
+                    "resolution_state",
+                    max_length=32,
+                ),
+                source_span_start=resolved_line_start,
+                source_span_end=resolved_line_end,
+                source_content_hash=payload_sha256 or content_hash,
+            )
+        )
+        result.edges.append(
+            EmittedEdge(
+                candidate_id=(
+                    f"implementation_target_{_ref_token(target_id)}_belongs_card"
+                ),
+                edge_type="belongs_to",
+                from_candidate_id=candidate_id,
+                to_candidate_id=_source_ref_endpoint(
+                    card_node_type,
+                    f"card:{card_id}",
+                ),
+                confidence=1.0,
+                rule_id=f"belongs_to/code_traceability_target_card@{WORKER_VERSION}",
+            )
+        )
+        evidence_ids: list[str] = []
+        baseline_evidence_id = _optional_traceability_string(
+            target,
+            "baseline_evidence_id",
+            max_length=255,
+        )
+        if baseline_evidence_id is not None:
+            evidence_ids.append(baseline_evidence_id)
+        for link in safe_evidence_links:
+            if str(link.get("relation_type") or "") != "derived_from":
+                continue
+            evidence_id = _required_traceability_string(
+                link,
+                "evidence_id",
+                max_length=255,
+            )
+            if evidence_id not in evidence_ids:
+                evidence_ids.append(evidence_id)
+        for index, evidence_id in enumerate(evidence_ids):
+            result.edges.append(
+                EmittedEdge(
+                    candidate_id=(
+                        f"implementation_target_{_ref_token(target_id)}_"
+                        f"derives_evidence_{index}"
+                    ),
+                    edge_type="derives_from",
+                    from_candidate_id=candidate_id,
+                    to_candidate_id=_source_ref_endpoint(
+                        "Entity",
+                        f"code_evidence:{evidence_id}",
+                    ),
+                    confidence=1.0,
+                    rule_id=(
+                        f"derives_from/code_traceability_evidence@{WORKER_VERSION}"
+                    ),
+                )
+            )
+        for overlap_target_id in overlap_target_ids:
+            if overlap_target_id == target_id:
+                raise ValueError("code_traceability_overlap_self_reference")
+            first_id, second_id = sorted((target_id, overlap_target_id))
+            result.edges.append(
+                EmittedEdge(
+                    candidate_id=(
+                        f"implementation_overlap_{_ref_token(first_id)}_"
+                        f"{_ref_token(second_id)}"
+                    ),
+                    edge_type="overlaps",
+                    from_candidate_id=(
+                        candidate_id
+                        if first_id == target_id
+                        else _source_ref_endpoint(
+                            "Entity",
+                            f"implementation_target:{first_id}",
+                        )
+                    ),
+                    to_candidate_id=(
+                        candidate_id
+                        if second_id == target_id
+                        else _source_ref_endpoint(
+                            "Entity",
+                            f"implementation_target:{second_id}",
+                        )
+                    ),
+                    confidence=1.0,
+                    rule_id=f"overlaps/code_traceability_current@{WORKER_VERSION}",
+                )
+            )
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "implementation_target",
+            lifecycle_status,
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
+        result.content_hash = _sha256(raw_content)
+        return result
+
+    # ------------------------------------------------------------------
     # Polymorphic dispatch
     # ------------------------------------------------------------------
 
@@ -2240,6 +3056,12 @@ class DeterministicWorker:
             return self.process_card(artifact)
         if artifact_type == "amendment_hotfix_revision":
             return self.process_amendment(artifact)
+        if artifact_type == "code_investigation_receipt":
+            return self.process_code_investigation_receipt(artifact)
+        if artifact_type == "code_evidence":
+            return self.process_code_evidence(artifact)
+        if artifact_type == "implementation_target":
+            return self.process_implementation_target(artifact)
         raise ValueError(f"unknown artifact_type: {artifact_type}")
 
 

@@ -34,6 +34,12 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import TypeVar
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH,
+    CodeTraceabilityKGWriteViolation,
+    is_code_traceability_subtype,
+    require_code_traceability_candidate_writer,
+)
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -500,6 +506,12 @@ async def begin_consolidation(
             )
         deterministic_candidates[candidate.candidate_id] = candidate
 
+    _require_code_traceability_candidate_ownership(
+        deterministic_candidates,
+        agent_id=agent_id,
+        session_id=session_id,
+    )
+
     try:
         lineage_intent = SpecLineageParentIntent(spec_lineage_parent_intent)
     except ValueError as exc:
@@ -690,6 +702,12 @@ async def add_node_candidate(
     store = get_kg_registry().require_session_store()
     cand = req.candidate
 
+    _require_code_traceability_candidate_ownership(
+        {cand.candidate_id: cand},
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
+
     # Cognitive canonical invariant (spec 007d1308 — FR1/FR3/FR4,
     # dec_0b3368fe/dec_26c5cc2d). The cognitive agent only ever produces
     # canonical knowledge; a working-layer node may originate solely from the
@@ -794,6 +812,8 @@ async def add_edge_candidate(
         for ep in (cand.from_candidate_id, cand.to_candidate_id):
             if ep.startswith("kg:"):
                 continue
+            if _parse_source_ref_endpoint(ep) is not None:
+                continue
             if ep in session.node_candidates:
                 continue
             # Cross-session deterministic refs (Layer 1 hierarchy backbone):
@@ -863,6 +883,11 @@ async def get_similar_nodes(
         )
 
     cand = session.node_candidates[req.candidate_id]
+    _require_code_traceability_candidate_ownership(
+        {cand.candidate_id: cand},
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
     embedder = get_kg_registry().require_embedding_provider()
     query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
 
@@ -887,6 +912,7 @@ async def get_similar_nodes(
             similarity=r.similarity,
         )
         for r in raw
+        if not is_code_traceability_subtype(getattr(r, "kind_of", None))
     ]
     return GetSimilarNodesResponse(
         session_id=req.session_id,
@@ -929,6 +955,13 @@ def _find_existing_graph_matches(
                 top_k=5,
                 min_similarity=0.3,
             )
+            matches = [
+                match
+                for match in matches
+                if not is_code_traceability_subtype(
+                    getattr(match, "kind_of", None)
+                )
+            ]
         except Exception as exc:
             logger.warning(
                 "kg.primitives.reconciliation_search_failed candidate=%s err=%s",
@@ -1001,6 +1034,12 @@ async def propose_reconciliation(
     async with session.lock:
         _validate_session_state(session, allow_pending_commit=False)
         candidate_snapshot = dict(session.node_candidates)
+
+    _require_code_traceability_candidate_ownership(
+        candidate_snapshot,
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
 
     if not force_reprocess:
         latest = await _get_latest_audit(
@@ -1090,6 +1129,92 @@ def _connectivity_writer_path(agent_id: str) -> str:
     if (agent_id or "").startswith("system:"):
         return "deterministic_worker"
     return "commit_consolidation"
+
+
+def _require_code_traceability_candidate_ownership(
+    node_candidates: dict,
+    *,
+    agent_id: str,
+    session_id: str,
+) -> None:
+    """Fail before staging/provider access when a generic writer forges CT."""
+
+    writer_path = _connectivity_writer_path(agent_id)
+    for candidate in node_candidates.values():
+        try:
+            require_code_traceability_candidate_writer(
+                candidate,
+                writer_path=writer_path,
+            )
+        except CodeTraceabilityKGWriteViolation as exc:
+            raise KGPrimitiveError(
+                "code_traceability_projection_reserved",
+                "Code Traceability KG projections are owned by the "
+                "deterministic worker",
+                session_id=session_id,
+                details={
+                    "reason": exc.reason,
+                    "candidate_id": exc.candidate_id,
+                    "reserved_fields": list(exc.reserved_fields),
+                    "required_writer_path": (
+                        CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH
+                    ),
+                },
+            ) from exc
+
+
+def _require_no_code_traceability_existing_targets(
+    graph_scope,
+    *,
+    node_candidates: dict,
+    effective_hints: dict,
+    agent_id: str,
+    session_id: str,
+) -> None:
+    """Prevent generic reconciliation/NC-8 from mutating deterministic CT."""
+
+    if _connectivity_writer_path(agent_id) == CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH:
+        return
+
+    probes: list[tuple[str, str, str]] = []
+    for candidate_id, candidate in node_candidates.items():
+        node_type = _enum_value(candidate.node_type)
+        if node_type != "Entity":
+            continue
+        hint = effective_hints.get(candidate_id)
+        target_id = str(getattr(hint, "target_node_id", None) or "").strip()
+        if target_id:
+            probes.append((candidate_id, "id", target_id))
+        source_ref = str(candidate.source_artifact_ref or "").strip()
+        if source_ref:
+            probes.append((candidate_id, "source_artifact_ref", source_ref))
+
+    for candidate_id, lookup_kind, lookup_value in probes:
+        if lookup_kind == "id":
+            statement = (
+                "MATCH (n:Entity {id: $value}) "
+                "RETURN n.kind_of LIMIT 1"
+            )
+        else:
+            statement = (
+                "MATCH (n:Entity {source_artifact_ref: $value}) "
+                "WHERE n.superseded_by IS NULL "
+                "RETURN n.kind_of LIMIT 1"
+            )
+        result = graph_scope.execute(statement, {"value": lookup_value})
+        if result.rows and is_code_traceability_subtype(result.rows[0][0]):
+            raise KGPrimitiveError(
+                "code_traceability_projection_reserved",
+                "Generic reconciliation cannot update, merge, or supersede "
+                "a deterministic Code Traceability projection",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "required_writer_path": (
+                        CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH
+                    ),
+                },
+            )
 
 
 def _validate_graph_connectivity_before_commit(
@@ -2253,6 +2378,37 @@ def _preserve_decision_history_for_updates(
     return guarded
 
 
+_SEMANTIC_PROJECTION_NODE_ATTRS: tuple[str, ...] = (
+    "kind_of",
+    "investigation_receipt_id",
+    "source_ref",
+    "attestor_actor_id",
+    "declared_revision",
+    "workspace_state_id",
+    "code_path",
+    "symbol_qualified_name",
+    "symbol_kind",
+    "selector_kind",
+    "selector_fingerprint",
+    "resolution_state",
+)
+
+
+def _semantic_projection_attrs(candidate: object) -> dict[str, object | None]:
+    """Copy only schema-declared semantic projection metadata.
+
+    Code Traceability candidates originate in persisted Pulse rows.  Keeping
+    this allowlist beside the graph commit boundary prevents an arbitrary
+    adapter attribute (including snippets or transport secrets) from leaking
+    into node properties.
+    """
+
+    return {
+        name: getattr(candidate, name, None)
+        for name in _SEMANTIC_PROJECTION_NODE_ATTRS
+    }
+
+
 def _do_graph_commit(
     board_id: str,
     session_id: str,
@@ -2363,6 +2519,13 @@ def _do_graph_commit(
         )
 
     try:
+        _require_no_code_traceability_existing_targets(
+            graph_scope,
+            node_candidates=node_candidates,
+            effective_hints=effective_hints,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
         effective_hints = _preserve_decision_history_for_updates(
             graph_scope=graph_scope,
             node_candidates=node_candidates,
@@ -2511,7 +2674,7 @@ def _do_graph_commit(
                     ),
                     "source_confidence": cand.source_confidence,
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
-                    "kind_of": getattr(cand, "kind_of", None),
+                    **_semantic_projection_attrs(cand),
                     "human_curated": False,
                     # An explicit UPDATE is a new assertion just like the
                     # NC-8 reuse path below. Keep its provenance anchor in
@@ -2605,7 +2768,7 @@ def _do_graph_commit(
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
                     "human_curated": False,
                     "generation": successor_generation,
-                    "kind_of": getattr(cand, "kind_of", None),
+                    **_semantic_projection_attrs(cand),
                     # Spec MKG-B-S1 (FR2/FR3): successor is a fresh assertion.
                     **_session_provenance_attrs(
                         cand, session_content_hash, session_artifact_id
@@ -2862,7 +3025,7 @@ def _do_graph_commit(
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
                             "human_curated": False,
                             "generation": trail_generation,
-                            "kind_of": getattr(cand, "kind_of", None),
+                            **_semantic_projection_attrs(cand),
                             # Spec MKG-B-S1 (FR2/FR3): trail successor is a
                             # fresh assertion — count restarts at 1.
                             **_session_provenance_attrs(
@@ -2920,7 +3083,7 @@ def _do_graph_commit(
                             ),
                             "source_confidence": cand.source_confidence,
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
-                            "kind_of": getattr(cand, "kind_of", None),
+                            **_semantic_projection_attrs(cand),
                             # Spec MKG-B-S1 (FR3/D5): the rewrite is a NEW
                             # assertion — restamp the provenance anchor so
                             # drift clears after the re-consolidation remedy.
@@ -3050,7 +3213,7 @@ def _do_graph_commit(
                 # writes unless the agent passes an explicit override.
                 "human_curated": False,
                 "generation": 0,
-                "kind_of": getattr(cand, "kind_of", None),
+                **_semantic_projection_attrs(cand),
                 # Spec MKG-B-S1 (FR2/FR3): extraction provenance + first
                 # attestation recorded at birth.
                 **_session_provenance_attrs(
@@ -3196,6 +3359,22 @@ def _do_graph_commit(
                 graph_scope=graph_scope,
             )
             if from_id is None or to_id is None:
+                if str(getattr(edge, "rule_id", "") or "").startswith(
+                    (
+                        "supports/code_traceability_",
+                        "derives_from/code_traceability_",
+                        "belongs_to/code_traceability_",
+                        "overlaps/code_traceability_",
+                        "supersedes/code_traceability_",
+                    )
+                ):
+                    raise KGPrimitiveError(
+                        "code_traceability_kg_endpoint_unresolved",
+                        "A persisted Code Traceability relation endpoint is "
+                        "not materialized yet; retry the relational projection.",
+                        session_id=session_id,
+                        details={"edge_candidate_id": edge.candidate_id},
+                    )
                 continue
             edge_attrs: dict[str, object] = {"confidence": edge.confidence}
             if edge.layer:
@@ -3524,6 +3703,12 @@ async def commit_consolidation(
         allow_pending_commit=True,
     )
 
+    _require_code_traceability_candidate_ownership(
+        dict(session.node_candidates),
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
+
     if defer_session_finalization and db is None:
         raise KGPrimitiveError(
             "relational_context_required",
@@ -3823,6 +4008,11 @@ async def commit_consolidation(
         _validate_session_state(
             session,
             allow_pending_commit=True,
+        )
+        _require_code_traceability_candidate_ownership(
+            dict(session.node_candidates),
+            agent_id=agent_id,
+            session_id=req.session_id,
         )
         kg_health_state = await _resolve_commit_kg_health_state(
             session.board_id,
@@ -4170,7 +4360,11 @@ def _provenance_attrs(
         "source_span_quote": quote,
         "extraction_model_id": getattr(cand, "extraction_model_id", None),
         "extraction_prompt_hash": getattr(cand, "extraction_prompt_hash", None),
-        "source_content_hash": session_content_hash or None,
+        "source_content_hash": (
+            getattr(cand, "source_content_hash", None)
+            or session_content_hash
+            or None
+        ),
     }
     if seed_attestation:
         attrs["attestation_count"] = 1
@@ -4246,11 +4440,26 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
     if not pairs:
         return
 
+    from okto_pulse.core.kg.schema_contract import (
+        CODE_TRACEABILITY_ENTITY_SUBTYPES,
+    )
     from okto_pulse.core.ports.kg_subtype_registry import (
         SubtypeRegistryError,
         normalize_kind_of,
         require_node_subtype_registry,
     )
+
+    system_declared_keys = {
+        ("Entity", normalize_kind_of(kind_of))
+        for kind_of in CODE_TRACEABILITY_ENTITY_SUBTYPES
+    }
+    unresolved_pairs = {
+        (node_type, kind_of)
+        for node_type, kind_of in pairs
+        if (node_type, normalize_kind_of(kind_of)) not in system_declared_keys
+    }
+    if not unresolved_pairs:
+        return
 
     try:
         registry = require_node_subtype_registry()
@@ -4262,8 +4471,10 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
             details={"remediation": exc.remediation},
         ) from exc
 
-    declared_by_type: dict = {}
-    declared_keys: set = set()
+    declared_by_type: dict = {
+        "Entity": list(CODE_TRACEABILITY_ENTITY_SUBTYPES),
+    }
+    declared_keys: set = set(system_declared_keys)
     for declaration in declared:
         declared_by_type.setdefault(declaration.node_type, []).append(
             declaration.kind_of
@@ -4272,7 +4483,7 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
             (declaration.node_type, normalize_kind_of(declaration.kind_of))
         )
 
-    for node_type, kind_of in sorted(pairs):
+    for node_type, kind_of in sorted(unresolved_pairs):
         if (node_type, normalize_kind_of(kind_of)) not in declared_keys:
             raise KGPrimitiveError(
                 "kg_subtype_undeclared",
@@ -4914,6 +5125,23 @@ _CROSS_SESSION_PREFIXES: tuple[str, ...] = (
     "sprint_",
     "card_",
 )
+_SOURCE_REF_ENDPOINT_PREFIX = "kgref:"
+
+
+def _parse_source_ref_endpoint(endpoint: str) -> tuple[str, str] | None:
+    """Parse a closed physical-node/source-artifact cross-session reference."""
+
+    if not endpoint.startswith(_SOURCE_REF_ENDPOINT_PREFIX):
+        return None
+    remainder = endpoint[len(_SOURCE_REF_ENDPOINT_PREFIX) :]
+    node_type, separator, source_artifact_ref = remainder.partition(":")
+    if not separator or not source_artifact_ref or len(source_artifact_ref) > 4096:
+        return None
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
+
+    if node_type not in NODE_TYPES:
+        return None
+    return node_type, source_artifact_ref
 
 
 def _is_cross_session_entity_ref(endpoint: str) -> bool:
@@ -4947,7 +5175,9 @@ def _resolve_endpoint(
     Resolution order:
         1. ``kg:<id>`` literal — strip prefix and trust the caller.
         2. Local session candidate — match by candidate_id in the supplied map.
-        3. Cross-session by deterministic id pattern (`spec_<short>_entity` /
+        3. ``kgref:<PhysicalType>:<source_artifact_ref>`` — exact,
+           allowlisted physical-type lookup used by relational projections.
+        4. Cross-session by deterministic id pattern (`spec_<short>_entity` /
            `sprint_<short>_entity`) — derive ``source_artifact_ref`` and
            probe graph backend for an Entity with that ref. Used by Layer 1 to wire
            Sprint→Spec / Card→Sprint hierarchy edges across sessions.
@@ -4962,6 +5192,22 @@ def _resolve_endpoint(
         return local, None
     if graph_scope is None:
         return None, None
+    source_ref_endpoint = _parse_source_ref_endpoint(endpoint)
+    if source_ref_endpoint is not None:
+        node_type, source_artifact_ref = source_ref_endpoint
+        result = graph_scope.execute(
+            f"MATCH (n:{node_type}) "
+            "WHERE n.source_artifact_ref = $ref "
+            "AND n.superseded_by IS NULL "
+            "RETURN n.id LIMIT 2",
+            {"ref": source_artifact_ref},
+        )
+        rows = tuple(getattr(result, "rows", ()) or ())
+        if len(rows) > 1:
+            raise ValueError("source_ref_endpoint_ambiguous")
+        if rows:
+            return str(rows[0][0]), node_type
+        return None, node_type
     # Cross-session deterministic-id fallback. We only handle the worker's
     # own naming convention here (`<artifact>_<id8>_entity`) to avoid
     # surprises; new patterns must be opt-in.
@@ -5025,6 +5271,20 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset(
         "source_content_hash",
         # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
         "kind_of",
+        # Code Traceability is a deterministic relational projection.  Its
+        # optional metadata follows the immutable source row on a refresh;
+        # no external repository is consulted at this boundary.
+        "investigation_receipt_id",
+        "source_ref",
+        "attestor_actor_id",
+        "declared_revision",
+        "workspace_state_id",
+        "code_path",
+        "symbol_qualified_name",
+        "symbol_kind",
+        "selector_kind",
+        "selector_fingerprint",
+        "resolution_state",
     }
 )
 

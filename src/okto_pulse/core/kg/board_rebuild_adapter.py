@@ -29,6 +29,12 @@ _DETERMINISTIC_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset(
         # Path B amendment (spec 7ea1e4be). MUST be enqueued for materialization,
         # otherwise it is counted in expected_by_layer but never materialized.
         "amendment_hotfix_revision",
+        # Code Traceability rows are already persisted by the edition adapter.
+        # Rebuild ingestion consumes only these relational records; it never
+        # opens a repository, filesystem, Git checkout, or provider API.
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     }
 )
 _CARD_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset(

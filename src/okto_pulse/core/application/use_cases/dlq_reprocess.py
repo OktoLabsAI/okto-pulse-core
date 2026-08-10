@@ -29,17 +29,30 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext, commit
+from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+    EvaluateCodeTraceabilityKGReadAccessUseCase,
+    require_code_traceability_safe_arbitrary_query,
+)
+from okto_pulse.core.domain.code_traceability_kg import (
+    KGDeadLetterReprocessScope,
+)
 
 
 class ReprocessDeadLetterRowsCommand:
-    __slots__ = ("board_id", "dead_letter_ids", "limit")
+    __slots__ = ("board_id", "dead_letter_ids", "limit", "scope")
 
     def __init__(
-        self, board_id: str, *, dead_letter_ids: list[str] | None = None, limit: int = 50
+        self,
+        board_id: str,
+        *,
+        dead_letter_ids: list[str] | None = None,
+        limit: int = 50,
+        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
     ) -> None:
         self.board_id = board_id
         self.dead_letter_ids = dead_letter_ids
         self.limit = limit
+        self.scope = KGDeadLetterReprocessScope(scope)
 
 
 class ReprocessDeadLetterRowsResult:
@@ -64,12 +77,27 @@ class ReprocessDeadLetterRowsUseCase:
             uow=uow,
             board_id=command.board_id,
         )
+        kwargs: dict[str, Any] = {
+            "dead_letter_ids": command.dead_letter_ids,
+            "limit": command.limit,
+        }
+        if command.scope is KGDeadLetterReprocessScope.CODE_TRACEABILITY:
+            access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+                actor=actor,
+                board_id=command.board_id,
+                uow=uow,
+            )
+            require_code_traceability_safe_arbitrary_query(access)
+            kwargs["scope"] = command.scope
         data = await uow.services.kg.reprocess_dead_letter_rows(
             command.board_id,
-            dead_letter_ids=command.dead_letter_ids,
-            limit=command.limit,
+            **kwargs,
         )
-        await commit(uow)
+        if (
+            command.scope is KGDeadLetterReprocessScope.GENERIC
+            or bool(data.get("mutated"))
+        ):
+            await commit(uow)
         return ReprocessDeadLetterRowsResult(data)
 
 

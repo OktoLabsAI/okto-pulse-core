@@ -92,6 +92,22 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         ),
     ),
     _ResourceContract(
+        uri="okto-pulse://reference/code-traceability",
+        required_headings=(
+            "# Agent-mediated Code Traceability",
+            "## Evidence and Targets",
+            "## Mandatory external preflight",
+            "## Targets and Resolution receipts",
+            "## Security and untrusted code",
+            "## Errors and remediation",
+        ),
+        required_cross_links=(
+            "okto-pulse://reference/errors",
+            "okto-pulse://reference/transitions",
+            "okto-pulse://reference/projection-profiles",
+        ),
+    ),
+    _ResourceContract(
         uri="okto-pulse://reference/quality-assessments",
         required_headings=(
             "# Quality assessments, pinpointing, and currentness",

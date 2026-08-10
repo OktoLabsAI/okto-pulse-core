@@ -87,6 +87,9 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"(request|review|revoke|revalidate)_semantic_guideline_waiver)$"),
     ("Guidelines", "guideline",
      r"guideline"),
+    ("Code Traceability", "code-traceability",
+     r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
+     r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),
     # --- SDLC entities ------------------------------------------------------
     ("Stories & Topics", "story",
      r"(story$|stories|topic)"),

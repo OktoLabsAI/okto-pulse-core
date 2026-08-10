@@ -21,6 +21,8 @@ from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
     from .checklist import ChecklistPersistencePort
+    from .code_investigation import CodeInvestigationStore
+    from .code_traceability import CodeTraceabilityReadPort, CodeTraceabilityStore
     from .guideline_policy import (
         GuidelinePolicyPersistencePort,
         SemanticGuidelineAssessmentPersistencePort,
@@ -165,6 +167,21 @@ class RelationalApplicationAdapter(Protocol):
         session: Any,
     ) -> "ResearchDecisionLedgerPersistencePort":
         """Return the transaction-bound SK-A RDL persistence port."""
+        ...
+
+    def code_investigations(self, session: Any) -> "CodeInvestigationStore":
+        """Return the transaction-bound agent-attestation request/receipt ledger."""
+
+        ...
+
+    def code_traceability(self, session: Any) -> "CodeTraceabilityStore":
+        """Return the transaction-bound Evidence/Target traceability ledger."""
+
+        ...
+
+    def code_traceability_read(self, session: Any) -> "CodeTraceabilityReadPort":
+        """Return bounded Code Traceability aggregate projections."""
+
         ...
 
     def guideline_policy(

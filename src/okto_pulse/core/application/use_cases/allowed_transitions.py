@@ -486,6 +486,34 @@ class ListAllowedTransitionsUseCase:
             return "Entity is archived. Restore it before changing status."
 
         try:
+            if entity_type in {"refinement", "spec", "card"}:
+                from okto_pulse.core.domain.code_traceability import (
+                    CodeTraceabilitySubjectType,
+                )
+                from okto_pulse.core.services.main import (
+                    evaluate_code_traceability_transition,
+                )
+
+                subject_service = {
+                    "refinement": services.refinements,
+                    "spec": services.specs,
+                    "card": services.cards,
+                }[entity_type]
+                board = await services.boards.get_board(entity.board_id)
+                evaluation = await evaluate_code_traceability_transition(
+                    getattr(subject_service, "db", None),
+                    board=board,
+                    subject=entity,
+                    subject_type=CodeTraceabilitySubjectType(entity_type),
+                    from_status=str(entity.status.value),
+                    to_status=transition.to_status,
+                )
+                if evaluation is not None and not evaluation.allowed:
+                    return "; ".join(
+                        f"{item.code}: {item.message}"
+                        for item in evaluation.blockers
+                        if item.blocking
+                    )
             if entity_type == "ideation" and transition.to_status == "done":
                 await services.ideations._enforce_ambiguity_gate(entity)
                 await services.resource_gate.validate_or_raise_entity_completion(

@@ -271,3 +271,31 @@ New boards (including the no-active-template fallback) and new default-board tem
 | `min_confidence` | 70 | `confidence < min_confidence` → **auto-fail** |
 | `min_completeness` | 80 | `estimated_completeness < min_completeness` → **auto-fail** |
 | `max_drift` | 50 | `estimated_drift > max_drift` → **auto-fail** |
+
+## 2.12 Agent-mediated implementation targets
+
+When Code Traceability is enabled, use this order before implementation:
+
+1. Read `okto_pulse_get_task_context(profile="full", context_scope="gate")`.
+2. Review relevant Code Evidence and inherited dispositions.
+3. Start the Card preflight request. The authenticated external agent checks
+   real access and capabilities and investigates the source in its own
+   environment; Pulse Core and Pulse Community never open or search it.
+4. Submit the agent receipt, then create or adjust semantic Targets.
+5. Submit a resolution receipt for every required Target.
+6. Review overlaps. Create a dependency or a bounded acknowledgement when the
+   policy permits it.
+7. Read `okto_pulse_get_allowed_transitions` and follow only an advertised
+   edge before starting execution.
+8. After implementation, submit an Execution Disposition for every active
+   required Target before `validation` or `done`.
+
+Run a new external preflight, re-evaluate the Targets, and submit a new receipt
+when a dependency finishes, the observed workspace fingerprint changes, a
+Target becomes stale, or the agent discovers additional code. A prior overlap
+acknowledgement or resolution may become outdated when those identities change.
+There is no `decoupled_mode` and no fallback repository reader in Community;
+an unavailable agent capability produces a typed blocker or an explicit human
+waiver according to board policy.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

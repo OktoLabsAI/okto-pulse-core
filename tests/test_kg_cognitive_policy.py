@@ -17,7 +17,7 @@ from okto_pulse.core.kg.cognitive_policy import (
 def test_deterministic_edges_catalog_matches_spec():
     assert DETERMINISTIC_EDGE_TYPES == frozenset({
         "tests", "implements", "violates", "derives_from", "mentions",
-        "originates_from", "covered_by", "belongs_to",
+        "originates_from", "covered_by", "supports", "overlaps", "belongs_to",
     })
 
 

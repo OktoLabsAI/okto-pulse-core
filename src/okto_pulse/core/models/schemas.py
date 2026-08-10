@@ -3634,6 +3634,41 @@ class SpecResourceType(str, PyEnum):
     MOCKUP = "mockup"
 
 
+class CodeTraceabilitySettings(BaseModel):
+    """Board policy for agent-attested code traceability.
+
+    This policy never grants Pulse permission to inspect a repository.  It
+    only governs bounded attestations submitted by an authenticated external
+    agent and the projections derived from accepted receipts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["off", "advisory", "blocking"] = "off"
+    evidence_attestation: Literal["none", "preferred", "required"] = "preferred"
+    target_resolution: Literal[
+        "advisory",
+        "required",
+        "required_current_receipt",
+    ] = "advisory"
+    accepted_attestor_policy: Literal[
+        "granular_permission",
+        "granular_permission_and_board_allowlist",
+    ] = "granular_permission"
+    minimum_trust: Literal["single_attestation", "corroborated"] = (
+        "single_attestation"
+    )
+    # Closed server-owned range.  The configured value controls accepted
+    # receipt currentness; it is never derived from agent-supplied observed_at.
+    preflight_freshness_seconds: int = Field(default=1800, ge=60, le=86_400)
+    overlap_policy: Literal["off", "warn", "block_parallel"] = "warn"
+    observed_state_policy: Literal[
+        "allow_dirty_attestation",
+        "require_committed_attestation",
+    ] = "allow_dirty_attestation"
+    receipt_content: Literal["metadata_only", "safe_excerpt"] = "safe_excerpt"
+
+
 class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
 
@@ -3696,6 +3731,9 @@ class BoardSettings(BaseModel):
     # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
     # boards with no field validate as 'off' (TR4 — never breaks an existing board).
     design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
+    # Absent on legacy boards means mode=off.  New board/template creation
+    # materializes an advisory policy in DefaultBoardConfigurationService.
+    code_traceability: CodeTraceabilitySettings | None = None
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = (
         True  # if True, cards must pass validation before moving to done

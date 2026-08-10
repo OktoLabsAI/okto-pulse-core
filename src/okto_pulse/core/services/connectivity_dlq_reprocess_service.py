@@ -61,7 +61,12 @@ async def diagnose_connectivity_guard_dlq(
     Returns the members with dead_letter_id, artifact_id, attempts, errors,
     last_error, the source_artifact_ref involved, the probable root cause and the
     next_action — so the class is actionable BEFORE any reprocessing."""
-    listing = await list_dead_letter_rows(db, board_id, limit=limit)
+    listing = await list_dead_letter_rows(
+        db,
+        board_id,
+        limit=limit,
+        include_code_traceability=False,
+    )
     items: list[dict[str, Any]] = []
     for row in listing.get("rows", []):
         if not _is_connectivity_guard_row(row):
@@ -154,7 +159,14 @@ async def check_reprocess_preconditions(
     # One listing → derive both the full existing set AND the diagnosed
     # connectivity-guard class set (codex: each selected id must PROVE class
     # membership, not merely exist).
-    rows = (await list_dead_letter_rows(db, board_id, limit=200)).get("rows", [])
+    rows = (
+        await list_dead_letter_rows(
+            db,
+            board_id,
+            limit=200,
+            include_code_traceability=False,
+        )
+    ).get("rows", [])
     existing = {r.get("dead_letter_id") or r.get("id") for r in rows}
     class_ids = {
         (r.get("dead_letter_id") or r.get("id"))

@@ -20,6 +20,9 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+    EvaluateCodeTraceabilityKGReadAccessUseCase,
+)
 
 
 class ListCognitiveDlqCommand:
@@ -56,9 +59,15 @@ class ListCognitiveDlqUseCase:
             uow=uow,
             board_id=command.board_id,
         )
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
+        )
         total, rows = await uow.services.kg.list_cognitive_dlq_rows(
             command.board_id,
             limit=command.limit,
             offset=command.offset,
+            include_code_traceability=ct_access.allowed,
         )
         return ListCognitiveDlqResult(total, rows)

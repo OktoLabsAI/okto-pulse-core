@@ -44,6 +44,12 @@ CANONICAL_STATUS_BY_ARTIFACT_TYPE: dict[str, frozenset[str]] = {
     # complete lineage, enforced by the lineage_complete guard below so it stays
     # aligned with evaluate_amendment_eligibility.canonicalization_candidate.
     "amendment_hotfix_revision": frozenset({"done"}),
+    # Code Traceability is a deterministic projection of governed Pulse rows.
+    # Accepted/current rows are canonical facts; conflict/revocation lifecycle
+    # states remain visible only in the working partition.
+    "code_investigation_receipt": frozenset({"accepted"}),
+    "code_evidence": frozenset({"active"}),
+    "implementation_target": frozenset({"active"}),
 }
 
 WORKING_ARTIFACT_TYPES = frozenset(
@@ -57,6 +63,9 @@ WORKING_ARTIFACT_TYPES = frozenset(
         "bug",
         "sprint",
         "amendment_hotfix_revision",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     }
 )
 
@@ -70,6 +79,9 @@ REBUILD_ARTIFACT_TYPES: tuple[str, ...] = (
     "test",
     "bug",
     "amendment_hotfix_revision",
+    "code_investigation_receipt",
+    "code_evidence",
+    "implementation_target",
 )
 
 CANONICAL_ARTIFACT_TYPES: tuple[str, ...] = (
@@ -79,6 +91,9 @@ CANONICAL_ARTIFACT_TYPES: tuple[str, ...] = (
     "test",
     "bug",
     "amendment_hotfix_revision",
+    "code_investigation_receipt",
+    "code_evidence",
+    "implementation_target",
 )
 
 TERMINAL_CANCELLED_STATUSES = frozenset({"cancelled", "archived"})

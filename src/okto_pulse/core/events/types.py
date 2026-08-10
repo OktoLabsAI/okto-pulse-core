@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import ClassVar, Literal, Optional
+from typing import Annotated, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -797,6 +797,239 @@ class StoryLinkedToIdeation(DomainEvent):
     ideation_id: str
 
 
+# --- Code Traceability (external-agent attestations; metadata-only events) ---
+
+
+_TraceabilityId = Annotated[str, Field(min_length=1, max_length=255)]
+_TraceabilityState = Annotated[str, Field(min_length=1, max_length=128)]
+_TraceabilityDigest = Annotated[
+    str,
+    Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$"),
+]
+_TraceabilityCount = Annotated[int, Field(ge=0, le=1_000_000)]
+_TraceabilityVersion = Annotated[int, Field(ge=1, le=2_147_483_647)]
+
+
+class CodeTraceabilityDomainEvent(DomainEvent):
+    """Closed, bounded event envelope with no operational code locator.
+
+    Event-specific fields are limited to identifiers, states, digests and
+    counts.  Repository paths, symbols, snippets, challenges and secrets are
+    deliberately absent; consumers needing those details read the governed
+    relational projection under their own authorization.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        frozen=True,
+    )
+
+    actor_type: Literal["agent", "user", "system"] = "system"
+
+
+class CodeInvestigationRequested(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_investigation.requested"
+    investigation_request_id: _TraceabilityId
+    subject_type: _TraceabilityState
+    subject_id: _TraceabilityId
+    subject_version: _TraceabilityVersion
+    expected_head_generation: _TraceabilityCount
+    required_capability_count: _TraceabilityCount
+    selector_scope_digest: _TraceabilityDigest
+    request_payload_sha256: _TraceabilityDigest
+
+
+class CodeInvestigationReceiptSubmitted(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_investigation.receipt_submitted"
+    investigation_request_id: _TraceabilityId
+    investigation_receipt_id: _TraceabilityId
+    acceptance_status: _TraceabilityState
+    outcome: _TraceabilityState
+    trust_level: _TraceabilityState
+    generation: _TraceabilityVersion
+    omission_count: _TraceabilityCount
+    observation_sha256: _TraceabilityDigest
+    payload_sha256: _TraceabilityDigest
+
+
+class CodeInvestigationReceiptRevoked(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_investigation.receipt_revoked"
+    investigation_receipt_id: _TraceabilityId
+    revocation_id: _TraceabilityId
+    reason_code: _TraceabilityState
+    head_state: _TraceabilityState
+
+
+class CodeEvidenceCreated(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_evidence.created"
+    evidence_id: _TraceabilityId
+    investigation_receipt_id: _TraceabilityId
+    parent_type: _TraceabilityState
+    parent_id: _TraceabilityId
+    lifecycle_status: _TraceabilityState
+    attestation_state: _TraceabilityState
+    payload_sha256: _TraceabilityDigest
+
+
+class CodeEvidenceSuperseded(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_evidence.superseded"
+    superseded_evidence_id: _TraceabilityId
+    superseding_evidence_id: _TraceabilityId
+    investigation_receipt_id: _TraceabilityId
+    payload_sha256: _TraceabilityDigest
+
+
+class CodeEvidenceRevoked(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_evidence.revoked"
+    evidence_id: _TraceabilityId
+    lifecycle_status: _TraceabilityState
+    reason_code: _TraceabilityState
+    reason_sha256: _TraceabilityDigest
+
+
+class CodeEvidenceLinked(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_evidence.linked"
+    evidence_id: _TraceabilityId
+    link_id: _TraceabilityId
+    spec_id: _TraceabilityId
+    entity_type: _TraceabilityState
+    entity_id: _TraceabilityId
+    relation_type: _TraceabilityState
+    evidence_content_sha256: _TraceabilityDigest
+
+
+class CodeEvidenceUnlinked(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_evidence.unlinked"
+    evidence_id: _TraceabilityId
+    link_id: _TraceabilityId
+    spec_id: _TraceabilityId
+    entity_type: _TraceabilityState
+    entity_id: _TraceabilityId
+    relation_type: _TraceabilityState
+    reason_sha256: _TraceabilityDigest
+
+
+class CodeEvidenceDispositionChanged(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_evidence.disposition_changed"
+    evidence_id: _TraceabilityId
+    disposition_id: _TraceabilityId
+    spec_id: _TraceabilityId
+    disposition: _TraceabilityState
+    active_state: _TraceabilityState
+    spec_version: _TraceabilityVersion
+
+
+class ImplementationTargetCreated(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "implementation_target.created"
+    target_id: _TraceabilityId
+    card_id: _TraceabilityId
+    lifecycle_status: _TraceabilityState
+    revision: _TraceabilityVersion
+    payload_sha256: _TraceabilityDigest
+
+
+class ImplementationTargetUpdated(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "implementation_target.updated"
+    target_id: _TraceabilityId
+    card_id: _TraceabilityId
+    lifecycle_status: _TraceabilityState
+    previous_revision: _TraceabilityVersion
+    revision: _TraceabilityVersion
+    change_reason_sha256: _TraceabilityDigest
+
+
+class ImplementationTargetRevoked(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "implementation_target.revoked"
+    target_id: _TraceabilityId
+    card_id: _TraceabilityId
+    lifecycle_status: _TraceabilityState
+    revision: _TraceabilityVersion
+    reason_sha256: _TraceabilityDigest
+
+
+class ImplementationTargetResolutionSubmitted(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "implementation_target.resolution_submitted"
+    target_id: _TraceabilityId
+    resolution_id: _TraceabilityId
+    investigation_receipt_id: _TraceabilityId
+    resolution_state: _TraceabilityState
+    target_revision: _TraceabilityVersion
+    receipt_generation: _TraceabilityVersion
+    candidate_count: _TraceabilityCount
+    selector_fingerprint: _TraceabilityDigest
+    payload_sha256: _TraceabilityDigest
+
+
+class ImplementationTargetExecutionReceiptSubmitted(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = (
+        "implementation_target.execution_receipt_submitted"
+    )
+    execution_record_id: _TraceabilityId
+    target_id: _TraceabilityId
+    card_id: _TraceabilityId
+    result_investigation_receipt_id: _TraceabilityId
+    disposition: _TraceabilityState
+    target_revision: _TraceabilityVersion
+    payload_sha256: _TraceabilityDigest
+
+
+class ImplementationOverlapAcknowledged(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "implementation_overlap.acknowledged"
+    acknowledgement_id: _TraceabilityId
+    target_a_id: _TraceabilityId
+    target_b_id: _TraceabilityId
+    resolution_a_id: _TraceabilityId
+    resolution_b_id: _TraceabilityId
+    disposition: _TraceabilityState
+    overlap_fingerprint: _TraceabilityDigest
+
+
+class CodeTraceabilityWaiverCreated(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_traceability.waiver_created"
+    waiver_id: _TraceabilityId
+    subject_type: _TraceabilityState
+    subject_id: _TraceabilityId
+    subject_version: _TraceabilityVersion
+    waiver_state: _TraceabilityState
+    justification_sha256: _TraceabilityDigest
+
+
+class CodeTraceabilityWaiverCleared(CodeTraceabilityDomainEvent):
+    event_type: ClassVar[str] = "code_traceability.waiver_cleared"
+    waiver_id: _TraceabilityId
+    subject_type: _TraceabilityState
+    subject_id: _TraceabilityId
+    subject_version: _TraceabilityVersion
+    waiver_state: _TraceabilityState
+    reason_sha256: _TraceabilityDigest
+
+
+# Exact public event vocabulary for handler registration and adapter seams.
+# Keeping this tuple beside the closed event schemas prevents a downstream
+# projection from silently missing a newly-added mutation event.
+CODE_TRACEABILITY_EVENT_TYPES: tuple[str, ...] = (
+    CodeInvestigationRequested.event_type,
+    CodeInvestigationReceiptSubmitted.event_type,
+    CodeInvestigationReceiptRevoked.event_type,
+    CodeEvidenceCreated.event_type,
+    CodeEvidenceSuperseded.event_type,
+    CodeEvidenceRevoked.event_type,
+    CodeEvidenceLinked.event_type,
+    CodeEvidenceUnlinked.event_type,
+    CodeEvidenceDispositionChanged.event_type,
+    ImplementationTargetCreated.event_type,
+    ImplementationTargetUpdated.event_type,
+    ImplementationTargetRevoked.event_type,
+    ImplementationTargetResolutionSubmitted.event_type,
+    ImplementationTargetExecutionReceiptSubmitted.event_type,
+    ImplementationOverlapAcknowledged.event_type,
+    CodeTraceabilityWaiverCreated.event_type,
+    CodeTraceabilityWaiverCleared.event_type,
+)
+
+
 # --- KG operational events (spec 28583299 — Ideação #4) ---
 
 
@@ -953,6 +1186,23 @@ EVENT_TYPES: list[str] = [
     StoryUpdated.event_type,
     StoryMoved.event_type,
     StoryLinkedToIdeation.event_type,
+    CodeInvestigationRequested.event_type,
+    CodeInvestigationReceiptSubmitted.event_type,
+    CodeInvestigationReceiptRevoked.event_type,
+    CodeEvidenceCreated.event_type,
+    CodeEvidenceSuperseded.event_type,
+    CodeEvidenceRevoked.event_type,
+    CodeEvidenceLinked.event_type,
+    CodeEvidenceUnlinked.event_type,
+    CodeEvidenceDispositionChanged.event_type,
+    ImplementationTargetCreated.event_type,
+    ImplementationTargetUpdated.event_type,
+    ImplementationTargetRevoked.event_type,
+    ImplementationTargetResolutionSubmitted.event_type,
+    ImplementationTargetExecutionReceiptSubmitted.event_type,
+    ImplementationOverlapAcknowledged.event_type,
+    CodeTraceabilityWaiverCreated.event_type,
+    CodeTraceabilityWaiverCleared.event_type,
     KGHitFlushed.event_type,
     CardPriorityChanged.event_type,
     CardSeverityChanged.event_type,
@@ -1000,6 +1250,27 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     StoryUpdated.event_type: StoryUpdated,
     StoryMoved.event_type: StoryMoved,
     StoryLinkedToIdeation.event_type: StoryLinkedToIdeation,
+    CodeInvestigationRequested.event_type: CodeInvestigationRequested,
+    CodeInvestigationReceiptSubmitted.event_type: CodeInvestigationReceiptSubmitted,
+    CodeInvestigationReceiptRevoked.event_type: CodeInvestigationReceiptRevoked,
+    CodeEvidenceCreated.event_type: CodeEvidenceCreated,
+    CodeEvidenceSuperseded.event_type: CodeEvidenceSuperseded,
+    CodeEvidenceRevoked.event_type: CodeEvidenceRevoked,
+    CodeEvidenceLinked.event_type: CodeEvidenceLinked,
+    CodeEvidenceUnlinked.event_type: CodeEvidenceUnlinked,
+    CodeEvidenceDispositionChanged.event_type: CodeEvidenceDispositionChanged,
+    ImplementationTargetCreated.event_type: ImplementationTargetCreated,
+    ImplementationTargetUpdated.event_type: ImplementationTargetUpdated,
+    ImplementationTargetRevoked.event_type: ImplementationTargetRevoked,
+    ImplementationTargetResolutionSubmitted.event_type: (
+        ImplementationTargetResolutionSubmitted
+    ),
+    ImplementationTargetExecutionReceiptSubmitted.event_type: (
+        ImplementationTargetExecutionReceiptSubmitted
+    ),
+    ImplementationOverlapAcknowledged.event_type: ImplementationOverlapAcknowledged,
+    CodeTraceabilityWaiverCreated.event_type: CodeTraceabilityWaiverCreated,
+    CodeTraceabilityWaiverCleared.event_type: CodeTraceabilityWaiverCleared,
     KGHitFlushed.event_type: KGHitFlushed,
     CardPriorityChanged.event_type: CardPriorityChanged,
     CardSeverityChanged.event_type: CardSeverityChanged,

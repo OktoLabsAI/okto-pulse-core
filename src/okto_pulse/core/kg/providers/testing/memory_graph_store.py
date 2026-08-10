@@ -277,14 +277,28 @@ class InMemoryGraphStore:
         return results[: filters.max_rows]
 
     def find_by_artifact(
-        self, board_id: str, artifact_id: str, filters: QueryFilters
+        self,
+        board_id: str,
+        artifact_id: str,
+        filters: QueryFilters,
+        *,
+        graph_layer: str = "all",
+        include_code_traceability: bool = True,
     ) -> list[list]:
+        from okto_pulse.core.domain.code_traceability_kg import (
+            CODE_TRACEABILITY_KG_SUBTYPES,
+        )
+
         nodes = self._board_nodes(board_id)
         results = []
         for n in nodes.values():
             if (
                 n.get("source_artifact_ref") == artifact_id
                 and _node_is_visible_in_active_reads(n)
+                and (
+                    include_code_traceability
+                    or n.get("kind_of") not in CODE_TRACEABILITY_KG_SUBTYPES
+                )
             ):
                 results.append(
                     [
@@ -310,8 +324,15 @@ class InMemoryGraphStore:
         direction: str = "both",
         max_depth: int = 2,
         graph_layer: str = "all",
+        include_code_traceability: bool = True,
     ) -> list[list]:
-        return self.find_by_artifact(board_id, artifact_id, filters)
+        return self.find_by_artifact(
+            board_id,
+            artifact_id,
+            filters,
+            graph_layer=graph_layer,
+            include_code_traceability=include_code_traceability,
+        )
 
     def traverse_supersedence(
         self,
@@ -402,6 +423,7 @@ class InMemoryGraphStore:
                         "content": n.get("content"),
                         "context": n.get("context"),
                         "justification": n.get("justification"),
+                        "kind_of": n.get("kind_of"),
                         "similarity": sim,
                     }
                 )

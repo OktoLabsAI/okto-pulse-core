@@ -21,6 +21,9 @@ from okto_pulse.core.events.handlers.checklist_binding_audit import (  # noqa: F
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (  # noqa: F401
     ConsolidationEnqueuer,
 )
+from okto_pulse.core.events.handlers.code_traceability_effects import (  # noqa: F401
+    CodeTraceabilityEventEffectsHandler,
+)
 from okto_pulse.core.events.handlers.discovery_selector_cache import (  # noqa: F401
     DiscoverySelectorCacheInvalidationHandler,
 )
@@ -47,6 +50,7 @@ __all__ = [
     "CognitiveExtractionHandler",
     "ChecklistBindingAuditHandler",
     "ConsolidationEnqueuer",
+    "CodeTraceabilityEventEffectsHandler",
     "DiscoverySelectorCacheInvalidationHandler",
     "KGHitRecomputeHandler",
     "PolicyConstraintProjectionHandler",

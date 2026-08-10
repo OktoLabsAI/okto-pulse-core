@@ -60,7 +60,7 @@ def _columns(kconn, node_type: str) -> set[str]:
 
 
 def test_s1_fresh_bootstrap_has_all_new_columns_and_version(kg_tempdir):
-    assert SCHEMA_VERSION == "0.3.12"
+    assert SCHEMA_VERSION == "0.4.0"
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     conn_ctx = open_board_connection(board_id)

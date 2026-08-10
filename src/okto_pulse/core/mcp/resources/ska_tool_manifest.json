@@ -1,6 +1,6 @@
 {
   "canonicalization": "json-utf8-lf-sort-keys-v1",
-  "manifest_sha256": "cfce3d83891f57d698d3a0e685d7b19d769e6a0a67ed91b77a91ce395bb72e98",
+  "manifest_sha256": "77635e7c149e2d8e883ae50e47921d4f8ae65331eb11c26360b254b209c28c97",
   "manifest_version": "SK-A-tools/v1",
   "tool_count": 11,
   "tools": [
@@ -93,7 +93,7 @@
         "{subject_type}.quality.assess",
         "{subject_type}.qa.ask when proposed_questions is non-empty"
       ],
-      "schema_sha256": "ad6175ecb5bb38237278cc3c6b8b1ba2e21197f69fbc8ad4bdfa9de1e1e44755"
+      "schema_sha256": "3806385f335c927b449d20cc4f369055452f777a33c18194c419e22eb7411de4"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",
@@ -113,7 +113,7 @@
         "SPECS_UPDATE",
         "spec.checklist.execute"
       ],
-      "schema_sha256": "3ddc662b452c705870aad2d7f80f6ed6a971a3b7680c38fbf44362554cf8b199"
+      "schema_sha256": "478ef686b6dca41adb67d51cc16dab4bb4775a66168a9fa24ea0ec86e9d04901"
     }
   ]
 }

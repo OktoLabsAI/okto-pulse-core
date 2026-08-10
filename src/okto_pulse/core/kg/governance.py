@@ -528,6 +528,7 @@ async def retry_pending_entry(
     queue_entry_id: str,
     *,
     recursive: bool = False,
+    include_code_traceability: bool = True,
 ) -> dict | None:
     """Re-queue a failed/done ConsolidationQueue entry so the worker reprocesses
     it (write, commits internally). ``recursive=True`` also re-enqueues
@@ -547,11 +548,22 @@ async def retry_pending_entry(
     """
     from okto_pulse.core.ports.kg_operational import get_kg_worker_queue_port
 
-    result = await get_kg_worker_queue_port().retry_pending_entry(
-        db,
-        board_id=board_id,
-        queue_entry_id=queue_entry_id,
-        recursive=recursive,
+    queue = get_kg_worker_queue_port()
+    result = (
+        await queue.retry_pending_entry(
+            db,
+            board_id=board_id,
+            queue_entry_id=queue_entry_id,
+            recursive=recursive,
+        )
+        if include_code_traceability
+        else await queue.retry_pending_entry(
+            db,
+            board_id=board_id,
+            queue_entry_id=queue_entry_id,
+            recursive=recursive,
+            include_code_traceability=False,
+        )
     )
     if result is None:
         return None
@@ -1096,6 +1108,10 @@ async def mutate_boost_node_graph(
     moving their event-loop-bound UnitOfWork to another loop."""
     import uuid
 
+    from okto_pulse.core.domain.code_traceability_kg import (
+        CodeTraceabilityKGWriteViolation,
+        is_code_traceability_subtype,
+    )
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
@@ -1115,13 +1131,19 @@ async def mutate_boost_node_graph(
                 res = scope.execute(
                     f"MATCH (n:{ntype} {{id: $nid}}) "
                     "RETURN n.relevance_score, n.revocation_reason, "
-                    "n.pre_cancellation_relevance_score",
+                    "n.pre_cancellation_relevance_score, n.kind_of",
                     {"nid": node_id},
                 )
             except Exception:
                 continue
             if res.rows:
                 row = res.rows[0]
+                if ntype == "Entity" and is_code_traceability_subtype(
+                    row[3] if len(row) > 3 else None
+                ):
+                    raise CodeTraceabilityKGWriteViolation(
+                        "Code Traceability KG projections cannot be boosted"
+                    )
                 score_before = float(row[0]) if row[0] is not None else 0.5
                 revocation_reason = (
                     str(row[1]) if len(row) > 1 and row[1] is not None else None

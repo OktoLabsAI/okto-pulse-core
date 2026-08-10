@@ -88,7 +88,27 @@ def _json_schema_for(annotation: Any) -> dict[str, Any]:
         if annotation is dict:
             return {"type": "object"}
         return {}
-    return dict(schema) if isinstance(schema, dict) else {}
+    return _without_nonsemantic_titles(dict(schema)) if isinstance(schema, dict) else {}
+
+
+def _without_nonsemantic_titles(value: Any) -> Any:
+    """Drop generated JSON-Schema titles while preserving validation metadata.
+
+    Pydantic repeats class/field names as ``title`` throughout every tool
+    schema.  MCP already carries the command and property names, so those
+    labels consume the always-loaded metadata budget without adding type,
+    bounds, enum, required, union, or closed-object semantics.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _without_nonsemantic_titles(item)
+            for key, item in value.items()
+            if key != "title"
+        }
+    if isinstance(value, list):
+        return [_without_nonsemantic_titles(item) for item in value]
+    return value
 
 
 def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:

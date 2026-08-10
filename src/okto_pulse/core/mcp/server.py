@@ -12,6 +12,7 @@ import threading
 import warnings
 import uuid as _uuid
 from contextlib import AsyncExitStack
+from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from importlib.resources import files as package_files
 from typing import Annotated, Any, Callable, Literal
@@ -36,6 +37,9 @@ from okto_pulse.core.application.ideation_scope import (
     IdeationScopeValidationError,
 )
 from okto_pulse.core.domain.datetime_utils import isoformat_utc
+from okto_pulse.core.domain.code_traceability_kg import (
+    KGDeadLetterReprocessScope,
+)
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     SCENARIO_TYPE_DESCRIPTION,
@@ -468,6 +472,16 @@ _CORE_RESOURCE_TABLE = [
         "okto-pulse://reference/policy-compliance",
         "reference/policy-compliance.md",
         "Versioned guideline, compliance, waiver, and policy-projection protocol.",
+    ),
+    (
+        "okto-pulse://reference/code-traceability",
+        "reference/code_traceability.md",
+        "Agent-mediated Code Evidence, Target resolution, overlap, and receipt protocol.",
+    ),
+    (
+        "okto-pulse://reference/tool-docs/code-traceability",
+        "reference/code_traceability.md",
+        "Long-form docs for the typed Code Traceability tool family.",
     ),
     # R1.1 — lazy long-form tool docs (args/returns/examples) moved off the
     # compact tools/list surface; one resource per tool family (api_fd7c5878).
@@ -905,9 +919,35 @@ _TOOL_DOCS_FAMILY_RULES = [
     ("snapshot", "snapshot"),
 ]
 
+_CODE_TRACEABILITY_TOOL_NAMES = frozenset(
+    {
+        "okto_pulse_acknowledge_implementation_overlap",
+        "okto_pulse_clear_code_traceability_not_applicable",
+        "okto_pulse_create_implementation_target",
+        "okto_pulse_get_code_evidence",
+        "okto_pulse_get_code_investigation_receipt",
+        "okto_pulse_get_implementation_overlaps",
+        "okto_pulse_link_code_evidence",
+        "okto_pulse_list_code_evidence",
+        "okto_pulse_list_implementation_targets",
+        "okto_pulse_mark_code_traceability_not_applicable",
+        "okto_pulse_set_code_evidence_disposition",
+        "okto_pulse_start_code_investigation",
+        "okto_pulse_submit_code_evidence",
+        "okto_pulse_submit_code_investigation_receipt",
+        "okto_pulse_submit_implementation_target_execution_receipt",
+        "okto_pulse_submit_implementation_target_resolution",
+        "okto_pulse_supersede_code_evidence",
+        "okto_pulse_unlink_code_evidence",
+        "okto_pulse_update_implementation_target",
+    }
+)
+
 
 def tool_docs_family(tool_name: str) -> str:
     """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
+    if tool_name in _CODE_TRACEABILITY_TOOL_NAMES:
+        return "code-traceability"
     if "kg" in tool_name.split("_"):
         return "kg"
     # R4 consolidated Q&A ask — exact-match before the substring rules because the
@@ -1591,6 +1631,92 @@ def _card_subject_version(card: object) -> int:
     """Project the card's internal policy fence under its public name."""
 
     return int(getattr(card, "policy_version"))
+
+
+async def _mcp_code_traceability_projection(
+    *,
+    uow: Any,
+    actor: Any,
+    board_id: str,
+    subject_type: str,
+    subject_id: str,
+    subject_version: int,
+    profile: str,
+    context_scope: str = "all",
+) -> dict[str, Any]:
+    """Return the Core projection, never an external source observation."""
+
+    from okto_pulse.core.application.use_cases.code_traceability import (
+        GetCodeTraceabilityProjectionUseCase,
+    )
+    from okto_pulse.core.domain.code_traceability import (
+        CodeTraceabilityContextScope,
+        CodeTraceabilityProjectionProfile,
+        CodeTraceabilitySubjectType,
+    )
+    from okto_pulse.core.ports.code_traceability import (
+        CodeTraceabilityProjectionQuery,
+    )
+    from okto_pulse.core.services.code_traceability_gate import (
+        resolve_code_traceability_settings,
+    )
+
+    resolved_profile = {
+        "summary": CodeTraceabilityProjectionProfile.SUMMARY,
+        "detail": CodeTraceabilityProjectionProfile.DETAIL,
+        "full": CodeTraceabilityProjectionProfile.FULL,
+        "legacy": CodeTraceabilityProjectionProfile.FULL,
+    }.get(profile, CodeTraceabilityProjectionProfile.SUMMARY)
+    resolved_scope = (
+        CodeTraceabilityContextScope.GATE
+        if context_scope == "gate"
+        else CodeTraceabilityContextScope.DEFAULT
+    )
+    try:
+        projection = await GetCodeTraceabilityProjectionUseCase().execute(
+            CodeTraceabilityProjectionQuery(
+                board_id=board_id,
+                subject_type=CodeTraceabilitySubjectType(subject_type),
+                subject_id=subject_id,
+                subject_version=subject_version,
+                profile=resolved_profile,
+                context_scope=resolved_scope,
+            ),
+            actor=actor,
+            uow=uow,
+        )
+        return projection.as_dict()
+    except (AttributeError, RuntimeError, ValueError) as exc:
+        board = await uow.services.boards.get_board(board_id)
+        settings = resolve_code_traceability_settings(
+            getattr(board, "settings", None) if board else None
+        )
+        blocking = settings.mode == "blocking"
+        return {
+            "subject_type": subject_type,
+            "subject_id": subject_id,
+            "subject_version": subject_version,
+            "gate_readiness": {
+                "mode": settings.mode,
+                "allowed": not blocking,
+                "passed": settings.mode == "off",
+                "blockers": (
+                    []
+                    if settings.mode == "off"
+                    else [
+                        {
+                            "code": "code_investigation_currentness_unknown",
+                            "message": (
+                                "Structured Code Traceability projection is unavailable."
+                            ),
+                            "blocking": blocking,
+                            "details": {"reason": type(exc).__name__},
+                            "remediation": [],
+                        }
+                    ]
+                ),
+            },
+        }
 
 
 def _dump_model(value: Any) -> dict[str, Any]:
@@ -3799,6 +3925,20 @@ async def okto_pulse_get_task_context(
             cognitive_verdict=cognitive_verdict,
             operational_flow=operational_flow,
         )
+        # ``legacy`` is a byte-shape compatibility contract. New semantic blocks
+        # are additive only on the profiled surfaces and must not leak through
+        # the legacy passthrough projector.
+        if _resolved_profile != "legacy":
+            result["code_traceability"] = await _mcp_code_traceability_projection(
+                uow=uow,
+                actor=actor,
+                board_id=board_id,
+                subject_type="card",
+                subject_id=card.id,
+                subject_version=_card_subject_version(card),
+                profile=_resolved_profile,
+                context_scope=_resolved_context_scope,
+            )
 
         from okto_pulse.core.mcp.context_projection import project_task_context
 
@@ -7406,6 +7546,16 @@ async def okto_pulse_get_refinement_context(
         if not _inc_architecture:
             resolved_references["architecture_designs"] = []
         result["resolved_references"] = resolved_references
+        if profile != "legacy":
+            result["code_traceability"] = await _mcp_code_traceability_projection(
+                uow=uow,
+                actor=actor,
+                board_id=board_id,
+                subject_type="refinement",
+                subject_id=refinement.id,
+                subject_version=refinement.version,
+                profile=profile,
+            )
 
         from okto_pulse.core.mcp.context_projection import project_entity_context
 
@@ -9434,7 +9584,8 @@ async def okto_pulse_get_spec_context(
         unsupported_projection_error as _unsupported_projection_error,
     )
 
-    if _resolve_profile(profile) is None:
+    _resolved_profile = _resolve_profile(profile)
+    if _resolved_profile is None:
         return json.dumps(_unsupported_projection_error(profile))
 
     _inc_kb = _flag_enabled(include_knowledge)
@@ -9710,6 +9861,16 @@ async def okto_pulse_get_spec_context(
             cognitive_enforcement_active=cognitive_enforcement_active,
             **checklist_readiness,
         )
+        if _resolved_profile != "legacy":
+            result["code_traceability"] = await _mcp_code_traceability_projection(
+                uow=uow,
+                actor=actor,
+                board_id=board_id,
+                subject_type="spec",
+                subject_id=spec.id,
+                subject_version=spec.version,
+                profile=_resolved_profile,
+            )
 
         from okto_pulse.core.mcp.context_projection import project_spec_context
 
@@ -18956,6 +19117,17 @@ _register_policy_governance_tools(
     get_settings=get_settings,
 )
 
+from okto_pulse.core.mcp.code_traceability_tools import (  # noqa: E402
+    register_code_traceability_tools as _register_code_traceability_tools,
+)
+
+_register_code_traceability_tools(
+    mcp,
+    get_board_agent=_get_agent_ctx,
+    get_uow=get_unit_of_work_factory_for_mcp,
+    get_settings=get_settings,
+)
+
 
 # ============================================================================
 # KG HEALTH (spec 20f67c2a — Ideação #5, FR2)
@@ -18986,6 +19158,10 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
         GetKgHealthCommand,
         GetKgHealthUseCase,
     )
+    from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+        EvaluateCodeTraceabilityKGReadAccessUseCase,
+        mask_code_traceability_graph_metrics,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.mcp.kg_query_safety import KGHealthMCPProjection
     from okto_pulse.core.services.kg_health_service import BoardNotFoundError
@@ -18998,6 +19174,11 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+                actor=actor,
+                board_id=board_id,
+                uow=uow,
+            )
             result = await GetKgHealthUseCase().execute(
                 GetKgHealthCommand(
                     board_id,
@@ -19010,7 +19191,11 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
         return json.dumps({"error": str(exc)})
     # FR4: slim default projection — keep the stop-rule fields, omit verbose
     # diagnostics until profile=full/legacy is requested.
-    data = KGHealthMCPProjection().project(result.data, profile=profile)
+    visible_health = mask_code_traceability_graph_metrics(
+        result.data,
+        ct_access,
+    )
+    data = KGHealthMCPProjection().project(visible_health, profile=profile)
     return json.dumps(data, default=str)
 
 
@@ -19043,6 +19228,10 @@ async def okto_pulse_kg_health_readiness(
         GetKgHealthReadinessCommand,
         GetKgHealthReadinessUseCase,
     )
+    from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+        EvaluateCodeTraceabilityKGReadAccessUseCase,
+        require_code_traceability_safe_arbitrary_query,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.services.kg_health_readiness_service import (
         InvalidProfileError,
@@ -19057,6 +19246,22 @@ async def okto_pulse_kg_health_readiness(
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+                actor=actor,
+                board_id=board_id,
+                uow=uow,
+            )
+            try:
+                require_code_traceability_safe_arbitrary_query(ct_access)
+            except PermissionDeniedError as exc:
+                return json.dumps(
+                    {
+                        "error": {
+                            "code": "permission_denied",
+                            "message": str(exc),
+                        }
+                    }
+                )
             result = await GetKgHealthReadinessUseCase().execute(
                 GetKgHealthReadinessCommand(
                     board_id,
@@ -20321,6 +20526,7 @@ async def okto_pulse_kg_dead_letter_reprocess(
     dead_letter_ids: list[str] | str = "",
     limit: int = 50,
     process_now: BoolInput = True,
+    scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
 ) -> str:
     """
     okto_pulse_kg_dead_letter_reprocess — requeue dead-lettered KG
@@ -20329,7 +20535,9 @@ async def okto_pulse_kg_dead_letter_reprocess(
     Use this after `okto_pulse_kg_migrate_schema`, WAL recovery, or a code fix
     when DLQ rows should be retried. The tool is idempotent: if a matching
     pending queue row already exists for the same board/artifact, it resets that
-    row and removes the DLQ entry instead of creating duplicates."""
+    row and removes the DLQ entry instead of creating duplicates. Code
+    Traceability replay is an explicit scope, requires exact IDs and the four
+    CT read leaves, and never performs repository/source investigation."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -20359,17 +20567,23 @@ async def okto_pulse_kg_dead_letter_reprocess(
     # case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
     # explicit commit is preserved inside the use case; the process_now worker
     # signalling below is unchanged.
+    command = ReprocessDeadLetterRowsCommand(
+        board_id,
+        dead_letter_ids=ids or None,
+        limit=limit,
+        scope=scope,
+    )
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         result = await ReprocessDeadLetterRowsUseCase().execute(
-            ReprocessDeadLetterRowsCommand(
-                board_id, dead_letter_ids=ids or None, limit=limit
-            ),
+            command,
             actor=actor,
             uow=uow,
         )
     data = result.data
 
-    if _flag_enabled(process_now):
+    if _flag_enabled(process_now) and bool(
+        data.get("mutated", int(data.get("selected") or 0) > 0)
+    ):
         from okto_pulse.core.application.runtime_workers import (
             process_runtime_worker_once,
             runtime_worker_is_running,
@@ -21150,10 +21364,26 @@ async def okto_pulse_kg_global_outbox_dead_letter_list(
     actor = MCPAdapterContract.actor(ctx)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+                EvaluateCodeTraceabilityKGReadAccessUseCase,
+            )
+
+            ct_access = (
+                await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+                    actor=actor,
+                    board_id=actor.board_id,
+                    uow=uow,
+                )
+            )
+            kwargs = {
+                "limit": limit,
+                "cursor": cursor,
+                "classification": classification,
+            }
+            if not ct_access.allowed:
+                kwargs["include_code_traceability"] = False
             result = await uow.services.kg.list_global_outbox_dead_letters(
-                limit=limit,
-                cursor=cursor,
-                classification=classification,
+                **kwargs
             )
     except Exception as exc:
         return _global_outbox_dead_letter_error_response("list", exc, mutation=False)
@@ -22842,6 +23072,107 @@ async def okto_pulse_list_snapshots(
     except EntityNotFoundError as exc:
         return _mcp_entity_not_found_error(exc)
     return json.dumps(result.payload, default=str)
+
+
+# These 69 reviewed commands have complete lazy family documentation.  Keep
+# their always-loaded descriptions to one identity line so the additive,
+# strongly typed Code Traceability schemas stay inside the tools/list budget.
+_TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
+    {
+        "okto_pulse_confirm_amendment_coverage",
+        "okto_pulse_update_default_guideline_refs",
+        "okto_pulse_create_amendment_revision",
+        "okto_pulse_kg_quarantine_restore",
+        "okto_pulse_get_activity_log",
+        "okto_pulse_kg_queue_drilldown",
+        "okto_pulse_execute_test_scenario_evidence",
+        "okto_pulse_update_test_scenario_status",
+        "okto_pulse_kg_add_edge_candidate",
+        "okto_pulse_add_screen_mockup",
+        "okto_pulse_add_architecture_design",
+        "okto_pulse_kg_list_cognitive_dlq",
+        "okto_pulse_kg_health",
+        "okto_pulse_move_card",
+        "okto_pulse_kg_rebuild_run",
+        "okto_pulse_kg_query_natural",
+        "okto_pulse_kg_rebuild_preflight",
+        "okto_pulse_kg_query_cypher",
+        "okto_pulse_add_choice_comment",
+        "okto_pulse_evaluate_ideation",
+        "okto_pulse_kg_canonical_partition_integrity_list",
+        "okto_pulse_kg_tick_run_now",
+        "okto_pulse_get_publish_health",
+        "okto_pulse_kg_get_decision_history",
+        "okto_pulse_ask_refinement_choice_question",
+        "okto_pulse_kg_update_cognitive_pending_item",
+        "okto_pulse_kg_migrate_schema",
+        "okto_pulse_create_refinement",
+        "okto_pulse_ask_ideation_choice_question",
+        "okto_pulse_validate_architecture_design_payload",
+        "okto_pulse_kg_stale_canonical_parity_list",
+        "okto_pulse_get_architecture_design_schema",
+        "okto_pulse_kg_digest_layer_mismatch_list",
+        "okto_pulse_list_blockers",
+        "okto_pulse_create_default_board_config_version",
+        "okto_pulse_get_spec_context",
+        "okto_pulse_kg_evaluate_cognitive_readiness",
+        "okto_pulse_ask_spec_choice_question",
+        "okto_pulse_link_task",
+        "okto_pulse_kg_list_cognitive_pending_items",
+        "okto_pulse_add_decision",
+        "okto_pulse_transition_amendment_revision",
+        "okto_pulse_set_ideation_ambiguity_gate_skip",
+        "okto_pulse_kg_verify_grounding",
+        "okto_pulse_kg_rebuild_confirm",
+        "okto_pulse_kg_export_jsonld",
+        "okto_pulse_kg_evaluate_bug_cognitive_closure",
+        "okto_pulse_get_task_context",
+        "okto_pulse_update_screen_mockup",
+        "okto_pulse_update_architecture_design",
+        "okto_pulse_kg_connectivity_dlq_diagnose",
+        "okto_pulse_kg_list_cognitive_readiness_items",
+        "okto_pulse_kg_clear_cognitive_skip",
+        "okto_pulse_copy_architecture_to_card",
+        "okto_pulse_kg_provenance_drift",
+        "okto_pulse_list_default_guideline_candidates",
+        "okto_pulse_copy_knowledge_to_card",
+        "okto_pulse_kg_explain_constraint",
+        "okto_pulse_move_ideation",
+        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_kg_begin_consolidation",
+        "okto_pulse_submit_spec_validation",
+        "okto_pulse_add_api_contract",
+        "okto_pulse_kg_query_reflective",
+        "okto_pulse_copy_mockups_to_card",
+        "okto_pulse_set_default_design_system",
+        "okto_pulse_update_card",
+        "okto_pulse_list_amendment_revisions",
+        "okto_pulse_update_test_scenario",
+    }
+)
+
+
+def _compact_reviewed_tool_descriptions() -> None:
+    catalog = mcp.resolve()
+    missing = _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION.difference(
+        catalog._tool_manager._tools
+    )
+    if missing:
+        raise RuntimeError(
+            "reviewed MCP description compaction references missing tools: "
+            + ",".join(sorted(missing))
+        )
+    for tool_name in sorted(_TOOLS_WITH_LAZY_COMPACT_DESCRIPTION):
+        tool = catalog._tool_manager._tools[tool_name]
+        catalog._tool_manager._tools[tool_name] = dataclass_replace(
+            tool,
+            description=(
+                f"Run `{tool_name}`. Read `{tool_docs_uri(tool_name)}` before use."
+            ),
+        )
+
+
+_compact_reviewed_tool_descriptions()
 
 
 # Decorators above populate the catalog resolved in the import context.  Keep

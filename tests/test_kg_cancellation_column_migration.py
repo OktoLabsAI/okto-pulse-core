@@ -54,7 +54,7 @@ def _columns(connection, node_type: str) -> set[str]:
 
 
 def test_fresh_bootstrap_has_reversible_cancellation_snapshot(kg_tempdir):
-    assert SCHEMA_VERSION == "0.3.12"
+    assert SCHEMA_VERSION == "0.4.0"
     assert CANCELLATION_COLUMNS == (("pre_cancellation_relevance_score", "DOUBLE"),)
     assert "pre_cancellation_relevance_score" in STABLE_NODE_PROPERTIES
 

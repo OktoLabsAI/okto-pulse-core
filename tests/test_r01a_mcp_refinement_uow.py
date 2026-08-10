@@ -186,6 +186,40 @@ async def _call(tool: str, **kwargs) -> dict:
     return json.loads(await t.fn(**kwargs))
 
 
+@pytest.mark.asyncio
+async def test_refinement_context_adds_traceability_without_changing_legacy_shape(
+    _seed,
+) -> None:
+    projection = AsyncMock(
+        return_value={"subject_type": "refinement", "subject_id": _seed}
+    )
+    with patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        projection,
+    ):
+        modern = await _call(
+            "okto_pulse_get_refinement_context",
+            board_id=BOARD_ID,
+            refinement_id=_seed,
+            profile="full",
+        )
+        legacy = await _call(
+            "okto_pulse_get_refinement_context",
+            board_id=BOARD_ID,
+            refinement_id=_seed,
+            profile="legacy",
+        )
+
+    assert modern["code_traceability"] == {
+        "subject_type": "refinement",
+        "subject_id": _seed,
+    }
+    assert "code_traceability" not in legacy
+    projection.assert_awaited_once()
+    assert projection.await_args.kwargs["profile"] == "full"
+
+
 @pytest.fixture
 async def _create_parent_ideations():
     """DONE parents on the authorized board and on a different board."""

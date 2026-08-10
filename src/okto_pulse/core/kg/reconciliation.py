@@ -41,6 +41,7 @@ class ExistingNodeSummary:
     content: str | None = None
     context: str | None = None
     justification: str | None = None
+    kind_of: str | None = None
     similarity: float = 0.0  # 0.0–1.0 against the candidate
 
 

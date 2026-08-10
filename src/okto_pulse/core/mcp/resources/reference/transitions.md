@@ -69,3 +69,25 @@ Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validatio
 ## Bug cards
 
 Bug lifecycle and the regression gate (Path A/B): see `okto-pulse://reference/card_types`.
+
+## Code Traceability gates
+
+`code_traceability.mode` resolves to `off`, `advisory`, or `blocking`. It does
+not authorize Pulse Core or Pulse Community to access source code. All source
+facts come from bounded receipts submitted after an authenticated external
+agent performs the preflight and investigation in its own environment.
+
+| Transition | Current Code Traceability requirement in `blocking` mode |
+|---|---|
+| Refinement → `review`/`approved`/`done` | Current accepted agent receipt and Evidence/disposition coverage required by policy, or an applicable human waiver. |
+| Spec `draft` → `review` | Every inherited Evidence item is linked to applicable Spec entities or has an explicit disposition; coverage is 100%. |
+| Card `not_started`/`started` → executable state | Every active required Target has a current accepted resolution; blocking overlaps are resolved by dependency or current acknowledgement. |
+| Card → `validation`/`done` | Every active required Target has an execution disposition bound to a current accepted result receipt. |
+
+In `advisory` mode the same currentness, coverage, and overlap decisions remain
+visible but do not independently block the edge. In `off` mode no Code
+Traceability gate is evaluated. `partial`, `unavailable`, revoked, expired,
+conflicted, or outdated receipts never become silently current. Read full gate
+context and `okto_pulse_get_allowed_transitions` immediately before a move.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

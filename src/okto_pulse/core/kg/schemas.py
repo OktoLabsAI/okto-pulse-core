@@ -88,10 +88,42 @@ class NodeCandidate(BaseModel):
     source_span_quote: str | None = None
     extraction_model_id: str | None = None
     extraction_prompt_hash: str | None = None
+    # A server-owned deterministic projection may carry a previously
+    # validated source digest that is more precise than the enclosing Pulse
+    # row hash (Code Evidence uses this for revision drift checks).
+    source_content_hash: str | None = Field(
+        None,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-fA-F]{64}$",
+    )
     # Spec MKG-E-S1 (FR4, D3): optional declarative subtype — when present
     # it MUST be declared in the NodeSubtypeRegistry (validated fail-closed
     # at commit); absent is always valid (incremental adoption).
     kind_of: str | None = None
+    # Code Traceability keeps its logical source identity separate from the
+    # rebuild artifact identity in ``source_artifact_ref``.  These optional
+    # fields are copied only from already-persisted Pulse records; the KG
+    # worker never opens code, a filesystem, Git, or a provider.
+    investigation_receipt_id: str | None = Field(None, min_length=1, max_length=64)
+    source_ref: str | None = Field(None, min_length=1, max_length=512)
+    attestor_actor_id: str | None = Field(None, min_length=1, max_length=255)
+    declared_revision: str | None = Field(None, min_length=1, max_length=255)
+    workspace_state_id: str | None = Field(None, min_length=1, max_length=255)
+    code_path: str | None = Field(None, min_length=1, max_length=1024)
+    symbol_qualified_name: str | None = Field(
+        None,
+        min_length=1,
+        max_length=2048,
+    )
+    symbol_kind: str | None = Field(None, min_length=1, max_length=128)
+    selector_kind: str | None = Field(None, min_length=1, max_length=32)
+    selector_fingerprint: str | None = Field(
+        None,
+        min_length=64,
+        max_length=64,
+    )
+    resolution_state: str | None = Field(None, min_length=1, max_length=32)
 
 
 class EdgeCandidate(BaseModel):

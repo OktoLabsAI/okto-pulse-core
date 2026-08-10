@@ -235,15 +235,20 @@ class McpCopyMockupsToCardUseCase:
             board_id=command.board_id,
         )
 
+        from okto_pulse.core.application.artifact_propagation import (
+            artifact_identity_values,
+            validate_artifact_selections,
+        )
+
         source_mockups = [m for m in (spec.screen_mockups or []) if isinstance(m, dict)]
         fallback = False
         source_type, source_id = "spec", command.spec_id
+        plan = await uow.services.resolve_effective_card_copy_plan(
+            board_id=command.board_id,
+            spec_id=command.spec_id,
+            resource_type="mockup",
+        )
         if not source_mockups:
-            plan = await uow.services.resolve_effective_card_copy_plan(
-                board_id=command.board_id,
-                spec_id=command.spec_id,
-                resource_type="mockup",
-            )
             if not plan["fallback"]:
                 return McpCopyMockupsToCardResult(empty_plan=plan)
             fallback_parent, _service, _update_class = await _load_entity_mockups(
@@ -264,11 +269,48 @@ class McpCopyMockupsToCardUseCase:
             source_type = plan["source_entity_type"]
             source_id = plan["source_entity_id"]
             fallback = True
+        else:
+            # A Spec may carry only the mockups selected at derivation time while
+            # still inheriting other effective mockups from its Refinement or
+            # Ideation.  The Resource Gate evaluates every effective identity, so
+            # copy the union.  Direct items win when their lineage identity
+            # intersects an inherited item; genuinely distinct inherited items
+            # remain available for explicit selection and card coverage.
+            inherited_refs = [
+                item
+                for item in plan.get("inherited_refs", ())
+                if isinstance(item, dict)
+            ]
+            refs_by_parent: dict[tuple[str, str], list[set[str]]] = {}
+            for ref in inherited_refs:
+                parent_type = str(ref.get("source_entity_type") or "").strip()
+                parent_id = str(ref.get("source_entity_id") or "").strip()
+                identities = artifact_identity_values(ref, "mockup")
+                if parent_type and parent_id and identities:
+                    refs_by_parent.setdefault((parent_type, parent_id), []).append(
+                        identities
+                    )
 
-        from okto_pulse.core.application.artifact_propagation import (
-            artifact_identity_values,
-            validate_artifact_selections,
-        )
+            seen_identities = [
+                artifact_identity_values(item, "mockup") for item in source_mockups
+            ]
+            for (parent_type, parent_id), wanted_identities in refs_by_parent.items():
+                inherited_items = await uow.services.load_effective_mockup_items(
+                    parent_type,
+                    parent_id,
+                )
+                for item in inherited_items:
+                    if not isinstance(item, dict):
+                        continue
+                    identities = artifact_identity_values(item, "mockup")
+                    if not identities or not any(
+                        identities & wanted for wanted in wanted_identities
+                    ):
+                        continue
+                    if any(identities & seen for seen in seen_identities):
+                        continue
+                    source_mockups.append(item)
+                    seen_identities.append(identities)
 
         requested_ids = (
             sorted(command.screen_ids)

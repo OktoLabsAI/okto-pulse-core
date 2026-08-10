@@ -32,6 +32,10 @@ from okto_pulse.core.domain.permissions import (
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     PermissionSet,
 )
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+    KGDeadLetterReprocessScope,
+)
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
 
@@ -400,6 +404,101 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])
     assert uow.commits == 0
     assert uow.rollbacks == 0
+
+
+@pytest.mark.asyncio
+async def test_code_traceability_dlq_reprocess_requires_all_read_leaves_and_commits_only_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _allow_operation(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(dlq_reprocess, "require_authorization", _allow_operation)
+    command = dlq_reprocess.ReprocessDeadLetterRowsCommand(
+        BOARD_ID,
+        dead_letter_ids=["dlq-ct-1", "dlq-ct-2"],
+        limit=2,
+        scope=KGDeadLetterReprocessScope.CODE_TRACEABILITY,
+    )
+
+    denied_uow = _Uow()
+    with pytest.raises(PermissionDeniedError):
+        await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
+            command,
+            actor=ActorContext(
+                "operator",
+                "mcp",
+                board_id=BOARD_ID,
+                permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS[:-1],
+            ),
+            uow=denied_uow,
+        )
+    assert "write:queue.dead_letter_reprocess" not in denied_uow.events
+    assert denied_uow.commits == 0
+
+    captured: dict[str, Any] = {}
+
+    async def _reprocess(board_id: str, **kwargs: Any) -> dict[str, Any]:
+        captured.update({"board_id": board_id, **kwargs})
+        return {
+            "success": False,
+            "blocked": True,
+            "mutated": False,
+            "scope": "code_traceability",
+            "selected": 0,
+        }
+
+    allowed_uow = _Uow()
+    allowed_uow.services.kg = SimpleNamespace(
+        reprocess_dead_letter_rows=_reprocess
+    )
+    result = await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
+        command,
+        actor=ActorContext(
+            "operator",
+            "mcp",
+            board_id=BOARD_ID,
+            permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+        ),
+        uow=allowed_uow,
+    )
+
+    assert result.data["blocked"] is True
+    assert captured == {
+        "board_id": BOARD_ID,
+        "dead_letter_ids": ["dlq-ct-1", "dlq-ct-2"],
+        "limit": 2,
+        "scope": KGDeadLetterReprocessScope.CODE_TRACEABILITY,
+    }
+    assert allowed_uow.commits == 0
+
+    async def _reprocess_mutating(
+        _board_id: str,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        return {
+            "success": True,
+            "blocked": False,
+            "mutated": True,
+            "scope": "code_traceability",
+            "selected": 2,
+        }
+
+    mutating_uow = _Uow()
+    mutating_uow.services.kg = SimpleNamespace(
+        reprocess_dead_letter_rows=_reprocess_mutating
+    )
+    await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
+        command,
+        actor=ActorContext(
+            "operator",
+            "mcp",
+            board_id=BOARD_ID,
+            permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+        ),
+        uow=mutating_uow,
+    )
+    assert mutating_uow.commits == 1
 
 
 _REST_OPERATION_CASES: tuple[
