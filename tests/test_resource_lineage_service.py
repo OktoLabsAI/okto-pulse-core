@@ -9,6 +9,7 @@ from okto_pulse.core.services.resource_lineage import (
     METRIC_RESOLUTION_FAILED_TOTAL,
     METRIC_RESOLVE_DURATION_MS,
     METRIC_RESOLVE_TOTAL,
+    MetadataLineageCapabilityUnavailable,
     ResolvedResourceLineageProjection,
     ResolvedResourceLineageService,
     UnsupportedLineageEntityType,
@@ -92,6 +93,131 @@ class FakeLineageProvider:
             "justification": mark.get("justification"),
             "source_channel": "mcp",
         }
+
+
+@pytest.mark.asyncio
+async def test_gate_profile_fails_closed_without_metadata_quartet() -> None:
+    provider = FakeLineageProvider(
+        roots={
+            ("card", "card-1"): LineageEntityRef(
+                "card",
+                "card-1",
+                "Card",
+            )
+        }
+    )
+
+    with pytest.raises(MetadataLineageCapabilityUnavailable) as exc_info:
+        await ResolvedResourceLineageService(provider).resolve(
+            "board-1",
+            "card",
+            "card-1",
+            include_coverage=False,
+            projection_profile="gate",
+        )
+
+    assert exc_info.value.code == "metadata_lineage_capability_unavailable"
+    assert exc_info.value.details == {
+        "projection_profile": "gate",
+        "reason": "metadata_lineage_methods_missing",
+        "required_methods": [
+            "load_entity_ref_metadata",
+            "load_parent_refs_metadata",
+            "collect_refs_metadata",
+            "filter_inherited_refs_metadata",
+        ],
+        "missing_methods": [
+            "collect_refs_metadata",
+            "filter_inherited_refs_metadata",
+            "load_entity_ref_metadata",
+            "load_parent_refs_metadata",
+        ],
+        "fallback_allowed": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_gate_profile_uses_complete_metadata_capability_without_legacy_reads() -> None:
+    card = LineageEntityRef("card", "card-1", "Card")
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    calls: list[str] = []
+
+    class MetadataProvider(FakeLineageProvider):
+        def supports_metadata_lineage(self) -> bool:
+            return True
+
+        async def load_entity_ref(self, *args, **kwargs):
+            raise AssertionError("legacy entity loader reached by gate profile")
+
+        async def load_parent_refs(self, *args, **kwargs):
+            raise AssertionError("legacy parent loader reached by gate profile")
+
+        async def collect_refs(self, *args, **kwargs):
+            raise AssertionError("legacy body ref loader reached by gate profile")
+
+        async def filter_inherited_refs(self, *args, **kwargs):
+            raise AssertionError("legacy inherited ref filter reached by gate profile")
+
+        async def load_entity_ref_metadata(self, board_id, entity_type, entity_id):
+            del board_id
+            calls.append("entity")
+            return self.roots[(entity_type, entity_id)]
+
+        async def load_parent_refs_metadata(self, board_id, root):
+            del board_id
+            calls.append("parents")
+            return list(self.parents.get(root.ref, []))
+
+        async def collect_refs_metadata(self, ref):
+            calls.append(f"refs:{ref.ref}")
+            empty = {"architecture": [], "mockup": [], "knowledge_base": []}
+            return {**empty, **self.refs.get(ref.ref, {})}
+
+        async def filter_inherited_refs_metadata(self, root, parent, refs):
+            del root, parent
+            calls.append("filter")
+            return refs
+
+    provider = MetadataProvider(
+        roots={("card", "card-1"): card},
+        parents={card.ref: [spec]},
+        refs={
+            spec.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "kb-metadata-only",
+                        "title": "KB identity",
+                        "root_source_kb_id": "kb-root",
+                        "source_entity_type": "spec",
+                        "source_entity_id": "spec-1",
+                    }
+                ]
+            }
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1",
+        "card",
+        "card-1",
+        include_coverage=False,
+        projection_profile="gate",
+    )
+
+    knowledge_state = next(
+        state
+        for state in resolved.resource_states
+        if state.resource_type == "knowledge_base"
+    )
+    assert knowledge_state.state == "provided"
+    assert knowledge_state.inherited_count == 1
+    assert calls == [
+        "entity",
+        "parents",
+        "refs:card:card-1",
+        "refs:spec:spec-1",
+        "filter",
+    ]
 
 
 @pytest.mark.asyncio

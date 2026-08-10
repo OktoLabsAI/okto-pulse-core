@@ -33,6 +33,7 @@ from okto_pulse.core.mcp.context_projection import (
     CONTEXT_GATE_BUDGET_BYTES,
     CONTEXT_SUMMARY_BUDGET_BYTES,
     _essential_context_projection,
+    build_bounded_task_content_manifest,
     project_entity_context,
     project_spec_context,
     project_task_context,
@@ -515,6 +516,7 @@ def test_full_gate_scope_is_bounded_manifested_and_full_all_stays_unchanged():
         "order": "oldest_to_newest_within_latest_window",
     }
     manifest = full_gate["content_manifest"]
+    assert "manifest_version" not in manifest
     assert manifest["source_payload_bytes"] > 100_000
     assert len(manifest["source_payload_sha256"]) == 64
     assert {
@@ -524,6 +526,66 @@ def test_full_gate_scope_is_bounded_manifested_and_full_all_stays_unchanged():
         "resolved_references",
         "validations",
     }
+
+
+def test_bounded_gate_manifest_v2_hashes_only_the_metadata_inventory() -> None:
+    class PoisonBody:
+        def __str__(self) -> str:
+            raise AssertionError("an omitted body was canonicalized")
+
+    inventory = {
+        "card.description": {
+            "presence": "unknown",
+            "materialization": "not_loaded",
+            "reason": "omitted_from_gate_scope",
+            # Unrecognized extensions must never widen the bounded contract.
+            "body": PoisonBody(),
+            "sha256": PoisonBody(),
+        },
+        "validations": {
+            "presence": "present",
+            "materialization": "available_not_copied",
+            "item_count": 17,
+        },
+    }
+
+    manifest = build_bounded_task_content_manifest(inventory)
+    repeated = build_bounded_task_content_manifest(inventory)
+
+    assert manifest == repeated
+    assert manifest["manifest_version"] == 2
+    assert manifest["materialization"] == "bounded_gate"
+    assert manifest["digest_scope"] == "section_inventory"
+    assert manifest["source_payload_bytes"] is None
+    assert manifest["source_payload_sha256"] is None
+    assert manifest["source_payload_status"] == "not_materialized"
+    assert manifest["inventory_payload_bytes"] > 0
+    assert len(manifest["inventory_sha256"]) == 64
+    assert manifest["section_count"] == 2
+    assert all("sha256" not in section for section in manifest["sections"])
+    assert all("payload_bytes" not in section for section in manifest["sections"])
+    assert manifest["sections"][1]["item_count"] == 17
+
+
+def test_optional_gate_manifest_does_not_change_non_gate_profiles() -> None:
+    source = _full_task_result()
+    supplied = {"manifest_version": 2, "sentinel": "bounded-only"}
+
+    for profile in ("summary", "detail", "full", "legacy"):
+        without_manifest = project_task_context(
+            source,
+            card_id="c1",
+            profile=profile,
+            context_scope="all",
+        )
+        with_manifest = project_task_context(
+            source,
+            card_id="c1",
+            profile=profile,
+            context_scope="all",
+            content_manifest=supplied,
+        )
+        assert with_manifest == without_manifest
 
 
 def test_gate_scope_requires_full_profile_and_rejects_unknown_scope():
@@ -743,7 +805,9 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     assert full_gate["context_scope"] == "gate"
     assert full_gate["projection"]["profile"] == "full"
     assert full_gate["projection"]["payload_bytes"] <= CONTEXT_GATE_BUDGET_BYTES
-    assert full_gate["content_manifest"]["source_payload_sha256"]
+    assert full_gate["content_manifest"]["manifest_version"] == 2
+    assert full_gate["content_manifest"]["source_payload_sha256"] is None
+    assert full_gate["content_manifest"]["inventory_sha256"]
     assert full_gate["spec"]["id"] == spec_id
 
     # unsupported profile → structured error, no silent fallback
@@ -762,6 +826,221 @@ async def test_get_task_context_default_summary_and_full_passthrough():
         call.kwargs["profile"] != "legacy"
         for call in traceability_projection.await_args_list
     )
+
+
+@pytest.mark.asyncio
+async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from okto_pulse.core.application import effective_knowledge_read
+    from okto_pulse.core.application.service_catalog import (
+        CoreApplicationServiceCatalog,
+    )
+    from okto_pulse.core.ports.application_persistence import ApplicationRecord
+    from okto_pulse.core.services.main import CardService, SpecService
+
+    db_factory = get_session_factory()
+    board_id = _id("ctxgate-board")
+    spec_id = _id("ctxgate-spec")
+    card_id = _id("ctxgate-card")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Bounded Gate", owner_id=USER_ID))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec with omitted bodies",
+                status=SpecStatus.IN_PROGRESS,
+                created_by=USER_ID,
+                description="must not be selected by the gate query",
+                functional_requirements=[
+                    {"id": "fr-heavy", "text": "R" * 50_000}
+                ],
+                screen_mockups=[
+                    {"id": "mock-heavy", "html": "<main>" + "M" * 50_000}
+                ],
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Lean gate card",
+                status=CardStatus.IN_PROGRESS,
+                card_type=CardType.NORMAL,
+                created_by=USER_ID,
+                description="D" * 50_000,
+                details="T" * 50_000,
+                screen_mockups=[
+                    {"id": "card-mock-heavy", "html": "C" * 50_000}
+                ],
+                validations=[
+                    {
+                        "id": f"validation-{index}",
+                        "verdict": "pass" if index == 9 else "fail",
+                        "general_justification": "V" * 20_000,
+                    }
+                    for index in range(10)
+                ],
+                conclusions=[
+                    {
+                        "author_id": USER_ID,
+                        "conclusion": "must stay inside SQLite" + "X" * 50_000,
+                    }
+                ],
+            )
+        )
+        await db.commit()
+
+    queries = []
+    original_list = CoreApplicationServiceCatalog.list_application_records
+
+    async def recording_list(self, query):
+        queries.append(query)
+        records = await original_list(self, query)
+        if not query.select_fields:
+            return records
+        # Re-wrap the detached records so accidental access to a non-selected
+        # field fails at the abstract port boundary.
+        return tuple(
+            ApplicationRecord(
+                record.entity,
+                {
+                    field_name: record.values[field_name]
+                    for field_name in query.select_fields
+                    if field_name in record.values
+                },
+            )
+            for record in records
+        )
+
+    forbidden_async = AsyncMock(
+        side_effect=AssertionError("a forbidden gate body loader was called")
+    )
+    forbidden_sync = MagicMock(
+        side_effect=AssertionError("a forbidden gate body assembler was called")
+    )
+    traceability_projection = AsyncMock(
+        return_value={"subject_type": "card", "subject_id": card_id}
+    )
+
+    with patch.object(
+        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+    ), patch.object(
+        mcp_server, "check_permission", return_value=None
+    ), patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        traceability_projection,
+    ), patch.object(
+        CoreApplicationServiceCatalog,
+        "list_application_records",
+        new=recording_list,
+    ), patch.object(
+        CoreApplicationServiceCatalog,
+        "get_application_record",
+        forbidden_async,
+    ), patch.object(
+        CardService,
+        "get_card",
+        forbidden_async,
+    ), patch.object(
+        SpecService,
+        "get_spec",
+        forbidden_async,
+    ), patch.object(
+        effective_knowledge_read,
+        "project_effective_knowledge",
+        forbidden_async,
+    ), patch.object(
+        mcp_server,
+        "_mcp_architecture_for_parent",
+        forbidden_async,
+    ), patch.object(
+        mcp_server,
+        "resolve_task_context_references",
+        forbidden_sync,
+    ), patch.object(
+        mcp_server,
+        "_serialize_knowledge_base",
+        forbidden_sync,
+    ):
+        gate = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
+            context_scope="gate",
+        )
+
+    card_query = next(
+        query
+        for query in queries
+        if query.entity == "card" and "policy_version" in query.select_fields
+    )
+    spec_query = next(
+        query
+        for query in queries
+        if query.entity == "spec" and "edition" in query.select_fields
+    )
+    assert {
+        "description",
+        "details",
+        "screen_mockups",
+        "knowledge_bases",
+        "qa_items",
+        "comments",
+        "architecture_designs",
+        "validations",
+        "conclusions",
+    }.isdisjoint(card_query.select_fields)
+    assert {
+        "description",
+        "context",
+        "functional_requirements",
+        "technical_requirements",
+        "acceptance_criteria",
+        "test_scenarios",
+        "business_rules",
+        "api_contracts",
+        "decisions",
+        "screen_mockups",
+        "knowledge_bases",
+        "qa_items",
+        "architecture_designs",
+    }.isdisjoint(spec_query.select_fields)
+
+    assert gate["card"]["id"] == card_id
+    assert gate["spec"]["id"] == spec_id
+    assert "description" not in gate["card"]
+    assert "functional_requirements" not in gate["spec"]
+    assert [item["id"] for item in gate["validations"]] == [
+        f"validation-{index}" for index in range(5, 10)
+    ]
+    assert gate["validation_history"] == {
+        "total_count": 10,
+        "returned_count": 5,
+        "has_more": True,
+        "order": "oldest_to_newest_within_latest_window",
+    }
+    assert gate["reviewer_separation"]["conflicts"] == [
+        f"card_creator:{card_id}",
+        f"card_executor:{card_id}",
+    ]
+    assert "must stay inside SQLite" not in json.dumps(gate)
+    assert gate["projection"]["payload_bytes"] <= CONTEXT_GATE_BUDGET_BYTES
+    manifest = gate["content_manifest"]
+    assert manifest["manifest_version"] == 2
+    assert manifest["materialization"] == "bounded_gate"
+    assert manifest["source_payload_status"] == "not_materialized"
+    assert manifest["source_payload_sha256"] is None
+    assert len(manifest["inventory_sha256"]) == 64
+    by_path = {section["path"]: section for section in manifest["sections"]}
+    assert by_path["card.description"]["presence"] == "unknown"
+    assert by_path["spec.functional_requirements"]["presence"] == "unknown"
+    assert all("sha256" not in section for section in manifest["sections"])
 
 
 # ===========================================================================

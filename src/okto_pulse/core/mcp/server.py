@@ -11,10 +11,12 @@ import re
 import threading
 import warnings
 import uuid as _uuid
+from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from importlib.resources import files as package_files
+from types import SimpleNamespace
 from typing import Annotated, Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainValidator
@@ -67,6 +69,8 @@ from okto_pulse.core.mcp.helpers import (
 from okto_pulse.core.mcp.kg_authorization import kg_permission_error
 from okto_pulse.core.mcp.outcome import McpToolOutcome
 from okto_pulse.core.ports.application_persistence import (
+    ApplicationFilter,
+    ApplicationQuery,
     PAGE_OFFSET_MAX,
     bounded_page_offset,
 )
@@ -1613,6 +1617,60 @@ def _resource_gate_error_response(exc: ResourceGateError) -> str:
 BoolInput = bool | Literal["true", "false", "1", "0", "yes", "no"]
 OptionalBoolInput = BoolInput | None
 
+_GATE_CONTENT_VALUE_MISSING = object()
+
+_TASK_GATE_CARD_SELECT_FIELDS = (
+    "id",
+    "board_id",
+    "title",
+    "status",
+    "policy_version",
+    "cancellation_reason",
+    "cancelled_by",
+    "cancelled_at",
+    "priority",
+    "assignee_id",
+    "labels",
+    "card_type",
+    "test_scenario_ids",
+    "due_date",
+    "created_by",
+    "created_at",
+    "severity",
+    "origin_task_id",
+    "linked_test_task_ids",
+    "spec_id",
+    "sprint_id",
+    # Gate history is projected as five scalar JSON objects plus an exact
+    # count.  The persistence adapter must not return the complete JSON body.
+    "validations_count",
+    "recent_validation_1",
+    "recent_validation_2",
+    "recent_validation_3",
+    "recent_validation_4",
+    "recent_validation_5",
+)
+_TASK_GATE_SPEC_SELECT_FIELDS = (
+    "id",
+    "board_id",
+    "title",
+    "status",
+    "edition",
+    "version",
+    "require_task_validation",
+    "validation_min_confidence",
+    "validation_min_completeness",
+    "validation_max_drift",
+)
+_TASK_GATE_BOARD_SELECT_FIELDS = ("id", "settings")
+_TASK_GATE_SPRINT_SELECT_FIELDS = (
+    "id",
+    "require_task_validation",
+    "validation_min_confidence",
+    "validation_min_completeness",
+    "validation_max_drift",
+)
+
 
 def _flag_enabled(value: BoolInput) -> bool:
     """Parse the temporary string compatibility form without truthiness."""
@@ -1631,6 +1689,156 @@ def _card_subject_version(card: object) -> int:
     """Project the card's internal policy fence under its public name."""
 
     return int(getattr(card, "policy_version"))
+
+
+def _gate_record_value(record: object, field_name: str) -> Any:
+    """Read one already-loaded base-record value without lazy relationship IO."""
+
+    values = getattr(record, "values", None)
+    if isinstance(values, Mapping):
+        return values.get(field_name, _GATE_CONTENT_VALUE_MISSING)
+    if isinstance(record, Mapping):
+        return record.get(field_name, _GATE_CONTENT_VALUE_MISSING)
+    # The bounded gate path is intentionally defined over the application
+    # persistence record contract.  Unknown record implementations fail closed
+    # as "not loaded" instead of probing attributes that could be lazy relations.
+    return _GATE_CONTENT_VALUE_MISSING
+
+
+def _gate_content_section_metadata(
+    value: Any = _GATE_CONTENT_VALUE_MISSING,
+    *,
+    materialization: str = "available_not_copied",
+    reason: str = "omitted_from_gate_scope",
+) -> dict[str, Any]:
+    """Return bounded presence/count metadata without serializing ``value``."""
+
+    if value is _GATE_CONTENT_VALUE_MISSING:
+        return {
+            "presence": "unknown",
+            "materialization": "not_loaded",
+            "reason": reason,
+        }
+
+    metadata: dict[str, Any] = {
+        "presence": "present",
+        "materialization": materialization,
+        "reason": reason,
+    }
+    if value is None:
+        metadata["presence"] = "empty"
+    elif isinstance(value, str):
+        metadata["character_count"] = len(value)
+        if not value:
+            metadata["presence"] = "empty"
+    elif isinstance(value, Mapping):
+        metadata["field_count"] = len(value)
+        if not value:
+            metadata["presence"] = "empty"
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        metadata["item_count"] = len(value)
+        if not value:
+            metadata["presence"] = "empty"
+    return metadata
+
+
+async def _gate_select_application_record(
+    services: Any,
+    *,
+    entity: str,
+    record_id: str,
+    select_fields: tuple[str, ...],
+) -> Any | None:
+    """Read one bounded application record through the hexagonal query port."""
+
+    records = await services.list_application_records(
+        ApplicationQuery(
+            entity=entity,
+            filters=(ApplicationFilter("id", "eq", record_id),),
+            limit=1,
+            select_fields=select_fields,
+        )
+    )
+    return records[0] if records else None
+
+
+async def _gate_select_dependencies(services: Any, card_id: str) -> list[Any]:
+    """Resolve dependency identity/state without loading dependent card bodies."""
+
+    links = await services.list_application_records(
+        ApplicationQuery(
+            entity="card_dependency",
+            filters=(ApplicationFilter("card_id", "eq", card_id),),
+            select_fields=("depends_on_id",),
+        )
+    )
+    dependency_ids = tuple(
+        str(link.depends_on_id)
+        for link in links
+        if getattr(link, "depends_on_id", None)
+    )
+    if not dependency_ids:
+        return []
+    return list(
+        await services.list_application_records(
+            ApplicationQuery(
+                entity="card",
+                filters=(ApplicationFilter("id", "in", dependency_ids),),
+                select_fields=("id", "title", "status"),
+            )
+        )
+    )
+
+
+def _gate_recent_validations(record: object) -> tuple[list[dict[str, Any]], int]:
+    """Decode the bounded validation window returned by persistence.
+
+    Slots are selected newest-first by persistence. Core reverses them to keep
+    the historical oldest-to-newest order within the latest window. Malformed
+    scalar projections fail closed; this path never falls back to the complete
+    ``validations`` JSON field.
+    """
+
+    try:
+        total_count = max(0, int(_gate_record_value(record, "validations_count")))
+    except (TypeError, ValueError):
+        total_count = 0
+    newest_first: list[dict[str, Any]] = []
+    for index in range(1, 6):
+        value = _gate_record_value(record, f"recent_validation_{index}")
+        if value in (_GATE_CONTENT_VALUE_MISSING, None, ""):
+            continue
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("gate_validation_projection_invalid") from exc
+        if not isinstance(value, Mapping):
+            raise ValueError("gate_validation_projection_invalid")
+        newest_first.append(dict(value))
+    return list(reversed(newest_first)), total_count
+
+
+async def _gate_reviewer_executed_card(
+    services: Any,
+    *,
+    card_id: str,
+    reviewer_id: str,
+) -> bool:
+    """Check conclusion authorship server-side without loading conclusions."""
+
+    records = await services.list_application_records(
+        ApplicationQuery(
+            entity="card",
+            filters=(
+                ApplicationFilter("id", "eq", card_id),
+                ApplicationFilter("conclusion_actor_id", "eq", reviewer_id),
+            ),
+            limit=1,
+            select_fields=("id",),
+        )
+    )
+    return bool(records)
 
 
 async def _mcp_code_traceability_projection(
@@ -3570,6 +3778,8 @@ async def okto_pulse_get_task_context(
     _inc_comments = _flag_enabled(include_comments)
     _inc_architecture = _flag_enabled(include_architecture)
     _inc_superseded = _flag_enabled(include_superseded)
+    _gate_scope = _resolved_context_scope == "gate"
+    _gate_manifest_inventory: dict[str, dict[str, Any]] = {}
 
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
@@ -3578,11 +3788,24 @@ async def okto_pulse_get_task_context(
         return json.dumps({"error": "Card not found"})
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         card_service = uow.services.cards
-        card = await card_service.get_card(card_id)
+        card = (
+            await _gate_select_application_record(
+                uow.services,
+                entity="card",
+                record_id=card_id,
+                select_fields=_TASK_GATE_CARD_SELECT_FIELDS,
+            )
+            if _gate_scope
+            else await card_service.get_card(card_id)
+        )
 
         if not card or card.board_id != board_id:
             return json.dumps({"error": "Card not found"})
-        if _inc_kb:
+        _gate_validations: list[dict[str, Any]] = []
+        _gate_validation_count = 0
+        if _gate_scope:
+            _gate_validations, _gate_validation_count = _gate_recent_validations(card)
+        if _inc_kb and not _gate_scope:
             from okto_pulse.core.application.effective_knowledge_read import (
                 project_effective_knowledge,
             )
@@ -3609,8 +3832,14 @@ async def okto_pulse_get_task_context(
             "card": {
                 "id": card.id,
                 "title": card.title,
-                "description": card.description,
-                "details": card.details,
+                **(
+                    {}
+                    if _gate_scope
+                    else {
+                        "description": card.description,
+                        "details": card.details,
+                    }
+                ),
                 "status": card.status.value,
                 "subject_version": _card_subject_version(card),
                 **project_cancellation(card),
@@ -3625,27 +3854,69 @@ async def okto_pulse_get_task_context(
             },
         }
 
+        if _gate_scope:
+            for _path, _field in (
+                ("card.description", "description"),
+                ("card.details", "details"),
+            ):
+                _gate_manifest_inventory[_path] = _gate_content_section_metadata(
+                    _gate_record_value(card, _field)
+                )
+            if _inc_mockups:
+                _gate_manifest_inventory["card.screen_mockups"] = (
+                    _gate_content_section_metadata(
+                        _gate_record_value(card, "screen_mockups")
+                    )
+                )
+            if (
+                _inc_architecture
+                and _mcp_check_architecture_permission(
+                    ctx.permissions,
+                    "card",
+                    "read",
+                )
+                is None
+            ):
+                _gate_manifest_inventory["card.architecture_designs"] = (
+                    _gate_content_section_metadata()
+                )
+            if _inc_qa:
+                _gate_manifest_inventory["card.qa_items"] = (
+                    _gate_content_section_metadata()
+                )
+            if _inc_comments:
+                _gate_manifest_inventory["card.comments"] = (
+                    _gate_content_section_metadata()
+                )
+            if _inc_kb:
+                _gate_manifest_inventory["card_knowledge_bases"] = (
+                    _gate_content_section_metadata(
+                        _gate_record_value(card, "knowledge_bases")
+                    )
+                )
+
         # Bug card fields
         if card.card_type and card.card_type.value == "bug":
             result["card"]["severity"] = card.severity.value if card.severity else None
             result["card"]["origin_task_id"] = card.origin_task_id
-            result["card"]["expected_behavior"] = card.expected_behavior
-            result["card"]["observed_behavior"] = card.observed_behavior
-            result["card"]["steps_to_reproduce"] = card.steps_to_reproduce
-            result["card"]["action_plan"] = card.action_plan
             result["card"]["linked_test_task_ids"] = card.linked_test_task_ids or []
+            if not _gate_scope:
+                result["card"]["expected_behavior"] = card.expected_behavior
+                result["card"]["observed_behavior"] = card.observed_behavior
+                result["card"]["steps_to_reproduce"] = card.steps_to_reproduce
+                result["card"]["action_plan"] = card.action_plan
 
-        if _inc_mockups and card.screen_mockups:
+        if not _gate_scope and _inc_mockups and card.screen_mockups:
             result["card"]["screen_mockups"] = card.screen_mockups
 
         card_architecture_designs: list[dict[str, Any]] = []
-        if _inc_architecture:
+        if _inc_architecture and not _gate_scope:
             card_architecture_designs = await _mcp_architecture_for_parent(
                 uow.services, "card", card_id, permissions=ctx.permissions
             )
             result["card"]["architecture_designs"] = card_architecture_designs
 
-        if _inc_qa:
+        if _inc_qa and not _gate_scope:
             result["card"]["qa_items"] = [
                 {
                     "id": q.id,
@@ -3657,7 +3928,7 @@ async def okto_pulse_get_task_context(
                 for q in card.qa_items
             ]
 
-        if _inc_comments:
+        if _inc_comments and not _gate_scope:
             result["card"]["comments"] = [
                 {
                     "id": c.id,
@@ -3669,7 +3940,11 @@ async def okto_pulse_get_task_context(
             ]
 
         # Dependencies
-        deps = await card_service.get_dependencies(card_id)
+        deps = (
+            await _gate_select_dependencies(uow.services, card_id)
+            if _gate_scope
+            else await card_service.get_dependencies(card_id)
+        )
         await uow.commit()
         if deps:
             result["card"]["depends_on"] = [
@@ -3679,13 +3954,28 @@ async def okto_pulse_get_task_context(
         # Spec context (the core of task context)
         spec = None
         spec_architecture_designs: list[dict[str, Any]] = []
+        linked_scenarios: list[Any] = []
         if card.spec_id:
             spec_service = uow.services.specs
-            spec = await spec_service.get_spec(card.spec_id)
+            _gate_spec_select_fields = _TASK_GATE_SPEC_SELECT_FIELDS
+            if _gate_scope and card.test_scenario_ids:
+                _gate_spec_select_fields += ("test_scenarios",)
+            if _gate_scope and card.card_type and card.card_type.value == "test":
+                _gate_spec_select_fields += ("acceptance_criteria",)
+            spec = (
+                await _gate_select_application_record(
+                    uow.services,
+                    entity="spec",
+                    record_id=card.spec_id,
+                    select_fields=_gate_spec_select_fields,
+                )
+                if _gate_scope
+                else await spec_service.get_spec(card.spec_id)
+            )
             await uow.commit()
 
             if spec:
-                if _inc_kb:
+                if _inc_kb and not _gate_scope:
                     try:
                         spec = await project_effective_knowledge(
                             uow.services,
@@ -3697,152 +3987,326 @@ async def okto_pulse_get_task_context(
                         KnowledgePropagationServiceError,
                     ) as exc:
                         return _knowledge_propagation_error(exc)
-                spec_data: dict = {
-                    "id": spec.id,
-                    "title": spec.title,
-                    "description": spec.description,
-                    "context": spec.context,
-                    "status": spec.status.value,
-                    "edition": int(getattr(spec, "edition", 1) or 1),
-                    "version": spec.version,
-                    "functional_requirements": spec.functional_requirements or [],
-                    "technical_requirements": spec.technical_requirements or [],
-                    "acceptance_criteria": spec.acceptance_criteria or [],
-                    "test_scenarios": spec.test_scenarios or [],
-                    "business_rules": spec.business_rules or [],
-                    "api_contracts": _project_api_contracts(spec.api_contracts),
-                    "decisions": _filter_decisions_by_status(
-                        getattr(spec, "decisions", None) or [],
-                        include_superseded=_inc_superseded,
-                    ),
-                    "decisions_stats": _decisions_stats(
-                        getattr(spec, "decisions", None) or []
-                    ),
-                    "decisions_markdown": _render_decisions_markdown(
-                        getattr(spec, "decisions", None) or [],
-                        include_superseded=_inc_superseded,
-                    ),
-                }
-                if (
-                    _mcp_check_permission(
-                        ctx.permissions,
-                        "spec.integration_requirements.read",
-                        Permissions.BOARD_READ,
-                    )
-                    is None
-                ):
-                    spec_data["integration_requirements"] = (
-                        getattr(spec, "integration_requirements", None) or []
-                    )
-                if (
-                    _mcp_check_permission(
-                        ctx.permissions,
-                        "spec.observability_requirements.read",
-                        Permissions.BOARD_READ,
-                    )
-                    is None
-                ):
-                    spec_data["observability_requirements"] = (
-                        getattr(spec, "observability_requirements", None) or []
+                if _gate_scope:
+                    spec_data = {
+                        "id": spec.id,
+                        "title": spec.title,
+                        "status": spec.status.value,
+                        "edition": int(getattr(spec, "edition", 1) or 1),
+                        "version": spec.version,
+                    }
+                    for _path, _field in (
+                        ("spec.description", "description"),
+                        ("spec.context", "context"),
+                        ("spec.functional_requirements", "functional_requirements"),
+                        ("spec.technical_requirements", "technical_requirements"),
+                        ("spec.acceptance_criteria", "acceptance_criteria"),
+                        ("spec.test_scenarios", "test_scenarios"),
+                        ("spec.business_rules", "business_rules"),
+                        ("spec.api_contracts", "api_contracts"),
+                    ):
+                        _gate_manifest_inventory[_path] = (
+                            _gate_content_section_metadata(
+                                _gate_record_value(spec, _field)
+                            )
+                        )
+
+                    _decisions = _gate_record_value(spec, "decisions")
+                    _decision_metadata = _gate_content_section_metadata(_decisions)
+                    if isinstance(_decisions, list) and not _inc_superseded:
+                        _decision_metadata["item_count"] = sum(
+                            1
+                            for _decision in _decisions
+                            if isinstance(_decision, dict)
+                            and _decision.get("status") in (None, "active")
+                        )
+                        if _decision_metadata["item_count"] == 0:
+                            _decision_metadata["presence"] = "empty"
+                    _gate_manifest_inventory["spec.decisions"] = _decision_metadata
+                    _decision_presence = _decision_metadata.get("presence")
+                    _decisions_markdown_metadata: dict[str, Any] = {
+                        "presence": {
+                            "present": "derivable",
+                            "empty": "empty",
+                        }.get(str(_decision_presence), "unknown"),
+                        "materialization": "not_materialized",
+                        "reason": "derived_render_omitted_from_gate_scope",
+                    }
+                    if "item_count" in _decision_metadata:
+                        _decisions_markdown_metadata["item_count"] = int(
+                            _decision_metadata["item_count"]
+                        )
+                    _gate_manifest_inventory["spec.decisions_markdown"] = (
+                        _decisions_markdown_metadata
                     )
 
-                if _inc_mockups and spec.screen_mockups:
-                    spec_data["screen_mockups"] = spec.screen_mockups
-
-                if _inc_architecture:
-                    spec_architecture_designs = await _mcp_architecture_for_parent(
-                        uow.services, "spec", spec.id, permissions=ctx.permissions
+                    _ir_allowed = (
+                        _mcp_check_permission(
+                            ctx.permissions,
+                            "spec.integration_requirements.read",
+                            Permissions.BOARD_READ,
+                        )
+                        is None
                     )
-                    spec_data["architecture_designs"] = spec_architecture_designs
+                    if _ir_allowed:
+                        _gate_manifest_inventory["spec.integration_requirements"] = (
+                            _gate_content_section_metadata(
+                                _gate_record_value(spec, "integration_requirements")
+                            )
+                        )
+                    _or_allowed = (
+                        _mcp_check_permission(
+                            ctx.permissions,
+                            "spec.observability_requirements.read",
+                            Permissions.BOARD_READ,
+                        )
+                        is None
+                    )
+                    if _or_allowed:
+                        _gate_manifest_inventory["spec.observability_requirements"] = (
+                            _gate_content_section_metadata(
+                                _gate_record_value(spec, "observability_requirements")
+                            )
+                        )
+                    if _inc_mockups:
+                        _gate_manifest_inventory["spec.screen_mockups"] = (
+                            _gate_content_section_metadata(
+                                _gate_record_value(spec, "screen_mockups")
+                            )
+                        )
+                    if (
+                        _inc_architecture
+                        and _mcp_check_architecture_permission(
+                            ctx.permissions,
+                            "spec",
+                            "read",
+                        )
+                        is None
+                    ):
+                        _gate_manifest_inventory["spec.architecture_designs"] = (
+                            _gate_content_section_metadata()
+                        )
+                    if _inc_qa:
+                        _gate_manifest_inventory["spec.qa_items"] = (
+                            _gate_content_section_metadata()
+                        )
+                    if _inc_kb:
+                        _gate_manifest_inventory["spec.knowledge_bases"] = (
+                            _gate_content_section_metadata()
+                        )
+                else:
+                    spec_data = {
+                        "id": spec.id,
+                        "title": spec.title,
+                        "description": spec.description,
+                        "context": spec.context,
+                        "status": spec.status.value,
+                        "edition": int(getattr(spec, "edition", 1) or 1),
+                        "version": spec.version,
+                        "functional_requirements": spec.functional_requirements or [],
+                        "technical_requirements": spec.technical_requirements or [],
+                        "acceptance_criteria": spec.acceptance_criteria or [],
+                        "test_scenarios": spec.test_scenarios or [],
+                        "business_rules": spec.business_rules or [],
+                        "api_contracts": _project_api_contracts(spec.api_contracts),
+                        "decisions": _filter_decisions_by_status(
+                            getattr(spec, "decisions", None) or [],
+                            include_superseded=_inc_superseded,
+                        ),
+                        "decisions_stats": _decisions_stats(
+                            getattr(spec, "decisions", None) or []
+                        ),
+                        "decisions_markdown": _render_decisions_markdown(
+                            getattr(spec, "decisions", None) or [],
+                            include_superseded=_inc_superseded,
+                        ),
+                    }
+                    if (
+                        _mcp_check_permission(
+                            ctx.permissions,
+                            "spec.integration_requirements.read",
+                            Permissions.BOARD_READ,
+                        )
+                        is None
+                    ):
+                        spec_data["integration_requirements"] = (
+                            getattr(spec, "integration_requirements", None) or []
+                        )
+                    if (
+                        _mcp_check_permission(
+                            ctx.permissions,
+                            "spec.observability_requirements.read",
+                            Permissions.BOARD_READ,
+                        )
+                        is None
+                    ):
+                        spec_data["observability_requirements"] = (
+                            getattr(spec, "observability_requirements", None) or []
+                        )
 
-                if _inc_qa:
-                    spec_data["qa_items"] = [
-                        {
-                            "id": q.id,
-                            "question": q.question,
-                            "answer": q.answer,
-                            "asked_by": q.asked_by,
-                            "answered_by": q.answered_by,
-                        }
-                        for q in (spec.qa_items or [])
-                    ]
+                    if _inc_mockups and spec.screen_mockups:
+                        spec_data["screen_mockups"] = spec.screen_mockups
 
-                if _inc_kb:
-                    spec_data["knowledge_bases"] = [
-                        _serialize_knowledge_base(kb)
-                        for kb in (spec.knowledge_bases or [])
-                    ]
+                    if _inc_architecture:
+                        spec_architecture_designs = await _mcp_architecture_for_parent(
+                            uow.services, "spec", spec.id, permissions=ctx.permissions
+                        )
+                        spec_data["architecture_designs"] = spec_architecture_designs
+
+                    if _inc_qa:
+                        spec_data["qa_items"] = [
+                            {
+                                "id": q.id,
+                                "question": q.question,
+                                "answer": q.answer,
+                                "asked_by": q.asked_by,
+                                "answered_by": q.answered_by,
+                            }
+                            for q in (spec.qa_items or [])
+                        ]
+
+                    if _inc_kb:
+                        spec_data["knowledge_bases"] = [
+                            _serialize_knowledge_base(kb)
+                            for kb in (spec.knowledge_bases or [])
+                        ]
 
                 result["spec"] = spec_data
 
                 # Card-own knowledge bases (JSON field)
-                if _inc_kb and card.knowledge_bases:
+                if not _gate_scope and _inc_kb and card.knowledge_bases:
                     result["card_knowledge_bases"] = [
                         _serialize_knowledge_base(kb) for kb in card.knowledge_bases
                     ]
 
                 # Filter test scenarios relevant to this card
                 if card.test_scenario_ids and spec.test_scenarios:
-                    result["my_test_scenarios"] = [
+                    linked_scenarios = [
                         ts
                         for ts in spec.test_scenarios
                         if ts.get("id") in card.test_scenario_ids
                     ]
+                    result["my_test_scenarios"] = (
+                        [
+                            {
+                                key: scenario[key]
+                                for key in ("id", "title", "status", "evidence_present")
+                                if key in scenario
+                            }
+                            if isinstance(scenario, Mapping)
+                            else scenario
+                            for scenario in linked_scenarios
+                        ]
+                        if _gate_scope
+                        else linked_scenarios
+                    )
+                    if _gate_scope:
+                        _gate_manifest_inventory["my_test_scenarios"] = (
+                            _gate_content_section_metadata(linked_scenarios)
+                        )
 
-        resolved_references = resolve_task_context_references(
-            card,
-            spec,
-            include_superseded=_inc_superseded,
-            include_content=_inc_kb,
-            card_architecture_designs=card_architecture_designs
-            if _inc_architecture
-            else [],
-            spec_architecture_designs=spec_architecture_designs
-            if _inc_architecture
-            else [],
-        )
-        if not _inc_kb:
-            resolved_references["knowledge_bases"] = []
-        if not _inc_mockups:
-            resolved_references["screen_mockups"] = []
-        if not _inc_architecture:
-            resolved_references["architecture_designs"] = []
-        result["resolved_references"] = resolved_references
-        result["resource_gate_summary"] = await uow.services.resource_gate.get_summary(
+        if _gate_scope:
+            _gate_manifest_inventory["resolved_references"] = {
+                "presence": "derivable",
+                "materialization": "not_materialized",
+                "reason": "derived_references_omitted_from_gate_scope",
+            }
+        else:
+            resolved_references = await asyncio.to_thread(
+                resolve_task_context_references,
+                card,
+                spec,
+                include_superseded=_inc_superseded,
+                include_content=_inc_kb,
+                card_architecture_designs=(
+                    card_architecture_designs if _inc_architecture else []
+                ),
+                spec_architecture_designs=(
+                    spec_architecture_designs if _inc_architecture else []
+                ),
+            )
+            if not _inc_kb:
+                resolved_references["knowledge_bases"] = []
+            if not _inc_mockups:
+                resolved_references["screen_mockups"] = []
+            if not _inc_architecture:
+                resolved_references["architecture_designs"] = []
+            result["resolved_references"] = resolved_references
+        _card_resource_gate_summary = await uow.services.resource_gate.get_summary(
             board_id,
             "card",
             card_id,
+            **({"metadata_only": True} if _gate_scope else {}),
         )
+        if _gate_scope:
+            from okto_pulse.core.mcp.context_projection import (
+                build_bounded_gate_resource_summary,
+            )
+
+            result["resource_gate_summary"] = build_bounded_gate_resource_summary(
+                _card_resource_gate_summary
+            )
+        else:
+            result["resource_gate_summary"] = _card_resource_gate_summary
         if spec:
-            result["spec"][
-                "resource_gate_summary"
-            ] = await uow.services.resource_gate.get_summary(
+            _spec_resource_gate_summary = (
+                await uow.services.resource_gate.get_summary(
                 board_id,
                 "spec",
                 spec.id,
+                **({"metadata_only": True} if _gate_scope else {}),
+            )
+            )
+            result["spec"]["resource_gate_summary"] = (
+                build_bounded_gate_resource_summary(_spec_resource_gate_summary)
+                if _gate_scope
+                else _spec_resource_gate_summary
             )
 
-        # Task validations — critical for agents picking up cards that failed validation
-        result["validations"] = list(card.validations or [])
+        # Task validations — critical for agents picking up cards that failed validation.
+        # Gate keeps only the latest window in the assembly and carries the real
+        # total separately; the projector then applies its established field denylist.
+        _task_validations = (
+            _gate_validations if _gate_scope else (card.validations or [])
+        )
+        if _gate_scope:
+            result["validations"] = _gate_validations
+            result["validation_history"] = {
+                "total_count": _gate_validation_count,
+            }
+            _gate_manifest_inventory["validations"] = {
+                "presence": "present" if _gate_validation_count else "empty",
+                "materialization": "bounded_window",
+                "reason": "latest_gate_window_only",
+                "item_count": _gate_validation_count,
+            }
+        else:
+            result["validations"] = list(_task_validations)
 
         # Validation gate config (resolved from sprint -> spec -> board hierarchy)
-        board_obj = await uow.services.get_application_record(
+        board_obj = await _gate_select_application_record(
+            uow.services,
             entity="board",
             record_id=card.board_id,
+            select_fields=_TASK_GATE_BOARD_SELECT_FIELDS,
         )
         board_settings = board_obj.settings or {} if board_obj else {}
-        spec_for_gate = (
-            await uow.services.get_application_record(
-                entity="spec",
-                record_id=card.spec_id,
+        if not card.spec_id:
+            spec_for_gate = None
+        elif _gate_scope:
+            # The bounded spec lookup already established either the lean
+            # record or its absence; never fall back to a full read here.
+            spec_for_gate = spec
+        else:
+            spec_for_gate = await uow.services.get_application_record(
+                entity="spec", record_id=card.spec_id, includes=()
             )
-            if card.spec_id
-            else None
-        )
         sprint_for_gate = (
-            await uow.services.get_application_record(
+            await _gate_select_application_record(
+                uow.services,
                 entity="sprint",
                 record_id=card.sprint_id,
+                select_fields=_TASK_GATE_SPRINT_SELECT_FIELDS,
             )
             if card.sprint_id
             else None
@@ -3854,10 +4318,27 @@ async def okto_pulse_get_task_context(
             evaluate_task_reviewer_separation,
         )
 
+        reviewer_card = card
+        if _gate_scope:
+            reviewer_was_executor = await _gate_reviewer_executed_card(
+                uow.services,
+                card_id=card.id,
+                reviewer_id=ctx.agent_id,
+            )
+            reviewer_card = SimpleNamespace(
+                id=card.id,
+                assignee_id=card.assignee_id,
+                created_by=card.created_by,
+                conclusions=(
+                    ({"author_id": ctx.agent_id},)
+                    if reviewer_was_executor
+                    else ()
+                ),
+            )
         separation = evaluate_task_reviewer_separation(
             board=board_obj,
             reviewer_id=ctx.agent_id,
-            card=card,
+            card=reviewer_card,
         )
         result["reviewer_separation"] = {
             "applies_to_task_validation": not (
@@ -3872,13 +4353,6 @@ async def okto_pulse_get_task_context(
         # client actually receives. No state-machine change.
         operational_flow = None
         if card.card_type and card.card_type.value == "test":
-            linked_scenarios = []
-            if spec and card.test_scenario_ids:
-                linked_scenarios = [
-                    ts
-                    for ts in (spec.test_scenarios or [])
-                    if ts.get("id") in card.test_scenario_ids
-                ]
             operational_flow = operational_flow_for_test_card(
                 card_id=card.id,
                 board_id=board_id,
@@ -3940,17 +4414,43 @@ async def okto_pulse_get_task_context(
                 context_scope=_resolved_context_scope,
             )
 
-        from okto_pulse.core.mcp.context_projection import project_task_context
-
-        projected = project_task_context(
-            result,
-            card_id=card_id,
-            profile=profile,
-            context_scope=_resolved_context_scope,
+        from okto_pulse.core.mcp.context_projection import (
+            build_bounded_task_content_manifest,
+            project_task_context,
         )
+
+        if _gate_scope:
+            projected = project_task_context(
+                result,
+                card_id=card_id,
+                profile=profile,
+                context_scope=_resolved_context_scope,
+                content_manifest=build_bounded_task_content_manifest(
+                    _gate_manifest_inventory
+                ),
+            )
+        else:
+            # Full/all, detail and summary may still carry large authorized
+            # bodies.  Keep their byte-compatible projection work off the
+            # shared MCP event loop.
+            projected = await asyncio.to_thread(
+                project_task_context,
+                result,
+                card_id=card_id,
+                profile=profile,
+                context_scope=_resolved_context_scope,
+            )
         # Compact separators make the advertised profile byte budget a wire-level
         # bound too (the projection counter uses the same compact JSON contract).
-        return json.dumps(
+        if _gate_scope:
+            return json.dumps(
+                projected,
+                default=str,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+        return await asyncio.to_thread(
+            json.dumps,
             projected,
             default=str,
             separators=(",", ":"),

@@ -219,7 +219,13 @@ async def test_enforce_fails_closed_before_validation_or_status_mutation(
 class _Ctx:
     agent_id = REVIEWER_ID
     agent_name = "Task Reviewer"
-    permissions = ["card.validation.submit"]
+    permissions = [
+        "card.validation.submit",
+        "code_traceability.investigation.read",
+        "code_traceability.evidence.read",
+        "code_traceability.target.read",
+        "code_traceability.overlap.read",
+    ]
 
 
 async def _call_tool(name: str, db_factory, **kwargs) -> dict:

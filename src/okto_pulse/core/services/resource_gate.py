@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from okto_pulse.core.ports.relational_services import (
     resolve_resource_gate_adapter_factory,
@@ -82,13 +82,15 @@ class ResourceGateService:
         board_id: str,
         entity_type: EntityType | str,
         entity_id: str,
+        *,
+        metadata_only: bool = False,
     ) -> dict[str, Any]:
         lineage = await self._resolve_resource_lineage(
             board_id,
             str(entity_type),
             entity_id,
             include_coverage=False,
-            projection_profile="summary",
+            projection_profile="gate" if metadata_only else "summary",
         )
         return await self._summary_from_lineage(
             board_id=board_id,
@@ -96,6 +98,7 @@ class ResourceGateService:
             entity_id=entity_id,
             lineage=lineage,
             authority_context="entity_completion",
+            metadata_only=metadata_only,
         )
 
     async def _summary_from_lineage(
@@ -106,6 +109,7 @@ class ResourceGateService:
         entity_id: str,
         lineage: ResolvedResourceLineage,
         authority_context: ResourceGateAuthorityContext,
+        metadata_only: bool = False,
     ) -> dict[str, Any]:
         authority_policy = resource_gate_authority_policy(authority_context)
         resources = [
@@ -131,24 +135,54 @@ class ResourceGateService:
             ),
             None,
         )
-        findings_result = await ArchitectureFindingGate(self.db).evaluate(
-            board_id=board_id,
-            owner_type=entity_type,
-            owner_id=entity_id,
-            architecture_refs=self._effective_architecture_refs(
-                architecture_resource
-            ),
+        architecture_refs = self._effective_architecture_refs(
+            architecture_resource
         )
-        architecture_findings = findings_result["architecture_findings"]
-        architecture_propagation = await self._architecture_propagation_block(
-            architecture_resource=architecture_resource,
+        if metadata_only:
+            architecture_findings = self._architecture_findings_metadata(
+                owner_type=entity_type,
+                owner_id=entity_id,
+                architecture_refs=architecture_refs,
+            )
+        else:
+            findings_result = await ArchitectureFindingGate(self.db).evaluate(
+                board_id=board_id,
+                owner_type=entity_type,
+                owner_id=entity_id,
+                architecture_refs=architecture_refs,
+            )
+            architecture_findings = findings_result["architecture_findings"]
+        architecture_propagation = (
+            self._architecture_propagation_block_metadata(
+                board_id=board_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                architecture_resource=architecture_resource,
+            )
+            if metadata_only
+            else await self._architecture_propagation_block(
+                architecture_resource=architecture_resource,
+            )
+        )
+        architecture_findings_blocking = bool(
+            architecture_findings.get(
+                "blocking",
+                architecture_findings.get("active_count"),
+            )
         )
         warnings: list[dict[str, Any]] = []
-        if architecture_findings["active_count"]:
+        if architecture_findings_blocking:
+            findings_metadata_unavailable = bool(
+                architecture_findings.get("metadata_unavailable_count")
+            )
             warnings.append(
                 {
-                    "code": "architecture_findings_active",
-                    "message": (
+                    "code": (
+                        "architecture_findings_metadata_unavailable"
+                        if findings_metadata_unavailable
+                        else "architecture_findings_active"
+                    ),
+                    "message": architecture_findings.get("remediation") or (
                         "Active Architecture Design findings block Done until "
                         "the backend architecture critic resolves them."
                     ),
@@ -186,15 +220,143 @@ class ResourceGateService:
             "authority_policy": authority_policy.to_dict(),
             "warnings": warnings,
             "architecture_findings": architecture_findings,
-            "architecture_findings_blocking": bool(
-                architecture_findings["active_count"]
-            ),
+            "architecture_findings_blocking": architecture_findings_blocking,
             "architecture_propagation": architecture_propagation,
             "architecture_propagation_blocking": architecture_propagation[
                 "blocking"
             ],
             "resource_lineage": lineage_payload,
             "lineage_counts": lineage.counts,
+        }
+
+    @staticmethod
+    def _architecture_findings_metadata(
+        *,
+        owner_type: str,
+        owner_id: str,
+        architecture_refs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Project persisted finding-run counts without listing findings."""
+
+        active_count = 0
+        resolved_count = 0
+        superseded_count = 0
+        metadata_unavailable_count = 0
+        by_design: list[dict[str, Any]] = []
+        top_remediation: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for index, ref in enumerate(architecture_refs):
+            design_id = str(ref.get("id") or "").strip()
+            identity = design_id or str(ref.get("source_ref") or "").strip()
+            identity = identity or f"unidentified:{index}"
+            if identity in seen:
+                continue
+            seen.add(identity)
+
+            run = ref.get("current_finding_run")
+            design_version = ResourceGateService._metadata_non_negative_int(
+                ref.get("design_version")
+            )
+            run_version = (
+                ResourceGateService._metadata_non_negative_int(
+                    run.get("design_version")
+                )
+                if isinstance(run, Mapping)
+                else None
+            )
+            current = bool(
+                isinstance(run, Mapping)
+                and run.get("is_current") is True
+                and design_version is not None
+                and run_version == design_version
+            )
+            active = (
+                ResourceGateService._metadata_non_negative_int(
+                    run.get("active_count")
+                )
+                if current
+                else None
+            )
+            resolved = (
+                ResourceGateService._metadata_non_negative_int(
+                    run.get("resolved_count")
+                )
+                if current
+                else None
+            )
+            superseded = (
+                ResourceGateService._metadata_non_negative_int(
+                    run.get("superseded_count")
+                )
+                if current
+                else None
+            )
+            metadata_available = active is not None
+            if not metadata_available:
+                metadata_unavailable_count += 1
+            else:
+                active_count += active
+                resolved_count += resolved or 0
+                superseded_count += superseded or 0
+
+            design_projection = {
+                "design_id": design_id or None,
+                "title": ref.get("title"),
+                "source_entity_type": ref.get("source_entity_type"),
+                "source_entity_id": ref.get("source_entity_id"),
+                "source_entity_title": ref.get("source_entity_title"),
+                "active_count": active,
+                "resolved_count": resolved,
+                "superseded_count": superseded,
+                "metadata_available": metadata_available,
+            }
+            by_design.append(design_projection)
+            if not metadata_available or active:
+                top_remediation.append(
+                    {
+                        **design_projection,
+                        "reason_code": (
+                            "architecture_finding_metadata_unavailable"
+                            if not metadata_available
+                            else "architecture_findings_active"
+                        ),
+                        "remediation": (
+                            "Read the full Resource Gate summary to verify the "
+                            "current architecture finding verdict."
+                            if not metadata_available
+                            else "Resolve active findings on the source design."
+                        ),
+                    }
+                )
+
+        blocking = bool(active_count or metadata_unavailable_count)
+        remediation = None
+        if metadata_unavailable_count:
+            remediation = (
+                "Architecture finding counts cannot be proven current from "
+                "bounded metadata. Read the full Resource Gate summary before "
+                "treating the finding gate as clear."
+            )
+        elif active_count:
+            remediation = (
+                "Active Architecture Design findings block Done until the "
+                "backend architecture critic resolves them."
+            )
+        return {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "design_count": len(seen),
+            "active_count": active_count,
+            "resolved_count": resolved_count,
+            "superseded_count": superseded_count,
+            "metadata_unavailable_count": metadata_unavailable_count,
+            "by_code": {},
+            "by_design": by_design,
+            "top_remediation": top_remediation[:10],
+            "blocking": blocking,
+            "remediation": remediation,
+            "evaluation_mode": "metadata_only",
         }
 
     async def _architecture_propagation_block(
@@ -239,6 +401,195 @@ class ResourceGateService:
                 "to bypass this."
             ),
         }
+
+    @staticmethod
+    def _architecture_propagation_block_metadata(
+        *,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+        architecture_resource: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Decide from persisted run metadata without loading the design.
+
+        Eligibility requires a complete current finding-run snapshot whose
+        design version matches the inherited ref, whose validator summary is
+        valid and issue-free, and whose active finding count is zero. Any
+        missing, stale or incompatible metadata fails closed. The agent can
+        drill down to the canonical full summary, where the existing policy may
+        load/revalidate the design.
+        """
+
+        empty: dict[str, Any] = {
+            "blocking": False,
+            "ineligible_sources": [],
+            "remediation": None,
+            "evaluation_mode": "metadata_only",
+            "decision": "not_required",
+            "reason_code": None,
+            "drilldown": None,
+        }
+        if not architecture_resource:
+            return empty
+        inherited = list(architecture_resource.get("inherited_refs") or [])
+        if not inherited:
+            return empty
+
+        blocked_sources: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        eligible_source_count = 0
+        for index, ref in enumerate(inherited):
+            design_id = str(
+                ref.get("id") or ref.get("source_design_id") or ""
+            ).strip()
+            identity = design_id or str(ref.get("source_ref") or "").strip()
+            identity = identity or f"unidentified:{index}"
+            if identity in seen:
+                continue
+            seen.add(identity)
+            run = ref.get("current_finding_run")
+            reason_code = ResourceGateService._metadata_run_block_reason(
+                ref=ref,
+                run=run,
+            )
+            if reason_code is None:
+                eligible_source_count += 1
+                continue
+            run_payload = (
+                {
+                    key: run.get(key)
+                    for key in (
+                        "critic_run_id",
+                        "design_version",
+                        "is_current",
+                        "active_count",
+                        "resolved_count",
+                        "superseded_count",
+                        "validator_valid",
+                        "validator_issue_count",
+                    )
+                }
+                if isinstance(run, Mapping)
+                else None
+            )
+            known_ineligible = reason_code == "active_findings_present"
+            blocked_sources.append(
+                {
+                    "code": (
+                        "architecture_propagation_blocked"
+                        if known_ineligible
+                        else "architecture_propagation_metadata_unavailable"
+                    ),
+                    "eligible": False,
+                    "eligibility_state": (
+                        "ineligible" if known_ineligible else "unknown"
+                    ),
+                    "design_id": design_id or None,
+                    "design_version": ref.get("design_version"),
+                    "source_design_id": ref.get("source_design_id"),
+                    "source_ref": ref.get("source_ref"),
+                    "source_entity_type": ref.get("source_entity_type"),
+                    "source_entity_id": ref.get("source_entity_id"),
+                    "current_finding_run": run_payload,
+                    "verdict_status": (
+                        "current" if known_ineligible else "unavailable"
+                    ),
+                    "revalidation_reason": reason_code,
+                }
+            )
+
+        if not blocked_sources:
+            return {
+                **empty,
+                "decision": "eligible",
+                "evaluated_source_count": eligible_source_count,
+            }
+        remediation = (
+            "One or more inherited Architecture Design sources are blocked or "
+            "cannot be proven eligible from their persisted current finding-run "
+            "metadata. Read the full Resource Gate summary so the canonical "
+            "architecture policy can revalidate when required before any mutation."
+        )
+        return {
+            "blocking": True,
+            "ineligible_sources": blocked_sources,
+            "remediation": remediation,
+            "evaluation_mode": "metadata_only",
+            "decision": "fail_closed",
+            "reason_code": (
+                "architecture_propagation_blocked"
+                if all(
+                    item["eligibility_state"] == "ineligible"
+                    for item in blocked_sources
+                )
+                else "architecture_propagation_metadata_unavailable"
+            ),
+            "evaluated_source_count": eligible_source_count + len(blocked_sources),
+            "drilldown": {
+                "rel": "read_full_resource_gate_summary",
+                "tool": "okto_pulse_get_resource_gate_summary",
+                "arguments": {
+                    "board_id": board_id,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                },
+            },
+        }
+
+    @staticmethod
+    def _metadata_run_block_reason(
+        *,
+        ref: Mapping[str, Any],
+        run: Any,
+    ) -> str | None:
+        """Return ``None`` only for a provably current persisted verdict."""
+
+        if not isinstance(run, Mapping):
+            return "current_finding_run_missing"
+        if not str(run.get("critic_run_id") or "").strip():
+            return "current_finding_run_incomplete"
+        if run.get("is_current") is not True:
+            return "current_finding_run_stale"
+
+        design_version = ResourceGateService._metadata_non_negative_int(
+            ref.get("design_version")
+        )
+        run_design_version = ResourceGateService._metadata_non_negative_int(
+            run.get("design_version")
+        )
+        if design_version is None or run_design_version is None:
+            return "design_version_metadata_missing"
+        if design_version != run_design_version:
+            return "design_version_incompatible"
+        if run.get("validator_valid") is not True:
+            return "validator_verdict_unavailable"
+
+        issue_count = ResourceGateService._metadata_non_negative_int(
+            run.get("validator_issue_count")
+        )
+        if issue_count is None:
+            return "validator_issue_count_missing"
+        if issue_count != 0:
+            return "validator_issues_present"
+
+        active_count = ResourceGateService._metadata_non_negative_int(
+            run.get("active_count")
+        )
+        if active_count is None:
+            return "active_finding_count_missing"
+        if active_count != 0:
+            return "active_findings_present"
+        return None
+
+    @staticmethod
+    def _metadata_non_negative_int(value: Any) -> int | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return None
+        return normalized if normalized >= 0 else None
 
     async def get_effective_resources(
         self,
@@ -898,6 +1249,37 @@ class ResourceGateService:
 
     async def collect_refs(self, *args: Any, **kwargs: Any) -> dict[str, list[dict]]:
         return await self._adapter.collect_refs(*args, **kwargs)
+
+    def supports_metadata_lineage(self) -> bool:
+        """True only when the adapter implements the complete bounded quartet."""
+
+        return all(
+            callable(getattr(self._adapter, method_name, None))
+            for method_name in (
+                "load_entity_ref_metadata",
+                "load_parent_refs_metadata",
+                "collect_refs_metadata",
+                "filter_inherited_refs_metadata",
+            )
+        )
+
+    async def load_entity_ref_metadata(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._adapter.load_entity_ref_metadata(*args, **kwargs)
+
+    async def load_parent_refs_metadata(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return await self._adapter.load_parent_refs_metadata(*args, **kwargs)
+
+    async def collect_refs_metadata(
+        self, *args: Any, **kwargs: Any
+    ) -> dict[str, list[dict]]:
+        return await self._adapter.collect_refs_metadata(*args, **kwargs)
+
+    async def filter_inherited_refs_metadata(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> dict[str, list[dict]]:
+        return await self._adapter.filter_inherited_refs_metadata(*args, **kwargs)
 
     async def filter_inherited_refs(
         self,

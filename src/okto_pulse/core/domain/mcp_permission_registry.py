@@ -12,6 +12,8 @@ import json
 from collections import Counter
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
+from enum import Enum
+from types import MappingProxyType
 from typing import Any
 
 from okto_pulse.core.domain.sdlc_registry import transition_permission_flags
@@ -22,12 +24,127 @@ from okto_pulse.core.domain.sdlc_registry import transition_permission_flags
 MAX_HUMAN_ONLY_TOOL_EXEMPTIONS = 3
 
 
+class McpAdmissionClass(str, Enum):
+    """Closed execution-effect classes published with every Core MCP tool."""
+
+    READER = "reader"
+    WRITER = "writer"
+
+
+# Exact allowlist reviewed for concurrent read admission.  This is deliberately
+# independent from permission-leaf spelling: read-authorized tools that persist
+# counters, acquire semantic mutexes, render, preview, or otherwise produce
+# effects remain writers unless they are explicitly present here.
+MCP_READER_TOOL_NAMES = frozenset(
+    {
+        "okto_pulse_get_active_default_board_config",
+        "okto_pulse_get_amendment_revision",
+        "okto_pulse_get_architecture_design_schema",
+        "okto_pulse_get_board",
+        "okto_pulse_get_board_design_system",
+        "okto_pulse_get_board_guidelines",
+        "okto_pulse_get_card",
+        "okto_pulse_get_card_dependencies",
+        "okto_pulse_get_checklist_binding",
+        "okto_pulse_get_checklist_receipt",
+        "okto_pulse_get_code_evidence",
+        "okto_pulse_get_code_investigation_receipt",
+        "okto_pulse_get_current_quality_assessment",
+        "okto_pulse_get_current_semantic_guideline_assessment",
+        "okto_pulse_get_design_system",
+        "okto_pulse_get_guideline_revision",
+        "okto_pulse_get_ideation",
+        "okto_pulse_get_ideation_context",
+        "okto_pulse_get_ideation_knowledge",
+        "okto_pulse_get_implementation_overlaps",
+        "okto_pulse_get_my_profile",
+        "okto_pulse_get_publish_health",
+        "okto_pulse_get_quality_assessment_receipt",
+        "okto_pulse_get_refinement",
+        "okto_pulse_get_refinement_context",
+        "okto_pulse_get_refinement_knowledge",
+        "okto_pulse_get_resource_gate_summary",
+        "okto_pulse_get_semantic_guideline_assessment",
+        "okto_pulse_get_semantic_guideline_waiver",
+        "okto_pulse_get_spec",
+        "okto_pulse_get_spec_context",
+        "okto_pulse_get_spec_evaluation",
+        "okto_pulse_get_spec_knowledge",
+        "okto_pulse_get_sprint",
+        "okto_pulse_get_sprint_context",
+        "okto_pulse_get_sprint_evaluation",
+        "okto_pulse_get_task_conclusions",
+        "okto_pulse_get_task_validation",
+        "okto_pulse_get_traceability_report",
+        "okto_pulse_kg_canonical_debt_list",
+        "okto_pulse_kg_canonical_partition_integrity_list",
+        "okto_pulse_kg_connectivity_dlq_diagnose",
+        "okto_pulse_kg_connectivity_dlq_verify",
+        "okto_pulse_kg_dead_letter_list",
+        "okto_pulse_kg_digest_layer_mismatch_list",
+        "okto_pulse_kg_evaluate_bug_cognitive_closure",
+        "okto_pulse_kg_evaluate_cognitive_readiness",
+        "okto_pulse_kg_global_discovery_recovery_status",
+        "okto_pulse_kg_global_outbox_dead_letter_list",
+        "okto_pulse_kg_health",
+        "okto_pulse_kg_health_readiness",
+        "okto_pulse_kg_list_cognitive_dlq",
+        "okto_pulse_kg_list_cognitive_pending_items",
+        "okto_pulse_kg_list_cognitive_readiness_items",
+        "okto_pulse_kg_originates_from_contract_audit",
+        "okto_pulse_kg_orphan_report",
+        "okto_pulse_kg_provenance_drift",
+        "okto_pulse_kg_queue_drilldown",
+        "okto_pulse_kg_stale_canonical_parity_list",
+        "okto_pulse_kg_takedown_status",
+        "okto_pulse_kg_verify_grounding",
+        "okto_pulse_list_agents",
+        "okto_pulse_list_amendment_revisions",
+        "okto_pulse_list_api_contracts",
+        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_list_attachments",
+        "okto_pulse_list_blockers",
+        "okto_pulse_list_board_members",
+        "okto_pulse_list_business_rules",
+        "okto_pulse_list_by_board",
+        "okto_pulse_list_cards_by_status",
+        "okto_pulse_list_code_evidence",
+        "okto_pulse_list_comments",
+        "okto_pulse_list_default_board_config_versions",
+        "okto_pulse_list_design_systems",
+        "okto_pulse_list_guideline_revisions",
+        "okto_pulse_list_guidelines",
+        "okto_pulse_list_implementation_targets",
+        "okto_pulse_list_integration_requirements",
+        "okto_pulse_list_my_boards",
+        "okto_pulse_list_observability_requirements",
+        "okto_pulse_list_qa",
+        "okto_pulse_list_quality_assessments",
+        "okto_pulse_list_quality_findings",
+        "okto_pulse_list_research_decisions",
+        "okto_pulse_list_screen_mockups",
+        "okto_pulse_list_semantic_guideline_assessments",
+        "okto_pulse_list_semantic_guideline_findings",
+        "okto_pulse_list_semantic_guideline_waiver_events",
+        "okto_pulse_list_semantic_guideline_waivers",
+        "okto_pulse_list_spec_evaluations",
+        "okto_pulse_list_spec_validations",
+        "okto_pulse_list_sprint_evaluations",
+        "okto_pulse_list_task_validations",
+        "okto_pulse_list_test_scenarios",
+        "okto_pulse_resolve_bug_regression_scenarios",
+        "okto_pulse_suggest_sprints",
+    }
+)
+
+
 @dataclass(frozen=True, order=True)
 class McpToolPermissionPolicy:
     """Canonical permission leaves that an exact MCP command may exercise."""
 
     tool_name: str
     permission_flags: tuple[str, ...]
+    admission_class: McpAdmissionClass = McpAdmissionClass.WRITER
 
 
 @dataclass(frozen=True, order=True)
@@ -36,10 +153,20 @@ class HumanOnlyToolExemption:
 
     tool_name: str
     reason: str
+    admission_class: McpAdmissionClass = McpAdmissionClass.WRITER
 
 
 def _policy(tool_name: str, *permission_flags: str) -> McpToolPermissionPolicy:
-    return McpToolPermissionPolicy(tool_name, tuple(permission_flags))
+    admission_class = (
+        McpAdmissionClass.READER
+        if tool_name in MCP_READER_TOOL_NAMES
+        else McpAdmissionClass.WRITER
+    )
+    return McpToolPermissionPolicy(
+        tool_name,
+        tuple(permission_flags),
+        admission_class,
+    )
 
 
 # Keep this tuple sorted by exact tool name.  Multiple flags describe a command
@@ -887,6 +1014,40 @@ HUMAN_ONLY_MCP_TOOL_EXEMPTIONS: tuple[HumanOnlyToolExemption, ...] = (
 )
 
 
+_MCP_POLICY_TOOL_NAMES = frozenset(
+    policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES
+)
+_UNBOUND_READER_TOOL_NAMES = MCP_READER_TOOL_NAMES - _MCP_POLICY_TOOL_NAMES
+if _UNBOUND_READER_TOOL_NAMES:
+    raise RuntimeError(
+        "MCP reader admission allowlist references tools without a permission "
+        "policy: " + ",".join(sorted(_UNBOUND_READER_TOOL_NAMES))
+    )
+
+
+MCP_TOOL_ADMISSION_CLASSES = MappingProxyType(
+    {
+        **{
+            policy.tool_name: policy.admission_class
+            for policy in MCP_TOOL_PERMISSION_POLICIES
+        },
+        **{
+            exemption.tool_name: exemption.admission_class
+            for exemption in HUMAN_ONLY_MCP_TOOL_EXEMPTIONS
+        },
+    }
+)
+
+
+def resolve_mcp_tool_admission_class(tool_name: object) -> McpAdmissionClass:
+    """Resolve exact Core metadata; unknown tools fail closed as writers."""
+
+    return MCP_TOOL_ADMISSION_CLASSES.get(
+        str(tool_name or ""),
+        McpAdmissionClass.WRITER,
+    )
+
+
 @dataclass(frozen=True)
 class McpPermissionRegistryReport:
     """Deterministic result of comparing the live catalog with the manifest."""
@@ -1035,10 +1196,14 @@ def build_mcp_permission_registry_report(
 __all__ = [
     "HUMAN_ONLY_MCP_TOOL_EXEMPTIONS",
     "MAX_HUMAN_ONLY_TOOL_EXEMPTIONS",
+    "MCP_READER_TOOL_NAMES",
+    "MCP_TOOL_ADMISSION_CLASSES",
     "MCP_TOOL_PERMISSION_POLICIES",
     "HumanOnlyToolExemption",
+    "McpAdmissionClass",
     "McpPermissionRegistryError",
     "McpPermissionRegistryReport",
     "McpToolPermissionPolicy",
     "build_mcp_permission_registry_report",
+    "resolve_mcp_tool_admission_class",
 ]

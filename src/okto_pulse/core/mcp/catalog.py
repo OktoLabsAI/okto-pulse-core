@@ -14,6 +14,11 @@ from typing import Annotated, Any, Callable, get_args, get_origin, get_type_hint
 
 from pydantic import TypeAdapter
 
+from okto_pulse.core.domain.mcp_permission_registry import (
+    McpAdmissionClass,
+    resolve_mcp_tool_admission_class,
+)
+
 
 @dataclass(frozen=True)
 class CoreMcpTool:
@@ -25,6 +30,7 @@ class CoreMcpTool:
     parameters: dict[str, Any]
     title: str | None = None
     enabled: bool = True
+    admission_class: McpAdmissionClass = McpAdmissionClass.WRITER
 
 
 @dataclass(frozen=True)
@@ -223,6 +229,7 @@ class CoreMcpCatalog:
             parameters=_parameters_for(fn),
             title=title,
             enabled=True if enabled is None else enabled,
+            admission_class=resolve_mcp_tool_admission_class(tool_name),
         )
         self._tool_manager._tools[tool_name] = tool
         return tool

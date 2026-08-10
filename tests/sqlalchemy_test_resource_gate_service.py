@@ -7,9 +7,10 @@ remain inferred from the existing Architecture, Mockup and Knowledge artifacts.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -195,6 +196,127 @@ class TestSqlAlchemyResourceGateAdapter:
     ) -> dict[str, list[dict[str, Any]]]:
         return await self._collect_refs(ref)
 
+    async def load_entity_ref_metadata(
+        self,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+    ) -> LineageEntityRef:
+        """Load identity and hierarchy fields without hydrating entity bodies."""
+
+        self._validate_entity_type(entity_type)
+        model = self._model_options(entity_type)[0]
+        columns = [model.id, model.board_id, model.title]
+        for field_name in ("ideation_id", "refinement_id", "spec_id"):
+            column = getattr(model, field_name, None)
+            if column is not None:
+                columns.append(column)
+        row = (
+            await self.db.execute(
+                select(*columns).where(
+                    model.id == entity_id,
+                    model.board_id == board_id,
+                )
+            )
+        ).mappings().one_or_none()
+        if row is None:
+            raise ResourceGateNotFound(entity_type, entity_id, board_id)
+        entity = SimpleNamespace(
+            board_id=str(row["board_id"]),
+            title=row.get("title"),
+            ideation_id=row.get("ideation_id"),
+            refinement_id=row.get("refinement_id"),
+            spec_id=row.get("spec_id"),
+        )
+        return LineageEntityRef(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            title=entity.title,
+            entity=entity,
+        )
+
+    async def load_parent_refs_metadata(
+        self,
+        board_id: str,
+        root: LineageEntityRef,
+    ) -> list[LineageEntityRef]:
+        entity = root.entity
+        parents: list[LineageEntityRef] = []
+        seen: set[tuple[str, str]] = set()
+
+        async def add_parent(entity_type: str, entity_id: str | None) -> None:
+            if not entity_id or (entity_type, entity_id) in seen:
+                return
+            parent = await self.load_entity_ref_metadata(
+                board_id,
+                entity_type,
+                entity_id,
+            )
+            seen.add((entity_type, entity_id))
+            parents.append(parent)
+
+        if root.entity_type == "refinement":
+            await add_parent("ideation", getattr(entity, "ideation_id", None))
+        elif root.entity_type == "spec":
+            await add_parent("refinement", getattr(entity, "refinement_id", None))
+            await add_parent("ideation", getattr(entity, "ideation_id", None))
+            refinement = next(
+                (
+                    parent.entity
+                    for parent in parents
+                    if parent.entity_type == "refinement"
+                ),
+                None,
+            )
+            await add_parent(
+                "ideation",
+                getattr(refinement, "ideation_id", None),
+            )
+        elif root.entity_type == "card":
+            await add_parent("spec", getattr(entity, "spec_id", None))
+            spec = next(
+                (
+                    parent.entity
+                    for parent in parents
+                    if parent.entity_type == "spec"
+                ),
+                None,
+            )
+            await add_parent("refinement", getattr(spec, "refinement_id", None))
+            await add_parent("ideation", getattr(spec, "ideation_id", None))
+            refinement = next(
+                (
+                    parent.entity
+                    for parent in parents
+                    if parent.entity_type == "refinement"
+                ),
+                None,
+            )
+            await add_parent(
+                "ideation",
+                getattr(refinement, "ideation_id", None),
+            )
+        return parents
+
+    async def collect_refs_metadata(
+        self,
+        ref: LineageEntityRef,
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "architecture": await self._architecture_refs_metadata(ref),
+            "mockup": await self._mockup_refs_metadata(ref),
+            "knowledge_base": await self._knowledge_refs_metadata(ref),
+        }
+
+    async def filter_inherited_refs_metadata(
+        self,
+        root: LineageEntityRef,
+        parent: LineageEntityRef,
+        refs: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        del root, parent
+        return refs
+
     async def load_active_marks(
         self,
         board_id: str,
@@ -344,6 +466,210 @@ class TestSqlAlchemyResourceGateAdapter:
                 item["source_design_id"] = row.get("source_design_id")
             if row.get("source_ref"):
                 item["source_ref"] = row.get("source_ref")
+            refs.append(item)
+        return refs
+
+    async def _architecture_refs_metadata(
+        self,
+        ref: LineageEntityRef,
+    ) -> list[dict[str, Any]]:
+        result = await self.db.execute(
+            select(
+                ArchitectureDesign.id,
+                ArchitectureDesign.title,
+                ArchitectureDesign.version.label("design_version"),
+                ArchitectureDesign.source_design_id,
+                ArchitectureDesign.source_ref,
+                ArchitectureDesign.source_version,
+            )
+            .where(
+                ArchitectureDesign.board_id == getattr(ref.entity, "board_id"),
+                ArchitectureDesign.parent_type == ref.entity_type,
+                self._architecture_parent_column(ref.entity_type) == ref.entity_id,
+            )
+            .order_by(ArchitectureDesign.created_at.asc())
+        )
+        refs: list[dict[str, Any]] = []
+        for row in result.mappings().all():
+            item = self._artifact_ref(
+                ref,
+                artifact_id=row.get("id"),
+                title=row.get("title"),
+            )
+            for key in (
+                "design_version",
+                "source_design_id",
+                "source_ref",
+                "source_version",
+            ):
+                if row.get(key) not in (None, ""):
+                    item[key] = row[key]
+            item["effective"] = True
+            refs.append(item)
+        return refs
+
+    async def _json_array_metadata_rows(
+        self,
+        ref: LineageEntityRef,
+        *,
+        attribute_name: str,
+        field_names: tuple[str, ...],
+    ) -> list[dict[str, Any]]:
+        model = self._model_options(ref.entity_type)[0]
+        json_column = getattr(model, attribute_name)
+        elements = func.json_each(
+            func.coalesce(json_column, "[]")
+        ).table_valued("key", "value", joins_implicitly=True)
+        columns = [
+            func.json_extract(elements.c.value, f"$.{field_name}").label(
+                field_name
+            )
+            for field_name in field_names
+        ]
+        result = await self.db.execute(
+            select(*columns)
+            .select_from(model)
+            .join(elements, true())
+            .where(
+                model.id == ref.entity_id,
+                model.board_id == getattr(ref.entity, "board_id"),
+            )
+            .order_by(elements.c.key.asc())
+        )
+        return [dict(row) for row in result.mappings().all()]
+
+    async def _mockup_refs_metadata(
+        self,
+        ref: LineageEntityRef,
+    ) -> list[dict[str, Any]]:
+        rows = await self._json_array_metadata_rows(
+            ref,
+            attribute_name="screen_mockups",
+            field_names=(
+                "id",
+                "title",
+                "name",
+                "root_source_mockup_id",
+                "immediate_parent_mockup_id",
+                "source_mockup_id",
+                "origin_id",
+                "origin_ref",
+                "source_ref",
+                "source",
+                "source_version",
+                "content_hash",
+            ),
+        )
+        refs: list[dict[str, Any]] = []
+        for row in rows:
+            item = self._artifact_ref(
+                ref,
+                artifact_id=row.get("id"),
+                title=row.get("title") or row.get("name"),
+            )
+            for key in (
+                "root_source_mockup_id",
+                "immediate_parent_mockup_id",
+                "source_mockup_id",
+                "origin_id",
+                "origin_ref",
+                "source_ref",
+                "source",
+                "source_version",
+                "content_hash",
+            ):
+                if row.get(key) not in (None, ""):
+                    item[key] = row[key]
+            item["effective"] = True
+            refs.append(item)
+        return refs
+
+    async def _knowledge_refs_metadata(
+        self,
+        ref: LineageEntityRef,
+    ) -> list[dict[str, Any]]:
+        if ref.entity_type == "card":
+            rows = await self._json_array_metadata_rows(
+                ref,
+                attribute_name="knowledge_bases",
+                field_names=(
+                    "id",
+                    "title",
+                    "root_source_kb_id",
+                    "source_kb_id",
+                    "immediate_parent_kb_id",
+                    "origin_ref",
+                    "source_ref",
+                    "source",
+                    "source_version",
+                    "content_hash",
+                ),
+            )
+            refs: list[dict[str, Any]] = []
+            for row in rows:
+                item = self._artifact_ref(
+                    ref,
+                    artifact_id=row.get("id"),
+                    title=row.get("title"),
+                )
+                for key in (
+                    "root_source_kb_id",
+                    "source_kb_id",
+                    "immediate_parent_kb_id",
+                    "origin_ref",
+                    "source_ref",
+                    "source",
+                    "source_version",
+                    "content_hash",
+                ):
+                    if row.get(key) not in (None, ""):
+                        item[key] = row[key]
+                item["effective"] = True
+                refs.append(item)
+            return refs
+
+        kb_model, fk_column = {
+            "ideation": (IdeationKnowledgeBase, IdeationKnowledgeBase.ideation_id),
+            "refinement": (
+                RefinementKnowledgeBase,
+                RefinementKnowledgeBase.refinement_id,
+            ),
+            "spec": (SpecKnowledgeBase, SpecKnowledgeBase.spec_id),
+        }[ref.entity_type]
+        result = await self.db.execute(
+            select(
+                kb_model.id,
+                kb_model.title,
+                kb_model.source_type,
+                kb_model.source_id,
+                kb_model.source_version,
+                kb_model.source_kb_id,
+                kb_model.root_source_kb_id,
+                kb_model.immediate_parent_kb_id,
+                kb_model.content_hash,
+            )
+            .where(fk_column == ref.entity_id)
+            .order_by(kb_model.created_at.asc())
+        )
+        refs = []
+        for row in result.mappings().all():
+            item = self._artifact_ref(
+                ref,
+                artifact_id=row.get("id"),
+                title=row.get("title"),
+            )
+            for key in (
+                "source_type",
+                "source_id",
+                "source_version",
+                "source_kb_id",
+                "root_source_kb_id",
+                "immediate_parent_kb_id",
+                "content_hash",
+            ):
+                if row.get(key) not in (None, ""):
+                    item[key] = row[key]
+            item["effective"] = True
             refs.append(item)
         return refs
 

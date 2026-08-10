@@ -51,6 +51,31 @@ class ResourceGateRelationalAdapter(Protocol):
     ) -> dict[str, dict[str, set[str]]]: ...
 
 
+class ResourceGateMetadataLineageAdapter(Protocol):
+    """Origin-bounded read capability required by the gate projection.
+
+    ResourceGateService discovers the complete quartet at runtime. A
+    ``projection_profile='gate'`` request fails closed when any method is
+    unavailable; it never falls back to the body-loading relational reads.
+    Metadata refs carry only identity, lineage/effectivity and persisted
+    revision fields — never KB/mockup/architecture bodies or computed hashes.
+    """
+
+    async def load_entity_ref_metadata(
+        self, board_id: str, entity_type: str, entity_id: str
+    ) -> Any: ...
+    async def load_parent_refs_metadata(
+        self, board_id: str, root: Any
+    ) -> list[Any]: ...
+    async def collect_refs_metadata(self, ref: Any) -> dict[str, list[dict]]: ...
+    async def filter_inherited_refs_metadata(
+        self,
+        root: Any,
+        parent: Any,
+        refs: dict[str, list[dict]],
+    ) -> dict[str, list[dict]]: ...
+
+
 class ResourceGateAdapterFactory(Protocol):
     def __call__(self, relational_context: object) -> ResourceGateRelationalAdapter: ...
 
@@ -87,6 +112,7 @@ def reset_relational_service_adapters_for_tests() -> None:
 
 __all__ = [
     "ResourceGateAdapterFactory",
+    "ResourceGateMetadataLineageAdapter",
     "ResourceGateRelationalAdapter",
     "register_resource_gate_adapter_factory",
     "register_runtime_settings_adapter",
