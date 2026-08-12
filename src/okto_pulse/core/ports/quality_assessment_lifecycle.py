@@ -45,6 +45,11 @@ class QualityAssessmentLifecyclePersistencePort(Protocol):
     ``stale_transition_key`` at most once.  A valid stale receipt is historical
     head state, not an orphan.  The adapter never commits, rolls back, closes
     the transaction, or opens another UoW.
+
+    ``admit_validation`` additionally freezes the effective policy, checklist,
+    and evaluator input scope for the admitted subject edition. The adapter
+    derives that snapshot from server-owned governance state; no client digest
+    is accepted as authority.
     """
 
     async def load_lifecycle_state(
@@ -61,7 +66,15 @@ class QualityAssessmentLifecyclePersistencePort(Protocol):
     async def apply_lifecycle_plan(
         self,
         plan: AssessmentLifecyclePlan,
-    ) -> None: ...
+    ) -> None:
+        """Apply all mutable-head actions atomically with the subject move.
+
+        When ``clear_checklist_execution_head`` is true, remove only the Spec's
+        mutable checklist head. Immutable checklist executions, receipts, and
+        item results are retained as prior-edition history.
+        """
+
+        ...
 
 
 @runtime_checkable

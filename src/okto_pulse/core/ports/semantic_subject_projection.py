@@ -125,6 +125,7 @@ class SemanticAssessmentV2ReadPort(Protocol):
         entity_type: str,
         subject_id: str,
         binding_id: str,
+        subject_edition: int | None = None,
     ) -> SemanticAssessmentReceiptProjectionV2 | None:
         """Return only a live-current v2 receipt for the exact subject fence."""
         ...

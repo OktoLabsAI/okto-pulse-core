@@ -468,6 +468,7 @@ class Ideation(Base):
     scope_assessment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     complexity: Mapped[IdeationComplexity | None] = mapped_column(IdeationComplexityType(), nullable=True)
     status: Mapped[IdeationStatus] = mapped_column(IdeationStatusType(), default=IdeationStatus.DRAFT, nullable=False)
+    edition: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -484,6 +485,9 @@ class Ideation(Base):
     # scope_assessment (which is evaluation-owned). Default false; the write
     # path works while the ideation is in evaluating status.
     skip_ambiguity_gate: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_ambiguity_gate_edition: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -644,6 +648,7 @@ class Refinement(Base):
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     status: Mapped[RefinementStatus] = mapped_column(RefinementStatusType(), default=RefinementStatus.DRAFT, nullable=False)
+    edition: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -660,6 +665,9 @@ class Refinement(Base):
     skip_ambiguity_gate: Mapped[bool] = mapped_column(
         nullable=False,
         server_default=text("false"),
+    )
+    skip_ambiguity_gate_edition: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
     )
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
@@ -810,6 +818,12 @@ class Spec(Base):
     )
     refinement_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("refinements.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_refinement_snapshot_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    source_refinement_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -2847,6 +2861,7 @@ class QualityAssessmentReceiptFixture(Base):
     subject_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     subject_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     subject_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    subject_edition: Mapped[int | None] = mapped_column(Integer, nullable=True)
     assessment_kind: Mapped[str | None] = mapped_column(String(50), nullable=True)
     origin: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source: Mapped[str | None] = mapped_column(String(50), nullable=True)

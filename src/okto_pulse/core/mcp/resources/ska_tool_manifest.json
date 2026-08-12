@@ -1,8 +1,8 @@
 {
   "canonicalization": "json-utf8-lf-sort-keys-v1",
-  "manifest_sha256": "77635e7c149e2d8e883ae50e47921d4f8ae65331eb11c26360b254b209c28c97",
+  "manifest_sha256": "ba78ab6920e2e4f5816877f0d4ac4bbb7e1ff43337a1a76b20f35a9b27fa1e38",
   "manifest_version": "SK-A-tools/v1",
-  "tool_count": 11,
+  "tool_count": 13,
   "tools": [
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/refinement",
@@ -26,7 +26,7 @@
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",
-      "implementation_sha256": "f1a359cd6eda1f5213a4df358e7fd045189a6511ce9c06ec4ed4ac04d31df65b",
+      "implementation_sha256": "bac56ee40d73f0a8ef53c56b15f1842926ccce60169780401826be021f6f5d0c",
       "name": "okto_pulse_get_checklist_receipt",
       "permission_policy": [
         "BOARD_READ",
@@ -53,6 +53,16 @@
         "resolved receipt subject *.quality.read via preflight"
       ],
       "schema_sha256": "291c3c7fa31456da88bbff6c56a9e395f26c05070b134a8d4b79d0cc4fcd5d35"
+    },
+    {
+      "documentation_uri": "okto-pulse://reference/tool-docs/quality",
+      "implementation_sha256": "731d740f63164ae3ef53bdb25e2d91fbbcf42d1ede49038856138ae61d9185c8",
+      "name": "okto_pulse_get_requirement_lint_preflight",
+      "permission_policy": [
+        "BOARD_READ",
+        "spec.quality.read"
+      ],
+      "schema_sha256": "9f633d32d955cb9c68c9107cdcc23422f657940ac8753100910ad0399eb6e333"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/quality",
@@ -86,34 +96,43 @@
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/quality",
-      "implementation_sha256": "d0688b870c3ea3c11484b91c68053daaaf6642e9331b666802de8b8ce6c375f5",
+      "implementation_sha256": "8c4d9257f65912d146ca2b2d0f0a49bc17277f6a0ef4a8fd843a18e227bd9144",
       "name": "okto_pulse_record_ambiguity_assessment",
       "permission_policy": [
         "SPECS_UPDATE",
-        "{subject_type}.quality.assess",
-        "{subject_type}.qa.ask when proposed_questions is non-empty"
+        "{subject_type}.quality.assess"
       ],
-      "schema_sha256": "3806385f335c927b449d20cc4f369055452f777a33c18194c419e22eb7411de4"
+      "schema_sha256": "947b018effa5396ea0fe03a71f5763f1c94b74001c6116a91a54a34afd43111e"
+    },
+    {
+      "documentation_uri": "okto-pulse://reference/tool-docs/quality",
+      "implementation_sha256": "75fb6a455ca2adfbcb6893f8d0a9669b46067d9282f795a2f56020dc3451648f",
+      "name": "okto_pulse_record_requirement_lint",
+      "permission_policy": [
+        "SPECS_UPDATE",
+        "spec.quality.assess"
+      ],
+      "schema_sha256": "593fa68aa2ca5e6f2d5b412b9e211d0ec359c59e1085d29be5bfc369f3de83e7"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",
-      "implementation_sha256": "4faae191e15b4a1478f5ebd82430b7dc9ebcd18ac8b44f75dd164906fe65b5be",
+      "implementation_sha256": "7d36678fe211bf0a996687e2fb75bf6dd8d5c2461b0c43ead924ac8eafc191cf",
       "name": "okto_pulse_start_checklist_execution",
       "permission_policy": [
         "SPECS_UPDATE",
         "spec.checklist.execute"
       ],
-      "schema_sha256": "1e666bee948db2574fc228782e6b9ccee8234fa8c5fa908313db1485be146c82"
+      "schema_sha256": "e68457f0cce2e3cbaa9d9818791ee7bdaadfa41b804f646d5cbea0bd14c75d8a"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",
-      "implementation_sha256": "63e90de9ca53a9af8123fb36cf36904fc48594088e1701ac617f4588c4ae9d67",
+      "implementation_sha256": "4d3499e17c1c25969d41735ab5e74b3115e3137c838d1da73d04b91a160225f7",
       "name": "okto_pulse_submit_checklist_execution",
       "permission_policy": [
         "SPECS_UPDATE",
         "spec.checklist.execute"
       ],
-      "schema_sha256": "478ef686b6dca41adb67d51cc16dab4bb4775a66168a9fa24ea0ec86e9d04901"
+      "schema_sha256": "cde56317eec056c5a66a39e3939fba319837143bef8503c0746f0108d4ccdf58"
     }
   ]
 }

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from okto_pulse.core.domain.enums import IdeationStatus
 from okto_pulse.core.domain.quality_assessment import QualityPageCursor
@@ -12,10 +13,15 @@ from okto_pulse.core.models.quality_assessment import (
     decode_quality_cursor,
     encode_quality_cursor,
 )
-from okto_pulse.core.models.schemas import IdeationPageItem
+from okto_pulse.core.models.schemas import (
+    IdeationPageItem,
+    QualityAssessmentSummary,
+)
 from okto_pulse.core.services.ska_observability import (
     METRIC_PROJECTION_QUERIES_TOTAL,
+    METRIC_VALIDATION_EXTERNAL_COGNITION_UOW_DURATION_SECONDS,
     SkaMetricEvent,
+    observe_validation_uow_factory,
     observe_ska_projection_queries,
     reset_ska_metric_samples_for_tests,
     sanitize_ska_metric,
@@ -46,28 +52,87 @@ def test_parent_quality_summary_is_permission_omittable_and_closed() -> None:
     allowed = _ideation(
         quality_summaries={
             "ambiguity": {
-                "receipt_id": "qar-1",
-                "subject_version": 3,
-                "currentness": "current",
-                "score": 1,
-                "scale": {
-                    "kind": "ambiguity_score",
-                    "min": 1,
-                    "max": 5,
-                    "direction": "lower_better",
+                "edition": 3,
+                "state": "current",
+                "previous_count": 2,
+                "current_result": {
+                    "score": 0,
+                    "scale": {
+                        "kind": "ambiguity_score",
+                        "min": 0,
+                        "max": 5,
+                        "direction": "lower_better",
+                    },
                 },
-                "head_revision": 2,
             }
         }
     ).model_dump(mode="json")
     assert set(allowed["quality_summaries"]["ambiguity"]) == {
-        "receipt_id",
-        "subject_version",
-        "currentness",
-        "score",
-        "scale",
-        "head_revision",
+        "edition",
+        "state",
+        "previous_count",
+        "current_result",
     }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {
+            "edition": 4,
+            "state": "not_started",
+            "previous_count": 3,
+            "current_result": None,
+        },
+        {
+            "edition": 4,
+            "state": "current",
+            "previous_count": 1,
+            "current_result": {
+                "score": 0,
+                "scale": {
+                    "kind": "ambiguity_score",
+                    "min": 0,
+                    "max": 5,
+                    "direction": "lower_better",
+                },
+            },
+        },
+    ),
+)
+def test_quality_summary_response_schema_accepts_canonical_states(payload) -> None:
+    result = TypeAdapter(QualityAssessmentSummary).validate_python(payload)
+    assert result.model_dump(mode="json") == payload
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {
+            "edition": 4,
+            "state": "current",
+            "previous_count": 0,
+            "current_result": None,
+        },
+        {
+            "edition": 4,
+            "state": "not_started",
+            "previous_count": 0,
+            "current_result": {
+                "score": 0,
+                "scale": {
+                    "kind": "ambiguity_score",
+                    "min": 0,
+                    "max": 5,
+                    "direction": "lower_better",
+                },
+            },
+        },
+    ),
+)
+def test_quality_summary_response_schema_rejects_incoherent_state(payload) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(QualityAssessmentSummary).validate_python(payload)
 
 
 def test_quality_finding_input_rejects_server_owned_fields() -> None:
@@ -155,3 +220,43 @@ def test_ska_metrics_reject_ids_and_free_form_labels() -> None:
                 },
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_external_cognition_metric_wraps_only_the_short_uow() -> None:
+    reset_ska_metric_samples_for_tests()
+    phases: list[str] = []
+
+    async def external_preflight() -> None:
+        phases.append("preflight")
+
+    @asynccontextmanager
+    async def raw_uow(**_kwargs):
+        phases.append("uow_enter")
+        try:
+            yield object()
+        finally:
+            phases.append("uow_exit")
+
+    await external_preflight()
+    assert ska_metric_samples() == ()
+
+    observed = observe_validation_uow_factory(
+        raw_uow,
+        assessment_kind="ambiguity",
+        subject_type="ideation",
+    )
+    async with observed(actor=object()):
+        phases.append("submit")
+
+    assert phases == ["preflight", "uow_enter", "submit", "uow_exit"]
+    samples = tuple(
+        item
+        for item in ska_metric_samples()
+        if item["metric_name"]
+        == METRIC_VALIDATION_EXTERNAL_COGNITION_UOW_DURATION_SECONDS
+    )
+    assert len(samples) == 1
+    assert samples[0]["assessment_kind"] == "ambiguity"
+    assert samples[0]["subject_type"] == "ideation"
+    assert samples[0]["outcome"] == "success"

@@ -142,9 +142,9 @@ def test_callable_names_and_schema_keys_stable():
     # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
     # al. +6). Set-level drift is now ALSO guarded by
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
-    # 2026-08-09: reviewed surface is 332 tools after 19 Code Traceability tools.
-    # joins the governance commands for revisions, impact, compliance and waivers.
-    assert len(tools) == 332
+    # 2026-08-11: reviewed surface is 334 tools after adding the externally
+    # supplied Requirement Lint result and preflight contracts.
+    assert len(tools) == 334
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

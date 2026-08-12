@@ -29,6 +29,7 @@ from okto_pulse.core.application.knowledge_workspace import (
 from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
 from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 
 
 @dataclass(frozen=True)
@@ -349,12 +350,14 @@ class MarkResourceNotApplicableUseCase:
             actor,
             allowed_share_permissions={"editor", "admin"},
         )
-        await _require_resource_gate_entity(
+        entity = await _require_resource_gate_entity(
             uow,
             command.board_id,
             command.entity_type,
             command.entity_id,
         )
+        if command.entity_type in {"ideation", "refinement", "spec"}:
+            require_draft_mutation(entity, subject_type=command.entity_type)
         data = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
             command.entity_type,
@@ -379,12 +382,14 @@ class ClearResourceNotApplicableUseCase:
             actor,
             allowed_share_permissions={"editor", "admin"},
         )
-        await _require_resource_gate_entity(
+        entity = await _require_resource_gate_entity(
             uow,
             command.board_id,
             command.entity_type,
             command.entity_id,
         )
+        if command.entity_type in {"ideation", "refinement", "spec"}:
+            require_draft_mutation(entity, subject_type=command.entity_type)
         data = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,
             command.entity_type,

@@ -427,6 +427,7 @@ class SetRefinementAmbiguityGateSkipCommand:
         "skip",
         "reason",
         "expected_refinement_version",
+        "expected_refinement_edition",
     )
 
     def __init__(
@@ -436,20 +437,23 @@ class SetRefinementAmbiguityGateSkipCommand:
         skip: bool,
         reason: str,
         expected_refinement_version: int,
+        expected_refinement_edition: int,
     ) -> None:
         self.refinement_id = refinement_id
         self.skip = skip
         self.reason = reason
         self.expected_refinement_version = expected_refinement_version
+        self.expected_refinement_edition = expected_refinement_edition
 
 
 class SetRefinementAmbiguityGateSkipResult:
-    __slots__ = ("skipped", "activity_id", "version")
+    __slots__ = ("skipped", "activity_id", "version", "edition")
 
-    def __init__(self, *, skipped: bool, activity_id: str, version: int) -> None:
+    def __init__(self, *, skipped: bool, activity_id: str, version: int, edition: int) -> None:
         self.skipped = skipped
         self.activity_id = activity_id
         self.version = version
+        self.edition = edition
 
 
 class SetRefinementAmbiguityGateSkipUseCase:
@@ -477,6 +481,7 @@ class SetRefinementAmbiguityGateSkipUseCase:
                 command.skip,
                 reason=command.reason,
                 expected_refinement_version=command.expected_refinement_version,
+                expected_refinement_edition=command.expected_refinement_edition,
                 source="rest",
                 actor_name=actor.actor_name,
             )
@@ -494,6 +499,7 @@ class SetRefinementAmbiguityGateSkipUseCase:
             skipped=result.skipped,
             activity_id=result.activity_id,
             version=result.version,
+            edition=result.edition,
         )
 
 

@@ -208,7 +208,7 @@ async def _client_and_entities():
                 id=spec_id,
                 board_id=board_id,
                 title="Architecture REST Spec",
-                status=SpecStatus.APPROVED,
+                status=SpecStatus.DRAFT,
                 created_by=USER_ID,
                 functional_requirements=["FR"],
                 acceptance_criteria=["AC"],

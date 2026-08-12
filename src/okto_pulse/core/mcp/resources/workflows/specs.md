@@ -58,48 +58,41 @@ Semantic guideline assessment follows
 
 ### Spec Quality — Canonical Agent Flow
 
-Use this section for **status-to-action routing**. Receipt mechanics live in
+Use this section for **status-to-action routing**. Result lifecycle rules live in
 `okto-pulse://reference/quality-assessments`, signatures in
 `okto-pulse://reference/tool-docs/quality`, and validation rules in
 `okto-pulse://reference/spec_gates`.
 
 #### Surface responsibilities
 
-- **Quality is read-only for Specs.** From `draft`, semantic Spec writers issue
-  `requirement_lint` automatically. Any `spec_validation` receipt is migrated
-  audit evidence; the live validation action does not write it through Quality.
+- **Requirement Lint is external agent evidence.** Pulse Core and Community do
+  not inspect a local repository or run lint cognition. At `approved`, the
+  agent records it with `okto_pulse_record_requirement_lint`.
 - **Validation is actionable at `approved`.** It owns the configured checklist
   and `okto_pulse_submit_spec_validation`.
-- Never call `okto_pulse_record_ambiguity_assessment` or create a Spec receipt
-  manually. Lint is advisory: its score is the finding count over evaluated
-  rules (lower is better); zero is not permission to advance.
-- **Every semantic write ends with a lint review, not with the write.** The
-  write you just made produced a fresh `requirement_lint` receipt and may have
-  materialized proposed questions into the Spec's Q&A. Read the receipt,
-  triage its findings, and account for every generated question (answer it or
-  explicitly leave it for the human) before declaring the authoring step done
-  — the mandatory steps live in
-  `okto-pulse://reference/quality-assessments` under "After any semantic Spec
-  write, review what the lint generated".
+- Never call `okto_pulse_record_ambiguity_assessment` for a Spec. Requirement
+  Lint requires an accepted result for the Current edition; finding count and
+  severity are advisory and never independently authorize or block the move.
 
 #### Agent flow by Spec status
 
 | Status | Required behavior |
 |---|---|
-| `draft` | Author with semantic Spec tools, then read current `requirement_lint`. No head means **no evidence**, not zero findings. Diagnose through findings and fix stable anchors through the owning writer. Never require a native `spec_validation` receipt. |
-| `review` | Refresh full context and lint. Resolve material findings or record why they are acceptable. Lint informs saturation but does not block approval. |
-| `approved` | Correct missing, stale, or material lint before validating. Otherwise follow **The Spec Validation Gate** below; its live result and current Spec status are authoritative. |
-| `validated`, `in_progress`, `done` | Read Quality only for a decision or audit. Stale, superseded, or historical receipts never authorize transitions. Reopened content reruns authoring and validation. |
-| `cancelled` or archived | Audit only. After restore or reopen, follow the row for the resulting status and require current evidence. |
+| `draft` | Author with semantic Spec tools. Previous validation results are history, not live gates. |
+| `review` | Review the candidate without issuing a new Requirement Lint result. |
+| `approved` | Run the external analysis, call `okto_pulse_record_requirement_lint`, then follow **The Spec Validation Gate** below. |
+| `validated`, `in_progress`, `done` | Read Quality only for a decision or audit. Only the Current result for this lifecycle edition may support a decision; Previous results are history. Reopening in `draft` starts a new edition and reruns authoring and validation. |
+| `cancelled` or archived | Audit only. After restore or reopen, follow the row for the resulting status and require a Current result for the new edition. |
 
 #### Token-efficient read sequence
 
-1. Read the mandatory full Spec context.
-2. Call `okto_pulse_get_current_quality_assessment` for
+1. Read the mandatory full Spec context at `approved`.
+2. Record Requirement Lint with exact version, edition, and head fences.
+3. Call `okto_pulse_get_current_quality_assessment` for
    `subject_type="spec"` and `assessment_kind="requirement_lint"`.
-3. If a head exists, inspect `currentness.current`; call
+4. If a Current result exists, inspect its lifecycle state; call
    `okto_pulse_list_quality_findings` only to diagnose an issue.
-4. Read `spec_validation` receipts/history only for audit. For readiness, use
+5. Read earlier results only for audit. For readiness, use
    live Validation and the current Spec context.
 
 ### The Spec Validation Gate
@@ -116,25 +109,24 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    `blocking`, combine its identity with the current Spec version from the
    required full Spec context, then call `okto_pulse_start_checklist_execution`.
    Submit all ten ordered `/specify/v1` results with concrete anchors via
-   `okto_pulse_submit_checklist_execution`, and read the issued receipt with
-   `okto_pulse_get_checklist_receipt`. Re-run the full Spec context or
+   `okto_pulse_submit_checklist_execution`, and read the submitted result with
+   `okto_pulse_get_checklist_receipt` (the compatibility API name). Re-run the full Spec context or
    `okto_pulse_get_allowed_transitions` before validation; that canonical
-   readiness check detects stale or failing receipts.
+   readiness check detects a missing or failing Current result.
 5. Only then call `okto_pulse_submit_spec_validation`.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may
-read the binding and receipts and execute the configured immutable template,
-but must not attempt to mutate its binding or author checklist items. Any Spec
-content/input identity change or executable binding identity change can make an
-earlier receipt stale. The executable identity is the binding digest/template
-pin presented at execution start; mode/version-only governance changes stay in
-the audit history and preserve currentness when that executable identity is
-unchanged. Use the ordered `stale_reasons` rather than guessing which fence
-changed.
+read the binding and validation results and execute the configured immutable
+template, but must not attempt to mutate its binding or author checklist
+items. The result belongs to the Spec lifecycle edition. Returning the Spec to
+`draft` increments that edition, moves the earlier result to Previous, and
+requires a new execution when the candidate reaches validation again. The
+binding digest/template pin remains technical audit evidence; it does not
+create a second human-facing lifecycle state.
 
 **Thresholds** (default 80/80/30): `completeness` and `assertiveness` higher-is-better minimums; `ambiguity` LOWER-is-better maximum. All scores are 0-100 integers, not 1-5 — a value like `5` is read literally as 5/100 and will usually fail the gate.
 
-**Single source for gate mechanics** — canonical flow, atomic `outcome` computation, content lock, and the unlock path (`okto_pulse_move_spec` back to `draft`/`approved`, clearing `current_validation_id`): `okto-pulse://reference/spec_gates`.
+**Single source for gate mechanics** — canonical flow, atomic `outcome` computation, content lock, and the reopen path (`okto_pulse_move_spec` back to `draft`, starting a new edition and clearing `current_validation_id`): `okto-pulse://reference/spec_gates`.
 
 ## 2.3b Spec Evaluation — Quality Gate for Execution
 

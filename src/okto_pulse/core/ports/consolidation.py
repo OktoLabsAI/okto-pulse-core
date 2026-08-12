@@ -50,6 +50,7 @@ class CurrentQualityAssessmentSummary:
     subject_type: str
     subject_id: str
     subject_version: int
+    subject_edition: int | None
     assessment_kind: str
     receipt_id: str
     head_revision: int
@@ -83,6 +84,7 @@ class CurrentQualityAssessmentSummary:
             "subject_type": self.subject_type,
             "subject_id": self.subject_id,
             "subject_version": self.subject_version,
+            "subject_edition": self.subject_edition,
             "assessment_kind": self.assessment_kind,
             "receipt_id": self.receipt_id,
             "head_revision": self.head_revision,

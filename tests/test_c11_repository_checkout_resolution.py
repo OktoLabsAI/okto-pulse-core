@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import multiprocessing
 import os
 import sys
@@ -23,15 +24,6 @@ def _checkout(workspace: Path, name: str, edition: str) -> Path:
         encoding="utf-8",
     )
     return repo
-
-
-def _capture_spawned_import_paths(queue) -> None:  # noqa: ANN001
-    queue.put(
-        {
-            "sys_path": tuple(sys.path),
-            "pythonpath": os.environ.get("PYTHONPATH", ""),
-        }
-    )
 
 
 def test_c11_explicit_repository_override_wins_and_is_provenanced(
@@ -115,9 +107,25 @@ def test_c11_activation_removes_legacy_roots_from_parent_and_child_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # This test exercises inferred current-vs-legacy selection. The suite may
+    # pin the real paired checkouts explicitly; those process-level overrides
+    # must not replace the synthetic workspace under test.
+    monkeypatch.delenv("OKTO_PULSE_CORE_REPO", raising=False)
+    monkeypatch.delenv("OKTO_PULSE_COMMUNITY_REPO", raising=False)
     workspace = tmp_path / "workspace"
     current_core = _checkout(workspace, "okto-pulse-core", "core")
     current_community = _checkout(workspace, "okto-pulse", "community")
+    probe_module = "c11_spawn_path_probe"
+    (current_core / "src" / f"{probe_module}.py").write_text(
+        "import os\n"
+        "import sys\n\n"
+        "def capture(queue):\n"
+        "    queue.put({\n"
+        "        'sys_path': tuple(sys.path),\n"
+        "        'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+        "    })\n",
+        encoding="utf-8",
+    )
     legacy_core = _checkout(workspace, "okto_labs_pulse_core", "core")
     legacy_community = _checkout(
         workspace,
@@ -157,9 +165,10 @@ def test_c11_activation_removes_legacy_roots_from_parent_and_child_paths(
     assert not any("okto_labs_pulse_" in value for value in sys.path)
     assert "okto_labs_pulse_" not in os.environ["PYTHONPATH"]
 
+    probe = importlib.import_module(probe_module)
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
-    process = context.Process(target=_capture_spawned_import_paths, args=(queue,))
+    process = context.Process(target=probe.capture, args=(queue,))
     process.start()
     process.join(timeout=20)
     assert process.exitcode == 0
@@ -169,3 +178,4 @@ def test_c11_activation_removes_legacy_roots_from_parent_and_child_paths(
     assert tuple(child["sys_path"][:2]) == expected
     assert "okto_labs_pulse_" not in os.pathsep.join(child["sys_path"])
     assert "okto_labs_pulse_" not in child["pythonpath"]
+    sys.modules.pop(probe_module, None)

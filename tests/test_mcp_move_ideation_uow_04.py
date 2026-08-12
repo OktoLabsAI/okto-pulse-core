@@ -84,6 +84,7 @@ async def test_mcp_move_ideation_uow_preserves_payload_and_persists(db_factory, 
         "ideation_id": ideation_id,
         "from_status": "draft",
         "to_status": "review",
+        "edition": 1,
     }
     # committed through the UoW (factory session) and visible on a fresh session
     async with db_factory() as db:

@@ -140,10 +140,26 @@ async def test_ts_9455d0bf_human_ambiguity_apply_and_remove_audited(db_factory):
         await db.commit()
 
     async with db_factory() as db:
-        await IdeationService(db).set_ambiguity_gate_skip(ideation_id, USER_ID, True, source="rest")
+        await IdeationService(db).set_ambiguity_gate_skip(
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
+        )
         await db.commit()
     async with db_factory() as db:
-        res = await IdeationService(db).set_ambiguity_gate_skip(ideation_id, USER_ID, False, source="rest")
+        res = await IdeationService(db).set_ambiguity_gate_skip(
+            ideation_id,
+            USER_ID,
+            False,
+            reason="Skip is no longer needed in this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
+        )
         await db.commit()
         assert res.skip_ambiguity_gate is False  # persisted removal
 

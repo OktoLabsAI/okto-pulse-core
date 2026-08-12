@@ -37,6 +37,9 @@ from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.models import BoardCreate, IdeationMove
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.core.domain.human_validation_cycle import (
+    LifecycleTransitionConflictError,
+)
 from okto_pulse.core.ports.authentication import Principal
 from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.services import BoardService
@@ -203,6 +206,15 @@ def test_mcp_adapter_actor_and_error():
         "detail": "Attach the missing resource.",
         "details": {"entity_type": "ideation"},
     }
+    lifecycle = json.loads(
+        MCPAdapterContract.error(
+            LifecycleTransitionConflictError("refinement", "refinement-1")
+        )
+    )
+    assert lifecycle["error"] == "subject_lifecycle_transition_conflict"
+    assert lifecycle["category"] == "conflict"
+    assert lifecycle["retryable"] is True
+    assert lifecycle["next_action"] == "refresh_and_retry"
 
 
 # --------------------------------------------------------------------------- #
@@ -353,6 +365,7 @@ async def test_mcp_move_ideation_payload_and_envelopes(db_factory, _stub_auth):
         "ideation_id": ideation_id,
         "from_status": "draft",
         "to_status": "review",
+        "edition": 1,
     }
 
     not_found = await _call_tool(
@@ -417,6 +430,9 @@ async def test_mcp_submit_spec_validation_missing_spec_envelope(db_factory, _stu
         "okto_pulse_submit_spec_validation",
         board_id=board_id,
         spec_id="missing-spec-09",
+        expected_validation_edition=1,
+        expected_spec_version=1,
+        expected_head_revision=0,
         completeness=95,
         completeness_justification="complete enough",
         assertiveness=95,

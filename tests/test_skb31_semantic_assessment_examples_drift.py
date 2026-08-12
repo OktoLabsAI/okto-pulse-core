@@ -31,6 +31,7 @@ def test_v2_example_has_explicit_discriminators_and_human_pinpoint() -> None:
     pinpoint = metric["pinpoints"][0]
 
     assert payload["contract_version"] == "v2"
+    assert payload["expected_subject_edition"] == 3
     assert metric["contract_version"] == "v2"
     assert pinpoint["contract_version"] == "v2"
     assert pinpoint["title"]

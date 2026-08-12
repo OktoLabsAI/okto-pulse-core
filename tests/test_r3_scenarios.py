@@ -23,6 +23,7 @@ from r3_scenario_helpers import (
     USER_ID,
     add_card,
     call_tool,
+    freeze_refinement_completion_fixture,
     new_board,
     seed_legacy_spec_with_card,
     seed_refinement,
@@ -432,6 +433,7 @@ async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
     async with db_factory() as db:
         refinement = await db.get(Refinement, refinement_id)
         refinement.status = RefinementStatus.DONE
+        await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
 
     spec_result = await call_tool(

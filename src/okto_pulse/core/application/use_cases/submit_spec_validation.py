@@ -31,7 +31,7 @@ from okto_pulse.core.application.use_cases.spec_crud import (
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
-_REQUIRED_FIELDS = (
+_LEGACY_REQUIRED_FIELDS = (
     "completeness",
     "completeness_justification",
     "assertiveness",
@@ -41,6 +41,7 @@ _REQUIRED_FIELDS = (
     "general_justification",
     "recommendation",
 )
+_FORMAL_FIELDS = ("score", "summary")
 _SCORE_DIMENSIONS = ("completeness", "assertiveness", "ambiguity")
 
 
@@ -59,7 +60,42 @@ class SubmitSpecValidationCommand:
         self.data = data
 
     def validate(self) -> None:
-        missing = [f for f in _REQUIRED_FIELDS if self.data.get(f) is None]
+        for field_name in (
+            "expected_validation_edition",
+            "expected_spec_version",
+            "expected_head_revision",
+        ):
+            value = self.data.get(field_name)
+            minimum = 0 if field_name == "expected_head_revision" else 1
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < minimum
+            ):
+                raise CommandValidationError(f"{field_name} is invalid")
+
+        formal = any(self.data.get(field) is not None for field in _FORMAL_FIELDS)
+        legacy = any(
+            self.data.get(field) is not None for field in _LEGACY_REQUIRED_FIELDS
+        )
+        if formal:
+            if legacy:
+                raise CommandValidationError(
+                    "formal and legacy validation shapes are mutually exclusive"
+                )
+            score = self.data.get("score")
+            if (
+                not isinstance(score, (int, float))
+                or isinstance(score, bool)
+                or not 0 <= float(score) <= 100
+            ):
+                raise CommandValidationError("score must be between 0 and 100")
+            summary = self.data.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                raise CommandValidationError("summary is required")
+            return
+
+        missing = [f for f in _LEGACY_REQUIRED_FIELDS if self.data.get(f) is None]
         if missing:
             raise CommandValidationError(
                 f"Missing required fields: {', '.join(missing)}"
@@ -137,7 +173,14 @@ class SubmitSpecValidationUseCase:
             spec_id=command.spec_id,
             reviewer_id=actor.actor_id,
             reviewer_name=reviewer_name,
-            data=dict(command.data),
+            # Pydantic compatibility models may materialize absent optional
+            # fields as ``None``.  The service consumes a discriminated
+            # formal-or-legacy mapping, so omit those transport placeholders.
+            data={
+                key: value
+                for key, value in command.data.items()
+                if value is not None
+            },
         )
         await commit(uow)
         return SubmitSpecValidationResult(payload=result)

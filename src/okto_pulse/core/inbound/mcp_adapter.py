@@ -18,6 +18,9 @@ from okto_pulse.core.application.use_cases import ActorContext
 from okto_pulse.core.domain.guideline_policy_transition import (
     PolicyTransitionRejected,
 )
+from okto_pulse.core.domain.human_validation_cycle import (
+    LifecycleTransitionConflictError,
+)
 from okto_pulse.core.inbound.policy_transition_error import (
     project_policy_transition_rejection,
 )
@@ -56,6 +59,8 @@ class MCPAdapterContract:
         """Map a domain/use case error to the MCP JSON error envelope."""
         if isinstance(exc, PolicyTransitionRejected):
             return json.dumps(project_policy_transition_rejection(exc))
+        if isinstance(exc, LifecycleTransitionConflictError):
+            return json.dumps(exc.to_error_dict())
         code = getattr(exc, "code", None)
         if isinstance(code, str) and code.strip():
             details = getattr(exc, "details", None)

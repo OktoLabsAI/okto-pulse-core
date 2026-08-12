@@ -691,6 +691,9 @@ _CROSS_BOARD_SPEC_PARENT_CASES = (
     (
         "okto_pulse_submit_spec_validation",
         {
+            "expected_validation_edition": 1,
+            "expected_spec_version": 1,
+            "expected_head_revision": 0,
             "completeness": 90,
             "completeness_justification": "All criteria have detailed coverage",
             "assertiveness": 85,
@@ -874,6 +877,9 @@ async def test_link_task_parents_same_board_roundtrip(_seed) -> None:
 
     async with get_session_factory()() as db:
         spec = await db.get(Spec, _seed)
+        # The operational card-to-Spec association retains its existing
+        # Approved support; structured requirement links below are Spec content
+        # and are switched to Draft before they are mutated.
         spec.status = SpecStatus.APPROVED
         await db.commit()
 
@@ -886,6 +892,11 @@ async def test_link_task_parents_same_board_roundtrip(_seed) -> None:
         card_id=card_id,
     )
     assert linked_spec["success"] is True
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, _seed)
+        spec.status = SpecStatus.DRAFT
+        await db.commit()
 
     for target_type, target_id, result_key in (
         ("contract", CONTRACT_ID, "contract_id"),
@@ -902,7 +913,7 @@ async def test_link_task_parents_same_board_roundtrip(_seed) -> None:
             card_id=card_id,
             spec_id=_seed,
         )
-        assert linked["success"] is True, linked
+        assert linked.get("success") is True, linked
         assert linked[result_key] == target_id
 
 

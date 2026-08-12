@@ -1,9 +1,9 @@
 """Shared SK-A ambiguity-assessment and gate contracts.
 
-The functions in this module are edition-neutral.  They project the current
-semantic subject/Q&A state into the same immutable digest set persisted by the
-quality-assessment aggregate and evaluate the Ideation/Refinement gates from a
-single predicate.  REST previews and status mutations therefore cannot drift.
+The immutable receipt still records the technical input digests, but human gate
+currentness is scoped to the subject lifecycle edition.  Editing within Draft
+does not manufacture a human-facing stale state; returning to Draft opens the
+next edition and makes every earlier receipt historical.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ AMBIGUITY_AUTHORITY_VERSION = "quality-authority/v1"
 
 AMBIGUITY_SCALE = AssessmentScale(
     kind=AssessmentScaleKind.AMBIGUITY_SCORE,
-    minimum=1,
+    minimum=0,
     maximum=5,
     direction=ScoreDirection.LOWER_BETTER,
 )
@@ -65,7 +65,7 @@ AMBIGUITY_RULESET_MANIFEST_V1: Mapping[str, object] = MappingProxyType(
         "input": "human_or_agent",
         "score_scale": {
             "kind": AssessmentScaleKind.AMBIGUITY_SCORE.value,
-            "minimum": 1,
+            "minimum": 0,
             "maximum": 5,
             "direction": ScoreDirection.LOWER_BETTER.value,
         },
@@ -392,22 +392,38 @@ class AmbiguityGateService:
 
         subject_id = getattr(subject, "id", None)
         subject_version = getattr(subject, "version", None)
+        subject_edition = getattr(subject, "edition", None)
         if (
             not isinstance(subject_id, str)
             or not subject_id.strip()
             or not isinstance(subject_version, int)
             or isinstance(subject_version, bool)
             or subject_version < 1
+            or not isinstance(subject_edition, int)
+            or isinstance(subject_edition, bool)
+            or subject_edition < 1
         ):
             raise AmbiguityGateError(
                 "ambiguity_gate_subject_invalid",
             )
-        resolved = await self._persistence.get_current(
-            board_id=board_id,
-            subject_type=resolved_type,
-            subject_id=subject_id,
-            assessment_kind=AssessmentKind.AMBIGUITY,
-        )
+        try:
+            resolved = await self._persistence.get_current(
+                board_id=board_id,
+                subject_type=resolved_type,
+                subject_id=subject_id,
+                assessment_kind=AssessmentKind.AMBIGUITY,
+                subject_edition=subject_edition,
+            )
+        except TypeError:
+            # Temporary compatibility for third-party adapters while the
+            # edition-aware port is rolled out.  The defensive check below
+            # keeps a legacy head history-only.
+            resolved = await self._persistence.get_current(
+                board_id=board_id,
+                subject_type=resolved_type,
+                subject_id=subject_id,
+                assessment_kind=AssessmentKind.AMBIGUITY,
+            )
         if resolved is None:
             raise AmbiguityGateError(
                 AmbiguityGateReason.ASSESSMENT_MISSING,
@@ -417,6 +433,13 @@ class AmbiguityGateService:
                 details={"threshold": configuration.maximum_score},
             )
         receipt, _head = resolved
+        if receipt.subject.subject_edition != subject_edition:
+            raise AmbiguityGateError(
+                AmbiguityGateReason.ASSESSMENT_MISSING,
+                "Ambiguity gate failed: this edition has not been assessed. "
+                "Run the ambiguity assessment for the current validation cycle.",
+                details={"threshold": configuration.maximum_score},
+            )
         current_digests = ambiguity_digest_set(
             subject_type=resolved_type,
             subject=subject,
@@ -430,19 +453,16 @@ class AmbiguityGateService:
                 subject_type=resolved_type,
                 subject_id=subject_id,
                 subject_version=subject_version,
+                subject_edition=subject_edition,
             ),
             current_digests=current_digests,
         )
         if not currentness.current:
-            reasons = [reason.value for reason in currentness.stale_reasons]
             raise AmbiguityGateError(
-                AmbiguityGateReason.ASSESSMENT_STALE,
-                "Ambiguity gate failed: the latest assessment is stale. "
-                "Re-run it against the current content, Q&A and board policy. "
-                "If a skip is required, request a human decision.",
+                AmbiguityGateReason.ASSESSMENT_MISSING,
+                "Ambiguity gate failed: this edition has not been assessed. "
+                "Run the ambiguity assessment for the current validation cycle.",
                 details={
-                    "receipt_id": receipt.id,
-                    "stale_reasons": reasons,
                     "threshold": configuration.maximum_score,
                 },
             )

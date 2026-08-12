@@ -24,6 +24,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.models.schemas import RefinementCreate
 from okto_pulse.core.services.main import RefinementService
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 
 
 USER_ID = "refinement-parent-context-agent"
@@ -41,7 +42,14 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": ["board:read", "specs:create"],
+            "permissions": [
+                "board:read",
+                "specs:create",
+                "code_traceability.investigation.read",
+                "code_traceability.evidence.read",
+                "code_traceability.target.read",
+                "code_traceability.overlap.read",
+            ],
         },
     )()
 
@@ -238,8 +246,7 @@ async def test_refinement_to_spec_derivation_includes_parent_context_for_legacy_
     db_factory = get_session_factory()
 
     async with db_factory() as db:
-        db.add(
-            Refinement(
+        refinement = Refinement(
                 id=refinement_id,
                 ideation_id=ideation_id,
                 board_id=board_id,
@@ -249,7 +256,9 @@ async def test_refinement_to_spec_derivation_includes_parent_context_for_legacy_
                 status=RefinementStatus.DONE,
                 created_by=USER_ID,
             )
-        )
+        db.add(refinement)
+        await db.flush()
+        await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
 
     async with db_factory() as db:

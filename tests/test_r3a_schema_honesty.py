@@ -150,7 +150,7 @@ async def _seed_spec():
             await db.flush()
         db.add(Spec(
             id=spec_id, board_id=BOARD_ID, title="R3a spec",
-            status=SpecStatus.APPROVED, created_by=USER_ID,
+            status=SpecStatus.DRAFT, created_by=USER_ID,
             functional_requirements=["FR1"], acceptance_criteria=["AC1"],
             test_scenarios=[], business_rules=[], api_contracts=[],
         ))

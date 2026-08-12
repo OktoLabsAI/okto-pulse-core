@@ -258,8 +258,8 @@ Args:
 Returns:
     JSON with complete spec context: all requirements + structured sections +
     artifacts + cards + sprints. `gate_readiness.spec_checklist` always projects
-    the canonical curated-checklist mode, allowance, reason, currentness, stale
-    reasons, and follow-up tool names. In `draft` this readiness remains visible
+    the canonical curated-checklist mode, allowance, lifecycle state, technical
+    compatibility reasons, and follow-up tool names. In `draft` this readiness remains visible
     without prematurely claiming an active transition gate; when an unsatisfied
     blocking checklist applies to `approved` → `validated`, the same predicate
     also appears in `gate_readiness.active_gates`.
@@ -315,7 +315,7 @@ Permissions:
 
 ## `okto_pulse_start_checklist_execution`
 
-Start a server-issued execution frozen to the current Spec version, semantic
+Start a server-issued execution frozen to the current Spec edition and version, semantic
 content/input digests, template version/digest, and binding version/digest.
 Mode `off` rejects the operation without creating an execution.
 
@@ -324,6 +324,7 @@ Args:
     spec_id: Spec ID
     binding_id: Current binding digest returned by
         `okto_pulse_get_checklist_binding`
+    spec_edition: Exact current lifecycle edition
     expected_spec_version: Current Spec version
     idempotency_key: Stable key for exact retries
 
@@ -338,8 +339,8 @@ Permissions:
 
 ## `okto_pulse_submit_checklist_execution`
 
-Submit one outcome for every immutable `/specify/v1` item and issue a
-server-authored receipt. The ten items must be present exactly once. Each
+Submit one outcome for every immutable `/specify/v1` item and seal a
+server-authored result. The ten items must be present exactly once. Each
 result requires a concrete Spec anchor; `not_applicable` also requires a
 rationale and is accepted only on items whose template allows it.
 
@@ -354,21 +355,21 @@ Args:
         `rationale`
 
 Returns:
-    JSON with immutable receipt ID, aggregate `outcome` (`pass` unless any
-    item is `fail`), request digest, head revision, and `replayed`.
+    JSON with a compatibility `receipt_id`, aggregate `outcome` (`pass` unless
+    any item is `fail`), request digest, head revision, and `replayed`.
 
 Permissions:
     Requires both Spec update authority and `spec.checklist.execute`.
 
 ## `okto_pulse_get_checklist_receipt`
 
-Read an immutable checklist receipt and its ordered per-item results. A receipt
-is useful for a blocking gate only while all Spec/template/binding identities
-remain current and every result is non-failing.
+Read an immutable checklist result and its ordered per-item evidence through
+the compatibility receipt-named API. A result supports a blocking gate only
+when it is Current for the exact Spec edition and every item is non-failing.
 
 Args:
     board_id: Board ID
-    receipt_id: Checklist receipt ID
+    receipt_id: Compatibility checklist result ID
 
 Returns:
     JSON with the frozen identities, ordered results, source, head revision,
@@ -391,16 +392,20 @@ Returns:
 
 ## `okto_pulse_list_spec_validations`
 
-List all Spec Validation Gate records in reverse chronological order.
+List Spec Validation Gate results in reverse chronological order, explicitly
+separating Current from Previous by lifecycle edition.
 
 Useful for understanding why a spec was validated (or failed). Each record
 includes the 3 scores, justifications, outcome, threshold violations, and
 a resolved_thresholds snapshot of what was in effect when the submit happened.
-The record currently pointed to by current_validation_id has active=true.
+The result matching the active Spec edition is Current. Earlier-edition results
+are Previous; legacy SQL `NULL` editions are `history_only` under Previous and
+can never become Current.
 
 Args:
     board_id: Board ID
     spec_id: Spec ID
+    lifecycle_state: Optional `all|current|previous|history_only` filter
 
 Returns:
     JSON with current_validation_id and validations list (reverse chronological)

@@ -94,7 +94,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Stories & Topics", "story",
      r"(story$|stories|topic)"),
     ("Quality Assessments", "quality",
-     r"^okto_pulse_(record_ambiguity_assessment|"
+     r"^okto_pulse_(record_ambiguity_assessment|record_requirement_lint|"
+     r"get_requirement_lint_preflight|"
      r"get_current_quality_assessment|get_quality_assessment_receipt|"
      r"list_quality_assessments|list_quality_findings)$"),
     ("Ideations", "ideation",

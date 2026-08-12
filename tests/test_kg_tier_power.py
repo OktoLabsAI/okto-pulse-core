@@ -403,12 +403,13 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        # 10 REL_TYPES single-pair entries + 6 MULTI_REL_TYPES names (implements,
-        # relates_to, belongs_to, originates_from, covered_by, supersedes).
+        # 10 REL_TYPES single-pair entries + 9 MULTI_REL_TYPES names (implements,
+        # supports, derives_from, overlaps, supersedes, relates_to, belongs_to,
+        # originates_from, covered_by).
         # S-KG-01 added the additive `relates_to` Learning taxonomy entry;
         # spec MKG-D-S1 promoted `supersedes` to a universal multi-pair edge
         # (walkable chain for all node types, +1).
-        assert len(info["stable_rel_types"]) == 16
+        assert len(info["stable_rel_types"]) == 19
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
         assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
 

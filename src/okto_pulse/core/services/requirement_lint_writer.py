@@ -1,4 +1,9 @@
-"""Shared orchestration boundary used by every semantic Spec writer."""
+"""Compatibility boundary for the retired semantic Spec writer hook.
+
+Production semantic writes no longer call this helper: Requirement Lint is
+performed externally after Approved admission.  The hook remains executable
+for third-party callers compiled against the previous public Core contract.
+"""
 
 from __future__ import annotations
 
@@ -61,11 +66,11 @@ async def stage_spec_requirement_lint(
     writer: RequirementLintWriter,
     changed_fields: tuple[str, ...] | list[str],
 ) -> RequirementLintWriteResult:
-    """Stage the lint receipt/findings/head through the current transaction.
+    """Stage through the registered compatibility hook without committing.
 
-    The concrete hook is forbidden from committing. Any analyzer, adapter,
-    CAS, audit or outbox failure is normalized to the single writer-facing
-    error required by SK-A; the caller's UoW then rolls everything back.
+    Production mutation paths must not call this helper.  Keeping the public
+    hook functional is source-compatible and does not assign lint cognition to
+    Community; an explicitly registered external adapter remains responsible.
     """
 
     try:

@@ -421,6 +421,36 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model quality lifecycle persistence."
         )
 
+    def code_investigations(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.code_investigation import (
+            CodeInvestigationAdapterMissing,
+        )
+
+        raise CodeInvestigationAdapterMissing(
+            "The SaaS fake does not model code-investigation persistence."
+        )
+
+    def code_traceability(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.code_traceability import (
+            CodeTraceabilityAdapterMissing,
+        )
+
+        raise CodeTraceabilityAdapterMissing(
+            "The SaaS fake does not model code-traceability persistence."
+        )
+
+    def code_traceability_read(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.code_traceability import (
+            CodeTraceabilityAdapterMissing,
+        )
+
+        raise CodeTraceabilityAdapterMissing(
+            "The SaaS fake does not model code-traceability projections."
+        )
+
     def research_decisions(self, session: Any) -> Any:
         _ = session
         from okto_pulse.core.ports.research_decision_ledger import (

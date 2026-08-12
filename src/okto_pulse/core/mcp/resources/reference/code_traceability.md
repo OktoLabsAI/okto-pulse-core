@@ -1,3 +1,7 @@
+---
+version: "1.0"
+---
+
 # Agent-mediated Code Traceability
 
 Code Traceability records bounded observations made by an authenticated

@@ -39,6 +39,9 @@ from okto_pulse.core.application.ideation_scope import (
     IdeationScopeValidationError,
 )
 from okto_pulse.core.domain.datetime_utils import isoformat_utc
+from okto_pulse.core.domain.human_validation_cycle import (
+    SubjectEditRequiresDraftError,
+)
 from okto_pulse.core.domain.code_traceability_kg import (
     KGDeadLetterReprocessScope,
 )
@@ -484,7 +487,7 @@ _CORE_RESOURCE_TABLE = [
     ),
     (
         "okto-pulse://reference/tool-docs/code-traceability",
-        "reference/code_traceability.md",
+        "reference/tool-docs/code-traceability.md",
         "Long-form docs for the typed Code Traceability tool family.",
     ),
     # R1.1 — lazy long-form tool docs (args/returns/examples) moved off the
@@ -896,6 +899,7 @@ _TOOL_DOCS_FAMILY_RULES = [
     ("quality_assessment", "quality"),
     ("quality_findings", "quality"),
     ("ambiguity_assessment", "quality"),
+    ("requirement_lint", "quality"),
     ("checklist", "spec"),
     ("research_decision", "refinement"),
     ("decision", "decision"),
@@ -1320,6 +1324,10 @@ async def _safe_spec_update(
         if propagate_spec_locked:
             raise
         return None, _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        if propagate_spec_locked:
+            raise
+        return None, _subject_edit_requires_draft_mcp_error(exc)
     except SpecLineagePreflightError as exc:
         return None, json.dumps(exc.to_error_dict())
     except ValueError as exc:
@@ -2676,6 +2684,7 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
                     "title": i.title,
                     "status": i.status.value,
                     "complexity": i.complexity.value if i.complexity else None,
+                    "edition": int(getattr(i, "edition", 1) or 1),
                     "version": i.version,
                     "labels": i.labels,
                 }
@@ -5251,15 +5260,22 @@ async def _ask_question_impl(
         McpAskQuestionCommand,
         McpAskQuestionUseCase,
     )
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await McpAskQuestionUseCase().execute(
-            McpAskQuestionCommand(board_id, target_type, parent_id, question),
-            actor=actor,
-            uow=uow,
-        )
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpAskQuestionUseCase().execute(
+                McpAskQuestionCommand(board_id, target_type, parent_id, question),
+                actor=actor,
+                uow=uow,
+            )
+    except SubjectEditRequiresDraftError as exc:
+        _telemetry("error")
+        return _subject_edit_requires_draft_mcp_error(exc)
     _telemetry("ok" if result.payload.get("success") else "error")
     return json.dumps(result.payload, default=str)
 
@@ -6023,6 +6039,9 @@ async def okto_pulse_mark_resource_not_applicable(
         McpMarkResourceNotApplicableCommand,
         McpMarkResourceNotApplicableUseCase,
     )
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -6039,6 +6058,8 @@ async def okto_pulse_mark_resource_not_applicable(
                 actor=actor,
                 uow=uow,
             )
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ResourceGateError as e:
         return _resource_gate_error_response(e)
     return json.dumps(result.payload, default=str)
@@ -6078,6 +6099,9 @@ async def okto_pulse_clear_resource_not_applicable(
         McpClearResourceNotApplicableCommand,
         McpClearResourceNotApplicableUseCase,
     )
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -6094,6 +6118,8 @@ async def okto_pulse_clear_resource_not_applicable(
                 actor=actor,
                 uow=uow,
             )
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ResourceGateError as e:
         return _resource_gate_error_response(e)
     return json.dumps(result.payload, default=str)
@@ -6548,6 +6574,7 @@ async def okto_pulse_create_ideation(
                     "id": ideation.id,
                     "title": ideation.title,
                     "status": ideation.status.value,
+                    "edition": int(getattr(ideation, "edition", 1) or 1),
                     "version": ideation.version,
                 },
             },
@@ -6602,6 +6629,7 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
                 else None,
                 "status": ideation.status.value,
                 **project_cancellation(ideation),
+                "edition": int(getattr(ideation, "edition", 1) or 1),
                 "version": ideation.version,
                 "assignee_id": ideation.assignee_id,
                 "created_by": ideation.created_by,
@@ -6613,6 +6641,7 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
                         "id": r.id,
                         "title": r.title,
                         "status": r.status.value,
+                        "edition": int(getattr(r, "edition", 1) or 1),
                         "version": r.version,
                     }
                     for r in ideation.refinements
@@ -6708,6 +6737,7 @@ async def okto_pulse_get_ideation_context(
             "complexity": ideation.complexity.value if ideation.complexity else None,
             "status": ideation.status.value,
             **project_cancellation(ideation),
+            "edition": int(getattr(ideation, "edition", 1) or 1),
             "version": ideation.version,
             "assignee_id": ideation.assignee_id,
             "created_by": ideation.created_by,
@@ -6728,6 +6758,7 @@ async def okto_pulse_get_ideation_context(
                     "id": r.id,
                     "title": r.title,
                     "status": r.status.value,
+                    "edition": int(getattr(r, "edition", 1) or 1),
                     "version": r.version,
                 }
                 for r in ideation.refinements
@@ -6868,6 +6899,9 @@ async def okto_pulse_update_ideation(
         McpUpdateIdeationUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (ideation update): the use case validates the canonical
@@ -6885,6 +6919,8 @@ async def okto_pulse_update_ideation(
             ).ideation
         except EntityNotFoundError:
             return json.dumps({"error": "Ideation not found"})
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
 
         return json.dumps(
             {
@@ -6987,6 +7023,7 @@ async def okto_pulse_move_ideation(
                 "ideation_id": result.ideation.id,
                 "from_status": old_status,
                 "to_status": status,
+                "edition": int(getattr(result.ideation, "edition", 1) or 1),
             },
             default=str,
         )
@@ -7595,11 +7632,14 @@ async def okto_pulse_ask_ideation_choice_question(
     # adapter parses options_json / coerces options into the IdeationQACreate.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpAskIdeationChoiceQuestionUseCase().execute(
-            McpAskIdeationChoiceQuestionCommand(board_id, ideation_id, data),
-            actor=actor,
-            uow=uow,
-        )
+        try:
+            _r = await McpAskIdeationChoiceQuestionUseCase().execute(
+                McpAskIdeationChoiceQuestionCommand(board_id, ideation_id, data),
+                actor=actor,
+                uow=uow,
+            )
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
         if _r.ideation_not_found:
             return json.dumps({"error": "Ideation not found"})
         qa = _r.qa
@@ -7663,18 +7703,21 @@ async def okto_pulse_answer_ideation_question(
     answer_payload = IdeationQAAnswer(answer=answer or None, selected=selected_list)
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpAnswerIdeationQuestionUseCase().execute(
-            McpAnswerIdeationQuestionCommand(
-                board_id,
-                ideation_id,
-                qa_id,
-                answer_payload=answer_payload,
-                answer_text=answer,
-                selected_list=selected_list,
-            ),
-            actor=actor,
-            uow=uow,
-        )
+        try:
+            _r = await McpAnswerIdeationQuestionUseCase().execute(
+                McpAnswerIdeationQuestionCommand(
+                    board_id,
+                    ideation_id,
+                    qa_id,
+                    answer_payload=answer_payload,
+                    answer_text=answer,
+                    selected_list=selected_list,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
         if _r.self_answer_error is not None:
             return json.dumps(
                 {
@@ -7804,6 +7847,7 @@ async def okto_pulse_create_refinement(
                         "id": refinement.id,
                         "title": refinement.title,
                         "status": refinement.status.value,
+                        "edition": int(getattr(refinement, "edition", 1) or 1),
                         "version": refinement.version,
                         "ideation_id": refinement.ideation_id,
                     },
@@ -7869,6 +7913,7 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
                 "decisions": refinement.decisions,
                 "status": refinement.status.value,
                 **project_cancellation(refinement),
+                "edition": int(getattr(refinement, "edition", 1) or 1),
                 "version": refinement.version,
                 "assignee_id": refinement.assignee_id,
                 "created_by": refinement.created_by,
@@ -7969,6 +8014,7 @@ async def okto_pulse_get_refinement_context(
             "decisions": refinement.decisions,
             "status": refinement.status.value,
             **project_cancellation(refinement),
+            "edition": int(getattr(refinement, "edition", 1) or 1),
             "version": refinement.version,
             "assignee_id": refinement.assignee_id,
             "created_by": refinement.created_by,
@@ -8148,6 +8194,9 @@ async def okto_pulse_update_refinement(
         McpUpdateRefinementUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (refinement update): the use case validates the canonical
@@ -8169,6 +8218,8 @@ async def okto_pulse_update_refinement(
             ).refinement
         except EntityNotFoundError:
             return json.dumps({"error": "Refinement not found"})
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
 
         return json.dumps(
             {
@@ -8249,6 +8300,7 @@ async def okto_pulse_move_refinement(
                     "refinement_id": _r.refinement.id,
                     "from_status": _r.old_status,
                     "to_status": status,
+                    "edition": int(getattr(_r.refinement, "edition", 1) or 1),
                 },
                 default=str,
             )
@@ -8495,13 +8547,75 @@ async def okto_pulse_get_refinement_history(
 # ============================================================================
 
 
-def _quality_mcp_error(error: Exception) -> str:
+def _observe_mcp_validation_edition_conflict(
+    error: BaseException,
+    *,
+    operation: str,
+    subject_type: str,
+    subject_id: str,
+    expected_edition: int,
+    correlation_id: str,
+) -> None:
+    from okto_pulse.core.services.ska_observability import (
+        observe_validation_edition_conflict_from_error,
+    )
+
+    observe_validation_edition_conflict_from_error(
+        error,
+        operation=operation,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        expected_edition=expected_edition,
+        correlation_id=correlation_id,
+    )
+
+
+def _validation_mcp_uow_factory(
+    *,
+    assessment_kind: str,
+    subject_type: str,
+):
+    from okto_pulse.core.services.ska_observability import (
+        observe_validation_uow_factory,
+    )
+
+    return observe_validation_uow_factory(
+        get_unit_of_work_factory_for_mcp(),
+        assessment_kind=assessment_kind,
+        subject_type=subject_type,
+    )
+
+
+def _quality_mcp_error(
+    error: Exception,
+    *,
+    operation: str | None = None,
+    subject_type: str | None = None,
+    subject_id: str | None = None,
+    expected_edition: int | None = None,
+    correlation_id: str | None = None,
+) -> str:
     """Serialize the shared REST/MCP Quality error envelope."""
 
     from okto_pulse.core.inbound.quality_assessment_error import (
         project_quality_assessment_error,
     )
 
+    if (
+        operation is not None
+        and subject_type is not None
+        and subject_id is not None
+        and expected_edition is not None
+        and correlation_id is not None
+    ):
+        _observe_mcp_validation_edition_conflict(
+            error,
+            operation=operation,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            expected_edition=expected_edition,
+            correlation_id=correlation_id,
+        )
     return json.dumps(project_quality_assessment_error(error))
 
 
@@ -8556,8 +8670,10 @@ async def okto_pulse_record_ambiguity_assessment(
     subject_id: str,
     idempotency_key: str,
     expected_subject_version: int,
+    expected_subject_edition: int,
     expected_head_revision: int,
     score: float,
+    summary: str,
     findings: list[QualityFindingInput] | None = None,
     proposed_questions: list[QualityProposedQuestionInput] | None = None,
 ) -> str:
@@ -8589,16 +8705,14 @@ async def okto_pulse_record_ambiguity_assessment(
             raise ValueError("assessment_subject_type_unsupported")
     except (TypeError, ValueError) as exc:
         return _quality_mcp_error(exc)
+    # Proposed questions stay immutable inside the assessment receipt; they do
+    # not create subject Q&A and therefore require no qa.ask permission.
     required_permissions = [
         (
             f"{parsed_subject_type.value}.quality.assess",
             Permissions.SPECS_UPDATE,
         )
     ]
-    if proposed_questions:
-        required_permissions.append(
-            (f"{parsed_subject_type.value}.qa.ask", Permissions.QA_CREATE)
-        )
     for granular_permission, legacy_permission in required_permissions:
         perm_err = _mcp_check_permission(
             ctx.permissions,
@@ -8609,6 +8723,7 @@ async def okto_pulse_record_ambiguity_assessment(
             return _quality_mcp_permission_error(perm_err)
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    correlation_id = str(_uuid.uuid4())
     try:
         parsed_findings = tuple(
             (
@@ -8628,7 +8743,10 @@ async def okto_pulse_record_ambiguity_assessment(
         )
         result = await RecordAmbiguityAssessmentUseCase(
             preflight_reader=get_quality_assessment_preflight_reader(),
-            uow_factory=get_unit_of_work_factory_for_mcp(),
+            uow_factory=_validation_mcp_uow_factory(
+                assessment_kind="ambiguity",
+                subject_type=parsed_subject_type.value,
+            ),
         ).execute(
             RecordAmbiguityAssessmentCommand(
                 board_id=board_id,
@@ -8636,22 +8754,195 @@ async def okto_pulse_record_ambiguity_assessment(
                 subject_id=subject_id,
                 idempotency_key=idempotency_key,
                 expected_subject_version=expected_subject_version,
+                expected_subject_edition=expected_subject_edition,
                 expected_head_revision=expected_head_revision,
                 score=score,
+                summary=summary,
                 findings=parsed_findings,
                 proposed_questions=parsed_questions,
             ),
             actor=actor,
         )
+        if result.subject_edition is None:
+            raise ValueError("assessment_subject_edition_missing")
         return json.dumps(
             {
                 "outcome": "success",
                 "data": {
-                    "receipt_id": result.receipt_id,
-                    "head_revision": result.head_revision,
-                    "qa_id_map": dict(result.qa_id_map),
-                    "replayed": result.replayed,
+                    "result_id": result.receipt_id,
+                    "subject_edition": result.subject_edition,
+                    "status": "accepted",
                 },
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(
+            exc,
+            operation="ambiguity",
+            subject_type=parsed_subject_type.value,
+            subject_id=subject_id,
+            expected_edition=expected_subject_edition,
+            correlation_id=correlation_id,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_record_requirement_lint(
+    board_id: str,
+    spec_id: str,
+    idempotency_key: str,
+    expected_subject_version: int,
+    expected_subject_edition: int,
+    expected_head_revision: int,
+    ruleset_digest: str,
+    score: float,
+    summary: str,
+    findings: list[QualityFindingInput] | None = None,
+    evaluated_rule_count: int | None = None,
+) -> str:
+    """Record external Requirement Lint evidence for an approved Spec edition."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        RecordRequirementLintCommand,
+        RecordRequirementLintUseCase,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.quality.assess",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _quality_mcp_permission_error(perm_err)
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    correlation_id = str(_uuid.uuid4())
+    try:
+        parsed_findings = tuple(
+            (
+                item
+                if isinstance(item, QualityFindingInput)
+                else QualityFindingInput.model_validate(item)
+            ).to_domain()
+            for item in (findings or ())
+        )
+        result = await RecordRequirementLintUseCase(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+            uow_factory=_validation_mcp_uow_factory(
+                assessment_kind="requirement_lint",
+                subject_type="spec",
+            ),
+        ).execute(
+            RecordRequirementLintCommand(
+                board_id=board_id,
+                spec_id=spec_id,
+                idempotency_key=idempotency_key,
+                expected_subject_version=expected_subject_version,
+                expected_subject_edition=expected_subject_edition,
+                expected_head_revision=expected_head_revision,
+                ruleset_digest=ruleset_digest,
+                score=score,
+                summary=summary,
+                evaluated_rule_count=evaluated_rule_count,
+                findings=parsed_findings,
+            ),
+            actor=actor,
+        )
+        if result.subject_edition is None:
+            raise ValueError("requirement_lint_edition_missing")
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": {
+                    "result_id": result.receipt_id,
+                    "subject_edition": result.subject_edition,
+                    "status": "accepted",
+                    "idempotent_replay": result.replayed,
+                },
+            }
+        )
+    except (
+        QualityAssessmentContractError,
+        QualityAssessmentError,
+        QualityAssessmentPersistenceError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return _quality_mcp_error(
+            exc,
+            operation="requirement_lint",
+            subject_type="spec",
+            subject_id=spec_id,
+            expected_edition=expected_subject_edition,
+            correlation_id=correlation_id,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_requirement_lint_preflight(
+    board_id: str,
+    spec_id: str,
+) -> str:
+    """Read the edition-pinned Requirement Lint submission fence."""
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    for permission in (Permissions.BOARD_READ, "spec.quality.read"):
+        perm_err = check_permission(ctx.permissions, permission)
+        if perm_err:
+            return _quality_mcp_permission_error(perm_err)
+
+    from okto_pulse.core.application.use_cases.quality_assessment import (
+        GetRequirementLintPreflightCommand,
+        GetRequirementLintPreflightUseCase,
+    )
+    from okto_pulse.core.domain.quality_assessment import (
+        QualityAssessmentContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.validation_cycle import (
+        project_requirement_lint_preflight,
+    )
+    from okto_pulse.core.ports.quality_assessment import (
+        QualityAssessmentPersistenceError,
+        get_quality_assessment_preflight_reader,
+    )
+    from okto_pulse.core.services.quality_assessment import (
+        QualityAssessmentError,
+    )
+
+    try:
+        result = await GetRequirementLintPreflightUseCase(
+            preflight_reader=get_quality_assessment_preflight_reader(),
+        ).execute(
+            GetRequirementLintPreflightCommand(spec_id=spec_id),
+            actor=MCPAdapterContract.actor(ctx, board_id=board_id),
+        )
+        return json.dumps(
+            {
+                "outcome": "success",
+                "data": project_requirement_lint_preflight(result),
             }
         )
     except (
@@ -9095,9 +9386,9 @@ async def okto_pulse_get_checklist_binding(board_id: str) -> str:
 async def okto_pulse_start_checklist_execution(
     board_id: str,
     spec_id: str,
-    binding_id: str,
+    spec_edition: int,
     expected_spec_version: int,
-    idempotency_key: str,
+    binding_version: int,
 ) -> str:
     """Start a frozen checklist execution for the current Spec version."""
     ctx = await _get_agent_ctx(board_id)
@@ -9119,24 +9410,25 @@ async def okto_pulse_start_checklist_execution(
         StartChecklistExecutionCommand,
         StartChecklistExecutionUseCase,
     )
-    from okto_pulse.core.domain.checklist import (
-        SPECIFY_CHECKLIST_TEMPLATE_V1,
-        ChecklistContractError,
-    )
+    from okto_pulse.core.domain.checklist import ChecklistContractError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.ports.checklist import ChecklistPersistenceError
     from okto_pulse.core.services.checklist import ChecklistError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    correlation_id = str(_uuid.uuid4())
     try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        async with _validation_mcp_uow_factory(
+            assessment_kind="curated_checklist",
+            subject_type="spec",
+        )(actor=actor) as uow:
             result = await StartChecklistExecutionUseCase().execute(
                 StartChecklistExecutionCommand(
                     board_id=board_id,
                     spec_id=spec_id,
+                    spec_edition=spec_edition,
                     expected_spec_version=expected_spec_version,
-                    binding_digest=binding_id,
-                    idempotency_key=idempotency_key,
+                    binding_version=binding_version,
                 ),
                 actor=actor,
                 uow=uow,
@@ -9146,33 +9438,9 @@ async def okto_pulse_start_checklist_execution(
             {
                 "outcome": "success",
                 "data": {
-                    "id": execution.id,
-                    "board_id": execution.board_id,
-                    "spec_id": execution.spec_id,
-                    "spec_version": execution.spec_version,
-                    "content_digest": execution.content_digest,
-                    "input_digest": execution.input_digest,
-                    "template_version_id": execution.template_version,
-                    "template_digest": execution.template_digest,
-                    "binding_version": execution.binding_version,
-                    "binding_id": execution.binding_digest,
-                    "binding_mode": execution.binding_mode.value,
-                    "revision": execution.revision,
-                    "status": execution.status.value,
-                    "receipt_id": execution.receipt_id,
-                    "created_at": execution.created_at.isoformat(),
-                    "replayed": result.replayed,
-                    "items": [
-                        {
-                            "item_id": item.item_id,
-                            "title_en": item.title_en,
-                            "title_pt": item.title_pt,
-                            "description_en": item.description_en,
-                            "description_pt": item.description_pt,
-                            "allow_na": item.allow_na,
-                        }
-                        for item in SPECIFY_CHECKLIST_TEMPLATE_V1.items
-                    ],
+                    "execution_id": execution.id,
+                    "spec_edition": execution.spec_edition,
+                    "status": "started",
                 },
             }
         )
@@ -9185,6 +9453,14 @@ async def okto_pulse_start_checklist_execution(
         TypeError,
         ValueError,
     ) as exc:
+        _observe_mcp_validation_edition_conflict(
+            exc,
+            operation="curated_checklist",
+            subject_type="spec",
+            subject_id=spec_id,
+            expected_edition=spec_edition,
+            correlation_id=correlation_id,
+        )
         from okto_pulse.core.inbound.ska_contract_error import (
             project_ska_contract_error,
         )
@@ -9196,10 +9472,10 @@ async def okto_pulse_start_checklist_execution(
 async def okto_pulse_submit_checklist_execution(
     board_id: str,
     spec_id: str,
+    spec_edition: int,
+    expected_spec_version: int,
     execution_id: str,
-    expected_execution_revision: int,
-    idempotency_key: str,
-    results: list[_ChecklistItemResultInput],
+    item_results: list[_ChecklistItemResultInput],
 ) -> str:
     """Submit all ten curated results and issue an immutable receipt."""
     ctx = await _get_agent_ctx(board_id)
@@ -9231,6 +9507,7 @@ async def okto_pulse_submit_checklist_execution(
     from okto_pulse.core.services.checklist import ChecklistError
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    correlation_id = str(_uuid.uuid4())
     try:
         item_results = tuple(
             ChecklistItemResult(
@@ -9239,17 +9516,20 @@ async def okto_pulse_submit_checklist_execution(
                 anchor=item.anchor,
                 rationale=item.rationale,
             )
-            for item in results
+            for item in item_results
         )
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        async with _validation_mcp_uow_factory(
+            assessment_kind="curated_checklist",
+            subject_type="spec",
+        )(actor=actor) as uow:
             result = await SubmitChecklistExecutionUseCase().execute(
                 SubmitChecklistExecutionCommand(
                     board_id=board_id,
                     spec_id=spec_id,
                     execution_id=execution_id,
-                    expected_execution_revision=expected_execution_revision,
-                    items=item_results,
-                    idempotency_key=idempotency_key,
+                    spec_edition=spec_edition,
+                    expected_spec_version=expected_spec_version,
+                    item_results=item_results,
                 ),
                 actor=actor,
                 uow=uow,
@@ -9258,21 +9538,16 @@ async def okto_pulse_submit_checklist_execution(
             {
                 "outcome": "success",
                 "data": {
-                    "receipt_id": result.receipt_id,
-                    "outcome": (
-                        "fail"
+                    "result_id": result.receipt_id,
+                    "status": (
+                        "failed"
                         if any(
                             item.outcome is ChecklistItemOutcome.FAIL
                             for item in item_results
                         )
-                        else "pass"
+                        else "passed"
                     ),
-                    "board_id": result.board_id,
-                    "spec_id": result.spec_id,
-                    "spec_version": result.spec_version,
-                    "request_digest": result.request_digest,
-                    "head_revision": result.head_revision,
-                    "replayed": result.replayed,
+                    "spec_edition": result.spec_edition,
                 },
             }
         )
@@ -9286,6 +9561,14 @@ async def okto_pulse_submit_checklist_execution(
         TypeError,
         ValueError,
     ) as exc:
+        _observe_mcp_validation_edition_conflict(
+            exc,
+            operation="curated_checklist",
+            subject_type="spec",
+            subject_id=spec_id,
+            expected_edition=spec_edition,
+            correlation_id=correlation_id,
+        )
         from okto_pulse.core.inbound.ska_contract_error import (
             project_ska_contract_error,
         )
@@ -9339,6 +9622,7 @@ async def okto_pulse_get_checklist_receipt(
                     "board_id": receipt.board_id,
                     "spec_id": receipt.spec_id,
                     "spec_version": receipt.spec_version,
+                    "spec_edition": receipt.spec_edition,
                     "content_digest": receipt.content_digest,
                     "input_digest": receipt.input_digest,
                     "template_version_id": receipt.template_version,
@@ -9709,11 +9993,14 @@ async def okto_pulse_ask_refinement_choice_question(
     # refinement_choice_question_added log + commit run atomically in the use case.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpAskRefinementChoiceQuestionUseCase().execute(
-            McpAskRefinementChoiceQuestionCommand(board_id, refinement_id, data),
-            actor=actor,
-            uow=uow,
-        )
+        try:
+            _r = await McpAskRefinementChoiceQuestionUseCase().execute(
+                McpAskRefinementChoiceQuestionCommand(board_id, refinement_id, data),
+                actor=actor,
+                uow=uow,
+            )
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
         if _r.refinement_not_found:
             return json.dumps({"error": "Refinement not found"})
         qa = _r.qa
@@ -9777,18 +10064,21 @@ async def okto_pulse_answer_refinement_question(
     # also catches QASelfAnsweringNotAllowedError (committing — legacy parity).
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpAnswerRefinementQuestionUseCase().execute(
-            McpAnswerRefinementQuestionCommand(
-                board_id,
-                refinement_id,
-                qa_id,
-                answer_payload=answer_payload,
-                answer_text=answer,
-                selected_list=selected_list,
-            ),
-            actor=actor,
-            uow=uow,
-        )
+        try:
+            _r = await McpAnswerRefinementQuestionUseCase().execute(
+                McpAnswerRefinementQuestionCommand(
+                    board_id,
+                    refinement_id,
+                    qa_id,
+                    answer_payload=answer_payload,
+                    answer_text=answer,
+                    selected_list=selected_list,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
         if _r.self_answer_error is not None:
             return json.dumps(
                 {
@@ -10474,6 +10764,9 @@ async def okto_pulse_update_spec(
         McpUpdateSpecUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (spec VARIANT): the mutation moves into McpUpdateSpecUseCase
@@ -10510,6 +10803,8 @@ async def okto_pulse_update_spec(
         return _spec_locked_error(exc)
     except SpecLineagePreflightError as exc:
         return json.dumps(exc.to_error_dict())
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
 
@@ -10544,6 +10839,9 @@ async def okto_pulse_move_spec(
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
     from okto_pulse.core.domain.guideline_policy_transition import (
         PolicyTransitionRejected,
+    )
+    from okto_pulse.core.domain.human_validation_cycle import (
+        LifecycleTransitionConflictError,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
@@ -10584,6 +10882,8 @@ async def okto_pulse_move_spec(
     except CancellationReasonRequiredError as e:
         return json.dumps({"error": e.code, **e.to_dict()})
     except PolicyTransitionRejected as e:
+        return MCPAdapterContract.error(e)
+    except LifecycleTransitionConflictError as e:
         return MCPAdapterContract.error(e)
     except ValueError as e:
         return json.dumps({"error": str(e)})
@@ -10663,6 +10963,8 @@ async def okto_pulse_add_test_scenario(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.invalid_scenario_type is not None:
         return json.dumps(
@@ -11130,6 +11432,8 @@ async def okto_pulse_update_test_scenario(
             ).result
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except InvalidScenarioTypeError as exc:
         # Defense in depth for direct handler/use-case callers that bypass the
         # closed FastMCP schema. Must precede the generic ValueError handler.
@@ -11193,6 +11497,8 @@ async def okto_pulse_delete_test_scenario(
             ).result
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": "scenario_not_found", "message": str(exc)})
 
@@ -11624,7 +11930,7 @@ async def _link_task_to_tr_internal(
             )
             if err:
                 return err
-        except SpecLockedError:
+        except (SpecLockedError, SubjectEditRequiresDraftError):
             try:
                 (
                     locked_spec,
@@ -13253,6 +13559,9 @@ async def _mcp_apply_structured_spec_entity(
         McpApplyStructuredSpecEntityCommand,
         McpApplyStructuredSpecEntityUseCase,
     )
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (spec structured-entity shared helper): the StructuredSpec-
@@ -13261,24 +13570,27 @@ async def _mcp_apply_structured_spec_entity(
     # auth, the api_contract gating, entity_type validation, the payload_json /
     # expected_spec_version parsing (all above) and renders result.as_dict().
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpApplyStructuredSpecEntityUseCase().execute(
-            McpApplyStructuredSpecEntityCommand(
-                board_id=board_id,
-                spec_id=spec_id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                operation=operation,
-                payload=payload,
-                expected_spec_version=expected,
-                task_id=task_id,
-                ack_token=ack_token,
-                permission_set=ctx.permissions,
-            ),
-            actor=actor,
-            uow=uow,
-        )
-        return json.dumps(_r.result.as_dict(), default=str)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            _r = await McpApplyStructuredSpecEntityUseCase().execute(
+                McpApplyStructuredSpecEntityCommand(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    operation=operation,
+                    payload=payload,
+                    expected_spec_version=expected,
+                    task_id=task_id,
+                    ack_token=ack_token,
+                    permission_set=ctx.permissions,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+            return json.dumps(_r.result.as_dict(), default=str)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
 
 @mcp.tool()
@@ -13407,6 +13719,8 @@ async def okto_pulse_add_business_rule(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
 
@@ -13504,6 +13818,8 @@ async def okto_pulse_update_business_rule(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
 
@@ -13719,6 +14035,8 @@ async def okto_pulse_add_integration_requirement(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.unresolved_tokens is not None:
         return json.dumps(
@@ -13954,6 +14272,8 @@ async def okto_pulse_add_observability_requirement(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.unresolved_tokens is not None:
         return json.dumps(
@@ -14142,6 +14462,8 @@ async def okto_pulse_add_decision(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.unresolved_tokens is not None:
         return json.dumps(
@@ -14305,6 +14627,8 @@ async def okto_pulse_update_decision(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.not_found:
         return json.dumps({"error": f"Decision '{decision_id}' not found"})
@@ -14419,7 +14743,7 @@ async def _link_task_to_decision_internal(
             )
             if _err:
                 return _err
-        except SpecLockedError:
+        except (SpecLockedError, SubjectEditRequiresDraftError):
             try:
                 (
                     locked_spec,
@@ -14722,6 +15046,8 @@ async def okto_pulse_add_api_contract(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.unresolved_tokens is not None:
         return json.dumps(
@@ -14868,6 +15194,8 @@ async def okto_pulse_update_api_contract(
         return json.dumps({"error": "Spec not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
 
     if _r.not_found:
         return json.dumps({"error": f"API contract '{contract_id}' not found"})
@@ -15024,6 +15352,9 @@ async def _remove_spec_entity_impl(
     except SpecLockedError as exc:
         _telemetry("error")
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        _telemetry("error")
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         _telemetry("error")
         return json.dumps({"error": str(exc)})
@@ -15274,6 +15605,9 @@ async def okto_pulse_add_screen_mockup(
         McpAddScreenMockupUseCase,
         McpScreenMockupCommand,
     )
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -15299,6 +15633,8 @@ async def okto_pulse_add_screen_mockup(
         return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps(result.payload, default=str)
@@ -15368,6 +15704,8 @@ async def okto_pulse_update_screen_mockup(
         return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps(result.payload, default=str)
@@ -15420,6 +15758,8 @@ async def okto_pulse_annotate_mockup(
         return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps(result.payload)
@@ -15524,6 +15864,8 @@ async def okto_pulse_delete_screen_mockup(
         return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
     except SpecLockedError as exc:
         return _spec_locked_error(exc)
+    except SubjectEditRequiresDraftError as exc:
+        return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps(result.payload)
@@ -16525,7 +16867,10 @@ async def okto_pulse_ask_spec_choice_question(
             choices=choice_list,
             allow_free_text=_flag_enabled(allow_free_text),
         )
-        qa = await service.create_question(spec_id, ctx.agent_id, data)
+        try:
+            qa = await service.create_question(spec_id, ctx.agent_id, data)
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
         if not qa:
             return json.dumps({"error": "Spec not found"})
 
@@ -16627,6 +16972,8 @@ async def okto_pulse_answer_spec_question(
                 actor_type="agent",
                 surface="mcp",
             )
+        except SubjectEditRequiresDraftError as exc:
+            return _subject_edit_requires_draft_mcp_error(exc)
         except QASelfAnsweringNotAllowedError as e:
             await uow.commit()
             return json.dumps({"error": e.reason, "detail": str(e)})
@@ -19429,56 +19776,37 @@ async def okto_pulse_get_task_validation(
 async def okto_pulse_submit_spec_validation(
     board_id: str,
     spec_id: str,
-    completeness: int,
-    completeness_justification: str,
-    assertiveness: int,
-    assertiveness_justification: str,
-    ambiguity: int,
-    ambiguity_justification: str,
-    general_justification: str,
-    recommendation: str,
+    expected_validation_edition: int,
+    expected_spec_version: int,
+    expected_head_revision: int,
+    score: float | None = None,
+    summary: str | None = None,
+    completeness: int | None = None,
+    completeness_justification: str | None = None,
+    assertiveness: int | None = None,
+    assertiveness_justification: str | None = None,
+    ambiguity: int | None = None,
+    ambiguity_justification: str | None = None,
+    general_justification: str | None = None,
+    recommendation: str | None = None,
 ) -> str:
-    """Submit semantic Spec Validation after deterministic gates. The Spec must
-    be approved. Success requires recommendation=approve and every configured
-    threshold; it promotes approved->validated and locks content. Scores are
-    0-100: completeness/assertiveness are higher-is-better and ambiguity is
-    lower-is-better. Remediate content instead of inflating scores.
-    Docs: okto-pulse://reference/tool-docs/spec.
+    """Record the human result for the current Spec validation edition.
+
+    Canonical callers submit ``score`` and ``summary`` with all three optimistic
+    fences. The dimension fields remain optional compatibility inputs only.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
-    if recommendation not in ("approve", "reject"):
-        return json.dumps({"error": "recommendation must be: approve or reject"})
-
-    for name, score in [
-        ("completeness", completeness),
-        ("assertiveness", assertiveness),
-        ("ambiguity", ambiguity),
-    ]:
-        if not (0 <= score <= 100):
-            return json.dumps({"error": f"{name} must be between 0 and 100"})
-
-    # Length checks (Pydantic will re-validate but fail fast here)
-    if len(completeness_justification.strip()) < 10:
-        return json.dumps(
-            {"error": "completeness_justification must be at least 10 characters"}
-        )
-    if len(assertiveness_justification.strip()) < 10:
-        return json.dumps(
-            {"error": "assertiveness_justification must be at least 10 characters"}
-        )
-    if len(ambiguity_justification.strip()) < 10:
-        return json.dumps(
-            {"error": "ambiguity_justification must be at least 10 characters"}
-        )
-    if len(general_justification.strip()) < 20:
-        return json.dumps(
-            {"error": "general_justification must be at least 20 characters"}
-        )
-
     data = {
+        "expected_validation_edition": expected_validation_edition,
+        "expected_spec_version": expected_spec_version,
+        "expected_head_revision": expected_head_revision,
+    }
+    optional_values = {
+        "score": score,
+        "summary": summary,
         "completeness": completeness,
         "completeness_justification": completeness_justification,
         "assertiveness": assertiveness,
@@ -19488,6 +19816,9 @@ async def okto_pulse_submit_spec_validation(
         "general_justification": general_justification,
         "recommendation": recommendation,
     }
+    data.update(
+        {key: value for key, value in optional_values.items() if value is not None}
+    )
 
     from okto_pulse.core.application.use_cases import (
         EntityNotFoundError,
@@ -19497,11 +19828,18 @@ async def okto_pulse_submit_spec_validation(
     from okto_pulse.core.domain.guideline_policy_transition import (
         PolicyTransitionRejected,
     )
+    from okto_pulse.core.domain.spec_validation import (
+        SpecValidationConflictError,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    correlation_id = str(_uuid.uuid4())
     try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        async with _validation_mcp_uow_factory(
+            assessment_kind="spec_validation",
+            subject_type="spec",
+        )(actor=actor) as uow:
             # Thin MCP adapter (spec #09): delegate to the shared use case (it
             # validates the payload, resolves the reviewer name from the MCP agent,
             # submits and commits). The MCP-specific input checks above are kept so
@@ -19511,9 +19849,27 @@ async def okto_pulse_submit_spec_validation(
                 actor=actor,
                 uow=uow,
             )
-        return json.dumps(result.payload, default=str)
+        payload = result.payload
+        return json.dumps(
+            {
+                "validation_id": payload["validation_id"],
+                "validation_edition": payload["validation_edition"],
+                "is_current": payload["is_current"],
+            },
+            default=str,
+        )
     except EntityNotFoundError:
         return json.dumps({"error": "Spec not found"})
+    except SpecValidationConflictError as exc:
+        _observe_mcp_validation_edition_conflict(
+            exc,
+            operation="spec_validation",
+            subject_type="spec",
+            subject_id=spec_id,
+            expected_edition=expected_validation_edition,
+            correlation_id=correlation_id,
+        )
+        return json.dumps(exc.to_error_dict())
     except PolicyTransitionRejected as e:
         return MCPAdapterContract.error(e)
     except ValueError as e:
@@ -19521,14 +19877,21 @@ async def okto_pulse_submit_spec_validation(
 
 
 @mcp.tool()
-async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
+async def okto_pulse_list_spec_validations(
+    board_id: str,
+    spec_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    lifecycle_state: Literal["all", "current", "previous", "history_only"] = "all",
+) -> str:
     """
     List all Spec Validation Gate records in reverse chronological order.
 
     Useful for understanding why a spec was validated (or failed). Each record
     includes the 3 scores, justifications, outcome, threshold violations, and
     a resolved_thresholds snapshot of what was in effect when the submit happened.
-    The record currently pointed to by current_validation_id has active=true."""
+    The current edition is explicit; replaced and prior-edition records are
+    previous, while legacy records without an edition are history_only."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -19547,7 +19910,12 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await ListSpecValidationsUseCase().execute(
-                ListSpecValidationsCommand(spec_id),
+                ListSpecValidationsCommand(
+                    spec_id,
+                    limit=limit,
+                    offset=offset,
+                    lifecycle_state=lifecycle_state,
+                ),
                 actor=actor,
                 uow=uow,
             )
@@ -19558,6 +19926,8 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
             },
             default=str,
         )
+    except PermissionDeniedError as exc:
+        return MCPAdapterContract.error(exc)
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -21834,6 +22204,19 @@ def _global_outbox_dead_letter_error_response(
     return json.dumps(payload)
 
 
+def _subject_edit_requires_draft_mcp_error(error: Exception) -> str:
+    from okto_pulse.core.domain.human_validation_cycle import (
+        SubjectEditRequiresDraftError,
+    )
+    from okto_pulse.core.inbound.human_validation_cycle_error import (
+        project_subject_edit_requires_draft_error,
+    )
+
+    if not isinstance(error, SubjectEditRequiresDraftError):
+        raise TypeError("subject_edit_requires_draft_error_required")
+    return json.dumps(project_subject_edit_requires_draft_error(error))
+
+
 @mcp.tool()
 async def okto_pulse_kg_global_outbox_dead_letter_list(
     limit: Annotated[
@@ -23219,6 +23602,7 @@ async def okto_pulse_list_by_board(
                             ),
                             "active_spec_count": getattr(i, "active_spec_count", 0),
                             "derivation_pending": is_derivation_pending_ideation(i),
+                            "edition": int(getattr(i, "edition", 1) or 1),
                             "version": i.version,
                             "assignee_id": i.assignee_id,
                             "labels": i.labels,
@@ -23260,6 +23644,7 @@ async def okto_pulse_list_by_board(
                             "status": r.status.value,
                             "active_spec_count": getattr(r, "active_spec_count", 0),
                             "derivation_pending": is_derivation_pending_refinement(r),
+                            "edition": int(getattr(r, "edition", 1) or 1),
                             "version": r.version,
                             "assignee_id": r.assignee_id,
                             "labels": r.labels,

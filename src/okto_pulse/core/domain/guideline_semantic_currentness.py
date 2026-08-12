@@ -57,6 +57,7 @@ class SemanticAssessmentCurrentnessReason(str, Enum):
     """Ordered, closed reasons why one recorded receipt is stale."""
 
     CURRENT_SNAPSHOT_MISSING = "current_snapshot_missing"
+    SUBJECT_EDITION_CHANGED = "subject_edition_changed"
     SUBJECT_VERSION_CHANGED = "subject_version_changed"
     SUBJECT_CONTENT_CHANGED = "subject_content_changed"
     GUIDELINE_REVISION_CHANGED = "guideline_revision_changed"
@@ -238,6 +239,24 @@ def assess_semantic_assessment_currentness(
     ):
         raise SemanticAssessmentContractError(
             "semantic_currentness_binding_scope_mismatch"
+        )
+
+    if current.subject.subject_edition is not None:
+        reasons = (
+            ()
+            if receipt.subject.subject_edition == current.subject.subject_edition
+            else (
+                SemanticAssessmentCurrentnessReason.SUBJECT_EDITION_CHANGED,
+            )
+        )
+        return SemanticAssessmentCurrentness(
+            receipt_id=receipt.receipt_id,
+            currentness=(
+                PolicyCurrentness.CURRENT
+                if not reasons
+                else PolicyCurrentness.STALE
+            ),
+            reasons=reasons,
         )
 
     present: set[SemanticAssessmentCurrentnessReason] = set()

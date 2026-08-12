@@ -34,7 +34,13 @@ from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
 ACTOR = "uc09-actor"
 
+_VALID_VALIDATION_FENCES = {
+    "expected_validation_edition": 1,
+    "expected_spec_version": 1,
+    "expected_head_revision": 0,
+}
 _VALID_VALIDATION_PAYLOAD = {
+    **_VALID_VALIDATION_FENCES,
     "completeness": 95,
     "completeness_justification": "complete enough",
     "assertiveness": 95,
@@ -130,8 +136,27 @@ async def test_uow_commit_uses_only_the_typed_transaction_capability():
 def test_submit_spec_validation_command_validation():
     SubmitSpecValidationCommand("s1", _VALID_VALIDATION_PAYLOAD).validate()  # no raise
 
+    # REST compatibility models may include absent formal fields as None. They
+    # must not turn an otherwise complete legacy payload into a formal one.
+    SubmitSpecValidationCommand(
+        "s1",
+        {**_VALID_VALIDATION_PAYLOAD, "score": None, "summary": None},
+    ).validate()
+
+    with pytest.raises(
+        CommandValidationError,
+        match="formal and legacy validation shapes are mutually exclusive",
+    ):
+        SubmitSpecValidationCommand(
+            "s1",
+            {**_VALID_VALIDATION_PAYLOAD, "score": 91, "summary": "Ready"},
+        ).validate()
+
     with pytest.raises(CommandValidationError, match="Missing required fields"):
-        SubmitSpecValidationCommand("s1", {"completeness": 95}).validate()
+        SubmitSpecValidationCommand(
+            "s1",
+            {**_VALID_VALIDATION_FENCES, "completeness": 95},
+        ).validate()
 
     with pytest.raises(CommandValidationError, match="recommendation must be"):
         SubmitSpecValidationCommand(

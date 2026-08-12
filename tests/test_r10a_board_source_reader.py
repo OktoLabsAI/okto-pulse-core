@@ -53,10 +53,10 @@ def _source_db(tmp_path: Path) -> Path:
         conn.execute(
             "INSERT INTO specs "
             "(id, board_id, status, created_at, updated_at, title, description, "
-            "context, version, functional_requirements, technical_requirements, "
+            "context, version, edition, functional_requirements, technical_requirements, "
             "acceptance_criteria, test_scenarios, business_rules, api_contracts, "
             "decisions, integration_requirements, observability_requirements) VALUES ("
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "s1",
                 "b1",
@@ -67,6 +67,7 @@ def _source_db(tmp_path: Path) -> Path:
                 "Description",
                 "Context",
                 2,
+                1,
                 '["FR"]',
                 '["TR"]',
                 '["AC"]',
@@ -242,6 +243,7 @@ def _seed_current_projection_heads(
             "decisions": "[]",
             "status": "done",
             "version": 2,
+            "edition": 1,
             "labels": "[]",
         }
     )
@@ -260,6 +262,7 @@ def _seed_current_projection_heads(
                 "subject_type": subject_type,
                 "subject_id": subject_id,
                 "subject_version": 2,
+                "subject_edition": 1,
                 "assessment_kind": "spec_validation",
                 "origin": "legacy_import",
                 "source": "legacy_migration",

@@ -58,19 +58,21 @@ Ideations are the starting point for solution definition. Stories may exist befo
    - **Review**: Read-only — awaits approval from reviewer (human or agent)
    - **Approved**: Read-only — handoff signal; the evaluator can now proceed to evaluate
    - **Evaluating**: Read-only — scope assessment and complexity evaluation must happen here
-   - **Done**: Frozen — immutable snapshot created, can only go back to draft (new version)
+   - **Done**: Frozen — immutable snapshot created, can only go back to draft (new lifecycle edition)
    - **Cancelled**: Terminal — accessible from any status except done
 4. **Evaluation only in "evaluating"**: `okto_pulse_evaluate_ideation` only works when status is `evaluating`
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
 7. **Triage pending derivations**: the canonical surface to find done ideations that still lack a derived child is `okto_pulse_list_by_board(entity_type="ideation", filters={"derivation_pending": true})` — see `okto-pulse://reference/list_tools`
 
-## 2.1a Receipt-Backed Ambiguity and Pinpointing
+## 2.1a Lifecycle Ambiguity Results and Pinpointing
 
 The scope evaluation's `ambiguity` dimension classifies the Ideation; the
-version-bound Quality receipt proves whether its current semantic content and
-Q&A are sufficiently unambiguous for the `evaluating → done` gate. Do not
-substitute one for the other.
+edition-bound Quality result records whether the Ideation is sufficiently
+unambiguous for the `evaluating → done` gate. Do not substitute one for the
+other. Human-facing state is always **Current** for the active edition or
+**Previous** for an earlier edition; technical result identifiers and digests
+belong only to audit detail.
 
 Use this sequence:
 
@@ -79,24 +81,30 @@ Use this sequence:
 2. Re-read the full Ideation context. Call
    `okto_pulse_get_current_quality_assessment` with
    `subject_type="ideation"` and `assessment_kind="ambiguity"` to discover
-   whether a head exists and obtain its revision.
+   whether a Current result exists for the edition and obtain its head
+   revision. Use revision 0 when none exists.
 3. In `evaluating`, call `okto_pulse_record_ambiguity_assessment` with the
-   current Ideation version and head revision. Score 1–5, lower is better.
+   current Ideation version, lifecycle edition, and head revision. Score 1–5,
+   lower is better.
    Pinpoint each issue with a stable field, structured-child, Q&A, or
    whole-artifact anchor; never use an array position.
-4. If the write materializes proposed Q&A, wait for answers and update the
-   semantic text when needed. Either action can stale the receipt. Re-read
-   context and record a new assessment against the new input/head.
-5. Immediately before `done`, read the current assessment again and inspect
-   `currentness.current`, ordered `stale_reasons`, score, and the board's
-   configured maximum. Use `okto_pulse_list_quality_findings` when you need
-   the full pinpoint/remediation set.
+4. Proposed questions are immutable evidence in the result; they never create
+   or update Q&A. If a question requires clarification or semantic edits,
+   return the Ideation to `draft`, resolve it there, and begin the new edition's
+   validation cycle.
+5. Multiple attempts in one edition remain auditable; the latest accepted one
+   is Current and earlier attempts are Previous. Immediately before `done`,
+   read Current again and compare its score with the board's configured
+   maximum. Use `okto_pulse_list_quality_findings` only when the complete
+   pinpoint/remediation set is needed.
 
 When the board requires the Ideation ambiguity gate, `done` requires a current
-receipt whose score is at or below `max_ideation_ambiguity`. A missing, stale,
-or excessive assessment fails closed. The per-Ideation skip is human-owned;
-an agent may report or request it but must not try to set it. Full tool
-contracts: `okto-pulse://reference/tool-docs/quality`.
+result for the active edition whose score is at or below
+`max_ideation_ambiguity`. A missing or excessive result fails closed. Returning
+to `draft` starts a new edition and moves all earlier results to Previous. The
+per-Ideation skip is human-owned; an agent may report or request it but must
+not try to set it. Full tool contracts:
+`okto-pulse://reference/tool-docs/quality`.
 
 ## 2.1b Ambiguity-Killer Protocol — ASK Before Advancing (MANDATORY)
 

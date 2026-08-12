@@ -32,6 +32,7 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
+    require_all,
     require_authorization,
 )
 from okto_pulse.core.application.use_cases.mutation_permissions import (
@@ -607,6 +608,7 @@ class RunStructuredSpecEntityCommand:
         "payload",
         "entity_id",
         "expected_spec_version",
+        "expected_spec_edition",
         "task_id",
         "ack_token",
         "preview_only",
@@ -621,6 +623,7 @@ class RunStructuredSpecEntityCommand:
         payload: dict[str, Any] | None = None,
         entity_id: str | None = None,
         expected_spec_version: int | None = None,
+        expected_spec_edition: int | None = None,
         task_id: str | None = None,
         ack_token: str | None = None,
         preview_only: bool = False,
@@ -631,6 +634,7 @@ class RunStructuredSpecEntityCommand:
         self.payload = payload
         self.entity_id = entity_id
         self.expected_spec_version = expected_spec_version
+        self.expected_spec_edition = expected_spec_edition
         self.task_id = task_id
         self.ack_token = ack_token
         self.preview_only = preview_only
@@ -677,6 +681,7 @@ class RunStructuredSpecEntityUseCase:
                 operation=command.operation,
                 payload=command.payload or {},
                 expected_spec_version=command.expected_spec_version,
+                expected_spec_edition=command.expected_spec_edition,
                 task_id=command.task_id,
                 ack_token=command.ack_token,
                 preview_only=command.preview_only,
@@ -694,10 +699,19 @@ class RunStructuredSpecEntityUseCase:
 
 
 class ListSpecValidationsCommand:
-    __slots__ = ("spec_id",)
+    __slots__ = ("spec_id", "limit", "offset", "lifecycle_state")
 
-    def __init__(self, spec_id: str) -> None:
+    def __init__(
+        self,
+        spec_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        lifecycle_state: str = "all",
+    ) -> None:
         self.spec_id = spec_id
+        self.limit = limit
+        self.offset = offset
+        self.lifecycle_state = lifecycle_state
 
 
 class ListSpecValidationsResult:
@@ -722,10 +736,22 @@ class ListSpecValidationsUseCase:
         uow: PulseUnitOfWork,
     ) -> ListSpecValidationsResult:
         try:
-            await _require_actor_board_spec(uow, command.spec_id, actor)
+            spec = await _require_actor_board_spec(uow, command.spec_id, actor)
         except EntityNotFoundError as exc:
             raise ValueError("Spec not found") from exc
-        result = await uow.services.specs.list_spec_validations(command.spec_id)
+        await require_all(
+            actor,
+            PermissionRequirement("spec.entity.read"),
+            PermissionRequirement("spec.validation.read"),
+            uow=uow,
+            board_id=spec.board_id,
+        )
+        result = await uow.services.specs.list_spec_validations(
+            command.spec_id,
+            limit=command.limit,
+            offset=command.offset,
+            lifecycle_state=command.lifecycle_state,
+        )
         return ListSpecValidationsResult(result)
 
 
@@ -953,8 +979,7 @@ class UnlinkTaskFromScenarioUseCase:
         card = await _require_spec_board_card(uow.services, command.card_id, spec)
 
         if not any(
-            isinstance(scenario, dict)
-            and scenario.get("id") == command.scenario_id
+            isinstance(scenario, dict) and scenario.get("id") == command.scenario_id
             for scenario in (spec.test_scenarios or [])
         ):
             raise EntityNotFoundError("scenario", command.scenario_id)

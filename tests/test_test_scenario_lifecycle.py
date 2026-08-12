@@ -34,7 +34,7 @@ from okto_pulse.core.models.schemas import (
     SpecUpdate,
     TestScenarioWrite as ScenarioWrite,
 )
-from okto_pulse.core.services.main import CardService, SpecLockedError, SpecService
+from okto_pulse.core.services.main import CardService, SpecService
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.test_scenario_lifecycle import StatusNotMutableError
 
@@ -456,22 +456,27 @@ async def test_semantic_edit_invalidates_evidence_cosmetic_preserves(db_factory)
 # ====================================================================
 
 
-async def test_update_and_delete_respect_content_lock(db_factory):
-    # ts_3b602216
+async def test_draft_reopen_allows_update_and_delete_after_previous_validation(
+    db_factory,
+):
+    # Returning to Draft starts a new human validation cycle. Historical
+    # validation rows cannot keep semantic authoring locked.
     _b, spec_id, _c = await _seed_spec(
         db_factory,
-        status=SpecStatus.IN_PROGRESS,
+        status=SpecStatus.DRAFT,
         locked=True,
         scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}],
     )
     async with db_factory() as db:
         svc = SpecService(db)
-        with pytest.raises(SpecLockedError):
-            await svc.update_test_scenario(spec_id, USER, "ts_a", title="nope")
+        result = await svc.update_test_scenario(
+            spec_id, USER, "ts_a", title="updated in draft"
+        )
+        assert result["updated_fields"] == ["title"]
     async with db_factory() as db:
         svc = SpecService(db)
-        with pytest.raises(SpecLockedError):
-            await svc.delete_test_scenario(spec_id, USER, "ts_a")
+        result = await svc.delete_test_scenario(spec_id, USER, "ts_a")
+        assert result["scenario_id"] == "ts_a"
 
 
 # ====================================================================

@@ -43,12 +43,12 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "7a26c2298715bc43422b06625127557d25f1517bba47fa480a9bab636e7e4464",
+  "manifest_sha256": "94718b8cccc0bc75cf683d885a23b8de72841fb1fb76c3ccfebd8443b6fbd724",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
     {
-      "content_sha256": "87a68978f9a7b93248f1c8cecf59a966f52769218063ff8651a57aeb159ff0a9",
+      "content_sha256": "25c648e620cdba4fb6bfd6d68ed7f8c463b5edcbe40991b7a72758256d84deea",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
@@ -120,7 +120,7 @@
       "uri": "okto-pulse://reference/list_tools"
     },
     {
-      "content_sha256": "f4125f6952dbb936210a2644c816f220aa4059656496d8bc6d74979fa73351e4",
+      "content_sha256": "4f3bfa16d9cf55b7b59a525711a5c255ab17ee49651334f1ef4d0dfe914fb274",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
@@ -136,7 +136,7 @@
         "# Semantic guideline protocol",
         "## Revision and adoption",
         "## Recording an assessment",
-        "## Gate and currentness",
+        "## Gate and lifecycle edition",
         "## Lists, pagination and errors",
         "## Capabilities and KG"
       ],
@@ -158,7 +158,7 @@
       "uri": "okto-pulse://reference/projection-profiles"
     },
     {
-      "content_sha256": "500cba47b6c88c2ad41c58c53d2868c2d511e72dc13aadee943453833a1fbd74",
+      "content_sha256": "ec9a9a19ceacb2523374b57c591d2d81eb8862752672c3250f5e06f380a0d888",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/policy-compliance",
@@ -178,11 +178,11 @@
         "okto-pulse://workflows/preflight"
       ],
       "required_headings": [
-        "# Quality assessments, pinpointing, and currentness",
+        "# Quality assessments, pinpointing, and lifecycle results",
         "## Subject and assessment matrix",
         "## Mandatory pre-flight for a write",
         "## Pinpoint findings and questions",
-        "## Currentness is computed, not inferred from head",
+        "## Lifecycle state and technical audit",
         "## Reads, projections, and pagination",
         "## Gate behavior and error parity",
         "## Related resources"
@@ -190,7 +190,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "5298331497c30ad57f7faab43997ed3640d84f46a4c6dff0dc521d8460693448",
+      "content_sha256": "98340b64f462d3f860743cf833963478ef53cd24ff7bed0c3fc67bf5a8a67fa0",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/tool-docs/spec",
@@ -207,7 +207,7 @@
       "uri": "okto-pulse://reference/spec_gates"
     },
     {
-      "content_sha256": "c842f2216f626b9cf0c7d73e749c105e2a6a4a3d42a58153fbb0f88ff42f3709",
+      "content_sha256": "5c7d272c990ac9a06f96584e4b010475ea095aecf33d716ca061a9aecf98cec1",
       "cross_links": [
         "okto-pulse://reference/policy-compliance"
       ],
@@ -221,7 +221,7 @@
       "uri": "okto-pulse://reference/tool-docs/guideline"
     },
     {
-      "content_sha256": "148b4ebb54f2305d65be038e37e87088af7fdcf6e256877b4019e15c7d44cb4f",
+      "content_sha256": "d2221e13a23e9d1183671d5054760d8e5db301714f480a7377a41a18cd5aafb8",
       "cross_links": [
         "okto-pulse://reference/quality-assessments"
       ],
@@ -230,6 +230,8 @@
       ],
       "required_headings": [
         "## `okto_pulse_record_ambiguity_assessment`",
+        "## `okto_pulse_record_requirement_lint`",
+        "## `okto_pulse_get_requirement_lint_preflight`",
         "## `okto_pulse_get_current_quality_assessment`",
         "## `okto_pulse_get_quality_assessment_receipt`",
         "## `okto_pulse_list_quality_assessments`",
@@ -254,7 +256,7 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "b4084e5795f1a2fdf9aa63645adfa6af224567d46485e56ab2dc0a5136abdd57",
+      "content_sha256": "ababfea3f726744aa0f1579f60179cb4ffc79e05c8cc8074939733b332f04c94",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
@@ -294,7 +296,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "5e76832ec3e5bb333e14d52eb349d4f0cf1a9fc6591ea59abfb27b48c9b82f1c",
+      "content_sha256": "1b1374cbec5030a44808a121deed96547c40e01d82d94c44ebeda15c6ade2d57",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",
@@ -342,7 +344,7 @@
       "uri": "okto-pulse://reference/tools_catalog"
     },
     {
-      "content_sha256": "37b9aae31dc45ee6b296cbaef4eb186eaf18f2661e950ab683a4277648ad75e8",
+      "content_sha256": "03dfcff8a5f02af8d49293f3ef8c781bfff45b110fc2645fb737309b729bf9ab",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -380,7 +382,7 @@
       "uri": "okto-pulse://workflows/cards"
     },
     {
-      "content_sha256": "e27b842d7ef7c2ee09e4f19806903a89f3d36548bd0a69dff57f049d4854e135",
+      "content_sha256": "353753133545b11b9a6ad23f4bb9328a9d66fd4c8c523aaddf60079cd39a6362",
       "cross_links": [
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/list_tools",
@@ -392,7 +394,7 @@
         "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
-        "## 2.1a Receipt-Backed Ambiguity and Pinpointing"
+        "## 2.1a Lifecycle Ambiguity Results and Pinpointing"
       ],
       "uri": "okto-pulse://workflows/ideations"
     },
@@ -433,7 +435,7 @@
       "uri": "okto-pulse://workflows/preflight"
     },
     {
-      "content_sha256": "5e731ea70c46669e9d7fc440674260ce80e8f4b1b9c9aebdd40fb7507d7721c6",
+      "content_sha256": "b64ccb48623a51499d91978eab0dda00d3d2aca41de769367f5957151e2fa010",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
@@ -446,13 +448,13 @@
         "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
-        "## Receipt-Backed Ambiguity and Pinpointing",
+        "## Lifecycle Ambiguity Results and Pinpointing",
         "## Operational Research Decision Ledger"
       ],
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "972a3d36dde52824dabccdb198d6e05fffe20dfa146ed2e7a63bb791edf9778a",
+      "content_sha256": "685f6ed1c3966c9e5ebb47f9d468206b58b47aff08765bded74caccd2a468c67",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",

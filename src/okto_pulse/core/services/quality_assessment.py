@@ -28,6 +28,7 @@ from okto_pulse.core.domain.quality_assessment import (
     AssessmentReceiptDetail,
     AssessmentReceiptState,
     AssessmentReceiptView,
+    AssessmentScaleKind,
     AssessmentSubjectHead,
     AssessmentSubjectIdentity,
     AssessmentSubjectRef,
@@ -44,6 +45,7 @@ from okto_pulse.core.domain.quality_assessment import (
     QualityFinding,
     QualityPage,
     QualityPageCursor,
+    ScoreDirection,
     evaluate_assessment_currentness,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
@@ -57,6 +59,7 @@ from okto_pulse.core.ports.quality_assessment import (
     AssessmentCurrentnessInput,
     AssessmentSubjectStatusConflict,
     AssessmentSubjectLifecycleConflict,
+    AssessmentSubjectEditionConflict,
     AssessmentSubjectVersionConflict,
     FindingListQuery,
     QualityGateInput,
@@ -319,6 +322,7 @@ class QualityAssessmentService:
                 "assessment_kind": submission.assessment_kind,
                 "idempotency_key": submission.idempotency_key,
                 "expected_subject_version": submission.expected_subject_version,
+                "expected_subject_edition": submission.expected_subject_edition,
                 "expected_head_revision": submission.expected_head_revision,
                 "score": submission.score,
                 "justification": submission.justification,
@@ -351,6 +355,7 @@ class QualityAssessmentService:
             submission.subject_type is AssessmentSubjectType.SPEC
             and submission.assessment_kind is AssessmentKind.REQUIREMENT_LINT
             and preflight.origin is AssessmentOrigin.SEMANTIC_WRITER
+            and preflight.subject.subject_edition is None
         ):
             if not authority.domain_write:
                 raise QualityAssessmentForbiddenError(
@@ -363,10 +368,18 @@ class QualityAssessmentService:
                 "assessment_permission_denied",
                 "The domain write authority and granular quality-assess leaf are both required.",
             )
-        if submission.proposed_questions and not authority.qa_ask:
-            raise QualityAssessmentForbiddenError(
-                "assessment_qa_permission_required"
-            )
+        if (
+            submission.subject_type is AssessmentSubjectType.SPEC
+            and submission.assessment_kind is AssessmentKind.REQUIREMENT_LINT
+            and preflight.subject.subject_edition is not None
+        ):
+            # External lint is advisory evidence, not submission of the Spec
+            # Validation gate. It must not inherit that gate's permission or
+            # reviewer-separation requirements.
+            return
+        # Proposed questions are immutable assessment evidence. They do not
+        # create or mutate the subject's Q&A collection, so qa_ask authority is
+        # deliberately not required here.
         if submission.subject_type is AssessmentSubjectType.SPEC:
             if not preflight.authority.spec_validation_submit:
                 raise QualityAssessmentForbiddenError(
@@ -464,6 +477,7 @@ class QualityAssessmentService:
                 "subject_type": preflight.subject.subject_type,
                 "subject_id": preflight.subject.subject_id,
                 "subject_version": preflight.subject.subject_version,
+                "subject_edition": preflight.subject.subject_edition,
                 "assessment_kind": submission.assessment_kind,
                 "ruleset_version": preflight.versions.ruleset_version,
                 "analyzer_version": preflight.versions.analyzer_version,
@@ -584,6 +598,7 @@ class QualityAssessmentService:
             idempotency_key=submission.idempotency_key,
             request_fingerprint=request_fingerprint,
             expected_subject_version=submission.expected_subject_version,
+            expected_subject_edition=submission.expected_subject_edition,
             expected_head_revision=submission.expected_head_revision,
             expected_head_receipt_id=preflight.current_head_receipt_id,
             expected_subject_status=preflight.status,
@@ -610,6 +625,13 @@ class QualityAssessmentService:
             or submission.subject_id != subject.subject_id
         ):
             raise QualityAssessmentValidationError("assessment_subject_mismatch")
+        if (
+            subject.subject_edition is not None
+            and submission.expected_subject_edition != subject.subject_edition
+        ):
+            raise QualityAssessmentConflictError(
+                "assessment_subject_edition_conflict"
+            )
         if submission.expected_subject_version != subject.subject_version:
             raise QualityAssessmentConflictError(
                 "assessment_subject_version_conflict"
@@ -672,7 +694,29 @@ class QualityAssessmentService:
             return
 
         if submission.assessment_kind is AssessmentKind.REQUIREMENT_LINT:
-            if preflight.origin is not AssessmentOrigin.SEMANTIC_WRITER:
+            if preflight.subject.subject_edition is not None:
+                if preflight.origin is not AssessmentOrigin.HUMAN_OR_AGENT:
+                    raise QualityAssessmentForbiddenError(
+                        "requirement_lint_internal_cognition_forbidden"
+                    )
+                if preflight.status != "approved":
+                    raise QualityAssessmentConflictError(
+                        "assessment_subject_status_conflict",
+                        retryable=False,
+                    )
+                if (
+                    submission.scale.kind
+                    is not AssessmentScaleKind.FINDING_COUNT
+                    or submission.scale.direction
+                    is not ScoreDirection.LOWER_BETTER
+                    or submission.scale.minimum != 0
+                    or submission.score != float(len(submission.findings))
+                    or submission.proposed_questions
+                ):
+                    raise QualityAssessmentValidationError(
+                        "requirement_lint_external_contract_invalid"
+                    )
+            elif preflight.origin is not AssessmentOrigin.SEMANTIC_WRITER:
                 raise QualityAssessmentForbiddenError(
                     "requirement_lint_external_submission_forbidden"
                 )
@@ -758,6 +802,10 @@ class QualityAssessmentService:
             raise QualityAssessmentConflictError(
                 "assessment_subject_version_conflict"
             ) from exc
+        except AssessmentSubjectEditionConflict as exc:
+            raise QualityAssessmentConflictError(
+                "assessment_subject_edition_conflict"
+            ) from exc
         except AssessmentIdempotencyConflict as exc:
             raise QualityAssessmentConflictError(
                 "assessment_idempotency_conflict",
@@ -825,6 +873,11 @@ class QualityAssessmentService:
             if source is not None
             else submission.expected_subject_version
         )
+        expected_edition = (
+            source.subject.subject_edition
+            if source is not None
+            else submission.expected_subject_edition
+        )
         expected_kind = (
             source.assessment_kind
             if source is not None
@@ -840,6 +893,10 @@ class QualityAssessmentService:
             or result.subject_type is not expected_type
             or result.subject_id != expected_id
             or result.subject_version != expected_version
+            or (
+                expected_edition is not None
+                and result.subject_edition != expected_edition
+            )
             or result.assessment_kind is not expected_kind
             or result.head_revision != expected_head
         ):
@@ -914,12 +971,25 @@ class QualityAssessmentService:
         gate_inputs: tuple[QualityGateInput, ...] = (),
         persistence: QualityAssessmentPersistencePort,
     ) -> CurrentAssessmentView:
-        resolved = await persistence.get_current(
-            board_id=board_id,
-            subject_type=subject_type,
-            subject_id=subject_id,
-            assessment_kind=assessment_kind,
-        )
+        try:
+            resolved = await persistence.get_current(
+                board_id=board_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                assessment_kind=assessment_kind,
+                subject_edition=current_subject.subject_edition,
+            )
+        except TypeError as exc:
+            # Transitional compatibility for third-party adapters compiled
+            # against the pre-edition optional keyword.
+            if "subject_edition" not in str(exc):
+                raise
+            resolved = await persistence.get_current(
+                board_id=board_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                assessment_kind=assessment_kind,
+            )
         if resolved is None:
             raise QualityAssessmentNotFoundError(
                 "assessment_current_not_found"
@@ -934,6 +1004,12 @@ class QualityAssessmentService:
                 "assessment_current_port_invalid"
             )
         receipt, head = resolved
+        if receipt.subject.subject_edition != current_subject.subject_edition:
+            # Adapters predating the optional selector may still return a global
+            # head. It is history, never current for this lifecycle edition.
+            raise QualityAssessmentNotFoundError(
+                "assessment_current_not_found"
+            )
         if (
             receipt.id != head.receipt_id
             or receipt.subject.board_id != board_id
@@ -951,10 +1027,14 @@ class QualityAssessmentService:
         currentness = evaluate_assessment_currentness(
             receipt,
             current_subject=current_subject,
-            current_digests=_current_digests_for_receipt(
-                receipt,
-                inputs=currentness_inputs,
-                fallback=current_digests,
+            current_digests=(
+                receipt.digests
+                if current_subject.subject_edition is not None
+                else _current_digests_for_receipt(
+                    receipt,
+                    inputs=currentness_inputs,
+                    fallback=current_digests,
+                )
             ),
         )
         return CurrentAssessmentView(
@@ -988,10 +1068,14 @@ class QualityAssessmentService:
         return evaluate_assessment_currentness(
             receipt,
             current_subject=current_subject,
-            current_digests=_current_digests_for_receipt(
-                receipt,
-                inputs=currentness_inputs,
-                fallback=None,
+            current_digests=(
+                receipt.digests
+                if current_subject.subject_edition is not None
+                else _current_digests_for_receipt(
+                    receipt,
+                    inputs=currentness_inputs,
+                    fallback=None,
+                )
             ),
         )
 
@@ -1088,6 +1172,8 @@ class QualityAssessmentService:
             or isinstance(query.current_subject_version, bool)
             or query.current_subject_version < 1
             or (
+                query.current_subject_edition is None
+                and
                 not has_identity_inputs
                 and not isinstance(query.current_digests, AssessmentDigestSet)
             )
@@ -1138,22 +1224,34 @@ class QualityAssessmentService:
                     subject_type=query.subject.subject_type,
                     subject_id=query.subject.subject_id,
                     subject_version=query.current_subject_version,
+                    subject_edition=query.current_subject_edition,
                 ),
-                current_digests=_current_digests_for_receipt(
-                    receipt,
-                    inputs=query.currentness_inputs,
-                    fallback=query.current_digests,
+                current_digests=(
+                    receipt.digests
+                    if query.current_subject_edition is not None
+                    else _current_digests_for_receipt(
+                        receipt,
+                        inputs=query.currentness_inputs,
+                        fallback=query.current_digests,
+                    )
                 ),
             )
-            expected_state = (
-                AssessmentReceiptState.SUPERSEDED
-                if not item.is_head
-                else (
+            if query.current_subject_edition is not None:
+                expected_state = (
                     AssessmentReceiptState.CURRENT
-                    if expected_freshness.current
-                    else AssessmentReceiptState.STALE
+                    if item.is_head and expected_freshness.current
+                    else AssessmentReceiptState.PREVIOUS
                 )
-            )
+            else:
+                expected_state = (
+                    AssessmentReceiptState.SUPERSEDED
+                    if not item.is_head
+                    else (
+                        AssessmentReceiptState.CURRENT
+                        if expected_freshness.current
+                        else AssessmentReceiptState.STALE
+                    )
+                )
             if (
                 item.freshness != expected_freshness
                 or item.state is not expected_state

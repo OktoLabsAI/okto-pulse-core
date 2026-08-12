@@ -57,6 +57,7 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_get_ideation_context",
         "okto_pulse_get_ideation_knowledge",
         "okto_pulse_get_implementation_overlaps",
+        "okto_pulse_get_requirement_lint_preflight",
         "okto_pulse_get_my_profile",
         "okto_pulse_get_publish_health",
         "okto_pulse_get_quality_assessment_receipt",
@@ -459,6 +460,10 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_get_refinement_knowledge", "refinement.knowledge.read"),
     _policy("okto_pulse_get_refinement_snapshot", "refinement.versions_read"),
     _policy(
+        "okto_pulse_get_requirement_lint_preflight",
+        "spec.quality.read",
+    ),
+    _policy(
         "okto_pulse_get_resource_gate_summary",
         "ideation.entity.read",
         "refinement.entity.read",
@@ -796,6 +801,10 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "okto_pulse_record_ambiguity_assessment",
         "ideation.quality.assess",
         "refinement.quality.assess",
+    ),
+    _policy(
+        "okto_pulse_record_requirement_lint",
+        "spec.quality.assess",
     ),
     _policy(
         "okto_pulse_record_semantic_guideline_assessment",

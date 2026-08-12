@@ -409,13 +409,13 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     ):
         assert status in specs
 
-    assert "Quality is read-only for Specs" in normalized_specs
+    assert "Requirement Lint is external agent evidence" in normalized_specs
     assert "Validation is actionable at `approved`" in normalized_specs
-    assert "its score is the finding count" in normalized_specs
-    assert "No head means **no evidence**, not zero findings" in normalized_specs
-    assert "is migrated audit evidence" in normalized_specs
+    assert "finding count and severity are advisory" in normalized_specs
+    assert "Previous validation results are history" in normalized_specs
+    assert "Current result for this lifecycle edition" in normalized_specs
     assert "System legacy import" in normalized_quality
-    assert "not a native Quality receipt" in normalized_quality
+    assert "is migrated audit evidence" in normalized_quality
     assert (
         "This resource intentionally does not repeat those lifecycle steps"
         in normalized_quality
@@ -424,11 +424,35 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     # Shared operational details have one canonical home to control token use.
     for detail in (
         "limits `25|50|100`",
-        "`subject_version_changed`, `content_changed`",
+        "edition is SQL `NULL`",
         "`{subject}.quality.read`",
     ):
         assert detail in quality
         assert detail not in specs
+
+
+def test_ideation_and_refinement_quality_guidance_uses_lifecycle_results() -> None:
+    """Human ambiguity guidance must describe Current/Previous by edition."""
+    from okto_pulse.core.mcp import server as _srv
+
+    ideations = _srv._load_resource_file("workflows/ideations.md")
+    refinements = _srv._load_resource_file("workflows/refinements.md")
+
+    for body in (ideations, refinements):
+        normalized = " ".join(body.split())
+        assert "Lifecycle Ambiguity Results and Pinpointing" in body
+        assert "Current" in normalized
+        assert "Previous" in normalized
+        assert "Returning to `draft` starts a new edition" in normalized
+        assert "lifecycle edition" in normalized
+        assert "Receipt-Backed Ambiguity" not in body
+        assert "currentness.current" not in body
+        assert "missing, stale, or excessive" not in normalized.lower()
+
+    assert "Either action can stale the receipt" not in ideations
+    assert "Proposed questions are created atomically with the receipt" not in (
+        refinements
+    )
 
 
 def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
@@ -462,7 +486,7 @@ def test_initial_footprint_under_budget() -> None:
 
     Budget rationale (post-P0.A + post-P0.B, pre-P1 lazy-loading):
       - instructions ≤ 10K tokens — P0.A goal (was ~71K pre-rewrite).
-      - tools metadata ≤ 48.5K tokens — reviewed ceiling for 332 tools,
+      - tools metadata ≤ 48.5K tokens — reviewed ceiling for 334 tools,
         including the 20 closed policy-governance schemas and the typed
         impact_evidence contract (SK-B2-S1); P1 lazy-loading by role will
         reduce this drastically per session.
@@ -492,8 +516,8 @@ def test_initial_footprint_under_budget() -> None:
     # 48_500: the 19 closed Code Traceability schemas remain fully typed; 69
     # reviewed descriptions point to lazy family docs and generated JSON-Schema
     # titles are omitted because property names already carry that identity.
-    # Reproducible measurements (cl100k_base, live registry, 332 tools):
-    # Measured footprint: instructions=2_272, tools=46_695, combined=48_967.
+    # Reproducible measurements (cl100k_base, live registry, 334 tools):
+    # Measured footprint: instructions=2_272, tools=48_139, combined=50_411.
     # The next increase still requires equivalent metadata reduction or
     # role-based lazy loading; weakening closed input schemas is not allowed.
     assert tools_tokens <= 48_500, (

@@ -32,6 +32,7 @@ from okto_pulse.core.application.use_cases._service_payload import (
     payload,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 from okto_pulse.core.services.knowledge_governance_projection import (
     serialize_knowledge_base as _serialize_knowledge_base,
 )
@@ -40,6 +41,11 @@ from okto_pulse.core.services.knowledge_governance_projection import (
 @dataclass(frozen=True)
 class McpPayloadResult:
     payload: Any
+
+
+def _require_mockup_parent_draft(entity: Any, entity_type: str) -> None:
+    if entity_type in {"ideation", "refinement", "spec"}:
+        require_draft_mutation(entity, subject_type=entity_type)
 
 
 def _qa_selected_labels(qa: Any) -> list[str]:
@@ -495,6 +501,7 @@ class McpAddScreenMockupUseCase:
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
+        _require_mockup_parent_draft(entity, command.entity_type)
 
         screen_id = (
             "sm_"
@@ -577,6 +584,7 @@ class McpUpdateScreenMockupUseCase:
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
+        _require_mockup_parent_draft(entity, command.entity_type)
         screens = list(entity.screen_mockups or [])
         screen = next((s for s in screens if s.get("id") == command.screen_id), None)
         if not screen:
@@ -652,6 +660,7 @@ class McpAnnotateMockupUseCase:
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
+        _require_mockup_parent_draft(entity, command.entity_type)
         annotation = {
             "id": "an_"
             + hashlib.md5(
@@ -754,6 +763,7 @@ class McpDeleteScreenMockupUseCase:
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
+        _require_mockup_parent_draft(entity, command.entity_type)
         screens = list(entity.screen_mockups or [])
         original_len = len(screens)
         screens = [s for s in screens if s.get("id") != command.screen_id]

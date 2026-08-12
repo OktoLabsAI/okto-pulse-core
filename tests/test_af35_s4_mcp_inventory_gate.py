@@ -364,10 +364,19 @@ def test_af35_s4_migrated_wrapper_gate_blocks_raw_mcp_db() -> None:
     missing = AF35_S4_MIGRATED_MCP_WRAPPERS - set(nodes)
     assert not missing, f"missing migrated MCP wrappers: {sorted(missing)}"
 
+    # Validation writes use the observability-decorated MCP UoW factory. Keep
+    # the AST gate fail-closed by proving that helper itself resolves the
+    # canonical MCP provider, then accept either factory at the tool wrapper.
+    validation_factory = nodes["_validation_mcp_uow_factory"]
+    assert _calls(validation_factory, "get_unit_of_work_factory_for_mcp")
+
     missing_uow = [
         name
         for name in sorted(AF35_S4_MIGRATED_MCP_WRAPPERS)
-        if not _calls(nodes[name], "get_unit_of_work_factory_for_mcp")
+        if not (
+            _calls(nodes[name], "get_unit_of_work_factory_for_mcp")
+            or _calls(nodes[name], "_validation_mcp_uow_factory")
+        )
     ]
     coupling_issues = {
         name: _wrapper_coupling_issues(nodes[name])

@@ -710,15 +710,32 @@ class QualityScaleSummary(BaseSchema):
     direction: ScoreDirection
 
 
-class QualityAssessmentSummary(BaseSchema):
-    """Permission-gated current assessment projected on an entity row."""
+class QualityAssessmentCurrentResultSummary(BaseSchema):
+    """The one human-current quality result for the subject edition."""
 
-    receipt_id: str
-    subject_version: int
-    currentness: Literal["current", "stale"]
     score: float
     scale: QualityScaleSummary
-    head_revision: int
+
+
+class QualityAssessmentSummary(BaseSchema):
+    """Summary-first projection used by entity lists and workspace badges.
+
+    Technical receipt/version/head fields deliberately do not belong to this
+    projection.  They remain available from the lazy Technical audit surface.
+    """
+
+    edition: int = Field(..., ge=1)
+    state: Literal["not_started", "current"]
+    previous_count: int = Field(default=0, ge=0)
+    current_result: QualityAssessmentCurrentResultSummary | None = None
+
+    @model_validator(mode="after")
+    def _current_result_matches_state(self) -> "QualityAssessmentSummary":
+        if self.state == "current" and self.current_result is None:
+            raise ValueError("quality_summary_current_result_required")
+        if self.state == "not_started" and self.current_result is not None:
+            raise ValueError("quality_summary_current_result_forbidden")
+        return self
 
 
 QualitySummaryMap: TypeAlias = dict[AssessmentKind, QualityAssessmentSummary]
@@ -739,6 +756,7 @@ class IdeationPageItem(BaseSchema):
     problem_statement: str | None = None
     complexity: IdeationComplexity | None = None
     status: IdeationStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None = None
     created_by: str
@@ -762,6 +780,7 @@ class RefinementPageItem(BaseSchema):
     title: str
     description: str | None = None
     status: RefinementStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None = None
     created_by: str
@@ -1427,6 +1446,17 @@ class IdeationAmbiguityGateSkipUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     skip_ambiguity_gate: bool
+    reason: str = Field(..., min_length=1, max_length=2000)
+    expected_ideation_version: int = Field(..., ge=1)
+    expected_ideation_edition: int = Field(..., ge=1)
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("reason must not be blank")
+        return normalized
 
 
 class IdeationSummary(BaseSchema):
@@ -1451,6 +1481,7 @@ class IdeationSummary(BaseSchema):
     problem_statement: str | None
     complexity: IdeationComplexity | None
     status: IdeationStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None
     created_by: str
@@ -1462,6 +1493,7 @@ class IdeationSummary(BaseSchema):
     pre_archive_status: str | None = None
     # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
 
 
 # ============================================================================
@@ -1832,6 +1864,7 @@ class RefinementAmbiguityGateSkipUpdate(BaseModel):
     skip_ambiguity_gate: bool
     reason: str = Field(..., min_length=1, max_length=2000)
     expected_refinement_version: int = Field(..., ge=1)
+    expected_refinement_edition: int = Field(..., ge=1)
 
     @field_validator("reason")
     @classmethod
@@ -1846,6 +1879,7 @@ class RefinementAmbiguityGateSkipResponse(BaseModel):
     skipped: bool
     activity_id: str
     version: int
+    edition: int = Field(..., ge=1)
 
 
 class RefinementSummary(BaseSchema):
@@ -1862,6 +1896,7 @@ class RefinementSummary(BaseSchema):
     title: str
     description: str | None
     status: RefinementStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None
     created_by: str
@@ -1871,6 +1906,7 @@ class RefinementSummary(BaseSchema):
     archived: bool = False
     pre_archive_status: str | None = None
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
 
 
 # ============================================================================
@@ -2292,6 +2328,8 @@ class SpecSummary(BaseSchema):
     labels: list[str] | None
     ideation_id: str | None = None
     refinement_id: str | None = None
+    source_refinement_snapshot_id: str | None = None
+    source_refinement_version: int | None = Field(default=None, ge=1)
     architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
@@ -2310,6 +2348,7 @@ class IdeationResponse(BaseSchema):
     complexity: IdeationComplexity | None
     screen_mockups: list[ScreenMockup] | None = None
     status: IdeationStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None
     created_by: str
@@ -2320,6 +2359,7 @@ class IdeationResponse(BaseSchema):
     pre_archive_status: str | None = None
     # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
@@ -2346,6 +2386,7 @@ class RefinementResponse(BaseSchema):
     decisions: list[str] | None
     screen_mockups: list[ScreenMockup] | None = None
     status: RefinementStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None
     created_by: str
@@ -2355,6 +2396,7 @@ class RefinementResponse(BaseSchema):
     archived: bool = False
     pre_archive_status: str | None = None
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
@@ -2617,6 +2659,8 @@ class SpecResponse(BaseSchema):
     labels: list[str] | None
     ideation_id: str | None = None
     refinement_id: str | None = None
+    source_refinement_snapshot_id: str | None = None
+    source_refinement_version: int | None = Field(default=None, ge=1)
     cards: list[CardSummaryForSpec] = []
     knowledge_bases: list[SpecKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
@@ -3503,44 +3547,93 @@ class TaskValidationResponse(BaseModel):
 
 
 class SpecValidationSubmit(BaseModel):
-    """Request body for submitting a spec validation.
+    """Canonical human validation body plus legacy compatibility fields."""
 
-    Mirrors TaskValidationSubmit but with the 3 spec-specific dimensions:
-    completeness, assertiveness, ambiguity (lower is better for ambiguity).
-    """
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    completeness: int = Field(..., ge=0, le=100)
-    completeness_justification: str = Field(..., min_length=10)
-    assertiveness: int = Field(..., ge=0, le=100)
-    assertiveness_justification: str = Field(..., min_length=10)
-    ambiguity: int = Field(..., ge=0, le=100)
-    ambiguity_justification: str = Field(..., min_length=10)
-    general_justification: str = Field(..., min_length=20)
-    recommendation: str = Field(..., pattern="^(approve|reject)$")
+    expected_validation_edition: int = Field(
+        ...,
+        ge=1,
+        validation_alias=AliasChoices(
+            "expected_validation_edition",
+            "expected_spec_edition",
+        ),
+    )
+    expected_spec_version: int = Field(..., ge=1)
+    expected_head_revision: int = Field(..., ge=0)
+    score: float | None = Field(default=None, ge=0, le=100)
+    summary: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    completeness: int | None = Field(default=None, ge=0, le=100)
+    completeness_justification: str | None = Field(default=None, min_length=10)
+    assertiveness: int | None = Field(default=None, ge=0, le=100)
+    assertiveness_justification: str | None = Field(default=None, min_length=10)
+    ambiguity: int | None = Field(default=None, ge=0, le=100)
+    ambiguity_justification: str | None = Field(default=None, min_length=10)
+    general_justification: str | None = Field(default=None, min_length=20)
+    recommendation: str | None = Field(default=None, pattern="^(approve|reject)$")
+
+    @model_validator(mode="after")
+    def validate_formal_or_legacy_shape(self) -> "SpecValidationSubmit":
+        legacy_fields = (
+            "completeness",
+            "completeness_justification",
+            "assertiveness",
+            "assertiveness_justification",
+            "ambiguity",
+            "ambiguity_justification",
+            "general_justification",
+            "recommendation",
+        )
+        formal = self.score is not None or self.summary is not None
+        if formal:
+            if self.score is None or self.summary is None or not self.summary.strip():
+                raise ValueError("score and summary are required together")
+            if any(getattr(self, name) is not None for name in legacy_fields):
+                raise ValueError(
+                    "formal and legacy validation shapes are mutually exclusive"
+                )
+            self.summary = self.summary.strip()
+            return self
+        if any(getattr(self, name) is None for name in legacy_fields):
+            raise ValueError(
+                "score/summary or all legacy validation dimensions are required"
+            )
+        return self
 
 
 class SpecValidationResponse(BaseModel):
-    """Response for a spec validation."""
+    """Canonical response with compatibility-only legacy details."""
 
-    id: str
-    spec_id: str
-    board_id: str
-    reviewer_id: str
+    validation_id: str
+    validation_edition: int = Field(..., ge=1)
+    is_current: bool
+    spec_id: str | None = None
+    board_id: str | None = None
+    reviewer_id: str | None = None
     reviewer_name: str | None = None
-    completeness: int
-    completeness_justification: str
-    assertiveness: int
-    assertiveness_justification: str
-    ambiguity: int
-    ambiguity_justification: str
-    general_justification: str
-    recommendation: str
-    outcome: str
-    threshold_violations: list[str]
+    score: float | None = None
+    summary: str | None = None
+    completeness: int | None = None
+    completeness_justification: str | None = None
+    assertiveness: int | None = None
+    assertiveness_justification: str | None = None
+    ambiguity: int | None = None
+    ambiguity_justification: str | None = None
+    general_justification: str | None = None
+    recommendation: str | None = None
+    outcome: str | None = None
+    receipt_id: str | None = None
+    subject_version: int | None = Field(default=None, ge=1)
+    head_revision: int | None = Field(default=None, ge=1)
+    digests: dict[str, str] | None = None
+    threshold_violations: list[str] | None = None
     resolved_thresholds: dict | None = None
-    created_at: str
+    created_at: str | None = None
     spec_status: str | None = None
     active: bool | None = None
+    edition: int | None = Field(default=None, ge=1)
+    lifecycle_state: Literal["current", "previous", "history_only"] | None = None
 
 
 # ============================================================================

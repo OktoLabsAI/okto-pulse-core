@@ -188,13 +188,19 @@ def test_expected_layers_counts_amendment_canonical():
 
 def _temp_pulse_db(tmp_path):
     """A self-contained sync SQLite pulse.db with the full schema (create_all)."""
+    import sqlite3
+
     from sqlalchemy import create_engine
     from sqlalchemy_test_models import Base
     import sqlalchemy_test_models  # noqa: F401 - register all tables
+    from source_reader_schema_testing import create_complete_source_catalog
 
     db_file = tmp_path / "pulse.db"
     engine = create_engine(f"sqlite:///{db_file}")
     Base.metadata.create_all(engine)
+    with sqlite3.connect(db_file) as connection:
+        create_complete_source_catalog(connection)
+        connection.commit()
     return db_file, engine  # Path (BoardSourceStore calls db_path.exists())
 
 

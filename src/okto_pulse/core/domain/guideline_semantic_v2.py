@@ -848,6 +848,11 @@ def semantic_assessment_request_digest_v2(
                 "subject_type": request.subject.entity_type.value,
                 "subject_id": request.subject.subject_id,
                 "subject_version": request.subject.subject_version,
+                **(
+                    {"subject_edition": request.subject.subject_edition}
+                    if request.subject.subject_edition is not None
+                    else {}
+                ),
             },
             "binding_id": request.binding_id,
             "expected_binding_revision": request.expected_binding_revision,
@@ -891,6 +896,11 @@ def semantic_metric_result_digest_v2(result: SemanticMetricResultV2) -> str:
                 "subject_type": result.subject.entity_type.value,
                 "subject_id": result.subject.subject_id,
                 "subject_version": result.subject.subject_version,
+                **(
+                    {"subject_edition": result.subject.subject_edition}
+                    if result.subject.subject_edition is not None
+                    else {}
+                ),
             },
             "binding_id": result.binding_id,
             "guideline_id": result.guideline_id,

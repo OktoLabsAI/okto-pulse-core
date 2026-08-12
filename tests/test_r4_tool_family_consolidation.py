@@ -178,7 +178,7 @@ async def _seed_spec(db_factory, *, board_id, spec_id, **spec_kwargs):
         db.add(Board(id=board_id, name="R4", owner_id=USER_ID))
         db.add(Spec(
             id=spec_id, board_id=board_id, title="Spec",
-            status=SpecStatus.IN_PROGRESS, created_by=USER_ID, **spec_kwargs,
+            status=SpecStatus.DRAFT, created_by=USER_ID, **spec_kwargs,
         ))
         await db.commit()
 
@@ -247,7 +247,7 @@ async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
     board_id, spec_id, card_id = _id("r4q-board"), _id("r4q-spec"), _id("r4q-card")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="R4Q", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.IN_PROGRESS, created_by=USER_ID))
+        db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.DRAFT, created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="Card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL, created_by=USER_ID))
         await db.commit()
@@ -353,14 +353,14 @@ async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
             board_id=board_id,
             ideation_id=local_ideation.id,
             title="Local spec",
-            status=SpecStatus.IN_PROGRESS,
+            status=SpecStatus.DRAFT,
             created_by=USER_ID,
         )
         foreign_spec = Spec(
             board_id=foreign_board_id,
             ideation_id=foreign_ideation.id,
             title="Foreign spec",
-            status=SpecStatus.IN_PROGRESS,
+            status=SpecStatus.DRAFT,
             created_by=USER_ID,
         )
         db.add_all(

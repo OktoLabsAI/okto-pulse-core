@@ -150,6 +150,13 @@ async def test_status_and_whole_spec_paths_reject_same_runtime_false(db_factory)
                 spec_id, ACTOR, scenario_id, "passed", bad
             )
 
+    # Whole-Spec semantic writes are Draft-only. Put the fixture in Draft so
+    # this assertion still reaches the narrower scoped-scenario invariant.
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.status = SpecStatus.DRAFT
+        await db.commit()
+
     async with db_factory() as db:
         service = SpecService(db)
         with pytest.raises(
@@ -173,6 +180,11 @@ async def test_status_and_whole_spec_paths_reject_same_runtime_false(db_factory)
             )
 
     # A valid attestation follows the same path and persists losslessly.
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.status = SpecStatus.IN_PROGRESS
+        await db.commit()
+
     good = _evidence(scenario_id)
     async with db_factory() as db:
         result = await SpecService(db).set_test_scenario_status(
@@ -218,6 +230,9 @@ async def test_whole_spec_semantic_edit_cannot_replay_old_receipt(db_factory):
         )
         scenario["status"] = "passed"
         scenario["evidence"] = old_evidence
+        # Exercise semantic-evidence binding beneath the outer Draft-only
+        # authoring fence instead of contradicting that lifecycle contract.
+        spec.status = SpecStatus.DRAFT
         flag_modified(spec, "test_scenarios")
         await db.commit()
 

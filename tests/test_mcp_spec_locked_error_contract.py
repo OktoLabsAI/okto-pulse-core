@@ -15,11 +15,15 @@ from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
     McpUpdateScreenMockupUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_spec_crud import (
+    McpAddBusinessRuleUseCase,
     McpRemoveSpecEntityUseCase,
     McpAddTestScenarioUseCase,
     McpDeleteTestScenarioUseCase,
     McpUpdateSpecUseCase,
     McpUpdateTestScenarioUseCase,
+)
+from okto_pulse.core.domain.human_validation_cycle import (
+    SubjectEditRequiresDraftError,
 )
 from okto_pulse.core.mcp import server
 from okto_pulse.core.mcp.outcome import coerce_mcp_tool_outcome
@@ -90,6 +94,35 @@ def _assert_locked_error(raw: str, *, tool_name: str) -> None:
     assert "SpecLockedError" not in raw
 
 
+def _assert_requires_draft_error(raw: str, *, tool_name: str) -> None:
+    payload = json.loads(raw)
+    assert payload == {
+        "outcome": "error",
+        "error": "subject_edit_requires_draft",
+        "code": "subject_edit_requires_draft",
+        "error_code": "subject_edit_requires_draft",
+        "message": (
+            "spec spec-review can only be edited while in draft "
+            "(current status: review)"
+        ),
+        "category": "conflict",
+        "retryable": False,
+        "next_action": "move_subject_to_draft",
+        "details": {
+            "subject_type": "spec",
+            "subject_id": "spec-review",
+            "current_status": "review",
+            "required_status": "draft",
+        },
+    }
+    outcome = coerce_mcp_tool_outcome(raw, tool_name=tool_name)
+    assert outcome.is_error is True
+    assert outcome.code == "subject_edit_requires_draft"
+    assert outcome.retryable is False
+    assert "Traceback" not in raw
+    assert "SubjectEditRequiresDraftError" not in raw
+
+
 @pytest.mark.asyncio
 async def test_add_test_scenario_locked_spec_is_structured_and_rolls_back(
     monkeypatch: Any,
@@ -153,6 +186,74 @@ async def test_add_screen_mockup_locked_spec_is_structured_and_rolls_back(
 
     _assert_locked_error(raw, tool_name="okto_pulse_add_screen_mockup")
     assert context.exit_exception is SpecLockedError
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "use_case", "kwargs"),
+    (
+        (
+            "okto_pulse_add_test_scenario",
+            McpAddTestScenarioUseCase,
+            {
+                "board_id": "board-1",
+                "spec_id": "spec-review",
+                "title": "Blocked scenario",
+                "given": "Given a reviewed Spec",
+                "when": "When an edit is attempted",
+                "then": "Then no scenario is appended",
+            },
+        ),
+        (
+            "okto_pulse_add_business_rule",
+            McpAddBusinessRuleUseCase,
+            {
+                "board_id": "board-1",
+                "spec_id": "spec-review",
+                "title": "Blocked rule",
+                "rule": "The reviewed Spec is immutable",
+                "when": "A mutation is attempted",
+                "then": "The stable Draft-only error is returned",
+            },
+        ),
+        (
+            "okto_pulse_add_screen_mockup",
+            McpAddScreenMockupUseCase,
+            {
+                "board_id": "board-1",
+                "entity_id": "spec-review",
+                "entity_type": "spec",
+                "title": "Blocked mockup",
+                "html_content": "<main>must not persist</main>",
+            },
+        ),
+    ),
+)
+async def test_non_draft_spec_write_families_share_stable_mcp_error(
+    monkeypatch: Any,
+    tool_name: str,
+    use_case: type,
+    kwargs: dict[str, Any],
+) -> None:
+    context = _UowContext()
+
+    async def _raise_requires_draft(*args: Any, **call_kwargs: Any) -> Any:
+        del args, call_kwargs
+        raise SubjectEditRequiresDraftError("spec", "spec-review", "review")
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *args: None)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: _Factory(context),
+    )
+    monkeypatch.setattr(use_case, "execute", _raise_requires_draft)
+
+    raw = await getattr(server, tool_name).fn(**kwargs)
+
+    _assert_requires_draft_error(raw, tool_name=tool_name)
+    assert context.exit_exception is SubjectEditRequiresDraftError
 
 
 @pytest.mark.asyncio

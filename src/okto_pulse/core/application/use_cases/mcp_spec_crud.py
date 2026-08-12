@@ -33,7 +33,6 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
     transition_permission_requirement,
 )
 from okto_pulse.core.domain.test_scenarios import ScenarioType
-from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.services.application_schemas import (
     PersistedTestScenarioSpecUpdate,
@@ -1868,7 +1867,6 @@ class McpAddTestScenarioUseCase:
             command.spec_id,
             actor.actor_id,
             PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
-            requirement_lint_writer=RequirementLintWriter.STRUCTURED_CRUD,
         )
         await commit(uow)
         return McpAddTestScenarioResult(

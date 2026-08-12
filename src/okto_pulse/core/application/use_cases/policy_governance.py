@@ -58,6 +58,8 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineLifecycleStatus,
     GuidelineRetirement,
     GuidelineRevision,
+    PolicyEntityType,
+    PolicySubjectRef,
     normalize_guideline_sha256,
     normalize_policy_bounded_text,
 )
@@ -74,8 +76,12 @@ from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.ports.guideline_policy import (
     GuidelineImpactListQuery,
     GuidelinePolicyDigestConflict,
+    GuidelinePolicyEditionConflict,
     GuidelinePolicyIdempotencyConflict,
+    GuidelinePolicyLifecycleConflict,
     GuidelinePolicyPersistencePort,
+    GuidelinePolicySubjectConflict,
+    GuidelinePolicyVersionConflict,
     GuidelineRetirementReplay,
     GuidelineRevisionNoopReplay,
     GuidelineRevisionReplay,
@@ -1414,6 +1420,62 @@ def _semantic_assessment_replay_matches(
     return True
 
 
+_POLICY_ASSESSMENT_ADMISSION_STATUS = {
+    PolicyEntityType.IDEATION: "evaluating",
+    PolicyEntityType.REFINEMENT: "approved",
+    PolicyEntityType.SPEC: "approved",
+}
+
+
+async def require_policy_assessment_lifecycle(
+    uow: PulseUnitOfWork,
+    *,
+    subject: PolicySubjectRef,
+) -> None:
+    """Admit edition-capable subjects only at their SDLC validation gate.
+
+    Sprint, Card, and Test Scenario retain the legacy version-fenced policy
+    flow because they do not own a human-validation lifecycle edition.
+    """
+
+    if subject.entity_type not in _POLICY_ASSESSMENT_ADMISSION_STATUS:
+        return
+
+    if subject.entity_type is PolicyEntityType.IDEATION:
+        live = await uow.services.ideations.get_ideation(subject.subject_id)
+    elif subject.entity_type is PolicyEntityType.REFINEMENT:
+        live = await uow.services.refinements.get_refinement(subject.subject_id)
+    elif subject.entity_type is PolicyEntityType.SPEC:
+        live = await uow.services.specs.get_spec(subject.subject_id)
+    else:  # pragma: no cover - map and closed enum keep this unreachable
+        return
+    if live is None or getattr(live, "board_id", None) != subject.board_id:
+        raise EntityNotFoundError("policy_subject", subject.subject_id)
+
+    live_edition = getattr(live, "edition", None)
+    if (
+        subject.subject_edition is not None
+        and live_edition != subject.subject_edition
+    ):
+        raise GuidelinePolicyEditionConflict(
+            "guideline_policy_edition_conflict",
+            details=(
+                ("current", str(live_edition)),
+                ("expected", str(subject.subject_edition)),
+            ),
+        )
+    current_status = getattr(getattr(live, "status", None), "value", None)
+    required_status = _POLICY_ASSESSMENT_ADMISSION_STATUS[subject.entity_type]
+    if current_status != required_status:
+        raise GuidelinePolicyLifecycleConflict(
+            "guideline_policy_lifecycle_conflict",
+            details=(
+                ("current_status", str(current_status or "unknown")),
+                ("required_status", required_status),
+            ),
+        )
+
+
 class RecordSemanticGuidelineAssessmentUseCase:
     """Validate and atomically persist external cognition against exact fences."""
 
@@ -1467,6 +1529,41 @@ class RecordSemanticGuidelineAssessmentUseCase:
                 "policy_subject",
                 submission.subject.subject_id,
             )
+        if (
+            submission.subject.subject_edition
+            != subject_snapshot.subject.subject_edition
+        ):
+            raise GuidelinePolicyEditionConflict(
+                "guideline_policy_edition_conflict",
+                details=(
+                    (
+                        "current",
+                        str(subject_snapshot.subject.subject_edition),
+                    ),
+                    ("expected", str(submission.subject.subject_edition)),
+                ),
+            )
+        if (
+            submission.subject.subject_version
+            != subject_snapshot.subject.subject_version
+        ):
+            raise GuidelinePolicyVersionConflict(
+                "guideline_policy_version_conflict"
+            )
+        if (
+            submission.subject.board_id != subject_snapshot.subject.board_id
+            or submission.subject.entity_type
+            is not subject_snapshot.subject.entity_type
+            or submission.subject.subject_id
+            != subject_snapshot.subject.subject_id
+        ):
+            raise GuidelinePolicySubjectConflict(
+                "guideline_policy_subject_conflict"
+            )
+        await require_policy_assessment_lifecycle(
+            uow,
+            subject=subject_snapshot.subject,
+        )
         bindings = tuple(
             binding
             for binding in await port.list_bindings(board_id=command.board_id)
@@ -1599,4 +1696,5 @@ __all__ = [
     "RetireGuidelineResult",
     "RetireGuidelineUseCase",
     "require_policy_governance_capabilities",
+    "require_policy_assessment_lifecycle",
 ]

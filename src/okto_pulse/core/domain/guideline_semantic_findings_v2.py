@@ -323,6 +323,11 @@ def _finding_payload(finding: SemanticMetricFindingV2) -> dict[str, object]:
             "subject_type": finding.subject.entity_type.value,
             "subject_id": finding.subject.subject_id,
             "subject_version": finding.subject.subject_version,
+            **(
+                {"subject_edition": finding.subject.subject_edition}
+                if finding.subject.subject_edition is not None
+                else {}
+            ),
             "content_digest": finding.subject_content_digest,
         },
         "guideline": {

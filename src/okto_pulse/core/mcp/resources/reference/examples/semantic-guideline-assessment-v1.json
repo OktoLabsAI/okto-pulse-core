@@ -4,6 +4,7 @@
   "confidence": 95,
   "entity_type": "spec",
   "expected_binding_revision": 2,
+  "expected_subject_edition": 3,
   "expected_subject_version": 7,
   "guideline_revision_id": "guideline-revision-id",
   "idempotency_key": "semantic-assessment-example-1",

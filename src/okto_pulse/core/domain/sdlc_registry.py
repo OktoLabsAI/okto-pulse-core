@@ -95,6 +95,12 @@ _CANCEL = dict(
     effects=("status_changed", "cancellation_recorded", "activity_logged"),
     reason_codes=("cancellation_reason_required", "transition_not_allowed"),
 )
+_NEW_EDITION_EFFECTS = (
+    "status_changed",
+    "edition_bumped",
+    "current_validations_cleared",
+    "activity_logged",
+)
 _TEST_SCENARIO_PROGRESSION = dict(
     gate="test_scenario_progression",
     preconditions=("authenticated_test_evidence",),
@@ -130,7 +136,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "review": [
-                    _edge("draft"),
+                    _edge("draft", effects=_NEW_EDITION_EFFECTS),
                     _edge("approved"),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -165,7 +171,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "draft",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=("status_changed", "version_bumped", "activity_logged"),
+                        effects=(*_NEW_EDITION_EFFECTS[:-1], "version_bumped", "activity_logged"),
                     )
                 ],
                 "cancelled": [
@@ -175,6 +181,8 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         capabilities=("reopen",),
                         effects=(
                             "status_changed",
+                            "edition_bumped",
+                            "current_validations_cleared",
                             "cancellation_cleared",
                             "version_bumped",
                             "activity_logged",
@@ -200,7 +208,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "review": [
-                    _edge("draft"),
+                    _edge("draft", effects=_NEW_EDITION_EFFECTS),
                     _edge("approved"),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -232,7 +240,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "draft",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=("status_changed", "version_bumped", "activity_logged"),
+                        effects=(*_NEW_EDITION_EFFECTS[:-1], "version_bumped", "activity_logged"),
                     )
                 ],
                 "cancelled": [
@@ -242,6 +250,8 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         capabilities=("reopen",),
                         effects=(
                             "status_changed",
+                            "edition_bumped",
+                            "current_validations_cleared",
                             "cancellation_cleared",
                             "version_bumped",
                             "activity_logged",
@@ -256,7 +266,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
             {
                 "draft": [_edge("review"), _edge("cancelled", **_CANCEL)],
                 "review": [
-                    _edge("draft"),
+                    _edge("draft", effects=_NEW_EDITION_EFFECTS),
                     _edge("approved"),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -274,7 +284,12 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         ),
                         policy_compliance=True,
                     ),
-                    _edge("draft", gate="unlock_content", capabilities=("reopen",)),
+                    _edge(
+                        "draft",
+                        gate="unlock_content",
+                        capabilities=("reopen",),
+                        effects=_NEW_EDITION_EFFECTS,
+                    ),
                     _edge("cancelled", **_CANCEL),
                 ],
                 "validated": [
@@ -286,11 +301,22 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         capabilities=("start",),
                         reason_codes=("spec_evaluation_required", "transition_not_allowed"),
                     ),
-                    _edge("draft", gate="unlock_content", capabilities=("reopen",)),
+                    _edge(
+                        "draft",
+                        gate="unlock_content",
+                        capabilities=("reopen",),
+                        effects=_NEW_EDITION_EFFECTS,
+                    ),
                     _edge("cancelled", **_CANCEL),
                 ],
                 "in_progress": [
                     _edge("validated", gate="reopen", capabilities=("reopen",)),
+                    _edge(
+                        "draft",
+                        gate="unlock_content",
+                        capabilities=("reopen",),
+                        effects=_NEW_EDITION_EFFECTS,
+                    ),
                     _edge(
                         "done",
                         gate="coverage_and_tasks",
@@ -318,7 +344,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "draft",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=("status_changed", "version_bumped", "activity_logged"),
+                        effects=(*_NEW_EDITION_EFFECTS[:-1], "version_bumped", "activity_logged"),
                     )
                 ],
                 "cancelled": [
@@ -328,6 +354,8 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         capabilities=("reopen",),
                         effects=(
                             "status_changed",
+                            "edition_bumped",
+                            "current_validations_cleared",
                             "cancellation_cleared",
                             "version_bumped",
                             "activity_logged",

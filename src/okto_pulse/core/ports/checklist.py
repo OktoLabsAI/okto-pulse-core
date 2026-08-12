@@ -1,9 +1,9 @@
-"""Edition-neutral A3 checklist persistence and preflight ports."""
+"""Lifecycle-edition aware A3 checklist persistence and preflight ports."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.checklist import (
     ChecklistBinding,
@@ -15,6 +15,7 @@ from okto_pulse.core.domain.checklist import (
     ChecklistPhase,
     ChecklistPreflight,
     ChecklistReceipt,
+    ChecklistReceiptState,
     ChecklistSpecSnapshot,
     ChecklistSubmission,
     ChecklistTargetType,
@@ -27,7 +28,13 @@ class ChecklistPersistenceError(RuntimeError):
 
     code = "checklist_persistence_error"
 
-    def __init__(self, message: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.details = dict(details or {})
         super().__init__(message or self.code)
 
 
@@ -41,6 +48,10 @@ class ChecklistHeadRevisionConflict(ChecklistPersistenceError):
 
 class ChecklistSpecVersionConflict(ChecklistPersistenceError):
     code = "checklist_spec_version_conflict"
+
+
+class ChecklistSpecEditionConflict(ChecklistPersistenceError):
+    code = "checklist_spec_edition_conflict"
 
 
 class ChecklistContentDigestConflict(ChecklistPersistenceError):
@@ -81,6 +92,8 @@ class ChecklistListQuery:
     spec_id: str
     offset: int
     limit: int
+    current_spec_edition: int | None = None
+    state: ChecklistReceiptState | None = None
 
 
 @runtime_checkable
@@ -163,12 +176,34 @@ class ChecklistPersistencePort(Protocol):
         phase: ChecklistPhase,
     ) -> ChecklistBinding | None: ...
 
+    async def get_validation_binding(
+        self,
+        *,
+        board_id: str,
+        spec_id: str,
+        spec_edition: int,
+        target_type: ChecklistTargetType,
+        phase: ChecklistPhase,
+    ) -> ChecklistBinding:
+        """Resolve the immutable governance snapshot for one Spec edition.
+
+        The snapshot includes ``OFF`` and is keyed by board/Spec/edition. The
+        adapter pins it atomically when the edition first enters its validation
+        lifecycle (with a first-read/write fallback for migrated rows). Later
+        board binding/template changes never alter this result; they apply only
+        after the Spec returns to Draft and opens a new edition. Legacy subjects
+        without an edition continue to use ``get_binding``.
+        """
+
+        ...
+
     async def get_current(
         self,
         *,
         board_id: str,
         spec_id: str,
         phase: ChecklistPhase,
+        spec_edition: int | None = None,
     ) -> tuple[ChecklistReceipt, ChecklistExecutionHead] | None: ...
 
     async def get_execution(
@@ -213,6 +248,7 @@ __all__ = [
     "ChecklistPersistencePort",
     "ChecklistPreflightReadPort",
     "ChecklistSpecLifecycleConflict",
+    "ChecklistSpecEditionConflict",
     "ChecklistSpecVersionConflict",
     "ChecklistTemplateConflict",
 ]

@@ -205,9 +205,11 @@ Semantic guideline protocol:
 ## Quality Assessments
 - `okto_pulse_get_current_quality_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_get_quality_assessment_receipt` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_get_requirement_lint_preflight` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_list_quality_assessments` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_list_quality_findings` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_record_ambiguity_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_record_requirement_lint` — docs: `okto-pulse://reference/tool-docs/quality`
 
 ## Ideations
 - `okto_pulse_add_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`

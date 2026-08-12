@@ -160,7 +160,12 @@ async def test_rest_persists_while_mcp_refuses(db_factory):
     client = _rest_client()
     rest_res = client.patch(
         f"/api/v1/ideations/{rest_ideation}/ambiguity-gate-skip",
-        json={"skip_ambiguity_gate": True},
+        json={
+            "skip_ambiguity_gate": True,
+            "reason": "Accepted for this validation edition.",
+            "expected_ideation_version": 1,
+            "expected_ideation_edition": 1,
+        },
     ).json()
 
     # REST (human) persists ...

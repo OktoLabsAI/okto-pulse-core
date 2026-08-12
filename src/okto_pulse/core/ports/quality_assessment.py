@@ -1,9 +1,9 @@
-"""Edition-neutral persistence/read ports for SK-A quality assessments."""
+"""Lifecycle-edition aware persistence/read ports for quality assessments."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.quality_assessment import (
     AssessmentCommitResult,
@@ -29,6 +29,7 @@ from okto_pulse.core.domain.quality_assessment import (
     QualityPageCursor,
 )
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.domain.validation_cycle import RequirementLintPreflight
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
     require_runtime_value,
@@ -41,7 +42,13 @@ class QualityAssessmentPersistenceError(RuntimeError):
 
     code = "quality_assessment_persistence_error"
 
-    def __init__(self, message: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.details = dict(details or {})
         super().__init__(message or self.code)
 
 
@@ -55,6 +62,10 @@ class AssessmentHeadRevisionConflict(QualityAssessmentPersistenceError):
 
 class AssessmentSubjectVersionConflict(QualityAssessmentPersistenceError):
     code = "assessment_subject_version_conflict"
+
+
+class AssessmentSubjectEditionConflict(QualityAssessmentPersistenceError):
+    code = "assessment_subject_edition_conflict"
 
 
 class AssessmentIdempotencyConflict(QualityAssessmentPersistenceError):
@@ -89,6 +100,10 @@ class AssessmentReadAccessDenied(QualityAssessmentPersistenceError):
     code = "assessment_read_access_denied"
 
 
+class RequirementLintSubjectNotApproved(QualityAssessmentPersistenceError):
+    code = "requirement_lint_subject_not_approved"
+
+
 @dataclass(frozen=True, slots=True)
 class AssessmentListQuery:
     subject: AssessmentSubjectIdentity
@@ -97,6 +112,7 @@ class AssessmentListQuery:
     assessment_kind: AssessmentKind | None = None
     state: AssessmentReceiptState | None = None
     current_subject_version: int | None = None
+    current_subject_edition: int | None = None
     current_digests: AssessmentDigestSet | None = None
     currentness_inputs: tuple["AssessmentCurrentnessInput", ...] = ()
     cursor: QualityPageCursor | None = None
@@ -192,6 +208,23 @@ class QualityAssessmentPreflightReadPort(Protocol):
         """Resolve server-owned assessment inputs without a materialized submission."""
         ...
 
+    async def resolve_requirement_lint_preflight(
+        self,
+        *,
+        spec_id: str,
+        actor_id: str,
+        realm_scope: RealmScope,
+    ) -> RequirementLintPreflight:
+        """Return the read-only, edition-pinned Requirement Lint fence.
+
+        The Spec must be Approved. Before the first result of an edition, the
+        adapter may pin the currently admitted ruleset. Once a Current result
+        exists, this method must return that result's ``ruleset_digest`` for
+        the rest of the edition; live deployments apply only next edition.
+        """
+
+        ...
+
     async def resolve_assessment_read_context(
         self,
         *,
@@ -221,7 +254,8 @@ class QualityAssessmentPersistencePort(Protocol):
     """Transaction-bound relational source of truth.
 
     ``apply_bundle_cas`` must first repeat idempotency lookup in the transaction,
-    then revalidate row existence, ``archived=false``, status, subject version,
+    then revalidate row existence, ``archived=false``, status, subject edition,
+    subject version,
     input digest, authority digest, reviewer separation, head revision, and
     predecessor receipt identity against the bundle's complete fence.
     It stages receipt, findings, questions, links, head, history, event, and
@@ -249,6 +283,7 @@ class QualityAssessmentPersistencePort(Protocol):
         subject_type: AssessmentSubjectType,
         subject_id: str,
         assessment_kind: AssessmentKind,
+        subject_edition: int | None = None,
     ) -> tuple[AssessmentReceipt, AssessmentSubjectHead] | None:
         ...
 
@@ -312,6 +347,7 @@ __all__ = [
     "AssessmentReadAccessDenied",
     "AssessmentReceiptNotFound",
     "AssessmentSubjectVersionConflict",
+    "AssessmentSubjectEditionConflict",
     "AssessmentSubjectNotFound",
     "AssessmentSubjectStatusConflict",
     "AssessmentSubjectLifecycleConflict",
@@ -320,6 +356,7 @@ __all__ = [
     "QualityAssessmentAdapterMissing",
     "QualityAssessmentPersistencePort",
     "QualityAssessmentPreflightReadPort",
+    "RequirementLintSubjectNotApproved",
     "QualityAssessmentReadContext",
     "QualityGateInput",
     "get_quality_assessment_preflight_reader",

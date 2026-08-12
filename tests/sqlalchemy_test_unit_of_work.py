@@ -25,6 +25,15 @@ from okto_pulse.core.ports.application_persistence import (
     get_application_persistence_port,
 )
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.community.adapters.semantic_assessment_v2_capabilities import (
+    CommunitySemanticAssessmentV2Capabilities,
+)
+from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_v2 import (
+    CommunitySqlAlchemySemanticGuidelineAssessmentV2,
+)
+from okto_pulse.community.adapters.sqlalchemy_semantic_subject_projection import (
+    CommunitySqlAlchemySemanticSubjectProjection,
+)
 from sqlalchemy_test_repositories import (
     SQLAlchemyBoardRepository,
     SQLAlchemyIdeationRepository,
@@ -57,6 +66,18 @@ class SQLAlchemyUnitOfWork:
         self.ideations = SQLAlchemyIdeationRepository(session, self.realm_scope)
         self.specs = SQLAlchemySpecRepository(session, self.realm_scope)
         self.services = build_application_service_catalog(session)
+        # Keep the test UoW structurally aligned with the production Community
+        # adapter as the public PulseUnitOfWork protocol gains capabilities.
+        self.semantic_subject_projection = (
+            CommunitySqlAlchemySemanticSubjectProjection(session)
+        )
+        self.semantic_assessment_v2 = (
+            CommunitySqlAlchemySemanticGuidelineAssessmentV2(session)
+        )
+        self.semantic_assessment_v2_reader = self.semantic_assessment_v2
+        self.semantic_assessment_v2_capability = (
+            CommunitySemanticAssessmentV2Capabilities(session)
+        )
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self

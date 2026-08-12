@@ -35,7 +35,7 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 
 EXPECTED_HASHES = {
     "submit_spec_validation": (
-        "88b004f71f8cbf4cc5606fd449d73ea279a244f517005842c9507ae63b595c4f"
+        "08ec3872cd6d5d3fe79858484144aefd149cc7e10219c1ab80c46d2e63b14e7e"
     ),
     "submit_evaluation": (
         "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"

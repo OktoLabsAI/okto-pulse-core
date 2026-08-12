@@ -11,11 +11,11 @@ from okto_pulse.core.mcp.ska_tool_manifest import (
 )
 
 
-def test_ska_tool_manifest_freezes_all_eleven_live_contracts() -> None:
+def test_ska_tool_manifest_freezes_all_thirteen_live_contracts() -> None:
     manifest = build_ska_tool_manifest()
 
-    assert manifest["tool_count"] == len(manifest["tools"]) == 11
-    assert len({entry["name"] for entry in manifest["tools"]}) == 11
+    assert manifest["tool_count"] == len(manifest["tools"]) == 13
+    assert len({entry["name"] for entry in manifest["tools"]}) == 13
     for entry in manifest["tools"]:
         assert entry["documentation_uri"].startswith(
             "okto-pulse://reference/tool-docs/"

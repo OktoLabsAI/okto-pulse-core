@@ -390,6 +390,7 @@ async def test_locked_traceability_narrow_writer_refreshes_scope_without_version
                     {
                         "id": f"val-{suffix}",
                         "outcome": "success",
+                        "edition": 1,
                     }
                 ],
                 functional_requirements=[

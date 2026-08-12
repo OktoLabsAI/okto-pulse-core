@@ -8,6 +8,8 @@ Gate / lineage services.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -25,8 +27,15 @@ from sqlalchemy_test_models import (
     IdeationStatus,
     Refinement,
     RefinementKnowledgeBase,
+    RefinementSnapshot,
     RefinementStatus,
     Spec,
+)
+from okto_pulse.core.domain.research_decision_ledger import (
+    ResearchDecisionLedgerSnapshot,
+)
+from okto_pulse.core.ports.relational_application import (
+    require_relational_application_adapter,
 )
 
 USER_ID = "user-r3-scenarios"
@@ -65,6 +74,38 @@ async def new_board(db_factory) -> str:
     return board_id
 
 
+async def freeze_refinement_completion_fixture(db, refinement) -> None:
+    """Persist both immutable completion snapshots required by derivation."""
+
+    db.add(
+        RefinementSnapshot(
+            refinement_id=refinement.id,
+            version=refinement.version,
+            title=refinement.title,
+            description=refinement.description,
+            in_scope=refinement.in_scope,
+            out_of_scope=refinement.out_of_scope,
+            analysis=refinement.analysis,
+            decisions=refinement.decisions,
+            labels=refinement.labels,
+            qa_snapshot=[],
+            created_by=USER_ID,
+        )
+    )
+    await require_relational_application_adapter().research_decisions(
+        db
+    ).save_snapshot(
+        ResearchDecisionLedgerSnapshot(
+            id=sid("rdl-snapshot"),
+            board_id=refinement.board_id,
+            refinement_id=refinement.id,
+            refinement_version=refinement.version,
+            heads=(),
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+
+
 async def seed_refinement(
     db_factory, board_id, *, status="done", kb=False, mockup=False, architecture=False,
 ) -> dict:
@@ -78,7 +119,7 @@ async def seed_refinement(
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="R3 ideation",
                         status=IdeationStatus.DONE, created_by=USER_ID))
-        db.add(Refinement(
+        refinement = Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="R3 refinement", created_by=USER_ID,
             status=RefinementStatus(status),
@@ -86,7 +127,8 @@ async def seed_refinement(
                 [{"id": mockup_id, "title": "Ref mockup", "screen_type": "form",
                   "html_content": "<div/>"}] if mockup else []
             ),
-        ))
+        )
+        db.add(refinement)
         if kb:
             db.add(RefinementKnowledgeBase(
                 id=kb_id, refinement_id=refinement_id, title="Ref KB",
@@ -99,6 +141,9 @@ async def seed_refinement(
                 refinement_id=refinement_id, title="Ref design", global_description="g",
                 entities=[], interfaces=[], diagrams=[], created_by=USER_ID,
             ))
+        if refinement.status is RefinementStatus.DONE:
+            await db.flush()
+            await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
     return {"ideation_id": ideation_id, "refinement_id": refinement_id,
             "kb_id": kb_id, "mockup_id": mockup_id, "design_id": design_id}

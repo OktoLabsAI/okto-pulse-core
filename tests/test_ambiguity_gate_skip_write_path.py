@@ -91,7 +91,13 @@ async def test_skip_persists_while_evaluating_and_writes_audit(db_factory):
     async with db_factory() as db:
         service = IdeationService(db)
         result = await service.set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="rest"
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
         )
         await db.commit()
         assert result is not None
@@ -114,19 +120,24 @@ async def test_skip_persists_while_evaluating_and_writes_audit(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_mcp_source_is_audited_distinctly(db_factory):
+async def test_mcp_source_cannot_grant_human_skip(db_factory):
     _, ideation_id = await _seed_ideation(db_factory, status=IdeationStatus.EVALUATING)
 
     async with db_factory() as db:
-        await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="mcp"
-        )
-        await db.commit()
+        with pytest.raises(ValueError, match="human_actor_required"):
+            await IdeationService(db).set_ambiguity_gate_skip(
+                ideation_id,
+                USER_ID,
+                True,
+                reason="An agent cannot grant this override.",
+                expected_ideation_version=1,
+                expected_ideation_edition=1,
+                source="mcp",
+            )
 
     async with db_factory() as db:
         logs = await _skip_logs(db, ideation_id)
-        assert logs[0].details["source"] == "mcp"
-        assert logs[0].details["new_value"] is True
+        assert logs == []
 
 
 @pytest.mark.asyncio
@@ -138,14 +149,28 @@ async def test_skip_rejects_archived_ideation(db_factory):
         with pytest.raises(
             ValueError, match="Cannot update ambiguity gate skip for archived ideation"
         ):
-            await service.set_ambiguity_gate_skip(ideation_id, USER_ID, True, source="rest")
+            await service.set_ambiguity_gate_skip(
+                ideation_id,
+                USER_ID,
+                True,
+                reason="Accepted for this validation edition.",
+                expected_ideation_version=1,
+                expected_ideation_edition=1,
+                source="rest",
+            )
 
 
 @pytest.mark.asyncio
 async def test_skip_missing_ideation_returns_none(db_factory):
     async with db_factory() as db:
         result = await IdeationService(db).set_ambiguity_gate_skip(
-            _id("missing"), USER_ID, True, source="rest"
+            _id("missing"),
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
         )
         assert result is None
 
@@ -158,7 +183,7 @@ async def test_generic_update_ideation_still_rejects_non_draft_edits(db_factory)
 
     async with db_factory() as db:
         service = IdeationService(db)
-        with pytest.raises(ValueError, match="Cannot edit ideation in 'evaluating' status"):
+        with pytest.raises(ValueError, match="subject_edit_requires_draft"):
             await service.update_ideation(
                 ideation_id, USER_ID, IdeationUpdate(description="sneaky non-draft edit")
             )
@@ -192,7 +217,12 @@ async def test_rest_skip_endpoint_persists_in_evaluating(_client):
 
     resp = client.patch(
         f"/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
-        json={"skip_ambiguity_gate": True},
+        json={
+            "skip_ambiguity_gate": True,
+            "reason": "Accepted for this validation edition.",
+            "expected_ideation_version": 1,
+            "expected_ideation_edition": 1,
+        },
     )
     assert resp.status_code == 200
     assert resp.json()["skip_ambiguity_gate"] is True
@@ -205,7 +235,13 @@ async def test_rest_skip_endpoint_rejects_extra_fields(_client):
 
     resp = client.patch(
         f"/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
-        json={"skip_ambiguity_gate": True, "description": "sneaky"},
+        json={
+            "skip_ambiguity_gate": True,
+            "reason": "Accepted for this validation edition.",
+            "expected_ideation_version": 1,
+            "expected_ideation_edition": 1,
+            "description": "sneaky",
+        },
     )
     assert resp.status_code == 422  # extra='forbid' blocks smuggled edits
 
@@ -228,7 +264,15 @@ async def test_rest_skip_endpoint_archived_is_400(_client):
 
     resp = client.patch(
         f"/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
-        json={"skip_ambiguity_gate": True},
+        json={
+            "skip_ambiguity_gate": True,
+            "reason": "Accepted for this validation edition.",
+            "expected_ideation_version": 1,
+            "expected_ideation_edition": 1,
+        },
     )
     assert resp.status_code == 400
-    assert "archived" in resp.json()["detail"].lower()
+    assert resp.json()["detail"] == {
+        "error_code": "Cannot update ambiguity gate skip for archived ideation.",
+        "retryable": False,
+    }

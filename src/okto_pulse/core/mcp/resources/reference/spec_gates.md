@@ -15,9 +15,9 @@ Spec projections expose both counters:
 - `edition` is the human-facing lifecycle counter shown as `vN`. Creation
   starts at `1`; it advances only when a successful lifecycle move enters
   `draft` from a non-draft status.
-- `version` is the technical revision used for optimistic concurrency,
-  receipts, checklist currentness, and KG source revision. Content and
-  structured-entity writes may advance it without changing `edition`.
+- `version` is the technical revision used for optimistic concurrency and KG
+  source revision. Content and structured-entity writes may advance it without
+  changing `edition`; those changes do not start a new human validation cycle.
 
 Always pass `version`, never `edition`, to fields such as
 `expected_spec_version` or `spec_version`. Reopening a terminal Spec may
@@ -55,8 +55,8 @@ as 1/100 through 5/100 and will usually fail the configured thresholds.
 
 **MCP tools for the gate:**
 - `okto_pulse_submit_spec_validation(...)` — requires spec in `approved` status.
-- `okto_pulse_list_spec_validations(board_id, spec_id)` — returns full history with `active=true` on the current pointer.
-- `okto_pulse_move_spec(board_id, spec_id, status="draft")` — the single-hop unlock path from `validated` or `approved`. Clears `current_validation_id` but preserves the validations array.
+- `okto_pulse_list_spec_validations(board_id, spec_id)` — returns Current and Previous results by lifecycle edition; legacy SQL `NULL` editions are history-only under Previous.
+- `okto_pulse_move_spec(board_id, spec_id, status="draft")` — the single-hop reopen path. It starts a new edition, clears `current_validation_id`, and preserves earlier results under Previous.
 
 ## Curated Spec Checklist Gate — `/specify/v1`
 
@@ -75,31 +75,32 @@ The execution flow is:
    context.
 2. If mode is `advisory` or `blocking`, call
    `okto_pulse_start_checklist_execution` with the current binding digest and
-   Spec version.
+   exact Spec edition plus its technical version.
 3. Submit all ten immutable items exactly once with `pass`, `fail`, or allowed
    `not_applicable`; every result needs an anchor and N/A needs a rationale.
-4. Read the issued receipt, then re-run full Spec context or
-   `okto_pulse_get_allowed_transitions`. Canonical readiness requires every
-   Spec content/input, template, and executable binding digest to match and
-   reports ordered stale reasons when they do not. The executable digest pins
-   the template selection; binding mode/version changes alone remain auditable
-   governance and do not stale an otherwise current receipt.
+4. Read the submitted result with `okto_pulse_get_checklist_receipt` (the
+   compatibility API name), then re-run full Spec context or
+   `okto_pulse_get_allowed_transitions`. Canonical human readiness requires a
+   passing Current result for the exact Spec edition. Frozen content, template,
+   and binding identities remain technical audit evidence and do not create a
+   second human-facing lifecycle state.
 
 Mode behavior:
 
 - `off`: start/submit is rejected before any execution row is created; the
   checklist does not block Spec Validation.
-- `advisory`: receipts remain traceable but do not block.
+- `advisory`: results remain traceable but do not block.
 - `blocking`: `approved` → `validated` and semantic Spec Validation both
-  require a current, native, non-failing receipt.
+  require a native, non-failing Current result for the same Spec edition.
 
 The same pure readiness predicate drives
 `okto_pulse_get_allowed_transitions`, `okto_pulse_move_spec`,
 `okto_pulse_submit_spec_validation`, full Spec context, and REST/UI state.
-Canonical blocking codes are `spec_checklist_gate_required` plus the
-checklist reason such as `checklist_receipt_required`,
+Canonical blocking codes are `spec_checklist_gate_required` plus technical
+compatibility reason codes such as `checklist_receipt_required`,
 `checklist_receipt_stale`, `checklist_item_failed`, or
-`manual_checklist_legacy_unverified`.
+`manual_checklist_legacy_unverified`. The `receipt`/`stale` vocabulary in those
+stable codes does not define the human UI state, which is Current or Previous.
 
 MCP read/execution tools:
 

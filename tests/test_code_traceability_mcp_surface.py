@@ -53,7 +53,7 @@ def test_code_traceability_registers_exact_reviewed_inventory() -> None:
     assert server._CODE_TRACEABILITY_TOOL_NAMES == frozenset(EXPECTED_TOOLS)
     live = {tool.name for tool in server.mcp.iter_tools()}
     assert set(EXPECTED_TOOLS).issubset(live)
-    assert len(live) == 332
+    assert len(live) == 334
 
 
 def test_every_code_traceability_tool_has_a_closed_specific_schema() -> None:
@@ -100,14 +100,16 @@ def test_code_traceability_tools_have_one_exact_granular_permission() -> None:
     }
     for tool_name, expected_flag in EXPECTED_TOOLS.items():
         assert policies[tool_name] == (expected_flag,)
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 329
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 331
 
 
 def test_code_traceability_lazy_docs_are_canonical_and_complete() -> None:
     uri = "okto-pulse://reference/tool-docs/code-traceability"
     registered = {entry[0] for entry in server._RESOURCE_REGISTRY}
     assert uri in registered
-    content = server._load_resource_file("reference/code_traceability.md")
+    content = server._load_resource_file(
+        "reference/tool-docs/code-traceability.md"
+    )
     for tool_name in EXPECTED_TOOLS:
         assert server.tool_docs_uri(tool_name) == uri
         assert tool_name in content

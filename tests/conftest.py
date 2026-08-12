@@ -885,6 +885,9 @@ class _CoreTestAmendmentRevisionApiBackend:
 class _CoreTestRelationalApplicationAdapter:
     """Explicit test-only relational adapter bundle for Core use cases."""
 
+    def __init__(self) -> None:
+        self._research_decision_snapshots = {}
+
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
 
@@ -935,15 +938,31 @@ class _CoreTestRelationalApplicationAdapter:
         """Empty RDL port for Core scenarios that do not seed ledger entries."""
 
         _ = session
+        snapshots = self._research_decision_snapshots
 
         class _ResearchDecisionLedgerStub:
-            async def get_snapshot_for_version(self, **_kwargs):
-                return None
+            async def get_snapshot_for_version(
+                self,
+                *,
+                board_id,
+                refinement_id,
+                refinement_version,
+            ):
+                return snapshots.get(
+                    (board_id, refinement_id, refinement_version)
+                )
 
             async def list_current_entries_with_heads(self, **_kwargs):
                 return ()
 
             async def save_snapshot(self, snapshot):
+                snapshots[
+                    (
+                        snapshot.board_id,
+                        snapshot.refinement_id,
+                        snapshot.refinement_version,
+                    )
+                ] = snapshot
                 return snapshot
 
             async def save_derivation(self, derivation):

@@ -9,6 +9,8 @@ asserts that the failure leaves no partial spec, card, or Architecture row.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import select
 
@@ -20,6 +22,7 @@ from sqlalchemy_test_models import (
     Ideation,
     IdeationStatus,
     Refinement,
+    RefinementSnapshot,
     RefinementStatus,
     Spec,
     SpecStatus,
@@ -27,6 +30,12 @@ from sqlalchemy_test_models import (
 
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.resource_lineage import ResolvedResourceLineageService
+from okto_pulse.core.domain.research_decision_ledger import (
+    ResearchDecisionLedgerSnapshot,
+)
+from okto_pulse.core.ports.relational_application import (
+    require_relational_application_adapter,
+)
 
 
 async def _seed_done_ideation_with_architecture(db_factory) -> dict[str, str]:
@@ -127,6 +136,33 @@ async def test_ts_1c481902_mcp_multihop_and_atomic_mixed_selection(
         refinement = await db.get(Refinement, refinement_id)
         assert refinement is not None
         refinement.status = RefinementStatus.DONE
+        db.add(
+            RefinementSnapshot(
+                refinement_id=refinement.id,
+                version=refinement.version,
+                title=refinement.title,
+                description=refinement.description,
+                in_scope=refinement.in_scope,
+                out_of_scope=refinement.out_of_scope,
+                analysis=refinement.analysis,
+                decisions=refinement.decisions,
+                labels=refinement.labels,
+                qa_snapshot=[],
+                created_by=USER_ID,
+            )
+        )
+        await require_relational_application_adapter().research_decisions(
+            db
+        ).save_snapshot(
+            ResearchDecisionLedgerSnapshot(
+                id=sid("rdl-snapshot-ts-1c481902"),
+                board_id=board_id,
+                refinement_id=refinement.id,
+                refinement_version=refinement.version,
+                heads=(),
+                created_at=datetime.now(timezone.utc),
+            )
+        )
         await db.commit()
 
     foreign_design_id = sid("arch-foreign-ts-1c481902")

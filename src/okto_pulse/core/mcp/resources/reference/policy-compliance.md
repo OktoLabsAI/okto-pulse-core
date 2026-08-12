@@ -13,8 +13,8 @@ evidence at a transition.
 
 Pulse never judges semantic adherence. The external agent produces the
 cognitive analysis; Pulse deterministically validates exact authority,
-completeness, score bounds, thresholds, independence and currentness, then
-seals immutable evidence.
+completeness, score bounds, thresholds, independence and lifecycle edition,
+then seals immutable evidence.
 
 ## Revision and adoption
 
@@ -43,9 +43,13 @@ seals immutable evidence.
 
 Before recording:
 
+Ideation, Refinement, and Spec use the lifecycle-edition cycle described here.
+Sprint, Card, and Test Scenario remain legacy version-fenced subjects: omit
+`expected_subject_edition` for those three types, and do not infer an edition.
+
 1. Read the entity's full current context and the exact adopted guideline
-   revision. Use the current subject version, binding revision and guideline
-   revision ID as explicit fences.
+   revision. Use the current subject version, lifecycle edition, binding
+   revision and guideline revision ID as explicit fences.
 2. Assess every metric targeting that entity type. Do not omit difficult or
    failed metrics and do not submit non-applicable metrics.
 3. For each metric submit one integer score in `0..100`, a concrete rationale,
@@ -61,10 +65,10 @@ artifact forbids `anchor_ref`; all other kinds require a stable semantic
 reference. Never use mutable list indexes. Evidence references require source
 type, source ID, positive source version and exact content hash.
 
-Pulse rejects the assessment before persistence when a fence is stale, a
+Pulse rejects the assessment before persistence when a fence conflicts, a
 metric is missing/unknown/non-applicable, confidence is below the board
 minimum, or an agent that last changed the subject attempts a blocking
-assessment. Receipt and all metric results are written atomically.
+assessment. The result and all metric evidence are written atomically.
 
 `policy_assessment_inadmissible` is non-retryable without remediation. Inspect
 `details.inadmissibility_cause`: `confidence_below_minimum` requires a new
@@ -82,10 +86,10 @@ assessor identity.
    `okto_pulse_record_semantic_guideline_assessment` with the context fences.
 4. Confirm the sealed result with
    `okto_pulse_get_current_semantic_guideline_assessment(profile="full")`.
-5. If the current read is missing, or a listed/full receipt reports stale
-   currentness, reload context and revision, analyze the new content, and
-   record again with refreshed fences and a new stable idempotency key. Never
-   reuse or edit the stale receipt.
+5. If the Current read is missing for the active edition, reload context and
+   revision, analyze the candidate, and record with refreshed fences and a new
+   stable idempotency key. Previous results remain immutable audit history and
+   are never reused or edited.
 
 <!-- semantic-assessment-rollout:start -->
 ## Semantic assessment contract rollout
@@ -93,7 +97,7 @@ assessor identity.
 The legacy writer remains available as contract v1. The explicit v2 writer is
 `okto_pulse_record_semantic_guideline_assessment_v2`; its REST twin is
 `POST /boards/{board_id}/semantic-guideline-assessments/v2`. Current reads are
-dual-read and return the newest live-current receipt with an outer v1/v2
+dual-read and return the newest Current result with an outer v1/v2
 discriminator. Versioned request examples ship at
 `reference/examples/semantic-guideline-assessment-v1.json` and
 `reference/examples/semantic-guideline-assessment-v2.json`.
@@ -114,14 +118,14 @@ schema and readers remain forward-compatible. Never drop v2 data or triggers
 as a rollback action.
 <!-- semantic-assessment-rollout:end -->
 
-## Gate and currentness
+## Gate and lifecycle edition
 
 - Evidence presence is mandatory regardless of enforcement: every applicable
-  binding requires a current, admissible assessment receipt before a governed
-  transition. A missing, stale, unavailable or inadmissible assessment rejects
+  binding requires a Current, admissible assessment result before a governed
+  transition. A missing, unavailable or inadmissible assessment rejects
   the transition even when the binding is advisory (an active human skip is
   the only bypass).
-- Advisory bindings never block on metric SCORES: with a current receipt
+- Advisory bindings never block on metric SCORES: with a Current result
   recorded, failed advisory metrics stay visible evidence only.
 - Blocking bindings are conjunctive: every applicable metric must pass its
   effective threshold and the compulsory confidence minimum must pass.
@@ -130,9 +134,11 @@ as a rollback action.
   threshold.
 - Blocking assessment requires an assessor independent from the subject's last
   semantic editor. Advisory evidence does not require separation.
-- A receipt is current only for the exact subject content/version, binding
-  configuration and revision, guideline revision, board binding head and
-  semantic policy set it sealed. Any relevant drift requires reassessment.
+- A result is Current only for the exact subject lifecycle edition. Returning
+  the subject to `draft` increments the edition and moves every earlier result
+  to Previous. Ordinary version, content, digest, binding, or policy drift
+  remains technical audit data and does not create human-facing staleness
+  inside one edition.
 - Native ambiguity, Resource, checklist, test, validation and evaluation gates
   remain independent. Semantic guidelines do not duplicate or replace them.
 - Human skip is deliberately absent from MCP and agent permissions. Only the
@@ -147,11 +153,12 @@ use signed opaque keyset cursors. Preserve every filter, projection and
 `evaluated_at` across pages; never decode or edit a cursor.
 `next_cursor=null` with `has_more=false` ends traversal.
 
-Use the semantic assessment reads to inspect immutable receipts and derived
-currentness; use the finding list to address one failed metric without
-reconstructing it from free text. Currentness filters apply only to assessment
-lists. Finding and waiver results expose currentness but deliberately do not
-accept a currentness filter.
+Use semantic assessment reads to inspect immutable results grouped as Current
+and Previous; use the finding list to address one failed metric without
+reconstructing it from free text. Legacy results whose subject edition is SQL
+`NULL` are history-only under Previous and can never become Current. Technical
+compatibility filters apply only to assessment lists; finding and waiver lists
+do not accept them.
 
 Waiver collection and singular reads evaluate expiry as of their required
 `evaluated_at`. Reuse the exact collection snapshot when opening one result.
@@ -162,7 +169,7 @@ an expired, stale or revoked waiver. A requester or the assessor who sealed the
 anchored receipt cannot review or revalidate that waiver.
 
 On failure inspect the MCP outcome code, retryability, next action and bounded
-details. Refresh exact authority on conflict/staleness; increase SemVer on
+details. Refresh exact authority on conflict; increase SemVer on
 `under_bump`; restart without a cursor on `invalid_cursor`; request the named
 capability on permission denial. Never repair evidence or authority by editing
 digests, database rows or KG nodes.

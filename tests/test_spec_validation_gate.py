@@ -25,7 +25,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from sqlalchemy_test_models import (
     Board,
@@ -42,18 +42,44 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import SpecMove, SpecUpdate
+from okto_pulse.core.domain.human_validation_cycle import (
+    SubjectEditRequiresDraftError,
+)
+from okto_pulse.core.domain.spec_validation import (
+    RequirementLintRequired,
+    SpecValidationGateNotReady,
+)
 from okto_pulse.core.ports.application_persistence import (
     get_application_persistence_port,
 )
 from okto_pulse.core.services.main import (
-    SpecLockedError,
     SpecService,
 )
+from okto_pulse.core.services import main as main_service
 
 
 BOARD_ID = "validation-board-001"
 SPEC_ID = "validation-spec-001"
 USER_ID = "user-test-001"
+
+
+@pytest.fixture(autouse=True)
+def _legacy_specs_have_current_requirement_lint(monkeypatch):
+    """Keep this pre-lifecycle gate suite focused on Spec Validation itself.
+
+    Dedicated lifecycle tests exercise the mandatory edition-scoped lint gate.
+    Production code remains fail-closed; only these legacy fixtures model an
+    already accepted external Requirement Lint result.
+    """
+
+    async def accepted_lint(_service, _spec):
+        return None
+
+    monkeypatch.setattr(
+        SpecService,
+        "_enforce_spec_requirement_lint_gate",
+        accepted_lint,
+    )
 
 
 # ===========================================================================
@@ -275,6 +301,24 @@ def _valid_submit_data(
 
 async def _submit_spec_validation(service, db, *args, **kwargs):
     """Model the caller-owned transaction used by the application UoW."""
+    data = dict(kwargs.get("data") or {})
+    spec_id = kwargs.get("spec_id") or (args[0] if args else None)
+    spec = await service.get_spec(spec_id)
+    if spec is not None:
+        data.setdefault("expected_validation_edition", spec.edition)
+        data.setdefault("expected_spec_version", spec.version)
+        data.setdefault(
+            "expected_head_revision",
+            max(
+                (
+                    int(item.get("head_revision", 0))
+                    for item in (spec.validations or [])
+                    if item.get("edition") == spec.edition
+                ),
+                default=0,
+            ),
+        )
+    kwargs["data"] = data
     result = await service.submit_spec_validation(*args, **kwargs)
     await get_application_persistence_port().flush(db)
     return result
@@ -328,6 +372,108 @@ class TestStateGuard:
             },
             {"field": "status", "old": "approved", "new": "validated"},
         ]
+
+    async def test_lost_lifecycle_fence_appends_nothing(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        """A concurrent validation/reopen loses cleanly before any side effect."""
+
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            service = SpecService(db)
+            history_before = await db.scalar(
+                select(func.count()).select_from(SpecHistory)
+            )
+            events_before = await db.scalar(
+                select(func.count()).select_from(DomainEventRow)
+            )
+
+            async def lost_fence(*_args, **_kwargs):
+                return False
+
+            recorded_allow_decisions: list[object] = []
+
+            async def record_allow(*_args, **kwargs):
+                recorded_allow_decisions.append(kwargs["decision"])
+
+            monkeypatch.setattr(main_service, "_application_fence", lost_fence)
+            monkeypatch.setattr(
+                main_service,
+                "_record_critical_context_decision",
+                record_allow,
+            )
+            with pytest.raises(SpecValidationGateNotReady) as raised:
+                await _submit_spec_validation(
+                    service,
+                    db,
+                    spec_id=SPEC_ID,
+                    reviewer_id=USER_ID,
+                    reviewer_name="Tester",
+                    data=_valid_submit_data(),
+                )
+
+            spec = await service.get_spec(SPEC_ID)
+            assert raised.value.details == {"reason": "lifecycle_fence_conflict"}
+            assert spec.status == SpecStatus.APPROVED
+            assert spec.validations in (None, [])
+            assert spec.current_validation_id is None
+            assert recorded_allow_decisions == []
+            assert await db.scalar(
+                select(func.count()).select_from(SpecHistory)
+            ) == history_before
+            assert await db.scalar(
+                select(func.count()).select_from(DomainEventRow)
+            ) == events_before
+
+    async def test_lint_head_replaced_after_preflight_blocks_promotion(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        """The post-fence head read is authoritative for this edition."""
+
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            service = SpecService(db)
+            lint_reads = 0
+            recorded_allow_decisions: list[object] = []
+
+            async def replaced_lint(_spec):
+                nonlocal lint_reads
+                lint_reads += 1
+                if lint_reads == 2:
+                    raise RequirementLintRequired(
+                        "Requirement Lint was replaced before promotion."
+                    )
+
+            async def record_allow(*_args, **kwargs):
+                recorded_allow_decisions.append(kwargs["decision"])
+
+            service._enforce_spec_requirement_lint_gate = replaced_lint  # type: ignore[method-assign]
+            monkeypatch.setattr(
+                main_service,
+                "_record_critical_context_decision",
+                record_allow,
+            )
+
+            with pytest.raises(RequirementLintRequired):
+                await _submit_spec_validation(
+                    service,
+                    db,
+                    spec_id=SPEC_ID,
+                    reviewer_id=USER_ID,
+                    reviewer_name="Tester",
+                    data=_valid_submit_data(),
+                )
+
+            spec = await service.get_spec(SPEC_ID)
+            assert lint_reads == 2
+            assert recorded_allow_decisions == []
+            assert spec.status == SpecStatus.APPROVED
+            assert spec.validations in (None, [])
+            assert spec.current_validation_id is None
 
     async def test_successful_submit_emits_status_consolidation_event(self, db_factory):
         """Spec validation promotion must re-enqueue KG consolidation."""
@@ -1153,7 +1299,7 @@ class TestAppendOnlyHistory:
 
 @pytest.mark.asyncio
 class TestContentLock:
-    """After successful validation, spec edits raise SpecLockedError."""
+    """After successful validation, edits require reopening Draft."""
 
     async def test_update_spec_blocked_after_success(self, db_factory):
         content_lock_board_id = str(uuid.uuid4())
@@ -1169,13 +1315,14 @@ class TestContentLock:
                 data=_valid_submit_data(),
             )
             # Now try to update — should be blocked
-            with pytest.raises(SpecLockedError) as exc_info:
+            with pytest.raises(SubjectEditRequiresDraftError) as exc_info:
                 await _update_spec(service, db,
                     content_lock_spec_id,
                     USER_ID,
                     SpecUpdate(description="New description after validation"),
                 )
-        assert "locked" in str(exc_info.value).lower()
+        assert exc_info.value.code == "subject_edit_requires_draft"
+        assert "draft" in str(exc_info.value).lower()
 
     async def test_update_title_blocked_after_success(self, db_factory):
         """Updating the title should also be blocked."""
@@ -1190,7 +1337,7 @@ class TestContentLock:
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
-            with pytest.raises(SpecLockedError):
+            with pytest.raises(SubjectEditRequiresDraftError):
                 await _update_spec(service, db,
                     content_lock_spec_id,
                     USER_ID,
@@ -1210,7 +1357,7 @@ class TestContentLock:
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
-            with pytest.raises(SpecLockedError):
+            with pytest.raises(SubjectEditRequiresDraftError):
                 await _update_spec(service, db,
                     cl_spec_id,
                     USER_ID,
@@ -1251,13 +1398,13 @@ class TestContentLock:
             )
             try:
                 await _update_spec(service, db,
-                    SPEC_ID,
+                    cl_spec_id,
                     USER_ID,
                     SpecUpdate(description="attempted edit"),
                 )
-            except SpecLockedError as exc:
-                assert "locked" in str(exc).lower()
-                assert "validation passed" in str(exc).lower() or "move" in str(exc).lower()
+            except SubjectEditRequiresDraftError as exc:
+                assert exc.code == "subject_edit_requires_draft"
+                assert "only be edited while in draft" in str(exc).lower()
 
 
 # ===========================================================================
@@ -1317,18 +1464,7 @@ class TestLockRelease:
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
-            # Move back through review to approved
-            await _move_spec(service, db,
-                lr_spec_id,
-                USER_ID,
-                SpecMove(status=SpecStatus.REVIEW),
-            )
-            await _move_spec(service, db,
-                lr_spec_id,
-                USER_ID,
-                SpecMove(status=SpecStatus.APPROVED),
-            )
-            # Now edit should work
+            # Draft is the only editable state in the new lifecycle edition.
             spec = await _update_spec(service, db,
                 lr_spec_id,
                 USER_ID,
@@ -1378,8 +1514,8 @@ class TestLockRelease:
         assert len(spec.validations) == 2  # history preserved
         assert spec.current_validation_id is None
 
-    async def test_move_to_approved_clears_lock(self, db_factory):
-        """Moving from validated → approved also clears the lock."""
+    async def test_move_to_approved_preserves_current_validation(self, db_factory):
+        """A same-edition move does not clear the current validation."""
         lr_board_id = str(uuid.uuid4())
         lr_spec_id = str(uuid.uuid4())
         await _seed_board(db_factory, board_id=lr_board_id, spec_id=lr_spec_id)
@@ -1401,7 +1537,7 @@ class TestLockRelease:
                 SpecMove(status=SpecStatus.APPROVED),
             )
             spec = await service.get_spec(lr_spec_id)
-        assert spec.current_validation_id is None
+        assert spec.current_validation_id is not None
         assert spec.status == SpecStatus.APPROVED
 
 
@@ -1476,10 +1612,12 @@ class TestListValidations:
         latest = list_result["validations"][0]
         assert latest["id"] == result2["id"]
         assert latest["active"] is True
+        assert latest["is_current"] is True
         # Previous should be inactive
         prev = list_result["validations"][1]
         assert prev["id"] == result1["id"]
         assert prev["active"] is False
+        assert prev["is_current"] is False
 
     async def test_list_after_lock_release(self, db_factory):
         """After lock release, current_validation_id is None and no active flag."""
@@ -1504,6 +1642,7 @@ class TestListValidations:
         assert result["current_validation_id"] is None
         for v in result["validations"]:
             assert v["active"] is False
+            assert v["is_current"] is False
 
     async def test_list_returns_all_record_fields(self, db_factory):
         """Each validation record should include all expected fields."""

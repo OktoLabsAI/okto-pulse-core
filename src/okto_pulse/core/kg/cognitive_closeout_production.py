@@ -222,7 +222,16 @@ async def _persist_all(
         if cand.node_type not in COGNITIVE_NODE_TYPES:  # TR1 guard
             logger.warning("cognitive_closeout.non_cognitive_node_type type=%s", cand.node_type)
             continue
-        if persister.already_persisted(board_id, cand.node_type, cand.source_artifact_ref):
+        already_persisted = await run_blocking_graph_io(
+            partial(
+                persister.already_persisted,
+                board_id,
+                cand.node_type,
+                cand.source_artifact_ref,
+            ),
+            task_name="core.kg.cognitive_closeout.already_persisted",
+        )
+        if already_persisted:
             result.skipped_existing_refs.append(cand.source_artifact_ref)
             any_persisted = True  # already effective (AC1 replay idempotency)
             continue
@@ -476,7 +485,17 @@ class ConsolidationPipelinePersister:
                 # Decision id) OR a canonical ref (e.g. card:<uuid> for the Bug);
                 # resolve the canonical ref to the real node id (RKG-02 identity).
                 target_label = "Bug" if edge.edge_type == "validates" else "Decision"
-                node_id = _resolve_existing_node_id(board_id, target_label, edge.to_ref)
+                node_id = await run_blocking_graph_io(
+                    partial(
+                        _resolve_existing_node_id,
+                        board_id,
+                        target_label,
+                        edge.to_ref,
+                    ),
+                    task_name=(
+                        "core.kg.cognitive_closeout.resolve_edge_endpoint"
+                    ),
+                )
                 other = f"kg:{node_id}"
                 # validates is outgoing (Learning→Bug); relates_to is incoming
                 # (Decision→Alternative) so the existing node is the source.
@@ -640,7 +659,15 @@ class ConsolidationPipelinePersister:
                         candidate.source_artifact_ref, getattr(exc, "code", exc))
             return False
         # BR2: effective only when actually queryable in board graph.
-        return self.already_persisted(board_id, candidate.node_type, candidate.source_artifact_ref)
+        return await run_blocking_graph_io(
+            partial(
+                self.already_persisted,
+                board_id,
+                candidate.node_type,
+                candidate.source_artifact_ref,
+            ),
+            task_name="core.kg.cognitive_closeout.confirm_queryable",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -62,14 +62,14 @@ def test_registry_move_flags_are_exact_sdlc_projection() -> None:
     expected = set(transition_permission_flags())
     actual = {flag for flag in ALL_FLAGS if ".move." in flag}
 
-    assert len(expected) == 91
+    assert len(expected) == 92
     assert actual == expected
     introduced_moves = {
         leaf
         for leaf in SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves
         if ".move." in leaf
     }
-    assert len(introduced_moves) == 65
+    assert len(introduced_moves) == 66
     assert introduced_moves < expected
     assert set(SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves) - introduced_moves == {
         "ideation.interact_in.review",

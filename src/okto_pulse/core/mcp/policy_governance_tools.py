@@ -134,6 +134,9 @@ PolicyEntityTypeValue = Literal[
     "card",
     "test_scenario",
 ]
+EDITION_VALIDATION_SUBJECT_TYPES = frozenset(
+    {"ideation", "refinement", "spec"}
+)
 GuidelineEnforcementValue = Literal["advisory", "blocking"]
 GuidelineLifecycleValue = Literal["retired", "superseded"]
 GuidelineImpactItemKindValue = Literal[
@@ -520,6 +523,10 @@ def register_policy_governance_tools(
             "record_assessment": "v1",
             "record_assessment_v2": "v2",
         }.get(operation)
+        correlation_id = uuid.uuid4().hex
+        validation_subject_type: str | None = None
+        validation_subject_id: str | None = None
+        validation_subject_edition: int | None = None
         context = await get_board_agent(board_id)
         if context is None:
             if semantic_contract_version is not None:
@@ -559,7 +566,49 @@ def register_policy_governance_tools(
                 command = build_command(codec, actor)
             if command is None:
                 raise TypeError("policy_governance_command_required")
-            async with get_uow()(actor=actor) as uow:
+            if semantic_contract_version is not None:
+                command_payload = getattr(command, "submission", None)
+                if command_payload is None:
+                    command_payload = getattr(command, "draft", None)
+                validation_subject = getattr(command_payload, "subject", None)
+                raw_subject_type = getattr(
+                    validation_subject,
+                    "entity_type",
+                    None,
+                )
+                validation_subject_type = str(
+                    getattr(raw_subject_type, "value", raw_subject_type) or ""
+                )
+                validation_subject_id = str(
+                    getattr(validation_subject, "subject_id", "") or ""
+                )
+                raw_subject_edition = getattr(
+                    validation_subject,
+                    "subject_edition",
+                    None,
+                )
+                if (
+                    isinstance(raw_subject_edition, int)
+                    and not isinstance(raw_subject_edition, bool)
+                    and raw_subject_edition > 0
+                ):
+                    validation_subject_edition = raw_subject_edition
+
+            uow_factory = get_uow()
+            if (
+                semantic_contract_version is not None
+                and validation_subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+            ):
+                from okto_pulse.core.services.ska_observability import (
+                    observe_validation_uow_factory,
+                )
+
+                uow_factory = observe_validation_uow_factory(
+                    uow_factory,
+                    assessment_kind="policy_compliance",
+                    subject_type=validation_subject_type,
+                )
+            async with uow_factory(actor=actor) as uow:
                 result = await use_case.execute(command, actor=actor, uow=uow)
             if semantic_contract_version is not None:
                 from okto_pulse.core.services.governance_observability import (
@@ -574,6 +623,24 @@ def register_policy_governance_tools(
             return McpToolOutcome.success(_result_payload(result, codec))
         except Exception as exc:
             try:
+                if (
+                    semantic_contract_version is not None
+                    and validation_subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+                    and validation_subject_id
+                    and validation_subject_edition is not None
+                ):
+                    from okto_pulse.core.services.ska_observability import (
+                        observe_validation_edition_conflict_from_error,
+                    )
+
+                    observe_validation_edition_conflict_from_error(
+                        exc,
+                        operation="policy_compliance",
+                        subject_type=validation_subject_type,
+                        subject_id=validation_subject_id,
+                        expected_edition=validation_subject_edition,
+                        correlation_id=correlation_id,
+                    )
                 outcome = _error_outcome(exc)
                 if semantic_contract_version is not None:
                     from okto_pulse.core.services.governance_observability import (
@@ -937,6 +1004,7 @@ def register_policy_governance_tools(
             str | None,
             Field(default=None, min_length=1, max_length=200),
         ] = None,
+        expected_subject_edition: PositiveRevision | None = None,
     ) -> McpToolOutcome:
         """Record complete agent-produced metric evidence against exact fences.
 
@@ -968,12 +1036,18 @@ def register_policy_governance_tools(
             _codec: object | None,
             actor: object,
         ) -> object:
+            if (
+                entity_type in EDITION_VALIDATION_SUBJECT_TYPES
+                and expected_subject_edition is None
+            ):
+                raise ValueError("expected_subject_edition_required")
             submission = SemanticGuidelineAssessmentSubmission(
                 subject=PolicySubjectRef(
                     board_id=board_id,
                     entity_type=PolicyEntityType(entity_type),
                     subject_id=subject_id,
                     subject_version=expected_subject_version,
+                    subject_edition=expected_subject_edition,
                 ),
                 binding_id=binding_id,
                 expected_binding_revision=expected_binding_revision,
@@ -1050,6 +1124,7 @@ def register_policy_governance_tools(
             str | None,
             Field(default=None, min_length=1, max_length=200),
         ] = None,
+        expected_subject_edition: PositiveRevision | None = None,
     ) -> McpToolOutcome:
         """Record an actionable, human-readable semantic assessment v2."""
 
@@ -1078,12 +1153,18 @@ def register_policy_governance_tools(
         )
 
         def build_command(_codec: object | None, actor: object) -> object:
+            if (
+                subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+                and expected_subject_edition is None
+            ):
+                raise ValueError("expected_subject_edition_required")
             draft = SemanticAssessmentDraftV2(
                 subject=PolicySubjectRef(
                     board_id=board_id,
                     entity_type=PolicyEntityType(subject_type),
                     subject_id=subject_id,
                     subject_version=expected_subject_version,
+                    subject_edition=expected_subject_edition,
                 ),
                 binding_id=binding_id,
                 expected_binding_revision=expected_binding_revision,

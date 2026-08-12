@@ -63,6 +63,39 @@ class _UnsupportedServiceCatalog:
         )
 
 
+class _UnsupportedSemanticAssessmentPort:
+    async def resolve_semantic_anchor(self, request: object) -> None:
+        del request
+        raise NotImplementedError(
+            "fake SaaS semantic subject projection was not configured"
+        )
+
+    async def save_semantic_assessment_v2(self, request: object) -> None:
+        del request
+        raise NotImplementedError(
+            "fake SaaS semantic assessment persistence was not configured"
+        )
+
+    async def get_current_semantic_assessment_v2(
+        self,
+        *,
+        board_id: str,
+        entity_type: str,
+        subject_id: str,
+        binding_id: str,
+        subject_edition: int | None = None,
+    ) -> None:
+        del board_id, entity_type, subject_id, binding_id, subject_edition
+        raise NotImplementedError(
+            "fake SaaS semantic assessment reader was not configured"
+        )
+
+    async def semantic_assessment_v2_capabilities(self) -> None:
+        raise NotImplementedError(
+            "fake SaaS semantic assessment capabilities were not configured"
+        )
+
+
 class FakeSaaSUnitOfWork:
     """Copy-on-write UnitOfWork with no native persistence handle."""
 
@@ -91,6 +124,11 @@ class FakeSaaSUnitOfWork:
             parent_boards=self._working_state.boards,
         )
         self.services = services or _UnsupportedServiceCatalog()
+        unsupported_semantic_port = _UnsupportedSemanticAssessmentPort()
+        self.semantic_subject_projection = unsupported_semantic_port
+        self.semantic_assessment_v2 = unsupported_semantic_port
+        self.semantic_assessment_v2_reader = unsupported_semantic_port
+        self.semantic_assessment_v2_capability = unsupported_semantic_port
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0

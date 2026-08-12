@@ -46,7 +46,7 @@ Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validatio
 |------|-----|---------------|
 | `draft` | `review` | — |
 | `review` | `approved` | — |
-| `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve`; when the curated checklist binding is `blocking`, a current passing `/specify/v1` receipt is also required (see `okto-pulse://reference/spec_gates`) |
+| `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve`; when the curated checklist binding is `blocking`, a passing Current `/specify/v1` result for the same Spec edition is also required (see `okto-pulse://reference/spec_gates`) |
 | `validated` | `in_progress` | `okto_pulse_submit_spec_evaluation` with `recommendation=approve` |
 | `in_progress` | `done` | All linked non-bug, non-archived cards `done` or `cancelled`; when sprints exist, all sprints `closed`/`cancelled` (minimum 1 closed) |
 

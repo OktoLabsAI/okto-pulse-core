@@ -76,9 +76,9 @@ def test_tool_names_stable_after_compaction():
     # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
     # tools entraram); o delta exato agora é nomeado por
     # test_mcp_tools_catalog_drift.py.
-    # 2026-08-09: reviewed surface is 332 tools after 19 Code Traceability tools.
-    # joins the governance commands for revisions, impact, compliance and waivers.
-    assert len(names) == 332
+    # 2026-08-11: reviewed surface is 334 tools after adding the externally
+    # supplied Requirement Lint result and preflight contracts.
+    assert len(names) == 334
     assert all(n.startswith("okto_pulse_") for n in names)
 
 

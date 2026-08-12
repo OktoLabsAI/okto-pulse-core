@@ -59,6 +59,9 @@ ATTACKER = "spec-rest-scope-attacker"
 OTHER_OWNER = "spec-rest-scope-owner"
 
 VALIDATION = {
+    "expected_validation_edition": 1,
+    "expected_spec_version": 1,
+    "expected_head_revision": 0,
     "completeness": 90,
     "completeness_justification": "Complete enough for the authorization probe.",
     "assertiveness": 90,

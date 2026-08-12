@@ -293,6 +293,9 @@ async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permissio
         await server.okto_pulse_submit_spec_validation.fn(
             board_id=BOARD_ID,
             spec_id="spec-1",
+            expected_validation_edition=1,
+            expected_spec_version=1,
+            expected_head_revision=0,
             completeness=90,
             completeness_justification="Complete enough",
             assertiveness=90,

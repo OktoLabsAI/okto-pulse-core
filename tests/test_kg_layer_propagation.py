@@ -344,6 +344,7 @@ def test_query_global_filters_stale_digest_ids():
 @dataclass
 class _FakeAgent:
     id: str = "agent-layer-test"
+    agent_id: str = "agent-layer-test"
 
 
 class _MCPDouble:

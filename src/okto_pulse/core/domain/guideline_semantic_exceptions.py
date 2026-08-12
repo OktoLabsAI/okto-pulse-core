@@ -457,6 +457,11 @@ def semantic_metric_waiver_scope_digest(
                 "subject_type": anchor.subject.entity_type.value,
                 "subject_id": anchor.subject.subject_id,
                 "subject_version": anchor.subject.subject_version,
+                **(
+                    {"subject_edition": anchor.subject.subject_edition}
+                    if anchor.subject.subject_edition is not None
+                    else {}
+                ),
                 "content_digest": anchor.subject_content_digest,
             },
             "guideline": {
@@ -2082,6 +2087,11 @@ def semantic_policy_skip_scope_digest(
                 "subject_type": scope.subject.entity_type.value,
                 "subject_id": scope.subject.subject_id,
                 "subject_version": scope.subject.subject_version,
+                **(
+                    {"subject_edition": scope.subject.subject_edition}
+                    if scope.subject.subject_edition is not None
+                    else {}
+                ),
                 "content_digest": scope.subject_content_digest,
             },
             "guideline": {

@@ -355,6 +355,9 @@ async def test_spec_validation_permission_denies_before_writer():
         "actor-1", "mcp", board_id=BOARD_ID, permissions=permissions
     )
     data = {
+        "expected_validation_edition": 1,
+        "expected_spec_version": 1,
+        "expected_head_revision": 0,
         "completeness": 90,
         "completeness_justification": "complete enough",
         "assertiveness": 90,

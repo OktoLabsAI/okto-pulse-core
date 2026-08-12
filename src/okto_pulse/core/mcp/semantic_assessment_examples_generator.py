@@ -18,7 +18,7 @@ _ROLLOUT_SECTION = """<!-- semantic-assessment-rollout:start -->
 The legacy writer remains available as contract v1. The explicit v2 writer is
 `okto_pulse_record_semantic_guideline_assessment_v2`; its REST twin is
 `POST /boards/{board_id}/semantic-guideline-assessments/v2`. Current reads are
-dual-read and return the newest live-current receipt with an outer v1/v2
+dual-read and return the newest Current result with an outer v1/v2
 discriminator. Versioned request examples ship at
 `reference/examples/semantic-guideline-assessment-v1.json` and
 `reference/examples/semantic-guideline-assessment-v2.json`.
@@ -45,6 +45,7 @@ def semantic_assessment_examples() -> dict[str, dict[str, Any]]:
         "board_id": "board-id",
         "subject_id": "spec-id",
         "expected_subject_version": 7,
+        "expected_subject_edition": 3,
         "binding_id": "binding-id",
         "expected_binding_revision": 2,
         "guideline_revision_id": "guideline-revision-id",

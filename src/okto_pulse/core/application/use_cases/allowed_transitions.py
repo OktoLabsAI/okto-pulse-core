@@ -14,6 +14,11 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    decide_authorization,
+    resolve_actor_permissions,
+)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
@@ -46,6 +51,9 @@ from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 ALLOWED_TRANSITIONS_SOURCE = "core_sdlc_registry_v1"
 ALLOWED_TRANSITIONS_DRIFT_METRIC = "allowed_transitions_contract_drift_total"
 POLICY_SUBJECT_REQUIRED = "policy_subject_required"
+POLICY_COMPLIANCE_REDACTED = "policy_compliance_redacted"
+POLICY_COMPLIANCE_PROJECTION_FULL = "full"
+POLICY_COMPLIANCE_PROJECTION_REDACTED = "redacted"
 
 
 @dataclass(frozen=True)
@@ -77,19 +85,6 @@ class AllowedTransitionPolicyComplianceDecision:
     binding_decisions: tuple[dict[str, Any], ...] = ()
 
     @classmethod
-    def subject_required(
-        cls,
-    ) -> "AllowedTransitionPolicyComplianceDecision":
-        """Represent an intentionally unscoped lifecycle-only projection."""
-
-        return cls(
-            state=POLICY_SUBJECT_REQUIRED,
-            allowed=None,
-            policy_compliance_required=True,
-            reason_codes=(POLICY_SUBJECT_REQUIRED,),
-        )
-
-    @classmethod
     def from_decision(
         cls,
         decision: PolicyTransitionDecision,
@@ -107,9 +102,7 @@ class AllowedTransitionPolicyComplianceDecision:
             fence_digest=decision.fence_digest,
             receipt_ids=decision.receipt_ids,
             currentness=(
-                decision.currentness.value
-                if decision.currentness is not None
-                else None
+                decision.currentness.value if decision.currentness is not None else None
             ),
             currentness_reasons=tuple(
                 reason.value for reason in decision.currentness_reasons
@@ -123,9 +116,7 @@ class AllowedTransitionPolicyComplianceDecision:
             waived_metric_count=decision.waived_metric_count,
             advisory_issue_count=decision.advisory_issue_count,
             skipped_binding_count=decision.skipped_binding_count,
-            diagnostic_codes=tuple(
-                item.value for item in decision.diagnostic_codes
-            ),
+            diagnostic_codes=tuple(item.value for item in decision.diagnostic_codes),
             binding_decisions=tuple(
                 item.to_payload() for item in decision.binding_decisions
             ),
@@ -133,6 +124,7 @@ class AllowedTransitionPolicyComplianceDecision:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "projection": POLICY_COMPLIANCE_PROJECTION_FULL,
             "state": self.state,
             "allowed": self.allowed,
             "policy_compliance_required": self.policy_compliance_required,
@@ -143,9 +135,7 @@ class AllowedTransitionPolicyComplianceDecision:
             "currentness": self.currentness,
             "currentness_reasons": list(self.currentness_reasons),
             "applicable_metric_count": self.applicable_metric_count,
-            "applicable_blocking_metric_count": (
-                self.applicable_blocking_metric_count
-            ),
+            "applicable_blocking_metric_count": (self.applicable_blocking_metric_count),
             "failed_metric_count": self.failed_metric_count,
             "blocking_metric_count": self.blocking_metric_count,
             "waived_metric_count": self.waived_metric_count,
@@ -153,6 +143,46 @@ class AllowedTransitionPolicyComplianceDecision:
             "skipped_binding_count": self.skipped_binding_count,
             "diagnostic_codes": list(self.diagnostic_codes),
             "binding_decisions": list(self.binding_decisions),
+        }
+
+
+@dataclass(frozen=True)
+class AllowedTransitionPolicyComplianceRedactedDecision:
+    """Coarse admission only; never carries policy evidence or diagnostics."""
+
+    state: str
+    allowed: bool | None
+    policy_compliance_required: bool
+
+    @classmethod
+    def subject_required(
+        cls,
+    ) -> "AllowedTransitionPolicyComplianceRedactedDecision":
+        return cls(
+            state=POLICY_SUBJECT_REQUIRED,
+            allowed=None,
+            policy_compliance_required=True,
+        )
+
+    @classmethod
+    def from_decision(
+        cls,
+        decision: PolicyTransitionDecision,
+    ) -> "AllowedTransitionPolicyComplianceRedactedDecision":
+        if not isinstance(decision, PolicyTransitionDecision):
+            raise TypeError("policy_transition_decision_invalid")
+        return cls(
+            state=POLICY_COMPLIANCE_REDACTED,
+            allowed=decision.allowed,
+            policy_compliance_required=decision.policy_compliance_required,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "projection": POLICY_COMPLIANCE_PROJECTION_REDACTED,
+            "state": self.state,
+            "allowed": self.allowed,
+            "policy_compliance_required": self.policy_compliance_required,
         }
 
 
@@ -168,7 +198,9 @@ class AllowedTransition:
     reason_codes: tuple[str, ...] = ()
     policy_compliance: bool = False
     policy_compliance_decision: (
-        AllowedTransitionPolicyComplianceDecision | None
+        AllowedTransitionPolicyComplianceDecision
+        | AllowedTransitionPolicyComplianceRedactedDecision
+        | None
     ) = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -205,7 +237,9 @@ class AllowedTransitionsReadModel:
             "entity_type": self.entity_type,
             "entity_id": self.entity_id,
             "current_status": self.current_status,
-            "allowed_transitions": [item.to_dict() for item in self.allowed_transitions],
+            "allowed_transitions": [
+                item.to_dict() for item in self.allowed_transitions
+            ],
             "source": self.source,
         }
 
@@ -373,7 +407,9 @@ def calculate_allowed_transition_drift(
         if entity_type in expected:
             continue
         for from_status, to_statuses in status_edges.items():
-            extra.extend((entity_type, from_status, to_status) for to_status in to_statuses)
+            extra.extend(
+                (entity_type, from_status, to_status) for to_status in to_statuses
+            )
     return AllowedTransitionDriftReport(
         metric_name=ALLOWED_TRANSITIONS_DRIFT_METRIC,
         drift_total=len(missing) + len(extra),
@@ -412,7 +448,9 @@ class ListAllowedTransitionsUseCase:
             current_status = str(entity.status.value)
             if entity_type == "card":
                 raw_card_type = getattr(entity, "card_type", None)
-                card_type = str(getattr(raw_card_type, "value", raw_card_type or "normal"))
+                card_type = str(
+                    getattr(raw_card_type, "value", raw_card_type or "normal")
+                )
         else:
             if not command.current_status:
                 raise CommandValidationError(
@@ -425,12 +463,23 @@ class ListAllowedTransitionsUseCase:
             entity_type, current_status, card_type=card_type
         )
         if entity_id:
+            permissions = await resolve_actor_permissions(
+                actor,
+                uow,
+                command.board_id,
+            )
+            can_read_policy_details = decide_authorization(
+                actor,
+                PermissionRequirement("guidelines.assessments.read"),
+                permissions,
+            ).allowed
             transitions = [
                 await self._preview_entity_transition(
                     uow.services,
                     entity_type,
                     entity,
                     transition,
+                    include_policy_details=can_read_policy_details,
                 )
                 for transition in transitions
             ]
@@ -444,7 +493,7 @@ class ListAllowedTransitionsUseCase:
                             "to evaluate Policy Compliance."
                         ),
                         policy_compliance_decision=(
-                            AllowedTransitionPolicyComplianceDecision.subject_required()
+                            AllowedTransitionPolicyComplianceRedactedDecision.subject_required()
                         ),
                     )
                     if transition.policy_compliance
@@ -523,12 +572,9 @@ class ListAllowedTransitionsUseCase:
                     phase="ideation_done",
                 )
             elif entity_type == "refinement":
-                if (
-                    transition.to_status == "review"
-                    and not any(
-                        isinstance(item, str) and item.strip()
-                        for item in (getattr(entity, "in_scope", None) or [])
-                    )
+                if transition.to_status == "review" and not any(
+                    isinstance(item, str) and item.strip()
+                    for item in (getattr(entity, "in_scope", None) or [])
                 ):
                     return (
                         "refinement_scope_required: add at least one non-empty "
@@ -591,10 +637,7 @@ class ListAllowedTransitionsUseCase:
         )
 
         spec = await services.specs.get_spec(scenario.spec_id)
-        if (
-            spec is None
-            or getattr(spec, "board_id", None) != scenario.board_id
-        ):
+        if spec is None or getattr(spec, "board_id", None) != scenario.board_id:
             return (
                 "test_scenario_parent_spec_not_found: refresh the scenario "
                 "subject before changing status."
@@ -616,6 +659,8 @@ class ListAllowedTransitionsUseCase:
         entity_type: str,
         entity: Any,
         transition: AllowedTransition,
+        *,
+        include_policy_details: bool = True,
     ) -> AllowedTransition:
         """Aggregate existing gates with the canonical Policy preview."""
 
@@ -636,16 +681,20 @@ class ListAllowedTransitionsUseCase:
             to_status=transition.to_status,
         )
         if decision is None:
-            raise RuntimeError(
-                "policy_transition_preview_missing_for_gated_edge"
+            raise RuntimeError("policy_transition_preview_missing_for_gated_edge")
+        projected = (
+            AllowedTransitionPolicyComplianceDecision.from_decision(decision)
+            if include_policy_details
+            else AllowedTransitionPolicyComplianceRedactedDecision.from_decision(
+                decision
             )
-        projected = AllowedTransitionPolicyComplianceDecision.from_decision(
-            decision
         )
         if not decision.allowed:
             policy_reason = (
                 f"{decision.reason_code.value}: Policy Compliance blocks "
                 "this transition."
+                if include_policy_details
+                else "Policy Compliance blocks this transition."
             )
             blocked_reason = (
                 f"{blocked_reason}; {policy_reason}"
@@ -687,9 +736,8 @@ class ListAllowedTransitionsUseCase:
                 return self._exception_reason(exc)
 
         if target_status == "validated":
-            if (
-                spec.status == SpecStatus.APPROVED
-                and board_settings.get("require_spec_validation", True)
+            if spec.status == SpecStatus.APPROVED and board_settings.get(
+                "require_spec_validation", True
             ):
                 return (
                     "spec_validation_required: submit the Spec Validation Gate; "
@@ -703,10 +751,7 @@ class ListAllowedTransitionsUseCase:
                 persistence=services.checklists,
             )
             if not checklist_gate.allowed:
-                return (
-                    "spec_checklist_gate_required: "
-                    f"{checklist_gate.reason}"
-                )
+                return f"spec_checklist_gate_required: {checklist_gate.reason}"
             try:
                 await services.resource_gate.validate_or_raise_spec_architecture_validation_resource(
                     spec.board_id,
@@ -719,9 +764,7 @@ class ListAllowedTransitionsUseCase:
 
         if target_status == "in_progress":
             auto_validate = bool(board_settings.get("auto_validate", False))
-            skip_qualitative = bool(
-                getattr(spec, "skip_qualitative_validation", False)
-            )
+            skip_qualitative = bool(getattr(spec, "skip_qualitative_validation", False))
             if not auto_validate and not skip_qualitative:
                 evaluations = [
                     item
@@ -748,13 +791,12 @@ class ListAllowedTransitionsUseCase:
                         "spec_evaluation_required: submit at least one approving "
                         "Spec Evaluation before starting the spec."
                     )
-                threshold = (
-                    getattr(spec, "validation_threshold", None)
-                    or board_settings.get("validation_threshold_global", 70)
+                threshold = getattr(
+                    spec, "validation_threshold", None
+                ) or board_settings.get("validation_threshold_global", 70)
+                average = sum(item.get("overall_score", 0) for item in approvals) / len(
+                    approvals
                 )
-                average = sum(
-                    item.get("overall_score", 0) for item in approvals
-                ) / len(approvals)
                 if average < threshold:
                     return (
                         "spec_evaluation_below_threshold: average approval "
@@ -762,13 +804,8 @@ class ListAllowedTransitionsUseCase:
                     )
 
         if target_status == "done":
-            skip_global = bool(
-                board_settings.get("skip_test_coverage_global", False)
-            )
-            if (
-                not bool(getattr(spec, "skip_test_coverage", False))
-                and not skip_global
-            ):
+            skip_global = bool(board_settings.get("skip_test_coverage_global", False))
+            if not bool(getattr(spec, "skip_test_coverage", False)) and not skip_global:
                 from okto_pulse.core.services.main import (
                     _structured_ref_text,
                     resolve_linked_criteria_to_indices,
@@ -858,9 +895,7 @@ class ListAllowedTransitionsUseCase:
         sprint: Any,
         target_status: str,
     ) -> str | None:
-        list_assigned_cards = getattr(
-            services.sprints, "list_assigned_cards", None
-        )
+        list_assigned_cards = getattr(services.sprints, "list_assigned_cards", None)
         if callable(list_assigned_cards):
             cards = list(await list_assigned_cards(sprint.id))
         else:
@@ -876,9 +911,7 @@ class ListAllowedTransitionsUseCase:
             if not cards:
                 return "sprint_empty: assign at least one card before activation."
             if getattr(sprint, "lane_type", None) == SprintLaneType.HOTFIX:
-                bug_ids = {
-                    card.id for card in cards if card.card_type == CardType.BUG
-                }
+                bug_ids = {card.id for card in cards if card.card_type == CardType.BUG}
                 test_ids = {
                     card.id for card in cards if card.card_type == CardType.TEST
                 }
@@ -891,9 +924,7 @@ class ListAllowedTransitionsUseCase:
                     ),
                     None,
                 )
-                linked = set(
-                    getattr(origin_bug, "linked_test_task_ids", None) or []
-                )
+                linked = set(getattr(origin_bug, "linked_test_task_ids", None) or [])
                 if (
                     not sprint.origin_bug_id
                     or sprint.origin_bug_id not in bug_ids
@@ -956,12 +987,8 @@ class ListAllowedTransitionsUseCase:
                     completion_blockers,
                 )
 
-                settings = (
-                    (getattr(board, "settings", None) or {}) if board else {}
-                )
-                skip_evidence = bool(
-                    settings.get("skip_test_evidence_global", False)
-                )
+                settings = (getattr(board, "settings", None) or {}) if board else {}
+                skip_evidence = bool(settings.get("skip_test_evidence_global", False))
                 scope = SprintScopeResolver.resolve(
                     sprint=sprint,
                     spec=spec,
@@ -990,9 +1017,7 @@ class ListAllowedTransitionsUseCase:
                     ),
                 )
                 if scope_blockers:
-                    codes = ", ".join(
-                        blocker.code for blocker in scope_blockers[:5]
-                    )
+                    codes = ", ".join(blocker.code for blocker in scope_blockers[:5])
                     return (
                         "sprint_scope_gate_blocked: resolve scoped coverage, "
                         f"evidence, and rules blockers ({codes})."
@@ -1003,10 +1028,7 @@ class ListAllowedTransitionsUseCase:
                     for item in (getattr(sprint, "evaluations", None) or [])
                     if not item.get("stale")
                 ]
-                if any(
-                    item.get("recommendation") == "reject"
-                    for item in evaluations
-                ):
+                if any(item.get("recommendation") == "reject" for item in evaluations):
                     return (
                         "sprint_evaluation_rejected: replace the rejecting "
                         "evaluation before closing."
@@ -1021,20 +1043,17 @@ class ListAllowedTransitionsUseCase:
                         "sprint_evaluation_required: submit an approving sprint "
                         "evaluation before closing."
                     )
-                threshold = (
-                    getattr(sprint, "validation_threshold", None)
-                    or (
-                        (getattr(board, "settings", None) or {}).get(
-                            "validation_threshold_global",
-                            70,
-                        )
-                        if board
-                        else 70
+                threshold = getattr(sprint, "validation_threshold", None) or (
+                    (getattr(board, "settings", None) or {}).get(
+                        "validation_threshold_global",
+                        70,
                     )
+                    if board
+                    else 70
                 )
-                average = sum(
-                    item.get("overall_score", 0) for item in approvals
-                ) / len(approvals)
+                average = sum(item.get("overall_score", 0) for item in approvals) / len(
+                    approvals
+                )
                 if average < threshold:
                     return (
                         "sprint_evaluation_below_threshold: average approval "
@@ -1100,9 +1119,7 @@ class ListAllowedTransitionsUseCase:
             if getattr(card, "spec_id", None)
             else []
         )
-        amendment_facts = [
-            AmendmentLineageFact.from_row(row) for row in amendment_rows
-        ]
+        amendment_facts = [AmendmentLineageFact.from_row(row) for row in amendment_rows]
         effective_test_ids = list(
             getattr(card, "linked_test_task_ids", None) or []
         ) or _amendment_regression_test_task_ids(amendment_rows)
@@ -1122,9 +1139,7 @@ class ListAllowedTransitionsUseCase:
                 if spec is not None and origin_task is not None
                 else None
             )
-            eligible_count = (
-                len(eligibility.eligible_scenarios) if eligibility else 0
-            )
+            eligible_count = len(eligibility.eligible_scenarios) if eligibility else 0
             if eligible_count == 0:
                 return (
                     True,
@@ -1164,9 +1179,7 @@ class ListAllowedTransitionsUseCase:
                     f"regression_test_type_invalid: linked card '{test_id}' "
                     "is not a test card.",
                 )
-            scenario_ids = list(
-                getattr(test_card, "test_scenario_ids", None) or []
-            )
+            scenario_ids = list(getattr(test_card, "test_scenario_ids", None) or [])
             if not scenario_ids:
                 return (
                     True,
@@ -1174,8 +1187,7 @@ class ListAllowedTransitionsUseCase:
                     "has no test scenarios.",
                 )
             if (
-                getattr(test_card, "spec_id", None)
-                != getattr(card, "spec_id", None)
+                getattr(test_card, "spec_id", None) != getattr(card, "spec_id", None)
                 and not amendment_facts
             ):
                 return (
@@ -1191,8 +1203,7 @@ class ListAllowedTransitionsUseCase:
             ):
                 return (
                     True,
-                    f"regression_test_stale: linked test '{test_id}' predates "
-                    "the bug.",
+                    f"regression_test_stale: linked test '{test_id}' predates the bug.",
                 )
             validated_tests.append(test_card)
             candidate_scenario_ids.extend(str(item) for item in scenario_ids)
@@ -1299,8 +1310,7 @@ class ListAllowedTransitionsUseCase:
             )
 
             scenario_ids = [
-                str(value)
-                for value in (getattr(card, "test_scenario_ids", None) or [])
+                str(value) for value in (getattr(card, "test_scenario_ids", None) or [])
             ]
             if not scenario_ids:
                 pending_scenarios.append(
@@ -1364,14 +1374,15 @@ class ListAllowedTransitionsUseCase:
                 board_settings,
             )
             validation_required = bool(config["required"])
-        bug_gate_applies_now, bug_blocked_reason = (
-            await self._bug_regression_blocked_reason(
-                services,
-                card,
-                target,
-                board_settings=board_settings,
-                spec=spec,
-            )
+        (
+            bug_gate_applies_now,
+            bug_blocked_reason,
+        ) = await self._bug_regression_blocked_reason(
+            services,
+            card,
+            target,
+            board_settings=board_settings,
+            spec=spec,
         )
         if bug_blocked_reason is not None:
             return bug_blocked_reason
@@ -1389,9 +1400,7 @@ class ListAllowedTransitionsUseCase:
             sprint_exists=sprint is not None if card.sprint_id else True,
             sprint_status=getattr(sprint, "status", None),
             sprint_title=getattr(sprint, "title", None),
-            sprint_is_hotfix=bool(
-                sprint and sprint.lane_type == SprintLaneType.HOTFIX
-            ),
+            sprint_is_hotfix=bool(sprint and sprint.lane_type == SprintLaneType.HOTFIX),
             hotfix_count=sum(
                 1 for item in sprints if item.lane_type == SprintLaneType.HOTFIX
             ),
@@ -1413,12 +1422,8 @@ class ListAllowedTransitionsUseCase:
         )
         decision = evaluate_card_transition(facts)
         if not decision.allowed and decision.block:
-            if (
-                decision.block.code == "test_scenarios_pending"
-                and any(
-                    scenario.status == "missing"
-                    for scenario in pending_scenarios
-                )
+            if decision.block.code == "test_scenarios_pending" and any(
+                scenario.status == "missing" for scenario in pending_scenarios
             ):
                 missing_ids = [
                     scenario.scenario_id
@@ -1438,9 +1443,10 @@ class ListAllowedTransitionsUseCase:
         old_level = services.cards._STATUS_ORDER.get(old_status, 0)
         new_level = services.cards._STATUS_ORDER.get(target, 0)
         if new_level > old_level and target != CardStatus.CANCELLED:
-            if card_type == CardType.NORMAL and old_level < services.cards._STATUS_ORDER[
-                CardStatus.IN_PROGRESS
-            ]:
+            if (
+                card_type == CardType.NORMAL
+                and old_level < services.cards._STATUS_ORDER[CardStatus.IN_PROGRESS]
+            ):
                 try:
                     await services.cards.check_card_requirement_link_gate(
                         card, spec, board

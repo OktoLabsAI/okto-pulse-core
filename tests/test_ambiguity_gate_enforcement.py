@@ -92,6 +92,7 @@ async def _seed(
             status=status,
             scope_assessment=scope,
             skip_ambiguity_gate=skip,
+            skip_ambiguity_gate_edition=1 if skip else None,
         )
     )
     await db.flush()
@@ -146,6 +147,7 @@ def _receipt_for(
         subject_type=subject_type,
         subject_id=subject.id,
         subject_version=subject.version,
+        subject_edition=subject.edition,
     )
     return AssessmentReceipt(
         id=_id("receipt"),
@@ -536,7 +538,86 @@ async def test_refinement_done_runs_ambiguity_resource_cognitive_in_order(
 
         assert moved is not None
         assert moved.status is RefinementStatus.DONE
-        assert calls == ["ambiguity", "resource", "cognitive"]
+    assert calls == ["ambiguity", "resource", "cognitive", "ambiguity"]
+
+
+@pytest.mark.asyncio
+async def test_refinement_done_rechecks_ambiguity_after_lifecycle_fence(
+    db_factory,
+    monkeypatch,
+):
+    """A concurrent PASS -> FAIL head replacement cannot be promoted."""
+
+    calls: list[str] = []
+    async with db_factory() as db:
+        _, refinement_id = await _seed_refinement(db)
+        refinement = await db.get(Refinement, refinement_id)
+        assert refinement is not None
+        receipts = [
+            _receipt_for(
+                refinement,
+                subject_type=AssessmentSubjectType.REFINEMENT,
+                threshold=3,
+                score=2,
+            ),
+            _receipt_for(
+                refinement,
+                subject_type=AssessmentSubjectType.REFINEMENT,
+                threshold=3,
+                score=5,
+            ),
+        ]
+
+        class _ReplacingPersistence(_ReceiptPersistence):
+            async def get_current(self, **_kwargs):
+                calls.append("ambiguity")
+                receipt = receipts[min(len(calls) - 1, 1)]
+                return (
+                    receipt,
+                    AssessmentSubjectHead(
+                        board_id=receipt.subject.board_id,
+                        subject_type=receipt.subject.subject_type,
+                        subject_id=receipt.subject.subject_id,
+                        assessment_kind=receipt.assessment_kind,
+                        receipt_id=receipt.id,
+                        revision=len(calls),
+                        updated_at=NOW,
+                    ),
+                )
+
+        service = RefinementService(db)
+        service._ambiguity_gate_service_factory = (  # type: ignore[attr-defined]
+            lambda _db: AmbiguityGateService(_ReplacingPersistence(receipts[0]))  # type: ignore[arg-type]
+        )
+
+        async def allow_resource(*_args, **_kwargs):
+            calls.append("resource")
+
+        async def allow_cognitive(*_args, **_kwargs):
+            calls.append("cognitive")
+
+        monkeypatch.setattr(
+            ResourceGateService,
+            "validate_or_raise_entity_completion",
+            allow_resource,
+        )
+        service._validate_cognitive_done = allow_cognitive  # type: ignore[method-assign]
+
+        with pytest.raises(AmbiguityGateError) as raised:
+            await service.move_refinement(
+                refinement_id,
+                ACTOR,
+                RefinementMove(status=RefinementStatus.DONE),
+            )
+
+        assert (
+            raised.value.code
+            == AmbiguityGateReason.SCORE_EXCEEDS_THRESHOLD.value
+        )
+        assert calls == ["ambiguity", "resource", "cognitive", "ambiguity"]
+        unchanged = await db.get(Refinement, refinement_id)
+        assert unchanged is not None
+        assert unchanged.status is RefinementStatus.APPROVED
 
 
 @pytest.mark.asyncio

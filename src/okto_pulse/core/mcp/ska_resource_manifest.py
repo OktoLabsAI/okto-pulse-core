@@ -81,7 +81,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "# Semantic guideline protocol",
             "## Revision and adoption",
             "## Recording an assessment",
-            "## Gate and currentness",
+            "## Gate and lifecycle edition",
             "## Lists, pagination and errors",
             "## Capabilities and KG",
         ),
@@ -110,11 +110,11 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://reference/quality-assessments",
         required_headings=(
-            "# Quality assessments, pinpointing, and currentness",
+            "# Quality assessments, pinpointing, and lifecycle results",
             "## Subject and assessment matrix",
             "## Mandatory pre-flight for a write",
             "## Pinpoint findings and questions",
-            "## Currentness is computed, not inferred from head",
+            "## Lifecycle state and technical audit",
             "## Reads, projections, and pagination",
             "## Gate behavior and error parity",
             "## Related resources",
@@ -151,6 +151,8 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         uri="okto-pulse://reference/tool-docs/quality",
         required_headings=(
             "## `okto_pulse_record_ambiguity_assessment`",
+            "## `okto_pulse_record_requirement_lint`",
+            "## `okto_pulse_get_requirement_lint_preflight`",
             "## `okto_pulse_get_current_quality_assessment`",
             "## `okto_pulse_get_quality_assessment_receipt`",
             "## `okto_pulse_list_quality_assessments`",
@@ -227,7 +229,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://workflows/ideations",
         required_headings=(
-            "## 2.1a Receipt-Backed Ambiguity and Pinpointing",
+            "## 2.1a Lifecycle Ambiguity Results and Pinpointing",
         ),
         required_cross_links=(
             "okto-pulse://reference/tool-docs/quality",
@@ -258,7 +260,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://workflows/refinements",
         required_headings=(
-            "## Receipt-Backed Ambiguity and Pinpointing",
+            "## Lifecycle Ambiguity Results and Pinpointing",
             "## Operational Research Decision Ledger",
         ),
         required_cross_links=(

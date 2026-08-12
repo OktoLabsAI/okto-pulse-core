@@ -11,6 +11,7 @@ from okto_pulse.core.application.use_cases.base import EntityNotFoundError
 from okto_pulse.core.application.use_cases.policy_governance import (
     ASSESSMENTS_RECORD,
     ASSESSMENTS_READ,
+    require_policy_assessment_lifecycle,
     require_policy_governance_capabilities,
 )
 from okto_pulse.core.application.use_cases.semantic_guideline_governance import (
@@ -161,6 +162,8 @@ def semantic_assessment_v2_write_projection(
         "request_digest": result.persistence.request_digest,
         "receipt_digest": receipt.receipt_digest,
         "currentness": "current",
+        "validation_edition": receipt.subject.subject_edition,
+        "lifecycle_state": "current",
         "metrics": _metric_projection_v2(receipt),
     }
 
@@ -178,6 +181,8 @@ def semantic_assessment_v2_current_projection(
         "subject_type": receipt.subject.entity_type.value,
         "subject_id": receipt.subject.subject_id,
         "subject_version": receipt.subject.subject_version,
+        "validation_edition": receipt.subject.subject_edition,
+        "lifecycle_state": "current",
         "binding_id": receipt.binding_id,
         "guideline_id": receipt.guideline_id,
         "guideline_revision_id": receipt.guideline_revision_id,
@@ -205,11 +210,21 @@ class GetCurrentSemanticGuidelineAssessmentAnyUseCase:
         reader = uow.semantic_assessment_v2_reader
         if not isinstance(reader, SemanticAssessmentV2ReadPort):
             raise TypeError("semantic_assessment_v2_reader_missing")
+        semantic_port = uow.services.guidelines.semantic_policy_persistence()
+        subject = await semantic_port.resolve_policy_subject_snapshot(
+            board_id=command.board_id,
+            entity_type=command.entity_type,
+            subject_id=command.subject_id,
+            lock=False,
+        )
+        if subject is None:
+            raise EntityNotFoundError("policy_subject", command.subject_id)
         v2 = await reader.get_current_semantic_assessment_v2(
             board_id=command.board_id,
             entity_type=command.entity_type.value,
             subject_id=command.subject_id,
             binding_id=command.binding_id,
+            subject_edition=subject.subject.subject_edition,
         )
         try:
             v1_result = await GetCurrentSemanticGuidelineAssessmentUseCase().execute(
@@ -289,6 +304,10 @@ class SealSemanticGuidelineAssessmentV2UseCase:
                 raise SemanticSubjectProjectionError(
                     SemanticSubjectProjectionFailure.FORBIDDEN
                 )
+            await require_policy_assessment_lifecycle(
+                uow,
+                subject=command.draft.subject,
+            )
             subject_projection = uow.semantic_subject_projection
             persistence = uow.semantic_assessment_v2
             capability = uow.semantic_assessment_v2_capability

@@ -157,6 +157,14 @@ class GuidelinePolicyVersionConflict(GuidelinePolicyPersistenceError):
     code = "guideline_policy_version_conflict"
 
 
+class GuidelinePolicyEditionConflict(GuidelinePolicyPersistenceError):
+    code = "guideline_policy_edition_conflict"
+
+
+class GuidelinePolicyLifecycleConflict(GuidelinePolicyPersistenceError):
+    code = "guideline_policy_lifecycle_conflict"
+
+
 class GuidelinePolicyDigestConflict(GuidelinePolicyPersistenceError):
     code = "guideline_policy_digest_conflict"
 
@@ -377,6 +385,18 @@ def _limit(value: object) -> int:
     return value
 
 
+def _optional_subject_edition(value: object, code: str) -> int | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 1 <= value <= POLICY_SQL_INTEGER_MAX
+    ):
+        raise ValueError(code)
+    return value
+
+
 def _revision_cursor(
     value: object,
 ) -> GuidelineRevisionPageCursor | None:
@@ -543,6 +563,7 @@ class PolicyComplianceReceiptListQuery:
     cursor: PolicyReceiptPageCursor | None = None
     entity_type: PolicyEntityType | None = None
     subject_id: str | None = None
+    subject_edition: int | None = None
     outcome: PolicyEvaluationOutcome | None = None
     currentness: PolicyCurrentness | None = None
     projection: PolicyProjection = PolicyProjection.SUMMARY
@@ -579,6 +600,12 @@ class PolicyComplianceReceiptListQuery:
             PolicyEvaluationOutcome,
         ):
             raise ValueError("policy_receipt_outcome_invalid")
+        if self.subject_edition is not None and (
+            not isinstance(self.subject_edition, int)
+            or isinstance(self.subject_edition, bool)
+            or not 1 <= self.subject_edition <= POLICY_SQL_INTEGER_MAX
+        ):
+            raise ValueError("policy_receipt_subject_edition_invalid")
         if self.currentness is not None and not isinstance(
             self.currentness,
             PolicyCurrentness,
@@ -595,6 +622,7 @@ class PolicyComplianceReceiptListQuery:
                     self.entity_type.value if self.entity_type is not None else None
                 ),
                 "subject_id": self.subject_id,
+                "subject_edition": self.subject_edition,
                 "outcome": (self.outcome.value if self.outcome is not None else None),
                 "currentness": (
                     self.currentness.value if self.currentness is not None else None
@@ -718,6 +746,7 @@ class PolicyWaiverListQuery:
     entity_type: PolicyEntityType | None = None
     subject_id: str | None = None
     subject_version: int | None = None
+    subject_edition: int | None = None
     status: PolicyWaiverStatus | None = None
     projection: PolicyProjection = PolicyProjection.SUMMARY
     filter_digest: str = field(init=False)
@@ -775,6 +804,12 @@ class PolicyWaiverListQuery:
             or not 1 <= self.subject_version <= POLICY_SQL_INTEGER_MAX
         ):
             raise ValueError("policy_waiver_subject_version_invalid")
+        if self.subject_edition is not None and (
+            not isinstance(self.subject_edition, int)
+            or isinstance(self.subject_edition, bool)
+            or not 1 <= self.subject_edition <= POLICY_SQL_INTEGER_MAX
+        ):
+            raise ValueError("policy_waiver_subject_edition_invalid")
         if self.status is not None and not isinstance(
             self.status,
             PolicyWaiverStatus,
@@ -800,6 +835,7 @@ class PolicyWaiverListQuery:
                 ),
                 "subject_id": self.subject_id,
                 "subject_version": self.subject_version,
+                "subject_edition": self.subject_edition,
                 "status": (self.status.value if self.status is not None else None),
             }
         )
@@ -861,6 +897,7 @@ class SemanticAssessmentListQuery:
     cursor: SemanticAssessmentPageCursor | None = None
     entity_type: PolicyEntityType | None = None
     subject_id: str | None = None
+    subject_edition: int | None = None
     guideline_id: str | None = None
     binding_id: str | None = None
     outcome: SemanticAssessmentState | None = None
@@ -911,6 +948,14 @@ class SemanticAssessmentListQuery:
             ),
         )
         object.__setattr__(self, "limit", _limit(self.limit))
+        object.__setattr__(
+            self,
+            "subject_edition",
+            _optional_subject_edition(
+                self.subject_edition,
+                "semantic_assessment_subject_edition_invalid",
+            ),
+        )
         if self.entity_type is not None and not isinstance(
             self.entity_type,
             PolicyEntityType,
@@ -941,6 +986,7 @@ class SemanticAssessmentListQuery:
                     else None
                 ),
                 "subject_id": self.subject_id,
+                "subject_edition": self.subject_edition,
                 "guideline_id": self.guideline_id,
                 "binding_id": self.binding_id,
                 "outcome": (
@@ -974,6 +1020,7 @@ class SemanticFindingListQuery:
     cursor: SemanticFindingPageCursor | None = None
     entity_type: PolicyEntityType | None = None
     subject_id: str | None = None
+    subject_edition: int | None = None
     receipt_id: str | None = None
     guideline_id: str | None = None
     binding_id: str | None = None
@@ -1014,6 +1061,14 @@ class SemanticFindingListQuery:
                 ),
             )
         object.__setattr__(self, "limit", _limit(self.limit))
+        object.__setattr__(
+            self,
+            "subject_edition",
+            _optional_subject_edition(
+                self.subject_edition,
+                "semantic_finding_subject_edition_invalid",
+            ),
+        )
         if self.entity_type is not None and not isinstance(
             self.entity_type,
             PolicyEntityType,
@@ -1039,6 +1094,7 @@ class SemanticFindingListQuery:
                     else None
                 ),
                 "subject_id": self.subject_id,
+                "subject_edition": self.subject_edition,
                 "receipt_id": self.receipt_id,
                 "guideline_id": self.guideline_id,
                 "binding_id": self.binding_id,
@@ -1076,6 +1132,7 @@ class SemanticWaiverListQuery:
     metric_id: str | None = None
     entity_type: PolicyEntityType | None = None
     subject_id: str | None = None
+    subject_edition: int | None = None
     status: SemanticMetricWaiverStatus | None = None
     projection: SemanticGuidelineProjection = (
         SemanticGuidelineProjection.SUMMARY
@@ -1125,6 +1182,14 @@ class SemanticWaiverListQuery:
                 ),
             )
         object.__setattr__(self, "limit", _limit(self.limit))
+        object.__setattr__(
+            self,
+            "subject_edition",
+            _optional_subject_edition(
+                self.subject_edition,
+                "semantic_waiver_subject_edition_invalid",
+            ),
+        )
         if self.entity_type is not None and not isinstance(
             self.entity_type,
             PolicyEntityType,
@@ -1159,6 +1224,7 @@ class SemanticWaiverListQuery:
                     else None
                 ),
                 "subject_id": self.subject_id,
+                "subject_edition": self.subject_edition,
                 "status": (
                     self.status.value if self.status is not None else None
                 ),
@@ -1185,6 +1251,7 @@ class SemanticSkipListQuery:
     cursor: SemanticSkipPageCursor | None = None
     entity_type: PolicyEntityType | None = None
     subject_id: str | None = None
+    subject_edition: int | None = None
     binding_id: str | None = None
     status: SemanticPolicySkipStatus | None = None
     currentness: PolicyCurrentness | None = None
@@ -1220,6 +1287,14 @@ class SemanticSkipListQuery:
                 ),
             )
         object.__setattr__(self, "limit", _limit(self.limit))
+        object.__setattr__(
+            self,
+            "subject_edition",
+            _optional_subject_edition(
+                self.subject_edition,
+                "semantic_skip_subject_edition_invalid",
+            ),
+        )
         if self.entity_type is not None and not isinstance(
             self.entity_type,
             PolicyEntityType,
@@ -1250,6 +1325,7 @@ class SemanticSkipListQuery:
                     else None
                 ),
                 "subject_id": self.subject_id,
+                "subject_edition": self.subject_edition,
                 "binding_id": self.binding_id,
                 "status": (
                     self.status.value if self.status is not None else None
@@ -1294,7 +1370,12 @@ class PolicyTransitionSnapshotResolver(Protocol):
 
     Implementations used by mutation paths must apply their edition-specific
     board/subject locking before returning.  The core contract intentionally
-    does not prescribe a database lock primitive.
+    does not prescribe a database lock primitive. For an edition-aware subject,
+    the returned policy set and governance digests MUST come from the immutable
+    snapshot pinned to that subject edition. A later policy deployment applies
+    only after the subject returns to Draft and opens its next edition. Live
+    board policy resolution is compatibility-only for legacy subjects whose
+    edition is absent; it must never replace an already-pinned edition snapshot.
     """
 
     async def resolve_transition_snapshot(
@@ -1365,6 +1446,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         entity_type: PolicyEntityType,
         subject_id: str,
         binding_id: str,
+        subject_edition: int | None = None,
     ) -> SemanticGuidelineAssessmentReceipt | None: ...
 
     async def list_semantic_assessment_receipts(
@@ -1373,6 +1455,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         board_id: str,
         entity_type: PolicyEntityType | None = None,
         subject_id: str | None = None,
+        subject_edition: int | None = None,
         guideline_id: str | None = None,
         binding_id: str | None = None,
         outcome: SemanticAssessmentState | None = None,
@@ -1403,6 +1486,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         board_id: str,
         entity_type: PolicyEntityType | None = None,
         subject_id: str | None = None,
+        subject_edition: int | None = None,
         receipt_id: str | None = None,
         guideline_id: str | None = None,
         binding_id: str | None = None,
@@ -1461,6 +1545,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         metric_id: str | None = None,
         entity_type: PolicyEntityType | None = None,
         subject_id: str | None = None,
+        subject_edition: int | None = None,
         status: SemanticMetricWaiverStatus | None = None,
         after: tuple[datetime, str] | None = None,
         limit: int = 50,
@@ -1485,6 +1570,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         entity_type: PolicyEntityType,
         subject_id: str,
         subject_version: int,
+        subject_edition: int | None,
         subject_content_digest: str,
         binding_id: str,
         binding_revision: int,
@@ -1507,6 +1593,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         board_id: str,
         entity_type: PolicyEntityType | None = None,
         subject_id: str | None = None,
+        subject_edition: int | None = None,
         binding_id: str | None = None,
         status: SemanticPolicySkipStatus | None = None,
         after: tuple[datetime, str] | None = None,
@@ -1784,9 +1871,11 @@ __all__ = [
     "GuidelinePolicyCasConflict",
     "GuidelinePolicyCursorConflict",
     "GuidelinePolicyDigestConflict",
+    "GuidelinePolicyEditionConflict",
     "GuidelinePolicyHeadConflict",
     "GuidelinePolicyIdempotencyConflict",
     "GuidelinePolicyInvalidCursor",
+    "GuidelinePolicyLifecycleConflict",
     "GuidelinePolicyPersistenceError",
     "GuidelinePolicyPersistencePort",
     "GuidelinePolicyRevisionConflict",

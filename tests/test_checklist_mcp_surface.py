@@ -25,6 +25,13 @@ from okto_pulse.core.domain.checklist import (
     ChecklistReceiptSource,
 )
 from okto_pulse.core.mcp import server
+from okto_pulse.core.services.checklist import ChecklistConflictError
+from okto_pulse.core.services.ska_observability import (
+    METRIC_VALIDATION_EXTERNAL_COGNITION_UOW_DURATION_SECONDS,
+    reset_ska_metric_samples_for_tests,
+    ska_metric_samples,
+    validation_edition_conflict_events,
+)
 
 
 class _UowContext:
@@ -33,6 +40,21 @@ class _UowContext:
 
     async def __aexit__(self, exc_type, exc, traceback):
         del exc_type, exc, traceback
+
+
+class _RollbackUowContext:
+    def __init__(self, committed: list[str]) -> None:
+        self.committed = committed
+        self.staged: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        del exc, traceback
+        if exc_type is None:
+            self.committed.extend(self.staged)
+        self.staged.clear()
 
 
 def _ctx():
@@ -93,7 +115,7 @@ def test_legacy_unverified_receipt_never_projects_a_vacuous_pass() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("replayed", [False, True])
-async def test_mcp_start_returns_the_frozen_ordered_template_items(
+async def test_mcp_start_returns_only_the_human_acknowledgement(
     monkeypatch,
     replayed,
 ) -> None:
@@ -127,6 +149,7 @@ async def test_mcp_start_returns_the_frozen_ordered_template_items(
                 idempotency_key="start-1",
                 created_by="agent-1",
                 created_at=datetime(2026, 7, 27, tzinfo=timezone.utc),
+                spec_edition=3,
             ),
             replayed=replayed,
         )
@@ -141,31 +164,90 @@ async def test_mcp_start_returns_the_frozen_ordered_template_items(
         await server.okto_pulse_start_checklist_execution.fn(
             board_id="board-1",
             spec_id="spec-1",
-            binding_id="b" * 64,
+            spec_edition=3,
             expected_spec_version=4,
-            idempotency_key="start-1",
+            binding_version=2,
         )
     )
 
-    assert payload["outcome"] == "success"
-    data = payload["data"]
-    assert data["template_version_id"] == SPECIFY_CHECKLIST_TEMPLATE_V1.version
-    assert data["template_digest"] == SPECIFY_CHECKLIST_TEMPLATE_V1.digest
-    assert data["replayed"] is replayed
-    assert data["items"] == [
-        {
-            "item_id": item.item_id,
-            "title_en": item.title_en,
-            "title_pt": item.title_pt,
-            "description_en": item.description_en,
-            "description_pt": item.description_pt,
-            "allow_na": item.allow_na,
-        }
-        for item in SPECIFY_CHECKLIST_TEMPLATE_V1.items
-    ]
-    assert [item["item_id"] for item in data["items"]] == list(
-        SPECIFY_CHECKLIST_ITEM_IDS
+    assert payload == {
+        "outcome": "success",
+        "data": {
+            "execution_id": "execution-1",
+            "spec_edition": 3,
+            "status": "started",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_mcp_edition_conflict_emits_one_audit_and_rolls_back(
+    monkeypatch,
+) -> None:
+    reset_ska_metric_samples_for_tests()
+    committed: list[str] = []
+
+    async def agent_ctx(_board_id):
+        return _ctx()
+
+    monkeypatch.setattr(server, "_get_agent_ctx", agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *_args: None)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: (lambda **_kwargs: _RollbackUowContext(committed)),
     )
+
+    async def reject_old_edition(self, command, *, actor, uow):
+        del self, command, actor
+        uow.staged.append("execution-would-have-been-written")
+        raise ChecklistConflictError(
+            "checklist_spec_edition_conflict",
+            details={"expected": 3, "current": 4},
+        )
+
+    monkeypatch.setattr(
+        StartChecklistExecutionUseCase,
+        "execute",
+        reject_old_edition,
+    )
+
+    payload = json.loads(
+        await server.okto_pulse_start_checklist_execution.fn(
+            board_id="board-1",
+            spec_id="spec-1",
+            spec_edition=3,
+            expected_spec_version=4,
+            binding_version=2,
+        )
+    )
+
+    assert payload["error_code"] == "checklist_spec_edition_conflict"
+    assert committed == []
+    assert validation_edition_conflict_events() == (
+        {
+            "event": "validation.edition_conflict",
+            "operation": "curated_checklist",
+            "subject_type": "spec",
+            "subject_id": "spec-1",
+            "expected_edition": 3,
+            "actual_edition": 4,
+            "correlation_id": validation_edition_conflict_events()[0][
+                "correlation_id"
+            ],
+            "conflict_code": "checklist_spec_edition_conflict",
+        },
+    )
+    uow_samples = tuple(
+        item
+        for item in ska_metric_samples()
+        if item["metric_name"]
+        == METRIC_VALIDATION_EXTERNAL_COGNITION_UOW_DURATION_SECONDS
+    )
+    assert len(uow_samples) == 1
+    assert uow_samples[0]["assessment_kind"] == "curated_checklist"
+    assert uow_samples[0]["subject_type"] == "spec"
+    assert uow_samples[0]["outcome"] == "conflict"
 
 
 @pytest.mark.asyncio
@@ -176,7 +258,7 @@ async def test_live_registry_excludes_redundant_reads_and_closes_results_schema(
 
     results_schema = tools[
         "okto_pulse_submit_checklist_execution"
-    ].parameters["properties"]["results"]
+    ].parameters["properties"]["item_results"]
     item_schema = results_schema["$defs"]["_ChecklistItemResultInput"]
     assert item_schema["additionalProperties"] is False
     assert item_schema["properties"]["outcome"]["enum"] == [
@@ -210,6 +292,7 @@ async def test_mcp_submit_and_receipt_expose_failed_aggregate_outcome(
             receipt_id="receipt-1",
             request_digest="f" * 64,
             head_revision=3,
+            spec_edition=3,
         )
 
     async def receipt_execute(self, command, *, actor, uow):
@@ -250,10 +333,10 @@ async def test_mcp_submit_and_receipt_expose_failed_aggregate_outcome(
         await server.okto_pulse_submit_checklist_execution.fn(
             board_id="board-1",
             spec_id="spec-1",
+            spec_edition=3,
+            expected_spec_version=4,
             execution_id="execution-1",
-            expected_execution_revision=1,
-            idempotency_key="submit-1",
-            results=[
+            item_results=[
                 server._ChecklistItemResultInput(
                     item_id=item.item_id,
                     outcome=item.outcome.value,
@@ -264,8 +347,14 @@ async def test_mcp_submit_and_receipt_expose_failed_aggregate_outcome(
             ],
         )
     )
-    assert submit_payload["outcome"] == "success"
-    assert submit_payload["data"]["outcome"] == "fail"
+    assert submit_payload == {
+        "outcome": "success",
+        "data": {
+            "result_id": "receipt-1",
+            "spec_edition": 3,
+            "status": "failed",
+        },
+    }
 
     receipt_payload = json.loads(
         await server.okto_pulse_get_checklist_receipt.fn(

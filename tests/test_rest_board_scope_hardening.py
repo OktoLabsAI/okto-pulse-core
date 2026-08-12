@@ -125,9 +125,14 @@ class _Kg:
         self._events.append("queue-health")
         return {"queue_depth": 0}
 
-    async def queue_drilldown(self, board_id):
+    async def queue_drilldown(
+        self, board_id, *, include_code_traceability: bool = False
+    ):
         self._events.append(f"queue-drilldown:{board_id}")
-        return {"board_id": board_id}
+        return {
+            "board_id": board_id,
+            "include_code_traceability": include_code_traceability,
+        }
 
     async def list_dead_letter_rows(self, board_id, **kwargs):
         self._events.append(f"dead-letter:{board_id}")
@@ -539,7 +544,10 @@ async def test_queue_drilldown_owner_reaches_reader() -> None:
         uow=uow,
     )
 
-    assert result.data == {"board_id": "board-b"}
+    assert result.data == {
+        "board_id": "board-b",
+        "include_code_traceability": False,
+    }
     assert uow.events == ["board:board-b", "queue-drilldown:board-b"]
 
 
@@ -596,7 +604,10 @@ async def test_global_queue_authorized_actor_reaches_readers(actor) -> None:
     )
 
     assert health.data == {"queue_depth": 0}
-    assert drilldown.data == {"board_id": None}
+    assert drilldown.data == {
+        "board_id": None,
+        "include_code_traceability": False,
+    }
     assert uow.events == ["queue-health", "queue-drilldown:None"]
 
 
@@ -628,5 +639,11 @@ async def test_dead_letter_owner_reaches_reader() -> None:
         uow=uow,
     )
 
-    assert result.data == {"rows": [], "total": 0, "limit": 20, "offset": 0}
+    assert result.data == {
+        "rows": [],
+        "total": 0,
+        "limit": 20,
+        "offset": 0,
+        "include_code_traceability": False,
+    }
     assert uow.events == ["board:board-b", "dead-letter:board-b"]

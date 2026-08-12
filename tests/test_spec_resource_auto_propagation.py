@@ -27,6 +27,7 @@ from okto_pulse.core.models.schemas import (
     SpecCreate,
     SpecKnowledgeCreate,
     SpecKnowledgeUpdate,
+    SpecMove,
     SpecUpdate,
 )
 from okto_pulse.core.ports.knowledge_propagation import (
@@ -437,6 +438,12 @@ async def test_spec_resource_changes_backfill_existing_linked_cards(db_factory):
         assert card.knowledge_bases in (None, [])
         assert card.screen_mockups in (None, [])
 
+        await SpecService(db).move_spec(
+            spec_id,
+            actor_id,
+            SpecMove(status=SpecStatus.DRAFT),
+        )
+
         await SpecKnowledgeService(db).create_knowledge(
             spec_id,
             actor_id,
@@ -507,6 +514,12 @@ async def test_governance_metadata_refreshes_once_without_changing_card_identity
             CardCreate(title="Governed target", spec_id=spec_id),
         )
         assert card is not None
+
+        await SpecService(db).move_spec(
+            spec_id,
+            actor_id,
+            SpecMove(status=SpecStatus.DRAFT),
+        )
 
         service = SpecKnowledgeService(db)
         kb = await service.create_knowledge(
@@ -665,7 +678,7 @@ async def _seed_board_spec_card(db, *, resource_types: tuple[str, ...]) -> dict[
             id=spec_id,
             board_id=board_id,
             title="Service layer spec",
-            status=SpecStatus.APPROVED,
+            status=SpecStatus.DRAFT,
             created_by=actor_id,
             functional_requirements=["FR"],
             acceptance_criteria=["AC"],

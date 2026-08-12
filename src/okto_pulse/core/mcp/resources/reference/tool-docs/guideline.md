@@ -298,6 +298,8 @@ Args:
     entity_type: Closed governed entity type.
     subject_id: Exact entity identity.
     expected_subject_version: Exact current entity version fence.
+    expected_subject_edition: Required exact validation-edition fence for
+        Ideation, Refinement, and Spec; omit for Sprint, Card, and Test Scenario.
     binding_id: Exact adopted binding identity.
     expected_binding_revision: Exact binding revision fence.
     guideline_revision_id: Exact adopted guideline revision fence.
@@ -307,7 +309,7 @@ Args:
     model_id: Optional assessor model identifier.
 
 Returns:
-    Outcome with one atomically sealed receipt and all metric results.
+    Outcome with one atomically sealed result and all metric evidence.
 
 ## `okto_pulse_record_semantic_guideline_assessment_v2`
 
@@ -322,6 +324,8 @@ Args:
     contract_version: Required literal `v2` discriminator.
     subject_type, subject_id: Exact governed subject.
     expected_subject_version: Exact current subject version fence.
+    expected_subject_edition: Required exact validation-edition fence for
+        Ideation, Refinement, and Spec; omit for Sprint, Card, and Test Scenario.
     binding_id, expected_binding_revision: Exact adopted binding fences.
     guideline_revision_id: Exact adopted guideline revision fence.
     idempotency_key: Retry-stable client key.
@@ -332,13 +336,15 @@ Args:
     model_id: Optional assessor model identifier.
 
 Returns:
-    A `v2` receipt with server-owned snapshots, findings and metric results.
+    A `v2` result with server-owned snapshots, findings and metric evidence.
     Disabled writer returns `unsupported_contract_version`; requested writer
     with incomplete prerequisites returns `v2_writer_not_ready`.
 
 ## `okto_pulse_list_semantic_guideline_assessments`
 
-Page immutable semantic assessment receipts with derived currentness.
+Page immutable semantic assessment results. Product surfaces group them as
+Current or Previous by subject edition; legacy SQL `NULL` editions are
+history-only under Previous.
 
 Args:
     board_id: Authenticated board scope.
@@ -347,7 +353,8 @@ Args:
     entity_type, subject_id: Optional exact subject filters.
     guideline_id, binding_id: Optional exact policy filters.
     outcome: Optional `passed` or `metric_threshold_failed`.
-    currentness: Optional `current` or `stale`; scanning remains keyset-safe.
+    currentness: Technical compatibility filter `current|stale`; scanning
+        remains keyset-safe. Use lifecycle state for human decisions.
     profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
@@ -355,7 +362,7 @@ Returns:
 
 ## `okto_pulse_get_semantic_guideline_assessment`
 
-Read one immutable semantic assessment receipt by identity.
+Read one immutable semantic assessment result by compatibility receipt identity.
 
 Args:
     board_id: Authenticated board scope.
@@ -363,11 +370,11 @@ Args:
     profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with currentness derived against authoritative live fences.
+    Outcome with lifecycle state and technical authority audit.
 
 ## `okto_pulse_get_current_semantic_guideline_assessment`
 
-Read the current receipt for one exact subject and adopted binding.
+Read the Current result for one exact subject edition and adopted binding.
 
 Args:
     board_id: Authenticated board scope.
@@ -376,7 +383,7 @@ Args:
     profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with the current receipt or a canonical not-found error.
+    Outcome with the Current result or a canonical not-found error.
 
 ## `okto_pulse_list_semantic_guideline_findings`
 
@@ -392,7 +399,7 @@ Args:
     profile: Closed `summary`, `detail`, or `full` projection.
 
 Returns:
-    Outcome with findings, honest currentness, and optional `next_cursor`.
+    Outcome with findings, lifecycle state, and optional `next_cursor`.
 
 ## `okto_pulse_list_semantic_guideline_waivers`
 

@@ -95,6 +95,7 @@ def serialize_parent_ideation_context(
         "id": getattr(ideation, "id", None),
         "title": getattr(ideation, "title", None),
         "status": _enum_value(getattr(ideation, "status", None)),
+        "edition": int(getattr(ideation, "edition", 1) or 1),
         "version": getattr(ideation, "version", None),
         "description": getattr(ideation, "description", None),
         "problem_statement": getattr(ideation, "problem_statement", None),

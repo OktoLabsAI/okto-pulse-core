@@ -36,6 +36,7 @@ from okto_pulse.core.services.main import (
     SpecLineagePreflightError,
     SpecService,
 )
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 from sqlalchemy_domain_event_delivery_store import build_test_event_processor
 from sqlalchemy_test_models import (
     ActivityLog,
@@ -76,7 +77,6 @@ async def lineage_graph() -> dict[str, str]:
             )
         )
         await db.flush()
-
         idea_a = Ideation(
             board_id=board_id,
             title="Idea A",
@@ -200,6 +200,16 @@ async def lineage_graph() -> dict[str, str]:
             )
         )
         await db.flush()
+        for refinement in (
+            refinement_a,
+            refinement_a_other,
+            refinement_b,
+            refinement_medium_done,
+            refinement_large_done,
+            refinement_draft_ancestor,
+            refinement_cross_board_ancestor,
+        ):
+            await freeze_refinement_completion_fixture(db, refinement)
 
         graph = {
             "board_id": board_id,

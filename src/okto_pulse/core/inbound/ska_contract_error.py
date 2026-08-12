@@ -13,6 +13,12 @@ _ALIASES: dict[SkaContractFamily, dict[str, str]] = {
     },
     "checklist": {
         "checklist_items_incomplete": "checklist_incomplete",
+        "checklist_spec_lifecycle_conflict": "checklist_spec_status_conflict",
+        # Keep technical Spec revisions out of the frozen public checklist
+        # vocabulary. Clients recover by refreshing the validation cycle.
+        "checklist_spec_version_conflict": "checklist_spec_status_conflict",
+        "checklist_execution_revision_conflict": "checklist_execution_conflict",
+        "checklist_execution_state_conflict": "checklist_execution_conflict",
     },
 }
 _SPECIFIC_CODES: dict[SkaContractFamily, frozenset[str]] = {
@@ -21,6 +27,10 @@ _SPECIFIC_CODES: dict[SkaContractFamily, frozenset[str]] = {
         {
             "checklist_incomplete",
             "checklist_binding_off",
+            "checklist_spec_edition_conflict",
+            "checklist_binding_conflict",
+            "checklist_spec_status_conflict",
+            "checklist_execution_conflict",
             "human_actor_required",
         }
     ),
@@ -33,6 +43,10 @@ _NEXT_ACTION = {
     "resolved_evidence_required": "provide_evidence_or_justification",
     "checklist_incomplete": "submit_all_curated_items",
     "checklist_binding_off": "request_human_binding_change",
+    "checklist_spec_edition_conflict": "refresh_spec_validation_cycle",
+    "checklist_binding_conflict": "refresh_checklist_binding",
+    "checklist_spec_status_conflict": "refresh_spec_validation_cycle",
+    "checklist_execution_conflict": "refresh_checklist_execution",
     "human_actor_required": "use_human_session",
 }
 
@@ -106,7 +120,13 @@ def _retryable(error: Exception, *, code: str) -> bool:
         "validation_failed",
     }:
         return False
-    if code == "version_conflict":
+    if code in {
+        "version_conflict",
+        "checklist_spec_edition_conflict",
+        "checklist_binding_conflict",
+        "checklist_spec_status_conflict",
+        "checklist_execution_conflict",
+    }:
         return bool(getattr(error, "retryable", True))
     return False
 

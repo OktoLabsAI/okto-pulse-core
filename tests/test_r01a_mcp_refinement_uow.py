@@ -215,6 +215,7 @@ async def test_refinement_context_adds_traceability_without_changing_legacy_shap
         "subject_type": "refinement",
         "subject_id": _seed,
     }
+    assert modern["edition"] == legacy["edition"] == 1
     assert "code_traceability" not in legacy
     projection.assert_awaited_once()
     assert projection.await_args.kwargs["profile"] == "full"
@@ -394,6 +395,7 @@ async def test_create_refinement_same_board_succeeds(_create_parent_ideations):
     )
 
     assert created["success"] is True
+    assert created["refinement"]["edition"] == 1
     async with get_session_factory()() as db:
         refinement = await db.get(Refinement, created["refinement"]["id"])
         assert refinement is not None
@@ -442,6 +444,7 @@ async def test_get_update_move_delete_roundtrip(_seed):
         "okto_pulse_get_refinement", board_id=BOARD_ID, refinement_id=_seed
     )
     assert got["id"] == _seed
+    assert got["edition"] == 1
 
     updated = await _call(
         "okto_pulse_update_refinement",
@@ -458,6 +461,7 @@ async def test_get_update_move_delete_roundtrip(_seed):
         status="review",
     )
     assert moved["from_status"] == "draft" and moved["to_status"] == "review"
+    assert moved["edition"] == 1
 
     deleted = await _call(
         "okto_pulse_delete_refinement", board_id=BOARD_ID, refinement_id=_seed
@@ -465,6 +469,41 @@ async def test_get_update_move_delete_roundtrip(_seed):
     assert deleted["success"] is True
     assert deleted["takedown"]["artifact_type"] == "refinement"
     assert deleted["takedown"]["artifact_id"] == _seed
+
+
+@pytest.mark.asyncio
+async def test_move_to_draft_projects_new_refinement_edition(_seed):
+    await _call(
+        "okto_pulse_move_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        status="review",
+    )
+    returned_to_draft = await _call(
+        "okto_pulse_move_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        status="draft",
+    )
+    assert returned_to_draft["edition"] == 2
+
+    got = await _call(
+        "okto_pulse_get_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+    )
+    with patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        AsyncMock(return_value={}),
+    ):
+        context = await _call(
+            "okto_pulse_get_refinement_context",
+            board_id=BOARD_ID,
+            refinement_id=_seed,
+            profile="full",
+        )
+    assert got["edition"] == context["edition"] == 2
 
 
 @pytest.mark.asyncio
