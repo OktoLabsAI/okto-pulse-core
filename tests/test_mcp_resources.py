@@ -519,6 +519,73 @@ def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> N
     ]
 
 
+def test_spec_validation_resources_publish_the_calibrated_evaluator_method() -> None:
+    """Five scores must remain reproducible instead of threshold-shaped guesses."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    gates = _srv._load_resource_file("reference/spec_gates.md")
+    tool_docs = _srv._load_resource_file("reference/tool-docs/spec.md")
+    normalized_specs = " ".join(specs.split())
+    normalized_gates = " ".join(gates.split())
+    normalized_tool_docs = " ".join(tool_docs.split())
+
+    assert "### Canonical Spec Validation scoring rubric" in gates
+    for score_band in (
+        "`0-19`",
+        "`20-39`",
+        "`40-59`",
+        "`60-69`",
+        "`70-79`",
+        "`80-89`",
+        "`90-99`",
+        "`100`",
+    ):
+        assert score_band in gates
+
+    for dimension_heading in (
+        "#### `confidence` — reliability of the evaluation",
+        "#### `clarity` — understandable intent without hidden context",
+        "#### `assertiveness` — objective pass/fail verification",
+        "#### `decidability` — sufficient direction for material choices",
+        "#### `ambiguity` — competing plausible interpretations (lower is better)",
+    ):
+        assert dimension_heading in gates
+
+    # Calibration constraints that prevent the most common agent scoring drift.
+    for invariant in (
+        "Confidence describes the inspection, not the quality of the Spec",
+        "This is the maximum when any material section was not inspected",
+        "Do not reduce Clarity merely because a requirement lacks a number",
+        "Assertiveness asks whether a reviewer can prove pass or fail",
+        "Do not reward needless prescription",
+        "Ambiguity uses inverse anchors based on severity and dispersion",
+        "do not double-count automatically",
+        "Never start from the configured threshold and work backwards",
+        "Scores never compensate for one another",
+    ):
+        assert invariant.lower() in normalized_gates.lower()
+
+    assert "The stable item ID" in gates
+    assert "never a list index or human ordinal" in gates
+    assert "observable defect + impact + concrete remediation" in normalized_gates
+    assert "at least one pinpoint for every metric" in normalized_gates
+    assert "The application must have high availability" in gates
+    assert "Run active-active across at least three availability zones" in gates
+    assert '"anchor_ref": "tr_availability"' in gates
+
+    # Workflow and tool docs route to the single canonical rubric and retain
+    # the operational loop without copying the full tables.
+    for body in (normalized_specs, normalized_tool_docs):
+        assert "okto-pulse://reference/spec_gates" in body
+        assert "Canonical Spec Validation scoring rubric" in body
+    assert "Select a rubric band from evidence first" in normalized_specs
+    assert "On a retry after failed validation" in normalized_specs
+    assert "okto_pulse_get_board(board_id).settings" in normalized_specs
+    assert "NOT Spec quality" in tool_docs
+    assert "severity and dispersion" in tool_docs
+
+
 # ---------------------------------------------------------------------------
 # 9. ts_edd149c4 — Initial footprint regression guard via tiktoken
 # ---------------------------------------------------------------------------

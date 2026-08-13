@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 # Tool docs — `spec`
@@ -537,8 +537,12 @@ Submit a Spec Validation Gate record for a spec in 'approved' status.
 
 This is the entry point for the Spec Validation Gate — a semantic quality
 gate that runs AFTER the existing deterministic coverage gates (AC/FR/TR/Contract).
-Use this AFTER you have confidence the spec is saturated on detail (see
-agent_instructions.md section 2.3a "Detail Saturation").
+Use this AFTER the Spec is saturated on detail. Read
+`okto-pulse://workflows/specs` for the authoring/evaluator loop and
+`okto-pulse://reference/spec_gates` under **Canonical Spec Validation scoring rubric**
+for the required bands, evidence caps, dimension boundaries, examples,
+pinpoint anchors, and recommendation semantics. The abbreviated argument text
+below is not sufficient to derive scores consistently.
 
 The system runs coverage gates first; if any fails the submit is rejected
 with the specific coverage violation. If coverage passes, it computes outcome:
@@ -561,15 +565,15 @@ Args:
     expected_validation_edition: Current human lifecycle edition
     expected_spec_version: Current technical Spec version
     expected_head_revision: Current validation head revision
-    confidence: Score 0-100 — evaluator confidence in this assessment
+    confidence: Score 0-100 — reliability and evidence coverage of the evaluator's whole-current-edition assessment; NOT Spec quality
     confidence_justification: Why this confidence score (min 10 chars)
-    clarity: Score 0-100 — how clearly problem, solution and requirements are specified
+    clarity: Score 0-100 — how self-contained and understandable the problem, solution, scope, actors, terms, flows and errors are
     clarity_justification: Why this clarity score (min 10 chars)
-    assertiveness: Score 0-100 — how measurable/testable is the text (no weasel words)?
+    assertiveness: Score 0-100 — whether normative statements have objective, observable pass/fail criteria
     assertiveness_justification: Why this assertiveness score (min 10 chars)
-    decidability: Score 0-100 — how directly the Spec supports concrete implementation decisions
+    decidability: Score 0-100 — whether material implementation/operational choices are selected, constrained, or deliberately delegated with criteria
     decidability_justification: Why this decidability score (min 10 chars)
-    ambiguity: Score 0-100 — how many sentences admit multiple interpretations? (LOWER IS BETTER)
+    ambiguity: Score 0-100 — severity and dispersion of materially competing plausible interpretations (LOWER IS BETTER)
     ambiguity_justification: Why this ambiguity score (min 10 chars)
     pinpoints: Optional closed list of metric-tagged semantic problem locations
     recommendation: One of: approve, reject
@@ -581,6 +585,13 @@ Scoring contract:
     70/80/80/80/max-30 respectively. Every score requires its own
     justification. A pinpoint has `{metric, anchor_type, anchor_ref?, detail}`;
     whole_artifact omits anchor_ref, while field/structured_child/qa require it.
+    Prefer a stable structured-child or Q&A ID over a mutable ordinal/index.
+    Select the rubric band from evidence before the exact score. Do not derive
+    a score from the configured threshold, average dimensions, or mirror one
+    defect across dimensions without a distinct metric-specific impact. Read
+    the effective board thresholds before submitting. The evaluator method
+    requires a pinpoint for each threshold violation and for an exceptional
+    blocker behind reject when all scores pass.
     Pulse validates and stores the evaluator's result but does not perform the
     evaluation. Historical score/summary and completeness shapes remain
     readable history, but are not accepted for new submissions.

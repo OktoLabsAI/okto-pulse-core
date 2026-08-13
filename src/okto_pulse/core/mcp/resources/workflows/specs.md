@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -37,27 +37,45 @@ Semantic guideline assessment follows
 
 | Dimension | Self-assessment question | Raise the bar when... |
 |-----------|-------------------------|-----------------------|
-| **Confidence** | How confident is the evaluator that this assessment reflects the whole current Spec? | Important sections were not inspected or the evidence does not support a firm score. |
+| **Confidence** | How reliable is the evaluator's inspection of the whole current Spec edition? | Important sections were not inspected, current identity was not confirmed, or conclusions are not traceable to evidence. Confidence measures the evaluation, not Spec quality. |
 | **Clarity** | Does the Spec state the problem, solution and requirements clearly? | Scope, actors, behavior or terminology require contextual inference. |
-| **Assertiveness** | Is every statement in the spec **measurable and testable**? Would two independent engineers produce the same implementation from this text, or would they have to guess? | You find words like "should", "appropriate", "reasonable", "if needed", "etc." without objective criteria behind them. |
-| **Decidability** | Does every relevant requirement direct concrete implementation or operational choices? | A requirement names a quality such as "high availability" without topology, bounds, SLOs or other decision criteria. |
-| **Ambiguity** (lower is better) | How many sentences in the spec admit more than one interpretation? How many terms are undefined, implicit, or rely on shared context that isn't written down? | Any requirement can be read two ways, or any domain term is used without a definition. |
+| **Assertiveness** | Does every normative statement provide an observable pass/fail oracle, with units, bounds or tolerances when applicable? | You find words like "should", "appropriate", "reasonable", "if needed", "quickly", or "etc." without objective criteria. |
+| **Decidability** | Does every material requirement direct an implementation/operational choice, or deliberately delegate it with explicit constraints and decision criteria? | A requirement names a quality such as "high availability" without topology, bounds, SLOs, defaults, ownership, or other decision criteria. |
+| **Ambiguity** (lower is better) | Are two or more materially different interpretations plausible? | A requirement can be read in ways that change behavior, security, data, testing, or operations, or a domain term is undefined. |
+
+The calibrated bands, evidence caps, dimension-boundary rules, examples, and
+pinpoint anchors are canonical in `okto-pulse://reference/spec_gates` under
+**Canonical Spec Validation scoring rubric**. Read that section before scoring;
+the summary above is not sufficient to choose a number.
 
 **The required loop — iterate until saturation:**
 
 1. **Draft** — populate ACs, FRs, BRs, TRs, contracts, test scenarios.
-2. **Read your own spec out loud** (i.e., call `okto_pulse_get_spec` and re-read it in full). Look for weasel words, undefined terms, missing edge cases, and untested error paths.
-3. **Score the current Spec** on confidence / clarity / assertiveness /
-   decidability / ambiguity. Justify every score and pinpoint concrete problems.
-4. **If any dimension is below your bar, KEEP DETAILING.** Specific actions:
+2. **Read the full current edition** with
+   `okto_pulse_get_spec_context(profile="full")`, not only its description and
+   requirements. Cross-check Q&A, rules, contracts, scenarios, decisions,
+   dependencies, and every applicable artifact. Confirm the current `edition`
+   and technical `version` before evaluating.
+3. **Inspect the effective thresholds** from
+   `okto_pulse_get_board(board_id).settings`; do not assume defaults.
+4. **Select a rubric band from evidence first**, then choose a score inside the
+   band. Score confidence / clarity / assertiveness / decidability / ambiguity,
+   justify every score, and pinpoint concrete problems. Do not start at the
+   configured threshold or make scores compensate for one another.
+5. **If any dimension is below your bar, KEEP DETAILING.** Specific actions:
    - Add more test scenarios (edge cases, error flows, boundary conditions)
    - Rewrite vague ACs into measurable, verifiable statements (numbers, specific endpoints, concrete inputs/outputs)
    - Add BRs to capture invariants you've been assuming implicitly
    - Add TRs for architectural constraints you derived from codebase analysis
    - Add API contracts with concrete request/response shapes
-5. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
-6. **Re-read and re-score.** Repeat until all five dimensions clear the configured bar.
-7. **Only then promote.**
+6. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
+7. **Re-read and re-score.** Repeat until all five dimensions clear the
+   configured bar and no blocker remains.
+8. **On a retry after failed validation**, first read the Current result and
+   its `threshold_violations`, all five justifications, and pinpoints. Modify
+   the Spec rather than only changing scores; then refresh edition, version,
+   head revision, prerequisite results, and full context before resubmitting.
+9. **Only then promote.**
 
 ### Spec Quality — Canonical Agent Flow
 
@@ -120,7 +138,13 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    the five externally evaluated scores (confidence, clarity, assertiveness,
    decidability and ambiguity), a justification for each, optional
    metric-tagged pinpoints, and an approve/reject recommendation. Pulse records
-   this evaluation; it does not generate the scores.
+   this evaluation; it does not generate the scores. For each accepted
+   pinpoint Pulse resolves the authorized anchor and seals its human label,
+   text/excerpt, source version and digest into validation history. Clients
+   submit only the anchor selector and explanation; they cannot supply the
+   sealed snapshot. Records created before this contract explicitly report the
+   snapshot as `legacy_unavailable` and are never re-resolved from current
+   mutable Spec content.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may
 read the binding and validation results and execute the configured immutable

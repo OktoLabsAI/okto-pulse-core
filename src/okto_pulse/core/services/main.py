@@ -10729,9 +10729,7 @@ class SpecService:
                         f"{name}_justification must be at least 10 characters"
                     )
             from okto_pulse.core.domain.spec_validation import (
-                SpecValidationMetric,
                 SpecValidationPinpoint,
-                SpecValidationPinpointAnchorType,
             )
 
             raw_pinpoints = data.get("pinpoints") or []
@@ -10743,6 +10741,7 @@ class SpecService:
                 allowed_pinpoint_fields = {
                     *required_pinpoint_fields,
                     "anchor_ref",
+                    "anchor_snapshot",
                 }
                 if (
                     not isinstance(raw_pinpoint, dict)
@@ -10750,16 +10749,14 @@ class SpecService:
                     or not set(raw_pinpoint).issubset(allowed_pinpoint_fields)
                 ):
                     raise ValueError("spec_validation_pinpoint_invalid")
-                pinpoint = SpecValidationPinpoint(
-                    metric=SpecValidationMetric(raw_pinpoint.get("metric")),
-                    anchor_type=SpecValidationPinpointAnchorType(
-                        raw_pinpoint.get("anchor_type")
-                    ),
-                    anchor_ref=raw_pinpoint.get("anchor_ref"),
-                    detail=raw_pinpoint.get("detail"),
-                )
+                pinpoint = SpecValidationPinpoint.from_dict(raw_pinpoint)
                 projected_pinpoint = pinpoint.to_dict()
-                pinpoint_identity = tuple(projected_pinpoint.values())
+                pinpoint_identity = (
+                    projected_pinpoint["metric"],
+                    projected_pinpoint["anchor_type"],
+                    projected_pinpoint.get("anchor_ref"),
+                    projected_pinpoint["detail"],
+                )
                 if pinpoint_identity in pinpoint_identities:
                     raise ValueError("spec_validation_pinpoint_duplicate")
                 pinpoint_identities.add(pinpoint_identity)

@@ -1098,6 +1098,12 @@ from okto_pulse.core.application.use_cases.quality_assessment import (
     SubmitQualityAssessmentResult,
     SubmitQualityAssessmentUseCase,
 )
+from okto_pulse.core.application.use_cases.entity_export import (
+    ENTITY_EXPORT_ROOT_READ_PERMISSION,
+    GetEntityExportBundleCommand,
+    GetEntityExportBundleResult,
+    GetEntityExportBundleUseCase,
+)
 from okto_pulse.core.application.use_cases.spec_dependencies import (
     AddSpecDependencyCommand,
     AddSpecDependencyResult,
@@ -2165,6 +2171,11 @@ __all__ = [
     "SubmitSpecValidationCommand",
     "SubmitSpecValidationResult",
     "SubmitSpecValidationUseCase",
+    # entity_export
+    "ENTITY_EXPORT_ROOT_READ_PERMISSION",
+    "GetEntityExportBundleCommand",
+    "GetEntityExportBundleResult",
+    "GetEntityExportBundleUseCase",
     # update_agent
     "UpdateAgentCommand",
     "UpdateAgentResult",

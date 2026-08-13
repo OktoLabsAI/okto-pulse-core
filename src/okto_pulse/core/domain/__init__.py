@@ -5,6 +5,23 @@ resolver/gate without pulling heavy database dependencies.
 """
 
 from okto_pulse.core.domain.entities import Board, Ideation, Spec
+from okto_pulse.core.domain.entity_export import (
+    ENTITY_EXPORT_BUNDLE_CONTRACT_VERSION,
+    ENTITY_EXPORT_MANIFEST_CONTRACT_VERSION,
+    ENTITY_EXPORT_SECTION_CONTRACT_VERSION,
+    EntityExportBundle,
+    EntityExportContractError,
+    EntityExportDisclosure,
+    EntityExportHistoryScope,
+    EntityExportManifest,
+    EntityExportOverallState,
+    EntityExportRequest,
+    EntityExportSection,
+    EntityExportSectionManifestEntry,
+    EntityExportSectionStatus,
+    EntityExportSubjectSnapshot,
+    EntityExportType,
+)
 from okto_pulse.core.domain.knowledge_governance import (
     KnowledgeGovernanceInvalidMetadata,
     KnowledgeGovernanceMetadataV1,
@@ -47,6 +64,21 @@ from okto_pulse.core.domain.spec_dependency import (
 
 __all__ = [
     "Board",
+    "ENTITY_EXPORT_BUNDLE_CONTRACT_VERSION",
+    "ENTITY_EXPORT_MANIFEST_CONTRACT_VERSION",
+    "ENTITY_EXPORT_SECTION_CONTRACT_VERSION",
+    "EntityExportBundle",
+    "EntityExportContractError",
+    "EntityExportDisclosure",
+    "EntityExportHistoryScope",
+    "EntityExportManifest",
+    "EntityExportOverallState",
+    "EntityExportRequest",
+    "EntityExportSection",
+    "EntityExportSectionManifestEntry",
+    "EntityExportSectionStatus",
+    "EntityExportSubjectSnapshot",
+    "EntityExportType",
     "Ideation",
     "KnowledgeGovernanceInvalidMetadata",
     "KnowledgeGovernanceMetadataV1",

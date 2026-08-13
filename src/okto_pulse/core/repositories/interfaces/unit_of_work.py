@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         SemanticAssessmentV2CapabilityPort,
         SemanticSubjectProjectionPort,
     )
+    from okto_pulse.core.ports.entity_export import EntityExportReadPort
 
 
 class ConsistentReadContractError(RuntimeError):
@@ -52,6 +53,7 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     semantic_assessment_v2: "SemanticAssessmentV2PersistencePort"
     semantic_assessment_v2_reader: "SemanticAssessmentV2ReadPort"
     semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
+    entity_exports: "EntityExportReadPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 

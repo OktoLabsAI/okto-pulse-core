@@ -3634,6 +3634,32 @@ class SpecValidationPinpoint(BaseModel):
         return self
 
 
+class SpecValidationAnchorSnapshotResponse(BaseModel):
+    """Immutable human-readable anchor content stored with a validation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["spec-validation-pinpoint-snapshot/v1"] = (
+        "spec-validation-pinpoint-snapshot/v1"
+    )
+    availability_at_seal: Literal["available", "legacy_unavailable"]
+    label: str | None = None
+    text: str | None = None
+    excerpt: str | None = None
+    source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_version: str | None = None
+
+
+class SpecValidationPinpointResponse(SpecValidationPinpoint):
+    """Read projection; old rows state that no sealed snapshot exists."""
+
+    anchor_snapshot: SpecValidationAnchorSnapshotResponse = Field(
+        default_factory=lambda: SpecValidationAnchorSnapshotResponse(
+            availability_at_seal="legacy_unavailable"
+        )
+    )
+
+
 class SpecValidationSubmit(BaseModel):
     """Canonical five-dimensional Spec Validation submission."""
 
@@ -3690,7 +3716,7 @@ class SpecValidationResponse(BaseModel):
     ambiguity_justification: str | None = None
     general_justification: str | None = None
     recommendation: str | None = None
-    pinpoints: list[SpecValidationPinpoint] | None = None
+    pinpoints: list[SpecValidationPinpointResponse] | None = None
     outcome: str | None = None
     receipt_id: str | None = None
     subject_version: int | None = Field(default=None, ge=1)

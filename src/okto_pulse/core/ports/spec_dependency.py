@@ -134,6 +134,10 @@ class SpecDependencyPersistencePort(Protocol):
         removed_by_name: str | None,
         removal_reason: str,
         source_version_on_remove: int,
+        source_title_on_remove: str,
+        source_edition_on_remove: int,
+        target_title_on_remove: str | None,
+        target_edition_on_remove: int | None,
         idempotency_key: str,
         request_digest: str,
     ) -> SpecDependencyRecord: ...

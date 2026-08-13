@@ -130,6 +130,11 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://reference/spec_gates",
         required_headings=(
+            "### Canonical Spec Validation scoring rubric",
+            "### Dimension boundaries — do not double-count automatically",
+            "### Evidence, justifications, and pinpoint anchors",
+            "### Calibrated examples",
+            "### Recommendation semantics",
             "## Curated Spec Checklist Gate — `/specify/v1`",
         ),
         required_cross_links=(
@@ -179,6 +184,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "## `okto_pulse_start_checklist_execution`",
             "## `okto_pulse_submit_checklist_execution`",
             "## `okto_pulse_get_checklist_receipt`",
+            "## `okto_pulse_submit_spec_validation`",
         ),
         required_cross_links=(
             "okto-pulse://reference/spec_gates",
@@ -271,6 +277,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://workflows/specs",
         required_headings=(
+            "## 2.3a Detail Saturation — DO NOT Push Forward With Gaps",
             "### Spec Quality — Canonical Agent Flow",
             "#### Surface responsibilities",
             "#### Agent flow by Spec status",

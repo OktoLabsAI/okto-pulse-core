@@ -43,7 +43,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "a308c589e71f998f5d08dc06f37bedc55103561fe7fd4be20bd9f91b12fcb103",
+  "manifest_sha256": "feef13a313ccf76aa289b9be3b32140b799c10ff36ddcd852231081774d79d91",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -190,7 +190,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "4910de20d92f9e17894f28e4cb65cf50f5617f3a6ee97625af344fa95ad08165",
+      "content_sha256": "a05b44db5afa87fd6a6cb7fd80aba67b698ceebddd1a46e8234bcd0526f9bb4e",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/tool-docs/spec",
@@ -202,6 +202,11 @@
         "okto-pulse://reference/transitions"
       ],
       "required_headings": [
+        "### Canonical Spec Validation scoring rubric",
+        "### Dimension boundaries — do not double-count automatically",
+        "### Evidence, justifications, and pinpoint anchors",
+        "### Calibrated examples",
+        "### Recommendation semantics",
         "## Curated Spec Checklist Gate — `/specify/v1`"
       ],
       "uri": "okto-pulse://reference/spec_gates"
@@ -256,13 +261,14 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "7b35585da426a90990909cbd9818948b6d89160bbb757e7c4f02bbbbe1cde22d",
+      "content_sha256": "facc8026dd9138e6cb5dcc18acb3ff0b018330bd4933b49c7ec13a9ab5790d5f",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/spec_gates",
-        "okto-pulse://reference/tool-families/spec_entity_remove"
+        "okto-pulse://reference/tool-families/spec_entity_remove",
+        "okto-pulse://workflows/specs"
       ],
       "required_cross_links": [
         "okto-pulse://reference/spec_gates"
@@ -271,7 +277,8 @@
         "## `okto_pulse_get_checklist_binding`",
         "## `okto_pulse_start_checklist_execution`",
         "## `okto_pulse_submit_checklist_execution`",
-        "## `okto_pulse_get_checklist_receipt`"
+        "## `okto_pulse_get_checklist_receipt`",
+        "## `okto_pulse_submit_spec_validation`"
       ],
       "uri": "okto-pulse://reference/tool-docs/spec"
     },
@@ -454,7 +461,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "f5f8a2a55e0e451f809887b58424e79c872c18cefea0aac6a454dfc57dce44a1",
+      "content_sha256": "7df193c09ed4a40625181dd5eb6ec096a961a5c7636fec318fa3cc5df49e9125",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
@@ -470,6 +477,7 @@
         "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
+        "## 2.3a Detail Saturation — DO NOT Push Forward With Gaps",
         "### Spec Quality — Canonical Agent Flow",
         "#### Surface responsibilities",
         "#### Agent flow by Spec status",

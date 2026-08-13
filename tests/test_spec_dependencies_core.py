@@ -446,6 +446,10 @@ class _AtomicDependencyTransaction:
         removed_by_name: str | None,
         removal_reason: str,
         source_version_on_remove: int,
+        source_title_on_remove: str,
+        source_edition_on_remove: int,
+        target_title_on_remove: str | None,
+        target_edition_on_remove: int | None,
         idempotency_key: str,
         request_digest: str,
     ) -> SpecDependencyRecord:
@@ -460,6 +464,10 @@ class _AtomicDependencyTransaction:
             removed_by_name=removed_by_name,
             removal_reason=removal_reason,
             source_version_on_remove=source_version_on_remove,
+            source_title_on_remove=source_title_on_remove,
+            source_edition_on_remove=source_edition_on_remove,
+            target_title_on_remove=target_title_on_remove,
+            target_edition_on_remove=target_edition_on_remove,
             remove_idempotency_key=idempotency_key,
         )
         self.working.dependencies[dependency_id] = removed
@@ -1748,6 +1756,48 @@ async def test_remove_receipt_snapshots_current_target_satisfaction(
     assert receipt.dependency.target_status_on_create is SpecStatus.DONE
     assert receipt.satisfied is False
     assert next(iter(state.receipts.values())).satisfied is False
+
+
+@pytest.mark.asyncio
+async def test_add_receipt_seals_human_readable_endpoint_snapshots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _AtomicDependencyState(
+        snapshots={
+            "source": _snapshot("source"),
+            "target": _snapshot(
+                "target",
+                status=SpecStatus.DONE,
+                version=3,
+                edition=4,
+            ),
+        },
+    )
+    transaction = _AtomicDependencyTransaction(state, fail_after="never")
+    _install_atomic_effect_ports(monkeypatch, transaction)
+
+    async with transaction:
+        receipt = await SpecDependencyService(
+            transaction,
+            transaction,
+        ).add_dependency(
+            board_id="board-1",
+            source_spec_id="source",
+            target_spec_id="target",
+            expected_spec_version=7,
+            expected_spec_edition=2,
+            idempotency_key="human-snapshots",
+            actor_id="actor-1",
+            actor_type="user",
+            actor_name="User",
+        )
+        await transaction.commit()
+
+    assert receipt.dependency.source_title_on_create == "Spec source"
+    assert receipt.dependency.source_edition_on_create == 2
+    assert receipt.dependency.target_title_on_create == "Spec target"
+    assert receipt.dependency.target_edition_on_create == 4
+    assert receipt.dependency.to_dict()["target_title_on_create"] == "Spec target"
 
 
 @pytest.mark.asyncio

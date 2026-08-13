@@ -95,6 +95,12 @@ class _UnsupportedSemanticAssessmentPort:
             "fake SaaS semantic assessment capabilities were not configured"
         )
 
+    async def build_bundle(self, **kwargs: object) -> None:
+        del kwargs
+        raise NotImplementedError(
+            "fake SaaS entity export reader was not configured"
+        )
+
 
 class FakeSaaSUnitOfWork:
     """Copy-on-write UnitOfWork with no native persistence handle."""
@@ -129,6 +135,7 @@ class FakeSaaSUnitOfWork:
         self.semantic_assessment_v2 = unsupported_semantic_port
         self.semantic_assessment_v2_reader = unsupported_semantic_port
         self.semantic_assessment_v2_capability = unsupported_semantic_port
+        self.entity_exports = unsupported_semantic_port
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0

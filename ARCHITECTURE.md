@@ -116,6 +116,7 @@ the concrete request-context lookup and projects its credential through the
 | `McpAuthenticator` / `AuthSession` | `core.ports.mcp_auth` | Authenticates MCP credentials and returns an agent session. | `community.adapters.mcp_auth.CommunityMcpAuthenticator`. |
 | `McpResourceCatalog` | `core.ports.mcp_resources` | Supplies common or operational MCP resources and validates catalog hygiene. | `community.adapters.resources.build_community_resource_catalog`. |
 | `CapabilityDescriptorSource` | `core.ports.capability_descriptor` | Describes edition/provider capabilities without importing the edition. | `community.adapters.capability_descriptors.CommunityCapabilityDescriptorSource`. |
+| `EntityExportReadPort` | `core.ports.entity_export` | Builds one versioned, renderer-neutral and permission-aware export bundle inside a caller-owned consistent read. | Community supplies the transaction-bound relational reader; Markdown/HTML renderers remain edition-owned. |
 
 ### Telemetry Ports
 
@@ -148,6 +149,7 @@ Repository contracts live under `okto_pulse.core.repositories.interfaces`.
 | `SpecRepository` | `get(spec_id)` and `add(spec)`. | `core.repositories.sqlalchemy.SQLAlchemySpecRepository`. |
 | `RepositoryCatalog` | Groups aggregate repositories behind one object. | SQLAlchemy unit of work. |
 | `PulseUnitOfWork` | Async context manager with commit/rollback/close. | `core.repositories.sqlalchemy.SQLAlchemyUnitOfWork`. |
+| `EntityExportReadPort` | Complete entity export manifest and section bundle bound to the UoW snapshot. | Community relational application adapter. |
 | `UnitOfWorkFactory` | Creates unit-of-work instances for application use cases. | `core.repositories.sqlalchemy.SQLAlchemyUnitOfWorkFactory`. |
 
 This is the first-cut relational strangler seam. The current coverage is narrow;

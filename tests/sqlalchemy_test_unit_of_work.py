@@ -44,6 +44,12 @@ if TYPE_CHECKING:
     from okto_pulse.core.application.use_cases.base import ActorContext
 
 
+class _UnsupportedEntityExportReadPort:
+    async def build_bundle(self, **kwargs: object) -> None:
+        del kwargs
+        raise NotImplementedError("entity export reader is not configured")
+
+
 class SQLAlchemyUnitOfWork:
     """PulseUnitOfWork backed by a SQLAlchemy AsyncSession."""
 
@@ -78,6 +84,9 @@ class SQLAlchemyUnitOfWork:
         self.semantic_assessment_v2_capability = (
             CommunitySemanticAssessmentV2Capabilities(session)
         )
+        # Export adapters are edition-owned. This relational test UoW only
+        # exercises the public Core UoW shape, not export materialization.
+        self.entity_exports = _UnsupportedEntityExportReadPort()
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self

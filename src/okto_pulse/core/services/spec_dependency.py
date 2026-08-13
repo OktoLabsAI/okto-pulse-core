@@ -341,6 +341,10 @@ class SpecDependencyService:
             resolved_on_create=target_done,
             retrospective=current_cycle_started,
             add_idempotency_key=idempotency_key,
+            source_title_on_create=source.title,
+            source_edition_on_create=source.edition,
+            target_title_on_create=target.title,
+            target_edition_on_create=target.edition,
         )
         await self.persistence.insert_dependency(
             dependency,
@@ -430,7 +434,7 @@ class SpecDependencyService:
         if replay is not None:
             return _assert_replay_matches(replay, request_digest)
 
-        _require_expected_snapshot(
+        source = _require_expected_snapshot(
             await self.persistence.get_spec_snapshot(
                 board_id=board_id,
                 spec_id=source_spec_id,
@@ -474,6 +478,12 @@ class SpecDependencyService:
             removed_by_name=actor_name,
             removal_reason=normalized_reason,
             source_version_on_remove=expected_spec_version + 1,
+            source_title_on_remove=source.title,
+            source_edition_on_remove=source.edition,
+            target_title_on_remove=target.title if target is not None else None,
+            target_edition_on_remove=(
+                target.edition if target is not None else None
+            ),
             idempotency_key=idempotency_key,
             request_digest=request_digest,
         )

@@ -35,6 +35,16 @@ from okto_pulse.core.domain.spec_validation import (
     SpecValidationPinpoint,
     SpecValidationPinpointAnchorType,
 )
+from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
+from okto_pulse.core.domain.quality_assessment import (
+    FindingAnchorType,
+    UnboundFindingAnchor,
+)
+from okto_pulse.core.ports.semantic_subject_projection import (
+    SemanticSubjectProjectionError,
+    SemanticSubjectProjectionPort,
+    SemanticSubjectProjectionRequest,
+)
 
 _CANONICAL_REQUIRED_FIELDS = (
     "confidence",
@@ -185,6 +195,49 @@ async def _resolve_reviewer_name(
         return actor_id
 
 
+async def _seal_pinpoint_snapshots(
+    *,
+    pinpoints: list[dict[str, Any]],
+    spec: object,
+    actor: ActorContext,
+    uow: PulseUnitOfWork,
+) -> list[dict[str, Any]]:
+    if not pinpoints:
+        return []
+    projection = getattr(uow, "semantic_subject_projection", None)
+    if not isinstance(projection, SemanticSubjectProjectionPort):
+        raise TypeError("semantic_subject_projection_adapter_missing")
+    subject = PolicySubjectRef(
+        board_id=str(getattr(spec, "board_id")),
+        entity_type=PolicyEntityType.SPEC,
+        subject_id=str(getattr(spec, "id")),
+        subject_version=int(getattr(spec, "version")),
+        subject_edition=int(getattr(spec, "edition", 1) or 1),
+    )
+    sealed: list[dict[str, Any]] = []
+    for raw in pinpoints:
+        pinpoint = SpecValidationPinpoint.from_dict(raw)
+        try:
+            snapshot = await projection.resolve_semantic_anchor(
+                SemanticSubjectProjectionRequest(
+                    subject=subject,
+                    anchor=UnboundFindingAnchor(
+                        anchor_type=FindingAnchorType(pinpoint.anchor_type.value),
+                        anchor_ref=pinpoint.anchor_ref,
+                    ),
+                    actor_id=actor.actor_id,
+                )
+            )
+            sealed.append(pinpoint.seal(snapshot).to_dict())
+        except SemanticSubjectProjectionError as exc:
+            raise CommandValidationError(
+                f"spec_validation_pinpoint_anchor_{exc.reason.value}"
+            ) from exc
+        except ValueError as exc:
+            raise CommandValidationError(str(exc)) from exc
+    return sealed
+
+
 class SubmitSpecValidationUseCase:
     """Submit a spec validation gate record without any transport dependency."""
 
@@ -217,6 +270,12 @@ class SubmitSpecValidationUseCase:
             actor.actor_id,
             spec.board_id,
         )
+        sealed_pinpoints = await _seal_pinpoint_snapshots(
+            pinpoints=command.data.get("pinpoints") or [],
+            spec=spec,
+            actor=actor,
+            uow=uow,
+        )
         # ResourceGateError / ValueError propagate to the adapter (HTTP 409),
         # mirroring api/specs.py:submit_spec_validation.
         result = await service.submit_spec_validation(
@@ -228,7 +287,8 @@ class SubmitSpecValidationUseCase:
             # formal-or-legacy mapping, so omit those transport placeholders.
             data={
                 key: value for key, value in command.data.items() if value is not None
-            },
+            }
+            | {"pinpoints": sealed_pinpoints},
         )
         await commit(uow)
         return SubmitSpecValidationResult(payload=result)

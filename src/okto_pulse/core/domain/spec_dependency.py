@@ -116,10 +116,64 @@ class SpecDependencyRecord:
     source_version_on_remove: int | None = None
     add_idempotency_key: str | None = None
     remove_idempotency_key: str | None = None
+    source_title_on_create: str | None = None
+    source_edition_on_create: int | None = None
+    target_title_on_create: str | None = None
+    target_edition_on_create: int | None = None
+    source_title_on_remove: str | None = None
+    source_edition_on_remove: int | None = None
+    target_title_on_remove: str | None = None
+    target_edition_on_remove: int | None = None
 
     @property
     def active(self) -> bool:
         return self.removed_at is None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Canonical ledger shape; nullable snapshots preserve old rows."""
+
+        payload: dict[str, Any] = {
+            "id": self.id,
+            "board_id": self.board_id,
+            "source_spec_id": self.source_spec_id,
+            "target_spec_id": self.target_spec_id,
+            "created_at": self.created_at.isoformat(),
+            "created_by": self.created_by,
+            "source_version_on_create": self.source_version_on_create,
+            "source_status_on_create": self.source_status_on_create.value,
+            "target_status_on_create": self.target_status_on_create.value,
+            "target_version_on_create": self.target_version_on_create,
+            "resolved_on_create": self.resolved_on_create,
+            "retrospective": self.retrospective,
+            "created_by_type": self.created_by_type,
+            "active": self.active,
+        }
+        optional = (
+            "created_by_name",
+            "removed_at",
+            "removed_by",
+            "removed_by_type",
+            "removed_by_name",
+            "removal_reason",
+            "source_version_on_remove",
+            "add_idempotency_key",
+            "remove_idempotency_key",
+            "source_title_on_create",
+            "source_edition_on_create",
+            "target_title_on_create",
+            "target_edition_on_create",
+            "source_title_on_remove",
+            "source_edition_on_remove",
+            "target_title_on_remove",
+            "target_edition_on_remove",
+        )
+        for field_name in optional:
+            value = getattr(self, field_name)
+            if value is not None:
+                payload[field_name] = (
+                    value.isoformat() if isinstance(value, datetime) else value
+                )
+        return payload
 
 
 @dataclass(frozen=True, slots=True)

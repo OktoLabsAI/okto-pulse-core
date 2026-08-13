@@ -5007,7 +5007,7 @@ def _spec_dependency_record_payload(
     *,
     satisfied: bool | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "id": record.id,
         "dependent_spec_id": record.source_spec_id,
         "prerequisite_spec_id": record.target_spec_id,
@@ -5034,6 +5034,18 @@ def _spec_dependency_record_payload(
         "removal_reason": record.removal_reason,
         "removed_at_spec_version": record.source_version_on_remove,
     }
+    for field_name in (
+        "source_title_on_create",
+        "source_edition_on_create",
+        "source_title_on_remove",
+        "source_edition_on_remove",
+        "target_title_on_remove",
+        "target_edition_on_remove",
+    ):
+        value = getattr(record, field_name, None)
+        if value is not None:
+            payload[field_name] = value
+    return payload
 
 
 def _spec_dependency_page_payload(page: Any, *, direction: str) -> dict[str, Any]:

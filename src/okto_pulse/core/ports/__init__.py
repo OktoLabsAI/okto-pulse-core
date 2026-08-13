@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import importlib
 
+from .entity_export import EntityExportReadPort
+
 from .data_bootstrapper import (
     BOOTSTRAP_DOMAINS,
     BootstrapDomain,
@@ -297,6 +299,7 @@ from .telemetry import (
 )
 
 __all__ = [
+    "EntityExportReadPort",
     "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT",
     "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3",
     "HEALTH_REPORT_FIELDS",
