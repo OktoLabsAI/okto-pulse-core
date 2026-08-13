@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus, SprintStatus
+from okto_pulse.core.domain.spec_dependency import (
+    spec_dependency_blocked_guidance,
+    spec_dependency_blocking_facts,
+    transition_starts_card_execution,
+)
 
 
 CARD_STATUS_ORDER = {
@@ -60,6 +65,11 @@ class CardTransitionFacts:
     bug_test_gate_min_severity: str = "minor"
     severity: str = "minor"
     has_regression_test_evidence: bool = False
+    spec_dependency_blockers: tuple[object, ...] = ()
+    spec_dependency_blocking_count: int = 0
+    spec_dependency_archived_blocking_count: int = 0
+    spec_dependency_unfinished_blocking_count: int = 0
+    spec_dependency_blockers_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +107,41 @@ def archived_card_block(facts: CardTransitionFacts) -> CardTransitionBlock | Non
             remediation="restore_tree",
         ).block
     return None
+
+
+def spec_dependency_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
+    """Block every exact Card execution-start/resume edge on prerequisites."""
+
+    if not facts.spec_id or not transition_starts_card_execution(
+        facts.old_status,
+        facts.new_status,
+    ):
+        return None
+    blockers = tuple(facts.spec_dependency_blockers)
+    if facts.spec_dependency_blocking_count <= 0:
+        return None
+    detail, remediation = spec_dependency_blocked_guidance(
+        archived_blocking_count=facts.spec_dependency_archived_blocking_count,
+        unfinished_blocking_count=facts.spec_dependency_unfinished_blocking_count,
+    )
+
+    return _blocked(
+        "spec_dependencies_incomplete",
+        detail,
+        remediation=remediation,
+        facts=spec_dependency_blocking_facts(
+            spec_id=facts.spec_id,
+            blockers=blockers,
+            blocking_count=facts.spec_dependency_blocking_count,
+            archived_blocking_count=(
+                facts.spec_dependency_archived_blocking_count
+            ),
+            unfinished_blocking_count=(
+                facts.spec_dependency_unfinished_blocking_count
+            ),
+            blockers_truncated=facts.spec_dependency_blockers_truncated,
+        ),
+    ).block
 
 
 def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
@@ -254,6 +299,7 @@ def bug_regression_gate_applies(facts: CardTransitionFacts) -> bool:
 def evaluate_card_transition(facts: CardTransitionFacts) -> CardTransitionDecision:
     for evaluator in (
         archived_card_block,
+        spec_dependency_block,
         spec_maturity_block,
         sprint_assignment_block,
         validation_gate_block,
@@ -278,6 +324,7 @@ __all__ = [
     "bug_regression_evidence_block",
     "bug_regression_gate_applies",
     "evaluate_card_transition",
+    "spec_dependency_block",
     "spec_maturity_block",
     "sprint_assignment_block",
     "test_completion_block",

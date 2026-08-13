@@ -46,6 +46,24 @@ def test_runtime_models_share_the_canonical_node_edge_and_outcome_enums():
     )
     assert [member.value for member in KGNodeType] == contract["node_types"]
     assert [member.value for member in KGEdgeType] == list(edge_type_values())
+    assert list(edge_type_values()) == [
+        "supersedes",
+        "contradicts",
+        "derives_from",
+        "relates_to",
+        "mentions",
+        "depends_on",
+        "violates",
+        "implements",
+        "tests",
+        "validates",
+        "precedes",
+        "supports",
+        "overlaps",
+        "belongs_to",
+        "originates_from",
+        "covered_by",
+    ]
     assert "Alternative" in contract["node_types"]
 
 
@@ -62,6 +80,12 @@ def test_query_contract_covers_layers_related_context_and_edge_endpoints():
     assert {"from": "Decision", "to": "Alternative"} in contract[
         "edge_endpoints"
     ]["relates_to"]
+    assert contract["edge_endpoints"]["precedes"] == [
+        {"from": "Entity", "to": "Entity"}
+    ]
+    assert contract["edge_endpoints"]["depends_on"] == [
+        {"from": "Decision", "to": "Decision"}
+    ]
 
 
 def test_schema_info_exposes_the_same_machine_readable_contract():

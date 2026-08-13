@@ -1076,6 +1076,22 @@ CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
+SKM_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="SK-M/v1",
+    leaves=("spec.entity.manage_dependencies",),
+    preset_grants=_explicit_preset_grants(
+        ("spec.entity.manage_dependencies",),
+        {"Spec": ("spec.entity.manage_dependencies",)},
+    ),
+    # Dependency mutation is a newly introduced governance boundary. The
+    # canonical grant and the existing Spec edit authority must both be
+    # explicit; a flat ``specs:update`` token cannot acquire it by fallback.
+    historical_authorities=(
+        ("spec.entity.manage_dependencies", "spec.entity.edit_fields"),
+    ),
+)
+
+
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
@@ -1087,6 +1103,7 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
+    SKM_PERMISSION_INTRODUCTION_V1,
 )
 
 
@@ -1579,6 +1596,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "assign": True,
             "label": True,
             "link_card": True,
+            "manage_dependencies": True,
             "archive": True,
             "restore": True,
             "delete": True,
@@ -2165,6 +2183,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.entity.assign",
         "spec.entity.label",
         "spec.entity.link_card",
+        "spec.entity.manage_dependencies",
         "spec.tests.create",
         "spec.tests.update_status",
         "spec.rules.create",
@@ -3029,6 +3048,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.entity.assign",
             "spec.entity.label",
             "spec.entity.link_card",
+            "spec.entity.manage_dependencies",
             "spec.entity.archive",
             "spec.entity.restore",
             "spec.entity.delete",
@@ -4112,6 +4132,7 @@ __all__ = [
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
     "SKB3_PERMISSION_INTRODUCTION_V1",
+    "SKM_PERMISSION_INTRODUCTION_V1",
     "SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1",
     "STRUCTURED_SPEC_ENTITY_OPERATIONS",
     "STRUCTURED_SPEC_ENTITY_TYPES",

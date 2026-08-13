@@ -177,7 +177,7 @@ def _target() -> dict[str, object]:
 def test_event_registry_adds_exactly_the_seventeen_closed_event_names():
     actual = {event.event_type for event in _TRACEABILITY_EVENT_CLASSES}
     assert actual == _TRACEABILITY_EVENT_TYPES
-    assert len(EVENT_TYPES) == 60
+    assert len(EVENT_TYPES) == 62
     assert _TRACEABILITY_EVENT_TYPES.issubset(EVENT_TYPES)
     for event_class in _TRACEABILITY_EVENT_CLASSES:
         assert resolve_event_class(event_class.event_type) is event_class
@@ -236,7 +236,7 @@ def test_event_payload_is_bounded_frozen_and_rejects_unknown_fields():
 
 
 def test_kg_schema_is_additive_semantic_subtyping_only():
-    assert SCHEMA_VERSION == "0.4.0"
+    assert SCHEMA_VERSION == "0.5.0"
     assert len(NODE_TYPES) == 11
     assert not set(CODE_TRACEABILITY_ENTITY_SUBTYPES).intersection(NODE_TYPES)
     assert CODE_TRACEABILITY_ENTITY_SUBTYPES == (

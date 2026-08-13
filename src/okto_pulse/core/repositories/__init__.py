@@ -10,6 +10,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "IdeationRepository": "okto_pulse.core.repositories.interfaces",
     "SpecRepository": "okto_pulse.core.repositories.interfaces",
     "RepositoryCatalog": "okto_pulse.core.repositories.interfaces",
+    "ConsistentReadContractError": "okto_pulse.core.repositories.interfaces",
     "PulseUnitOfWork": "okto_pulse.core.repositories.interfaces",
     "UnitOfWorkFactory": "okto_pulse.core.repositories.interfaces",
     # Resource-gate contracts.

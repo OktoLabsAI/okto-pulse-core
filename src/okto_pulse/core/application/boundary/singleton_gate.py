@@ -36,6 +36,7 @@ SAFE_CONTEXT_LOCAL_STATE: frozenset[str] = frozenset(
         "okto_pulse/core/kg/global_discovery_writer.py::_active_lease",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
         "okto_pulse/core/runtime_context.py::_active_runtime_values",
+        "okto_pulse/core/services/spec_dependency_observability.py::_CURRENT_MUTATION",
     }
 )
 

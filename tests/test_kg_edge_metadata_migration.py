@@ -60,6 +60,7 @@ def test_schema_version_is_current():
         "0.3.11",
         "0.3.12",
         "0.4.0",
+        "0.5.0",
     }
 
 

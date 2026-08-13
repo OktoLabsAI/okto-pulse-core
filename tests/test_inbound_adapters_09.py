@@ -83,7 +83,9 @@ async def _call_tool(name: str, **kwargs) -> dict:
 
 @pytest.fixture
 def _stub_auth():
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())):
+    with patch.object(
+        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())
+    ):
         yield
 
 
@@ -126,15 +128,17 @@ async def test_replay_reports_equivalence_and_deltas():
     assert report.deltas == []
 
     # A differing payload is a delta...
-    other = FlowOutcome(ok=True, payload={"a": 1, "b": 99}, side_effects={"committed": 1})
+    other = FlowOutcome(
+        ok=True, payload={"a": 1, "b": 99}, side_effects={"committed": 1}
+    )
     delta_report = GoldenInboundReplay("flow", "rest").compare(before, other)
     assert not delta_report.equivalent
     assert any(d.field == "payload" for d in delta_report.deltas)
 
     # ...unless explicitly accepted.
-    accepted = GoldenInboundReplay("flow", "rest", accepted_deltas=("payload",)).compare(
-        before, other
-    )
+    accepted = GoldenInboundReplay(
+        "flow", "rest", accepted_deltas=("payload",)
+    ).compare(before, other)
     assert accepted.equivalent
 
 
@@ -167,7 +171,9 @@ def test_rest_adapter_actor():
 
 
 def test_rest_adapter_http_error_mapping():
-    assert RESTAdapterContract.http_error(CommandValidationError("bad")).status_code == 400
+    assert (
+        RESTAdapterContract.http_error(CommandValidationError("bad")).status_code == 400
+    )
     nf = RESTAdapterContract.http_error(
         EntityNotFoundError("spec", "s1"), not_found_detail="Spec not found"
     )
@@ -177,7 +183,11 @@ def test_rest_adapter_http_error_mapping():
         ResourceGateError("some_code", "blocked", details={"x": 1})
     )
     assert rge.status_code == 409
-    assert rge.detail == {"error": "some_code", "message": "blocked", "details": {"x": 1}}
+    assert rge.detail == {
+        "error": "some_code",
+        "message": "blocked",
+        "details": {"x": 1},
+    }
     assert RESTAdapterContract.http_error(ValueError("v")).status_code == 409
     # Not an error this contract owns -> re-raised, not silently swallowed.
     with pytest.raises(KeyError):
@@ -258,9 +268,7 @@ async def test_create_board_rest_equivalent(db_factory):
                 principal=Principal(
                     subject=USER_ID,
                     realm_id=LOCAL_REALM_ID,
-                    claims={
-                        "permissions": ["board.admin.create", "board:read"]
-                    },
+                    claims={"permissions": ["board.admin.create", "board:read"]},
                     actor_kind="human",
                 ),
                 uow=SQLAlchemyUnitOfWork(db),
@@ -433,13 +441,16 @@ async def test_mcp_submit_spec_validation_missing_spec_envelope(db_factory, _stu
         expected_validation_edition=1,
         expected_spec_version=1,
         expected_head_revision=0,
-        completeness=95,
-        completeness_justification="complete enough",
+        confidence=95,
+        confidence_justification="high evaluator confidence",
+        clarity=95,
+        clarity_justification="problem and solution are explicit",
         assertiveness=95,
         assertiveness_justification="assertive enough",
+        decidability=95,
+        decidability_justification="requirements direct concrete choices",
         ambiguity=5,
         ambiguity_justification="low ambiguity",
-        general_justification="general justification well over twenty chars",
         recommendation="approve",
     )
     # Inline MCP validation passes; the use case pre-check raises EntityNotFoundError

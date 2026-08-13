@@ -15,6 +15,9 @@ anchor snapshots and metric evidence against exact subject and binding fences.
 - MCP resources and examples document the new writer and current-assessment
   reader without exposing opaque identifiers as the primary user evidence.
 - Policy error envelopes and governance observability cover the v2 lifecycle.
+- Governed same-board Spec precedence now uses an authoritative relational DAG,
+  Done-only execution gates, edition-scoped start memory and a deterministic
+  `precedes` Knowledge Graph projection shared by REST and MCP.
 
 
 ### 0.3.1

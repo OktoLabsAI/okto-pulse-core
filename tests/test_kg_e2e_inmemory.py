@@ -129,7 +129,7 @@ class TestBackwardCompat:
         )
 
         assert len(NODE_TYPES) == 11
-        assert len(REL_TYPES) == 10
+        assert len(REL_TYPES) == 11
         assert ("implements", (("APIContract", "Constraint"),)) in MULTI_REL_TYPES
         # SCHEMA_VERSION é bumped a cada migração estrutural do KG; este teste
         # apenas garante que o módulo expõe a constante em formato semver

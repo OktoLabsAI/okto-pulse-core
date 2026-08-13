@@ -7,6 +7,7 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     SpecLineageEdgeSnapshot,
     SpecLineageParentIntent,
     SpecLineageReconciliationError,
+    SpecLineageReconciliationReceipt,
 )
 from okto_pulse.core.kg.providers.testing.memory_graph_store import (
     InMemoryGraphStore,
@@ -345,6 +346,101 @@ class _DeleteAndRestoreFailingScope(_InMemoryGraphTransactionScope):
         raise RuntimeError("injected delete failure after auto-commit")
 
 
+class _AlreadyCompensatedCleanupScope(_InMemoryGraphTransactionScope):
+    """Emulate the embedded adapter's restore-first cleanup failure."""
+
+    def __init__(self, board_id: str, store: InMemoryGraphStore) -> None:
+        super().__init__(board_id, store)
+        self.cleanup_failure_injected = False
+        self.compensation_calls = 0
+
+    def _delete_spec_lineage_edge(
+        self,
+        snapshot: SpecLineageEdgeSnapshot,
+    ) -> None:
+        super()._delete_spec_lineage_edge(snapshot)
+        if (
+            snapshot.target_id == IDEATION_ID
+            and not self.cleanup_failure_injected
+        ):
+            self.cleanup_failure_injected = True
+            raise RuntimeError("injected old-parent cleanup failure")
+
+    def compensate_spec_lineage_parent(self, receipt) -> None:
+        self.compensation_calls += 1
+        super().compensate_spec_lineage_parent(receipt)
+
+
+class _ProgressPreservedScope(_InMemoryGraphTransactionScope):
+    def __init__(self, board_id: str, store: InMemoryGraphStore) -> None:
+        super().__init__(board_id, store)
+        self.compensation_calls = 0
+
+    def reconcile_spec_lineage_parent(
+        self,
+        source_id: str,
+        target_id: str,
+        attrs: dict,
+    ) -> SpecLineageReconciliationReceipt:
+        old_edges = tuple(
+            self._spec_lineage_snapshot(edge)
+            for edge in self._spec_lineage_edges(source_id)
+            if str(edge.get("rule_id") or "") == IDEATION_RULE
+        )
+        created = self.create_edge(
+            "belongs_to",
+            "Entity",
+            "Entity",
+            source_id,
+            target_id,
+            dict(attrs),
+        )
+        receipt = SpecLineageReconciliationReceipt(
+            source_id=source_id,
+            target_id=target_id,
+            target_rule_id=str(attrs["rule_id"]),
+            target_attrs=dict(attrs),
+            new_edge_created=created,
+            removed_edges=old_edges,
+        )
+        raise SpecLineageReconciliationError(
+            "spec_lineage_old_parent_cleanup_incomplete",
+            "replacement exists while the old parent remains",
+            receipt=receipt,
+        )
+
+    def compensate_spec_lineage_parent(self, receipt) -> None:
+        self.compensation_calls += 1
+        super().compensate_spec_lineage_parent(receipt)
+
+
+class _SpecLineageFailureTransaction:
+    def __init__(self, store: InMemoryGraphStore) -> None:
+        self.store = store
+        self.begin_calls = 0
+        self.inline_scope: _AlreadyCompensatedCleanupScope | None = None
+        self.outer_compensation_calls = 0
+
+    async def begin(self, board_id: str):
+        self.begin_calls += 1
+        if self.begin_calls == 1:
+            self.inline_scope = _AlreadyCompensatedCleanupScope(
+                board_id,
+                self.store,
+            )
+            return self.inline_scope
+
+        scope = _InMemoryGraphTransactionScope(board_id, self.store)
+        original = scope.compensate_spec_lineage_parent
+
+        def _probe(receipt) -> None:
+            self.outer_compensation_calls += 1
+            original(receipt)
+
+        scope.compensate_spec_lineage_parent = _probe  # type: ignore[method-assign]
+        return scope
+
+
 def test_partial_failure_carries_receipt_and_never_leaves_zero_parent() -> None:
     store = _seed_graph()
     scope = _DeleteAndRestoreFailingScope(BOARD_ID, store)
@@ -369,6 +465,149 @@ def test_partial_failure_carries_receipt_and_never_leaves_zero_parent() -> None:
     assert len(orchestrator.records) == 1
     assert orchestrator.records[0].lineage_receipt is excinfo.value.receipt
     assert _lineage_targets(store) == [REFINEMENT_ID]
+
+
+@pytest.mark.asyncio
+async def test_outer_compensation_preserves_bounded_reconciliation_progress() -> None:
+    store = _seed_graph()
+    scope = _ProgressPreservedScope(BOARD_ID, store)
+    orchestrator = TransactionOrchestrator(
+        scope,
+        session_id="session-new",
+        board_id=BOARD_ID,
+    )
+
+    with pytest.raises(SpecLineageReconciliationError) as excinfo:
+        orchestrator.create_edge(
+            "belongs_to",
+            SPEC_ID,
+            REFINEMENT_ID,
+            attrs=_edge_attrs(REFINEMENT_RULE, "ignored-by-orchestrator"),
+            from_type="Entity",
+            to_type="Entity",
+        )
+
+    assert excinfo.value.retryable is True
+    assert excinfo.value.preserve_progress is True
+    assert orchestrator.records[0].lineage_progress_preserved is True
+
+    await orchestrator.compensate()
+
+    assert scope.compensation_calls == 0
+    assert _lineage_targets(store) == [IDEATION_ID, REFINEMENT_ID]
+
+
+def test_graph_commit_preserves_lineage_error_and_avoids_double_compensation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from okto_pulse.core.kg import primitives
+    from okto_pulse.core.kg.providers.testing.embedding import (
+        TestingStubEmbeddingProvider,
+    )
+    from okto_pulse.core.kg.query_contract import KGEdgeType, KGNodeType
+    from okto_pulse.core.kg.schemas import (
+        EdgeCandidate,
+        NodeCandidate,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    store = _seed_graph()
+    transaction = _SpecLineageFailureTransaction(store)
+    monkeypatch.setattr(
+        primitives,
+        "get_kg_registry",
+        lambda: SimpleNamespace(graph_transaction=transaction),
+    )
+    monkeypatch.setattr(
+        primitives,
+        "_validate_graph_connectivity_before_commit",
+        lambda *args, **kwargs: primitives._connectivity_empty_result(),
+    )
+
+    spec_candidate = NodeCandidate(
+        candidate_id="spec-candidate",
+        node_type=KGNodeType.ENTITY,
+        title="Spec",
+    )
+    refinement_candidate = NodeCandidate(
+        candidate_id="refinement-candidate",
+        node_type=KGNodeType.ENTITY,
+        title="Refinement",
+    )
+    edge = EdgeCandidate(
+        candidate_id="spec-parent",
+        edge_type=KGEdgeType.BELONGS_TO,
+        from_candidate_id=spec_candidate.candidate_id,
+        to_candidate_id=refinement_candidate.candidate_id,
+        confidence=1.0,
+        layer="deterministic",
+        rule_id=REFINEMENT_RULE,
+        created_by="worker_deterministic_v1",
+    )
+    hints = {
+        spec_candidate.candidate_id: ReconciliationHint(
+            candidate_id=spec_candidate.candidate_id,
+            operation=ReconciliationOperation.UPDATE,
+            target_node_id=SPEC_ID,
+            confidence=1.0,
+            reason="test existing root",
+        ),
+        refinement_candidate.candidate_id: ReconciliationHint(
+            candidate_id=refinement_candidate.candidate_id,
+            operation=ReconciliationOperation.UPDATE,
+            target_node_id=REFINEMENT_ID,
+            confidence=1.0,
+            reason="test existing root",
+        ),
+    }
+
+    with pytest.raises(primitives.KGPrimitiveError) as excinfo:
+        primitives._do_graph_commit(
+            BOARD_ID,
+            "session-new",
+            {
+                spec_candidate.candidate_id: spec_candidate,
+                refinement_candidate.candidate_id: refinement_candidate,
+            },
+            {edge.candidate_id: edge},
+            hints,
+            "system:historical_consolidation",
+            TestingStubEmbeddingProvider(dim=8),
+            "healthy",
+            "content-hash",
+            SPEC_ID,
+            frozenset(),
+            "spec",
+            SpecLineageParentIntent.PRESERVE,
+            frozenset(),
+            None,
+        )
+
+    failure = excinfo.value
+    assert failure.code == "spec_lineage_old_parent_cleanup_failed"
+    assert failure.retryable is True
+    assert failure.details == {
+        "failure_type": "SpecLineageReconciliationError",
+        "spec_lineage_error_code": "spec_lineage_old_parent_cleanup_failed",
+        "retryable": True,
+        "compensation_applied": True,
+        "progress_preserved": False,
+        "cause_type": "RuntimeError",
+        "cause_code": None,
+        "source_id": SPEC_ID,
+        "target_id": REFINEMENT_ID,
+        "target_rule_id": REFINEMENT_RULE,
+        "new_edge_created": True,
+        "removed_edge_count": 1,
+        "ambiguous_legacy_edges": 0,
+    }
+    assert transaction.inline_scope is not None
+    assert transaction.inline_scope.compensation_calls == 1
+    assert transaction.outer_compensation_calls == 0
+    assert _lineage_targets(store) == [IDEATION_ID]
 
 
 def test_legacy_ambiguous_edge_is_signaled_and_preserved() -> None:

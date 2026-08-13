@@ -31,23 +31,37 @@ When the board has `require_spec_validation=true`, advancing from `approved` to 
 **The canonical flow:**
 1. Populate the spec in `draft` → move through `review` → `approved`.
 2. Iterate coverage until ALL deterministic gates are green: AC coverage 100%, FR→BR coverage 100%, scenario→task linkage 100%, contract→task linkage 100%, TR→task linkage 100%.
-3. Call `okto_pulse_submit_spec_validation(board_id, spec_id, completeness, completeness_justification, assertiveness, assertiveness_justification, ambiguity, ambiguity_justification, general_justification, recommendation)`.
+3. Call `okto_pulse_submit_spec_validation` with the optimistic fences and all
+   five canonical scores (`confidence`, `clarity`, `assertiveness`,
+   `decidability`, `ambiguity`), one justification per score, optional
+   metric-tagged pinpoints, and `recommendation=approve|reject`.
 4. The gate runs coverage checks first. If any fail, you get a coverage error — fix the gap and retry.
 5. If coverage passes, the gate computes `outcome` atomically:
    - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
    - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
 6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock**.
 
-**Thresholds (default 80/80/30):**
+**Thresholds (defaults 70/80/80/80/30):**
 
 All scores are 0-100 integers, not 1-5. A 1-5-style score is treated literally
 as 1/100 through 5/100 and will usually fail the configured thresholds.
 
 | Dimension | Direction | Default threshold |
 |---|---|---|
-| `completeness` | Higher is better (min) | 80 |
+| `confidence` | Higher is better (min) | 70 |
+| `clarity` | Higher is better (min) | 80 |
 | `assertiveness` | Higher is better (min) | 80 |
+| `decidability` | Higher is better (min) | 80 |
 | `ambiguity` | LOWER is better (max) | 30 |
+
+Each score requires its own evaluator justification. Optional pinpoints use the
+closed shape `{metric, anchor_type, anchor_ref?, detail}`. `metric` is one of the
+five dimensions; `anchor_type` is `whole_artifact`, `field`,
+`structured_child`, or `qa`. Whole-artifact anchors omit `anchor_ref`; every
+other anchor type requires it. Pulse validates and stores this externally
+supplied assessment but does not run an evaluator. Historical `score`/`summary`
+and `completeness` records remain readable compatibility evidence and do not
+define the canonical five-metric gate.
 
 **Anti-pattern — GRAVE violation:** Re-submitting with higher numbers without actually improving the spec. The correct response to a failed dimension is to ADD content (new test scenarios, refined BRs, edge cases) until you genuinely believe the score is higher.
 

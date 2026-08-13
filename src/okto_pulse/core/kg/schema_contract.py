@@ -18,7 +18,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.5.0"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -52,7 +52,7 @@ VECTOR_INDEX_TYPES: tuple[str, ...] = (
     "Learning",
 )
 
-# 10 rel types. supersedes and contradicts are the two core semantic relations
+# 11 base rel types. supersedes and contradicts are the two core semantic relations
 # the primary tier walks variable-length paths on; the rest encode provenance,
 # context, co-reference, and quality feedback.
 REL_TYPES: tuple[tuple[str, str, str], ...] = (
@@ -66,6 +66,9 @@ REL_TYPES: tuple[tuple[str, str, str], ...] = (
     ("implements", "APIContract", "Requirement"),
     ("tests", "TestScenario", "Criterion"),
     ("validates", "Learning", "Bug"),
+    # Operational Spec precedence. This is intentionally distinct from the
+    # cognitive Decision -> Decision ``depends_on`` relation.
+    ("precedes", "Entity", "Entity"),
 )
 
 

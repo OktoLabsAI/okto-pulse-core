@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         QualityAssessmentLifecyclePersistencePort,
     )
     from .research_decision_ledger import ResearchDecisionLedgerPersistencePort
+    from .spec_dependency import SpecDependencyPersistencePort
 
 
 class RelationalApplicationAdapterMissing(RuntimeError):
@@ -167,6 +168,13 @@ class RelationalApplicationAdapter(Protocol):
         session: Any,
     ) -> "ResearchDecisionLedgerPersistencePort":
         """Return the transaction-bound SK-A RDL persistence port."""
+        ...
+
+    def spec_dependencies(
+        self,
+        session: Any,
+    ) -> "SpecDependencyPersistencePort":
+        """Return the transaction-bound operational Spec precedence authority."""
         ...
 
     def code_investigations(self, session: Any) -> "CodeInvestigationStore":

@@ -23,6 +23,7 @@ from okto_pulse.core.events.types import DomainEvent
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.ports.relational_effects import (
     ConsolidationQueueUpsert,
+    SpecDependencyProjectionQueueMetadata,
     get_relational_effects_port,
 )
 
@@ -50,6 +51,10 @@ _BUG_REGRESSION_DECISION_EVENT = "bug_regression_scenario_reuse_decision"
 _CODE_INVESTIGATION_RECEIPT_EVENTS = {
     "code_investigation.receipt_submitted",
     "code_investigation.receipt_revoked",
+}
+_SPEC_DEPENDENCY_EVENTS = {
+    "spec.dependency_added",
+    "spec.dependency_removed",
 }
 _CODE_EVIDENCE_EVENTS = {
     "code_evidence.created",
@@ -93,6 +98,8 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "card.linked_to_spec",
     "card.unlinked_from_spec",
     "spec.created",
+    "spec.dependency_added",
+    "spec.dependency_removed",
     "spec.moved",
     "spec.version_bumped",
     "spec.semantic_changed",
@@ -147,7 +154,12 @@ class ConsolidationEnqueuer:
 
         for artifact_type, artifact_id in targets:
             await self._enqueue_one(
-                event, artifact_type, artifact_id, priority, session
+                event,
+                artifact_type,
+                artifact_id,
+                priority,
+                session,
+                payload=self._queue_payload(event, artifact_type, artifact_id),
             )
 
     async def _enqueue_one(
@@ -157,6 +169,8 @@ class ConsolidationEnqueuer:
         artifact_id: str,
         priority: str,
         session: object,
+        *,
+        payload: dict[str, object] | None = None,
     ) -> None:
         # Bug 4a430c6d (race fix): the relational port atomically merges
         # concurrent events for the same (board_id, artifact_type, artifact_id)
@@ -185,6 +199,7 @@ class ConsolidationEnqueuer:
                     priority=priority,
                     source=f"event:{event.event_type}",
                     triggered_by_event=event.event_type,
+                    payload=payload,
                 ),
             )
         )
@@ -277,6 +292,37 @@ class ConsolidationEnqueuer:
                 },
             )
 
+    @staticmethod
+    def _queue_payload(
+        event: DomainEvent,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> dict[str, str] | None:
+        """Bind dependency fan-out ownership to durable queue metadata."""
+
+        if event.event_type not in _SPEC_DEPENDENCY_EVENTS or artifact_type != "spec":
+            return None
+        owner_spec_id = getattr(event, "projection_owner_spec_id", None)
+        dependency_id = getattr(event, "dependency_id", None)
+        if (
+            not isinstance(owner_spec_id, str)
+            or not owner_spec_id
+            or not isinstance(dependency_id, str)
+            or not dependency_id
+        ):
+            return None
+        return SpecDependencyProjectionQueueMetadata(
+            mutation_event_id=event.event_id,
+            mutation_event_type=event.event_type,
+            dependency_id=dependency_id,
+            projection_owner_spec_id=owner_spec_id,
+            target_role=(
+                "projection_owner"
+                if artifact_id == owner_spec_id
+                else "endpoint_bootstrap"
+            ),
+        ).to_payload()
+
     def _map_targets(self, event: DomainEvent) -> list[tuple[str, str]]:
         """Return one or more (artifact_type, artifact_id) targets per event.
 
@@ -334,6 +380,30 @@ class ConsolidationEnqueuer:
             artifact_id = getattr(event, "artifact_id", None)
             if artifact_type and artifact_id:
                 targets.append((artifact_type, artifact_id))
+            return targets
+
+        if et in _SPEC_DEPENDENCY_EVENTS:
+            # Re-read authority through the dependent projection. Enqueue the
+            # prerequisite as well so its endpoint root converges without any
+            # network or graph work inside the relational mutation lock.
+            # Materialize the prerequisite root before the dependent tries to
+            # resolve its reference-only ``precedes`` endpoint.
+            for attr in ("target_spec_id", "spec_id"):
+                spec_id = getattr(event, attr, None)
+                target = ("spec", spec_id)
+                if spec_id and target not in targets:
+                    targets.append(target)
+            return targets
+
+        if et == "spec.version_bumped" and set(
+            getattr(event, "changed_fields", ())
+        ) == {"dependencies"}:
+            # Dependency mutations publish both the generic version signal and
+            # a dependency-specific event in the same transaction.  The latter
+            # owns the prerequisite/dependent fan-out and its durable metric
+            # marker.  Admitting the generic signal first can coalesce the
+            # dependent row without that marker, so leave this projection to
+            # the mutation-specific event.
             return targets
 
         # Dual-target spec-only events (Ideação #2): spec re-enqueue, no card.

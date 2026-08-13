@@ -646,6 +646,9 @@ async def test_ac23_resolves_only_the_proven_status_only_done_snapshot(
     async def list_records(_db, kind: str, **kwargs):
         query_kinds.append(kind)
         assert kwargs["limit"] == 2
+        assert kwargs["filters"][-1].field == "version"
+        assert kwargs["filters"][-1].operator == "eq"
+        assert kwargs["filters"][-1].value == 12
         return [
             SimpleNamespace(
                 changes=[{"field": "status", "old": "approved", "new": "done"}]

@@ -70,21 +70,41 @@ def _seed_foreign_card_id(spec_id: str) -> str:
 def _seed_qa_id(spec_id: str) -> str:
     return f"qa-scope-{spec_id[:8]}"
 
+
 # The 33 spec-family MCP tools (inventory w1ahn926e).
 _SPEC_TOOLS = (
-    "get_spec", "delete_spec", "get_spec_history", "update_test_scenario_status",
-    "move_spec", "update_spec", "create_spec", "get_spec_context",
-    "derive_spec_from_ideation", "derive_spec_from_refinement",
-    "add_business_rule", "update_business_rule", "remove_business_rule",
+    "get_spec",
+    "delete_spec",
+    "get_spec_history",
+    "update_test_scenario_status",
+    "move_spec",
+    "update_spec",
+    "create_spec",
+    "get_spec_context",
+    "derive_spec_from_ideation",
+    "derive_spec_from_refinement",
+    "add_business_rule",
+    "update_business_rule",
+    "remove_business_rule",
     "list_business_rules",
-    "add_api_contract", "update_api_contract", "remove_api_contract",
+    "add_api_contract",
+    "update_api_contract",
+    "remove_api_contract",
     "list_api_contracts",
-    "add_decision", "update_decision", "remove_decision",
-    "add_integration_requirement", "list_integration_requirements",
-    "add_observability_requirement", "list_observability_requirements",
-    "add_test_scenario", "list_test_scenarios", "update_test_scenario",
+    "add_decision",
+    "update_decision",
+    "remove_decision",
+    "add_integration_requirement",
+    "list_integration_requirements",
+    "add_observability_requirement",
+    "list_observability_requirements",
+    "add_test_scenario",
+    "list_test_scenarios",
+    "update_test_scenario",
     "delete_test_scenario",
-    "update_spec_entity", "update_spec_api_contract", "remove_spec_entity",
+    "update_spec_entity",
+    "update_spec_api_contract",
+    "remove_spec_entity",
     "migrate_spec_decisions",
 )
 
@@ -247,9 +267,16 @@ def test_api_contract_f9_f10_canonical_no_pydantic_url():
     from okto_pulse.core.models.schemas import ApiContract
 
     bad = {
-        "id": "api_x", "method": "CALL", "path": "/x", "description": "",
-        "request_body": None, "response_success": None, "response_errors": None,
-        "linked_requirements": None, "linked_rules": None, "notes": None,
+        "id": "api_x",
+        "method": "CALL",
+        "path": "/x",
+        "description": "",
+        "request_body": None,
+        "response_success": None,
+        "response_errors": None,
+        "linked_requirements": None,
+        "linked_rules": None,
+        "notes": None,
     }
     with pytest.raises(ValidationError) as ei:
         ApiContract.model_validate(bad, context={"on_write": True})
@@ -271,10 +298,10 @@ def _stub_ctx():
 
 @pytest.fixture(autouse=True)
 def _auth():
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())
-    ), patch.object(mcp_server, "check_permission", return_value=None), patch.object(
-        mcp_server, "_mcp_check_permission", return_value=None
+    with (
+        patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(mcp_server, "_mcp_check_permission", return_value=None),
     ):
         yield
 
@@ -419,9 +446,7 @@ async def _spec_mutation_state(spec_id: str) -> dict:
         )
         knowledge_ids = list(
             await db.scalars(
-                select(SpecKnowledgeBase.id).where(
-                    SpecKnowledgeBase.spec_id == spec_id
-                )
+                select(SpecKnowledgeBase.id).where(SpecKnowledgeBase.spec_id == spec_id)
             )
         )
         qa_items = list(
@@ -456,24 +481,26 @@ async def _spec_mutation_state(spec_id: str) -> dict:
         }
         if spec is None:
             return state
-        state.update({
-            "title": spec.title,
-            "description": spec.description,
-            "context": spec.context,
-            "edition": spec.edition,
-            "version": spec.version,
-            "updated_at": spec.updated_at,
-            "functional_requirements": deepcopy(spec.functional_requirements),
-            "technical_requirements": deepcopy(spec.technical_requirements),
-            "acceptance_criteria": deepcopy(spec.acceptance_criteria),
-            "business_rules": deepcopy(spec.business_rules),
-            "api_contracts": deepcopy(spec.api_contracts),
-            "decisions": deepcopy(spec.decisions),
-            "test_scenarios": deepcopy(spec.test_scenarios),
-            "validations": deepcopy(spec.validations),
-            "current_validation_id": spec.current_validation_id,
-            "evaluations": deepcopy(spec.evaluations),
-        })
+        state.update(
+            {
+                "title": spec.title,
+                "description": spec.description,
+                "context": spec.context,
+                "edition": spec.edition,
+                "version": spec.version,
+                "updated_at": spec.updated_at,
+                "functional_requirements": deepcopy(spec.functional_requirements),
+                "technical_requirements": deepcopy(spec.technical_requirements),
+                "acceptance_criteria": deepcopy(spec.acceptance_criteria),
+                "business_rules": deepcopy(spec.business_rules),
+                "api_contracts": deepcopy(spec.api_contracts),
+                "decisions": deepcopy(spec.decisions),
+                "test_scenarios": deepcopy(spec.test_scenarios),
+                "validations": deepcopy(spec.validations),
+                "current_validation_id": spec.current_validation_id,
+                "evaluations": deepcopy(spec.evaluations),
+            }
+        )
         return state
 
 
@@ -516,8 +543,12 @@ async def test_move_spec_returns_committed_version(_seed) -> None:
 async def test_add_business_rule_roundtrip(_seed):
     out = await _call(
         "okto_pulse_add_business_rule",
-        board_id=BOARD_ID, spec_id=_seed,
-        title="Clamp", rule="MUST clamp", when="score > 1.5", then="clamp to 1.5",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        title="Clamp",
+        rule="MUST clamp",
+        when="score > 1.5",
+        then="clamp to 1.5",
     )
     assert out["success"] is True
     assert out["business_rule"]["id"].startswith("br_")
@@ -531,7 +562,10 @@ async def test_add_business_rule_roundtrip(_seed):
 async def test_add_api_contract_roundtrip(_seed):
     out = await _call(
         "okto_pulse_add_api_contract",
-        board_id=BOARD_ID, spec_id=_seed, method="get", path="/login",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        method="get",
+        path="/login",
     )
     assert out["success"] is True
     assert out["api_contract"]["method"] == "GET"
@@ -573,9 +607,7 @@ async def test_get_spec_exposes_structured_families_and_archive_state(_seed):
     assert payload["api_contracts"][0]["id"] == CONTRACT_ID
     assert payload["decisions"][0]["id"] == DECISION_ID
     assert payload["test_scenarios"][0]["id"] == "ts_get_spec"
-    assert payload["integration_requirements"][0]["id"] == (
-        INTEGRATION_REQUIREMENT_ID
-    )
+    assert payload["integration_requirements"][0]["id"] == (INTEGRATION_REQUIREMENT_ID)
     assert payload["observability_requirements"][0]["id"] == (
         OBSERVABILITY_REQUIREMENT_ID
     )
@@ -589,7 +621,10 @@ async def test_get_spec_exposes_structured_families_and_archive_state(_seed):
 async def test_add_api_contract_invalid_method_is_canonical(_seed):
     out = await _call(
         "okto_pulse_add_api_contract",
-        board_id=BOARD_ID, spec_id=_seed, method="CALL", path="/x",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        method="CALL",
+        path="/x",
     )
     assert out["error"] == "invalid_api_contract"
     assert "errors.pydantic.dev" not in json.dumps(out)
@@ -604,7 +639,8 @@ async def test_integration_requirement_is_board_scoped(_seed):
     assert ok["spec_id"] == _seed
     cross = await _call(
         "okto_pulse_list_integration_requirements",
-        board_id=OTHER_BOARD_ID, spec_id=_seed,
+        board_id=OTHER_BOARD_ID,
+        spec_id=_seed,
     )
     assert cross == {"error": "Spec not found"}
 
@@ -694,13 +730,16 @@ _CROSS_BOARD_SPEC_PARENT_CASES = (
             "expected_validation_edition": 1,
             "expected_spec_version": 1,
             "expected_head_revision": 0,
-            "completeness": 90,
-            "completeness_justification": "All criteria have detailed coverage",
+            "confidence": 90,
+            "confidence_justification": "Evaluator inspected the complete Spec",
+            "clarity": 90,
+            "clarity_justification": "Problem and solution are explicit",
             "assertiveness": 85,
             "assertiveness_justification": "Requirements use measurable language",
+            "decidability": 90,
+            "decidability_justification": "Requirements direct concrete choices",
             "ambiguity": 15,
             "ambiguity_justification": "Terms are explicitly and clearly defined",
-            "general_justification": "The specification is ready for deterministic execution",
             "recommendation": "approve",
         },
         "Spec not found",
@@ -770,7 +809,9 @@ _CROSS_BOARD_SPEC_PARENT_CASES = (
 @pytest.mark.parametrize(
     ("tool", "tool_args", "expected_error"),
     _CROSS_BOARD_SPEC_PARENT_CASES,
-    ids=[case[0].removeprefix("okto_pulse_") for case in _CROSS_BOARD_SPEC_PARENT_CASES],
+    ids=[
+        case[0].removeprefix("okto_pulse_") for case in _CROSS_BOARD_SPEC_PARENT_CASES
+    ],
 )
 async def test_spec_parent_operations_fail_closed_cross_board_without_audit(
     _seed, tool: str, tool_args: dict, expected_error: str
@@ -811,7 +852,11 @@ async def test_spec_parent_operations_fail_closed_cross_board_without_audit(
 @pytest.mark.parametrize(
     ("target_type", "target_id", "expected_error"),
     (
-        ("spec", "__seed_spec__", "Spec or card not found, or they belong to different boards"),
+        (
+            "spec",
+            "__seed_spec__",
+            "Spec or card not found, or they belong to different boards",
+        ),
         ("contract", CONTRACT_ID, "Spec not found"),
         ("tr", TECHNICAL_REQUIREMENT_ID, "Spec not found"),
         ("decision", DECISION_ID, "Spec not found"),
@@ -843,7 +888,11 @@ async def test_link_task_parents_fail_closed_cross_board_without_audit(
 @pytest.mark.parametrize(
     ("target_type", "target_id", "expected_error"),
     (
-        ("spec", "__seed_spec__", "Spec or card not found, or they belong to different boards"),
+        (
+            "spec",
+            "__seed_spec__",
+            "Spec or card not found, or they belong to different boards",
+        ),
         ("contract", CONTRACT_ID, "Card not found"),
         ("tr", TECHNICAL_REQUIREMENT_ID, "Card not found"),
         ("decision", DECISION_ID, "Card not found"),
@@ -1126,13 +1175,18 @@ async def test_spec_evaluation_same_board_read_and_delete(_seed) -> None:
 async def test_decision_remove_is_soft_delete(_seed):
     added = await _call(
         "okto_pulse_add_decision",
-        board_id=BOARD_ID, spec_id=_seed,
-        title="Pick LadybugDB", rationale="embedded + single-writer",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        title="Pick LadybugDB",
+        rationale="embedded + single-writer",
     )
     dec_id = added["decision"]["id"]
     removed = await _call(
         "okto_pulse_remove_spec_entity",
-        board_id=BOARD_ID, spec_id=_seed, target_type="decision", entity_id=dec_id,
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        target_type="decision",
+        entity_id=dec_id,
     )
     assert removed["success"] is True and removed["revoked"] == dec_id
     assert removed["decision"]["status"] == "revoked"

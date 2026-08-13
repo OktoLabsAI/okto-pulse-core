@@ -115,163 +115,190 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
     card_impl_id = str(uuid.uuid4())
     card_test_id = str(uuid.uuid4())
     async with db_factory() as db:
-        db.add(Board(
-            id=board_id,
-            name="Validation Gate Board",
-            owner_id=USER_ID,
-            settings={
-                "require_spec_validation": True,
-                "min_spec_completeness": 80,
-                "min_spec_assertiveness": 80,
-                "max_spec_ambiguity": 30,
-            },
-        ))
-        db.add(Ideation(
-            id=ideation_id,
-            board_id=board_id,
-            title="Validation Gate Ideation",
-            status=IdeationStatus.DONE,
-            archived=False,
-            created_by=USER_ID,
-        ))
-        db.add(Refinement(
-            id=ref_id,
-            ideation_id=ideation_id,
-            board_id=board_id,
-            title="Validation Gate Refinement",
-            status=RefinementStatus.DONE,
-            archived=False,
-            created_by=USER_ID,
-        ))
-        db.add(Spec(
-            id=spec_id,
-            board_id=board_id,
-            ideation_id=ideation_id,
-            refinement_id=ref_id,
-            title="Validation Gate Spec",
-            status=SpecStatus.APPROVED,
-            archived=False,
-            skip_test_coverage=True,
-            acceptance_criteria=[
-                "AC1: System returns 200 on health check",
-                "AC2: System returns 401 on invalid token",
-                "AC3: System returns 404 on unknown resource",
-            ],
-            functional_requirements=[
-                "FR1: Health endpoint exists",
-                "FR2: Authentication required",
-                "FR3: Resource not found handling",
-            ],
-            test_scenarios=[
-                {
-                    "id": "ts_health",
-                    "title": "Health check returns 200",
-                    "given": "Server is running",
-                    "when": "GET /health",
-                    "then": "Returns 200 OK",
-                    "scenario_type": "integration",
-                    "linked_criteria": [0],
-                    "linked_task_ids": [card_impl_id],
+        db.add(
+            Board(
+                id=board_id,
+                name="Validation Gate Board",
+                owner_id=USER_ID,
+                settings={
+                    "require_spec_validation": True,
+                    "min_spec_completeness": 80,
+                    "min_spec_assertiveness": 80,
+                    "max_spec_ambiguity": 30,
                 },
-                {
-                    "id": "ts_auth",
-                    "title": "Invalid token returns 401",
-                    "given": "Client sends invalid token",
-                    "when": "GET /resource",
-                    "then": "Returns 401 Unauthorized",
-                    "scenario_type": "integration",
-                    "linked_criteria": [1],
-                    "linked_task_ids": [card_impl_id],
-                },
-                {
-                    "id": "ts_notfound",
-                    "title": "Unknown resource returns 404",
-                    "given": "Client requests unknown path",
-                    "when": "GET /unknown",
-                    "then": "Returns 404 Not Found",
-                    "scenario_type": "integration",
-                    "linked_criteria": [2],
-                    "linked_task_ids": [card_impl_id],
-                },
-            ],
-            business_rules=[
-                {
-                    "id": "br_health",
-                    "title": "Health endpoint exists",
-                    "rule": "Health endpoint must return 200",
-                    "when": "GET /health is called",
-                    "then": "Return 200 OK",
-                    "linked_requirements": [0],
-                    "linked_task_ids": [card_impl_id],
-                },
-                {
-                    "id": "br_auth",
-                    "title": "Authentication required",
-                    "rule": "All endpoints require valid token",
-                    "when": "Request is made without token",
-                    "then": "Return 401",
-                    "linked_requirements": [1],
-                    "linked_task_ids": [card_impl_id],
-                },
-                {
-                    "id": "br_notfound",
-                    "title": "Resource not found handling",
-                    "rule": "Unknown resources return 404",
-                    "when": "Resource does not exist",
-                    "then": "Return 404 with message",
-                    "linked_requirements": [2],
-                    "linked_task_ids": [card_impl_id],
-                },
-            ],
-            technical_requirements=[
-                {"id": "tr_1", "text": "Must use JWT auth", "linked_task_ids": [card_impl_id]},
-                {"id": "tr_2", "text": "Response time < 200ms", "linked_task_ids": [card_impl_id]},
-            ],
-            api_contracts=[
-                {
-                    "id": "api_1",
-                    "method": "GET",
-                    "path": "/health",
-                    "description": "Health check endpoint",
-                    "request_body": None,
-                    "response_success": {"status": 200, "message": "ok"},
-                    "response_errors": [{"status": 500, "detail": "internal error"}],
-                    "linked_requirements": [0],
-                    "linked_rules": [],
-                    "linked_task_ids": [card_impl_id],
-                },
-            ],
-            decisions=[
-                {"id": "dec_1", "title": "Use JWT", "status": "active", "linked_task_ids": [card_impl_id]},
-            ],
-            created_by=USER_ID,
-        ))
+            )
+        )
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="Validation Gate Ideation",
+                status=IdeationStatus.DONE,
+                archived=False,
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Refinement(
+                id=ref_id,
+                ideation_id=ideation_id,
+                board_id=board_id,
+                title="Validation Gate Refinement",
+                status=RefinementStatus.DONE,
+                archived=False,
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                ideation_id=ideation_id,
+                refinement_id=ref_id,
+                title="Validation Gate Spec",
+                status=SpecStatus.APPROVED,
+                archived=False,
+                skip_test_coverage=True,
+                acceptance_criteria=[
+                    "AC1: System returns 200 on health check",
+                    "AC2: System returns 401 on invalid token",
+                    "AC3: System returns 404 on unknown resource",
+                ],
+                functional_requirements=[
+                    "FR1: Health endpoint exists",
+                    "FR2: Authentication required",
+                    "FR3: Resource not found handling",
+                ],
+                test_scenarios=[
+                    {
+                        "id": "ts_health",
+                        "title": "Health check returns 200",
+                        "given": "Server is running",
+                        "when": "GET /health",
+                        "then": "Returns 200 OK",
+                        "scenario_type": "integration",
+                        "linked_criteria": [0],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                    {
+                        "id": "ts_auth",
+                        "title": "Invalid token returns 401",
+                        "given": "Client sends invalid token",
+                        "when": "GET /resource",
+                        "then": "Returns 401 Unauthorized",
+                        "scenario_type": "integration",
+                        "linked_criteria": [1],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                    {
+                        "id": "ts_notfound",
+                        "title": "Unknown resource returns 404",
+                        "given": "Client requests unknown path",
+                        "when": "GET /unknown",
+                        "then": "Returns 404 Not Found",
+                        "scenario_type": "integration",
+                        "linked_criteria": [2],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                ],
+                business_rules=[
+                    {
+                        "id": "br_health",
+                        "title": "Health endpoint exists",
+                        "rule": "Health endpoint must return 200",
+                        "when": "GET /health is called",
+                        "then": "Return 200 OK",
+                        "linked_requirements": [0],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                    {
+                        "id": "br_auth",
+                        "title": "Authentication required",
+                        "rule": "All endpoints require valid token",
+                        "when": "Request is made without token",
+                        "then": "Return 401",
+                        "linked_requirements": [1],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                    {
+                        "id": "br_notfound",
+                        "title": "Resource not found handling",
+                        "rule": "Unknown resources return 404",
+                        "when": "Resource does not exist",
+                        "then": "Return 404 with message",
+                        "linked_requirements": [2],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                ],
+                technical_requirements=[
+                    {
+                        "id": "tr_1",
+                        "text": "Must use JWT auth",
+                        "linked_task_ids": [card_impl_id],
+                    },
+                    {
+                        "id": "tr_2",
+                        "text": "Response time < 200ms",
+                        "linked_task_ids": [card_impl_id],
+                    },
+                ],
+                api_contracts=[
+                    {
+                        "id": "api_1",
+                        "method": "GET",
+                        "path": "/health",
+                        "description": "Health check endpoint",
+                        "request_body": None,
+                        "response_success": {"status": 200, "message": "ok"},
+                        "response_errors": [
+                            {"status": 500, "detail": "internal error"}
+                        ],
+                        "linked_requirements": [0],
+                        "linked_rules": [],
+                        "linked_task_ids": [card_impl_id],
+                    },
+                ],
+                decisions=[
+                    {
+                        "id": "dec_1",
+                        "title": "Use JWT",
+                        "status": "active",
+                        "linked_task_ids": [card_impl_id],
+                    },
+                ],
+                created_by=USER_ID,
+            )
+        )
         yesterday = datetime.now(timezone.utc)
-        db.add(Card(
-            id=card_impl_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Implementation card",
-            status=CardStatus.DONE,
-            card_type=CardType.NORMAL,
-            archived=False,
-            created_by=USER_ID,
-            created_at=yesterday,
-            updated_at=yesterday,
-        ))
+        db.add(
+            Card(
+                id=card_impl_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Implementation card",
+                status=CardStatus.DONE,
+                card_type=CardType.NORMAL,
+                archived=False,
+                created_by=USER_ID,
+                created_at=yesterday,
+                updated_at=yesterday,
+            )
+        )
         # Test card — required by check_test_coverage for scenarios with linked_task_ids
-        db.add(Card(
-            id=card_test_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Test card",
-            status=CardStatus.DONE,
-            card_type=CardType.TEST,
-            archived=False,
-            created_by=USER_ID,
-            created_at=yesterday,
-            updated_at=yesterday,
-        ))
+        db.add(
+            Card(
+                id=card_test_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Test card",
+                status=CardStatus.DONE,
+                card_type=CardType.TEST,
+                archived=False,
+                created_by=USER_ID,
+                created_at=yesterday,
+                updated_at=yesterday,
+            )
+        )
         await db.commit()
 
 
@@ -296,6 +323,38 @@ def _valid_submit_data(
         "ambiguity_justification": "Glossary added and terms defined clearly",
         "general_justification": "Spec is ready for execution with high confidence",
         "recommendation": recommendation,
+    }
+
+
+def _canonical_submit_data(
+    *,
+    confidence: int = 90,
+    clarity: int = 90,
+    assertiveness: int = 90,
+    decidability: int = 90,
+    ambiguity: int = 10,
+    recommendation: str = "approve",
+) -> dict:
+    return {
+        "confidence": confidence,
+        "confidence_justification": "The evaluator inspected the complete Spec.",
+        "clarity": clarity,
+        "clarity_justification": "Problem, solution and requirements are explicit.",
+        "assertiveness": assertiveness,
+        "assertiveness_justification": "Requirements use measurable and testable language.",
+        "decidability": decidability,
+        "decidability_justification": "Constraints lead to concrete implementation choices.",
+        "ambiguity": ambiguity,
+        "ambiguity_justification": "Defined terms have one interpretation in context.",
+        "recommendation": recommendation,
+        "pinpoints": [
+            {
+                "metric": "decidability",
+                "anchor_type": "field",
+                "anchor_ref": "technical_requirements.tr_availability",
+                "detail": "State the required scaling bounds.",
+            }
+        ],
     }
 
 
@@ -350,7 +409,9 @@ class TestStateGuard:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -420,12 +481,14 @@ class TestStateGuard:
             assert spec.validations in (None, [])
             assert spec.current_validation_id is None
             assert recorded_allow_decisions == []
-            assert await db.scalar(
-                select(func.count()).select_from(SpecHistory)
-            ) == history_before
-            assert await db.scalar(
-                select(func.count()).select_from(DomainEventRow)
-            ) == events_before
+            assert (
+                await db.scalar(select(func.count()).select_from(SpecHistory))
+                == history_before
+            )
+            assert (
+                await db.scalar(select(func.count()).select_from(DomainEventRow))
+                == events_before
+            )
 
     async def test_lint_head_replaced_after_preflight_blocks_promotion(
         self,
@@ -487,17 +550,25 @@ class TestStateGuard:
                 )
             )
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             events = (
-                await db.execute(
-                    select(DomainEventRow).where(DomainEventRow.board_id == board_id)
+                (
+                    await db.execute(
+                        select(DomainEventRow).where(
+                            DomainEventRow.board_id == board_id
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         assert result["spec_status"] == "validated"
         by_type = {event.event_type: event.payload_json for event in events}
@@ -516,37 +587,43 @@ class TestStateGuard:
         spec_id = str(uuid.uuid4())
         board_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Validation Gate Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Draft Spec",
-                status=SpecStatus.DRAFT,
-                archived=False,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Validation Gate Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Draft Spec",
+                    status=SpecStatus.DRAFT,
+                    archived=False,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'draft'"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -558,37 +635,43 @@ class TestStateGuard:
         spec_id = str(uuid.uuid4())
         board_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Validation Gate Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="In Progress Spec",
-                status=SpecStatus.IN_PROGRESS,
-                archived=False,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Validation Gate Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="In Progress Spec",
+                    status=SpecStatus.IN_PROGRESS,
+                    archived=False,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'in_progress'"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -600,37 +683,43 @@ class TestStateGuard:
         spec_id = str(uuid.uuid4())
         board_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Validation Gate Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Done Spec",
-                status=SpecStatus.DONE,
-                archived=False,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Validation Gate Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Done Spec",
+                    status=SpecStatus.DONE,
+                    archived=False,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'done'"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -642,37 +731,43 @@ class TestStateGuard:
         spec_id = str(uuid.uuid4())
         board_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Validation Gate Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Validated Spec",
-                status=SpecStatus.VALIDATED,
-                archived=False,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Validation Gate Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Validated Spec",
+                    status=SpecStatus.VALIDATED,
+                    archived=False,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'validated'"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -684,37 +779,43 @@ class TestStateGuard:
         spec_id = str(uuid.uuid4())
         board_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Validation Gate Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Review Spec",
-                status=SpecStatus.REVIEW,
-                archived=False,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Validation Gate Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Review Spec",
+                    status=SpecStatus.REVIEW,
+                    archived=False,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'review'"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -727,7 +828,9 @@ class TestStateGuard:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="not found"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id="nonexistent-spec",
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -741,6 +844,79 @@ class TestStateGuard:
 
 
 @pytest.mark.asyncio
+class TestCanonicalFiveMetricGate:
+    async def test_canonical_scores_justifications_and_pinpoints_are_persisted(
+        self,
+        db_factory,
+    ):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            result = await _submit_spec_validation(
+                SpecService(db),
+                db,
+                spec_id=SPEC_ID,
+                reviewer_id=USER_ID,
+                reviewer_name="Evaluator Agent",
+                data=_canonical_submit_data(),
+            )
+
+        assert result["outcome"] == "success"
+        assert result["spec_status"] == "validated"
+        assert result["confidence"] == 90
+        assert result["clarity"] == 90
+        assert result["assertiveness"] == 90
+        assert result["decidability"] == 90
+        assert result["ambiguity"] == 10
+        assert result["pinpoints"] == [
+            {
+                "metric": "decidability",
+                "anchor_type": "field",
+                "anchor_ref": "technical_requirements.tr_availability",
+                "detail": "State the required scaling bounds.",
+            }
+        ]
+        assert result["resolved_thresholds"] == {
+            "min_spec_confidence": 70,
+            "min_spec_clarity": 80,
+            "min_spec_assertiveness": 80,
+            "min_spec_decidability": 80,
+            "max_spec_ambiguity": 30,
+        }
+        assert "min_spec_completeness" not in result["resolved_thresholds"]
+
+    async def test_every_canonical_threshold_participates_in_gate_outcome(
+        self,
+        db_factory,
+    ):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            result = await _submit_spec_validation(
+                SpecService(db),
+                db,
+                spec_id=SPEC_ID,
+                reviewer_id=USER_ID,
+                reviewer_name="Evaluator Agent",
+                data=_canonical_submit_data(
+                    confidence=69,
+                    clarity=79,
+                    assertiveness=79,
+                    decidability=79,
+                    ambiguity=31,
+                ),
+            )
+
+        assert result["outcome"] == "failed"
+        assert result["spec_status"] == "approved"
+        assert result["threshold_violations"] == [
+            "confidence 69 < min 70",
+            "clarity 79 < min 80",
+            "assertiveness 79 < min 80",
+            "decidability 79 < min 80",
+            "ambiguity 31 > max 30",
+        ]
+
+
+@pytest.mark.asyncio
 class TestThresholdPass:
     """All scores meet thresholds + recommendation=approve → spec becomes validated."""
 
@@ -748,7 +924,9 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -768,7 +946,9 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -791,7 +971,9 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -814,7 +996,9 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -839,7 +1023,9 @@ class TestThresholdFailCompleteness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -865,7 +1051,9 @@ class TestThresholdFailCompleteness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -888,7 +1076,9 @@ class TestThresholdFailCompleteness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -920,7 +1110,9 @@ class TestThresholdFailAssertiveness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -945,7 +1137,9 @@ class TestThresholdFailAssertiveness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -977,7 +1171,9 @@ class TestThresholdFailAmbiguity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1003,7 +1199,9 @@ class TestThresholdFailAmbiguity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1026,7 +1224,9 @@ class TestThresholdFailAmbiguity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1058,7 +1258,9 @@ class TestRecommendationReject:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1083,7 +1285,9 @@ class TestRecommendationReject:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1117,7 +1321,9 @@ class TestAppendOnlyHistory:
         async with db_factory() as db:
             service = SpecService(db)
             # First submission: fails (low completeness)
-            result1 = await _submit_spec_validation(service, db,
+            result1 = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1135,7 +1341,9 @@ class TestAppendOnlyHistory:
             assert result1["outcome"] == "failed"
 
             # Second submission: passes
-            result2 = await _submit_spec_validation(service, db,
+            result2 = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1144,24 +1352,32 @@ class TestAppendOnlyHistory:
             assert result2["outcome"] == "success"
 
             # Move back to approved for third submission
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.REVIEW),
             )
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
             )
 
             # Third submission: fails again (reject)
-            result3 = await _submit_spec_validation(service, db,
+            result3 = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1189,7 +1405,9 @@ class TestAppendOnlyHistory:
             service = SpecService(db)
             results = []
             for i in range(3):
-                result = await _submit_spec_validation(service, db,
+                result = await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1213,7 +1431,9 @@ class TestAppendOnlyHistory:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1228,7 +1448,9 @@ class TestAppendOnlyHistory:
                     "recommendation": "approve",
                 },
             )
-            result2 = await _submit_spec_validation(service, db,
+            result2 = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1243,7 +1465,9 @@ class TestAppendOnlyHistory:
         async with db_factory() as db:
             service = SpecService(db)
             # Submit a successful validation → spec becomes validated
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1253,26 +1477,34 @@ class TestAppendOnlyHistory:
             validation_count = len(spec.validations)
 
             # Move back to draft
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
 
             # Move back through review to approved so we can submit again
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.REVIEW),
             )
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
             )
 
             # Submit another validation
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1304,11 +1536,15 @@ class TestContentLock:
     async def test_update_spec_blocked_after_success(self, db_factory):
         content_lock_board_id = str(uuid.uuid4())
         content_lock_spec_id = str(uuid.uuid4())
-        await _seed_board(db_factory, board_id=content_lock_board_id, spec_id=content_lock_spec_id)
+        await _seed_board(
+            db_factory, board_id=content_lock_board_id, spec_id=content_lock_spec_id
+        )
         async with db_factory() as db:
             service = SpecService(db)
             # First, pass validation
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=content_lock_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1316,7 +1552,9 @@ class TestContentLock:
             )
             # Now try to update — should be blocked
             with pytest.raises(SubjectEditRequiresDraftError) as exc_info:
-                await _update_spec(service, db,
+                await _update_spec(
+                    service,
+                    db,
                     content_lock_spec_id,
                     USER_ID,
                     SpecUpdate(description="New description after validation"),
@@ -1328,17 +1566,23 @@ class TestContentLock:
         """Updating the title should also be blocked."""
         content_lock_board_id = str(uuid.uuid4())
         content_lock_spec_id = str(uuid.uuid4())
-        await _seed_board(db_factory, board_id=content_lock_board_id, spec_id=content_lock_spec_id)
+        await _seed_board(
+            db_factory, board_id=content_lock_board_id, spec_id=content_lock_spec_id
+        )
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=content_lock_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             with pytest.raises(SubjectEditRequiresDraftError):
-                await _update_spec(service, db,
+                await _update_spec(
+                    service,
+                    db,
                     content_lock_spec_id,
                     USER_ID,
                     SpecUpdate(title="New title"),
@@ -1351,14 +1595,18 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=cl_board_id, spec_id=cl_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=cl_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             with pytest.raises(SubjectEditRequiresDraftError):
-                await _update_spec(service, db,
+                await _update_spec(
+                    service,
+                    db,
                     cl_spec_id,
                     USER_ID,
                     SpecUpdate(functional_requirements=["New FR"]),
@@ -1371,7 +1619,9 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=cl_board_id, spec_id=cl_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=cl_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1390,14 +1640,18 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=cl_board_id, spec_id=cl_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=cl_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             try:
-                await _update_spec(service, db,
+                await _update_spec(
+                    service,
+                    db,
                     cl_spec_id,
                     USER_ID,
                     SpecUpdate(description="attempted edit"),
@@ -1424,7 +1678,9 @@ class TestLockRelease:
         async with db_factory() as db:
             service = SpecService(db)
             # Pass validation
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1434,7 +1690,9 @@ class TestLockRelease:
             assert spec.current_validation_id is not None
 
             # Move back to draft
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
@@ -1452,20 +1710,26 @@ class TestLockRelease:
         async with db_factory() as db:
             service = SpecService(db)
             # Pass validation
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             # Move back to draft (releases lock)
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
             # Draft is the only editable state in the new lifecycle edition.
-            spec = await _update_spec(service, db,
+            spec = await _update_spec(
+                service,
+                db,
                 lr_spec_id,
                 USER_ID,
                 SpecUpdate(description="Updated after lock release"),
@@ -1480,7 +1744,9 @@ class TestLockRelease:
         async with db_factory() as db:
             service = SpecService(db)
             # Submit multiple validations
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1495,7 +1761,9 @@ class TestLockRelease:
                     "recommendation": "approve",
                 },
             )
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1505,7 +1773,9 @@ class TestLockRelease:
             assert len(spec.validations) == 2
 
             # Move back to draft
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
@@ -1521,7 +1791,9 @@ class TestLockRelease:
         await _seed_board(db_factory, board_id=lr_board_id, spec_id=lr_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1531,7 +1803,9 @@ class TestLockRelease:
             assert spec.current_validation_id is not None
 
             # Move back to approved (not draft)
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
@@ -1550,7 +1824,9 @@ class TestLockRelease:
 class TestListValidations:
     """list_validations returns all validations with current one marked active."""
 
-    async def test_list_returns_validations_in_reverse_chronological_order(self, db_factory):
+    async def test_list_returns_validations_in_reverse_chronological_order(
+        self, db_factory
+    ):
         lv_board_id = str(uuid.uuid4())
         lv_spec_id = str(uuid.uuid4())
         await _seed_board(db_factory, board_id=lv_board_id, spec_id=lv_spec_id)
@@ -1558,7 +1834,9 @@ class TestListValidations:
             service = SpecService(db)
             # Submit 3 validations
             for i in range(3):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=lv_spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1586,7 +1864,9 @@ class TestListValidations:
         async with db_factory() as db:
             service = SpecService(db)
             # Submit 2 validations
-            result1 = await _submit_spec_validation(service, db,
+            result1 = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1601,7 +1881,9 @@ class TestListValidations:
                     "recommendation": "approve",
                 },
             )
-            result2 = await _submit_spec_validation(service, db,
+            result2 = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1626,14 +1908,18 @@ class TestListValidations:
         await _seed_board(db_factory, board_id=lv_board_id, spec_id=lv_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             # Move back to draft
-            await _move_spec(service, db,
+            await _move_spec(
+                service,
+                db,
                 lv_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
@@ -1651,7 +1937,9 @@ class TestListValidations:
         await _seed_board(db_factory, board_id=lv_board_id, spec_id=lv_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="TestReviewer",
@@ -1660,13 +1948,23 @@ class TestListValidations:
             result = await service.list_spec_validations(lv_spec_id)
         v = result["validations"][0]
         for field in (
-            "id", "spec_id", "board_id", "reviewer_id", "reviewer_name",
-            "completeness", "completeness_justification",
-            "assertiveness", "assertiveness_justification",
-            "ambiguity", "ambiguity_justification",
-            "general_justification", "recommendation",
-            "outcome", "threshold_violations",
-            "resolved_thresholds", "created_at",
+            "id",
+            "spec_id",
+            "board_id",
+            "reviewer_id",
+            "reviewer_name",
+            "completeness",
+            "completeness_justification",
+            "assertiveness",
+            "assertiveness_justification",
+            "ambiguity",
+            "ambiguity_justification",
+            "general_justification",
+            "recommendation",
+            "outcome",
+            "threshold_violations",
+            "resolved_thresholds",
+            "created_at",
         ):
             assert field in v, f"Missing field: {field}"
 
@@ -1696,7 +1994,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="completeness"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1717,7 +2017,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="completeness"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1738,7 +2040,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="assertiveness"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1759,7 +2063,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="ambiguity"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1780,7 +2086,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="ambiguity"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1801,7 +2109,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="recommendation"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1823,7 +2133,9 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises((KeyError, TypeError, ValueError)):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1854,41 +2166,51 @@ class TestBoardLevelConfig:
         board_id = "custom-threshold-board"
         spec_id = "custom-threshold-spec"
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Custom Threshold Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 95,  # higher default
-                    "min_spec_assertiveness": 90,  # higher default
-                    "max_spec_ambiguity": 10,  # lower default (stricter)
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Custom Threshold Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                skip_decisions_coverage=True,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[
-                    {"id": "dec_threshold", "title": "Thresholds are board-configured", "status": "active"},
-                ],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Custom Threshold Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 95,  # higher default
+                        "min_spec_assertiveness": 90,  # higher default
+                        "max_spec_ambiguity": 10,  # lower default (stricter)
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Custom Threshold Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    skip_decisions_coverage=True,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[
+                        {
+                            "id": "dec_threshold",
+                            "title": "Thresholds are board-configured",
+                            "status": "active",
+                        },
+                    ],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             # With default thresholds (80/80/30) this would pass, but with
             # custom thresholds (95/90/10) it should fail on completeness.
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1912,39 +2234,49 @@ class TestBoardLevelConfig:
         board_id = "custom-pass-board"
         spec_id = "custom-pass-spec"
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Custom Pass Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 95,
-                    "min_spec_assertiveness": 90,
-                    "max_spec_ambiguity": 10,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Custom Pass Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                skip_decisions_coverage=True,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[
-                    {"id": "dec_threshold_pass", "title": "Thresholds can pass", "status": "active"},
-                ],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Custom Pass Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 95,
+                        "min_spec_assertiveness": 90,
+                        "max_spec_ambiguity": 10,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Custom Pass Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    skip_decisions_coverage=True,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[
+                        {
+                            "id": "dec_threshold_pass",
+                            "title": "Thresholds can pass",
+                            "status": "active",
+                        },
+                    ],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1962,39 +2294,51 @@ class TestBoardLevelConfig:
         assert result["outcome"] == "success"
         assert result["spec_status"] == "validated"
 
-    async def test_default_validation_gate_and_thresholds_when_not_configured(self, db_factory):
+    async def test_default_validation_gate_and_thresholds_when_not_configured(
+        self, db_factory
+    ):
         """Board without explicit gate settings should require validation with default thresholds."""
         board_id = "default-threshold-board"
         spec_id = "default-threshold-spec"
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Default Threshold Board",
-                owner_id=USER_ID,
-                settings={},  # no threshold settings
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Default Threshold Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                skip_decisions_coverage=True,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[
-                    {"id": "dec_default_threshold", "title": "Default thresholds apply", "status": "active"},
-                ],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Default Threshold Board",
+                    owner_id=USER_ID,
+                    settings={},  # no threshold settings
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Default Threshold Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    skip_decisions_coverage=True,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[
+                        {
+                            "id": "dec_default_threshold",
+                            "title": "Default thresholds apply",
+                            "status": "active",
+                        },
+                    ],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2009,34 +2353,40 @@ class TestBoardLevelConfig:
         board_id = "opt-out-board"
         spec_id = "opt-out-spec"
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Opt Out Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": False,  # explicitly disabled
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Opt Out Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Opt Out Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": False,  # explicitly disabled
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Opt Out Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="does not require"):
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -2048,7 +2398,9 @@ class TestBoardLevelConfig:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2083,20 +2435,34 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="TestReviewer",
                 data=_valid_submit_data(),
             )
         expected_fields = {
-            "id", "spec_id", "board_id", "reviewer_id", "reviewer_name",
-            "completeness", "completeness_justification",
-            "assertiveness", "assertiveness_justification",
-            "ambiguity", "ambiguity_justification",
-            "general_justification", "recommendation",
-            "outcome", "threshold_violations",
-            "resolved_thresholds", "created_at", "spec_status", "active",
+            "id",
+            "spec_id",
+            "board_id",
+            "reviewer_id",
+            "reviewer_name",
+            "completeness",
+            "completeness_justification",
+            "assertiveness",
+            "assertiveness_justification",
+            "ambiguity",
+            "ambiguity_justification",
+            "general_justification",
+            "recommendation",
+            "outcome",
+            "threshold_violations",
+            "resolved_thresholds",
+            "created_at",
+            "spec_status",
+            "active",
         }
         assert set(result.keys()) >= expected_fields
 
@@ -2105,7 +2471,9 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2121,7 +2489,9 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id="reviewer-123",
                 reviewer_name="JaneReviewer",
@@ -2137,7 +2507,9 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2153,7 +2525,9 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2177,7 +2551,9 @@ class TestEdgeCases:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await _submit_spec_validation(service, db,
+            await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2194,17 +2570,27 @@ class TestEdgeCases:
             )
             spec = await service.get_spec(SPEC_ID)
         v = spec.validations[0]
-        assert v["completeness_justification"] == "All ACs are covered with detailed test plans"
+        assert (
+            v["completeness_justification"]
+            == "All ACs are covered with detailed test plans"
+        )
         assert v["assertiveness_justification"] == "FRs are measurable and testable"
-        assert v["ambiguity_justification"] == "Glossary added and terms defined clearly"
-        assert v["general_justification"] == "Spec is ready for execution with high confidence"
+        assert (
+            v["ambiguity_justification"] == "Glossary added and terms defined clearly"
+        )
+        assert (
+            v["general_justification"]
+            == "Spec is ready for execution with high confidence"
+        )
 
     async def test_multiple_violations_with_reject(self, db_factory):
         """Both threshold violations AND reject recommendation are recorded."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2229,7 +2615,9 @@ class TestEdgeCases:
         async with db_factory() as db:
             service = SpecService(db)
             # Low ambiguity should pass
-            result_pass = await _submit_spec_validation(service, db,
+            result_pass = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2252,28 +2640,36 @@ class TestEdgeCases:
         async with db_factory() as db:
             # Create a spec with no coverage items (empty arrays)
             spec_id = "no-coverage-spec"
-            db.add(Spec(
-                id=spec_id,
-                board_id=BOARD_ID,
-                title="No Coverage Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                skip_decisions_coverage=True,
-                acceptance_criteria=[],
-                functional_requirements=[],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[
-                    {"id": "dec_no_coverage", "title": "Coverage arrays are empty by design", "status": "active"},
-                ],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=BOARD_ID,
+                    title="No Coverage Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    skip_decisions_coverage=True,
+                    acceptance_criteria=[],
+                    functional_requirements=[],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[
+                        {
+                            "id": "dec_no_coverage",
+                            "title": "Coverage arrays are empty by design",
+                            "status": "active",
+                        },
+                    ],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
-            result = await _submit_spec_validation(service, db,
+            result = await _submit_spec_validation(
+                service,
+                db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2296,49 +2692,53 @@ class TestAcScenarioPrecheck:
         board_id = str(uuid.uuid4())
         spec_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="AC Precheck Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                    "skip_test_coverage_global": False,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="AC Precheck Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                skip_test_coverage=False,
-                acceptance_criteria=[
-                    "AC1: covered behavior",
-                    "AC2: UNcovered behavior",
-                ],
-                functional_requirements=[],
-                test_scenarios=[
-                    {
-                        "id": "ts_covered",
-                        "title": "Covered scenario",
-                        "given": "g",
-                        "when": "w",
-                        "then": "t",
-                        "scenario_type": "integration",
-                        "linked_criteria": [0],
-                        "linked_task_ids": [],
-                        "status": "passed",
+            db.add(
+                Board(
+                    id=board_id,
+                    name="AC Precheck Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                        "skip_test_coverage_global": False,
                     },
-                ],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="AC Precheck Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    skip_test_coverage=False,
+                    acceptance_criteria=[
+                        "AC1: covered behavior",
+                        "AC2: UNcovered behavior",
+                    ],
+                    functional_requirements=[],
+                    test_scenarios=[
+                        {
+                            "id": "ts_covered",
+                            "title": "Covered scenario",
+                            "given": "g",
+                            "when": "w",
+                            "then": "t",
+                            "scenario_type": "integration",
+                            "linked_criteria": [0],
+                            "linked_task_ids": [],
+                            "status": "passed",
+                        },
+                    ],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
         return board_id, spec_id
 
@@ -2347,8 +2747,12 @@ class TestAcScenarioPrecheck:
         board_id, spec_id = await self._seed_spec_with_uncovered_ac(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            with pytest.raises(ValueError, match="acceptance criteria lack test scenarios"):
-                await _submit_spec_validation(service, db,
+            with pytest.raises(
+                ValueError, match="acceptance criteria lack test scenarios"
+            ):
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -2375,41 +2779,47 @@ class TestFrCoverageMessageFormat:
         spec_id = str(uuid.uuid4())
         board_id = str(uuid.uuid4())
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="FR Coverage Board",
-                owner_id=USER_ID,
-                settings={
-                    "require_spec_validation": True,
-                    "min_spec_completeness": 80,
-                    "min_spec_assertiveness": 80,
-                    "max_spec_ambiguity": 30,
-                },
-            ))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="FR Coverage Spec",
-                status=SpecStatus.APPROVED,
-                archived=False,
-                skip_test_coverage=True,
-                acceptance_criteria=[],
-                functional_requirements=[
-                    "FR1: do thing A",
-                    "FR2: do thing B",
-                ],
-                test_scenarios=[],
-                business_rules=[],
-                technical_requirements=[],
-                api_contracts=[],
-                decisions=[],
-                created_by=USER_ID,
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="FR Coverage Board",
+                    owner_id=USER_ID,
+                    settings={
+                        "require_spec_validation": True,
+                        "min_spec_completeness": 80,
+                        "min_spec_assertiveness": 80,
+                        "max_spec_ambiguity": 30,
+                    },
+                )
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="FR Coverage Spec",
+                    status=SpecStatus.APPROVED,
+                    archived=False,
+                    skip_test_coverage=True,
+                    acceptance_criteria=[],
+                    functional_requirements=[
+                        "FR1: do thing A",
+                        "FR2: do thing B",
+                    ],
+                    test_scenarios=[],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=USER_ID,
+                )
+            )
             await db.commit()
 
             service = SpecService(db)
             with pytest.raises(ValueError) as exc_info:
-                await _submit_spec_validation(service, db,
+                await _submit_spec_validation(
+                    service,
+                    db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",

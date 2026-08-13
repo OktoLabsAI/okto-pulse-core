@@ -30,19 +30,81 @@ from okto_pulse.core.application.use_cases.spec_crud import (
     _require_actor_board_spec,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.domain.spec_validation import (
+    SpecValidationMetric,
+    SpecValidationPinpoint,
+    SpecValidationPinpointAnchorType,
+)
 
-_LEGACY_REQUIRED_FIELDS = (
-    "completeness",
-    "completeness_justification",
+_CANONICAL_REQUIRED_FIELDS = (
+    "confidence",
+    "confidence_justification",
+    "clarity",
+    "clarity_justification",
     "assertiveness",
     "assertiveness_justification",
+    "decidability",
+    "decidability_justification",
     "ambiguity",
     "ambiguity_justification",
-    "general_justification",
     "recommendation",
 )
-_FORMAL_FIELDS = ("score", "summary")
-_SCORE_DIMENSIONS = ("completeness", "assertiveness", "ambiguity")
+_CANONICAL_SCORE_DIMENSIONS = (
+    "confidence",
+    "clarity",
+    "assertiveness",
+    "decidability",
+    "ambiguity",
+)
+_CANONICAL_ALLOWED_FIELDS = {
+    "expected_validation_edition",
+    "expected_spec_version",
+    "expected_head_revision",
+    *_CANONICAL_REQUIRED_FIELDS,
+    "pinpoints",
+}
+
+
+def _canonical_pinpoints(value: object) -> list[dict[str, str]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise CommandValidationError("pinpoints must be a list")
+    normalized: list[dict[str, str]] = []
+    identities: set[tuple[str | None, ...]] = set()
+    required_fields = {"metric", "anchor_type", "detail"}
+    allowed_fields = {*required_fields, "anchor_ref"}
+    for raw in value:
+        if (
+            not isinstance(raw, Mapping)
+            or not required_fields.issubset(raw)
+            or not set(raw).issubset(allowed_fields)
+        ):
+            raise CommandValidationError(
+                "each pinpoint must contain metric, anchor_type and detail; "
+                "anchor_ref is optional"
+            )
+        try:
+            pinpoint = SpecValidationPinpoint(
+                metric=SpecValidationMetric(raw.get("metric")),
+                anchor_type=SpecValidationPinpointAnchorType(raw.get("anchor_type")),
+                anchor_ref=raw.get("anchor_ref"),
+                detail=raw.get("detail"),
+            )
+        except (TypeError, ValueError) as exc:
+            raise CommandValidationError(str(exc)) from exc
+        projected = pinpoint.to_dict()
+        identity = (
+            projected["metric"],
+            projected["anchor_type"],
+            projected.get("anchor_ref"),
+            projected["detail"],
+        )
+        if identity in identities:
+            raise CommandValidationError("pinpoints must not contain duplicates")
+        identities.add(identity)
+        normalized.append(projected)
+    return normalized
 
 
 class SubmitSpecValidationCommand:
@@ -57,9 +119,14 @@ class SubmitSpecValidationCommand:
 
     def __init__(self, spec_id: str, data: Mapping[str, Any]) -> None:
         self.spec_id = spec_id
-        self.data = data
+        self.data = dict(data)
 
     def validate(self) -> None:
+        unknown = sorted(set(self.data).difference(_CANONICAL_ALLOWED_FIELDS))
+        if unknown:
+            raise CommandValidationError(
+                "Unknown spec validation fields: " + ", ".join(unknown)
+            )
         for field_name in (
             "expected_validation_edition",
             "expected_spec_version",
@@ -67,53 +134,34 @@ class SubmitSpecValidationCommand:
         ):
             value = self.data.get(field_name)
             minimum = 0 if field_name == "expected_head_revision" else 1
-            if (
-                not isinstance(value, int)
-                or isinstance(value, bool)
-                or value < minimum
-            ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
                 raise CommandValidationError(f"{field_name} is invalid")
 
-        formal = any(self.data.get(field) is not None for field in _FORMAL_FIELDS)
-        legacy = any(
-            self.data.get(field) is not None for field in _LEGACY_REQUIRED_FIELDS
-        )
-        if formal:
-            if legacy:
-                raise CommandValidationError(
-                    "formal and legacy validation shapes are mutually exclusive"
-                )
-            score = self.data.get("score")
-            if (
-                not isinstance(score, (int, float))
-                or isinstance(score, bool)
-                or not 0 <= float(score) <= 100
-            ):
-                raise CommandValidationError("score must be between 0 and 100")
-            summary = self.data.get("summary")
-            if not isinstance(summary, str) or not summary.strip():
-                raise CommandValidationError("summary is required")
-            return
-
-        missing = [f for f in _LEGACY_REQUIRED_FIELDS if self.data.get(f) is None]
+        missing = [
+            field
+            for field in _CANONICAL_REQUIRED_FIELDS
+            if self.data.get(field) is None
+        ]
         if missing:
             raise CommandValidationError(
-                f"Missing required fields: {', '.join(missing)}"
+                "Missing required fields: " + ", ".join(missing)
             )
         if self.data.get("recommendation") not in ("approve", "reject"):
-            raise CommandValidationError(
-                "recommendation must be 'approve' or 'reject'"
-            )
-        for dim in _SCORE_DIMENSIONS:
-            justification = self.data.get(f"{dim}_justification", "")
+            raise CommandValidationError("recommendation must be 'approve' or 'reject'")
+        for dimension in _CANONICAL_SCORE_DIMENSIONS:
+            score = self.data.get(dimension)
+            if (
+                not isinstance(score, int)
+                or isinstance(score, bool)
+                or not 0 <= score <= 100
+            ):
+                raise CommandValidationError(f"{dimension} must be between 0 and 100")
+            justification = self.data.get(f"{dimension}_justification")
             if not isinstance(justification, str) or len(justification.strip()) < 10:
                 raise CommandValidationError(
-                    f"{dim}_justification must be at least 10 characters"
+                    f"{dimension}_justification must be at least 10 characters"
                 )
-        if len((self.data.get("general_justification") or "").strip()) < 20:
-            raise CommandValidationError(
-                "general_justification must be at least 20 characters"
-            )
+        self.data["pinpoints"] = _canonical_pinpoints(self.data.get("pinpoints"))
 
 
 class SubmitSpecValidationResult:
@@ -141,12 +189,14 @@ class SubmitSpecValidationUseCase:
     """Submit a spec validation gate record without any transport dependency."""
 
     async def execute(
-        self, command: SubmitSpecValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: SubmitSpecValidationCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> SubmitSpecValidationResult:
         service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         command.validate()
         state = entity_state(spec)
         await require_authorization(
@@ -177,9 +227,7 @@ class SubmitSpecValidationUseCase:
             # fields as ``None``.  The service consumes a discriminated
             # formal-or-legacy mapping, so omit those transport placeholders.
             data={
-                key: value
-                for key, value in command.data.items()
-                if value is not None
+                key: value for key, value in command.data.items() if value is not None
             },
         )
         await commit(uow)

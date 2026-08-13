@@ -213,9 +213,7 @@ async def test_card_dependency_mutations_lookup_before_permission_denial(
     tool,
 ) -> None:
     async def _context(_board_id: str):
-        return _ctx(
-            PermissionSet({"card": {"entity": {"manage_dependencies": False}}})
-        )
+        return _ctx(PermissionSet({"card": {"entity": {"manage_dependencies": False}}}))
 
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
 
@@ -296,13 +294,16 @@ async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permissio
             expected_validation_edition=1,
             expected_spec_version=1,
             expected_head_revision=0,
-            completeness=90,
-            completeness_justification="Complete enough",
+            confidence=90,
+            confidence_justification="Evaluator inspected the complete Spec",
+            clarity=90,
+            clarity_justification="Problem and solution are explicit",
             assertiveness=90,
             assertiveness_justification="Assertive enough",
+            decidability=90,
+            decidability_justification="Requirements direct concrete choices",
             ambiguity=10,
             ambiguity_justification="Low ambiguity",
-            general_justification="A sufficiently complete validation rationale",
             recommendation="approve",
         )
 
@@ -412,11 +413,7 @@ async def test_copy_to_card_looks_up_source_before_permission_denial(
     family, operation, resource = permission_leaf.split(".")
 
     async def _context(_board_id: str):
-        return _ctx(
-            PermissionSet(
-                {family: {operation: {resource: False}}}
-            )
-        )
+        return _ctx(PermissionSet({family: {operation: {resource: False}}}))
 
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
 

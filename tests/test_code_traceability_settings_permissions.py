@@ -87,11 +87,11 @@ async def test_new_board_and_template_defaults_are_forward_only_advisory(
 
 def test_code_traceability_permission_generation_is_fail_closed() -> None:
     manifest = CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1
-    assert manifest is PERMISSION_INTRODUCTION_MANIFESTS[-1]
+    assert manifest in PERMISSION_INTRODUCTION_MANIFESTS
     assert manifest.version == "CODE-TRACEABILITY/v1"
     assert manifest.legacy_compatible is False
     assert len(manifest.leaves) == 22
-    assert len(ALL_FLAGS) == 584
+    assert len(ALL_FLAGS) == 585
     assert set(manifest.leaves) <= set(ALL_FLAGS)
     assert set(dict(manifest.historical_authorities)) == set(manifest.leaves)
 

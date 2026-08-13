@@ -128,6 +128,7 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_list_semantic_guideline_findings",
         "okto_pulse_list_semantic_guideline_waiver_events",
         "okto_pulse_list_semantic_guideline_waivers",
+        "okto_pulse_list_spec_dependencies",
         "okto_pulse_list_spec_evaluations",
         "okto_pulse_list_spec_validations",
         "okto_pulse_list_sprint_evaluations",
@@ -217,6 +218,11 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "refinement.mockups.create",
         "spec.mockups.create",
         "card.mockups.create",
+    ),
+    _policy(
+        "okto_pulse_add_spec_dependency",
+        "spec.entity.manage_dependencies",
+        "spec.entity.read",
     ),
     _policy("okto_pulse_add_spec_knowledge", "spec.knowledge.create"),
     _policy("okto_pulse_add_test_scenario", "spec.tests.create"),
@@ -765,6 +771,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.versions_read",
         "refinement.versions_read",
     ),
+    _policy("okto_pulse_list_spec_dependencies", "spec.entity.read"),
     _policy("okto_pulse_list_spec_evaluations", "spec.evaluations.read"),
     _policy("okto_pulse_list_spec_validations", "spec.validation.read"),
     _policy("okto_pulse_list_sprint_evaluations", "sprint.evaluations.read"),
@@ -824,6 +831,11 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy(
         "okto_pulse_remove_decision",
         "spec.structured_entity.decision.revoke",
+    ),
+    _policy(
+        "okto_pulse_remove_spec_dependency",
+        "spec.entity.manage_dependencies",
+        "spec.entity.read",
     ),
     _policy(
         "okto_pulse_remove_spec_entity",

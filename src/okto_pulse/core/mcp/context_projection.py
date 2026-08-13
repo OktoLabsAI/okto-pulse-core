@@ -218,6 +218,7 @@ _GATE_SPEC_KEYS = (
     "title",
     "status",
     "edition",
+    "last_started_edition",
     "version",
     "archived",
     "pre_archive_status",

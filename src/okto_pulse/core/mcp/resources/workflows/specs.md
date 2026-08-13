@@ -31,21 +31,24 @@ Semantic guideline assessment follows
 
 ## 2.3a Detail Saturation — DO NOT Push Forward With Gaps
 
-**This is a hard behavioral rule, not a suggestion.** Coverage gates (existing tests/rules/TRs/contracts counts) tell you that content *exists*, not that it is *good enough*. Your job as spec author is to iterate on detail until your own perception of **completeness**, **assertiveness**, and **ambiguity** is satisfactory — not to race to the next stage.
+**This is a hard behavioral rule, not a suggestion.** Coverage gates (existing tests/rules/TRs/contracts counts) tell you that content *exists*, not that it is *good enough*. Your job as spec author is to iterate on detail until an evaluator can assess **confidence**, **clarity**, **assertiveness**, **decidability**, and **ambiguity** with concrete evidence — not to race to the next stage.
 
-**Before you call any tool that promotes a spec forward**, you MUST self-assess the spec on three dimensions:
+**Before you call any tool that promotes a spec forward**, you MUST assess the spec on five dimensions:
 
 | Dimension | Self-assessment question | Raise the bar when... |
 |-----------|-------------------------|-----------------------|
-| **Completeness** | Have I covered every functional requirement with concrete ACs, BRs, TRs, test scenarios, and (where applicable) API contracts? Are there scenarios, edge cases, or error paths I haven't written down? | You can think of any plausible user flow, failure mode, or integration point that isn't yet documented in the spec. |
+| **Confidence** | How confident is the evaluator that this assessment reflects the whole current Spec? | Important sections were not inspected or the evidence does not support a firm score. |
+| **Clarity** | Does the Spec state the problem, solution and requirements clearly? | Scope, actors, behavior or terminology require contextual inference. |
 | **Assertiveness** | Is every statement in the spec **measurable and testable**? Would two independent engineers produce the same implementation from this text, or would they have to guess? | You find words like "should", "appropriate", "reasonable", "if needed", "etc." without objective criteria behind them. |
+| **Decidability** | Does every relevant requirement direct concrete implementation or operational choices? | A requirement names a quality such as "high availability" without topology, bounds, SLOs or other decision criteria. |
 | **Ambiguity** (lower is better) | How many sentences in the spec admit more than one interpretation? How many terms are undefined, implicit, or rely on shared context that isn't written down? | Any requirement can be read two ways, or any domain term is used without a definition. |
 
 **The required loop — iterate until saturation:**
 
 1. **Draft** — populate ACs, FRs, BRs, TRs, contracts, test scenarios.
 2. **Read your own spec out loud** (i.e., call `okto_pulse_get_spec` and re-read it in full). Look for weasel words, undefined terms, missing edge cases, and untested error paths.
-3. **Score yourself** on completeness / assertiveness / ambiguity. Be honest.
+3. **Score the current Spec** on confidence / clarity / assertiveness /
+   decidability / ambiguity. Justify every score and pinpoint concrete problems.
 4. **If any dimension is below your bar, KEEP DETAILING.** Specific actions:
    - Add more test scenarios (edge cases, error flows, boundary conditions)
    - Rewrite vague ACs into measurable, verifiable statements (numbers, specific endpoints, concrete inputs/outputs)
@@ -53,7 +56,7 @@ Semantic guideline assessment follows
    - Add TRs for architectural constraints you derived from codebase analysis
    - Add API contracts with concrete request/response shapes
 5. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
-6. **Re-read and re-score.** Repeat until all three dimensions clear your bar.
+6. **Re-read and re-score.** Repeat until all five dimensions clear the configured bar.
 7. **Only then promote.**
 
 ### Spec Quality — Canonical Agent Flow
@@ -113,7 +116,11 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    `okto_pulse_get_checklist_receipt` (the compatibility API name). Re-run the full Spec context or
    `okto_pulse_get_allowed_transitions` before validation; that canonical
    readiness check detects a missing or failing Current result.
-5. Only then call `okto_pulse_submit_spec_validation`.
+5. Only then call `okto_pulse_submit_spec_validation` with the current fences,
+   the five externally evaluated scores (confidence, clarity, assertiveness,
+   decidability and ambiguity), a justification for each, optional
+   metric-tagged pinpoints, and an approve/reject recommendation. Pulse records
+   this evaluation; it does not generate the scores.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may
 read the binding and validation results and execute the configured immutable
@@ -124,7 +131,11 @@ requires a new execution when the candidate reaches validation again. The
 binding digest/template pin remains technical audit evidence; it does not
 create a second human-facing lifecycle state.
 
-**Thresholds** (default 80/80/30): `completeness` and `assertiveness` higher-is-better minimums; `ambiguity` LOWER-is-better maximum. All scores are 0-100 integers, not 1-5 — a value like `5` is read literally as 5/100 and will usually fail the gate.
+**Thresholds** (defaults 70/80/80/80/30): `confidence`, `clarity`,
+`assertiveness`, and `decidability` are higher-is-better minimums;
+`ambiguity` is a LOWER-is-better maximum. All scores are 0-100 integers, not
+1-5 — a value like `5` is read literally as 5/100 and will usually fail the
+gate.
 
 **Single source for gate mechanics** — canonical flow, atomic `outcome` computation, content lock, and the reopen path (`okto_pulse_move_spec` back to `draft`, starting a new edition and clearing `current_validation_id`): `okto-pulse://reference/spec_gates`.
 

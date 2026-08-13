@@ -156,6 +156,7 @@ class InMemoryGraphStore:
         to_type: str,
         from_id: str,
         to_id: str,
+        rule_id: str | None = None,
     ) -> bool:
         return any(
             edge.get("_type") == edge_type
@@ -163,6 +164,10 @@ class InMemoryGraphStore:
             and edge.get("_to_type") == to_type
             and edge.get("_from") == from_id
             and edge.get("_to") == to_id
+            and (
+                rule_id is None
+                or str(edge.get("rule_id") or "") == rule_id
+            )
             for edge in self._board_edges(board_id)
         )
 
@@ -727,6 +732,7 @@ class _InMemoryGraphTransactionScope:
         to_type: str,
         from_id: str,
         to_id: str,
+        rule_id: str | None = None,
     ) -> bool:
         return any(
             edge.get("_type") == edge_type
@@ -734,6 +740,10 @@ class _InMemoryGraphTransactionScope:
             and edge.get("_to_type") == to_type
             and edge.get("_from") == from_id
             and edge.get("_to") == to_id
+            and (
+                rule_id is None
+                or str(edge.get("rule_id") or "") == rule_id
+            )
             for edge in self.store._board_edges(self.board_id)
         )
 
@@ -1048,16 +1058,139 @@ class _InMemoryGraphTransactionScope:
             tuple(sorted((str(key), repr(value)) for key, value in edge.attrs.items())),
         )
 
+    def _reconcile_spec_dependency_edges(
+        self,
+        intent: ProjectionActiveSetIntent,
+    ) -> ProjectionActiveSetReceipt:
+        if intent.active_nodes or intent.owner_node_id is None:
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_member_invalid",
+                "The Spec dependency projection owns edges and requires its root.",
+            )
+        desired: set[tuple[str, str, str, str, str, str]] = set()
+        desired_endpoints: set[tuple[str, str, str, str, str]] = set()
+        for edge in intent.active_edges:
+            endpoint_identity = (
+                edge.edge_type,
+                edge.from_type,
+                edge.to_type,
+                edge.from_id,
+                edge.to_id,
+            )
+            identity = (*endpoint_identity, edge.rule_id)
+            if (
+                edge.edge_type != "precedes"
+                or edge.from_type != "Entity"
+                or edge.to_type != "Entity"
+                or edge.to_id != intent.owner_node_id
+                or not edge.rule_id.startswith("precedes/spec_dependency/")
+                or endpoint_identity in desired_endpoints
+            ):
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_member_invalid",
+                    "A Spec dependency edge is outside the exact projection scope.",
+                )
+            desired.add(identity)
+            desired_endpoints.add(endpoint_identity)
+
+        owned: list[
+            tuple[tuple[str, str, str, str, str, str], dict[str, Any]]
+        ] = []
+        for edge in self.store._board_edges(self.board_id):
+            if (
+                edge.get("_type") == "precedes"
+                and edge.get("_from_type") == "Entity"
+                and edge.get("_to_type") == "Entity"
+                and edge.get("_to") == intent.owner_node_id
+                and str(edge.get("rule_id") or "").startswith(
+                    "precedes/spec_dependency/"
+                )
+            ):
+                identity = (
+                    "precedes",
+                    "Entity",
+                    "Entity",
+                    str(edge.get("_from") or ""),
+                    str(edge.get("_to") or ""),
+                    str(edge.get("rule_id") or ""),
+                )
+                owned.append((identity, edge))
+
+        owned_identities = [identity for identity, _edge in owned]
+        if len(owned_identities) != len(set(owned_identities)):
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_source_ref_ambiguous",
+                "A Spec precedence identity resolves to multiple edges.",
+            )
+        missing = desired.difference(owned_identities)
+        if missing:
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_member_missing",
+                "An active Spec dependency edge is missing or untrusted.",
+            )
+
+        stale = [edge for identity, edge in owned if identity not in desired]
+        edge_before_images = tuple(
+            ProjectionEdgeBeforeImage(
+                edge_type=str(edge.get("_type") or ""),
+                from_type=str(edge.get("_from_type") or ""),
+                to_type=str(edge.get("_to_type") or ""),
+                from_id=str(edge.get("_from") or ""),
+                to_id=str(edge.get("_to") or ""),
+                attrs={
+                    key: value
+                    for key, value in edge.items()
+                    if not key.startswith("_")
+                },
+            )
+            for edge in stale
+        )
+        receipt = ProjectionActiveSetReceipt(
+            intent=intent,
+            edge_before_images=edge_before_images,
+        )
+        stale_keys = {
+            self._projection_edge_key(edge) for edge in edge_before_images
+        }
+        self.store._edges[self.board_id] = [
+            edge
+            for edge in self.store._board_edges(self.board_id)
+            if self._projection_edge_key(
+                ProjectionEdgeBeforeImage(
+                    edge_type=str(edge.get("_type") or ""),
+                    from_type=str(edge.get("_from_type") or ""),
+                    to_type=str(edge.get("_to_type") or ""),
+                    from_id=str(edge.get("_from") or ""),
+                    to_id=str(edge.get("_to") or ""),
+                    attrs={
+                        key: value
+                        for key, value in edge.items()
+                        if not key.startswith("_")
+                    },
+                )
+            )
+            not in stale_keys
+        ]
+        return receipt
+
     def reconcile_projection_active_set(
         self,
         intent: ProjectionActiveSetIntent,
     ) -> ProjectionActiveSetReceipt:
-        """Reconcile only exact parser-owned RDL nodes for one refinement."""
+        """Reconcile one exact relational node or edge projection."""
+
+        if intent.owner_type == "spec" and intent.namespace == "dependencies":
+            return self._reconcile_spec_dependency_edges(intent)
 
         if intent.owner_type != "refinement" or intent.namespace != "rdl":
             raise ProjectionActiveSetReconciliationError(
                 "projection_active_set_scope_invalid",
                 "Only the exact refinement/RDL relational projection is supported.",
+            )
+        if intent.active_edges:
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_member_invalid",
+                "The refinement/RDL projection cannot own operational edges.",
             )
 
         active_by_ref: dict[str, tuple[str, str]] = {}
@@ -1228,7 +1361,7 @@ class _InMemoryGraphTransactionScope:
         self,
         receipt: ProjectionActiveSetReceipt,
     ) -> None:
-        if not receipt.before_images:
+        if not receipt.before_images and not receipt.edge_before_images:
             return
         restored_ids = {item.node_id for item in receipt.before_images}
         self.store._edges[self.board_id] = [
@@ -1261,6 +1394,16 @@ class _InMemoryGraphTransactionScope:
                     from_type=edge.from_type,
                     to_type=edge.to_type,
                 )
+        for edge in receipt.edge_before_images:
+            self.store.create_edge(
+                self.board_id,
+                edge.edge_type,
+                edge.from_id,
+                edge.to_id,
+                dict(edge.attrs),
+                from_type=edge.from_type,
+                to_type=edge.to_type,
+            )
 
     def find_node_types(self, node_id: str) -> tuple[str, ...]:
         node = self.store._board_nodes(self.board_id).get(node_id)

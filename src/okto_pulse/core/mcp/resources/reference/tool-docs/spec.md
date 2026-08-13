@@ -9,6 +9,89 @@ Validation and curated-checklist gate rules:
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+## `okto_pulse_add_spec_dependency`
+
+Add a directed operational prerequisite to a Spec. Both Specs must exist on the
+same board, self-references and cycles are rejected, and an already active edge
+cannot be added twice. If execution has started in the current Spec edition,
+the new prerequisite must already be Done and not archived.
+
+Args:
+    board_id: Board ID shared by the dependent and prerequisite Specs
+    spec_id: Dependent Spec whose execution will be gated
+    prerequisite_spec_id: Spec that must be Done and not archived
+    expected_spec_version: Exact current technical revision of the dependent Spec
+    expected_spec_edition: Exact current lifecycle edition of the dependent Spec
+    idempotency_key: Caller-stable key for exact retries of this add operation
+
+Returns:
+    `{success, dependency, spec_version, replayed}`. The successful mutation
+    advances the dependent Spec's technical revision. An exact retry returns the
+    original result with `replayed=true`; reusing the key for different input is
+    a closed `spec_dependency_state_conflict` with
+    `facts.conflict_kind=idempotency_key_reuse`.
+
+Permissions:
+    Requires `spec.entity.manage_dependencies` in the dependent Spec's current
+    lifecycle state and read access to both endpoint Specs.
+
+## `okto_pulse_remove_spec_dependency`
+
+Remove an active outgoing prerequisite while preserving its immutable lifecycle
+record. Removal is a tombstone operation; historical edges remain available
+through `okto_pulse_list_spec_dependencies` with `active_state=removed|all`.
+
+Args:
+    board_id: Board ID
+    spec_id: Dependent Spec that owns the outgoing edge
+    dependency_id: Active dependency identity returned by the list/add tool
+    reason: Required non-blank human explanation for removal
+    expected_spec_version: Exact current technical revision of the dependent Spec
+    expected_spec_edition: Exact current lifecycle edition of the dependent Spec
+    idempotency_key: Caller-stable key for exact retries of this remove operation
+
+Returns:
+    `{success, dependency, spec_version, replayed}`. The successful mutation
+    advances the dependent Spec's technical revision and returns the tombstone.
+
+Permissions:
+    Requires `spec.entity.manage_dependencies` in the dependent Spec's current
+    lifecycle state and `spec.entity.read` for that dependent Spec.
+
+## `okto_pulse_list_spec_dependencies`
+
+List operational precedence in either direction with opaque keyset pagination.
+The response embeds the authoritative readiness projection; there is no separate
+readiness tool. A prerequisite is satisfied only while its current Spec is Done
+and not archived.
+
+Args:
+    board_id: Board ID
+    spec_id: Anchor Spec
+    direction: `depends_on` for outgoing prerequisites (default), or
+        `required_by` for incoming dependents
+    cursor: Opaque `next_cursor` from the previous response; never decode or edit it
+    limit: Page size from 1 through 100 (default 25)
+    active_state: `active` (default), `removed`, or `all`
+    satisfaction: `all` (default), `satisfied`, or `unmet`
+    retrospective: Optional boolean filter for edges added after execution started
+    related_statuses: Optional multi-value Spec-status filter
+    lineage: `all` (default), `same_ideation`, or `cross_ideation`
+
+Returns:
+    `{items, direction, total, next_cursor, has_more, readiness}`. Each item
+    includes current related-Spec state, satisfaction, lineage, retrospective
+    state, and `{can_remove, remove_reason_code, can_navigate}` capabilities.
+    `readiness.blocking_count`, `archived_blocking_count`, and
+    `unfinished_blocking_count` are exact totals. `readiness.blockers[]` is a
+    bounded diagnostic sample and `blockers_truncated` declares whether rows
+    were omitted. Each sampled blocker includes `target_archived`, so a
+    Done-but-archived prerequisite remains explicitly blocked and must be
+    restored or removed even when its row falls outside the sample.
+
+Permissions:
+    Requires `spec.entity.read` for the anchor Spec.
+
 ## `okto_pulse_remove_spec_entity`
 
 Consolidated spec-entity removal (R4). Dispatches on `target_type`.
@@ -395,9 +478,11 @@ Returns:
 List Spec Validation Gate results in reverse chronological order, explicitly
 separating Current from Previous by lifecycle edition.
 
-Useful for understanding why a spec was validated (or failed). Each record
-includes the 3 scores, justifications, outcome, threshold violations, and
-a resolved_thresholds snapshot of what was in effect when the submit happened.
+Useful for understanding why a spec was validated (or failed). Canonical
+records include five scores, per-score justifications, optional pinpoints,
+outcome, threshold violations, and a resolved_thresholds snapshot of what was
+in effect when the submit happened. Older records preserve their historical
+score/summary or three-metric shape.
 The result matching the active Spec edition is Current. Earlier-edition results
 are Previous; legacy SQL `NULL` editions are `history_only` under Previous and
 can never become Current.
@@ -473,19 +558,32 @@ raising the numbers.
 Args:
     board_id: Board ID
     spec_id: Spec ID (must be in 'approved' status)
-    completeness: Score 0-100 — how complete is the spec detail (ACs, BRs, TRs, scenarios, contracts)?
-    completeness_justification: Why this completeness score (min 10 chars)
+    expected_validation_edition: Current human lifecycle edition
+    expected_spec_version: Current technical Spec version
+    expected_head_revision: Current validation head revision
+    confidence: Score 0-100 — evaluator confidence in this assessment
+    confidence_justification: Why this confidence score (min 10 chars)
+    clarity: Score 0-100 — how clearly problem, solution and requirements are specified
+    clarity_justification: Why this clarity score (min 10 chars)
     assertiveness: Score 0-100 — how measurable/testable is the text (no weasel words)?
     assertiveness_justification: Why this assertiveness score (min 10 chars)
+    decidability: Score 0-100 — how directly the Spec supports concrete implementation decisions
+    decidability_justification: Why this decidability score (min 10 chars)
     ambiguity: Score 0-100 — how many sentences admit multiple interpretations? (LOWER IS BETTER)
     ambiguity_justification: Why this ambiguity score (min 10 chars)
-    general_justification: Overall assessment (min 20 chars)
+    pinpoints: Optional closed list of metric-tagged semantic problem locations
     recommendation: One of: approve, reject
 
 Scoring contract:
     Use a 0-100 integer scale, not 1-5. A value like 5 is treated as 5/100 and
-    will usually fail. completeness/assertiveness are higher-is-better;
-    ambiguity is lower-is-better.
+    will usually fail. confidence/clarity/assertiveness/decidability are
+    higher-is-better; ambiguity is lower-is-better. Default thresholds are
+    70/80/80/80/max-30 respectively. Every score requires its own
+    justification. A pinpoint has `{metric, anchor_type, anchor_ref?, detail}`;
+    whole_artifact omits anchor_ref, while field/structured_child/qa require it.
+    Pulse validates and stores the evaluator's result but does not perform the
+    evaluation. Historical score/summary and completeness shapes remain
+    readable history, but are not accepted for new submissions.
 
 Coverage contract:
     FR coverage is computed from business_rules[].linked_requirements. Direct

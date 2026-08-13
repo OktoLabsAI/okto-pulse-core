@@ -41,13 +41,16 @@ _VALID_VALIDATION_FENCES = {
 }
 _VALID_VALIDATION_PAYLOAD = {
     **_VALID_VALIDATION_FENCES,
-    "completeness": 95,
-    "completeness_justification": "complete enough",
+    "confidence": 95,
+    "confidence_justification": "confidence is supported by evidence",
+    "clarity": 95,
+    "clarity_justification": "problem and solution are explicitly stated",
     "assertiveness": 95,
     "assertiveness_justification": "assertive enough",
+    "decidability": 95,
+    "decidability_justification": "requirements direct concrete choices",
     "ambiguity": 5,
     "ambiguity_justification": "low ambiguity",
-    "general_justification": "general justification well over twenty chars",
     "recommendation": "approve",
 }
 
@@ -106,7 +109,9 @@ def test_use_cases_satisfy_protocol():
 
 
 def test_actor_context_is_transport_neutral_data():
-    actor = ActorContext("user-1", "mcp", board_id="b1", realm_id=None, roles=("owner",))
+    actor = ActorContext(
+        "user-1", "mcp", board_id="b1", realm_id=None, roles=("owner",)
+    )
     assert actor.actor_id == "user-1"
     assert actor.source == "mcp"
     assert actor.board_id == "b1"
@@ -136,16 +141,9 @@ async def test_uow_commit_uses_only_the_typed_transaction_capability():
 def test_submit_spec_validation_command_validation():
     SubmitSpecValidationCommand("s1", _VALID_VALIDATION_PAYLOAD).validate()  # no raise
 
-    # REST compatibility models may include absent formal fields as None. They
-    # must not turn an otherwise complete legacy payload into a formal one.
-    SubmitSpecValidationCommand(
-        "s1",
-        {**_VALID_VALIDATION_PAYLOAD, "score": None, "summary": None},
-    ).validate()
-
     with pytest.raises(
         CommandValidationError,
-        match="formal and legacy validation shapes are mutually exclusive",
+        match="Unknown spec validation fields",
     ):
         SubmitSpecValidationCommand(
             "s1",
@@ -155,7 +153,7 @@ def test_submit_spec_validation_command_validation():
     with pytest.raises(CommandValidationError, match="Missing required fields"):
         SubmitSpecValidationCommand(
             "s1",
-            {**_VALID_VALIDATION_FENCES, "completeness": 95},
+            {**_VALID_VALIDATION_FENCES, "confidence": 95},
         ).validate()
 
     with pytest.raises(CommandValidationError, match="recommendation must be"):
@@ -163,14 +161,17 @@ def test_submit_spec_validation_command_validation():
             "s1", {**_VALID_VALIDATION_PAYLOAD, "recommendation": "maybe"}
         ).validate()
 
-    with pytest.raises(CommandValidationError, match="completeness_justification must be at least"):
+    with pytest.raises(
+        CommandValidationError,
+        match="confidence_justification must be at least",
+    ):
         SubmitSpecValidationCommand(
-            "s1", {**_VALID_VALIDATION_PAYLOAD, "completeness_justification": "short"}
+            "s1", {**_VALID_VALIDATION_PAYLOAD, "confidence_justification": "short"}
         ).validate()
 
-    with pytest.raises(CommandValidationError, match="general_justification must be at least"):
+    with pytest.raises(CommandValidationError, match="Unknown spec validation fields"):
         SubmitSpecValidationCommand(
-            "s1", {**_VALID_VALIDATION_PAYLOAD, "general_justification": "too short"}
+            "s1", {**_VALID_VALIDATION_PAYLOAD, "completeness": 95}
         ).validate()
 
 
@@ -214,7 +215,9 @@ async def test_move_ideation_use_case_changes_status(db_factory):
         await db.flush()
 
         result = await MoveIdeationUseCase().execute(
-            MoveIdeationCommand(ideation_id, IdeationMove(status=IdeationStatus.REVIEW)),
+            MoveIdeationCommand(
+                ideation_id, IdeationMove(status=IdeationStatus.REVIEW)
+            ),
             actor=ActorContext(ACTOR, "rest"),
             uow=_wrap_uow(db),
         )
@@ -227,7 +230,9 @@ async def test_move_ideation_missing_raises_not_found(db_factory):
     async with db_factory() as db:
         with pytest.raises(EntityNotFoundError) as exc_info:
             await MoveIdeationUseCase().execute(
-                MoveIdeationCommand("missing-id", IdeationMove(status=IdeationStatus.REVIEW)),
+                MoveIdeationCommand(
+                    "missing-id", IdeationMove(status=IdeationStatus.REVIEW)
+                ),
                 actor=ActorContext(ACTOR, "rest"),
                 uow=_wrap_uow(db),
             )

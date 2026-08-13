@@ -38,6 +38,7 @@ GATE_TEST_CARD_COMPLETION = "test_card_completion"
 GATE_RESOURCE = "resource_gate"
 GATE_COGNITIVE_READINESS = "cognitive_readiness"
 GATE_STATE_TRANSITION = "state_transition"
+GATE_SPEC_DEPENDENCIES = "spec_dependencies"
 
 _DETAIL_KEYS = (
     "gate_type",
@@ -603,6 +604,7 @@ def spec_gate_readiness(
     checklist_reason: str | None = None,
     checklist_current: bool | None = None,
     checklist_stale_reasons: tuple[str, ...] = (),
+    dependency_readiness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Read-only gate/readiness summary for a spec context (R4-IMP4).
 
@@ -613,6 +615,44 @@ def spec_gate_readiness(
     requires validation), derived from the SAME builder ``move_spec`` raises.
     """
     active_gates: list[dict[str, Any]] = []
+    dependency_readiness = dict(dependency_readiness or {})
+    dependency_gate_applicable = (
+        spec_status == "validated"
+        and int(dependency_readiness.get("blocking_count", 0) or 0) > 0
+    )
+    if dependency_gate_applicable:
+        archived_blocking_count = int(
+            dependency_readiness.get("archived_blocking_count", 0) or 0
+        )
+        unfinished_blocking_count = int(
+            dependency_readiness.get("unfinished_blocking_count", 0) or 0
+        )
+        operator_action = "Complete every unfinished prerequisite Spec."
+        if archived_blocking_count > 0:
+            operator_action = (
+                "Restore archived prerequisite Specs (and complete them when "
+                "needed), complete unfinished prerequisite Specs, or remove "
+                "the blocking dependencies."
+            )
+        active_gates.append(
+            {
+                "gate_type": GATE_SPEC_DEPENDENCIES,
+                "blocked_transition": "validated_to_in_progress",
+                "required_status": "done",
+                "required_tool": "okto_pulse_list_spec_dependencies",
+                "follow_up_tool": "okto_pulse_get_spec_context",
+                "operator_action": operator_action,
+                "enforcement_mode": "blocking",
+                "enforcement_active": True,
+                "blocking_count": int(dependency_readiness.get("blocking_count", 0)),
+                "archived_blocking_count": archived_blocking_count,
+                "unfinished_blocking_count": unfinished_blocking_count,
+                "blockers_truncated": bool(
+                    dependency_readiness.get("blockers_truncated", False)
+                ),
+                "blockers": list(dependency_readiness.get("blockers", ())),
+            }
+        )
     spec_validation_applicable = (
         spec_status == "approved" and bool(require_spec_validation)
     )
@@ -674,10 +714,14 @@ def spec_gate_readiness(
         "spec_checklist_gate": any(
             gate["gate_type"] == GATE_SPEC_CHECKLIST for gate in active_gates
         ),
+        "spec_dependency_gate": any(
+            gate["gate_type"] == GATE_SPEC_DEPENDENCIES for gate in active_gates
+        ),
     }
     expected = {
         "spec_validation_gate": spec_validation_applicable,
         "spec_checklist_gate": checklist_gate_applicable,
+        "spec_dependency_gate": dependency_gate_applicable,
     }
     if observed != expected:
         consistency = _consistency_mismatch(
@@ -705,6 +749,7 @@ def spec_gate_readiness(
         ),
         "mutation_allowed": False,
         "consistency": consistency,
+        "spec_dependencies": dependency_readiness,
     }
     if checklist_mode is not None:
         readiness["spec_checklist"] = {
@@ -892,6 +937,7 @@ __all__ = [
     "GATE_COGNITIVE_READINESS",
     "GATE_RESOURCE",
     "GATE_SPEC_CHECKLIST",
+    "GATE_SPEC_DEPENDENCIES",
     "GATE_SPEC_QUALITATIVE_EVALUATION",
     "GATE_SPEC_VALIDATION",
     "GATE_STATE_TRANSITION",

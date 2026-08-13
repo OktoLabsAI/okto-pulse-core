@@ -141,6 +141,17 @@ class RelationalProjectionActiveRef:
 
 
 @dataclass(frozen=True, slots=True)
+class RelationalProjectionActiveEdgeRef:
+    """Exact deterministic edge retained by relational active-set cleanup."""
+
+    candidate_id: str
+    edge_type: str
+    from_candidate_id: str
+    to_candidate_id: str
+    rule_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class RelationalProjectionActiveSetIntent:
     """Exact desired set for one relational projection namespace."""
 
@@ -148,6 +159,7 @@ class RelationalProjectionActiveSetIntent:
     owner_id: str
     namespace: str
     active_refs: tuple[RelationalProjectionActiveRef, ...]
+    active_edges: tuple[RelationalProjectionActiveEdgeRef, ...] = ()
 
 
 @dataclass
@@ -495,6 +507,13 @@ def _projection_raw(label: str, records: list[dict[str, Any]]) -> str:
             key=lambda row: (
                 str(row.get("ledger_id") or ""),
                 str(row.get("entry_id") or ""),
+            )
+        )
+    elif label == "spec_dependencies":
+        normalized_records.sort(
+            key=lambda row: (
+                str(row.get("prerequisite_spec_id") or ""),
+                str(row.get("dependency_id") or ""),
             )
         )
     return json.dumps(
@@ -1150,6 +1169,7 @@ class DeterministicWorker:
         quality_assessments = _projection_records(
             spec.get("quality_assessments")
         )
+        spec_dependencies = _projection_records(spec.get("spec_dependencies"))
         if not spec.get("refinement_id") and not spec.get("ideation_id"):
             result.spec_lineage_parent_intent = SpecLineageParentIntent.CLEAR
         raw_parts: list[str] = [
@@ -1163,6 +1183,10 @@ class DeterministicWorker:
                     "quality_assessments",
                     quality_assessments,
                 )
+            )
+        if "spec_dependencies" in spec:
+            raw_parts.append(
+                _projection_raw("spec_dependencies", spec_dependencies)
             )
 
         # 1. Spec entity (anchor node) — used by hierarchy edges on caller.
@@ -1179,6 +1203,74 @@ class DeterministicWorker:
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
         ))
+
+        # Operational precedence is a relational projection, not a cognitive
+        # inference. The authoritative loader supplies only active outgoing
+        # dependencies for this dependent Spec. Direction is prerequisite ->
+        # dependent so graph walks follow execution order.
+        active_precedence_edges: list[RelationalProjectionActiveEdgeRef] = []
+        if "spec_dependencies" in spec:
+            for dependency in spec_dependencies:
+                dependency_id = str(dependency.get("dependency_id") or "")
+                dependent_spec_id = str(
+                    dependency.get("dependent_spec_id") or ""
+                )
+                prerequisite_spec_id = str(
+                    dependency.get("prerequisite_spec_id") or ""
+                )
+                if (
+                    not dependency_id
+                    or dependent_spec_id != str(spec_id)
+                    or not prerequisite_spec_id
+                    or prerequisite_spec_id == str(spec_id)
+                ):
+                    raise ValueError("spec_dependency_projection_invalid")
+                # This is a reference to the prerequisite's canonical root,
+                # never a partial candidate for that root. A dependency
+                # projection must not overwrite title/content/context when the
+                # prerequisite was already consolidated. The exact source-ref
+                # endpoint is resolved by the graph transaction at commit.
+                prerequisite_cid = (
+                    f"kgref:Entity:spec:{prerequisite_spec_id}"
+                )
+                edge_cid = f"{prefix}_precedes_{dependency_id}"
+                rule_id = (
+                    "precedes/spec_dependency/"
+                    f"{dependency_id}@{WORKER_VERSION}"
+                )
+                result.edges.append(
+                    EmittedEdge(
+                        candidate_id=edge_cid,
+                        edge_type="precedes",
+                        from_candidate_id=prerequisite_cid,
+                        to_candidate_id=spec_entity_id,
+                        confidence=1.0,
+                        rule_id=rule_id,
+                    )
+                )
+                active_precedence_edges.append(
+                    RelationalProjectionActiveEdgeRef(
+                        candidate_id=edge_cid,
+                        edge_type="precedes",
+                        from_candidate_id=prerequisite_cid,
+                        to_candidate_id=spec_entity_id,
+                        rule_id=rule_id,
+                    )
+                )
+            result.relational_projection_active_set_intent = (
+                RelationalProjectionActiveSetIntent(
+                    owner_type="spec",
+                    owner_id=str(spec_id),
+                    namespace="dependencies",
+                    active_refs=(),
+                    active_edges=tuple(
+                        sorted(
+                            active_precedence_edges,
+                            key=lambda edge: edge.candidate_id,
+                        )
+                    ),
+                )
+            )
 
         parent_refinement_id = spec.get("refinement_id")
         if parent_refinement_id:

@@ -358,8 +358,13 @@ def register_kg_tools(
                 )
             return _ok(result.resp)
         except KGPrimitiveError as e:
-            return _err(e.code, e.message, session_id=e.session_id,
-                        details=e.details)
+            return _err(
+                e.code,
+                e.message,
+                session_id=e.session_id,
+                retryable=e.retryable,
+                details=e.details,
+            )
 
     @mcp.tool()
     async def okto_pulse_kg_add_node_candidate(

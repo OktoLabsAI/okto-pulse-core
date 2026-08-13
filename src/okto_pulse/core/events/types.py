@@ -559,6 +559,39 @@ class SpecVersionBumped(DomainEvent):
     changed_fields: list[str] = Field(default_factory=list)
 
 
+class SpecDependencyAdded(DomainEvent):
+    event_type: ClassVar[str] = "spec.dependency_added"
+    spec_id: str
+    dependency_id: str
+    target_spec_id: str
+    projection_owner_spec_id: str
+    source_version: int
+    source_status_on_create: str
+    resolved_on_create: bool
+
+    @model_validator(mode="after")
+    def _projection_owner_is_dependent(self) -> "SpecDependencyAdded":
+        if self.projection_owner_spec_id != self.spec_id:
+            raise ValueError("spec_dependency_projection_owner_invalid")
+        return self
+
+
+class SpecDependencyRemoved(DomainEvent):
+    event_type: ClassVar[str] = "spec.dependency_removed"
+    spec_id: str
+    dependency_id: str
+    target_spec_id: str
+    projection_owner_spec_id: str
+    source_version: int
+    removal_reason: str
+
+    @model_validator(mode="after")
+    def _projection_owner_is_dependent(self) -> "SpecDependencyRemoved":
+        if self.projection_owner_spec_id != self.spec_id:
+            raise ValueError("spec_dependency_projection_owner_invalid")
+        return self
+
+
 class SpecSemanticChanged(DomainEvent):
     """Fired when semantic spec content changes WITHOUT bumping version.
 
@@ -1165,6 +1198,8 @@ EVENT_TYPES: list[str] = [
     SpecCreated.event_type,
     SpecMoved.event_type,
     SpecVersionBumped.event_type,
+    SpecDependencyAdded.event_type,
+    SpecDependencyRemoved.event_type,
     SpecSemanticChanged.event_type,
     StructuredSpecEntityCreated.event_type,
     StructuredSpecEntityUpdated.event_type,
@@ -1229,6 +1264,8 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     SpecCreated.event_type: SpecCreated,
     SpecMoved.event_type: SpecMoved,
     SpecVersionBumped.event_type: SpecVersionBumped,
+    SpecDependencyAdded.event_type: SpecDependencyAdded,
+    SpecDependencyRemoved.event_type: SpecDependencyRemoved,
     SpecSemanticChanged.event_type: SpecSemanticChanged,
     StructuredSpecEntityCreated.event_type: StructuredSpecEntityCreated,
     StructuredSpecEntityUpdated.event_type: StructuredSpecEntityUpdated,

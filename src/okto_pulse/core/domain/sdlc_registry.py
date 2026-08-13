@@ -297,9 +297,16 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge(
                         "in_progress",
                         gate="spec_evaluation",
-                        preconditions=("spec_evaluation_ready",),
+                        preconditions=(
+                            "spec_evaluation_ready",
+                            "spec_dependencies_ready",
+                        ),
                         capabilities=("start",),
-                        reason_codes=("spec_evaluation_required", "transition_not_allowed"),
+                        reason_codes=(
+                            "spec_evaluation_required",
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
                     ),
                     _edge(
                         "draft",
@@ -369,18 +376,41 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
             CardStatus,
             {
                 "not_started": [
-                    _edge("started", gate="start_readiness", capabilities=("start",)),
+                    _edge(
+                        "started",
+                        gate="start_readiness",
+                        preconditions=("spec_dependencies_ready",),
+                        capabilities=("start",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                    ),
                     _edge(
                         "in_progress",
                         gate="execution_readiness",
+                        preconditions=("spec_dependencies_ready",),
                         capabilities=("execute",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
                         card_types=("test", "bug"),
                     ),
                     _edge("cancelled", **_CANCEL),
                 ],
                 "started": [
                     _edge("not_started", gate="reopen", capabilities=("reopen",)),
-                    _edge("in_progress", gate="execution_readiness", capabilities=("execute",)),
+                    _edge(
+                        "in_progress",
+                        gate="execution_readiness",
+                        preconditions=("spec_dependencies_ready",),
+                        capabilities=("execute",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                    ),
                     _edge(
                         "validation",
                         gate="regression_readiness",
@@ -396,7 +426,12 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "in_progress": [
-                    _edge("started", gate="reopen", capabilities=("reopen",)),
+                    _edge(
+                        "started",
+                        gate="reopen",
+                        capabilities=("reopen",),
+                        card_types=("normal",),
+                    ),
                     _edge("validation", gate="task_validation", capabilities=("validate",)),
                     _edge(
                         "done",
@@ -415,7 +450,16 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "validation": [
-                    _edge("in_progress", gate="rework", capabilities=("reopen",)),
+                    _edge(
+                        "in_progress",
+                        gate="rework",
+                        preconditions=("spec_dependencies_ready",),
+                        capabilities=("reopen",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                    ),
                     _edge(
                         "done",
                         gate="task_validation",
@@ -437,11 +481,40 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "on_hold": [
-                    _edge("started", gate="resume", capabilities=("resume",)),
-                    _edge("in_progress", gate="resume", capabilities=("resume",)),
+                    _edge(
+                        "started",
+                        gate="resume",
+                        preconditions=("spec_dependencies_ready",),
+                        capabilities=("resume",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                    ),
+                    _edge(
+                        "in_progress",
+                        gate="resume",
+                        preconditions=("spec_dependencies_ready",),
+                        capabilities=("resume",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                    ),
                     _edge("cancelled", **_CANCEL),
                 ],
-                "done": [_edge("in_progress", gate="reopen", capabilities=("reopen",))],
+                "done": [
+                    _edge(
+                        "in_progress",
+                        gate="reopen",
+                        preconditions=("spec_dependencies_ready",),
+                        capabilities=("reopen",),
+                        reason_codes=(
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                    )
+                ],
                 "cancelled": [
                     _edge(
                         "not_started",

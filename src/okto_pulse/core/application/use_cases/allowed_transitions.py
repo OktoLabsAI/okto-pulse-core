@@ -46,6 +46,12 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     TestScenarioStatus,
 )
+from okto_pulse.core.domain.spec_dependency import (
+    spec_dependency_blocked_guidance,
+    spec_dependency_blocking_facts,
+    transition_starts_card_execution,
+    transition_starts_spec_execution,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 ALLOWED_TRANSITIONS_SOURCE = "core_sdlc_registry_v1"
@@ -192,6 +198,7 @@ class AllowedTransition:
     label: str
     gate: str
     blocked_reason: str | None = None
+    blocked_facts: dict[str, Any] | None = None
     preconditions: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     effects: tuple[str, ...] = ()
@@ -209,6 +216,7 @@ class AllowedTransition:
             "label": self.label,
             "gate": self.gate,
             "blocked_reason": self.blocked_reason,
+            "blocked_facts": self.blocked_facts,
             "preconditions": list(self.preconditions),
             "capabilities": list(self.capabilities),
             "effects": list(self.effects),
@@ -523,6 +531,8 @@ class ListAllowedTransitionsUseCase:
         entity_type: str,
         entity: Any,
         transition: AllowedTransition,
+        *,
+        dependency_readiness: Any | None = None,
     ) -> str | None:
         """Preview state-dependent admission gates without mutating the entity.
 
@@ -599,7 +609,10 @@ class ListAllowedTransitionsUseCase:
                     )
             elif entity_type == "spec":
                 return await self._spec_blocked_reason(
-                    services, entity, transition.to_status
+                    services,
+                    entity,
+                    transition.to_status,
+                    dependency_readiness=dependency_readiness,
                 )
             elif entity_type == "sprint":
                 return await self._sprint_blocked_reason(
@@ -607,7 +620,10 @@ class ListAllowedTransitionsUseCase:
                 )
             elif entity_type == "card":
                 return await self._card_blocked_reason(
-                    services, entity, transition.to_status
+                    services,
+                    entity,
+                    transition.to_status,
+                    dependency_readiness=dependency_readiness,
                 )
             elif entity_type == "test_scenario":
                 return await self._test_scenario_blocked_reason(
@@ -664,14 +680,45 @@ class ListAllowedTransitionsUseCase:
     ) -> AllowedTransition:
         """Aggregate existing gates with the canonical Policy preview."""
 
+        dependency_readiness = await self._dependency_readiness_for_transition(
+            services,
+            entity_type,
+            entity,
+            transition.to_status,
+        )
         blocked_reason = await self._blocked_reason(
             services,
             entity_type,
             entity,
             transition,
+            dependency_readiness=dependency_readiness,
         )
+        blocked_facts = None
+        if (
+            dependency_readiness is not None
+            and not dependency_readiness.ready
+            and str(blocked_reason or "").startswith(
+                "spec_dependencies_incomplete:"
+            )
+        ):
+            blocked_facts = spec_dependency_blocking_facts(
+                spec_id=str(dependency_readiness.spec_id),
+                blockers=dependency_readiness.blockers,
+                blocking_count=dependency_readiness.blocking_count,
+                archived_blocking_count=(
+                    dependency_readiness.archived_blocking_count
+                ),
+                unfinished_blocking_count=(
+                    dependency_readiness.unfinished_blocking_count
+                ),
+                blockers_truncated=dependency_readiness.blockers_truncated,
+            )
         if not transition.policy_compliance:
-            return replace(transition, blocked_reason=blocked_reason)
+            return replace(
+                transition,
+                blocked_reason=blocked_reason,
+                blocked_facts=blocked_facts,
+            )
 
         decision = await services.guidelines.preview_policy_transition(
             board_id=entity.board_id,
@@ -704,7 +751,34 @@ class ListAllowedTransitionsUseCase:
         return replace(
             transition,
             blocked_reason=blocked_reason,
+            blocked_facts=blocked_facts,
             policy_compliance_decision=projected,
+        )
+
+    @staticmethod
+    async def _dependency_readiness_for_transition(
+        services: ApplicationServiceCatalog,
+        entity_type: str,
+        entity: Any,
+        target_status: str,
+    ) -> Any | None:
+        spec_id: str | None = None
+        if entity_type == "spec" and transition_starts_spec_execution(
+            entity.status,
+            target_status,
+        ):
+            spec_id = str(entity.id)
+        elif entity_type == "card" and transition_starts_card_execution(
+            entity.status,
+            target_status,
+        ):
+            raw_spec_id = getattr(entity, "spec_id", None)
+            spec_id = str(raw_spec_id) if raw_spec_id else None
+        if spec_id is None:
+            return None
+        return await services.spec_dependencies.get_readiness(
+            board_id=str(entity.board_id),
+            spec_id=spec_id,
         )
 
     async def _spec_blocked_reason(
@@ -712,6 +786,8 @@ class ListAllowedTransitionsUseCase:
         services: ApplicationServiceCatalog,
         spec: Any,
         target_status: str,
+        *,
+        dependency_readiness: Any | None = None,
     ) -> str | None:
         board = await services.boards.get_board(spec.board_id)
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
@@ -763,6 +839,26 @@ class ListAllowedTransitionsUseCase:
                 return self._exception_reason(exc)
 
         if target_status == "in_progress":
+            if dependency_readiness is None:
+                dependency_readiness = (
+                    await services.spec_dependencies.get_readiness(
+                        board_id=spec.board_id,
+                        spec_id=spec.id,
+                    )
+                )
+            if not dependency_readiness.ready:
+                guidance, _remediation = spec_dependency_blocked_guidance(
+                    archived_blocking_count=(
+                        dependency_readiness.archived_blocking_count
+                    ),
+                    unfinished_blocking_count=(
+                        dependency_readiness.unfinished_blocking_count
+                    ),
+                )
+                return (
+                    "spec_dependencies_incomplete: "
+                    f"{guidance} ({dependency_readiness.blocking_count} blocking)."
+                )
             auto_validate = bool(board_settings.get("auto_validate", False))
             skip_qualitative = bool(getattr(spec, "skip_qualitative_validation", False))
             if not auto_validate and not skip_qualitative:
@@ -1273,6 +1369,8 @@ class ListAllowedTransitionsUseCase:
         services: ApplicationServiceCatalog,
         card: Any,
         target_status: str,
+        *,
+        dependency_readiness: Any | None = None,
     ) -> str | None:
         target = CardStatus(target_status)
         old_status = card.status
@@ -1289,6 +1387,31 @@ class ListAllowedTransitionsUseCase:
             if getattr(card, "spec_id", None)
             else None
         )
+        dependency_blockers: tuple[object, ...] = ()
+        dependency_blocking_count = 0
+        dependency_archived_blocking_count = 0
+        dependency_unfinished_blocking_count = 0
+        dependency_blockers_truncated = False
+        if (
+            spec is not None
+            and transition_starts_card_execution(old_status, target)
+        ):
+            if dependency_readiness is None:
+                dependency_readiness = (
+                    await services.spec_dependencies.get_readiness(
+                        board_id=card.board_id,
+                        spec_id=spec.id,
+                    )
+                )
+            dependency_blockers = tuple(dependency_readiness.blockers)
+            dependency_blocking_count = dependency_readiness.blocking_count
+            dependency_archived_blocking_count = (
+                dependency_readiness.archived_blocking_count
+            )
+            dependency_unfinished_blocking_count = (
+                dependency_readiness.unfinished_blocking_count
+            )
+            dependency_blockers_truncated = dependency_readiness.blockers_truncated
         sprints = (
             await services.sprints.list_sprints(card.spec_id)
             if getattr(card, "spec_id", None)
@@ -1419,6 +1542,15 @@ class ListAllowedTransitionsUseCase:
                 getattr(card, "linked_test_task_ids", None)
             )
             or bug_gate_applies_now,
+            spec_dependency_blockers=dependency_blockers,
+            spec_dependency_blocking_count=dependency_blocking_count,
+            spec_dependency_archived_blocking_count=(
+                dependency_archived_blocking_count
+            ),
+            spec_dependency_unfinished_blocking_count=(
+                dependency_unfinished_blocking_count
+            ),
+            spec_dependency_blockers_truncated=dependency_blockers_truncated,
         )
         decision = evaluate_card_transition(facts)
         if not decision.allowed and decision.block:

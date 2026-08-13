@@ -250,6 +250,11 @@ Semantic guideline protocol:
 - `okto_pulse_move_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_update_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 
+## Specs — dependencies
+- `okto_pulse_add_spec_dependency` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_list_spec_dependencies` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_remove_spec_dependency` — docs: `okto-pulse://reference/tool-docs/spec`
+
 ## Specs — lifecycle & gates
 - `okto_pulse_add_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_create_spec` — docs: `okto-pulse://reference/tool-docs/spec`

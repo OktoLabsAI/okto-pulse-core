@@ -55,6 +55,46 @@ def test_backend_errors_without_stable_contention_type_remain_fail_closed():
     assert classified.replay_safe is False
 
 
+def test_spec_lineage_cleanup_failure_is_operational_and_replay_safe():
+    classified = classify_kg_recovery_failure(
+        "spec_lineage_edge_delete_unconfirmed",
+        "replacement parent was preserved for bounded recovery",
+    )
+
+    assert classified.recovery_class == "connectivity"
+    assert classified.reason_code == "kg_recovery.spec_lineage_reconciliation"
+    assert classified.replay_safe is True
+
+    entry = build_attempt_entry(
+        attempt=5,
+        error_type="spec_lineage_old_parent_cleanup_incomplete",
+        message="replacement exists while an old parent remains",
+    )
+    assert entry["recovery_class"] == "connectivity"
+    assert entry["reason_code"] == "kg_recovery.spec_lineage_reconciliation"
+    assert entry["replay_safe"] is True
+
+
+def test_spec_lineage_metadata_inconsistency_requires_rebuild_not_replay():
+    classified = classify_kg_recovery_failure(
+        "spec_lineage_edge_metadata_inconsistent",
+        "directional reads disagree; graph rebuild required",
+    )
+
+    assert classified.recovery_class == "true_drift"
+    assert classified.reason_code == "kg_recovery.spec_lineage_rebuild_required"
+    assert classified.replay_safe is False
+
+    entry = build_attempt_entry(
+        attempt=5,
+        error_type="spec_lineage_edge_metadata_inconsistent",
+        message="directional reads disagree; graph rebuild required",
+    )
+    assert entry["recovery_class"] == "true_drift"
+    assert entry["reason_code"] == "kg_recovery.spec_lineage_rebuild_required"
+    assert entry["replay_safe"] is False
+
+
 def test_dlq_attempt_carries_reason_and_correlation_without_payload_leak():
     entry = build_attempt_entry(
         attempt=3,

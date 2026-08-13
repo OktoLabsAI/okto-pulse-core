@@ -132,6 +132,7 @@ class FakeSaaSUnitOfWork:
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0
+        self.consistent_read_calls = 0
         self.closed = False
 
     async def __aenter__(self) -> "FakeSaaSUnitOfWork":
@@ -167,6 +168,11 @@ class FakeSaaSUnitOfWork:
             self.realm_scope,
             parent_boards=self._working_state.boards,
         )
+
+    async def begin_consistent_read(self) -> None:
+        # The fake takes a deep copy when the UoW is created, so every read in
+        # this UoW already observes one immutable committed-state snapshot.
+        self.consistent_read_calls += 1
 
     async def synchronize(
         self,

@@ -272,10 +272,12 @@ class TestSemanticGraphStore:
         assert info["schema_version"] == SCHEMA_VERSION
         assert len(info["stable_node_types"]) == 11
         # Code Traceability adds supports/derives_from/overlaps without adding
-        # a physical node label; the closed relationship vocabulary is now 19.
-        assert len(info["stable_rel_types"]) == 19
+        # a physical node label. SK-M adds the deterministic Entity -> Entity
+        # `precedes` pair without overloading cognitive `depends_on`, so the
+        # closed relationship vocabulary is now 20.
+        assert len(info["stable_rel_types"]) == 20
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
-        assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
+        assert {"belongs_to", "originates_from", "covered_by", "precedes"} <= rel_names
         assert len(info["vector_indexes"]) == 9
 
     def test_get_schema_info_with_internal(self):

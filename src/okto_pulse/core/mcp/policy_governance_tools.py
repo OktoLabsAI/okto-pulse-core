@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
+import logging
 from typing import Annotated, Any, Callable, Literal, Mapping
 import uuid
 
@@ -61,6 +62,9 @@ from okto_pulse.core.domain.guideline_semantic_v2 import (
     SEMANTIC_PINPOINT_TITLE_MAX_LENGTH,
 )
 from okto_pulse.core.mcp.outcome import McpToolOutcome
+
+
+logger = logging.getLogger(__name__)
 
 
 POLICY_PAGE_LIMIT_DEFAULT = 50
@@ -367,10 +371,36 @@ def _result_payload(result: object, codec: object | None) -> object:
 
 def _error_outcome(error: Exception) -> McpToolOutcome:
     from okto_pulse.core.inbound.guideline_policy_error import (
+        UnsupportedGuidelinePolicyError,
         project_guideline_policy_error,
     )
 
-    projected = project_guideline_policy_error(error)
+    try:
+        projected = project_guideline_policy_error(error)
+    except UnsupportedGuidelinePolicyError:
+        # Keep both the wire response and operator logs closed.  Exception
+        # messages and tracebacks can embed DSNs, tokens, or subject content;
+        # the bounded type signal is sufficient to correlate the failure with
+        # the surrounding request telemetry without persisting that payload.
+        logger.error(
+            "guideline_policy.unhandled_error error_type=%s",
+            type(error).__name__,
+            extra={
+                "event": "guideline_policy.unhandled_error",
+                "error_type": type(error).__name__,
+            },
+        )
+        return McpToolOutcome.error(
+            code="internal_error",
+            message="The guideline policy operation could not be completed.",
+            retryable=False,
+            next_action={"rel": "report_error"},
+            details={
+                "category": "internal",
+                "status_category": "internal",
+                "http_status": 500,
+            },
+        )
     next_action = projected.get("next_action")
     details = {
         "category": projected["category"],
@@ -622,47 +652,42 @@ def register_policy_governance_tools(
                 )
             return McpToolOutcome.success(_result_payload(result, codec))
         except Exception as exc:
-            try:
-                if (
-                    semantic_contract_version is not None
-                    and validation_subject_type in EDITION_VALIDATION_SUBJECT_TYPES
-                    and validation_subject_id
-                    and validation_subject_edition is not None
-                ):
-                    from okto_pulse.core.services.ska_observability import (
-                        observe_validation_edition_conflict_from_error,
-                    )
+            if (
+                semantic_contract_version is not None
+                and validation_subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+                and validation_subject_id
+                and validation_subject_edition is not None
+            ):
+                from okto_pulse.core.services.ska_observability import (
+                    observe_validation_edition_conflict_from_error,
+                )
 
-                    observe_validation_edition_conflict_from_error(
-                        exc,
-                        operation="policy_compliance",
-                        subject_type=validation_subject_type,
-                        subject_id=validation_subject_id,
-                        expected_edition=validation_subject_edition,
-                        correlation_id=correlation_id,
-                    )
-                outcome = _error_outcome(exc)
-                if semantic_contract_version is not None:
-                    from okto_pulse.core.services.governance_observability import (
-                        emit_semantic_assessment_write_metric,
-                    )
+                observe_validation_edition_conflict_from_error(
+                    exc,
+                    operation="policy_compliance",
+                    subject_type=validation_subject_type,
+                    subject_id=validation_subject_id,
+                    expected_edition=validation_subject_edition,
+                    correlation_id=correlation_id,
+                )
+            outcome = _error_outcome(exc)
+            if semantic_contract_version is not None:
+                from okto_pulse.core.services.governance_observability import (
+                    emit_semantic_assessment_write_metric,
+                )
 
-                    emit_semantic_assessment_write_metric(
-                        surface="mcp",
-                        contract_version=semantic_contract_version,
-                        outcome="error",
-                        reason_code=outcome.code,
-                        capability_state=(
-                            str(outcome.details["capability_state"])
-                            if "capability_state" in outcome.details
-                            else None
-                        ),
-                    )
-                return outcome
-            except TypeError:
-                # Programming errors and unsupported exception classes are not
-                # converted into a misleading successful domain response.
-                raise exc
+                emit_semantic_assessment_write_metric(
+                    surface="mcp",
+                    contract_version=semantic_contract_version,
+                    outcome="error",
+                    reason_code=outcome.code,
+                    capability_state=(
+                        str(outcome.details["capability_state"])
+                        if "capability_state" in outcome.details
+                        else None
+                    ),
+                )
+            return outcome
 
     def _decode(
         codec: object | None,

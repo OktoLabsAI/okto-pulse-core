@@ -68,6 +68,10 @@ from okto_pulse.core.domain.spec_validation import (
     SpecValidationGateNotReady,
     SpecValidationVersionConflict,
 )
+from okto_pulse.core.domain.spec_dependency import (
+    transition_starts_card_execution,
+    transition_starts_spec_execution,
+)
 from okto_pulse.core.domain.sdlc_registry import (
     is_transition_allowed,
     transition_contracts,
@@ -452,7 +456,11 @@ async def evaluate_code_traceability_transition(
         return None
     board_id = getattr(subject, "board_id", None)
     subject_id = getattr(subject, "id", None)
-    version_field = "policy_version" if subject_type is CodeTraceabilitySubjectType.CARD else "version"
+    version_field = (
+        "policy_version"
+        if subject_type is CodeTraceabilitySubjectType.CARD
+        else "version"
+    )
     subject_version = getattr(subject, version_field, None)
     if subject_version is None and subject_type is CodeTraceabilitySubjectType.CARD:
         subject_version = getattr(subject, "version", None)
@@ -475,9 +483,7 @@ async def evaluate_code_traceability_transition(
             require_relational_application_adapter,
         )
 
-        read_port = require_relational_application_adapter().code_traceability_read(
-            db
-        )
+        read_port = require_relational_application_adapter().code_traceability_read(db)
     except (AttributeError, RuntimeError) as exc:
         if settings.mode != "blocking":
             return None
@@ -3339,7 +3345,14 @@ class CardService:
                     },
                 )
 
-            if knowledge_propagation_v2:
+            # Preserve the established fail-closed ordering for ordinary bug
+            # creation. Direct STARTED creation defers this physical write
+            # until after the precedence gate below, so the dependency graph
+            # fence remains the first mutation on that execution-start edge.
+            if knowledge_propagation_v2 and not transition_starts_card_execution(
+                CardStatus.NOT_STARTED,
+                data.status,
+            ):
                 from okto_pulse.core.services.knowledge_propagation import (
                     KnowledgePropagationServiceError,
                 )
@@ -3441,6 +3454,69 @@ class CardService:
                 spec,
                 getattr(data, "knowledge_propagation", None),
             )
+
+        # Direct creation in STARTED is the same execution-start edge as
+        # NOT_STARTED -> STARTED in move_card.  Acquire the dependency-graph
+        # fence, lock/revalidate the source Spec lifecycle identity, check the
+        # current readiness projection and mark this edition started before
+        # any card row, audit, propagation or domain event is staged.  The
+        # caller-owned transaction retains both the fence and marker through
+        # the eventual card write/commit; any later failure rolls them back
+        # together.
+        if transition_starts_card_execution(CardStatus.NOT_STARTED, data.status):
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import (
+                SpecDependencyService,
+            )
+
+            await SpecDependencyService(
+                require_relational_application_adapter().spec_dependencies(self.db),
+                self.db,
+            ).require_ready_for_execution(
+                board_id=board_id,
+                spec_id=spec.id,
+                mark_started=True,
+                expected_edition=int(getattr(spec, "edition", 1) or 1),
+                expected_status=spec.status,
+                expected_archived=bool(getattr(spec, "archived", False)),
+            )
+
+        # The propagation parent CAS is intentionally after the precedence
+        # gate.  On STARTED creation this keeps the graph/source fence as the
+        # first physical write while preserving the existing fail-closed
+        # parent-change contract in the same transaction.
+        if (
+            knowledge_propagation_v2
+            and card_type_val == "bug"
+            and transition_starts_card_execution(
+                CardStatus.NOT_STARTED,
+                data.status,
+            )
+        ):
+            from okto_pulse.core.services.knowledge_propagation import (
+                KnowledgePropagationServiceError,
+            )
+
+            expected_spec_id = data.spec_id
+            if not expected_spec_id or not await _application_fence(
+                self.db,
+                "card",
+                origin_task_id,
+                expected_values={
+                    "board_id": board_id,
+                    "spec_id": expected_spec_id,
+                },
+            ):
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_parent_changed",
+                    ("the bug origin changed after propagation preflight"),
+                    details={
+                        "origin_task_id": origin_task_id,
+                        "expected_spec_id": expected_spec_id,
+                    },
+                )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -5428,6 +5504,23 @@ class CardService:
         # Once a spec reaches IN_PROGRESS or DONE, cards can advance freely.
         old_level = self._STATUS_ORDER.get(old_status, 0)
         new_level = self._STATUS_ORDER.get(data.status, 0)
+        precedence_expected_edition: int | None = None
+        precedence_expected_status: SpecStatus | None = None
+        precedence_expected_archived: bool | None = None
+        if transition_starts_card_execution(old_status, data.status) and card.spec_id:
+            spec_for_precedence = await _application_get(self.db, "spec", card.spec_id)
+            if spec_for_precedence is not None:
+                # Capture the optimistic lifecycle identity without taking the
+                # graph fence. Expensive sprint, regression, traceability,
+                # policy and cognitive gates run before the lock; readiness is
+                # re-read under the fence immediately before mutation.
+                precedence_expected_edition = int(
+                    getattr(spec_for_precedence, "edition", 1) or 1
+                )
+                precedence_expected_status = spec_for_precedence.status
+                precedence_expected_archived = bool(
+                    getattr(spec_for_precedence, "archived", False)
+                )
         if new_level > old_level and card.spec_id:
             spec_for_status = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_status:
@@ -6156,6 +6249,8 @@ class CardService:
             )
 
         report_target = None
+        pending_conclusion_entry: dict[str, Any] | None = None
+        pending_missing_impact_advisory = False
         if data.status == CardStatus.DONE:
             report_target = "Done"
         elif (
@@ -6223,13 +6318,10 @@ class CardService:
                 resolve_impact_evidence_mode,
             )
 
-            impact_mode, _impact_mode_source = resolve_impact_evidence_mode(
-                board
-            )
+            impact_mode, _impact_mode_source = resolve_impact_evidence_mode(board)
             impact_block = data.impact_evidence
             impact_populated = (
-                impact_block is not None
-                and impact_block.is_minimally_populated()
+                impact_block is not None and impact_block.is_minimally_populated()
             )
             if impact_mode == "require" and not impact_populated:
                 raise CardOperationError(
@@ -6252,33 +6344,15 @@ class CardService:
                         "target_status": data.status.value,
                     },
                 )
-            if impact_mode == "advisory" and not impact_populated:
-                # AC-17: exact advisory payload - action name, card scope and
-                # {mode, target_status, author_id} details; no entry in the
-                # off/require modes.
-                await self._log_activity(
-                    board_id=card.board_id,
-                    action="impact_evidence_missing",
-                    actor_type="user",
-                    actor_id=user_id,
-                    actor_name=actor_name
-                    or await resolve_actor_name(
-                        self.db, user_id, card.board_id
-                    ),
-                    card_id=card.id,
-                    details={
-                        "mode": "advisory",
-                        "target_status": data.status.value,
-                        "author_id": user_id,
-                    },
-                )
+            pending_missing_impact_advisory = (
+                impact_mode == "advisory" and not impact_populated
+            )
 
             report_source = (
                 "move_to_validation"
                 if data.status == CardStatus.VALIDATION
                 else "move_to_done"
             )
-            conclusions = list(card.conclusions or [])
             conclusion_entry: dict[str, Any] = {
                 "text": data.conclusion.strip(),
                 "author_id": user_id,
@@ -6296,24 +6370,7 @@ class CardService:
                 conclusion_entry["impact_evidence"] = impact_block.model_dump(
                     mode="json", exclude_none=True
                 )
-            conclusions.append(conclusion_entry)
-            card.conclusions = conclusions
-            card.mark_dirty("conclusions")
-
-            from okto_pulse.core.events import publish as event_publish
-            from okto_pulse.core.events.types import CardConclusionAdded
-
-            await event_publish(
-                CardConclusionAdded(
-                    board_id=card.board_id,
-                    actor_id=user_id,
-                    card_id=card_id,
-                    spec_id=card.spec_id,
-                    conclusion_excerpt=data.conclusion.strip()[:280],
-                    added_by=user_id,
-                ),
-                session=self.db,
-            )
+            pending_conclusion_entry = conclusion_entry
 
         # Block forward moves if dependencies not met
         if new_level > old_level and data.status != CardStatus.CANCELLED:
@@ -6336,6 +6393,100 @@ class CardService:
                 card.id,
                 phase="card_done",
             )
+
+        if precedence_expected_edition is not None and card.spec_id:
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            dependency_service = SpecDependencyService(
+                require_relational_application_adapter().spec_dependencies(self.db),
+                self.db,
+            )
+            await dependency_service.require_ready_for_execution(
+                board_id=card.board_id,
+                spec_id=card.spec_id,
+                mark_started=True,
+                expected_edition=precedence_expected_edition,
+                expected_status=precedence_expected_status,
+                expected_archived=precedence_expected_archived,
+            )
+
+        # All report validation and potentially blocking dependency/resource
+        # reads run before staging the report.  On an execution-start edge the
+        # precedence graph fence above is therefore acquired first, so a
+        # concurrent prerequisite edit cannot leave a conclusion/event queued
+        # for an execution start that must fail.
+        if pending_conclusion_entry is not None:
+            if pending_missing_impact_advisory:
+                # AC-17: exact advisory payload - action name, card scope and
+                # {mode, target_status, author_id} details; no entry in the
+                # off/require modes.
+                await self._log_activity(
+                    board_id=card.board_id,
+                    action="impact_evidence_missing",
+                    actor_type="user",
+                    actor_id=user_id,
+                    actor_name=actor_name
+                    or await resolve_actor_name(self.db, user_id, card.board_id),
+                    card_id=card.id,
+                    details={
+                        "mode": "advisory",
+                        "target_status": data.status.value,
+                        "author_id": user_id,
+                    },
+                )
+
+            conclusions = list(card.conclusions or [])
+            conclusions.append(pending_conclusion_entry)
+            card.conclusions = conclusions
+            card.mark_dirty("conclusions")
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardConclusionAdded
+
+            await event_publish(
+                CardConclusionAdded(
+                    board_id=card.board_id,
+                    actor_id=user_id,
+                    card_id=card_id,
+                    spec_id=card.spec_id,
+                    conclusion_excerpt=pending_conclusion_entry["text"][:280],
+                    added_by=user_id,
+                ),
+                session=self.db,
+            )
+
+        spec_for_auto_rollback = None
+        if data.status == CardStatus.CANCELLED and card.spec_id:
+            candidate = await _application_get(self.db, "spec", card.spec_id)
+            if candidate is not None and candidate.status == SpecStatus.VALIDATED:
+                from okto_pulse.core.ports.relational_application import (
+                    require_relational_application_adapter,
+                )
+                from okto_pulse.core.services.spec_dependency import (
+                    SpecDependencyService,
+                )
+
+                await SpecDependencyService(
+                    require_relational_application_adapter().spec_dependencies(self.db),
+                    self.db,
+                ).acquire_lifecycle_write_fence(board_id=card.board_id)
+                if not await _application_fence(
+                    self.db,
+                    "spec",
+                    candidate.id,
+                    expected_values={
+                        "status": candidate.status,
+                        "edition": int(getattr(candidate, "edition", 1) or 1),
+                        "version": int(candidate.version),
+                        "archived": bool(getattr(candidate, "archived", False)),
+                        "current_validation_id": candidate.current_validation_id,
+                    },
+                ):
+                    raise LifecycleTransitionConflictError("spec", candidate.id)
+                spec_for_auto_rollback = candidate
 
         # Cancellation justification (ITEM 17): cancel requires a reason
         # (replacing any previous one); reopening clears it.
@@ -6373,29 +6524,25 @@ class CardService:
         )
 
         # Auto-rollback: if card cancelled and spec is validated → revert to approved
-        if data.status == CardStatus.CANCELLED and card.spec_id:
-            spec_for_rollback = await _application_get(self.db, "spec", card.spec_id)
-            if spec_for_rollback and spec_for_rollback.status == SpecStatus.VALIDATED:
-                spec_for_rollback.status = SpecStatus.APPROVED
-                if spec_for_rollback.evaluations:
-                    for ev in spec_for_rollback.evaluations:
-                        ev["stale"] = True
-                    spec_for_rollback.mark_dirty("evaluations")
-                rollback_name = actor_name or await resolve_actor_name(
-                    self.db, user_id, card.board_id
-                )
-                spec_service = SpecService(self.db)
-                await spec_service._record_history(
-                    spec_id=card.spec_id,
-                    action="status_changed",
-                    actor_id=user_id,
-                    actor_name=rollback_name,
-                    changes=[
-                        {"field": "status", "old": "validated", "new": "approved"}
-                    ],
-                    summary=f"Auto-rollback: card '{card.title}' cancelled — spec reverted for revalidation",
-                    version=spec_for_rollback.version,
-                )
+        if spec_for_auto_rollback is not None:
+            spec_for_auto_rollback.status = SpecStatus.APPROVED
+            if spec_for_auto_rollback.evaluations:
+                for ev in spec_for_auto_rollback.evaluations:
+                    ev["stale"] = True
+                spec_for_auto_rollback.mark_dirty("evaluations")
+            rollback_name = actor_name or await resolve_actor_name(
+                self.db, user_id, card.board_id
+            )
+            spec_service = SpecService(self.db)
+            await spec_service._record_history(
+                spec_id=card.spec_id,
+                action="status_changed",
+                actor_id=user_id,
+                actor_name=rollback_name,
+                changes=[{"field": "status", "old": "validated", "new": "approved"}],
+                summary=f"Auto-rollback: card '{card.title}' cancelled — spec reverted for revalidation",
+                version=spec_for_auto_rollback.version,
+            )
 
         # Application records are detached from adapter-specific identity maps.
         # Synchronize the transition before another service reads it in this UoW.
@@ -9888,6 +10035,30 @@ class SpecService:
             to_status=data.status.value,
         )
 
+        # Every Spec lifecycle write shares the board dependency-graph fence.
+        # This prevents a prerequisite Done→Draft transition from racing a
+        # dependent's readiness check. The caller-owned transaction keeps the
+        # fence held through the row fence, status write and commit.
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+        dependency_service = SpecDependencyService(
+            require_relational_application_adapter().spec_dependencies(self.db),
+            self.db,
+        )
+        await dependency_service.acquire_lifecycle_write_fence(board_id=spec.board_id)
+
+        if transition_starts_spec_execution(spec.status, data.status):
+            await dependency_service.require_ready_for_execution(
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                mark_started=True,
+                expected_edition=int(getattr(spec, "edition", 1) or 1),
+                acquire_graph_lock=False,
+            )
+
         # Run expensive read-only gates before acquiring the write lock, then
         # atomically recheck the originally loaded lifecycle authority.  The
         # persistence adapter implements this as a conditional no-op UPDATE,
@@ -9957,14 +10128,10 @@ class SpecService:
             "cancel"
             if data.status == SpecStatus.CANCELLED
             else "reopen"
-            if (
-                data.status == SpecStatus.DRAFT
-                and old_status != SpecStatus.DRAFT
-            )
+            if (data.status == SpecStatus.DRAFT and old_status != SpecStatus.DRAFT)
             else "admit_validation"
             if (
-                data.status == SpecStatus.APPROVED
-                and old_status != SpecStatus.APPROVED
+                data.status == SpecStatus.APPROVED and old_status != SpecStatus.APPROVED
             )
             else None
         )
@@ -10064,6 +10231,20 @@ class SpecService:
         spec = await self.get_spec(spec_id)
         if not spec:
             return False
+
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+        await SpecDependencyService(
+            require_relational_application_adapter().spec_dependencies(self.db),
+            self.db,
+        ).require_no_incoming_active(
+            board_id=spec.board_id,
+            target_spec_ids=(spec.id,),
+            operation="delete Spec",
+        )
 
         # Unlink cards. A deleted spec also owns the scenario ids stored on
         # those cards; retaining them would leave dangling references that can
@@ -10266,8 +10447,11 @@ class SpecService:
             "require_spec_validation": bool(
                 settings.get("require_spec_validation", True)
             ),
+            "min_spec_confidence": int(settings.get("min_spec_confidence", 70)),
+            "min_spec_clarity": int(settings.get("min_spec_clarity", 80)),
             "min_spec_completeness": int(settings.get("min_spec_completeness", 80)),
             "min_spec_assertiveness": int(settings.get("min_spec_assertiveness", 80)),
+            "min_spec_decidability": int(settings.get("min_spec_decidability", 80)),
             "max_spec_ambiguity": int(settings.get("max_spec_ambiguity", 30)),
         }
 
@@ -10362,9 +10546,7 @@ class SpecService:
             )
 
         critical_actor_type = (
-            "agent"
-            if reviewer_name and "agent" in reviewer_name.lower()
-            else "user"
+            "agent" if reviewer_name and "agent" in reviewer_name.lower() else "user"
         )
         critical_actor_name = reviewer_name or await resolve_actor_name(
             self.db, reviewer_id, spec.board_id
@@ -10427,9 +10609,31 @@ class SpecService:
                 details={"reason": type(exc).__name__},
             ) from exc
 
-        # The formal contract is a single human score + summary. Legacy
-        # dimensions remain accepted only as compatibility input and retain
-        # their historical threshold behavior.
+        # Five evaluator-supplied dimensions are the canonical contract. The
+        # score/summary and completeness shapes remain compatibility inputs so
+        # immutable records created by older clients stay readable/replayable.
+        canonical_validation_fields = (
+            "confidence",
+            "confidence_justification",
+            "clarity",
+            "clarity_justification",
+            "assertiveness",
+            "assertiveness_justification",
+            "decidability",
+            "decidability_justification",
+            "ambiguity",
+            "ambiguity_justification",
+            "recommendation",
+        )
+        canonical_marker_fields = (
+            "confidence",
+            "confidence_justification",
+            "clarity",
+            "clarity_justification",
+            "decidability",
+            "decidability_justification",
+            "pinpoints",
+        )
         legacy_validation_fields = (
             "completeness",
             "completeness_justification",
@@ -10443,18 +10647,36 @@ class SpecService:
         formal_submission = (
             data.get("score") is not None or data.get("summary") is not None
         )
+        canonical_submission = any(
+            data.get(field) is not None for field in canonical_marker_fields
+        )
         legacy_submission = any(
             data.get(field) is not None for field in legacy_validation_fields
         )
-        if formal_submission and legacy_submission:
+        if formal_submission and (canonical_submission or legacy_submission):
             raise ValueError(
                 "formal and legacy validation shapes are mutually exclusive"
             )
+        if canonical_submission and any(
+            data.get(field) is not None
+            for field in (
+                "completeness",
+                "completeness_justification",
+                "general_justification",
+            )
+        ):
+            raise ValueError(
+                "canonical and legacy validation shapes are mutually exclusive"
+            )
         score: float | None = None
         human_summary: str | None = None
+        confidence: int | None = None
+        clarity: int | None = None
         completeness: int | None = None
         assertiveness: int | None = None
+        decidability: int | None = None
         ambiguity: int | None = None
+        pinpoints: list[dict[str, Any]] = []
         recommendation: str | None = None
         violations: list[str] = []
         if formal_submission:
@@ -10463,6 +10685,110 @@ class SpecService:
             score = float(data["score"])
             human_summary = str(data["summary"]).strip()
             outcome = "success"
+        elif canonical_submission:
+            missing = [
+                field
+                for field in canonical_validation_fields
+                if data.get(field) is None
+            ]
+            if missing:
+                raise ValueError("Missing required fields: " + ", ".join(missing))
+            for name in (
+                "confidence",
+                "clarity",
+                "assertiveness",
+                "decidability",
+                "ambiguity",
+            ):
+                raw_score = data[name]
+                if not isinstance(raw_score, int) or isinstance(raw_score, bool):
+                    raise ValueError(f"{name} must be between 0 and 100")
+            confidence = int(data["confidence"])
+            clarity = int(data["clarity"])
+            assertiveness = int(data["assertiveness"])
+            decidability = int(data["decidability"])
+            ambiguity = int(data["ambiguity"])
+            recommendation = data["recommendation"]
+            if recommendation not in ("approve", "reject"):
+                raise ValueError("recommendation must be 'approve' or 'reject'")
+            for name, dimension_score in (
+                ("confidence", confidence),
+                ("clarity", clarity),
+                ("assertiveness", assertiveness),
+                ("decidability", decidability),
+                ("ambiguity", ambiguity),
+            ):
+                if not (0 <= dimension_score <= 100):
+                    raise ValueError(f"{name} must be between 0 and 100")
+                justification = data.get(f"{name}_justification")
+                if (
+                    not isinstance(justification, str)
+                    or len(justification.strip()) < 10
+                ):
+                    raise ValueError(
+                        f"{name}_justification must be at least 10 characters"
+                    )
+            from okto_pulse.core.domain.spec_validation import (
+                SpecValidationMetric,
+                SpecValidationPinpoint,
+                SpecValidationPinpointAnchorType,
+            )
+
+            raw_pinpoints = data.get("pinpoints") or []
+            if not isinstance(raw_pinpoints, list):
+                raise ValueError("pinpoints must be a list")
+            pinpoint_identities: set[tuple[str | None, ...]] = set()
+            for raw_pinpoint in raw_pinpoints:
+                required_pinpoint_fields = {"metric", "anchor_type", "detail"}
+                allowed_pinpoint_fields = {
+                    *required_pinpoint_fields,
+                    "anchor_ref",
+                }
+                if (
+                    not isinstance(raw_pinpoint, dict)
+                    or not required_pinpoint_fields.issubset(raw_pinpoint)
+                    or not set(raw_pinpoint).issubset(allowed_pinpoint_fields)
+                ):
+                    raise ValueError("spec_validation_pinpoint_invalid")
+                pinpoint = SpecValidationPinpoint(
+                    metric=SpecValidationMetric(raw_pinpoint.get("metric")),
+                    anchor_type=SpecValidationPinpointAnchorType(
+                        raw_pinpoint.get("anchor_type")
+                    ),
+                    anchor_ref=raw_pinpoint.get("anchor_ref"),
+                    detail=raw_pinpoint.get("detail"),
+                )
+                projected_pinpoint = pinpoint.to_dict()
+                pinpoint_identity = tuple(projected_pinpoint.values())
+                if pinpoint_identity in pinpoint_identities:
+                    raise ValueError("spec_validation_pinpoint_duplicate")
+                pinpoint_identities.add(pinpoint_identity)
+                pinpoints.append(projected_pinpoint)
+            if confidence < config["min_spec_confidence"]:
+                violations.append(
+                    f"confidence {confidence} < min {config['min_spec_confidence']}"
+                )
+            if clarity < config["min_spec_clarity"]:
+                violations.append(
+                    f"clarity {clarity} < min {config['min_spec_clarity']}"
+                )
+            if assertiveness < config["min_spec_assertiveness"]:
+                violations.append(
+                    "assertiveness "
+                    f"{assertiveness} < min {config['min_spec_assertiveness']}"
+                )
+            if decidability < config["min_spec_decidability"]:
+                violations.append(
+                    "decidability "
+                    f"{decidability} < min {config['min_spec_decidability']}"
+                )
+            if ambiguity > config["max_spec_ambiguity"]:
+                violations.append(
+                    f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}"
+                )
+            outcome = (
+                "failed" if violations or recommendation == "reject" else "success"
+            )
         else:
             completeness = int(data["completeness"])
             assertiveness = int(data["assertiveness"])
@@ -10507,6 +10833,17 @@ class SpecService:
                     "Spec policy compliance is not ready.",
                     details={"reason": type(exc).__name__},
                 ) from exc
+
+        if outcome == "success":
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            await SpecDependencyService(
+                require_relational_application_adapter().spec_dependencies(self.db),
+                self.db,
+            ).acquire_lifecycle_write_fence(board_id=spec.board_id)
 
         # Keep database write-lock time short: evaluate every prerequisite
         # first, then serialize the immutable head append immediately before
@@ -10554,11 +10891,21 @@ class SpecService:
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
         subject_version = int(spec.version)
         head_revision = previous_head_revision + 1
-        resolved_thresholds = {
-            "min_spec_completeness": config["min_spec_completeness"],
-            "min_spec_assertiveness": config["min_spec_assertiveness"],
-            "max_spec_ambiguity": config["max_spec_ambiguity"],
-        }
+        resolved_thresholds = (
+            {
+                "min_spec_confidence": config["min_spec_confidence"],
+                "min_spec_clarity": config["min_spec_clarity"],
+                "min_spec_assertiveness": config["min_spec_assertiveness"],
+                "min_spec_decidability": config["min_spec_decidability"],
+                "max_spec_ambiguity": config["max_spec_ambiguity"],
+            }
+            if canonical_submission
+            else {
+                "min_spec_completeness": config["min_spec_completeness"],
+                "min_spec_assertiveness": config["min_spec_assertiveness"],
+                "max_spec_ambiguity": config["max_spec_ambiguity"],
+            }
+        )
         validation: dict[str, Any] = {
             "id": validation_id,
             "validation_id": validation_id,
@@ -10580,6 +10927,29 @@ class SpecService:
         }
         if formal_submission:
             validation.update({"score": score, "summary": human_summary})
+        elif canonical_submission:
+            validation.update(
+                {
+                    "confidence": confidence,
+                    "confidence_justification": data[
+                        "confidence_justification"
+                    ].strip(),
+                    "clarity": clarity,
+                    "clarity_justification": data["clarity_justification"].strip(),
+                    "assertiveness": assertiveness,
+                    "assertiveness_justification": data[
+                        "assertiveness_justification"
+                    ].strip(),
+                    "decidability": decidability,
+                    "decidability_justification": data[
+                        "decidability_justification"
+                    ].strip(),
+                    "ambiguity": ambiguity,
+                    "ambiguity_justification": data["ambiguity_justification"].strip(),
+                    "pinpoints": pinpoints,
+                    "recommendation": recommendation,
+                }
+            )
         else:
             validation.update(
                 {
@@ -10592,9 +10962,7 @@ class SpecService:
                         "assertiveness_justification"
                     ].strip(),
                     "ambiguity": ambiguity,
-                    "ambiguity_justification": data[
-                        "ambiguity_justification"
-                    ].strip(),
+                    "ambiguity_justification": data["ambiguity_justification"].strip(),
                     "general_justification": data["general_justification"].strip(),
                     "recommendation": recommendation,
                 }
@@ -10651,12 +11019,24 @@ class SpecService:
                 **(
                     {"score": score}
                     if formal_submission
-                    else {
-                        "recommendation": recommendation,
-                        "completeness": completeness,
-                        "assertiveness": assertiveness,
-                        "ambiguity": ambiguity,
-                    }
+                    else (
+                        {
+                            "recommendation": recommendation,
+                            "confidence": confidence,
+                            "clarity": clarity,
+                            "assertiveness": assertiveness,
+                            "decidability": decidability,
+                            "ambiguity": ambiguity,
+                            "pinpoint_count": len(pinpoints),
+                        }
+                        if canonical_submission
+                        else {
+                            "recommendation": recommendation,
+                            "completeness": completeness,
+                            "assertiveness": assertiveness,
+                            "ambiguity": ambiguity,
+                        }
+                    )
                 ),
                 "threshold_violations": violations,
                 "edition": spec.edition,
@@ -10696,8 +11076,17 @@ class SpecService:
                 f"Validation submitted: {outcome} ({score})"
                 if formal_submission
                 else (
-                    f"Validation submitted: {outcome} "
-                    f"({recommendation}; {completeness}/{assertiveness}/{ambiguity})"
+                    (
+                        f"Validation submitted: {outcome} "
+                        f"({recommendation}; {confidence}/{clarity}/"
+                        f"{assertiveness}/{decidability}/{ambiguity})"
+                    )
+                    if canonical_submission
+                    else (
+                        f"Validation submitted: {outcome} "
+                        f"({recommendation}; "
+                        f"{completeness}/{assertiveness}/{ambiguity})"
+                    )
                 )
             ),
             version=spec.version,
@@ -10727,7 +11116,11 @@ class SpecService:
         if not spec:
             raise ValueError("Spec not found")
 
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 100
+        ):
             raise ValueError("limit must be between 1 and 100")
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValueError("offset must be greater than or equal to 0")
@@ -10783,9 +11176,7 @@ class SpecService:
             ]
         else:
             filtered = [
-                item
-                for item in projected
-                if item["lifecycle_state"] == lifecycle_state
+                item for item in projected if item["lifecycle_state"] == lifecycle_state
             ]
         total = len(filtered)
         result_list = filtered[offset : offset + limit]
@@ -10996,9 +11387,7 @@ class SpecQAService:
         if spec is None:
             raise RuntimeError("quality_clarification_subject_missing")
         require_draft_mutation(spec, subject_type="spec")
-        board = (
-            await _application_get(self.db, "board", spec.board_id)
-        )
+        board = await _application_get(self.db, "board", spec.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -12780,7 +13169,9 @@ class IdeationService:
             "ideation",
             board_settings,
         )
-        skipped = bool(getattr(ideation, "skip_ambiguity_gate", False)) and is_current_edition(
+        skipped = bool(
+            getattr(ideation, "skip_ambiguity_gate", False)
+        ) and is_current_edition(
             getattr(ideation, "skip_ambiguity_gate_edition", None),
             getattr(ideation, "edition", 1),
         )
@@ -13010,7 +13401,13 @@ class IdeationService:
             changes=[
                 {"field": "status", "old": old_status.value, "new": data.status.value},
                 *(
-                    [{"field": "edition", "old": old_edition, "new": int(ideation.edition)}]
+                    [
+                        {
+                            "field": "edition",
+                            "old": old_edition,
+                            "new": int(ideation.edition),
+                        }
+                    ]
                     if opened_new_edition
                     else []
                 ),
@@ -13474,9 +13871,7 @@ class IdeationQAService:
         if ideation is None:
             raise RuntimeError("quality_clarification_subject_missing")
         require_draft_mutation(ideation, subject_type="ideation")
-        board = (
-            await _application_get(self.db, "board", ideation.board_id)
-        )
+        board = await _application_get(self.db, "board", ideation.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -13614,7 +14009,9 @@ class RefinementService:
             "refinement",
             board_settings,
         )
-        skipped = bool(getattr(refinement, "skip_ambiguity_gate", False)) and is_current_edition(
+        skipped = bool(
+            getattr(refinement, "skip_ambiguity_gate", False)
+        ) and is_current_edition(
             getattr(refinement, "skip_ambiguity_gate_edition", None),
             getattr(refinement, "edition", 1),
         )
@@ -14389,7 +14786,13 @@ class RefinementService:
             changes=[
                 {"field": "status", "old": old_status.value, "new": data.status.value},
                 *(
-                    [{"field": "edition", "old": old_edition, "new": int(refinement.edition)}]
+                    [
+                        {
+                            "field": "edition",
+                            "old": old_edition,
+                            "new": int(refinement.edition),
+                        }
+                    ]
                     if opened_new_edition
                     else []
                 ),
@@ -14474,9 +14877,12 @@ class RefinementService:
             # empty manifest. Enabled boards fail closed; persistence/runtime
             # failures are intentionally not swallowed by this narrow branch.
             board = await _application_get(self.db, "board", refinement.board_id)
-            if resolve_code_traceability_settings(
-                getattr(board, "settings", None) if board else None
-            ).mode != "off":
+            if (
+                resolve_code_traceability_settings(
+                    getattr(board, "settings", None) if board else None
+                ).mode
+                != "off"
+            ):
                 raise CodeInvestigationCurrentnessUnknown(
                     details={"reason": "snapshot_traceability_adapter_unavailable"}
                 ) from exc
@@ -14529,10 +14935,11 @@ class RefinementService:
     ) -> "RefinementSnapshot":
         """Resolve the immutable Done source without synthesizing history.
 
-        Current writers snapshot the post-flush version. Legacy writers could
-        snapshot content at ``vN`` and persist the status-only Done bump at
-        ``vN+1``. That one compatibility shape is accepted only when history
-        proves the intervening write changed status to Done and nothing else.
+        Current writers snapshot the post-flush version. Legacy records can
+        expose completed content and its status-only proof at ``vN`` while the
+        live aggregate is already ``vN+1``. That one compatibility shape is
+        accepted only when history proves the completed snapshot changed
+        status from Approved to Done and nothing else.
         """
 
         if refinement.status != RefinementStatus.DONE:
@@ -14553,13 +14960,17 @@ class RefinementService:
         else:
             previous = await self.get_snapshot(refinement.id, live_version - 1)
         if previous is not None:
+            # A compatible legacy record can expose the immutable completed
+            # snapshot and its strict status-only proof at N while the live
+            # aggregate is already N+1.  The proof is therefore keyed by the
+            # snapshot version, never inferred from the live row alone.
             rows = await _application_list(
                 self.db,
                 "refinement_history",
                 filters=(
                     _apf("refinement_id", "eq", refinement.id),
                     _apf("action", "eq", "status_changed"),
-                    _apf("version", "eq", live_version),
+                    _apf("version", "eq", live_version - 1),
                 ),
                 order_by=(("created_at", True), ("id", True)),
                 # Two rows are enough to reject an ambiguous/additional
@@ -14716,9 +15127,7 @@ class RefinementService:
         ):
             context_parts.append(parent_context)
         context = (
-            "\n\n".join(context_parts)
-            if context_parts
-            else source_snapshot.description
+            "\n\n".join(context_parts) if context_parts else source_snapshot.description
         )
 
         # Snapshot artifact data BEFORE create_spec — flush() in create_spec
@@ -14914,9 +15323,7 @@ class RefinementQAService:
         if refinement is None:
             raise RuntimeError("quality_clarification_subject_missing")
         require_draft_mutation(refinement, subject_type="refinement")
-        board = (
-            await _application_get(self.db, "board", refinement.board_id)
-        )
+        board = await _application_get(self.db, "board", refinement.board_id)
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -15239,9 +15646,7 @@ class GuidelineService:
             revision_digest=binding.revision_digest,
             enforcement=binding.enforcement.value,
             minimum_confidence=binding.minimum_confidence,
-            metric_threshold_overrides=dict(
-                binding.metric_threshold_overrides
-            ),
+            metric_threshold_overrides=dict(binding.metric_threshold_overrides),
             state=binding.state.value,
         )
 
@@ -15379,14 +15784,15 @@ class GuidelineService:
         waiver_cursor = None
         seen_waiver_cursors = set()
         while True:
-            waiver_page, next_waiver_cursor = (
-                await semantic_policy.list_board_semantic_waivers(
-                    board_id=board_id,
-                    evaluated_at=requested_at,
-                    guideline_id=guideline_id,
-                    after=waiver_cursor,
-                    limit=50,
-                )
+            (
+                waiver_page,
+                next_waiver_cursor,
+            ) = await semantic_policy.list_board_semantic_waivers(
+                board_id=board_id,
+                evaluated_at=requested_at,
+                guideline_id=guideline_id,
+                after=waiver_cursor,
+                limit=50,
             )
             semantic_waivers.extend(waiver_page)
             if next_waiver_cursor is None:
@@ -15495,9 +15901,7 @@ class GuidelineService:
             proposed_priority=proposed_priority,
             proposed_enforcement=proposed_enforcement,
             proposed_minimum_confidence=proposed_minimum_confidence,
-            proposed_metric_threshold_overrides=(
-                proposed_metric_threshold_overrides
-            ),
+            proposed_metric_threshold_overrides=(proposed_metric_threshold_overrides),
             requested_by=requested_by,
             requested_at=requested_at or self._next_event_time(),
             idempotency_key=idempotency_key,
@@ -15607,9 +16011,7 @@ class GuidelineService:
                 impact_receipt_id=impact_receipt_id,
                 proposed_priority=receipt.proposed_priority,
                 proposed_enforcement=receipt.proposed_enforcement,
-                proposed_minimum_confidence=(
-                    receipt.proposed_minimum_confidence
-                ),
+                proposed_minimum_confidence=(receipt.proposed_minimum_confidence),
                 proposed_metric_threshold_overrides=(
                     receipt.proposed_metric_threshold_overrides
                 ),
@@ -15638,9 +16040,7 @@ class GuidelineService:
                 (
                     (
                         "stale_reasons",
-                        ",".join(
-                            reason.value for reason in exc.currentness_reasons
-                        ),
+                        ",".join(reason.value for reason in exc.currentness_reasons),
                     ),
                 )
                 if exc.currentness_reasons
@@ -16533,6 +16933,32 @@ class ArchiveService:
         """Archive an entity and all its descendants."""
         tree = await self._resolve_tree(entity_type, entity_id)
 
+        spec_ids = tuple(str(spec.id) for spec in tree["specs"])
+        if spec_ids:
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            board_ids = sorted({str(spec.board_id) for spec in tree["specs"]})
+            for board_id in board_ids:
+                board_spec_ids = tuple(
+                    str(spec.id)
+                    for spec in tree["specs"]
+                    if str(spec.board_id) == board_id
+                )
+                await SpecDependencyService(
+                    require_relational_application_adapter().spec_dependencies(self.db),
+                    self.db,
+                ).require_no_incoming_active(
+                    board_id=board_id,
+                    target_spec_ids=board_spec_ids,
+                    # Edges wholly inside the same atomic archive tree do not
+                    # prevent the tree operation; external dependents do.
+                    exclude_source_spec_ids=board_spec_ids,
+                    operation="archive Spec tree",
+                )
+
         counts = {
             "ideations": 0,
             "refinements": 0,
@@ -16710,6 +17136,24 @@ class ArchiveService:
         )
 
         tree = await self._resolve_tree(entity_type, entity_id)
+
+        spec_board_ids = sorted(
+            {str(spec.board_id) for spec in tree["specs"] if spec.archived}
+        )
+        if spec_board_ids:
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            dependency_service = SpecDependencyService(
+                require_relational_application_adapter().spec_dependencies(self.db),
+                self.db,
+            )
+            for board_id in spec_board_ids:
+                await dependency_service.acquire_lifecycle_write_fence(
+                    board_id=board_id
+                )
 
         counts = {
             "ideations": 0,

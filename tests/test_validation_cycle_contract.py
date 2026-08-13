@@ -43,7 +43,11 @@ from okto_pulse.core.models.validation_cycle import (
     project_validation_cycle,
     project_validation_technical_audit,
 )
-from okto_pulse.core.models.schemas import SpecValidationSubmit
+from okto_pulse.core.models.schemas import (
+    BoardSettings,
+    SpecValidationResponse,
+    SpecValidationSubmit,
+)
 from okto_pulse.core.domain.human_validation_cycle import (
     SubjectEditRequiresDraftError,
 )
@@ -52,11 +56,8 @@ from okto_pulse.core.domain.human_validation_cycle import (
 _DIGEST = "a" * 64
 
 
-def test_spec_validation_submit_rejects_mixed_formal_and_legacy_shapes() -> None:
-    with pytest.raises(
-        ValueError,
-        match="formal and legacy validation shapes are mutually exclusive",
-    ):
+def test_spec_validation_submit_rejects_historical_write_shapes() -> None:
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         SpecValidationSubmit.model_validate(
             {
                 "expected_validation_edition": 3,
@@ -64,16 +65,12 @@ def test_spec_validation_submit_rejects_mixed_formal_and_legacy_shapes() -> None
                 "expected_head_revision": 0,
                 "score": 92,
                 "summary": "The current validation edition is ready.",
-                "completeness": 92,
             }
         )
 
-    # MCP builds a plain mapping and therefore relies on the shared command,
-    # rather than Pydantic, to enforce the exact same one-of contract.
-    with pytest.raises(
-        CommandValidationError,
-        match="formal and legacy validation shapes are mutually exclusive",
-    ):
+    # MCP builds a plain mapping and therefore relies on the shared command to
+    # enforce the same closed canonical write contract.
+    with pytest.raises(CommandValidationError, match="Unknown spec validation fields"):
         SubmitSpecValidationCommand(
             "spec-1",
             {
@@ -82,9 +79,127 @@ def test_spec_validation_submit_rejects_mixed_formal_and_legacy_shapes() -> None
                 "expected_head_revision": 0,
                 "score": 92,
                 "summary": "The current validation edition is ready.",
-                "completeness": 92,
             },
         ).validate()
+
+
+def _canonical_spec_validation_payload() -> dict[str, object]:
+    return {
+        "expected_validation_edition": 3,
+        "expected_spec_version": 17,
+        "expected_head_revision": 0,
+        "confidence": 91,
+        "confidence_justification": "The evaluator inspected every section.",
+        "clarity": 89,
+        "clarity_justification": "Problem, solution and requirements are explicit.",
+        "assertiveness": 92,
+        "assertiveness_justification": "Requirements use measurable language.",
+        "decidability": 88,
+        "decidability_justification": "The constraints direct concrete implementation choices.",
+        "ambiguity": 8,
+        "ambiguity_justification": "Terms have one interpretation in context.",
+        "recommendation": "approve",
+        "pinpoints": [
+            {
+                "metric": "decidability",
+                "anchor_type": "field",
+                "anchor_ref": "technical_requirements.tr_availability",
+                "detail": "Specify the minimum and maximum instance count.",
+            },
+            {
+                "metric": "clarity",
+                "anchor_type": "whole_artifact",
+                "detail": "State the solution boundary explicitly.",
+            },
+        ],
+    }
+
+
+def test_spec_validation_canonical_five_metric_contract_is_closed() -> None:
+    payload = _canonical_spec_validation_payload()
+    model = SpecValidationSubmit.model_validate(payload)
+    projected = model.model_dump(exclude_none=True)["pinpoints"]
+    assert [item["metric"] for item in projected] == ["decidability", "clarity"]
+    assert projected[1].get("anchor_ref") is None
+    command = SubmitSpecValidationCommand("spec-1", payload)
+    command.validate()
+    assert "anchor_ref" not in command.data["pinpoints"][1]
+
+    without_justification = dict(payload)
+    without_justification.pop("clarity_justification")
+    with pytest.raises(
+        ValueError,
+        match="Field required",
+    ):
+        SpecValidationSubmit.model_validate(without_justification)
+
+    invalid_pinpoint = dict(payload)
+    invalid_pinpoint["pinpoints"] = [
+        {
+            "metric": "decidability",
+            "anchor_type": "whole_artifact",
+            "anchor_ref": "description",
+            "detail": "This reference is forbidden for a whole-artifact anchor.",
+        }
+    ]
+    with pytest.raises(ValueError, match="anchor_ref_forbidden"):
+        SpecValidationSubmit.model_validate(invalid_pinpoint)
+
+    unknown_field = dict(payload)
+    unknown_field["pinpoints"] = [
+        {
+            "metric": "clarity",
+            "anchor_type": "field",
+            "anchor_ref": "description",
+            "detail": "Clarify the affected behavior.",
+            "severity": "high",
+        }
+    ]
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        SpecValidationSubmit.model_validate(unknown_field)
+
+
+def test_spec_validation_threshold_defaults_cover_five_canonical_metrics() -> None:
+    settings = BoardSettings()
+    assert {
+        "confidence": settings.min_spec_confidence,
+        "clarity": settings.min_spec_clarity,
+        "assertiveness": settings.min_spec_assertiveness,
+        "decidability": settings.min_spec_decidability,
+        "ambiguity": settings.max_spec_ambiguity,
+    } == {
+        "confidence": 70,
+        "clarity": 80,
+        "assertiveness": 80,
+        "decidability": 80,
+        "ambiguity": 30,
+    }
+    with pytest.raises(ValueError):
+        BoardSettings(min_spec_decidability=101)
+
+
+def test_spec_validation_history_response_preserves_legacy_null_edition() -> None:
+    legacy = SpecValidationResponse.model_validate(
+        {
+            "id": "legacy-validation",
+            "validation_edition": None,
+            "is_current": False,
+            "score": 88,
+            "summary": "Historical score and summary remain readable.",
+            "lifecycle_state": "history_only",
+        }
+    )
+    assert legacy.validation_edition is None
+    assert legacy.lifecycle_state == "history_only"
+
+    with pytest.raises(ValueError, match="current_edition_required"):
+        SpecValidationResponse.model_validate(
+            {
+                "id": "invalid-current",
+                "validation_edition": None,
+                "lifecycle_state": "current",
+            }
+        )
 
 
 def _fence(*, edition: int = 3) -> ValidationSubmissionFence:

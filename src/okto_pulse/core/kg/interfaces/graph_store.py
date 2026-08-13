@@ -144,6 +144,7 @@ class SemanticGraphStore(Protocol):
         to_type: str,
         from_id: str,
         to_id: str,
+        rule_id: str | None = None,
     ) -> bool: ...
 
     def find_node_types(self, board_id: str, node_id: str) -> tuple[str, ...]: ...

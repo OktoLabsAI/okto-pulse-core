@@ -60,6 +60,7 @@ from okto_pulse.core.kg.schemas import (
     ProposeReconciliationRequest,
 )
 from okto_pulse.core.kg.primitives import (
+    KGPrimitiveError,
     add_edge_candidate,
     abort_deferred_consolidation,
     abort_consolidation,
@@ -121,11 +122,15 @@ from okto_pulse.core.ports.runtime_workers import (
     BlockingExecutionPort,
     WorkerClockPort,
 )
+from okto_pulse.core.ports.relational_effects import (
+    parse_spec_dependency_projection_queue_metadata,
+)
 
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 AGENT_ID = "system:historical_consolidation"
 CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
+_DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS = 1
 _CLAIMABLE_WORK_KINDS = frozenset({"consolidate", "stale_reconcile", "stale_sweep"})
 _GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
     {"card", "ideation", "refinement", "spec", "sprint"}
@@ -153,6 +158,35 @@ def _delete_event_id(entry: ConsolidationQueueRecord) -> str | None:
 def _claim_token(entry: ConsolidationQueueRecord) -> str | None:
     value = getattr(entry, "claim_token", None)
     return str(value) if value else None
+
+
+def _observe_spec_dependency_projection_lag_after_ack(
+    entry: ConsolidationQueueRecord,
+    *,
+    projected_at: datetime,
+) -> bool:
+    """Emit only for the durable dependent/edge-owner fan-out target."""
+
+    metadata = parse_spec_dependency_projection_queue_metadata(entry.payload)
+    if (
+        metadata is None
+        or _work_kind(entry) != "consolidate"
+        or entry.artifact_type != "spec"
+        or metadata.target_role != "projection_owner"
+        or metadata.projection_owner_spec_id != entry.artifact_id
+        or metadata.mutation_event_type != entry.triggered_by_event
+    ):
+        return False
+    from okto_pulse.core.services.spec_dependency_observability import (
+        observe_spec_dependency_projection_lag,
+    )
+
+    observe_spec_dependency_projection_lag(
+        event_type=metadata.mutation_event_type,
+        triggered_at=entry.triggered_at,
+        projected_at=projected_at,
+    )
+    return True
 
 
 def _same_claim(
@@ -782,10 +816,14 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 blocking_execution=blocking_execution,
                 defer_session_finalization=defer_session_finalization,
             )
-        finally:
-            # The primitive may auto-commit and compensate before raising.
-            # Drain either path under this same live lease; the outer worker
-            # cannot infer possible graph effects from a missing response.
+        except KGPrimitiveError as exc:
+            # The dependency endpoint barrier is deliberately read-only.  It
+            # rolls back its graph scope before returning and therefore must
+            # not run checkpoint/flush/fsync against a graph it did not
+            # mutate.  The queue retry will enter a fresh guarded scope after
+            # the prerequisite's canonical root has been consolidated.
+            if exc.code == "relational_projection_endpoint_pending":
+                raise
             await _ensure_board_graph_durable(
                 board_id=entry.board_id,
                 mutation_ref=mutation_ref,
@@ -793,6 +831,27 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 blocking_execution=blocking_execution,
                 failure_timestamp=now,
             )
+            raise
+        except BaseException:
+            # Any other failure can follow an auto-commit plus compensation;
+            # drain that path before releasing the live writer lease.
+            await _ensure_board_graph_durable(
+                board_id=entry.board_id,
+                mutation_ref=mutation_ref,
+                write_lease=write_lease,
+                blocking_execution=blocking_execution,
+                failure_timestamp=now,
+            )
+            raise
+        # The primitive may auto-commit before returning.  Prove durability
+        # under this same live lease before the caller can acknowledge it.
+        await _ensure_board_graph_durable(
+            board_id=entry.board_id,
+            mutation_ref=mutation_ref,
+            write_lease=write_lease,
+            blocking_execution=blocking_execution,
+            failure_timestamp=now,
+        )
         return commit_resp
 
     if enter_graph_write is not None:
@@ -1135,6 +1194,10 @@ def _run_deterministic_worker(
         item.to_worker_dict()
         for item in getattr(projection_inputs, "research_decisions", ())
     ]
+    spec_dependencies = [
+        item.to_worker_dict()
+        for item in getattr(projection_inputs, "spec_dependencies", ())
+    ]
     if entry.artifact_type == "story":
         return worker.process_story(_story_to_dict(artifact))
     if entry.artifact_type == "ideation":
@@ -1149,6 +1212,7 @@ def _run_deterministic_worker(
     if entry.artifact_type == "spec":
         payload = _spec_to_dict(artifact)
         payload["quality_assessments"] = quality_assessments
+        payload["spec_dependencies"] = spec_dependencies
         return worker.process_spec(payload)
     if entry.artifact_type == "sprint":
         return worker.process_sprint(_sprint_to_dict(artifact))
@@ -2897,6 +2961,11 @@ class ConsolidationProcessor:
                                     failure_phase="after_relational_ack",
                                 )
                 except BaseException as processing_exc:
+                    endpoint_pending = bool(
+                        isinstance(processing_exc, KGPrimitiveError)
+                        and processing_exc.code
+                        == "relational_projection_endpoint_pending"
+                    )
                     if deferred_session_ids:
 
                         async def _settle_deferred_sessions() -> None:
@@ -2954,6 +3023,7 @@ class ConsolidationProcessor:
                             if (
                                 not relational_commit_confirmed
                                 and graph_write_lease is not None
+                                and not endpoint_pending
                             ):
                                 try:
                                     await _ensure_board_graph_durable(
@@ -3034,6 +3104,10 @@ class ConsolidationProcessor:
                             entry.artifact_id,
                         )
                 if acknowledged:
+                    _observe_spec_dependency_projection_lag_after_ack(
+                        entry,
+                        projected_at=self._now(),
+                    )
                     if delivery_transfer is not None:
                         receipt, circuit_reason = delivery_transfer
                         _log_stale_reconcile_delivery_transfer(
@@ -3086,13 +3160,23 @@ class ConsolidationProcessor:
                         if claim_is_current and fresh is not None:
                             error_text = (
                                 f"{exc.code}:{str(exc)[:480]}"
-                                if isinstance(exc, GraphError)
+                                if isinstance(exc, (GraphError, KGPrimitiveError))
                                 else f"{type(exc).__name__}: {str(exc)[:480]}"
                             )
                             retry_after_s = graph_memory_pressure_retry_after_seconds(
                                 exc
                             )
-                            if retry_after_s is not None:
+                            if (
+                                isinstance(exc, KGPrimitiveError)
+                                and exc.code
+                                == "relational_projection_endpoint_pending"
+                            ):
+                                await self._defer_relational_projection_endpoint(
+                                    db,
+                                    fresh,
+                                    error_text=error_text,
+                                )
+                            elif retry_after_s is not None:
                                 await self._defer_graph_memory_pressure(
                                     db,
                                     fresh,
@@ -3111,6 +3195,52 @@ class ConsolidationProcessor:
                     pass
 
         return processed
+
+    async def _defer_relational_projection_endpoint(
+        self,
+        db: Any,
+        entry: ConsolidationQueueRecord,
+        *,
+        error_text: str,
+    ) -> None:
+        """Yield a target-first projection without spending retry budget.
+
+        A short readiness delay lets another pending row for the same board
+        materialize the prerequisite root on the next worker pass.  This is a
+        convergence wait, not a failed delivery and therefore cannot enter
+        the dead-letter queue.
+        """
+
+        entry.last_error = error_text
+        entry.status = "pending"
+        entry.next_retry_at = self._now() + timedelta(
+            seconds=_DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS
+        )
+        entry.claim_timeout_at = None
+        entry.worker_id = None
+        entry.claimed_at = None
+        entry.claimed_by_session_id = None
+        entry.claim_token = None
+        await get_consolidation_persistence_port().save_queue_entries(
+            db,
+            (entry,),
+        )
+        logger.info(
+            "consolidation.dependency_endpoint_deferred "
+            "artifact=%s:%s attempts=%d retry_after_s=%d",
+            entry.artifact_type,
+            entry.artifact_id,
+            int(entry.attempts or 0),
+            _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS,
+            extra={
+                "event": "consolidation.dependency_endpoint_deferred",
+                "board_id": entry.board_id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "attempts": int(entry.attempts or 0),
+                "retry_after_s": _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS,
+            },
+        )
 
     async def _defer_graph_memory_pressure(
         self,

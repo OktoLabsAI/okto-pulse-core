@@ -19,7 +19,7 @@ from importlib.resources import files as package_files
 from types import SimpleNamespace
 from typing import Annotated, Any, Callable, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainValidator
+from pydantic import BaseModel, ConfigDict, Field, PlainValidator, WithJsonSchema
 from pydantic_core import PydanticCustomError
 
 from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
@@ -41,6 +41,10 @@ from okto_pulse.core.application.ideation_scope import (
 from okto_pulse.core.domain.datetime_utils import isoformat_utc
 from okto_pulse.core.domain.human_validation_cycle import (
     SubjectEditRequiresDraftError,
+)
+from okto_pulse.core.domain.spec_dependency import (
+    SPEC_DEPENDENCY_CURSOR_MAX_LENGTH,
+    SPEC_DEPENDENCY_REMOVAL_REASON_MAX_LENGTH,
 )
 from okto_pulse.core.domain.code_traceability_kg import (
     KGDeadLetterReprocessScope,
@@ -183,6 +187,37 @@ KnowledgePropagationEnvelopeInput = Annotated[
     ),
 ]
 
+# Keep the MCP transport schema exact and compact.  The shared command performs
+# the cross-field anchor invariant validation after host-level shape validation.
+SpecValidationPinpointInput = Annotated[
+    dict[str, Any],
+    WithJsonSchema(
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "metric": {
+                    "type": "string",
+                    "enum": [
+                        "confidence",
+                        "clarity",
+                        "assertiveness",
+                        "decidability",
+                        "ambiguity",
+                    ],
+                },
+                "anchor_type": {
+                    "type": "string",
+                    "enum": ["whole_artifact", "field", "structured_child", "qa"],
+                },
+                "anchor_ref": {"type": ["string", "null"]},
+                "detail": {"type": "string"},
+            },
+            "required": ["metric", "anchor_type", "detail"],
+        }
+    ),
+]
+
 
 def _defer_page_window_validation(value: Any) -> Any:
     """Let the canonical handler guard classify invalid pagination scalars."""
@@ -196,6 +231,15 @@ PageWindowInput = Annotated[
         _defer_page_window_validation,
         json_schema_input_type=int,
     ),
+]
+
+SpecDependencyRemovalReasonInput = Annotated[
+    str,
+    Field(min_length=1, max_length=SPEC_DEPENDENCY_REMOVAL_REASON_MAX_LENGTH),
+]
+SpecDependencyCursorInput = Annotated[
+    str,
+    Field(max_length=SPEC_DEPENDENCY_CURSOR_MAX_LENGTH),
 ]
 
 
@@ -1533,10 +1577,7 @@ def _mcp_check_permission(
         return None
     if check_permission(permissions, granular_permission) is None:
         return None
-    if (
-        legacy_permission
-        and check_permission(permissions, legacy_permission) is None
-    ):
+    if legacy_permission and check_permission(permissions, legacy_permission) is None:
         return None
     return f"Permission denied: requires '{granular_permission}'"
 
@@ -4258,13 +4299,11 @@ async def okto_pulse_get_task_context(
         else:
             result["resource_gate_summary"] = _card_resource_gate_summary
         if spec:
-            _spec_resource_gate_summary = (
-                await uow.services.resource_gate.get_summary(
+            _spec_resource_gate_summary = await uow.services.resource_gate.get_summary(
                 board_id,
                 "spec",
                 spec.id,
                 **({"metadata_only": True} if _gate_scope else {}),
-            )
             )
             result["spec"]["resource_gate_summary"] = (
                 build_bounded_gate_resource_summary(_spec_resource_gate_summary)
@@ -4339,9 +4378,7 @@ async def okto_pulse_get_task_context(
                 assignee_id=card.assignee_id,
                 created_by=card.created_by,
                 conclusions=(
-                    ({"author_id": ctx.agent_id},)
-                    if reviewer_was_executor
-                    else ()
+                    ({"author_id": ctx.agent_id},) if reviewer_was_executor else ()
                 ),
             )
         separation = evaluate_task_reviewer_separation(
@@ -4955,6 +4992,360 @@ async def okto_pulse_get_card_dependencies(board_id: str, card_id: str) -> str:
             )
     except EntityNotFoundError:
         return json.dumps({"error": "Card not found"})
+
+
+def _spec_dependency_readiness_payload(readiness: Any) -> dict[str, Any]:
+    from okto_pulse.core.domain.spec_dependency import (
+        spec_dependency_readiness_projection,
+    )
+
+    return spec_dependency_readiness_projection(readiness)
+
+
+def _spec_dependency_record_payload(
+    record: Any,
+    *,
+    satisfied: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": record.id,
+        "dependent_spec_id": record.source_spec_id,
+        "prerequisite_spec_id": record.target_spec_id,
+        "active": record.active,
+        "created_at": record.created_at,
+        "created_by": record.created_by,
+        "created_by_type": record.created_by_type,
+        "created_by_name": record.created_by_name,
+        "satisfied": (
+            record.target_status_on_create.value == "done"
+            if satisfied is None
+            else satisfied
+        ),
+        "resolved_on_create": record.resolved_on_create,
+        "retrospective": record.retrospective,
+        "introduced_at_spec_version": record.source_version_on_create,
+        "source_status_on_create": record.source_status_on_create.value,
+        "target_status_on_create": record.target_status_on_create.value,
+        "target_version_on_create": record.target_version_on_create,
+        "removed_at": record.removed_at,
+        "removed_by": record.removed_by,
+        "removed_by_type": record.removed_by_type,
+        "removed_by_name": record.removed_by_name,
+        "removal_reason": record.removal_reason,
+        "removed_at_spec_version": record.source_version_on_remove,
+    }
+
+
+def _spec_dependency_page_payload(page: Any, *, direction: str) -> dict[str, Any]:
+    """Project the closed MCP/REST dependency list contract."""
+
+    items = []
+    for item in page.items:
+        items.append(
+            {
+                **_spec_dependency_record_payload(item.dependency),
+                "direction": direction,
+                "related_spec": {
+                    "id": item.related_spec.id,
+                    "title": item.related_spec.title,
+                    "status": item.related_spec.status.value,
+                    "edition": item.related_spec.edition,
+                    "version": item.related_spec.version,
+                    "archived": item.related_spec.archived,
+                },
+                "satisfied": item.satisfied,
+                "retrospective": item.retrospective,
+                "lineage": (
+                    "same_ideation" if item.same_ideation else "cross_ideation"
+                ),
+                "capabilities": {
+                    "can_remove": item.capabilities.can_remove,
+                    "remove_reason_code": (item.capabilities.removal_blocked_reason),
+                    "can_navigate": item.capabilities.can_navigate,
+                },
+            }
+        )
+    return {
+        "items": items,
+        "direction": direction,
+        "next_cursor": page.next_cursor,
+        "has_more": page.has_more,
+        "total": page.total,
+        "readiness": _spec_dependency_readiness_payload(page.readiness),
+    }
+
+
+def _spec_dependency_error_payload(exc: Exception) -> str:
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+    from okto_pulse.core.inbound.spec_dependency_error import (
+        project_spec_dependency_error,
+    )
+
+    if isinstance(exc, SpecDependencyOperationError):
+        projected = project_spec_dependency_error(exc)
+        return json.dumps({"error": projected["code"], **projected})
+    if isinstance(exc, EntityNotFoundError):
+        return json.dumps(
+            {
+                "error": "spec_not_found",
+                "code": "spec_not_found",
+                "message": "Spec was not found in the requested board.",
+                "retryable": False,
+            }
+        )
+    if isinstance(exc, PermissionDeniedError):
+        return json.dumps(
+            {
+                "error": "permission_denied",
+                "code": "permission_denied",
+                "message": "Permission denied for this Spec dependency operation.",
+                "retryable": False,
+            }
+        )
+    projected = project_spec_dependency_error(exc)
+    return json.dumps({"error": projected["code"], **projected})
+
+
+def _log_unhandled_spec_dependency_error(operation: str, error: Exception) -> None:
+    """Emit bounded operator context without exception text or traceback."""
+
+    bounded_operation = (
+        operation if operation in {"add", "remove", "list"} else "unknown"
+    )
+    error_type = type(error).__name__
+    logging.getLogger("okto_pulse.mcp.spec_dependency").error(
+        "spec_dependency.unhandled_error operation=%s error_type=%s",
+        bounded_operation,
+        error_type,
+        extra={
+            "event": "spec_dependency.unhandled_error",
+            "operation": bounded_operation,
+            "error_type": error_type,
+        },
+    )
+
+
+@mcp.tool()
+async def okto_pulse_add_spec_dependency(
+    board_id: str,
+    spec_id: str,
+    prerequisite_spec_id: str,
+    expected_spec_version: int,
+    expected_spec_edition: int,
+    idempotency_key: str,
+) -> str:
+    """Add a prerequisite Spec using optimistic concurrency and idempotency."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases import (
+        AddSpecDependencyCommand,
+        AddSpecDependencyUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            receipt = (
+                await AddSpecDependencyUseCase().execute(
+                    AddSpecDependencyCommand(
+                        spec_id=spec_id,
+                        target_spec_id=prerequisite_spec_id,
+                        expected_spec_version=expected_spec_version,
+                        expected_spec_edition=expected_spec_edition,
+                        idempotency_key=idempotency_key,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            ).receipt
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        SpecDependencyOperationError,
+    ) as exc:
+        return _spec_dependency_error_payload(exc)
+    except Exception as exc:
+        _log_unhandled_spec_dependency_error("add", exc)
+        return _spec_dependency_error_payload(exc)
+    return json.dumps(
+        {
+            "success": True,
+            "dependency": _spec_dependency_record_payload(
+                receipt.dependency,
+                satisfied=receipt.satisfied,
+            ),
+            "spec_version": receipt.source_spec.version,
+            "replayed": receipt.replayed,
+        },
+        default=str,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_remove_spec_dependency(
+    board_id: str,
+    spec_id: str,
+    dependency_id: str,
+    reason: SpecDependencyRemovalReasonInput,
+    expected_spec_version: int,
+    expected_spec_edition: int,
+    idempotency_key: str,
+) -> str:
+    """Remove a prerequisite link while retaining its immutable audit history."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases import (
+        RemoveSpecDependencyCommand,
+        RemoveSpecDependencyUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            receipt = (
+                await RemoveSpecDependencyUseCase().execute(
+                    RemoveSpecDependencyCommand(
+                        spec_id=spec_id,
+                        dependency_id=dependency_id,
+                        reason=reason,
+                        expected_spec_version=expected_spec_version,
+                        expected_spec_edition=expected_spec_edition,
+                        idempotency_key=idempotency_key,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            ).receipt
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        SpecDependencyOperationError,
+    ) as exc:
+        return _spec_dependency_error_payload(exc)
+    except Exception as exc:
+        _log_unhandled_spec_dependency_error("remove", exc)
+        return _spec_dependency_error_payload(exc)
+    return json.dumps(
+        {
+            "success": True,
+            "dependency": _spec_dependency_record_payload(
+                receipt.dependency,
+                satisfied=receipt.satisfied,
+            ),
+            "spec_version": receipt.source_spec.version,
+            "replayed": receipt.replayed,
+        },
+        default=str,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_list_spec_dependencies(
+    board_id: str,
+    spec_id: str,
+    direction: Literal["depends_on", "required_by"] = "depends_on",
+    cursor: SpecDependencyCursorInput | None = None,
+    limit: PageWindowInput = 25,
+    active_state: Literal["active", "removed", "all"] = "active",
+    satisfaction: Literal["satisfied", "unmet", "all"] = "all",
+    retrospective: OptionalBoolInput = None,
+    related_statuses: str | list[str] | None = None,
+    lineage: Literal["same_ideation", "cross_ideation", "all"] = "all",
+) -> str:
+    """List outgoing prerequisites or incoming dependents with an opaque cursor."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.application.use_cases import (
+        ListSpecDependenciesCommand,
+        ListSpecDependenciesUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.enums import SpecStatus
+    from okto_pulse.core.domain.spec_dependency import (
+        SpecDependencyDirection,
+        SpecDependencyLifecycleFilter,
+        SpecDependencyLineageFilter,
+        SpecDependencyOperationError,
+        SpecDependencySatisfactionFilter,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    try:
+        statuses = tuple(
+            SpecStatus(value)
+            for value in coerce_to_list_str(related_statuses, strict_mode=True)
+        )
+        retrospective_value = (
+            _flag_enabled(retrospective) if retrospective is not None else None
+        )
+        lifecycle_filter = SpecDependencyLifecycleFilter(active_state)
+        satisfaction_filter = (
+            SpecDependencySatisfactionFilter.BLOCKING
+            if satisfaction == "unmet"
+            else SpecDependencySatisfactionFilter(satisfaction)
+        )
+        lineage_filter = SpecDependencyLineageFilter(lineage)
+        page_limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        invalid_request = SpecDependencyOperationError(
+            "invalid_spec_dependency_request",
+            "Spec dependency request is invalid.",
+        )
+        invalid_request.__cause__ = exc
+        return _spec_dependency_error_payload(invalid_request)
+
+    try:
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            page = (
+                await ListSpecDependenciesUseCase().execute(
+                    ListSpecDependenciesCommand(
+                        spec_id=spec_id,
+                        board_id=board_id,
+                        direction=(
+                            SpecDependencyDirection.OUTGOING
+                            if direction == "depends_on"
+                            else SpecDependencyDirection.INCOMING
+                        ),
+                        cursor=cursor,
+                        limit=page_limit,
+                        lifecycle=lifecycle_filter,
+                        satisfaction=satisfaction_filter,
+                        lineage=lineage_filter,
+                        related_statuses=statuses,
+                        retrospective=retrospective_value,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            ).page
+    except (
+        EntityNotFoundError,
+        PermissionDeniedError,
+        SpecDependencyOperationError,
+    ) as exc:
+        return _spec_dependency_error_payload(exc)
+    except Exception as exc:
+        _log_unhandled_spec_dependency_error("list", exc)
+        return _spec_dependency_error_payload(exc)
+
+    return json.dumps(
+        _spec_dependency_page_payload(page, direction=direction),
+        default=str,
+    )
 
 
 def _invalid_window_error(offset: Any, limit: Any) -> str | None:
@@ -10642,6 +11033,32 @@ async def okto_pulse_get_spec_context(
                     )
                 ),
             }
+        dependency_state = await uow.services.spec_dependencies.get_readiness(
+            board_id=spec.board_id,
+            spec_id=spec.id,
+            blocker_limit=25,
+        )
+        dependency_readiness = {
+            "ready": dependency_state.ready,
+            "current_edition": dependency_state.current_edition,
+            "last_started_edition": dependency_state.last_started_edition,
+            "current_edition_started": dependency_state.current_edition_started,
+            "active_dependency_count": dependency_state.active_dependency_count,
+            "blocking_count": dependency_state.blocking_count,
+            "archived_blocking_count": (dependency_state.archived_blocking_count),
+            "unfinished_blocking_count": (dependency_state.unfinished_blocking_count),
+            "blockers_truncated": dependency_state.blockers_truncated,
+            "blockers": [
+                {
+                    "dependency_id": blocker.dependency_id,
+                    "target_spec_id": blocker.target_spec_id,
+                    "target_title": blocker.target_title,
+                    "target_status": blocker.target_status.value,
+                    "target_archived": blocker.target_archived,
+                }
+                for blocker in dependency_state.blockers
+            ],
+        }
         result["gate_readiness"] = spec_gate_readiness(
             spec_id=spec.id,
             spec_status=spec.status.value,
@@ -10649,6 +11066,7 @@ async def okto_pulse_get_spec_context(
                 board_settings.get("require_spec_validation", True)
             ),
             cognitive_enforcement_active=cognitive_enforcement_active,
+            dependency_readiness=dependency_readiness,
             **checklist_readiness,
         )
         if _resolved_profile != "legacy":
@@ -12000,6 +12418,7 @@ async def okto_pulse_archive_tree(
         ArchiveTreeCommand,
         ArchiveTreeUseCase,
     )
+    from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
@@ -12017,6 +12436,8 @@ async def okto_pulse_archive_tree(
             )
     except EntityNotFoundError:
         return json.dumps({"error": f"{entity_type.capitalize()} not found"})
+    except SpecDependencyOperationError as exc:
+        return _spec_dependency_error_payload(exc)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps({"success": True, "archived_count": result.counts}, default=str)
@@ -13417,6 +13838,7 @@ async def okto_pulse_list_blockers(
     """Triage view of everything stalling the funnel, with root-cause
     classification. Each entry carries a `type` the agent can act on directly:
     dependency_blocked (active card with a not-DONE depends_on target),
+    spec_dependency_blocked (Spec with prerequisite Specs not yet Done),
     on_hold (explicitly paused card), stale (started/in_progress/validation
     card untouched beyond stale_hours), spec_pending_validation (approved spec
     with no 'approve' evaluation), spec_no_cards (validated/in_progress spec
@@ -16365,6 +16787,7 @@ async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
         DeleteSpecUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     # MCP-FU6 strangler (spec REUSE): DeleteSpecUseCase raises EntityNotFoundError
@@ -16377,6 +16800,8 @@ async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
             )
     except EntityNotFoundError:
         return json.dumps({"error": "Spec not found"})
+    except SpecDependencyOperationError as exc:
+        return _spec_dependency_error_payload(exc)
     return json.dumps({"success": True, "takedown": result.takedown})
 
 
@@ -16697,10 +17122,7 @@ async def okto_pulse_get_spec_history(
     limit: str = "30",
     offset: str = "0",
 ) -> str:
-    """
-    Get the detailed change history of a spec. Shows every modification with field-level diffs
-    (old value vs new value), who made the change, and when. Use this to understand how a spec
-    evolved over time and what exactly was modified at each step."""
+    """Read Spec change history. Docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -19779,22 +20201,20 @@ async def okto_pulse_submit_spec_validation(
     expected_validation_edition: int,
     expected_spec_version: int,
     expected_head_revision: int,
-    score: float | None = None,
-    summary: str | None = None,
-    completeness: int | None = None,
-    completeness_justification: str | None = None,
-    assertiveness: int | None = None,
-    assertiveness_justification: str | None = None,
-    ambiguity: int | None = None,
-    ambiguity_justification: str | None = None,
-    general_justification: str | None = None,
-    recommendation: str | None = None,
+    confidence: int,
+    confidence_justification: str,
+    clarity: int,
+    clarity_justification: str,
+    assertiveness: int,
+    assertiveness_justification: str,
+    decidability: int,
+    decidability_justification: str,
+    ambiguity: int,
+    ambiguity_justification: str,
+    recommendation: Literal["approve", "reject"],
+    pinpoints: list[SpecValidationPinpointInput] | None = None,
 ) -> str:
-    """Record the human result for the current Spec validation edition.
-
-    Canonical callers submit ``score`` and ``summary`` with all three optimistic
-    fences. The dimension fields remain optional compatibility inputs only.
-    """
+    """Record five evaluator scores, rationales and optional metric pinpoints."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -19804,20 +20224,21 @@ async def okto_pulse_submit_spec_validation(
         "expected_spec_version": expected_spec_version,
         "expected_head_revision": expected_head_revision,
     }
-    optional_values = {
-        "score": score,
-        "summary": summary,
-        "completeness": completeness,
-        "completeness_justification": completeness_justification,
-        "assertiveness": assertiveness,
-        "assertiveness_justification": assertiveness_justification,
-        "ambiguity": ambiguity,
-        "ambiguity_justification": ambiguity_justification,
-        "general_justification": general_justification,
-        "recommendation": recommendation,
-    }
     data.update(
-        {key: value for key, value in optional_values.items() if value is not None}
+        {
+            "confidence": confidence,
+            "confidence_justification": confidence_justification,
+            "clarity": clarity,
+            "clarity_justification": clarity_justification,
+            "assertiveness": assertiveness,
+            "assertiveness_justification": assertiveness_justification,
+            "decidability": decidability,
+            "decidability_justification": decidability_justification,
+            "ambiguity": ambiguity,
+            "ambiguity_justification": ambiguity_justification,
+            "recommendation": recommendation,
+            **({"pinpoints": pinpoints} if pinpoints is not None else {}),
+        }
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -19884,14 +20305,7 @@ async def okto_pulse_list_spec_validations(
     offset: int = 0,
     lifecycle_state: Literal["all", "current", "previous", "history_only"] = "all",
 ) -> str:
-    """
-    List all Spec Validation Gate records in reverse chronological order.
-
-    Useful for understanding why a spec was validated (or failed). Each record
-    includes the 3 scores, justifications, outcome, threshold violations, and
-    a resolved_thresholds snapshot of what was in effect when the submit happened.
-    The current edition is explicit; replaced and prior-edition records are
-    previous, while legacy records without an edition are history_only."""
+    """List Spec validations. Docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -20435,6 +20849,7 @@ async def okto_pulse_kg_digest_layer_reconcile(
         ReconcileDigestLayerCommand,
         ReconcileDigestLayerUseCase,
     )
+
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await ReconcileDigestLayerUseCase().execute(
@@ -21433,6 +21848,7 @@ async def okto_pulse_kg_dead_letter_reprocess(
         ReprocessDeadLetterRowsCommand,
         ReprocessDeadLetterRowsUseCase,
     )
+
     # Spec R01A MCP-FU2 (MCP strangler): requeue DLQ rows via the transport-free use
     # case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
     # explicit commit is preserved inside the use case; the process_now worker
@@ -21554,6 +21970,7 @@ async def okto_pulse_kg_connectivity_dlq_reprocess(
         ReprocessConnectivityDlqCommand,
         ReprocessConnectivityDlqUseCase,
     )
+
     # Spec R01A MCP-FU2 (MCP strangler): fail-closed reprocess via the transport-free
     # use case + MCP UnitOfWorkFactory instead of a raw get_db_for_mcp() session. The
     # use case commits ONLY when the service did not block (a blocked selection
@@ -22251,12 +22668,10 @@ async def okto_pulse_kg_global_outbox_dead_letter_list(
                 EvaluateCodeTraceabilityKGReadAccessUseCase,
             )
 
-            ct_access = (
-                await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
-                    actor=actor,
-                    board_id=actor.board_id,
-                    uow=uow,
-                )
+            ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+                actor=actor,
+                board_id=actor.board_id,
+                uow=uow,
             )
             kwargs = {
                 "limit": limit,
@@ -22265,9 +22680,7 @@ async def okto_pulse_kg_global_outbox_dead_letter_list(
             }
             if not ct_access.allowed:
                 kwargs["include_code_traceability"] = False
-            result = await uow.services.kg.list_global_outbox_dead_letters(
-                **kwargs
-            )
+            result = await uow.services.kg.list_global_outbox_dead_letters(**kwargs)
     except Exception as exc:
         return _global_outbox_dead_letter_error_response("list", exc, mutation=False)
     return json.dumps(result, default=str)
@@ -23959,7 +24372,7 @@ async def okto_pulse_list_snapshots(
     return json.dumps(result.payload, default=str)
 
 
-# These 69 reviewed commands have complete lazy family documentation.  Keep
+# These 70 reviewed commands have complete lazy family documentation.  Keep
 # their always-loaded descriptions to one identity line so the additive,
 # strongly typed Code Traceability schemas stay inside the tools/list budget.
 _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
@@ -24026,6 +24439,7 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_list_architecture_propagation_legacy",
         "okto_pulse_kg_begin_consolidation",
         "okto_pulse_submit_spec_validation",
+        "okto_pulse_submit_task_validation",
         "okto_pulse_add_api_contract",
         "okto_pulse_kg_query_reflective",
         "okto_pulse_copy_mockups_to_card",

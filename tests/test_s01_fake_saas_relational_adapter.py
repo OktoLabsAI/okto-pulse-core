@@ -63,6 +63,8 @@ def test_s01_saas_adapter_exposes_quality_assessment_seam_fail_closed() -> None:
         adapter.quality_assessments(object())
     with pytest.raises(GuidelinePolicyAdapterMissing):
         adapter.guideline_policy(object())
+    with pytest.raises(NotImplementedError, match="Spec-dependency persistence"):
+        adapter.spec_dependencies(object())
 
 
 @pytest.mark.asyncio

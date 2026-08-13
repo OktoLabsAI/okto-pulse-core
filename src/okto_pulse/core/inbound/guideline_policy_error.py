@@ -66,6 +66,13 @@ class GuidelinePolicyErrorCategory(str, Enum):
     SERVICE_UNAVAILABLE = "service_unavailable"
 
 
+class UnsupportedGuidelinePolicyError(TypeError):
+    """The strict projector does not recognize this exception family."""
+
+    def __init__(self) -> None:
+        super().__init__("guideline_policy_error_type_unsupported")
+
+
 GUIDELINE_POLICY_HTTP_STATUS_BY_CATEGORY: dict[
     GuidelinePolicyErrorCategory,
     int,
@@ -354,7 +361,7 @@ def _classify(
             reason_code,
             {},
         )
-    raise TypeError("guideline_policy_error_type_unsupported")
+    raise UnsupportedGuidelinePolicyError()
 
 
 def _safe_reason_code(value: object) -> str | None:
@@ -378,6 +385,7 @@ def _safe_semantic_version(value: object) -> str | None:
 __all__ = [
     "GUIDELINE_POLICY_HTTP_STATUS_BY_CATEGORY",
     "GuidelinePolicyErrorCategory",
+    "UnsupportedGuidelinePolicyError",
     "guideline_policy_http_status",
     "project_guideline_policy_error",
 ]

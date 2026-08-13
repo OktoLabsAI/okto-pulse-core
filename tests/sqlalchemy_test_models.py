@@ -902,6 +902,7 @@ class Spec(Base):
         SpecStatusType(), default=SpecStatus.DRAFT, nullable=False
     )
     edition: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    last_started_edition: Mapped[int | None] = mapped_column(Integer, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)

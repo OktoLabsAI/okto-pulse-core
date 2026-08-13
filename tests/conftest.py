@@ -37,9 +37,9 @@ _CORE_SRC = (Path(__file__).parent / ".." / "src").resolve()
 _WORKSPACE_ROOT = _CORE_SRC.parent.parent
 
 # Bootstrap the current Core tree before importing the shared checkout resolver.
-# The resolver then owns paired-edition precedence and removes stale okto_labs
-# roots from both sys.path and PYTHONPATH, so multiprocessing spawn children
-# inherit the same authoritative source trees.
+# The resolver then owns anchor-family paired-edition precedence and removes
+# non-selected sibling roots from both sys.path and PYTHONPATH, so
+# multiprocessing spawn children inherit the same authoritative source trees.
 _core_source_text = str(_CORE_SRC)
 while _core_source_text in sys.path:
     sys.path.remove(_core_source_text)
@@ -969,6 +969,15 @@ class _CoreTestRelationalApplicationAdapter:
                 return derivation
 
         return _ResearchDecisionLedgerStub()
+
+    def spec_dependencies(self, session):
+        """Use the real Community SK-M relational authority in integration tests."""
+
+        from okto_pulse.community.adapters.sqlalchemy_spec_dependency import (
+            CommunitySqlAlchemySpecDependency,
+        )
+
+        return CommunitySqlAlchemySpecDependency(session)
 
     def checklists(self, session):
         class _CreateBoardChecklistStub:

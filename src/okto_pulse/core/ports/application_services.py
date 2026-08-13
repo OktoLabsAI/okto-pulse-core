@@ -81,6 +81,7 @@ if TYPE_CHECKING:
     from okto_pulse.core.services.spec_structured_entities import (
         StructuredSpecEntityService,
     )
+    from okto_pulse.core.services.spec_dependency import SpecDependencyService
 
 
 class ApplicationServiceCatalog(Protocol):
@@ -175,6 +176,9 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def checklists(self) -> "ChecklistPersistencePort": ...
+
+    @property
+    def spec_dependencies(self) -> "SpecDependencyService": ...
 
     @property
     def research_decisions(self) -> "ResearchDecisionLedgerPersistencePort": ...

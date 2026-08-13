@@ -2302,6 +2302,65 @@ class SpecMove(BaseModel):
     )
 
 
+class SpecDependencyAdd(BaseModel):
+    """Create an operational dependency from one Spec to another."""
+
+    target_spec_id: str = Field(..., min_length=1)
+    expected_spec_version: int = Field(..., ge=1)
+    expected_spec_edition: int = Field(..., ge=1)
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
+
+
+class SpecDependencyRemove(BaseModel):
+    """Tombstone a dependency while preserving its audit lifecycle."""
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+    expected_spec_version: int = Field(..., ge=1)
+    expected_spec_edition: int = Field(..., ge=1)
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("removal reason must not be blank")
+        return normalized
+
+
+class SpecDependencyBlockerResponse(BaseSchema):
+    """Blocking prerequisite projected in Spec lifecycle readiness."""
+
+    dependency_id: str
+    dependent_spec_id: str
+    prerequisite_spec_id: str
+    target_title: str
+    target_status: SpecStatus
+    target_edition: int = Field(..., ge=1)
+    target_version: int = Field(..., ge=1)
+    target_archived: bool = False
+
+
+class SpecDependencyReadinessResponse(BaseSchema):
+    """Current, dynamically evaluated prerequisite readiness for a Spec."""
+
+    spec_id: str
+    board_id: str
+    can_start: bool
+    ready: bool
+    reason_code: Literal["spec_dependencies_incomplete"] | None = None
+    current_edition: int = Field(..., ge=1)
+    last_started_edition: int | None = Field(default=None, ge=1)
+    active_dependency_count: int = Field(..., ge=0)
+    unmet_count: int = Field(..., ge=0)
+    blocking_count: int = Field(..., ge=0)
+    archived_blocking_count: int = Field(..., ge=0)
+    unfinished_blocking_count: int = Field(..., ge=0)
+    blockers_truncated: bool
+    current_edition_started: bool
+    blockers: list[SpecDependencyBlockerResponse] = Field(default_factory=list)
+
+
 class SpecSummary(BaseSchema):
     """Schema for spec summary (without nested cards)."""
 
@@ -2316,6 +2375,11 @@ class SpecSummary(BaseSchema):
         1,
         ge=1,
         description="Human-facing Spec edition; advances only when re-entering draft.",
+    )
+    last_started_edition: int | None = Field(
+        None,
+        ge=1,
+        description="Most recent human lifecycle edition that began execution.",
     )
     version: int = Field(
         ...,
@@ -2648,6 +2712,12 @@ class SpecResponse(BaseSchema):
         ge=1,
         description="Human-facing Spec edition; advances only when re-entering draft.",
     )
+    last_started_edition: int | None = Field(
+        None,
+        ge=1,
+        description="Most recent human lifecycle edition that began execution.",
+    )
+    dependency_readiness: SpecDependencyReadinessResponse | None = None
     version: int = Field(
         ...,
         description="Technical revision used for concurrency and currentness.",
@@ -2879,9 +2949,7 @@ class _ImpactEvidenceInput(BaseModel):
     normalizes to ``None``) — never here.
     """
 
-    model_config = ConfigDict(
-        extra="forbid", json_schema_extra=_slim_impact_schema
-    )
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_slim_impact_schema)
 
 
 _IMPACT_DRIVE_RE = re.compile(r"^[A-Za-z]:")
@@ -2897,8 +2965,7 @@ def _validate_impact_repo_path(path: str) -> str:
         )
     if path.startswith("/"):
         raise ValueError(
-            "impact_evidence_path_invalid: leading slash - paths are "
-            "repo-root-relative"
+            "impact_evidence_path_invalid: leading slash - paths are repo-root-relative"
         )
     if _IMPACT_DRIVE_RE.match(path):
         raise ValueError(
@@ -2906,9 +2973,7 @@ def _validate_impact_repo_path(path: str) -> str:
             "paths are repo-root-relative"
         )
     if any(segment == ".." for segment in path.split("/")):
-        raise ValueError(
-            "impact_evidence_path_invalid: '..' segments are not allowed"
-        )
+        raise ValueError("impact_evidence_path_invalid: '..' segments are not allowed")
     return path
 
 
@@ -2992,18 +3057,10 @@ class ImpactEvidence(_ImpactEvidenceInput):
     """
 
     schema_version: Literal[1] = 1
-    files: list[ImpactEvidenceFile] = Field(
-        default_factory=list, max_length=200
-    )
-    symbols: list[ImpactEvidenceSymbol] = Field(
-        default_factory=list, max_length=200
-    )
-    surfaces: list[ImpactEvidenceSurface] = Field(
-        default_factory=list, max_length=50
-    )
-    tests: list[ImpactEvidenceTest] = Field(
-        default_factory=list, max_length=100
-    )
+    files: list[ImpactEvidenceFile] = Field(default_factory=list, max_length=200)
+    symbols: list[ImpactEvidenceSymbol] = Field(default_factory=list, max_length=200)
+    surfaces: list[ImpactEvidenceSurface] = Field(default_factory=list, max_length=50)
+    tests: list[ImpactEvidenceTest] = Field(default_factory=list, max_length=100)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
 
     @field_validator("evidence_refs")
@@ -3546,8 +3603,39 @@ class TaskValidationResponse(BaseModel):
 # ============================================================================
 
 
+class SpecValidationPinpoint(BaseModel):
+    """Closed evaluator-supplied location tagged with one quality metric."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: Literal[
+        "confidence",
+        "clarity",
+        "assertiveness",
+        "decidability",
+        "ambiguity",
+    ]
+    anchor_type: Literal["whole_artifact", "field", "structured_child", "qa"]
+    anchor_ref: str | None = Field(default=None, min_length=1, max_length=4096)
+    detail: str = Field(..., min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_anchor(self) -> "SpecValidationPinpoint":
+        self.detail = self.detail.strip()
+        if not self.detail:
+            raise ValueError("spec_validation_pinpoint_detail_invalid")
+        if self.anchor_type == "whole_artifact":
+            if self.anchor_ref is not None:
+                raise ValueError("spec_validation_pinpoint_anchor_ref_forbidden")
+            return self
+        if self.anchor_ref is None or not self.anchor_ref.strip():
+            raise ValueError("spec_validation_pinpoint_anchor_ref_required")
+        self.anchor_ref = self.anchor_ref.strip()
+        return self
+
+
 class SpecValidationSubmit(BaseModel):
-    """Canonical human validation body plus legacy compatibility fields."""
+    """Canonical five-dimensional Spec Validation submission."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -3561,59 +3649,39 @@ class SpecValidationSubmit(BaseModel):
     )
     expected_spec_version: int = Field(..., ge=1)
     expected_head_revision: int = Field(..., ge=0)
-    score: float | None = Field(default=None, ge=0, le=100)
-    summary: str | None = Field(default=None, min_length=1, max_length=4096)
-
-    completeness: int | None = Field(default=None, ge=0, le=100)
-    completeness_justification: str | None = Field(default=None, min_length=10)
-    assertiveness: int | None = Field(default=None, ge=0, le=100)
-    assertiveness_justification: str | None = Field(default=None, min_length=10)
-    ambiguity: int | None = Field(default=None, ge=0, le=100)
-    ambiguity_justification: str | None = Field(default=None, min_length=10)
-    general_justification: str | None = Field(default=None, min_length=20)
-    recommendation: str | None = Field(default=None, pattern="^(approve|reject)$")
-
-    @model_validator(mode="after")
-    def validate_formal_or_legacy_shape(self) -> "SpecValidationSubmit":
-        legacy_fields = (
-            "completeness",
-            "completeness_justification",
-            "assertiveness",
-            "assertiveness_justification",
-            "ambiguity",
-            "ambiguity_justification",
-            "general_justification",
-            "recommendation",
-        )
-        formal = self.score is not None or self.summary is not None
-        if formal:
-            if self.score is None or self.summary is None or not self.summary.strip():
-                raise ValueError("score and summary are required together")
-            if any(getattr(self, name) is not None for name in legacy_fields):
-                raise ValueError(
-                    "formal and legacy validation shapes are mutually exclusive"
-                )
-            self.summary = self.summary.strip()
-            return self
-        if any(getattr(self, name) is None for name in legacy_fields):
-            raise ValueError(
-                "score/summary or all legacy validation dimensions are required"
-            )
-        return self
+    confidence: int = Field(..., ge=0, le=100)
+    confidence_justification: str = Field(..., min_length=10)
+    clarity: int = Field(..., ge=0, le=100)
+    clarity_justification: str = Field(..., min_length=10)
+    assertiveness: int = Field(..., ge=0, le=100)
+    assertiveness_justification: str = Field(..., min_length=10)
+    decidability: int = Field(..., ge=0, le=100)
+    decidability_justification: str = Field(..., min_length=10)
+    ambiguity: int = Field(..., ge=0, le=100)
+    ambiguity_justification: str = Field(..., min_length=10)
+    recommendation: Literal["approve", "reject"]
+    pinpoints: list[SpecValidationPinpoint] | None = None
 
 
 class SpecValidationResponse(BaseModel):
-    """Canonical response with compatibility-only legacy details."""
+    """History record; legacy evidence may predate lifecycle editions."""
 
-    validation_id: str
-    validation_edition: int = Field(..., ge=1)
-    is_current: bool
+    id: str | None = None
+    validation_id: str | None = None
+    validation_edition: int | None = Field(default=None, ge=1)
+    is_current: bool = False
     spec_id: str | None = None
     board_id: str | None = None
     reviewer_id: str | None = None
     reviewer_name: str | None = None
     score: float | None = None
     summary: str | None = None
+    confidence: int | None = None
+    confidence_justification: str | None = None
+    clarity: int | None = None
+    clarity_justification: str | None = None
+    decidability: int | None = None
+    decidability_justification: str | None = None
     completeness: int | None = None
     completeness_justification: str | None = None
     assertiveness: int | None = None
@@ -3622,6 +3690,7 @@ class SpecValidationResponse(BaseModel):
     ambiguity_justification: str | None = None
     general_justification: str | None = None
     recommendation: str | None = None
+    pinpoints: list[SpecValidationPinpoint] | None = None
     outcome: str | None = None
     receipt_id: str | None = None
     subject_version: int | None = Field(default=None, ge=1)
@@ -3634,6 +3703,19 @@ class SpecValidationResponse(BaseModel):
     active: bool | None = None
     edition: int | None = Field(default=None, ge=1)
     lifecycle_state: Literal["current", "previous", "history_only"] | None = None
+
+    @model_validator(mode="after")
+    def require_compatible_identity(self) -> "SpecValidationResponse":
+        if not self.id and not self.validation_id:
+            raise ValueError("spec_validation_identity_required")
+        if self.lifecycle_state == "current" and self.validation_edition is None:
+            raise ValueError("spec_validation_current_edition_required")
+        if (
+            self.lifecycle_state == "history_only"
+            and self.validation_edition is not None
+        ):
+            raise ValueError("spec_validation_history_only_edition_forbidden")
+        return self
 
 
 # ============================================================================
@@ -3748,9 +3830,7 @@ class CodeTraceabilitySettings(BaseModel):
         "granular_permission",
         "granular_permission_and_board_allowlist",
     ] = "granular_permission"
-    minimum_trust: Literal["single_attestation", "corroborated"] = (
-        "single_attestation"
-    )
+    minimum_trust: Literal["single_attestation", "corroborated"] = "single_attestation"
     # Closed server-owned range.  The configured value controls accepted
     # receipt currentness; it is never derived from agent-supplied observed_at.
     preflight_freshness_seconds: int = Field(default=1800, ge=60, le=86_400)
@@ -3808,9 +3888,9 @@ class BoardSettings(BaseModel):
     # evaluated as a deterministic UNION of lexicons. Empty (the legacy
     # default) keeps the neutral-only profile: no language guessing, only
     # numbers/comparators/units/technical terms count as signals.
-    lint_languages: list[
-        Literal["pt-BR", "en-US", "es-ES", "de-DE", "fr-FR"]
-    ] = Field(default_factory=list)
+    lint_languages: list[Literal["pt-BR", "en-US", "es-ES", "de-DE", "fr-FR"]] = Field(
+        default_factory=list
+    )
     # Impact-evidence enforcement on execution reports (SK-B2-S1, FR-5).
     # off = no effect; advisory = gated moves succeed but a missing block is
     # recorded in the activity log; require = gated moves reject a conclusion
@@ -3838,9 +3918,14 @@ class BoardSettings(BaseModel):
     require_spec_validation: bool = (
         True  # if True, approved→validated requires Spec Validation Gate submission
     )
-    min_spec_completeness: int = 80  # min spec completeness score
-    min_spec_assertiveness: int = 80  # min spec assertiveness score
-    max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    min_spec_confidence: int = Field(default=70, ge=0, le=100)
+    min_spec_clarity: int = Field(default=80, ge=0, le=100)
+    min_spec_assertiveness: int = Field(default=80, ge=0, le=100)
+    min_spec_decidability: int = Field(default=80, ge=0, le=100)
+    max_spec_ambiguity: int = Field(default=30, ge=0, le=100)
+    # Compatibility-only setting for historical three-dimensional records.
+    # It is not part of the canonical five-metric gate.
+    min_spec_completeness: int = Field(default=80, ge=0, le=100)
     # Max ambiguity gate for ideation completion — opt-in (spec 2485780b).
     # When enabled, blocks ONLY the evaluating→done transition if the ideation
     # has no ambiguity score or scope_assessment.ambiguity exceeds the

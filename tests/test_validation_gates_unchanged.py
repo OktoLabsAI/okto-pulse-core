@@ -28,14 +28,17 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 # optimistic-versioning contract, then after the 2026-07-25 append-only
 # SpecHistory audit for validation submissions, after the 2026-07-27 SK-A A3
 # checklist predicate, and after the 2026-07-31 SK-B3 semantic policy transition
-# gate was deliberately added to successful Spec Validation. If a gate changes
-# intentionally, review its semantic tests and update this versioned constant in
-# the same change.
+# gate was deliberately added to successful Spec Validation. The 2026-08-12 SK-M
+# lifecycle fence now serializes a successful validation with the board's Spec
+# dependency graph before mutating the validation head. The canonical five-score
+# quality contract intentionally replaced the old three-score gate while keeping
+# legacy record compatibility. If a gate changes intentionally, review its
+# semantic tests and update this versioned constant in the same change.
 # ---------------------------------------------------------------------------
 
 EXPECTED_HASHES = {
     "submit_spec_validation": (
-        "08ec3872cd6d5d3fe79858484144aefd149cc7e10219c1ab80c46d2e63b14e7e"
+        "e919bc3d104549153ca9b05fd6089117e2ca5477a29a37abbd0f88283025cccc"
     ),
     "submit_evaluation": (
         "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"
@@ -81,9 +84,9 @@ class TestValidationGatesUnchanged:
         """SprintService.submit_evaluation (sprint_evaluation) deve continuar
         gravando sprint_evaluation_submitted no activity log."""
         src = _function_source(MAIN_PY, "submit_evaluation")
-        assert (
-            "sprint_evaluation_submitted" in src
-        ), "sprint_evaluation_submitted activity log marker missing"
+        assert "sprint_evaluation_submitted" in src, (
+            "sprint_evaluation_submitted activity log marker missing"
+        )
 
     def test_versioned_baseline_hashes_are_unchanged(self):
         """Fail deterministically when a protected gate changes."""
@@ -91,9 +94,7 @@ class TestValidationGatesUnchanged:
             "submit_spec_validation": _hash(
                 _function_source(MAIN_PY, "submit_spec_validation")
             ),
-            "submit_evaluation": _hash(
-                _function_source(MAIN_PY, "submit_evaluation")
-            ),
+            "submit_evaluation": _hash(_function_source(MAIN_PY, "submit_evaluation")),
         }
 
         assert current_hashes == EXPECTED_HASHES, (

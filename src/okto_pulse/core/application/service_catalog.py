@@ -27,12 +27,20 @@ class CoreAnalyticsOperations:
         filter_type: str | None = None,
     ):  # noqa: ANN201
         from okto_pulse.core.services.analytics_service import compute_blockers
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
 
         return await compute_blockers(
             self.__relational_context,
             board_id,
             stale_hours=stale_hours,
             filter_type=filter_type,
+            spec_dependency_persistence=(
+                require_relational_application_adapter().spec_dependencies(
+                    self.__relational_context
+                )
+            ),
         )
 
     async def mcp_board_analytics(
@@ -498,6 +506,21 @@ class CoreApplicationServiceCatalog:
 
         return require_relational_application_adapter().checklists(
             self.__relational_context
+        )
+
+    @cached_property
+    def spec_dependencies(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+        persistence = require_relational_application_adapter().spec_dependencies(
+            self.__relational_context,
+        )
+        return SpecDependencyService(
+            persistence,
+            self.__relational_context,
         )
 
     @cached_property

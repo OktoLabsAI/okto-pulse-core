@@ -102,6 +102,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"ideation"),
     ("Refinements", "refinement",
      r"refinement|research_decision"),
+    ("Specs — dependencies", "spec",
+     r"^okto_pulse_(add|list|remove)_spec_dependenc(?:y|ies)$"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
      r"get_spec_context|get_spec_history|derive_spec_from_ideation|"

@@ -100,6 +100,25 @@ class SQLAlchemyUnitOfWork:
     async def rollback(self) -> None:
         await get_application_persistence_port().rollback(self._session)
 
+    async def begin_consistent_read(self) -> None:
+        """Test-adapter implementation of the explicit composite-read port."""
+
+        bind = self._session.get_bind()
+        if bind is None or bind.dialect.name != "sqlite":
+            raise RuntimeError("consistent_read_dialect_unsupported")
+        connection = await self._session.connection()
+
+        def physical_transaction_active(sync_connection: Any) -> bool:
+            driver_connection = getattr(
+                sync_connection.connection,
+                "driver_connection",
+                None,
+            )
+            return bool(getattr(driver_connection, "in_transaction", False))
+
+        if not await connection.run_sync(physical_transaction_active):
+            await connection.exec_driver_sql("BEGIN")
+
     async def synchronize(
         self,
         *,

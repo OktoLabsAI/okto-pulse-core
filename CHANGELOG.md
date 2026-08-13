@@ -23,6 +23,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   amendments and Knowledge Graph operations.
 - A fail-closed CI registry validator requiring every live MCP action to have a
   canonical policy or an explicit human-only exemption.
+- Governed same-board Spec dependency contracts, lifecycle readiness gates,
+  edition-scoped start memory and a deterministic `precedes` KG projection.
 
 ### Changed
 

@@ -180,7 +180,7 @@ async def test_quality_mcp_inventory_remains_seven_tools_at_334() -> None:
     # recording and retains four bounded read surfaces (list, get, current and
     # findings).  Those reads are part of the public projection/pagination
     # contract; Code Traceability adds 19 reviewed, typed commands.
-    assert len(tools) == 334
+    assert len(tools) == 337
     assert {
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_semantic_guideline_assessment",

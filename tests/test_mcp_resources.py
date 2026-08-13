@@ -58,6 +58,7 @@ def test_required_core_resources_present() -> None:
     missing = [f for f in _REQUIRED_FILES if f not in EXPECTED_FILES]
     assert missing == [], f"core resources missing from bundle: {missing}"
 
+
 EXPECTED_URIS = [
     "okto-pulse://workflows/stories",
     "okto-pulse://workflows/ideations",
@@ -116,22 +117,16 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
     # gate guards PRESENCE of a version marker, not a pinned value (files
     # legitimately rev, e.g. api-contract.md is at "1.1").
     assert re.search(r'version: "\d+\.\d+"', frontmatter_body), (
-        f"{rel_path}: frontmatter missing a version marker. "
-        f"Found: {frontmatter_body!r}"
+        f"{rel_path}: frontmatter missing a version marker. Found: {frontmatter_body!r}"
     )
 
 
 def test_cards_workflow_defers_to_typed_transition_read_model() -> None:
-    content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(
-        encoding="utf-8"
-    )
+    content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(encoding="utf-8")
 
     assert "A normal card follows `not_started → started → in_progress`" in content
     assert "only when the transition tool advertises that edge" in content
-    assert (
-        '`okto_pulse_move_card(status="in_progress")` → begin work'
-        not in content
-    )
+    assert '`okto_pulse_move_card(status="in_progress")` → begin work' not in content
 
 
 def test_destructive_ops_documents_auditable_fallback_without_fake_comments() -> None:
@@ -145,9 +140,9 @@ def test_destructive_ops_documents_auditable_fallback_without_fake_comments() ->
 
 
 def test_design_system_board_docs_match_live_single_link_schema() -> None:
-    content = (
-        RESOURCES_DIR / "reference" / "tool-docs" / "board.md"
-    ).read_text(encoding="utf-8")
+    content = (RESOURCES_DIR / "reference" / "tool-docs" / "board.md").read_text(
+        encoding="utf-8"
+    )
     link = content.split("## `okto_pulse_link_board_design_system`", 1)[1].split(
         "## `okto_pulse_unlink_board_design_system`", 1
     )[0]
@@ -165,9 +160,9 @@ def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() ->
         ("qa_ask.md", "ask"),
         ("spec_entity_remove.md", "remove_spec_entity"),
     ):
-        content = (
-            RESOURCES_DIR / "reference" / "tool-families" / filename
-        ).read_text(encoding="utf-8")
+        content = (RESOURCES_DIR / "reference" / "tool-families" / filename).read_text(
+            encoding="utf-8"
+        )
         assert f"Registry-only short name: `{short_name}`" in content
         assert "not** an MCP" in content
         assert "does not appear in `tools/list`" in content
@@ -186,9 +181,9 @@ def test_choice_tool_docs_explain_structured_options_json(
     filename: str,
     tool_name: str,
 ) -> None:
-    content = (
-        RESOURCES_DIR / "reference" / "tool-docs" / filename
-    ).read_text(encoding="utf-8")
+    content = (RESOURCES_DIR / "reference" / "tool-docs" / filename).read_text(
+        encoding="utf-8"
+    )
     section = content.split(f"## `{tool_name}`", 1)[1].split("\n## `", 1)[0]
 
     assert "options_json: Preferred structured options" in section
@@ -331,19 +326,19 @@ def test_related_context_resources_require_typed_artifact_references() -> None:
         assert not any(stale in body for stale in stale_examples)
 
 
-def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter() -> None:
+def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter() -> (
+    None
+):
     """Agent guidance must match the asymmetric write/read type contract."""
     from okto_pulse.core.mcp import server as _srv
 
-    tool_docs = _srv._load_resource_file(
-        "reference/tool-docs/test-scenario.md"
-    )
-    update_section = tool_docs.split(
-        "## `okto_pulse_update_test_scenario`", 1
-    )[1].split("\n## `", 1)[0]
-    list_section = tool_docs.split(
-        "## `okto_pulse_list_test_scenarios`", 1
-    )[1].split("\n## `", 1)[0]
+    tool_docs = _srv._load_resource_file("reference/tool-docs/test-scenario.md")
+    update_section = tool_docs.split("## `okto_pulse_update_test_scenario`", 1)[
+        1
+    ].split("\n## `", 1)[0]
+    list_section = tool_docs.split("## `okto_pulse_list_test_scenarios`", 1)[1].split(
+        "\n## `", 1
+    )[0]
     normalized_update = " ".join(update_section.split())
     normalized_list = " ".join(list_section.split())
 
@@ -471,6 +466,59 @@ def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
     assert 'params={"prefix":"spec:<spec-id>:"}' in kg_workflow
 
 
+def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    parameters = _srv.mcp._tool_manager._tools[
+        "okto_pulse_submit_spec_validation"
+    ].parameters
+    properties = parameters["properties"]
+    expected = {
+        "board_id",
+        "spec_id",
+        "expected_validation_edition",
+        "expected_spec_version",
+        "expected_head_revision",
+        "confidence",
+        "confidence_justification",
+        "clarity",
+        "clarity_justification",
+        "assertiveness",
+        "assertiveness_justification",
+        "decidability",
+        "decidability_justification",
+        "ambiguity",
+        "ambiguity_justification",
+        "recommendation",
+        "pinpoints",
+    }
+    assert set(properties) == expected
+    assert set(parameters["required"]) == expected - {"pinpoints"}
+
+    pinpoint = properties["pinpoints"]["anyOf"][0]["items"]
+    assert pinpoint["additionalProperties"] is False
+    assert set(pinpoint["properties"]) == {
+        "metric",
+        "anchor_type",
+        "anchor_ref",
+        "detail",
+    }
+    assert set(pinpoint["required"]) == {"metric", "anchor_type", "detail"}
+    assert pinpoint["properties"]["metric"]["enum"] == [
+        "confidence",
+        "clarity",
+        "assertiveness",
+        "decidability",
+        "ambiguity",
+    ]
+    assert pinpoint["properties"]["anchor_type"]["enum"] == [
+        "whole_artifact",
+        "field",
+        "structured_child",
+        "qa",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # 9. ts_edd149c4 — Initial footprint regression guard via tiktoken
 # ---------------------------------------------------------------------------
@@ -486,7 +534,7 @@ def test_initial_footprint_under_budget() -> None:
 
     Budget rationale (post-P0.A + post-P0.B, pre-P1 lazy-loading):
       - instructions ≤ 10K tokens — P0.A goal (was ~71K pre-rewrite).
-      - tools metadata ≤ 48.5K tokens — reviewed ceiling for 334 tools,
+      - tools metadata ≤ 48.5K tokens — reviewed ceiling for 337 tools,
         including the 20 closed policy-governance schemas and the typed
         impact_evidence contract (SK-B2-S1); P1 lazy-loading by role will
         reduce this drastically per session.
@@ -513,11 +561,12 @@ def test_initial_footprint_under_budget() -> None:
         schema = json.dumps(getattr(tool, "parameters", {}), separators=(",", ":"))
         parts.append(f"{tool_name}\n{desc}\n{schema}")
     tools_tokens = len(enc.encode("\n".join(parts)))
-    # 48_500: the 19 closed Code Traceability schemas remain fully typed; 69
+    # 48_500: the 19 closed Code Traceability schemas remain fully typed; 70
     # reviewed descriptions point to lazy family docs and generated JSON-Schema
     # titles are omitted because property names already carry that identity.
-    # Reproducible measurements (cl100k_base, live registry, 334 tools):
-    # Measured footprint: instructions=2_272, tools=48_139, combined=50_411.
+    # Reproducible measurements (cl100k_base, live registry, 337 tools):
+    # Measured footprint after SK-M and equivalent lazy-doc compaction:
+    # instructions=2_272, tools=48_397, combined=50_669.
     # The next increase still requires equivalent metadata reduction or
     # role-based lazy loading; weakening closed input schemas is not allowed.
     assert tools_tokens <= 48_500, (

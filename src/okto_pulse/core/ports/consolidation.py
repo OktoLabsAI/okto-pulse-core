@@ -34,6 +34,7 @@ class ConsolidationQueueRecord:
     payload: dict[str, Any] | None = None
     delete_event_id: str | None = None
     claim_token: str | None = None
+    triggered_by_event: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,11 +164,36 @@ class CurrentResearchDecisionSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class CurrentSpecDependencyProjection:
+    """One authoritative active Spec dependency plus endpoint projection."""
+
+    dependency_id: str
+    board_id: str
+    dependent_spec_id: str
+    prerequisite_spec_id: str
+    prerequisite_title: str
+    prerequisite_status: str
+    prerequisite_version: int
+
+    def to_worker_dict(self) -> dict[str, Any]:
+        return {
+            "dependency_id": self.dependency_id,
+            "board_id": self.board_id,
+            "dependent_spec_id": self.dependent_spec_id,
+            "prerequisite_spec_id": self.prerequisite_spec_id,
+            "prerequisite_title": self.prerequisite_title,
+            "prerequisite_status": self.prerequisite_status,
+            "prerequisite_version": self.prerequisite_version,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ConsolidationProjectionInputs:
     """Bounded relational projections loaded alongside one source artifact."""
 
     quality_assessments: tuple[CurrentQualityAssessmentSummary, ...] = ()
     research_decisions: tuple[CurrentResearchDecisionSummary, ...] = ()
+    spec_dependencies: tuple[CurrentSpecDependencyProjection, ...] = ()
 
 
 class ConsolidationPersistencePort(Protocol):
@@ -318,6 +344,7 @@ __all__ = [
     "ConsolidationQueueRecord",
     "CurrentQualityAssessmentSummary",
     "CurrentResearchDecisionSummary",
+    "CurrentSpecDependencyProjection",
     "get_consolidation_persistence_port",
     "register_consolidation_persistence_port",
     "reset_consolidation_persistence_port_for_tests",

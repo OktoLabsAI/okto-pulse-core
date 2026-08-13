@@ -122,6 +122,12 @@ class Spec:
     # Human-facing lifecycle counter. Unlike ``version`` (the technical
     # revision/CAS token), this only advances when a Spec re-enters draft.
     edition: int = 1
+    # Monotonic execution marker for the human lifecycle edition.  Unlike the
+    # nominal status it remains set if an executing Spec returns to validated.
+    last_started_edition: int | None = None
+    # Read-only transport projection populated by GetSpecUseCase. Relational
+    # adapters do not persist this derived snapshot.
+    dependency_readiness: Any | None = field(default=None, repr=False)
     version: int = 1
     assignee_id: str | None = None
     created_at: datetime | None = None

@@ -98,7 +98,15 @@ class _StoreBackedGraphScope:
             **values,
         )
 
-    def edge_exists(self, edge_type, from_type, to_type, from_id, to_id):
+    def edge_exists(
+        self,
+        edge_type,
+        from_type,
+        to_type,
+        from_id,
+        to_id,
+        rule_id=None,
+    ):
         return self._store.edge_exists(
             self._board_id,
             edge_type,
@@ -106,6 +114,7 @@ class _StoreBackedGraphScope:
             to_type,
             from_id,
             to_id,
+            rule_id,
         )
 
     def create_edge(self, edge_type, from_type, to_type, from_id, to_id, attrs):
@@ -220,6 +229,8 @@ class GraphWriteRecord:
     from_id: str | None = None
     to_id: str | None = None
     lineage_receipt: SpecLineageReconciliationReceipt | None = None
+    lineage_compensation_applied: bool = False
+    lineage_progress_preserved: bool = False
     property_before_image: GraphNodePropertyBeforeImage | None = None
     projection_receipt: ProjectionActiveSetReceipt | None = None
 
@@ -547,6 +558,12 @@ class TransactionOrchestrator:
                             from_id=from_id,
                             to_id=to_id,
                             lineage_receipt=partial_receipt,
+                            lineage_compensation_applied=bool(
+                                exc.compensation_applied
+                            ),
+                            lineage_progress_preserved=bool(
+                                exc.preserve_progress
+                            ),
                         )
                     )
                 raise
@@ -580,7 +597,20 @@ class TransactionOrchestrator:
                 self.counters.edges_added += 1
             return
 
-        if self._edge_exists(edge_type, from_type, to_type, from_id, to_id):
+        dependency_rule_id = (
+            rule_id
+            if edge_type == "precedes"
+            and rule_id.startswith("precedes/spec_dependency/")
+            else None
+        )
+        if self._edge_exists(
+            edge_type,
+            from_type,
+            to_type,
+            from_id,
+            to_id,
+            rule_id=dependency_rule_id,
+        ):
             logger.info(
                 "kg.transaction.edge_exists session=%s edge=%s from=%s(%s) to=%s(%s)",
                 self.session_id, edge_type, from_type, from_id, to_type, to_id,
@@ -650,7 +680,10 @@ class TransactionOrchestrator:
         try:
             receipt = reconcile(intent)
         except ProjectionActiveSetReconciliationError as exc:
-            if exc.receipt is not None and exc.receipt.before_images:
+            if exc.receipt is not None and (
+                exc.receipt.before_images
+                or exc.receipt.edge_before_images
+            ):
                 self.records.append(
                     GraphWriteRecord(
                         kind="projection",
@@ -660,7 +693,7 @@ class TransactionOrchestrator:
                     )
                 )
             raise
-        if receipt.before_images:
+        if receipt.before_images or receipt.edge_before_images:
             self.records.append(
                 GraphWriteRecord(
                     kind="projection",
@@ -693,6 +726,12 @@ class TransactionOrchestrator:
                         entity_id=f"{source_id}-><none>",
                         from_id=source_id,
                         lineage_receipt=partial_receipt,
+                        lineage_compensation_applied=bool(
+                            exc.compensation_applied
+                        ),
+                        lineage_progress_preserved=bool(
+                            exc.preserve_progress
+                        ),
                     )
                 )
             raise
@@ -732,6 +771,8 @@ class TransactionOrchestrator:
         to_type: str,
         from_id: str,
         to_id: str,
+        *,
+        rule_id: str | None = None,
     ) -> bool:
         """Return True when this semantic edge already exists.
 
@@ -740,12 +781,21 @@ class TransactionOrchestrator:
         edge many times. The KG treats `(edge_type, from_id, to_id)` as the
         natural identity for all current relationships.
         """
+        if rule_id is None:
+            return self.graph_scope.edge_exists(
+                edge_type,
+                from_type,
+                to_type,
+                from_id,
+                to_id,
+            )
         return self.graph_scope.edge_exists(
             edge_type,
             from_type,
             to_type,
             from_id,
             to_id,
+            rule_id,
         )
 
     def _find_node_types(self, node_id: str) -> list[str]:
@@ -814,35 +864,54 @@ class TransactionOrchestrator:
                     ],
                 ) from exc
 
-        lineage_receipts = [
-            record.lineage_receipt
+        lineage_records = [
+            record
             for record in reversed(self.records)
             if record.lineage_receipt is not None
         ]
         preserved_edges: list[SpecLineageEdgeSnapshot] = []
-        for receipt in lineage_receipts:
-            try:
-                self.graph_scope.compensate_spec_lineage_parent(receipt)
-            except Exception as exc:
-                logger.error(
-                    "kg.compensate.spec_lineage_restore_failed "
-                    "session=%s source=%s target=%s err=%s",
-                    self.session_id,
-                    receipt.source_id,
-                    receipt.target_id,
-                    exc,
-                )
-                raise CompensationError(
-                    "Spec-lineage compensation failed before generic session "
-                    "cleanup; the replacement edge was preserved.",
-                    original_exc=exc,
-                    failed_records=[
-                        record
-                        for record in self.records
-                        if record.lineage_receipt is receipt
-                    ],
-                ) from exc
+        for record in lineage_records:
+            receipt = record.lineage_receipt
+            assert receipt is not None
+            if not (
+                record.lineage_compensation_applied
+                or record.lineage_progress_preserved
+            ):
+                try:
+                    self.graph_scope.compensate_spec_lineage_parent(receipt)
+                except Exception as exc:
+                    logger.error(
+                        "kg.compensate.spec_lineage_restore_failed "
+                        "session=%s source=%s target=%s err=%s",
+                        self.session_id,
+                        receipt.source_id,
+                        receipt.target_id,
+                        exc,
+                    )
+                    raise CompensationError(
+                        "Spec-lineage compensation failed before generic session "
+                        "cleanup; the replacement edge was preserved.",
+                        original_exc=exc,
+                        failed_records=[
+                            candidate
+                            for candidate in self.records
+                            if candidate.lineage_receipt is receipt
+                        ],
+                    ) from exc
             preserved_edges.extend(receipt.removed_edges)
+            if (
+                record.lineage_progress_preserved
+                and receipt.target_id is not None
+                and receipt.target_rule_id is not None
+            ):
+                preserved_edges.append(
+                    SpecLineageEdgeSnapshot(
+                        source_id=receipt.source_id,
+                        target_id=receipt.target_id,
+                        rule_id=receipt.target_rule_id,
+                        attrs=dict(receipt.target_attrs),
+                    )
+                )
 
         property_records = [
             record

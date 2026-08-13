@@ -351,7 +351,7 @@ def test_registry_has_sixty_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 60
+    assert len(EVENT_TYPES) == 62
     non_consolidation_events = {
         "kg.hit_flushed",
         "card.priority_changed",
@@ -1770,6 +1770,7 @@ def test_human_curated_column_declared_in_schema():
         "0.3.11",
         "0.3.12",
         "0.4.0",
+        "0.5.0",
     }
 
 

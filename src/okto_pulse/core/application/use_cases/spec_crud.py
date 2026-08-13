@@ -39,6 +39,9 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
     entity_state,
     transition_permission_requirement,
 )
+from okto_pulse.core.domain.spec_dependency import (
+    spec_dependency_readiness_projection,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import SpecUpdate
@@ -243,14 +246,26 @@ class GetSpecUseCase:
     async def execute(
         self, command: GetSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetSpecResult:
+        # The response combines the Spec, its effective knowledge projection,
+        # and dependency readiness.  Establish one transaction-wide snapshot
+        # before authorization or any repository lookup so those facts cannot
+        # be assembled from different committed states.
+        await uow.begin_consistent_read()
         spec = await _require_actor_board_spec(uow, command.spec_id, actor)
-        return GetSpecResult(
-            await project_effective_knowledge(
-                uow.services,
-                spec,
-                target_type="spec",
-            )
+        projected = await project_effective_knowledge(
+            uow.services,
+            spec,
+            target_type="spec",
         )
+        dependency_service = getattr(uow.services, "spec_dependencies", None)
+        if dependency_service is not None:
+            projected.dependency_readiness = spec_dependency_readiness_projection(
+                await dependency_service.get_readiness(
+                    board_id=str(spec.board_id),
+                    spec_id=str(spec.id),
+                )
+            )
+        return GetSpecResult(projected)
 
 
 # --- move (status transition) -----------------------------------------------
