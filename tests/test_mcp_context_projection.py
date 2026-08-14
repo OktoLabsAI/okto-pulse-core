@@ -89,7 +89,9 @@ def _full_task_result() -> dict:
             "id": "s1",
             "title": "Spec",
             "status": "in_progress",
-            "functional_requirements": [{"id": "fr_0", "text": "FR text the agent needs"}],
+            "functional_requirements": [
+                {"id": "fr_0", "text": "FR text the agent needs"}
+            ],
             "decisions": [{"id": "d1", "title": "decision"}],
         },
         "my_test_scenarios": [{"id": "ts_a", "title": "my scenario"}],
@@ -105,14 +107,20 @@ def _full_task_result() -> dict:
                 }
             ],
             "functional_requirements": [
-                {"index": 0, "text": "FR text the agent needs", "referenced_by_task": True}
+                {
+                    "index": 0,
+                    "text": "FR text the agent needs",
+                    "referenced_by_task": True,
+                }
             ],
         },
         "validations": [{"id": "v1", "outcome": "failed"}],
     }
 
 
-def _arch_design(did: str, parent_type: str, parent_id: str, *, with_body: bool = True) -> dict:
+def _arch_design(
+    did: str, parent_type: str, parent_id: str, *, with_body: bool = True
+) -> dict:
     """An architecture design as serialized into context sections — identifying
     fields + (optionally) the heavy bodies R2.2 deduplicates."""
     d = {
@@ -142,7 +150,11 @@ def _task_result_with_arch_md() -> dict:
     r["spec"]["architecture_designs"] = [_arch_design("ad_spec", "spec", "s1")]
     r["spec"]["decisions_markdown"] = "## Decisions\n\n- d1: decision body\n" * 5
     r["resolved_references"]["architecture_designs"] = [
-        {**_arch_design("ad_card", "card", "c1"), "source_type": "card", "source_id": "c1"},
+        {
+            **_arch_design("ad_card", "card", "c1"),
+            "source_type": "card",
+            "source_id": "c1",
+        },
         {
             **_arch_design("ad_spec", "spec", "s1"),
             "source_type": "spec",
@@ -181,7 +193,9 @@ def test_summary_dedups_resolved_references_keeping_unique_content():
     # Unique content the agent needs is preserved.
     assert out["card"]["description"] == "what to build"
     assert out["card"]["details"] == "detailed scope the agent needs"
-    assert out["spec"]["functional_requirements"][0]["text"] == "FR text the agent needs"
+    assert (
+        out["spec"]["functional_requirements"][0]["text"] == "FR text the agent needs"
+    )
     assert out["validations"] == [{"id": "v1", "outcome": "failed"}]
 
     # The DUPLICATION is removed: resolved_references no longer carry the bodies
@@ -279,9 +293,7 @@ def test_summary_and_detail_remove_primary_artifact_bodies():
     assert detail["spec"]["knowledge_bases"][0]["content_preview"].startswith(
         "large primary body"
     )
-    assert detail["spec"]["knowledge_bases"][0][
-        "content_preview_truncated"
-    ] is True
+    assert detail["spec"]["knowledge_bases"][0]["content_preview_truncated"] is True
     assert _stable_payload_bytes(summary) < _stable_payload_bytes(detail)
     assert "content" not in summary["card_knowledge_bases"][0]
     assert full["spec"]["knowledge_bases"][0]["content"].startswith(
@@ -519,9 +531,7 @@ def test_full_gate_scope_is_bounded_manifested_and_full_all_stays_unchanged():
     assert "manifest_version" not in manifest
     assert manifest["source_payload_bytes"] > 100_000
     assert len(manifest["source_payload_sha256"]) == 64
-    assert {
-        item["path"] for item in manifest["sections"]
-    } >= {
+    assert {item["path"] for item in manifest["sections"]} >= {
         "spec.functional_requirements",
         "resolved_references",
         "validations",
@@ -623,7 +633,9 @@ def test_unsupported_profile_returns_supported_list():
 def test_projection_metadata_uses_r5_canonical_names():
     out = project_task_context(_full_task_result(), card_id="c1", profile="summary")
     meta = out["projection"]
-    for key in ENVELOPE_METADATA_KEYS:  # profile/payload_bytes/truncated/omitted/deduped/follow_up
+    for key in (
+        ENVELOPE_METADATA_KEYS
+    ):  # profile/payload_bytes/truncated/omitted/deduped/follow_up
         assert key in meta
     assert meta["profile"] == "summary"
     assert isinstance(meta["payload_bytes"], int) and meta["payload_bytes"] > 0
@@ -692,7 +704,12 @@ def _stub_ctx(board_id: str):
     return type(
         "Ctx",
         (),
-        {"agent_id": USER_ID, "agent_name": USER_ID, "board_id": board_id, "permissions": ["board:read"]},
+        {
+            "agent_id": USER_ID,
+            "agent_name": USER_ID,
+            "board_id": board_id,
+            "permissions": ["board:read"],
+        },
     )()
 
 
@@ -740,19 +757,26 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     traceability_projection = AsyncMock(
         return_value={"subject_type": "card", "subject_id": card_id}
     )
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(
-        mcp_server, "check_permission", return_value=None
-    ), patch.object(
-        mcp_server,
-        "_mcp_code_traceability_projection",
-        traceability_projection,
+    with (
+        patch.object(
+            mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "_mcp_code_traceability_projection",
+            traceability_projection,
+        ),
     ):
         # default → summary
-        default = await _call("okto_pulse_get_task_context", board_id=board_id, card_id=card_id)
+        default = await _call(
+            "okto_pulse_get_task_context", board_id=board_id, card_id=card_id
+        )
         full = await _call(
-            "okto_pulse_get_task_context", board_id=board_id, card_id=card_id, profile="full"
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
         )
         full_gate = await _call(
             "okto_pulse_get_task_context",
@@ -762,7 +786,10 @@ async def test_get_task_context_default_summary_and_full_passthrough():
             context_scope="gate",
         )
         bad = await _call(
-            "okto_pulse_get_task_context", board_id=board_id, card_id=card_id, profile="nope"
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="nope",
         )
         bad_scope = await _call(
             "okto_pulse_get_task_context",
@@ -888,16 +915,22 @@ async def test_task_context_current_rejection_requires_validation_read():
     )
 
     def deny_validation_read(_permissions, operation):
-        return "card.validation.read is required" if operation == "card.validation.read" else None
+        return (
+            "card.validation.read is required"
+            if operation == "card.validation.read"
+            else None
+        )
 
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(
-        mcp_server, "check_permission", side_effect=deny_validation_read
-    ), patch.object(
-        mcp_server,
-        "_mcp_code_traceability_projection",
-        traceability_projection,
+    with (
+        patch.object(
+            mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+        ),
+        patch.object(mcp_server, "check_permission", side_effect=deny_validation_read),
+        patch.object(
+            mcp_server,
+            "_mcp_code_traceability_projection",
+            traceability_projection,
+        ),
     ):
         denied_full = await _call(
             "okto_pulse_get_task_context",
@@ -923,14 +956,16 @@ async def test_task_context_current_rejection_requires_validation_read():
         assert "current_rejection_summary" not in result["card"]
         assert secret not in json.dumps(result)
 
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(
-        mcp_server, "check_permission", return_value=None
-    ), patch.object(
-        mcp_server,
-        "_mcp_code_traceability_projection",
-        traceability_projection,
+    with (
+        patch.object(
+            mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "_mcp_code_traceability_projection",
+            traceability_projection,
+        ),
     ):
         allowed_full = await _call(
             "okto_pulse_get_task_context",
@@ -981,12 +1016,8 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
                 status=SpecStatus.IN_PROGRESS,
                 created_by=USER_ID,
                 description="must not be selected by the gate query",
-                functional_requirements=[
-                    {"id": "fr-heavy", "text": "R" * 50_000}
-                ],
-                screen_mockups=[
-                    {"id": "mock-heavy", "html": "<main>" + "M" * 50_000}
-                ],
+                functional_requirements=[{"id": "fr-heavy", "text": "R" * 50_000}],
+                screen_mockups=[{"id": "mock-heavy", "html": "<main>" + "M" * 50_000}],
             )
         )
         db.add(
@@ -1000,9 +1031,7 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
                 created_by=USER_ID,
                 description="D" * 50_000,
                 details="T" * 50_000,
-                screen_mockups=[
-                    {"id": "card-mock-heavy", "html": "C" * 50_000}
-                ],
+                screen_mockups=[{"id": "card-mock-heavy", "html": "C" * 50_000}],
                 validations=[
                     {
                         "id": f"validation-{index}",
@@ -1053,46 +1082,56 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
         return_value={"subject_type": "card", "subject_id": card_id}
     )
 
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(
-        mcp_server, "check_permission", return_value=None
-    ), patch.object(
-        mcp_server,
-        "_mcp_code_traceability_projection",
-        traceability_projection,
-    ), patch.object(
-        CoreApplicationServiceCatalog,
-        "list_application_records",
-        new=recording_list,
-    ), patch.object(
-        CoreApplicationServiceCatalog,
-        "get_application_record",
-        forbidden_async,
-    ), patch.object(
-        CardService,
-        "get_card",
-        forbidden_async,
-    ), patch.object(
-        SpecService,
-        "get_spec",
-        forbidden_async,
-    ), patch.object(
-        effective_knowledge_read,
-        "project_effective_knowledge",
-        forbidden_async,
-    ), patch.object(
-        mcp_server,
-        "_mcp_architecture_for_parent",
-        forbidden_async,
-    ), patch.object(
-        mcp_server,
-        "resolve_task_context_references",
-        forbidden_sync,
-    ), patch.object(
-        mcp_server,
-        "_serialize_knowledge_base",
-        forbidden_sync,
+    with (
+        patch.object(
+            mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "_mcp_code_traceability_projection",
+            traceability_projection,
+        ),
+        patch.object(
+            CoreApplicationServiceCatalog,
+            "list_application_records",
+            new=recording_list,
+        ),
+        patch.object(
+            CoreApplicationServiceCatalog,
+            "get_application_record",
+            forbidden_async,
+        ),
+        patch.object(
+            CardService,
+            "get_card",
+            forbidden_async,
+        ),
+        patch.object(
+            SpecService,
+            "get_spec",
+            forbidden_async,
+        ),
+        patch.object(
+            effective_knowledge_read,
+            "project_effective_knowledge",
+            forbidden_async,
+        ),
+        patch.object(
+            mcp_server,
+            "_mcp_architecture_for_parent",
+            forbidden_async,
+        ),
+        patch.object(
+            mcp_server,
+            "resolve_task_context_references",
+            forbidden_sync,
+        ),
+        patch.object(
+            mcp_server,
+            "_serialize_knowledge_base",
+            forbidden_sync,
+        ),
     ):
         gate = await _call(
             "okto_pulse_get_task_context",
@@ -1299,7 +1338,10 @@ def test_spec_context_dedups_architecture_and_uses_r5_metadata():
     assert out["functional_requirements"][0]["text"] == "FR"
     assert "entities" not in out["architecture_designs"][0]
     assert out["architecture_designs"][0]["counts"]["entities"] == 2
-    assert "global_description" not in out["resolved_references"]["architecture_designs"][0]
+    assert (
+        "global_description"
+        not in out["resolved_references"]["architecture_designs"][0]
+    )
     # decisions_markdown gated at the top level; structured decisions kept.
     assert "decisions_markdown" not in out
     assert out["decisions"] == [{"id": "d1", "title": "decision"}]
@@ -1324,7 +1366,9 @@ def test_context_projection_emits_usage_and_bytes_metrics(caplog):
     import logging
 
     with caplog.at_level(logging.INFO, logger="okto_pulse.mcp.context_projection"):
-        project_task_context(_task_result_with_arch_md(), card_id="c1", profile="summary")
+        project_task_context(
+            _task_result_with_arch_md(), card_id="c1", profile="summary"
+        )
         project_task_context(_full_task_result(), card_id="c1", profile="full")
 
     messages = [r.getMessage() for r in caplog.records]
@@ -1333,7 +1377,8 @@ def test_context_projection_emits_usage_and_bytes_metrics(caplog):
     assert messages.count("mcp_context_projection_payload_bytes") == 2
 
     rec = next(
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.getMessage() == "mcp_context_projection_usage_total"
     )
     labels = rec.context_projection
@@ -1341,8 +1386,13 @@ def test_context_projection_emits_usage_and_bytes_metrics(caplog):
     assert labels["profile"] in ("summary", "full")
     # Labels carry ONLY counts + identifiers — never a body field.
     assert set(labels) <= {
-        "tool_name", "profile", "outcome",
-        "payload_bytes", "omitted_count", "deduped_count", "truncated",
+        "tool_name",
+        "profile",
+        "outcome",
+        "payload_bytes",
+        "omitted_count",
+        "deduped_count",
+        "truncated",
     }
 
 
@@ -1363,7 +1413,10 @@ def test_telemetry_sink_records_context_projection_fail_closed():
     )
     assert res.accepted
     assert sink.metrics[METRIC_CONTEXT_PROJECTION_USAGE] == 1
-    assert sink.metrics[METRIC_CONTEXT_PROJECTION_BYTES] == out["projection"]["payload_bytes"]
+    assert (
+        sink.metrics[METRIC_CONTEXT_PROJECTION_BYTES]
+        == out["projection"]["payload_bytes"]
+    )
 
     # A forbidden label (a body field) is rejected fail-closed.
     bad = sink.record_context_projection({"profile": "summary", "title": "leaky body"})
@@ -1384,7 +1437,14 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     spec_id = _id("ctxproj-spec-spec")
 
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Ctx Proj Spec", owner_id=USER_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="Ctx Proj Spec",
+                owner_id=USER_ID,
+                settings={"skip_code_evidence_coverage_global": True},
+            )
+        )
         db.add(
             Spec(
                 id=spec_id,
@@ -1393,7 +1453,7 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
                 status=SpecStatus.IN_PROGRESS,
                 edition=5,
                 created_by=USER_ID,
-                skip_code_evidence_coverage=True,
+                skip_code_evidence_coverage=False,
                 functional_requirements=[{"id": "fr_0", "text": "FR text"}],
             )
         )
@@ -1402,21 +1462,34 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     traceability_projection = AsyncMock(
         return_value={"subject_type": "spec", "subject_id": spec_id}
     )
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
-    ), patch.object(
-        mcp_server, "check_permission", return_value=None
-    ), patch.object(
-        mcp_server,
-        "_mcp_code_traceability_projection",
-        traceability_projection,
+    with (
+        patch.object(
+            mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "_mcp_code_traceability_projection",
+            traceability_projection,
+        ),
     ):
-        default = await _call("okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id)
+        spec_detail = await _call(
+            "okto_pulse_get_spec", board_id=board_id, spec_id=spec_id
+        )
+        default = await _call(
+            "okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id
+        )
         full = await _call(
-            "okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id, profile="full"
+            "okto_pulse_get_spec_context",
+            board_id=board_id,
+            spec_id=spec_id,
+            profile="full",
         )
         bad = await _call(
-            "okto_pulse_get_spec_context", board_id=board_id, spec_id=spec_id, profile="nope"
+            "okto_pulse_get_spec_context",
+            board_id=board_id,
+            spec_id=spec_id,
+            profile="nope",
         )
         legacy = await _call(
             "okto_pulse_get_spec_context",
@@ -1432,14 +1505,21 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert default["functional_requirements"][0]["text"] == "FR text"
     assert default["edition"] == 5
     assert default["version"] == 1
-    assert default["skip_code_evidence_coverage"] is True
+    assert default["skip_code_evidence_coverage"] is False
+    assert default["skip_code_evidence_coverage_global"] is True
+    assert default["skip_code_evidence_coverage_effective"] is True
+    assert spec_detail["skip_code_evidence_coverage"] is False
+    assert spec_detail["skip_code_evidence_coverage_global"] is True
+    assert spec_detail["skip_code_evidence_coverage_effective"] is True
 
     # full preserves the prior payload shape (no projection envelope injected)
     assert "projection" not in full
     assert full["functional_requirements"][0]["text"] == "FR text"
     assert full["edition"] == 5
     assert full["version"] == 1
-    assert full["skip_code_evidence_coverage"] is True
+    assert full["skip_code_evidence_coverage"] is False
+    assert full["skip_code_evidence_coverage_global"] is True
+    assert full["skip_code_evidence_coverage_effective"] is True
     assert default["code_traceability"]["subject_id"] == spec_id
     assert full["code_traceability"]["subject_id"] == spec_id
     assert "code_traceability" not in legacy
@@ -1476,7 +1556,12 @@ def _result_with_evidence() -> dict:
         "last_run_at": "2026-06-19T00:00:00",
         "output_snippet": "1 passed",
     }
-    scenario = {"id": "ts_a", "title": "my scenario", "status": "passed", "evidence": dict(evidence)}
+    scenario = {
+        "id": "ts_a",
+        "title": "my scenario",
+        "status": "passed",
+        "evidence": dict(evidence),
+    }
     return {
         "card": {
             "id": "c1",
@@ -1498,16 +1583,22 @@ def _result_with_evidence() -> dict:
 
 @pytest.mark.parametrize("profile", ["summary", "full"])
 def test_projection_preserves_re_executable_evidence_fields(profile):
-    projected = project_task_context(_result_with_evidence(), card_id="c1", profile=profile)
+    projected = project_task_context(
+        _result_with_evidence(), card_id="c1", profile=profile
+    )
 
     scenarios = projected.get("my_test_scenarios") or []
     assert scenarios, f"my_test_scenarios dropped in {profile} projection"
     evidence = scenarios[0].get("evidence") or {}
     for field in _NEW_EVIDENCE_FIELDS:
-        assert evidence.get(field), f"{field} omitted from my_test_scenarios evidence ({profile})"
+        assert evidence.get(field), (
+            f"{field} omitted from my_test_scenarios evidence ({profile})"
+        )
 
     spec_scenarios = (projected.get("spec") or {}).get("test_scenarios") or []
     assert spec_scenarios, f"spec.test_scenarios dropped in {profile} projection"
     spec_evidence = spec_scenarios[0].get("evidence") or {}
     for field in _NEW_EVIDENCE_FIELDS:
-        assert spec_evidence.get(field), f"{field} omitted from spec scenario evidence ({profile})"
+        assert spec_evidence.get(field), (
+            f"{field} omitted from spec scenario evidence ({profile})"
+        )

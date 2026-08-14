@@ -607,8 +607,10 @@ Coverage contract:
     Code Evidence Matrix coverage is 100% only when every active inherited
     Evidence item has a current Spec link or final disposition. It is enforced
     even when Code Traceability mode is advisory, unless an authorized human
-    set the audited `skip_code_evidence_coverage` flag in the matrix UI/REST
-    surface. Agents can read but do not author that skip.
+    set `skip_code_evidence_coverage_global` for the Board or the audited
+    `skip_code_evidence_coverage` flag on the Spec. Effective resolution is
+    Board-global OR Spec-local. The governed agent workflow reads these flags
+    and remediates coverage; skip changes remain human UI/REST decisions.
 
 Returns:
     JSON with validation result, outcome, threshold violations, and resolved thresholds.

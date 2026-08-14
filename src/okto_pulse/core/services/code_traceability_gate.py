@@ -765,6 +765,31 @@ def resolve_code_traceability_settings(
     return settings
 
 
+def resolve_code_evidence_coverage_skip(
+    *,
+    board_settings: object,
+    spec: object,
+) -> bool:
+    """Resolve the effective Code Evidence Matrix coverage skip.
+
+    This follows the same Board→Spec contract as the other Spec coverage
+    gates: a board-wide skip applies to every Spec, while the audited per-Spec
+    flag can opt an individual Spec out when the board-wide default is off.
+    Historical settings without the board field remain fail-closed.
+    """
+
+    if isinstance(board_settings, BoardSettings):
+        skip_global = board_settings.skip_code_evidence_coverage_global
+    elif isinstance(board_settings, Mapping):
+        skip_global = board_settings.get(
+            "skip_code_evidence_coverage_global",
+            False,
+        )
+    else:
+        skip_global = False
+    return bool(getattr(spec, "skip_code_evidence_coverage", False) or skip_global)
+
+
 class CodeTraceabilityGateEvaluator:
     """Evaluate gates from an immutable relational projection only."""
 
@@ -1790,5 +1815,6 @@ __all__ = [
     "TargetEntityCoverage",
     "phases_for_transition",
     "extract_code_evidence_references",
+    "resolve_code_evidence_coverage_skip",
     "resolve_code_traceability_settings",
 ]

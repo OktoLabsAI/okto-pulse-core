@@ -2532,7 +2532,9 @@ async def test_blocking_rejected_card_allows_preflight_and_resolution_only() -> 
     )
     assert (
         await _resolution_card_version_or_replay(
-            resolution_command, actor=actor, uow=uow  # type: ignore[arg-type]
+            resolution_command,
+            actor=actor,
+            uow=uow,  # type: ignore[arg-type]
         )
         == 5
     )
@@ -2546,11 +2548,11 @@ async def test_blocking_rejected_card_allows_preflight_and_resolution_only() -> 
     )
     with pytest.raises(ImplementationTargetInvalid) as blocked:
         await _execution_card_version_or_replay(
-            execution_command, actor=actor, uow=uow  # type: ignore[arg-type]
+            execution_command,
+            actor=actor,
+            uow=uow,  # type: ignore[arg-type]
         )
-    assert blocked.value.details == {
-        "reason": "card_rejected_rework_handoff_required"
-    }
+    assert blocked.value.details == {"reason": "card_rejected_rework_handoff_required"}
 
 
 @pytest.mark.asyncio
@@ -2676,7 +2678,14 @@ async def test_aggregate_projection_requires_every_leaf_read_permission() -> Non
 
 
 @pytest.mark.asyncio
-async def test_spec_projection_propagates_code_evidence_coverage_skip() -> None:
+@pytest.mark.parametrize(
+    ("spec_skip", "board_skip"),
+    ((True, False), (False, True)),
+)
+async def test_spec_projection_propagates_effective_code_evidence_coverage_skip(
+    spec_skip: bool,
+    board_skip: bool,
+) -> None:
     marker = object()
 
     class ProjectionSpy:
@@ -2700,6 +2709,28 @@ async def test_spec_projection_propagates_code_evidence_coverage_skip() -> None:
     investigations = FakeInvestigationStore()
     traceability = FakeTraceabilityStore(investigations)
     projection = ProjectionSpy()
+    uow = FakeUnitOfWork(investigations, traceability)
+
+    class ProjectionBoardService:
+        async def get_board(self, board_id: str):
+            assert board_id == "board-1"
+            return SimpleNamespace(
+                id=board_id,
+                settings={
+                    "code_traceability": {"mode": "advisory"},
+                    "skip_code_evidence_coverage_global": board_skip,
+                },
+            )
+
+    class ProjectionSpecService:
+        async def get_spec(self, spec_id: str):
+            subject = await FakeSpecService().get_spec(spec_id)
+            assert subject is not None
+            subject.skip_code_evidence_coverage = spec_skip
+            return subject
+
+    uow.services.boards = ProjectionBoardService()
+    uow.services.specs = ProjectionSpecService()
     result = await GetCodeTraceabilityProjectionUseCase(
         projection,  # type: ignore[arg-type]
     ).execute(
@@ -2723,7 +2754,7 @@ async def test_spec_projection_propagates_code_evidence_coverage_skip() -> None:
                 "code_traceability.overlap.read",
             ),
         ),
-        uow=FakeUnitOfWork(investigations, traceability),  # type: ignore[arg-type]
+        uow=uow,  # type: ignore[arg-type]
     )
 
     assert result is marker

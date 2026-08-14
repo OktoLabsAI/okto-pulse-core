@@ -387,8 +387,8 @@ Code Traceability is complete for the current work only when:
 - each Evidence record has a meaningful claim, strongest applicable selector,
   current accepted receipt, and recomputable source digest;
 - every inherited Evidence item on a Spec is linked to stable normative IDs or
-  has a final disposition, with disposition coverage at `100%` (unless an
-  authorized human recorded the audited per-Spec matrix coverage skip);
+  has a final disposition, with disposition coverage at `100%` (unless the
+  effective audited Board-global OR Spec-local matrix coverage skip is active);
 - every material Card action has a required Implementation Target connected to
   its Spec intent and baseline Evidence when available;
 - every active required Target has a current Resolution before execution and
@@ -404,12 +404,14 @@ Matrix coverage gate used by Spec validation/start, and it does **not** mean
 that the agent should skip the preflight, Evidence, links, Targets,
 Resolutions, or Execution Dispositions.
 
-The per-Spec `skip_code_evidence_coverage` control is a human UI/REST decision,
-is recorded in Spec history/activity, and bypasses only pending matrix
-coverage. It does not admit an incomplete bounded projection or disable a
-traceability/currentness control that applies independently. Agents can read
-this flag from Spec context but must resolve coverage rather than author the
-skip.
+The effective matrix skip is the OR of the Board-level
+`skip_code_evidence_coverage_global` control and the per-Spec
+`skip_code_evidence_coverage` control. The Board setting applies to every Spec;
+the local flag remains recorded in Spec history/activity. Both are human
+UI/REST decisions and bypass only pending matrix coverage. They do not admit an
+incomplete bounded projection or disable a traceability/currentness control
+that applies independently. The governed agent workflow reads these controls
+and remediates coverage; skip changes remain human UI/REST decisions.
 
 Code Traceability and Spec Validation have independent lifecycles. Submitting
 or revoking an Investigation receipt; linking, unlinking, dispositioning,
@@ -478,7 +480,7 @@ remediation. Common branches:
 - `code_investigation_subject_version_conflict`: refetch full context;
 - `code_evidence_disposition_required`: link or disposition pending Evidence;
   an authorized human may explicitly skip this one matrix coverage obligation
-  in the Code Evidence Matrix tab;
+  in the Code Evidence Matrix tab or for the Board in Menu → Board;
 - `implementation_target_resolution_outdated`: rerun the external preflight;
 - `implementation_overlap_blocking`: add dependency or acknowledge the exact
   current pair;

@@ -49,7 +49,7 @@ from okto_pulse.core.domain.code_traceability import (
     WorkspaceReproducibilityClaim,
     code_investigation_receipt_currentness,
 )
-from okto_pulse.core.models.schemas import CodeTraceabilitySettings
+from okto_pulse.core.models.schemas import BoardSettings, CodeTraceabilitySettings
 from okto_pulse.core.services.code_investigation import (
     CodeInvestigationService,
     effective_required_capabilities_for_subject,
@@ -59,6 +59,7 @@ from okto_pulse.core.services.code_investigation import (
 from okto_pulse.core.services.code_traceability_gate import (
     CodeTraceabilityGateEvaluator,
     CodeTraceabilityGatePhase,
+    resolve_code_evidence_coverage_skip,
 )
 from okto_pulse.core.services.traceability import project_code_traceability_report
 from test_code_traceability_application import (
@@ -74,6 +75,38 @@ from test_code_traceability_application import (
 
 
 UTC = timezone.utc
+
+
+def test_code_evidence_coverage_skip_resolves_board_then_spec() -> None:
+    local_skip = SimpleNamespace(skip_code_evidence_coverage=True)
+    no_local_skip = SimpleNamespace(skip_code_evidence_coverage=False)
+
+    defaults = BoardSettings()
+    assert defaults.skip_code_evidence_coverage_global is False
+    assert (
+        defaults.model_dump(mode="json")["skip_code_evidence_coverage_global"] is False
+    )
+    assert (
+        resolve_code_evidence_coverage_skip(
+            board_settings=defaults,
+            spec=no_local_skip,
+        )
+        is False
+    )
+    assert (
+        resolve_code_evidence_coverage_skip(
+            board_settings=defaults,
+            spec=local_skip,
+        )
+        is True
+    )
+    assert (
+        resolve_code_evidence_coverage_skip(
+            board_settings={"skip_code_evidence_coverage_global": True},
+            spec=no_local_skip,
+        )
+        is True
+    )
 
 
 async def _accepted(
@@ -1291,6 +1324,33 @@ async def test_spec_code_evidence_coverage_is_deterministic_and_skippable(
     assert transition.allowed is True
     assert transition.evidence_coverage_skipped is True
 
+    subject.skip_code_evidence_coverage = False
+    global_board = SimpleNamespace(
+        settings={
+            "code_traceability": {"mode": "blocking"},
+            "skip_code_evidence_coverage_global": True,
+        }
+    )
+    globally_skipped = await evaluate_code_evidence_coverage_gate(
+        object(), board=global_board, spec=subject, enforce=True
+    )
+    assert globally_skipped.allowed is True
+    assert globally_skipped.evidence_coverage_skipped is True
+    assert globally_skipped.evidence_coverage.pending_ids == ("evidence-pending",)
+
+    global_transition = await evaluate_code_traceability_transition(
+        object(),
+        board=global_board,
+        subject=subject,
+        subject_type=CodeTraceabilitySubjectType.SPEC,
+        from_status="draft",
+        to_status="review",
+        enforce=True,
+    )
+    assert global_transition is not None
+    assert global_transition.allowed is True
+    assert global_transition.evidence_coverage_skipped is True
+
 
 @pytest.mark.asyncio
 async def test_spec_code_evidence_skip_does_not_mask_incomplete_projection(
@@ -1334,11 +1394,16 @@ async def test_spec_code_evidence_skip_does_not_mask_incomplete_projection(
         id="spec-1",
         board_id="board-1",
         version=5,
-        skip_code_evidence_coverage=True,
+        skip_code_evidence_coverage=False,
     )
     with pytest.raises(CodeTraceabilityContractError) as blocked:
         await evaluate_code_evidence_coverage_gate(
-            object(), board=SimpleNamespace(settings={}), spec=subject, enforce=True
+            object(),
+            board=SimpleNamespace(
+                settings={"skip_code_evidence_coverage_global": True}
+            ),
+            spec=subject,
+            enforce=True,
         )
     assert blocked.value.code == "code_traceability_projection_incomplete"
 
@@ -1365,12 +1430,15 @@ async def test_spec_code_evidence_skip_does_not_mask_read_adapter_failure(
         id="spec-1",
         board_id="board-1",
         version=5,
-        skip_code_evidence_coverage=True,
+        skip_code_evidence_coverage=False,
+    )
+    global_board = SimpleNamespace(
+        settings={"skip_code_evidence_coverage_global": True}
     )
 
     with pytest.raises(CodeTraceabilityContractError) as blocked:
         await evaluate_code_evidence_coverage_gate(
-            object(), board=SimpleNamespace(settings={}), spec=subject, enforce=True
+            object(), board=global_board, spec=subject, enforce=True
         )
 
     assert blocked.value.code == "code_investigation_currentness_unknown"
@@ -1388,7 +1456,7 @@ async def test_spec_code_evidence_skip_does_not_mask_read_adapter_failure(
     )
     with pytest.raises(RuntimeError, match="internal composition defect"):
         await evaluate_code_evidence_coverage_gate(
-            object(), board=SimpleNamespace(settings={}), spec=subject, enforce=True
+            object(), board=global_board, spec=subject, enforce=True
         )
 
 

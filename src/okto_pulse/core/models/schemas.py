@@ -3825,16 +3825,12 @@ def project_task_validation_public(
         if merged.get(alias) is None and merged.get(canonical) is not None:
             merged[alias] = merged[canonical]
     if merged.get("outcome") is None and merged.get("verdict") in {"pass", "fail"}:
-        merged["outcome"] = (
-            "success" if merged["verdict"] == "pass" else "failed"
-        )
+        merged["outcome"] = "success" if merged["verdict"] == "pass" else "failed"
     if merged.get("verdict") is None and merged.get("outcome") in {
         "success",
         "failed",
     }:
-        merged["verdict"] = (
-            "pass" if merged["outcome"] == "success" else "fail"
-        )
+        merged["verdict"] = "pass" if merged["outcome"] == "success" else "fail"
     merged.setdefault("threshold_violations", [])
     merged.setdefault("completion_gate_failures", [])
     if replayed is not None:
@@ -4158,6 +4154,9 @@ class BoardSettings(BaseModel):
     )
     skip_trs_coverage_global: bool = (
         False  # if True, all specs bypass TR→Task coverage checks
+    )
+    skip_code_evidence_coverage_global: bool = (
+        False  # if True, all specs bypass Code Evidence Matrix coverage checks
     )
     skip_contract_coverage_global: bool = (
         False  # if True, all specs bypass API contract coverage checks

@@ -137,6 +137,7 @@ from okto_pulse.core.services.code_traceability_gate import (
     CodeTraceabilityProjection,
     CodeTraceabilityProjectionService,
     extract_code_evidence_references,
+    resolve_code_evidence_coverage_skip,
     resolve_code_traceability_settings,
 )
 from okto_pulse.core.services.code_traceability_observability import (
@@ -210,6 +211,7 @@ class GetImplementationTargetCommand:
 @dataclass(frozen=True, slots=True)
 class _ResolvedPolicy:
     settings: CodeTraceabilitySettings
+    board_settings: object
 
     @property
     def minimum_trust(self) -> CodeInvestigationTrustLevel:
@@ -257,7 +259,7 @@ async def _load_policy(
         raise CodeTraceabilityLocked(
             details={"reason": "board_policy_invalid"}
         ) from exc
-    return _ResolvedPolicy(settings=settings)
+    return _ResolvedPolicy(settings=settings, board_settings=raw_settings)
 
 
 async def _authorize(
@@ -416,10 +418,7 @@ async def _require_evidence_card_parent_mutable(
         board_id=board_id,
         evidence_id=evidence_id,
     )
-    if (
-        evidence is None
-        or evidence.parent_type is not CodeTraceabilitySubjectType.CARD
-    ):
+    if evidence is None or evidence.parent_type is not CodeTraceabilitySubjectType.CARD:
         return evidence
     card = await _load_subject(
         board_id=board_id,
@@ -491,7 +490,12 @@ async def _execution_card_version_or_replay(
         subject_id=command.card_id,
         uow=uow,
     )
-    if str(getattr(getattr(card, "status", None), "value", getattr(card, "status", ""))).lower() == "rejected":
+    if (
+        str(
+            getattr(getattr(card, "status", None), "value", getattr(card, "status", ""))
+        ).lower()
+        == "rejected"
+    ):
         raise ImplementationTargetInvalid(
             details={"reason": "card_rejected_rework_handoff_required"}
         )
@@ -2250,7 +2254,10 @@ class GetCodeTraceabilityProjectionUseCase:
             ),
             skip_evidence_coverage=(
                 query.subject_type is CodeTraceabilitySubjectType.SPEC
-                and bool(getattr(subject, "skip_code_evidence_coverage", False))
+                and resolve_code_evidence_coverage_skip(
+                    board_settings=policy.board_settings,
+                    spec=subject,
+                )
             ),
         )
 

@@ -223,6 +223,7 @@ from okto_pulse.core.services.code_traceability_gate import (
     TargetEntityCoverage,
     extract_code_evidence_references,
     phases_for_transition,
+    resolve_code_evidence_coverage_skip,
     resolve_code_traceability_settings,
 )
 from okto_pulse.core.services.critical_context_guard import (
@@ -595,7 +596,12 @@ async def evaluate_code_traceability_transition(
         ),
         skip_evidence_coverage=(
             subject_type is CodeTraceabilitySubjectType.SPEC
-            and bool(getattr(subject, "skip_code_evidence_coverage", False))
+            and resolve_code_evidence_coverage_skip(
+                board_settings=(
+                    getattr(board, "settings", None) if board is not None else None
+                ),
+                spec=subject,
+            )
         ),
     )
     if enforce:
@@ -614,9 +620,9 @@ async def evaluate_code_evidence_coverage_gate(
 
     Unlike the board-wide Code Traceability posture, this is an ordinary Spec
     coverage gate: pending inherited Evidence blocks validation by default and
-    only the per-Spec, human-authored skip can bypass that coverage obligation.
-    Loading a complete server-owned projection remains mandatory even when the
-    coverage obligation is skipped.
+    the board-wide or per-Spec, human-authored skip can bypass that coverage
+    obligation. Loading a complete server-owned projection remains mandatory
+    even when the coverage obligation is skipped.
     """
 
     board_id = getattr(spec, "board_id", None)
@@ -669,8 +675,11 @@ async def evaluate_code_evidence_coverage_gate(
     evaluation = projection_service.project_context(
         context,
         deterministic_policy,
-        skip_evidence_coverage=bool(
-            getattr(spec, "skip_code_evidence_coverage", False)
+        skip_evidence_coverage=resolve_code_evidence_coverage_skip(
+            board_settings=(
+                getattr(board, "settings", None) if board is not None else None
+            ),
+            spec=spec,
         ),
     ).gate_readiness
     if enforce:
@@ -5707,7 +5716,7 @@ class CardService:
         The board's Agent-mediated Code Traceability mode remains responsible
         for its broader advisory/blocking policy.  Matrix coverage is a
         deterministic Spec validation prerequisite and is bypassed only by the
-        per-Spec ``skip_code_evidence_coverage`` flag.
+        effective board-wide/per-Spec Code Evidence coverage skip.
         """
 
         return await evaluate_code_evidence_coverage_gate(

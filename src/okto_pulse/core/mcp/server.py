@@ -154,6 +154,9 @@ from okto_pulse.core.services.main import (
     TopicOperationError,
     scenario_has_authenticated_required_evidence,
 )
+from okto_pulse.core.services.code_traceability_gate import (
+    resolve_code_evidence_coverage_skip,
+)
 from okto_pulse.core.services.card_operational_freeze import (
     require_card_operational_mutation_allowed,
 )
@@ -10741,6 +10744,18 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
         except EntityNotFoundError:
             return json.dumps({"error": "Spec not found"})
 
+        board = await uow.services.boards.get_board(board_id)
+        board_settings = getattr(board, "settings", None) if board is not None else None
+        board_code_evidence_skip = bool(
+            board_settings.get("skip_code_evidence_coverage_global", False)
+            if isinstance(board_settings, Mapping)
+            else getattr(
+                board_settings,
+                "skip_code_evidence_coverage_global",
+                False,
+            )
+        )
+
         payload = {
             "id": spec.id,
             "board_id": spec.board_id,
@@ -10767,6 +10782,13 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             "skip_or_coverage": bool(getattr(spec, "skip_or_coverage", False)),
             "skip_code_evidence_coverage": bool(
                 getattr(spec, "skip_code_evidence_coverage", False)
+            ),
+            "skip_code_evidence_coverage_global": board_code_evidence_skip,
+            "skip_code_evidence_coverage_effective": (
+                resolve_code_evidence_coverage_skip(
+                    board_settings=board_settings,
+                    spec=spec,
+                )
             ),
             "status": spec.status.value,
             **project_cancellation(spec),
@@ -10890,6 +10912,17 @@ async def okto_pulse_get_spec_context(
             ).spec
         except EntityNotFoundError:
             return json.dumps({"error": "Spec not found"})
+        board = await uow.services.boards.get_board(board_id)
+        board_settings = getattr(board, "settings", None) if board is not None else None
+        board_code_evidence_skip = bool(
+            board_settings.get("skip_code_evidence_coverage_global", False)
+            if isinstance(board_settings, Mapping)
+            else getattr(
+                board_settings,
+                "skip_code_evidence_coverage_global",
+                False,
+            )
+        )
         if _inc_kb:
             from okto_pulse.core.application.effective_knowledge_read import (
                 project_effective_knowledge,
@@ -10957,6 +10990,13 @@ async def okto_pulse_get_spec_context(
             "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", True),
             "skip_code_evidence_coverage": getattr(
                 spec, "skip_code_evidence_coverage", False
+            ),
+            "skip_code_evidence_coverage_global": board_code_evidence_skip,
+            "skip_code_evidence_coverage_effective": (
+                resolve_code_evidence_coverage_skip(
+                    board_settings=board_settings,
+                    spec=spec,
+                )
             ),
             "skip_qualitative_validation": getattr(
                 spec, "skip_qualitative_validation", False
@@ -12318,9 +12358,7 @@ async def _load_mcp_spec_card_for_link(
             operation="link_card_traceability",
         )
     except CardOperationError as exc:
-        return None, None, json.dumps(
-            {"error": exc.code, **exc.to_dict(), **exc.facts}
-        )
+        return None, None, json.dumps({"error": exc.code, **exc.to_dict(), **exc.facts})
     return spec, card, None
 
 

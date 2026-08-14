@@ -497,19 +497,21 @@ runs during `okto_pulse_submit_spec_validation`, direct
 - each item to have at least one current link to the applicable Spec, FR, TR,
   AC, BR, Decision, API Contract, IR, OR, or Test Scenario, or one explicit
   disposition for this Spec version;
-- `evidence_disposition_coverage_pct = 100`, unless the human-authored
-  `skip_code_evidence_coverage` flag is active.
+- `evidence_disposition_coverage_pct = 100`, unless the effective human-authored
+  skip is active: `skip_code_evidence_coverage_global` on the Board OR
+  `skip_code_evidence_coverage` on the Spec.
 
 Evidence remains a factual historical snapshot. The Spec remains the normative
 artifact, and linking or disposition does not rewrite either artifact. The
-audited per-Spec skip is changed by a human through the Code Evidence Matrix
-UI/REST surface and bypasses only `code_evidence_disposition_required`; it does
-not admit an incomplete bounded projection and does not disable separately
-applicable traceability/currentness controls. Historical absent flags resolve
-to `false`. An authenticated external agent performs source access checks and
-deterministic investigation before submission. Pulse Core validates the
-receipt and Community persists/projects it; neither reads a repository to
-satisfy the gate.
+Board skip is configured in Menu → Board and applies to every Spec; the audited
+per-Spec skip is changed through the Code Evidence Matrix surface. Resolution
+matches the other coverage gates: `effective_skip = board_global OR spec_local`.
+Either flag bypasses only `code_evidence_disposition_required`; neither admits
+an incomplete bounded projection nor disables separately applicable
+traceability/currentness controls. Historical absent flags resolve to `false`.
+An authenticated external agent performs source access checks and deterministic
+investigation before submission. Pulse Core validates the receipt and Community
+persists/projects it; neither reads a repository to satisfy the gate.
 
 For the broader Code Traceability posture,
 historical absent, `null`, or `off` settings resolve to the default Advisory
