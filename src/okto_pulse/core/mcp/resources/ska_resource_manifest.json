@@ -43,12 +43,12 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "50836606501ee481285b99136378219f34f1088684026d8d5834e781b9919899",
+  "manifest_sha256": "0d777bfe100e0dadb5eaea007d6ca6fef5d4ed11b8842922218ecd501cee8821",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
     {
-      "content_sha256": "9c0665c8b64929aed676bf10ae05d834fe8e70cf6086d17436cf3c8ed4f84a9a",
+      "content_sha256": "f331ef09fbd93e68e93ad372469ba56551f9a3fa13895a0dd1f125661099f864",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
@@ -90,7 +90,7 @@
       "uri": "okto-pulse://reference/destructive_ops"
     },
     {
-      "content_sha256": "3fe2afa157f23b9bde5bb808219ce4f553a5ed2b98ba97024f8df5ddfbee499c",
+      "content_sha256": "667309a4d036c5a944172f1cfc35599767b538f3a856a7a83e0f23356c984162",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/kg-health",
@@ -195,7 +195,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "dc8de41aacc0bf1fc0dda3d94f84f3bad23215e7401d27896ddf066f6f267a10",
+      "content_sha256": "1a4b23ac49bd29a6e934a11eae2fc96047c1114fc91c5e10fdd6b252b897449b",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/tool-docs/spec",
@@ -287,7 +287,7 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "facc8026dd9138e6cb5dcc18acb3ff0b018330bd4933b49c7ec13a9ab5790d5f",
+      "content_sha256": "a651bf81fc21bd31bb3700409ef5ba7699fe618b76d61072932846b6499bc72c",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
@@ -489,7 +489,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "347ded7f528aa666f7c873d92a0a08a1879bcbea725ae3f0f7a4c4f34be8b202",
+      "content_sha256": "a01f43d8a50c0502f50d8648b1ac22a8eb753071d3e1efb3a377ee514f42ec97",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",

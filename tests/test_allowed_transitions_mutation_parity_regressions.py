@@ -28,6 +28,10 @@ from okto_pulse.core.domain.enums import (
     SpecStatus,
     SprintStatus,
 )
+from okto_pulse.core.domain.code_traceability import (
+    CodeInvestigationCurrentnessUnknown,
+    CodeTraceabilityContractError,
+)
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.kg.cognitive_closeout_gate import (
     ELIGIBLE_CLOSEOUT_ENTITY_TYPES,
@@ -114,6 +118,196 @@ def _install_cognitive_block(services, service_name: str) -> None:
             "cognitive_consolidation_pending: done transition blocked (1)"
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("code-evidence-preview-board")
+    spec_id = _id("code-evidence-preview-spec")
+    await _persist(
+        db_factory,
+        _board(
+            board_id,
+            settings={
+                "require_spec_validation": False,
+                "code_traceability": {"mode": "advisory"},
+            },
+        ),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Code Evidence coverage preview",
+            status=SpecStatus.APPROVED,
+            created_by=USER_ID,
+            decisions=[
+                {
+                    "id": "decision-1",
+                    "title": "Use the current architecture",
+                    "status": "active",
+                    "linked_task_ids": ["traceability-placeholder"],
+                }
+            ],
+        ),
+    )
+
+    async def blocked(_service, _spec, _board):
+        raise CodeTraceabilityContractError(
+            "code_evidence_disposition_required",
+            "Every active inherited Evidence needs a link or final disposition.",
+        )
+
+    monkeypatch.setattr(
+        CardService,
+        "check_code_evidence_coverage",
+        blocked,
+    )
+    async with db_factory() as db:
+        preview = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            to_status="validated",
+        )
+        with pytest.raises(CodeTraceabilityContractError) as mutation:
+            await SpecService(db).move_spec(
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.VALIDATED),
+            )
+
+    assert preview.blocked_reason is not None
+    assert preview.blocked_reason.startswith("code_evidence_disposition_required:")
+    assert mutation.value.code == "code_evidence_disposition_required"
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("code-evidence-start-board")
+    spec_id = _id("code-evidence-start-spec")
+    await _persist(
+        db_factory,
+        _board(board_id, settings={"code_traceability": {"mode": "advisory"}}),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Code Evidence start coverage",
+            status=SpecStatus.VALIDATED,
+            created_by=USER_ID,
+            skip_qualitative_validation=True,
+            decisions=[
+                {
+                    "id": "decision-1",
+                    "title": "Use the current architecture",
+                    "status": "active",
+                    "linked_task_ids": ["traceability-placeholder"],
+                }
+            ],
+        ),
+    )
+
+    async def blocked(_service, _spec, _board):
+        raise CodeTraceabilityContractError(
+            "code_evidence_disposition_required",
+            "Every active inherited Evidence needs a link or final disposition.",
+        )
+
+    monkeypatch.setattr(
+        CardService,
+        "check_code_evidence_coverage",
+        blocked,
+    )
+    async with db_factory() as db:
+        preview = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            to_status="in_progress",
+        )
+        with pytest.raises(CodeTraceabilityContractError) as mutation:
+            await SpecService(db).move_spec(
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.IN_PROGRESS),
+            )
+
+    assert preview.blocked_reason is not None
+    assert preview.blocked_reason.startswith("code_evidence_disposition_required:")
+    assert mutation.value.code == "code_evidence_disposition_required"
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("code-evidence-technical-failure-board")
+    spec_id = _id("code-evidence-technical-failure-spec")
+    await _persist(
+        db_factory,
+        _board(
+            board_id,
+            settings={
+                "require_spec_validation": False,
+                "code_traceability": {"mode": "advisory"},
+            },
+        ),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Code Evidence technical failure",
+            status=SpecStatus.APPROVED,
+            created_by=USER_ID,
+            skip_code_evidence_coverage=True,
+            decisions=[
+                {
+                    "id": "decision-1",
+                    "title": "Use the current architecture",
+                    "status": "active",
+                    "linked_task_ids": ["traceability-placeholder"],
+                }
+            ],
+        ),
+    )
+
+    async def unavailable(_service, spec, _board):
+        assert spec.skip_code_evidence_coverage is True
+        raise CodeInvestigationCurrentnessUnknown(
+            details={"reason": "code_traceability_read_adapter_unavailable"}
+        )
+
+    monkeypatch.setattr(
+        CardService,
+        "check_code_evidence_coverage",
+        unavailable,
+    )
+    async with db_factory() as db:
+        preview = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            to_status="validated",
+        )
+        with pytest.raises(CodeInvestigationCurrentnessUnknown) as mutation:
+            await SpecService(db).move_spec(
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.VALIDATED),
+            )
+
+    assert preview.blocked_reason is not None
+    assert preview.blocked_reason.startswith("code_investigation_currentness_unknown:")
+    assert mutation.value.details == {
+        "reason": "code_traceability_read_adapter_unavailable"
+    }
 
 
 @pytest.mark.asyncio

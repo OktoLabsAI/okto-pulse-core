@@ -200,7 +200,7 @@ repository themselves.
 | `code_evidence_receipt_mismatch` | Evidence does not match the accepted receipt, head, or current subject. | Run a current preflight and bind Evidence to its exact receipt. |
 | `code_evidence_immutable` | Historical Evidence was edited in place. | Create a new Evidence item that supersedes the original. |
 | `code_evidence_attestation_required` | Policy requires Evidence linked to an accepted receipt. | Submit a current external-agent receipt, then the Evidence. |
-| `code_evidence_disposition_required` | Inherited Evidence remains pending. | Link it to applicable Spec entities or record an explicit disposition. |
+| `code_evidence_disposition_required` | Inherited Evidence remains pending, so Code Evidence Matrix coverage is below 100%. | Link it to applicable Spec entities or record an explicit disposition. An authorized human can auditably skip only this coverage obligation in the Code Evidence Matrix tab. |
 | `code_evidence_link_invalid` | The Spec entity or lineage is invalid. | Re-read full Spec context and link to a current supported entity. |
 | `implementation_target_invalid` | The semantic selector is incoherent. | Correct the selector and preserve its logical source scope. |
 | `implementation_target_resolution_required` | A required Target has no resolution. | Have the agent externally re-evaluate it and submit a resolution receipt. |

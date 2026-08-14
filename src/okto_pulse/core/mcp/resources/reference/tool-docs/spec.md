@@ -536,7 +536,8 @@ Returns:
 Submit a Spec Validation Gate record for a spec in 'approved' status.
 
 This is the entry point for the Spec Validation Gate — a semantic quality
-gate that runs AFTER the existing deterministic coverage gates (AC/FR/TR/Contract).
+gate that runs AFTER the existing deterministic coverage gates
+(AC/FR/TR/Contract/Code Evidence Matrix).
 Use this AFTER the Spec is saturated on detail. Read
 `okto-pulse://workflows/specs` for the authoring/evaluator loop and
 `okto-pulse://reference/spec_gates` under **Canonical Spec Validation scoring rubric**
@@ -600,6 +601,11 @@ Coverage contract:
     FR coverage is computed from business_rules[].linked_requirements. Direct
     task links on functional_requirements[].linked_task_ids are traceability
     only and do not close fr_coverage_pct.
+    Code Evidence Matrix coverage is 100% only when every active inherited
+    Evidence item has a current Spec link or final disposition. It is enforced
+    even when Code Traceability mode is advisory, unless an authorized human
+    set the audited `skip_code_evidence_coverage` flag in the matrix UI/REST
+    surface. Agents can read but do not author that skip.
 
 Returns:
     JSON with validation result, outcome, threshold violations, and resolved thresholds.

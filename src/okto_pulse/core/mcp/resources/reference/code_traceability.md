@@ -386,7 +386,8 @@ Code Traceability is complete for the current work only when:
 - each Evidence record has a meaningful claim, strongest applicable selector,
   current accepted receipt, and recomputable source digest;
 - every inherited Evidence item on a Spec is linked to stable normative IDs or
-  has a final disposition, with disposition coverage at `100%`;
+  has a final disposition, with disposition coverage at `100%` (unless an
+  authorized human recorded the audited per-Spec matrix coverage skip);
 - every material Card action has a required Implementation Target connected to
   its Spec intent and baseline Evidence when available;
 - every active required Target has a current Resolution before execution and
@@ -396,10 +397,18 @@ Code Traceability is complete for the current work only when:
 
 ## Advisory mode is non-blocking, not no-op
 
-`mode="advisory"` permits the lifecycle transition while returning unmet Code
-Traceability conditions as non-blocking warnings. It does **not** mean that the
-agent should skip the preflight, Evidence, links, Targets, Resolutions, or
-Execution Dispositions.
+`mode="advisory"` makes the broader Code Traceability policy findings
+non-blocking warnings. It does **not** disable the deterministic Code Evidence
+Matrix coverage gate used by Spec validation/start, and it does **not** mean
+that the agent should skip the preflight, Evidence, links, Targets,
+Resolutions, or Execution Dispositions.
+
+The per-Spec `skip_code_evidence_coverage` control is a human UI/REST decision,
+is recorded in Spec history/activity, and bypasses only pending matrix
+coverage. It does not admit an incomplete bounded projection or disable a
+traceability/currentness control that applies independently. Agents can read
+this flag from Spec context but must resolve coverage rather than author the
+skip.
 
 Pulse never reconstructs omitted source facts. Without persisted Technical
 Evidence and Technical Anchors, downstream humans and agents cannot reliably
@@ -459,6 +468,8 @@ remediation. Common branches:
 - `code_investigation_head_conflict`: start a fresh preflight on the new head;
 - `code_investigation_subject_version_conflict`: refetch full context;
 - `code_evidence_disposition_required`: link or disposition pending Evidence;
+  an authorized human may explicitly skip this one matrix coverage obligation
+  in the Code Evidence Matrix tab;
 - `implementation_target_resolution_outdated`: rerun the external preflight;
 - `implementation_overlap_blocking`: add dependency or acknowledge the exact
   current pair;

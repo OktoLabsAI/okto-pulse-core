@@ -55,6 +55,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationSubmissionLimitExceeded,
     CodeInvestigationTrustLevel,
     CodeTraceabilityLifecycleStatus,
+    CodeTraceabilityContext,
     CodeTraceabilityContextScope,
     CodeTraceabilityPage,
     CodeTraceabilityProjectionProfile,
@@ -2448,6 +2449,7 @@ class FakeSpecService:
             board_id="board-1",
             version=7,
             status="draft",
+            skip_code_evidence_coverage=True,
             refinement_id="refinement-1",
             source_refinement_snapshot_id="snapshot-3",
             source_refinement_version=3,
@@ -2671,6 +2673,61 @@ async def test_aggregate_projection_requires_every_leaf_read_permission() -> Non
             uow=uow,  # type: ignore[arg-type]
         )
     assert projection.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_spec_projection_propagates_code_evidence_coverage_skip() -> None:
+    marker = object()
+
+    class ProjectionSpy:
+        def __init__(self) -> None:
+            self.skip_evidence_coverage = None
+
+        async def load_context(self, query, **_kwargs):
+            return CodeTraceabilityContext(
+                board_id=query.board_id,
+                subject_type=query.subject_type,
+                subject_id=query.subject_id,
+                subject_version=query.subject_version,
+                profile=query.profile,
+                context_scope=query.context_scope,
+            )
+
+        def project_context(self, _context, _settings, **kwargs):
+            self.skip_evidence_coverage = kwargs["skip_evidence_coverage"]
+            return marker
+
+    investigations = FakeInvestigationStore()
+    traceability = FakeTraceabilityStore(investigations)
+    projection = ProjectionSpy()
+    result = await GetCodeTraceabilityProjectionUseCase(
+        projection,  # type: ignore[arg-type]
+    ).execute(
+        CodeTraceabilityProjectionQuery(
+            board_id="board-1",
+            subject_type=CodeTraceabilitySubjectType.SPEC,
+            subject_id="spec-1",
+            subject_version=7,
+            profile=CodeTraceabilityProjectionProfile.FULL,
+            context_scope=CodeTraceabilityContextScope.GATE,
+        ),
+        actor=ActorContext(
+            "user-1",
+            "rest",
+            actor_kind="user",
+            board_id="board-1",
+            permissions=(
+                "code_traceability.investigation.read",
+                "code_traceability.evidence.read",
+                "code_traceability.target.read",
+                "code_traceability.overlap.read",
+            ),
+        ),
+        uow=FakeUnitOfWork(investigations, traceability),  # type: ignore[arg-type]
+    )
+
+    assert result is marker
+    assert projection.skip_evidence_coverage is True
 
 
 @pytest.mark.asyncio

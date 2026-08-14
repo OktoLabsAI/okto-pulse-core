@@ -475,26 +475,36 @@ The `resolved_from` field in `validation_config` tells you which level provided 
 - `okto_pulse_list_spec_validations(board_id, spec_id)` — validation gate history.
 - `okto_pulse_list_task_validations(board_id, card_id)` — task-level validation history.
 
-## Code Evidence disposition gate
+## Code Evidence Matrix coverage gate
 
-When `code_traceability.mode="blocking"`, a Spec cannot leave authoring with
-inherited Code Evidence still pending. The deterministic gate requires:
+A Spec cannot validate or begin execution with inherited Code Evidence still
+pending. This deterministic coverage gate is independent of the board-wide
+`code_traceability.mode`: Advisory still governs broader traceability findings,
+while matrix coverage is enforced like the other Spec coverage dimensions. It
+runs during `okto_pulse_submit_spec_validation`, direct
+`approved → validated`, and again during `validated → in_progress`. It requires:
 
 - every inherited Evidence item to resolve from the current Spec lineage;
 - each item to have at least one current link to the applicable Spec, FR, TR,
   AC, BR, Decision, API Contract, IR, OR, or Test Scenario, or one explicit
   disposition for this Spec version;
-- `evidence_disposition_coverage_pct = 100`;
-- any receipt required by policy to be accepted, current, non-revoked, and
-  conflict-free.
+- `evidence_disposition_coverage_pct = 100`, unless the human-authored
+  `skip_code_evidence_coverage` flag is active.
 
 Evidence remains a factual historical snapshot. The Spec remains the normative
-artifact, and linking or disposition does not rewrite either artifact. In
-`advisory` mode the same findings are returned without independently blocking;
-historical absent, `null`, or `off` settings resolve to this default Advisory
-behavior. An authenticated external agent performs source access checks and
+artifact, and linking or disposition does not rewrite either artifact. The
+audited per-Spec skip is changed by a human through the Code Evidence Matrix
+UI/REST surface and bypasses only `code_evidence_disposition_required`; it does
+not admit an incomplete bounded projection and does not disable separately
+applicable traceability/currentness controls. Historical absent flags resolve
+to `false`. An authenticated external agent performs source access checks and
 deterministic investigation before submission. Pulse Core validates the
 receipt and Community persists/projects it; neither reads a repository to
 satisfy the gate.
+
+For the broader Code Traceability posture,
+historical absent, `null`, or `off` settings resolve to the default Advisory
+behavior; that compatibility rule does not disable the deterministic matrix
+coverage gate described above.
 
 Read `okto-pulse://reference/code-traceability` before operating this domain.

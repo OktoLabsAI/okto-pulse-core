@@ -10765,6 +10765,9 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             ),
             "skip_ir_coverage": bool(getattr(spec, "skip_ir_coverage", False)),
             "skip_or_coverage": bool(getattr(spec, "skip_or_coverage", False)),
+            "skip_code_evidence_coverage": bool(
+                getattr(spec, "skip_code_evidence_coverage", False)
+            ),
             "status": spec.status.value,
             **project_cancellation(spec),
             "edition": int(getattr(spec, "edition", 1) or 1),
@@ -10952,6 +10955,9 @@ async def okto_pulse_get_spec_context(
             "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
             "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
             "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", True),
+            "skip_code_evidence_coverage": getattr(
+                spec, "skip_code_evidence_coverage", False
+            ),
             "skip_qualitative_validation": getattr(
                 spec, "skip_qualitative_validation", False
             ),
@@ -24519,6 +24525,7 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_create_default_board_config_version",
         "okto_pulse_get_spec_context",
         "okto_pulse_kg_evaluate_cognitive_readiness",
+        "okto_pulse_ask",
         "okto_pulse_ask_spec_choice_question",
         "okto_pulse_link_task",
         "okto_pulse_kg_list_cognitive_pending_items",
@@ -24556,6 +24563,14 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
 )
 
 _LAZY_COMPACT_DESCRIPTION_OVERRIDES = {
+    "okto_pulse_ask": (
+        "Ask Q&A for a work item with structured options. Read "
+        "`okto-pulse://reference/tool-docs/qa` before use."
+    ),
+    "okto_pulse_submit_spec_validation": (
+        "Submit approved Spec validation after coverage gates. Read "
+        "`okto-pulse://reference/tool-docs/spec`."
+    ),
     "okto_pulse_submit_task_validation": (
         "Evaluate a Normal/Bug card in Validation on confidence, completeness, "
         "and drift. An admitted failed assessment or completion gate routes the "

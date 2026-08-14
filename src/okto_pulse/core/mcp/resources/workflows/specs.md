@@ -181,10 +181,13 @@ Every tool that feeds into a coverage gate **automatically returns a `coverage` 
 | `okto_pulse_add_business_rule` | `fr_coverage_pct` + `fr_uncovered_indices` | `fr_coverage_pct = 100` or `skip_rules_coverage = true` |
 | `okto_pulse_link_task(target_type="scenario", ...)` | `scenario_task_linkage_pct` | `scenario_task_linkage_pct = 100` |
 | `okto_pulse_link_task(target_type="rule", ...)` | `br_task_linkage_pct` | `br_task_linkage_pct = 100` |
+| Code Evidence link/disposition tools | `evidence_disposition_coverage.coverage_pct` | `coverage_pct = 100` or `skip_code_evidence_coverage = true` |
 
 **The `skip_*` flags tell you if full coverage is mandatory:**
 - `skip_test_coverage = false` → AC coverage MUST reach 100% before spec can advance
 - `skip_test_coverage = true` → AC coverage is tracked but not enforced
+- `skip_code_evidence_coverage = false` → every inherited Code Evidence item MUST be linked or dispositioned before validation
+- `skip_code_evidence_coverage = true` → coverage stays visible but this matrix obligation is not enforced; this is a human UI/REST control, not an agent remediation tool
 
 **FR coverage source:** `fr_coverage_pct` is computed from `business_rules[].linked_requirements`. Direct links on `functional_requirements[].linked_task_ids` are useful task traceability, but they do not satisfy the FR→BR coverage gate.
 
@@ -200,6 +203,15 @@ Evidence remains factual, immutable, and historical. Before moving a Spec to
 4. Record an explicit disposition for every inherited item that is not
    applicable to this Spec version.
 5. Confirm `evidence_disposition_coverage_pct = 100`.
+
+This matrix is a deterministic validation gate even when the board-wide Code
+Traceability mode is `advisory`. It is checked by Spec Validation, direct
+`approved → validated`, and again before `validated → in_progress`. A human can
+set the audited per-Spec `skip_code_evidence_coverage` control in the Code
+Evidence Matrix tab. That skip suppresses only pending matrix coverage; it does
+not admit an incomplete bounded projection or disable traceability/currentness
+controls that apply independently. Agents must remediate coverage rather than
+attempt to author the human skip.
 
 Each Evidence link/disposition mutates the technical Spec version. Use the
 `spec_version` returned by one successful mutation as the

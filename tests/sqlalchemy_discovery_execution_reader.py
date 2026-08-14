@@ -57,6 +57,9 @@ def _spec_fact(row: Any) -> DiscoverySpecFact:
         skip_decisions_coverage=bool(
             getattr(row, "skip_decisions_coverage", False)
         ),
+        skip_code_evidence_coverage=bool(
+            getattr(row, "skip_code_evidence_coverage", False)
+        ),
     )
 
 

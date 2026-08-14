@@ -53,6 +53,7 @@ from okto_pulse.core.ports.application_persistence import (
     get_application_persistence_port,
 )
 from okto_pulse.core.services.main import (
+    CardService,
     SpecService,
 )
 from okto_pulse.core.services import main as main_service
@@ -433,6 +434,57 @@ class TestStateGuard:
             },
             {"field": "status", "old": "approved", "new": "validated"},
         ]
+
+    async def test_code_evidence_coverage_blocks_submit_before_validation_write(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        from okto_pulse.core.domain.code_traceability import (
+            CodeTraceabilityContractError,
+        )
+
+        await _seed_board(db_factory)
+
+        async def blocked(_service, _spec, _board):
+            raise CodeTraceabilityContractError(
+                "code_evidence_disposition_required",
+                "Every active inherited Evidence needs a link or final disposition.",
+                details={
+                    "reason": "matrix_pending",
+                    "evidence_pending_ids": ["evidence-1", "evidence-2"],
+                    "evidence_disposition_coverage_pct": 0.0,
+                },
+            )
+
+        monkeypatch.setattr(
+            CardService,
+            "check_code_evidence_coverage",
+            blocked,
+        )
+        async with db_factory() as db:
+            service = SpecService(db)
+            with pytest.raises(SpecValidationGateNotReady) as raised:
+                await _submit_spec_validation(
+                    service,
+                    db,
+                    spec_id=SPEC_ID,
+                    reviewer_id=USER_ID,
+                    reviewer_name="Tester",
+                    data=_valid_submit_data(),
+                )
+            spec = await service.get_spec(SPEC_ID)
+
+        assert raised.value.details["reason"] == "code_evidence_disposition_required"
+        assert raised.value.details["technical_reason"] == "matrix_pending"
+        assert raised.value.details["evidence_pending_ids"] == [
+            "evidence-1",
+            "evidence-2",
+        ]
+        assert raised.value.details["evidence_disposition_coverage_pct"] == 0.0
+        assert spec.status == SpecStatus.APPROVED
+        assert spec.current_validation_id is None
+        assert spec.validations in (None, [])
 
     async def test_lost_lifecycle_fence_appends_nothing(
         self,

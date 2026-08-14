@@ -145,6 +145,7 @@ class CodeTraceabilityGateEvaluation:
     target_coverage: TargetEntityCoverage
     receipt_currentness: Mapping[str, str]
     resolution_freshness: Mapping[str, Mapping[str, object]]
+    evidence_coverage_skipped: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -154,6 +155,7 @@ class CodeTraceabilityGateEvaluation:
             "passed": self.passed,
             "blockers": [item.as_dict() for item in self.blockers],
             "evidence_disposition_coverage": self.evidence_coverage.as_dict(),
+            "evidence_coverage_skipped": self.evidence_coverage_skipped,
             "target_entity_coverage": self.target_coverage.as_dict(),
             "receipt_currentness": dict(self.receipt_currentness),
             "resolution_freshness": {
@@ -181,7 +183,10 @@ class CodeTraceabilityProjection:
             result.update(self._detail_payload())
         else:
             result.update(self._full_payload())
-        result["coverage"] = self.gate_readiness.evidence_coverage.as_dict()
+        result["coverage"] = {
+            **self.gate_readiness.evidence_coverage.as_dict(),
+            "skipped": self.gate_readiness.evidence_coverage_skipped,
+        }
         result["target_coverage"] = self.gate_readiness.target_coverage.as_dict()
         result["resolution_freshness"] = dict(self.gate_readiness.resolution_freshness)
         return result
@@ -585,6 +590,7 @@ def _gate_evidence(value: CodeEvidence) -> dict[str, Any]:
     projected.update(
         {
             "investigation_receipt_id": value.investigation_receipt_id,
+            "claim": value.claim,
             "workspace_state": _public_value(value.workspace_state),
             "declared_file_blob_sha256": value.declared_file_blob_sha256,
             "declared_source_content_sha256": value.declared_source_content_sha256,
@@ -776,6 +782,7 @@ class CodeTraceabilityGateEvaluator:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityGateEvaluation:
         phases = phases_for_transition(
             context.subject_type,
@@ -790,6 +797,7 @@ class CodeTraceabilityGateEvaluator:
             dependency_card_ids=dependency_card_ids,
             blocking_card_ids=blocking_card_ids,
             referenced_evidence_ids=referenced_evidence_ids,
+            skip_evidence_coverage=skip_evidence_coverage,
         )
 
     def evaluate(
@@ -802,6 +810,7 @@ class CodeTraceabilityGateEvaluator:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityGateEvaluation:
         if not isinstance(context, CodeTraceabilityContext):
             raise CodeTraceabilityContractError("code_traceability_context_invalid")
@@ -871,13 +880,14 @@ class CodeTraceabilityGateEvaluator:
                 )
             )
         if CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION in selected:
-            blockers.extend(
-                self._spec_disposition_blockers(
-                    context,
-                    settings,
-                    evidence_coverage,
+            if not skip_evidence_coverage:
+                blockers.extend(
+                    self._spec_disposition_blockers(
+                        context,
+                        settings,
+                        evidence_coverage,
+                    )
                 )
-            )
         if CodeTraceabilityGatePhase.CARD_TARGET in selected:
             blockers.extend(
                 self._card_target_blockers(
@@ -928,6 +938,10 @@ class CodeTraceabilityGateEvaluator:
             target_coverage=target_coverage,
             receipt_currentness=receipt_currentness,
             resolution_freshness=resolution_freshness,
+            evidence_coverage_skipped=(
+                skip_evidence_coverage
+                and CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION in selected
+            ),
         )
 
     def project(
@@ -939,6 +953,7 @@ class CodeTraceabilityGateEvaluator:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityProjection:
         inherited = self._inherited_evidence(context)
         direct = tuple(
@@ -959,6 +974,7 @@ class CodeTraceabilityGateEvaluator:
                 dependency_card_ids=dependency_card_ids,
                 blocking_card_ids=blocking_card_ids,
                 referenced_evidence_ids=referenced_evidence_ids,
+                skip_evidence_coverage=skip_evidence_coverage,
             ),
         )
 
@@ -1006,13 +1022,19 @@ class CodeTraceabilityGateEvaluator:
     ) -> tuple[CodeEvidence, ...]:
         if context.source_refinement_id is None:
             return ()
+        inherited_snapshot_version = context.source_refinement_version
+        if inherited_snapshot_version is None:
+            return ()
         return tuple(
             item
             for item in context.evidence
             if item.lifecycle_status is CodeTraceabilityLifecycleStatus.ACTIVE
             and item.parent_type is CodeTraceabilitySubjectType.REFINEMENT
             and item.parent_id == context.source_refinement_id
-            and item.parent_version == context.source_refinement_version
+            # The reader seals membership from the immutable refinement snapshot.
+            # A v4 snapshot may therefore inherit still-active Evidence authored
+            # at v3; equality would silently discard that canonical member.
+            and item.parent_version <= inherited_snapshot_version
         )
 
     def _evidence_coverage(
@@ -1664,6 +1686,7 @@ class CodeTraceabilityProjectionService:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityProjection:
         context = await self.load_context(query, read_port=read_port)
         return self._evaluator.project(
@@ -1673,6 +1696,7 @@ class CodeTraceabilityProjectionService:
             dependency_card_ids=dependency_card_ids,
             blocking_card_ids=blocking_card_ids,
             referenced_evidence_ids=referenced_evidence_ids,
+            skip_evidence_coverage=skip_evidence_coverage,
         )
 
     def project_context(
@@ -1684,6 +1708,7 @@ class CodeTraceabilityProjectionService:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityProjection:
         return self._evaluator.project(
             context,
@@ -1692,6 +1717,7 @@ class CodeTraceabilityProjectionService:
             dependency_card_ids=dependency_card_ids,
             blocking_card_ids=blocking_card_ids,
             referenced_evidence_ids=referenced_evidence_ids,
+            skip_evidence_coverage=skip_evidence_coverage,
         )
 
     async def evaluate_transition(
@@ -1706,6 +1732,7 @@ class CodeTraceabilityProjectionService:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityGateEvaluation:
         context = await self.load_context(query, read_port=read_port)
         return self._evaluator.evaluate_transition(
@@ -1717,6 +1744,7 @@ class CodeTraceabilityProjectionService:
             dependency_card_ids=dependency_card_ids,
             blocking_card_ids=blocking_card_ids,
             referenced_evidence_ids=referenced_evidence_ids,
+            skip_evidence_coverage=skip_evidence_coverage,
         )
 
     def evaluate_transition_context(
@@ -1730,6 +1758,7 @@ class CodeTraceabilityProjectionService:
         dependency_card_ids: tuple[str, ...] = (),
         blocking_card_ids: tuple[str, ...] = (),
         referenced_evidence_ids: tuple[str, ...] = (),
+        skip_evidence_coverage: bool = False,
     ) -> CodeTraceabilityGateEvaluation:
         return self._evaluator.evaluate_transition(
             context,
@@ -1740,6 +1769,7 @@ class CodeTraceabilityProjectionService:
             dependency_card_ids=dependency_card_ids,
             blocking_card_ids=blocking_card_ids,
             referenced_evidence_ids=referenced_evidence_ids,
+            skip_evidence_coverage=skip_evidence_coverage,
         )
 
     def validate_or_raise(

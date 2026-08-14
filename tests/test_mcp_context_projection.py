@@ -1393,6 +1393,7 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
                 status=SpecStatus.IN_PROGRESS,
                 edition=5,
                 created_by=USER_ID,
+                skip_code_evidence_coverage=True,
                 functional_requirements=[{"id": "fr_0", "text": "FR text"}],
             )
         )
@@ -1431,12 +1432,14 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert default["functional_requirements"][0]["text"] == "FR text"
     assert default["edition"] == 5
     assert default["version"] == 1
+    assert default["skip_code_evidence_coverage"] is True
 
     # full preserves the prior payload shape (no projection envelope injected)
     assert "projection" not in full
     assert full["functional_requirements"][0]["text"] == "FR text"
     assert full["edition"] == 5
     assert full["version"] == 1
+    assert full["skip_code_evidence_coverage"] is True
     assert default["code_traceability"]["subject_id"] == spec_id
     assert full["code_traceability"]["subject_id"] == spec_id
     assert "code_traceability" not in legacy

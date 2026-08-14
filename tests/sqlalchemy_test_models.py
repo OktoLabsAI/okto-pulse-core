@@ -869,6 +869,9 @@ class Spec(Base):
     skip_ir_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, spec can move forward without full OR→Task coverage
     skip_or_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_code_evidence_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
     skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # Minimum avg score for qualitative validation (None = use board or default 70)

@@ -979,6 +979,15 @@ class _CoreTestRelationalApplicationAdapter:
 
         return CommunitySqlAlchemySpecDependency(session)
 
+    def code_traceability_read(self, session):
+        """Use the real bounded Code Traceability projection in integration tests."""
+
+        from okto_pulse.community.adapters.sqlalchemy_code_traceability import (
+            CommunitySqlAlchemyCodeTraceabilityStore,
+        )
+
+        return CommunitySqlAlchemyCodeTraceabilityStore(session)
+
     def checklists(self, session):
         class _CreateBoardChecklistStub:
             async def apply_binding_cas(

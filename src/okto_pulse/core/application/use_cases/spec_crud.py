@@ -547,7 +547,11 @@ def _spec_update_permission_requirements(spec, data: SpecUpdate) -> set[str]:
         )
         if "spec.observability_requirements.link_task" in required:
             required.add("card.link_to.or")
-    if {"skip_ir_coverage", "skip_or_coverage"} & fields_set:
+    if {
+        "skip_ir_coverage",
+        "skip_or_coverage",
+        "skip_code_evidence_coverage",
+    } & fields_set:
         required.add("spec.entity.edit_coverage_flags")
 
     return required

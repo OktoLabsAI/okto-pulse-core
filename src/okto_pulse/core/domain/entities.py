@@ -104,6 +104,7 @@ class Spec:
     skip_contract_coverage: bool = False
     skip_ir_coverage: bool = False
     skip_or_coverage: bool = False
+    skip_code_evidence_coverage: bool = False
     skip_qualitative_validation: bool = False
     validation_threshold: int | None = None
     require_task_validation: bool | None = None

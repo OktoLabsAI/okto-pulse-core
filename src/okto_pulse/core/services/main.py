@@ -59,6 +59,7 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCurrentnessUnknown,
     CodeTraceabilityContextScope,
+    CodeTraceabilityContractError,
     CodeTraceabilityEnforcement,
     CodeTraceabilityLifecycleStatus,
     CodeTraceabilityProjectionProfile,
@@ -592,7 +593,86 @@ async def evaluate_code_traceability_transition(
             if subject_type is CodeTraceabilitySubjectType.REFINEMENT
             else ()
         ),
+        skip_evidence_coverage=(
+            subject_type is CodeTraceabilitySubjectType.SPEC
+            and bool(getattr(subject, "skip_code_evidence_coverage", False))
+        ),
     )
+    if enforce:
+        projection_service.validate_or_raise(evaluation)
+    return evaluation
+
+
+async def evaluate_code_evidence_coverage_gate(
+    db: Any,
+    *,
+    board: object | None,
+    spec: object,
+    enforce: bool = False,
+) -> CodeTraceabilityGateEvaluation:
+    """Evaluate the deterministic Spec Code Evidence Matrix coverage gate.
+
+    Unlike the board-wide Code Traceability posture, this is an ordinary Spec
+    coverage gate: pending inherited Evidence blocks validation by default and
+    only the per-Spec, human-authored skip can bypass that coverage obligation.
+    Loading a complete server-owned projection remains mandatory even when the
+    coverage obligation is skipped.
+    """
+
+    board_id = getattr(spec, "board_id", None)
+    spec_id = getattr(spec, "id", None)
+    spec_version = getattr(spec, "version", None)
+    if (
+        not isinstance(board_id, str)
+        or not board_id
+        or not isinstance(spec_id, str)
+        or not spec_id
+        or type(spec_version) is not int
+        or spec_version < 1
+    ):
+        raise CodeInvestigationCurrentnessUnknown(
+            details={
+                "reason": "subject_version_unavailable",
+                "subject_type": CodeTraceabilitySubjectType.SPEC.value,
+            }
+        )
+
+    from okto_pulse.core.ports.relational_application import (
+        RelationalApplicationAdapterMissing,
+        require_relational_application_adapter,
+    )
+
+    try:
+        read_port = require_relational_application_adapter().code_traceability_read(db)
+    except RelationalApplicationAdapterMissing as exc:
+        raise CodeInvestigationCurrentnessUnknown(
+            details={"reason": "code_traceability_read_adapter_unavailable"}
+        ) from exc
+    projection_service = CodeTraceabilityProjectionService()
+    context = await projection_service.load_context(
+        CodeTraceabilityProjectionQuery(
+            board_id=board_id,
+            subject_type=CodeTraceabilitySubjectType.SPEC,
+            subject_id=spec_id,
+            subject_version=spec_version,
+            profile=CodeTraceabilityProjectionProfile.FULL,
+            context_scope=CodeTraceabilityContextScope.GATE,
+        ),
+        read_port=read_port,
+    )
+    policy = resolve_code_traceability_settings(
+        getattr(board, "settings", None) if board is not None else None
+    )
+    deterministic_policy = policy.model_copy(
+        update={"mode": CodeTraceabilityEnforcement.BLOCKING}
+    )
+    evaluation = projection_service.project_context(
+        context,
+        deterministic_policy,
+        skip_evidence_coverage=bool(
+            getattr(spec, "skip_code_evidence_coverage", False)
+        ),
+    ).gate_readiness
     if enforce:
         projection_service.validate_or_raise(evaluation)
     return evaluation
@@ -5617,6 +5697,24 @@ class CardService:
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
+    async def check_code_evidence_coverage(
+        self, spec: "Spec", board: "Board | None"
+    ) -> CodeTraceabilityGateEvaluation:
+        """Require complete inherited Code Evidence disposition coverage.
+
+        The board's Agent-mediated Code Traceability mode remains responsible
+        for its broader advisory/blocking policy.  Matrix coverage is a
+        deterministic Spec validation prerequisite and is bypassed only by the
+        per-Spec ``skip_code_evidence_coverage`` flag.
+        """
+
+        return await evaluate_code_evidence_coverage_gate(
+            self.db,
+            board=board,
+            spec=spec,
+            enforce=True,
+        )
+
     async def check_ac_scenario_coverage(
         self, spec: "Spec", board: "Board | None"
     ) -> None:
@@ -10580,6 +10678,7 @@ class SpecService:
             await card_service.check_task_requirement_links_for_spec(spec, board)
             await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
+            await card_service.check_code_evidence_coverage(spec, board)
 
             # Spec Validation Gate: when enabled, the only path to validated is via
             # submit_spec_validation (which runs the semantic gate). Direct move_spec
@@ -10629,6 +10728,7 @@ class SpecService:
             await card_service.check_task_requirement_links_for_spec(spec, board)
             await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
+            await card_service.check_code_evidence_coverage(spec, board)
 
             # Qualitative validation gate
             auto_validate = (
@@ -11364,6 +11464,7 @@ class SpecService:
             await card_service.check_task_requirement_links_for_spec(spec, board)
             await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
+            await card_service.check_code_evidence_coverage(spec, board)
             resource_gate = ResourceGateService(self.db)
             await resource_gate.validate_or_raise_spec_architecture_validation_resource(
                 spec.board_id,
@@ -11383,6 +11484,15 @@ class SpecService:
             )
         except SpecValidationGateNotReady:
             raise
+        except CodeTraceabilityContractError as exc:
+            traceability_details = dict(exc.details)
+            detail_reason = traceability_details.pop("reason", None)
+            if detail_reason is not None:
+                traceability_details["technical_reason"] = detail_reason
+            raise SpecValidationGateNotReady(
+                str(exc) or "Code Evidence Matrix coverage is not ready.",
+                details={"reason": exc.code, **traceability_details},
+            ) from exc
         except Exception as exc:
             raise SpecValidationGateNotReady(
                 str(exc) or "Spec validation prerequisites are not ready.",

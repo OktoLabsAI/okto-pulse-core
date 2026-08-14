@@ -2248,6 +2248,10 @@ class GetCodeTraceabilityProjectionUseCase:
                 if query.subject_type is CodeTraceabilitySubjectType.REFINEMENT
                 else ()
             ),
+            skip_evidence_coverage=(
+                query.subject_type is CodeTraceabilitySubjectType.SPEC
+                and bool(getattr(subject, "skip_code_evidence_coverage", False))
+            ),
         )
 
 

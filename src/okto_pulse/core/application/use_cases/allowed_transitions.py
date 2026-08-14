@@ -816,6 +816,7 @@ class ListAllowedTransitionsUseCase:
                     await check(spec, board)
                 await card_service.check_decision_presence(spec)
                 await card_service.check_decisions_coverage(spec, board)
+                await card_service.check_code_evidence_coverage(spec, board)
             except ValueError as exc:
                 return self._exception_reason(exc)
 

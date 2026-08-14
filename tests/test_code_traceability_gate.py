@@ -453,7 +453,7 @@ async def test_metadata_only_receipt_uses_same_effective_capabilities_in_gate() 
 
 
 @pytest.mark.asyncio
-async def test_spec_inheritance_is_snapshot_bounded_and_deferred_is_pending() -> None:
+async def test_spec_inheritance_includes_prior_active_evidence_from_snapshot() -> None:
     committed, _service, store, _clock = await _accepted(
         subject_type=CodeTraceabilitySubjectType.REFINEMENT,
         subject_id="refinement-1",
@@ -466,8 +466,8 @@ async def test_spec_inheritance_is_snapshot_bounded_and_deferred_is_pending() ->
     )
     future = _evidence(
         committed.receipt,
-        evidence_id="evidence-v4",
-        parent_version=4,
+        evidence_id="evidence-v5",
+        parent_version=5,
     )
     deferred = CodeEvidenceDisposition(
         id="disposition-1",
@@ -493,8 +493,8 @@ async def test_spec_inheritance_is_snapshot_bounded_and_deferred_is_pending() ->
         evidence=(inherited, future),
         evidence_dispositions=(deferred,),
         source_refinement_id="refinement-1",
-        source_refinement_snapshot_id="snapshot-v3",
-        source_refinement_version=3,
+        source_refinement_snapshot_id="snapshot-v4",
+        source_refinement_version=4,
     )
     evaluator = CodeTraceabilityGateEvaluator(clock=lambda: NOW)
     blocked = evaluator.evaluate(
@@ -516,7 +516,7 @@ async def test_spec_inheritance_is_snapshot_bounded_and_deferred_is_pending() ->
         relation_type=CodeEvidenceSpecRelationType.SUPPORTS,
         rationale="Evidence supports the requirement.",
         evidence_content_sha256=inherited.content_sha256,
-        source_refinement_version=3,
+        source_refinement_version=4,
         spec_version=5,
         created_by="user-1",
         created_at=NOW,
@@ -528,6 +528,18 @@ async def test_spec_inheritance_is_snapshot_bounded_and_deferred_is_pending() ->
     )
     assert passed.allowed is True
     assert passed.evidence_coverage.coverage_pct == 100.0
+
+    skipped = evaluator.evaluate(
+        context,
+        CodeTraceabilitySettings(mode="blocking"),
+        phases=(CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION,),
+        skip_evidence_coverage=True,
+    )
+    assert skipped.allowed is True
+    assert skipped.passed is True
+    assert skipped.evidence_coverage.coverage_pct == 0.0
+    assert skipped.evidence_coverage_skipped is True
+    assert skipped.as_dict()["evidence_coverage_skipped"] is True
 
 
 @pytest.mark.asyncio
@@ -1195,6 +1207,192 @@ async def test_transition_runtime_surfaces_advisory_when_adapter_is_unavailable(
 
 
 @pytest.mark.asyncio
+async def test_spec_code_evidence_coverage_is_deterministic_and_skippable(
+    monkeypatch,
+) -> None:
+    import okto_pulse.core.ports.relational_application as relational_application
+    from okto_pulse.core.services.main import (
+        evaluate_code_evidence_coverage_gate,
+        evaluate_code_traceability_transition,
+    )
+
+    committed, _service, _store, _clock = await _accepted(
+        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+        subject_id="refinement-1",
+        subject_version=3,
+    )
+    inherited = _evidence(
+        committed.receipt,
+        evidence_id="evidence-pending",
+        parent_version=3,
+    )
+    context = CodeTraceabilityContext(
+        board_id="board-1",
+        subject_type=CodeTraceabilitySubjectType.SPEC,
+        subject_id="spec-1",
+        subject_version=5,
+        profile=CodeTraceabilityProjectionProfile.FULL,
+        context_scope=CodeTraceabilityContextScope.GATE,
+        evidence=(inherited,),
+        source_refinement_id="refinement-1",
+        source_refinement_snapshot_id="snapshot-v3",
+        source_refinement_version=3,
+    )
+
+    class ReadPort:
+        async def refinement_context(self, _query):
+            raise AssertionError("unexpected refinement projection")
+
+        async def spec_context(self, query):
+            assert query.subject_id == "spec-1"
+            return context
+
+        async def card_context(self, _query):
+            raise AssertionError("unexpected card projection")
+
+    monkeypatch.setattr(
+        relational_application,
+        "require_relational_application_adapter",
+        lambda: SimpleNamespace(code_traceability_read=lambda _db: ReadPort()),
+    )
+    board = SimpleNamespace(settings={"code_traceability": {"mode": "advisory"}})
+    subject = SimpleNamespace(
+        id="spec-1",
+        board_id="board-1",
+        version=5,
+        skip_code_evidence_coverage=False,
+    )
+
+    with pytest.raises(CodeTraceabilityContractError) as blocked:
+        await evaluate_code_evidence_coverage_gate(
+            object(), board=board, spec=subject, enforce=True
+        )
+    assert blocked.value.code == "code_evidence_disposition_required"
+    assert blocked.value.details["evidence_disposition_coverage_pct"] == 0.0
+
+    subject.skip_code_evidence_coverage = True
+    skipped = await evaluate_code_evidence_coverage_gate(
+        object(), board=board, spec=subject, enforce=True
+    )
+    assert skipped.allowed is True
+    assert skipped.evidence_coverage_skipped is True
+    assert skipped.evidence_coverage.pending_ids == ("evidence-pending",)
+
+    transition = await evaluate_code_traceability_transition(
+        object(),
+        board=SimpleNamespace(settings={"code_traceability": {"mode": "blocking"}}),
+        subject=subject,
+        subject_type=CodeTraceabilitySubjectType.SPEC,
+        from_status="draft",
+        to_status="review",
+        enforce=True,
+    )
+    assert transition is not None
+    assert transition.allowed is True
+    assert transition.evidence_coverage_skipped is True
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_skip_does_not_mask_incomplete_projection(
+    monkeypatch,
+) -> None:
+    import okto_pulse.core.ports.relational_application as relational_application
+    from okto_pulse.core.services.main import evaluate_code_evidence_coverage_gate
+
+    context = CodeTraceabilityContext(
+        board_id="board-1",
+        subject_type=CodeTraceabilitySubjectType.SPEC,
+        subject_id="spec-1",
+        subject_version=5,
+        profile=CodeTraceabilityProjectionProfile.FULL,
+        context_scope=CodeTraceabilityContextScope.GATE,
+        omitted_content_manifest=(
+            CodeTraceabilityOmittedContent(
+                collection="evidence",
+                hard_limit=CODE_TRACEABILITY_CONTEXT_COLLECTION_LIMITS["evidence"],
+                included_count=0,
+            ),
+        ),
+    )
+
+    class ReadPort:
+        async def refinement_context(self, _query):
+            raise AssertionError("unexpected refinement projection")
+
+        async def spec_context(self, _query):
+            return context
+
+        async def card_context(self, _query):
+            raise AssertionError("unexpected card projection")
+
+    monkeypatch.setattr(
+        relational_application,
+        "require_relational_application_adapter",
+        lambda: SimpleNamespace(code_traceability_read=lambda _db: ReadPort()),
+    )
+    subject = SimpleNamespace(
+        id="spec-1",
+        board_id="board-1",
+        version=5,
+        skip_code_evidence_coverage=True,
+    )
+    with pytest.raises(CodeTraceabilityContractError) as blocked:
+        await evaluate_code_evidence_coverage_gate(
+            object(), board=SimpleNamespace(settings={}), spec=subject, enforce=True
+        )
+    assert blocked.value.code == "code_traceability_projection_incomplete"
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_skip_does_not_mask_read_adapter_failure(
+    monkeypatch,
+) -> None:
+    import okto_pulse.core.ports.relational_application as relational_application
+    from okto_pulse.core.ports.relational_application import (
+        RelationalApplicationAdapterMissing,
+    )
+    from okto_pulse.core.services.main import evaluate_code_evidence_coverage_gate
+
+    def unavailable_adapter():
+        raise RelationalApplicationAdapterMissing("adapter unavailable")
+
+    monkeypatch.setattr(
+        relational_application,
+        "require_relational_application_adapter",
+        unavailable_adapter,
+    )
+    subject = SimpleNamespace(
+        id="spec-1",
+        board_id="board-1",
+        version=5,
+        skip_code_evidence_coverage=True,
+    )
+
+    with pytest.raises(CodeTraceabilityContractError) as blocked:
+        await evaluate_code_evidence_coverage_gate(
+            object(), board=SimpleNamespace(settings={}), spec=subject, enforce=True
+        )
+
+    assert blocked.value.code == "code_investigation_currentness_unknown"
+    assert blocked.value.details == {
+        "reason": "code_traceability_read_adapter_unavailable"
+    }
+
+    def broken_adapter():
+        raise RuntimeError("internal composition defect")
+
+    monkeypatch.setattr(
+        relational_application,
+        "require_relational_application_adapter",
+        broken_adapter,
+    )
+    with pytest.raises(RuntimeError, match="internal composition defect"):
+        await evaluate_code_evidence_coverage_gate(
+            object(), board=SimpleNamespace(settings={}), spec=subject, enforce=True
+        )
+
+
+@pytest.mark.asyncio
 async def test_projection_profiles_have_distinct_content_and_budgets() -> None:
     committed, _service, store, _clock = await _accepted(
         subject_type=CodeTraceabilitySubjectType.CARD,
@@ -1363,6 +1561,7 @@ async def test_projection_profiles_have_distinct_content_and_budgets() -> None:
     )
     assert full["executions"][0]["payload_sha256"] == H1
     assert gate["current_receipts"][0]["omission_manifest"] == []
+    assert gate["evidence"][0]["claim"] == evidence.claim
     assert "selector_fingerprint" in gate["resolutions"][0]
     assert gate["executions"][0]["id"] == "execution-profile"
     assert '"excerpt"' not in json.dumps(gate)
