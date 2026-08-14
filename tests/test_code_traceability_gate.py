@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -1136,7 +1137,7 @@ async def test_card_execution_requires_current_agent_result_receipt() -> None:
     assert passed.allowed is True
 
 
-def test_transition_projection_is_off_for_legacy_board() -> None:
+def test_transition_projection_defaults_to_non_blocking_advisory() -> None:
     context = CodeTraceabilityContext(
         board_id="board-1",
         subject_type=CodeTraceabilitySubjectType.CARD,
@@ -1153,9 +1154,44 @@ def test_transition_projection_is_off_for_legacy_board() -> None:
         from_status="not_started",
         to_status="started",
     )
-    assert evaluation.mode == "off"
+    assert evaluation.mode == "advisory"
     assert evaluation.allowed is True
-    assert evaluation.blockers == ()
+    assert evaluation.passed is False
+    assert evaluation.blockers
+    assert all(item.blocking is False for item in evaluation.blockers)
+
+
+@pytest.mark.asyncio
+async def test_transition_runtime_surfaces_advisory_when_adapter_is_unavailable(
+    monkeypatch,
+) -> None:
+    import okto_pulse.core.ports.relational_application as relational_application
+    from okto_pulse.core.services.main import evaluate_code_traceability_transition
+
+    def unavailable():
+        raise RuntimeError("adapter unavailable")
+
+    monkeypatch.setattr(
+        relational_application,
+        "require_relational_application_adapter",
+        unavailable,
+    )
+    evaluation = await evaluate_code_traceability_transition(
+        object(),
+        board=SimpleNamespace(settings={}),
+        subject=SimpleNamespace(id="refinement-1", board_id="board-1", version=1),
+        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+        from_status="review",
+        to_status="approved",
+    )
+
+    assert evaluation is not None
+    assert evaluation.as_dict()["mode"] == "advisory"
+    assert evaluation.allowed is True
+    assert evaluation.passed is False
+    assert [item.code for item in evaluation.blockers] == [
+        "code_investigation_currentness_unknown"
+    ]
 
 
 @pytest.mark.asyncio
@@ -1247,7 +1283,7 @@ async def test_projection_profiles_have_distinct_content_and_budgets() -> None:
         "executions": (execution,),
     }
     evaluator = CodeTraceabilityGateEvaluator(clock=lambda: NOW)
-    settings = CodeTraceabilitySettings(mode="off")
+    settings = CodeTraceabilitySettings(mode="advisory")
 
     def render(context: CodeTraceabilityContext) -> dict[str, object]:
         return evaluator.project(context, settings).as_dict()

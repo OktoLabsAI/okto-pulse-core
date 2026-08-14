@@ -20,6 +20,7 @@ from okto_pulse.core.domain.code_traceability import (
     DEFAULT_CODE_TRACEABILITY_LIMITS,
     CodeEvidence,
     CodeEvidenceDispositionKind,
+    CodeTraceabilityEnforcement,
     CodeInvestigationOutcome,
     CodeInvestigationReceipt,
     CodeInvestigationReceiptCurrentness,
@@ -135,7 +136,7 @@ class TargetEntityCoverage:
 
 @dataclass(frozen=True, slots=True)
 class CodeTraceabilityGateEvaluation:
-    mode: str
+    mode: CodeTraceabilityEnforcement
     phases: tuple[CodeTraceabilityGatePhase, ...]
     allowed: bool
     passed: bool
@@ -147,7 +148,7 @@ class CodeTraceabilityGateEvaluation:
 
     def as_dict(self) -> dict[str, object]:
         return {
-            "mode": self.mode,
+            "mode": self.mode.value,
             "phases": [item.value for item in self.phases],
             "allowed": self.allowed,
             "passed": self.passed,
@@ -182,9 +183,7 @@ class CodeTraceabilityProjection:
             result.update(self._full_payload())
         result["coverage"] = self.gate_readiness.evidence_coverage.as_dict()
         result["target_coverage"] = self.gate_readiness.target_coverage.as_dict()
-        result["resolution_freshness"] = dict(
-            self.gate_readiness.resolution_freshness
-        )
+        result["resolution_freshness"] = dict(self.gate_readiness.resolution_freshness)
         return result
 
     def _base_payload(self) -> dict[str, object]:
@@ -196,9 +195,7 @@ class CodeTraceabilityProjection:
             "profile": context.profile.value,
             "context_scope": context.context_scope.value,
             "source_refinement_id": context.source_refinement_id,
-            "source_refinement_snapshot_id": (
-                context.source_refinement_snapshot_id
-            ),
+            "source_refinement_snapshot_id": (context.source_refinement_snapshot_id),
             "source_refinement_version": context.source_refinement_version,
             "referenced_evidence_ids": list(self.referenced_evidence_ids),
             "gate_readiness": self.gate_readiness.as_dict(),
@@ -265,9 +262,7 @@ class CodeTraceabilityProjection:
                 )
                 for item in context.target_evidence_links
             ],
-            "resolutions": [
-                _summary_resolution(item) for item in context.resolutions
-            ],
+            "resolutions": [_summary_resolution(item) for item in context.resolutions],
             "overlaps": [_summary_overlap(item) for item in context.overlaps],
             "waivers": [
                 _selected_public_value(
@@ -312,12 +307,8 @@ class CodeTraceabilityProjection:
             "target_evidence_links": [
                 _public_value(item) for item in context.target_evidence_links
             ],
-            "resolutions": [
-                _detail_resolution(item) for item in context.resolutions
-            ],
-            "executions": [
-                _detail_execution(item) for item in context.executions
-            ],
+            "resolutions": [_detail_resolution(item) for item in context.resolutions],
+            "executions": [_detail_execution(item) for item in context.executions],
             "overlaps": [_public_value(item) for item in context.overlaps],
             "waivers": [_public_value(item) for item in context.waivers],
             "counts": _projection_counts(context),
@@ -357,9 +348,7 @@ class CodeTraceabilityProjection:
             "target_evidence_links": [
                 _public_value(item) for item in context.target_evidence_links
             ],
-            "resolutions": [
-                _gate_resolution(item) for item in context.resolutions
-            ],
+            "resolutions": [_gate_resolution(item) for item in context.resolutions],
             "executions": [
                 _selected_public_value(
                     item,
@@ -612,9 +601,7 @@ def _gate_resolution(value: Any) -> dict[str, Any]:
             "workspace_state": full.get("workspace_state"),
             "selector_fingerprint": full.get("selector_fingerprint"),
             "symbol_fingerprint": full.get("symbol_fingerprint"),
-            "declared_file_blob_sha256": full.get(
-                "declared_file_blob_sha256"
-            ),
+            "declared_file_blob_sha256": full.get("declared_file_blob_sha256"),
         }
     )
     return projected
@@ -740,38 +727,38 @@ def extract_code_evidence_references(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
     if not isinstance(value, str):
-        raise CodeTraceabilityContractError(
-            "code_evidence_reference_source_invalid"
-        )
+        raise CodeTraceabilityContractError("code_evidence_reference_source_invalid")
     return tuple(sorted(set(_EVIDENCE_REFERENCE_RE.findall(value))))
 
 
 def resolve_code_traceability_settings(
     raw_board_settings: object,
 ) -> CodeTraceabilitySettings:
-    """Resolve legacy absence as off and reject an explicitly malformed policy."""
+    """Resolve known legacy persistence as Advisory and reject other drift."""
 
     if raw_board_settings is None:
         return CodeTraceabilitySettings()
     if isinstance(raw_board_settings, CodeTraceabilitySettings):
         return raw_board_settings
     if isinstance(raw_board_settings, BoardSettings):
-        return raw_board_settings.code_traceability or CodeTraceabilitySettings()
+        return raw_board_settings.code_traceability
     if not isinstance(raw_board_settings, Mapping):
         raise CodeTraceabilityContractError(
             "code_traceability_settings_invalid",
             details={"reason": "board_settings_not_mapping"},
         )
-    if "code_traceability" not in raw_board_settings:
-        return CodeTraceabilitySettings()
     try:
-        board_settings = BoardSettings.model_validate(raw_board_settings)
+        normalized = dict(raw_board_settings)
+        normalized["code_traceability"] = CodeTraceabilitySettings.from_persisted(
+            normalized.get("code_traceability")
+        ).model_dump(mode="json")
+        board_settings = BoardSettings.model_validate(normalized)
     except ValidationError as exc:
         raise CodeTraceabilityContractError(
             "code_traceability_settings_invalid",
             details={"reason": "board_policy_invalid"},
         ) from exc
-    return board_settings.code_traceability or CodeTraceabilitySettings()
+    return board_settings.code_traceability
 
 
 class CodeTraceabilityGateEvaluator:
@@ -819,13 +806,9 @@ class CodeTraceabilityGateEvaluator:
         referenced_evidence_ids: tuple[str, ...] = (),
     ) -> CodeTraceabilityGateEvaluation:
         if not isinstance(context, CodeTraceabilityContext):
-            raise CodeTraceabilityContractError(
-                "code_traceability_context_invalid"
-            )
+            raise CodeTraceabilityContractError("code_traceability_context_invalid")
         if not isinstance(settings, CodeTraceabilitySettings):
-            raise CodeTraceabilityContractError(
-                "code_traceability_settings_invalid"
-            )
+            raise CodeTraceabilityContractError("code_traceability_settings_invalid")
         selected = phases
         if selected is None:
             selected = {
@@ -864,67 +847,68 @@ class CodeTraceabilityGateEvaluator:
         resolution_freshness: dict[str, Mapping[str, object]] = {}
         blockers: list[CodeTraceabilityGateBlocker] = []
 
-        if settings.mode != "off":
-            if (
-                context.context_scope is CodeTraceabilityContextScope.GATE
-                and context.omitted_content_manifest
-            ):
-                blockers.extend(
-                    self._blocker(
-                        settings,
-                        "code_traceability_projection_incomplete",
-                        "Gate context exceeded a server-owned projection budget.",
-                        collection=item.collection,
-                        hard_limit=item.hard_limit,
-                        omitted_at_least=item.omitted_at_least,
-                        reason=item.reason_code,
-                    )
-                    for item in context.omitted_content_manifest
+        if (
+            context.context_scope is CodeTraceabilityContextScope.GATE
+            and context.omitted_content_manifest
+        ):
+            blockers.extend(
+                self._blocker(
+                    settings,
+                    "code_traceability_projection_incomplete",
+                    "Gate context exceeded a server-owned projection budget.",
+                    collection=item.collection,
+                    hard_limit=item.hard_limit,
+                    omitted_at_least=item.omitted_at_least,
+                    reason=item.reason_code,
                 )
-            if CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE in selected:
-                blockers.extend(
-                    self._refinement_evidence_blockers(
-                        context,
-                        settings,
-                        receipt_currentness,
-                        referenced_evidence_ids=referenced_evidence_ids,
-                    )
+                for item in context.omitted_content_manifest
+            )
+        if CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE in selected:
+            blockers.extend(
+                self._refinement_evidence_blockers(
+                    context,
+                    settings,
+                    receipt_currentness,
+                    referenced_evidence_ids=referenced_evidence_ids,
                 )
-            if CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION in selected:
-                blockers.extend(
-                    self._spec_disposition_blockers(
-                        context,
-                        settings,
-                        evidence_coverage,
-                    )
+            )
+        if CodeTraceabilityGatePhase.SPEC_EVIDENCE_DISPOSITION in selected:
+            blockers.extend(
+                self._spec_disposition_blockers(
+                    context,
+                    settings,
+                    evidence_coverage,
                 )
-            if CodeTraceabilityGatePhase.CARD_TARGET in selected:
-                blockers.extend(
-                    self._card_target_blockers(
-                        context,
-                        settings,
-                        card_type=card_type,
-                        dependency_card_ids=set(dependency_card_ids),
-                        blocking_card_ids=set(blocking_card_ids),
-                        target_coverage=target_coverage,
-                        receipt_currentness=receipt_currentness,
-                        resolution_freshness=resolution_freshness,
-                    )
+            )
+        if CodeTraceabilityGatePhase.CARD_TARGET in selected:
+            blockers.extend(
+                self._card_target_blockers(
+                    context,
+                    settings,
+                    card_type=card_type,
+                    dependency_card_ids=set(dependency_card_ids),
+                    blocking_card_ids=set(blocking_card_ids),
+                    target_coverage=target_coverage,
+                    receipt_currentness=receipt_currentness,
+                    resolution_freshness=resolution_freshness,
                 )
-            if CodeTraceabilityGatePhase.CARD_EXECUTION in selected:
-                blockers.extend(
-                    self._card_execution_blockers(
-                        context,
-                        settings,
-                        receipt_currentness=receipt_currentness,
-                    )
+            )
+        if CodeTraceabilityGatePhase.CARD_EXECUTION in selected:
+            blockers.extend(
+                self._card_execution_blockers(
+                    context,
+                    settings,
+                    receipt_currentness=receipt_currentness,
                 )
+            )
 
         blockers = sorted(
             {
                 (
                     item.code,
-                    tuple(sorted((key, str(value)) for key, value in item.details.items())),
+                    tuple(
+                        sorted((key, str(value)) for key, value in item.details.items())
+                    ),
                 ): item
                 for item in blockers
             }.values(),
@@ -1011,7 +995,9 @@ class CodeTraceabilityGateEvaluator:
         return CodeTraceabilityGateBlocker(
             code=code,
             message=message,
-            blocking=settings.mode == "blocking" and enforce,
+            blocking=(
+                settings.mode is CodeTraceabilityEnforcement.BLOCKING and enforce
+            ),
             details=details,
             remediation=_REMEDIATIONS.get(code, ()),
         )
@@ -1056,9 +1042,7 @@ class CodeTraceabilityGateEvaluator:
             }
             and item.evidence_id not in linked_ids
         }
-        pending = tuple(
-            sorted(set(evidence_by_id) - linked_ids - dispositioned_ids)
-        )
+        pending = tuple(sorted(set(evidence_by_id) - linked_ids - dispositioned_ids))
         return EvidenceDispositionCoverage(
             total=len(evidence_by_id),
             linked=len(linked_ids),
@@ -1066,7 +1050,9 @@ class CodeTraceabilityGateEvaluator:
             pending_ids=pending,
         )
 
-    def _target_coverage(self, context: CodeTraceabilityContext) -> TargetEntityCoverage:
+    def _target_coverage(
+        self, context: CodeTraceabilityContext
+    ) -> TargetEntityCoverage:
         if context.subject_type is not CodeTraceabilitySubjectType.CARD:
             return TargetEntityCoverage(0, 0, ())
         active_targets = {
@@ -1190,7 +1176,9 @@ class CodeTraceabilityGateEvaluator:
             )
         )
         if not required.issubset(receipt.capabilities):
-            missing = sorted(item.value for item in required - set(receipt.capabilities))
+            missing = sorted(
+                item.value for item in required - set(receipt.capabilities)
+            )
             return (
                 f"capability_missing:{','.join(missing)}",
                 "code_investigation_capability_missing",
@@ -1228,15 +1216,19 @@ class CodeTraceabilityGateEvaluator:
         missing_references = tuple(
             sorted(set(referenced_evidence_ids) - active_evidence_ids)
         )
-        blockers = [
-            self._blocker(
-                settings,
-                "code_evidence_attestation_required",
-                "Refinement analysis cites Evidence that is not active or does not exist.",
-                missing_evidence_ids=list(missing_references),
-                reason="analysis_evidence_reference_missing",
-            )
-        ] if missing_references else []
+        blockers = (
+            [
+                self._blocker(
+                    settings,
+                    "code_evidence_attestation_required",
+                    "Refinement analysis cites Evidence that is not active or does not exist.",
+                    missing_evidence_ids=list(missing_references),
+                    reason="analysis_evidence_reference_missing",
+                )
+            ]
+            if missing_references
+            else []
+        )
         if any(
             _waiver_matches(
                 item,
@@ -1324,9 +1316,7 @@ class CodeTraceabilityGateEvaluator:
                 "Every active inherited Evidence needs a link or final disposition.",
                 evidence_pending_ids=list(coverage.pending_ids),
                 evidence_disposition_coverage_pct=coverage.coverage_pct,
-                source_refinement_snapshot_id=(
-                    context.source_refinement_snapshot_id
-                ),
+                source_refinement_snapshot_id=(context.source_refinement_snapshot_id),
             )
         ]
 
@@ -1565,7 +1555,6 @@ class CodeTraceabilityGateEvaluator:
                     )
                 )
         return blockers
-
 
     def _card_execution_blockers(
         self,

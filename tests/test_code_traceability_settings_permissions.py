@@ -11,10 +11,18 @@ from okto_pulse.core.domain.permissions import (
     PERMISSION_INTRODUCTION_MANIFESTS,
     PermissionSet,
 )
+from okto_pulse.core.domain.code_traceability import (
+    CodeTraceabilityEnforcement,
+)
 from okto_pulse.core.models.schemas import (
     BoardSettings,
+    BoardUpdate,
     CodeTraceabilitySettings,
 )
+from okto_pulse.core.services.code_traceability_gate import (
+    resolve_code_traceability_settings,
+)
+from okto_pulse.core.services.board_governance import BoardGovernanceService
 from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationService,
 )
@@ -33,13 +41,11 @@ def _flags(*paths: str) -> dict[str, object]:
     return result
 
 
-def test_legacy_board_is_off_and_nested_policy_is_closed() -> None:
-    assert BoardSettings().code_traceability is None
-    policy = BoardSettings(
-        code_traceability={"mode": "advisory"}
-    ).code_traceability
-    assert policy is not None
-    assert policy.mode == "advisory"
+def test_traceability_defaults_advisory_and_authored_policy_is_closed() -> None:
+    default_policy = BoardSettings().code_traceability
+    assert default_policy.mode is CodeTraceabilityEnforcement.ADVISORY
+    policy = BoardSettings(code_traceability={"mode": "advisory"}).code_traceability
+    assert policy.mode is CodeTraceabilityEnforcement.ADVISORY
     assert policy.evidence_attestation == "preferred"
     assert policy.target_resolution == "advisory"
     assert policy.preflight_freshness_seconds == 1800
@@ -47,7 +53,47 @@ def test_legacy_board_is_off_and_nested_policy_is_closed() -> None:
     with pytest.raises(ValidationError):
         CodeTraceabilitySettings(mode="verified")  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
+        CodeTraceabilitySettings(mode="off")  # type: ignore[arg-type]
+    with pytest.raises(ValidationError):
+        BoardUpdate.model_validate({"settings": {"code_traceability": {"mode": "off"}}})
+    with pytest.raises(ValidationError):
         CodeTraceabilitySettings(repository_url="https://example.invalid/repo")
+
+    assert {
+        BoardUpdate.model_validate(
+            {"settings": {"code_traceability": {"mode": mode}}}
+        ).settings.code_traceability.mode
+        for mode in ("advisory", "blocking")
+    } == {
+        CodeTraceabilityEnforcement.ADVISORY,
+        CodeTraceabilityEnforcement.BLOCKING,
+    }
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [None, {}, {"code_traceability": None}, {"code_traceability": {"mode": "off"}}],
+)
+def test_legacy_absence_null_and_off_resolve_to_advisory(legacy) -> None:
+    resolved = resolve_code_traceability_settings(legacy)
+    assert resolved.mode is CodeTraceabilityEnforcement.ADVISORY
+
+
+def test_unrelated_board_patch_upgrades_legacy_off_but_authored_off_is_rejected() -> (
+    None
+):
+    merged = BoardGovernanceService.merge_settings_patch(
+        {"code_traceability": {"mode": "off"}, "max_scenarios_per_card": 3},
+        {"max_scenarios_per_card": 5},
+    )
+    assert merged["code_traceability"]["mode"] == "advisory"
+    assert merged["max_scenarios_per_card"] == 5
+
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.merge_settings_patch(
+            {"code_traceability": {"mode": "advisory"}},
+            {"code_traceability": {"mode": "off"}},
+        )
 
 
 @pytest.mark.parametrize("value", [59, 86_401])
@@ -70,12 +116,12 @@ async def test_new_board_and_template_defaults_are_forward_only_advisory(
         assert snapshot is None
         assert fallback["code_traceability"]["mode"] == "advisory"
 
-        explicit_off, _ = await service.build_snapshot_for_create(
-            settings_override={"code_traceability": {"mode": "off"}},
-            applied_by="agent-defaults",
-            scope=scope,
-        )
-        assert explicit_off["code_traceability"]["mode"] == "off"
+        with pytest.raises(ValidationError):
+            await service.build_snapshot_for_create(
+                settings_override={"code_traceability": {"mode": "off"}},
+                applied_by="agent-defaults",
+                scope=scope,
+            )
 
         template = await service.create_version(
             settings_payload={},

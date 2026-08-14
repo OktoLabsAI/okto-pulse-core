@@ -183,4 +183,12 @@ Read `okto-pulse://reference/code-traceability`, then:
 6. use an explicit waiver when code is genuinely not applicable; and
 7. verify the Code Evidence gate before approval.
 
+The UI's **Technical Evidence** items are these immutable Code Evidence
+records. A meaningful claim plus the strongest applicable path/symbol selector
+is required; a receipt by itself does not communicate the finding. Even in
+`advisory`, record the finding now: Pulse cannot reconstruct it, and source or
+Refinement-version drift can require the next agent to repeat the whole
+preflight and deterministic investigation. Field recipes, symbol examples,
+and completion criteria live in the canonical resource above.
+
 There is no `decoupled_mode`. Pulse and Community never inspect source code.

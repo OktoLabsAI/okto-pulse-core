@@ -12,8 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import ValidationError
-
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
     require_authorization,
@@ -94,7 +92,7 @@ from okto_pulse.core.models.code_traceability import (
     StartCodeInvestigationResult,
     TargetOverlapAcknowledgementInput,
 )
-from okto_pulse.core.models.schemas import BoardSettings, CodeTraceabilitySettings
+from okto_pulse.core.models.schemas import CodeTraceabilitySettings
 from okto_pulse.core.ports.code_traceability import (
     CodeEvidenceQuery,
     CodeTraceabilityProjectionQuery,
@@ -139,6 +137,7 @@ from okto_pulse.core.services.code_traceability_gate import (
     CodeTraceabilityProjection,
     CodeTraceabilityProjectionService,
     extract_code_evidence_references,
+    resolve_code_traceability_settings,
 )
 from okto_pulse.core.services.code_traceability_observability import (
     METRIC_CODE_INVESTIGATION_RECEIPT_AGE_SECONDS,
@@ -244,21 +243,17 @@ async def _load_policy(
     *,
     board_id: str,
     uow: PulseUnitOfWork,
-    require_enabled: bool = True,
 ) -> _ResolvedPolicy:
     board = await uow.services.boards.get_board(board_id)
     if board is None:
         raise EntityNotFoundError("board", board_id)
     raw_settings = getattr(board, "settings", None) or {}
     try:
-        board_settings = BoardSettings.model_validate(raw_settings)
-    except ValidationError as exc:
+        settings = resolve_code_traceability_settings(raw_settings)
+    except CodeTraceabilityContractError as exc:
         raise CodeTraceabilityLocked(
             details={"reason": "board_policy_invalid"}
         ) from exc
-    settings = board_settings.code_traceability or CodeTraceabilitySettings()
-    if require_enabled and settings.mode == "off":
-        raise CodeTraceabilityLocked(details={"reason": "board_policy_off"})
     return _ResolvedPolicy(settings=settings)
 
 
@@ -538,9 +533,7 @@ async def _load_waiver_entity(
     # a global child lookup or any source-code access.
     parts = entity_id.split(":", 3)
     if len(parts) != 4 or parts[0] != "spec":
-        raise CodeEvidenceLinkInvalid(
-            details={"reason": "spec_entity_ref_invalid"}
-        )
+        raise CodeEvidenceLinkInvalid(details={"reason": "spec_entity_ref_invalid"})
     _, spec_id, raw_entity_type, child_id = parts
     try:
         spec_entity_type = SpecEntityType(raw_entity_type)
@@ -549,9 +542,7 @@ async def _load_waiver_entity(
             details={"reason": "spec_entity_ref_invalid"}
         ) from exc
     if spec_entity_type is SpecEntityType.SPEC:
-        raise CodeEvidenceLinkInvalid(
-            details={"reason": "spec_entity_ref_invalid"}
-        )
+        raise CodeEvidenceLinkInvalid(details={"reason": "spec_entity_ref_invalid"})
     spec = await _load_subject(
         board_id=board_id,
         subject_type=CodeTraceabilitySubjectType.SPEC,
@@ -814,7 +805,6 @@ class RevokeCodeInvestigationReceiptUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -864,7 +854,6 @@ class GetCodeInvestigationReceiptUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -1538,9 +1527,7 @@ class UpdateImplementationTargetUseCase:
                 "card_id": target.card_id,
                 "lifecycle_status": target.lifecycle_status.value,
                 "revision": target.revision,
-                "reason_sha256": code_traceability_event_digest(
-                    command.change_reason
-                ),
+                "reason_sha256": code_traceability_event_digest(command.change_reason),
             }
         else:
             event_class = ImplementationTargetUpdated
@@ -1686,9 +1673,7 @@ class SubmitImplementationTargetExecutionUseCase:
             execution_record_id=record.id,
             target_id=record.target_id,
             card_id=record.card_id,
-            result_investigation_receipt_id=(
-                record.result_investigation_receipt_id
-            ),
+            result_investigation_receipt_id=(record.result_investigation_receipt_id),
             disposition=record.disposition.value,
             target_revision=record.target_revision,
             payload_sha256=record.payload_sha256,
@@ -1709,7 +1694,6 @@ class GetCodeEvidenceUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -1737,7 +1721,6 @@ class ListCodeEvidenceUseCase:
         await _load_policy(
             board_id=command.query.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -1767,7 +1750,6 @@ class GetImplementationTargetUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -1795,7 +1777,6 @@ class ListImplementationTargetsUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -1820,7 +1801,6 @@ class GetImplementationOverlapsUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -1976,7 +1956,6 @@ class ClearCodeTraceabilityNotApplicableUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,
@@ -2042,7 +2021,6 @@ class GetCodeTraceabilityProjectionUseCase:
         policy = await _load_policy(
             board_id=query.board_id,
             uow=uow,
-            require_enabled=False,
         )
         for operation in (
             "code_traceability.investigation.read",
@@ -2116,9 +2094,7 @@ class GetCodeTraceabilityProjectionUseCase:
             dependency_card_ids=dependency_card_ids,
             blocking_card_ids=blocking_card_ids,
             referenced_evidence_ids=(
-                extract_code_evidence_references(
-                    getattr(subject, "analysis", None)
-                )
+                extract_code_evidence_references(getattr(subject, "analysis", None))
                 if query.subject_type is CodeTraceabilitySubjectType.REFINEMENT
                 else ()
             ),
@@ -2136,7 +2112,6 @@ class ListCodeInvestigationReceiptsUseCase:
         await _load_policy(
             board_id=command.board_id,
             uow=uow,
-            require_enabled=False,
         )
         await _authorize(
             actor,

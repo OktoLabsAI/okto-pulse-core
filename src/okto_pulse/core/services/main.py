@@ -49,6 +49,7 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCurrentnessUnknown,
     CodeTraceabilityContextScope,
+    CodeTraceabilityEnforcement,
     CodeTraceabilityLifecycleStatus,
     CodeTraceabilityProjectionProfile,
     CodeTraceabilitySubjectType,
@@ -200,8 +201,11 @@ from okto_pulse.core.ports.code_traceability import (
     CodeTraceabilityProjectionQuery,
 )
 from okto_pulse.core.services.code_traceability_gate import (
+    CodeTraceabilityGateBlocker,
     CodeTraceabilityGateEvaluation,
     CodeTraceabilityProjectionService,
+    EvidenceDispositionCoverage,
+    TargetEntityCoverage,
     extract_code_evidence_references,
     phases_for_transition,
     resolve_code_traceability_settings,
@@ -441,9 +445,8 @@ async def evaluate_code_traceability_transition(
 ) -> CodeTraceabilityGateEvaluation | None:
     """Evaluate one SDLC edge from Pulse relational attestations only.
 
-    Legacy/off policies short-circuit before adapter resolution.  Community is
-    solely the materializer; all coverage, freshness, overlap and waiver rules
-    are evaluated here in Core.
+    Community is solely the materializer; all coverage, freshness, overlap and
+    waiver rules are evaluated here in Core.
     """
 
     phases = phases_for_transition(subject_type, from_status, to_status)
@@ -452,8 +455,6 @@ async def evaluate_code_traceability_transition(
     settings = resolve_code_traceability_settings(
         getattr(board, "settings", None) if board is not None else None
     )
-    if settings.mode == "off":
-        return None
     board_id = getattr(subject, "board_id", None)
     subject_id = getattr(subject, "id", None)
     version_field = (
@@ -485,8 +486,39 @@ async def evaluate_code_traceability_transition(
 
         read_port = require_relational_application_adapter().code_traceability_read(db)
     except (AttributeError, RuntimeError) as exc:
-        if settings.mode != "blocking":
-            return None
+        if settings.mode is CodeTraceabilityEnforcement.ADVISORY:
+            return CodeTraceabilityGateEvaluation(
+                mode=settings.mode,
+                phases=phases,
+                allowed=True,
+                passed=False,
+                blockers=(
+                    CodeTraceabilityGateBlocker(
+                        code="code_investigation_currentness_unknown",
+                        message=(
+                            "Structured Code Traceability projection is unavailable."
+                        ),
+                        blocking=False,
+                        details={
+                            "reason": ("code_traceability_read_adapter_unavailable")
+                        },
+                        remediation=(),
+                    ),
+                ),
+                evidence_coverage=EvidenceDispositionCoverage(
+                    total=0,
+                    linked=0,
+                    dispositioned=0,
+                    pending_ids=(),
+                ),
+                target_coverage=TargetEntityCoverage(
+                    total=0,
+                    covered=0,
+                    pending_entity_ids=(),
+                ),
+                receipt_currentness={},
+                resolution_freshness={},
+            )
         raise CodeInvestigationCurrentnessUnknown(
             details={"reason": "code_traceability_read_adapter_unavailable"}
         ) from exc
@@ -14870,19 +14902,11 @@ class RefinementService:
             CodeTraceabilityAdapterMissing,
             RelationalApplicationAdapterMissing,
         ) as exc:
-            # Legacy/off boards predate the adapter and deliberately snapshot an
-            # empty manifest. Enabled boards fail closed; persistence/runtime
-            # failures are intentionally not swallowed by this narrow branch.
-            board = await _application_get(self.db, "board", refinement.board_id)
-            if (
-                resolve_code_traceability_settings(
-                    getattr(board, "settings", None) if board else None
-                ).mode
-                != "off"
-            ):
-                raise CodeInvestigationCurrentnessUnknown(
-                    details={"reason": "snapshot_traceability_adapter_unavailable"}
-                ) from exc
+            # Agent-mediated traceability is always evaluated. Never seal a
+            # falsely empty manifest when its authoritative store is absent.
+            raise CodeInvestigationCurrentnessUnknown(
+                details={"reason": "snapshot_traceability_adapter_unavailable"}
+            ) from exc
         code_evidence_manifest.sort(key=lambda item: item["evidence_id"])
 
         snapshot = _new_application_record(

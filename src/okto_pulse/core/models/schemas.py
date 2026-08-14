@@ -1,6 +1,7 @@
 """Pydantic schemas for API request/response models."""
 
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Any, Generic, Literal, TypeAlias, TypeVar
@@ -20,6 +21,9 @@ from pydantic import (
 from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
+)
+from okto_pulse.core.domain.code_traceability import (
+    CodeTraceabilityEnforcement,
 )
 from okto_pulse.core.domain.enums import (
     BugSeverity,
@@ -3845,7 +3849,7 @@ class CodeTraceabilitySettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["off", "advisory", "blocking"] = "off"
+    mode: CodeTraceabilityEnforcement = CodeTraceabilityEnforcement.ADVISORY
     evidence_attestation: Literal["none", "preferred", "required"] = "preferred"
     target_resolution: Literal[
         "advisory",
@@ -3866,6 +3870,28 @@ class CodeTraceabilitySettings(BaseModel):
         "require_committed_attestation",
     ] = "allow_dirty_attestation"
     receipt_content: Literal["metadata_only", "safe_excerpt"] = "safe_excerpt"
+
+    @classmethod
+    def from_persisted(cls, value: object) -> "CodeTraceabilitySettings":
+        """Read one historical policy without reopening the write contract.
+
+        ``off`` and an explicit legacy ``null`` were valid before enforcement
+        became mandatory.  They now resolve to Advisory so existing databases
+        remain readable and agent-mediated checks still run.  Native model
+        validation remains strict, so Board create/update and default-template
+        writes cannot author either compatibility value.
+        """
+
+        if isinstance(value, cls):
+            return value
+        if value is None:
+            return cls()
+        if isinstance(value, Mapping) and value.get("mode") == "off":
+            value = {
+                **value,
+                "mode": CodeTraceabilityEnforcement.ADVISORY.value,
+            }
+        return cls.model_validate(value)
 
 
 class BoardSettings(BaseModel):
@@ -3930,9 +3956,13 @@ class BoardSettings(BaseModel):
     # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
     # boards with no field validate as 'off' (TR4 — never breaks an existing board).
     design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
-    # Absent on legacy boards means mode=off.  New board/template creation
-    # materializes an advisory policy in DefaultBoardConfigurationService.
-    code_traceability: CodeTraceabilitySettings | None = None
+    # Agent-mediated Code Traceability is always evaluated. Historical absent,
+    # null, or ``off`` policies resolve to Advisory on tolerant READ paths and
+    # are converged by Community's startup migration. Native writes are closed
+    # to Advisory or Blocking.
+    code_traceability: CodeTraceabilitySettings = Field(
+        default_factory=CodeTraceabilitySettings
+    )
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = (
         True  # if True, cards must pass validation before moving to done

@@ -472,8 +472,9 @@ When `code_traceability.mode="blocking"`, a Spec cannot leave authoring with
 inherited Code Evidence still pending. The deterministic gate requires:
 
 - every inherited Evidence item to resolve from the current Spec lineage;
-- each item to have at least one current link to an applicable FR, TR, BR,
-  Decision, or Contract, or one explicit disposition for this Spec version;
+- each item to have at least one current link to the applicable Spec, FR, TR,
+  AC, BR, Decision, API Contract, IR, OR, or Test Scenario, or one explicit
+  disposition for this Spec version;
 - `evidence_disposition_coverage_pct = 100`;
 - any receipt required by policy to be accepted, current, non-revoked, and
   conflict-free.
@@ -481,9 +482,10 @@ inherited Code Evidence still pending. The deterministic gate requires:
 Evidence remains a factual historical snapshot. The Spec remains the normative
 artifact, and linking or disposition does not rewrite either artifact. In
 `advisory` mode the same findings are returned without independently blocking;
-in `off` mode this gate is skipped. An authenticated external agent performs
-source access checks and deterministic investigation before submission. Pulse
-Core validates the receipt and Community persists/projects it; neither reads a
-repository to satisfy the gate.
+historical absent, `null`, or `off` settings resolve to this default Advisory
+behavior. An authenticated external agent performs source access checks and
+deterministic investigation before submission. Pulse Core validates the
+receipt and Community persists/projects it; neither reads a repository to
+satisfy the gate.
 
 Read `okto-pulse://reference/code-traceability` before operating this domain.

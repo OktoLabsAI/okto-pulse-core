@@ -46,34 +46,22 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://reference/destructive_ops",
         required_headings=("## Rules of Engagement",),
-        required_cross_links=(
-            "okto-pulse://reference/quality-assessments",
-        ),
+        required_cross_links=("okto-pulse://reference/quality-assessments",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/errors",
-        required_headings=(
-            "## SK-A Quality, Research Decisions, and Checklist",
-        ),
-        required_cross_links=(
-            "okto-pulse://reference/quality-assessments",
-        ),
+        required_headings=("## SK-A Quality, Research Decisions, and Checklist",),
+        required_cross_links=("okto-pulse://reference/quality-assessments",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/list_tools",
         required_headings=("# Consolidated List Tools (P0.B)",),
-        required_cross_links=(
-            "okto-pulse://reference/quality-assessments",
-        ),
+        required_cross_links=("okto-pulse://reference/quality-assessments",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/projection-profiles",
-        required_headings=(
-            "# Projection Profiles & the Response Envelope",
-        ),
-        required_cross_links=(
-            "okto-pulse://reference/quality-assessments",
-        ),
+        required_headings=("# Projection Profiles & the Response Envelope",),
+        required_cross_links=("okto-pulse://reference/quality-assessments",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/policy-compliance",
@@ -95,9 +83,14 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         uri="okto-pulse://reference/code-traceability",
         required_headings=(
             "# Agent-mediated Code Traceability",
+            "## Technical Evidence and Technical Anchors",
             "## Evidence and Targets",
+            "## When the agent must record",
             "## Mandatory external preflight",
             "## Targets and Resolution receipts",
+            "## Operational examples",
+            "## Completion criteria",
+            "## Advisory mode is non-blocking, not no-op",
             "## Security and untrusted code",
             "## Errors and remediation",
         ),
@@ -106,6 +99,21 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "okto-pulse://reference/transitions",
             "okto-pulse://reference/projection-profiles",
         ),
+    ),
+    _ResourceContract(
+        uri="okto-pulse://reference/tool-docs/code-traceability",
+        required_headings=(
+            "# Tool docs — Code Traceability",
+            "## Technical Evidence versus Technical Anchors",
+            "## Mandatory operation and fence order",
+            "## `okto_pulse_submit_code_evidence`",
+            "## `okto_pulse_link_code_evidence`",
+            "## `okto_pulse_create_implementation_target`",
+            "## `okto_pulse_submit_implementation_target_resolution`",
+            "## `okto_pulse_submit_implementation_target_execution_receipt`",
+            "## Advisory outcome",
+        ),
+        required_cross_links=("okto-pulse://reference/code-traceability",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/quality-assessments",
@@ -148,9 +156,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "# Tool docs — `guideline`",
             "## Governed policy tool conventions",
         ),
-        required_cross_links=(
-            "okto-pulse://reference/policy-compliance",
-        ),
+        required_cross_links=("okto-pulse://reference/policy-compliance",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/tool-docs/quality",
@@ -163,9 +169,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "## `okto_pulse_list_quality_assessments`",
             "## `okto_pulse_list_quality_findings`",
         ),
-        required_cross_links=(
-            "okto-pulse://reference/quality-assessments",
-        ),
+        required_cross_links=("okto-pulse://reference/quality-assessments",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/tool-docs/refinement",
@@ -173,9 +177,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "## `okto_pulse_append_research_decision`",
             "## `okto_pulse_list_research_decisions`",
         ),
-        required_cross_links=(
-            "okto-pulse://workflows/refinements",
-        ),
+        required_cross_links=("okto-pulse://workflows/refinements",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/tool-docs/spec",
@@ -186,9 +188,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "## `okto_pulse_get_checklist_receipt`",
             "## `okto_pulse_submit_spec_validation`",
         ),
-        required_cross_links=(
-            "okto-pulse://reference/spec_gates",
-        ),
+        required_cross_links=("okto-pulse://reference/spec_gates",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/tool-docs/test-scenario",
@@ -200,9 +200,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "## `okto_pulse_execute_test_scenario_evidence`",
             "## `okto_pulse_update_test_scenario_status`",
         ),
-        required_cross_links=(
-            "okto-pulse://reference/card_types",
-        ),
+        required_cross_links=("okto-pulse://reference/card_types",),
     ),
     _ResourceContract(
         uri="okto-pulse://reference/tools_catalog",
@@ -220,13 +218,14 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     _ResourceContract(
         uri="okto-pulse://reference/transitions",
         required_headings=("## Spec transitions",),
-        required_cross_links=(
-            "okto-pulse://reference/spec_gates",
-        ),
+        required_cross_links=("okto-pulse://reference/spec_gates",),
     ),
     _ResourceContract(
         uri="okto-pulse://workflows/cards",
-        required_headings=("### Quality evidence while executing a card",),
+        required_headings=(
+            "### Quality evidence while executing a card",
+            "## 2.12 Agent-mediated implementation targets",
+        ),
         required_cross_links=(
             "okto-pulse://reference/quality-assessments",
             "okto-pulse://reference/policy-compliance",
@@ -234,9 +233,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     ),
     _ResourceContract(
         uri="okto-pulse://workflows/ideations",
-        required_headings=(
-            "## 2.1a Lifecycle Ambiguity Results and Pinpointing",
-        ),
+        required_headings=("## 2.1a Lifecycle Ambiguity Results and Pinpointing",),
         required_cross_links=(
             "okto-pulse://reference/tool-docs/quality",
             "okto-pulse://reference/policy-compliance",
@@ -244,9 +241,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     ),
     _ResourceContract(
         uri="okto-pulse://workflows/kg",
-        required_headings=(
-            "### SK-A relational authority and graph projection",
-        ),
+        required_headings=("### SK-A relational authority and graph projection",),
         required_cross_links=(
             "okto-pulse://reference/quality-assessments",
             "okto-pulse://reference/policy-compliance",
@@ -268,6 +263,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         required_headings=(
             "## Lifecycle Ambiguity Results and Pinpointing",
             "## Operational Research Decision Ledger",
+            "### Agent-mediated Code Traceability sequence",
         ),
         required_cross_links=(
             "okto-pulse://reference/tool-docs/quality",
@@ -278,6 +274,7 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
         uri="okto-pulse://workflows/specs",
         required_headings=(
             "## 2.3a Detail Saturation — DO NOT Push Forward With Gaps",
+            "## 2.3d Agent-mediated Code Traceability",
             "### Spec Quality — Canonical Agent Flow",
             "#### Surface responsibilities",
             "#### Agent flow by Spec status",
@@ -292,12 +289,8 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
     ),
     _ResourceContract(
         uri="okto-pulse://workflows/sprints",
-        required_headings=(
-            "# Sprints Workflow — Lifecycle & Evaluation",
-        ),
-        required_cross_links=(
-            "okto-pulse://reference/policy-compliance",
-        ),
+        required_headings=("# Sprints Workflow — Lifecycle & Evaluation",),
+        required_cross_links=("okto-pulse://reference/policy-compliance",),
     ),
 )
 
@@ -348,9 +341,7 @@ def _validate_content(
         )
 
     links = _cross_links(content)
-    missing_links = tuple(
-        link for link in required_cross_links if link not in links
-    )
+    missing_links = tuple(link for link in required_cross_links if link not in links)
     if missing_links:
         raise ValueError(
             f"{identity}: missing required cross-links: {', '.join(missing_links)}"
@@ -361,9 +352,7 @@ def _validate_content(
         if link not in known_uris and link not in allowed_template_links
     )
     if unresolved:
-        raise ValueError(
-            f"{identity}: unresolved cross-links: {', '.join(unresolved)}"
-        )
+        raise ValueError(f"{identity}: unresolved cross-links: {', '.join(unresolved)}")
     return links
 
 
@@ -375,9 +364,7 @@ def _effective_specs_by_uri() -> dict[str, Any]:
 
 
 def _instruction_content() -> str:
-    resource = package_files("okto_pulse.core.mcp").joinpath(
-        "agent_instructions.md"
-    )
+    resource = package_files("okto_pulse.core.mcp").joinpath("agent_instructions.md")
     return resource.read_text(encoding="utf-8")
 
 
@@ -402,8 +389,7 @@ def build_ska_resource_manifest() -> dict[str, Any]:
     )
     if missing_resources:
         raise ValueError(
-            "Governed resources are not registered: "
-            + ", ".join(missing_resources)
+            "Governed resources are not registered: " + ", ".join(missing_resources)
         )
 
     resources: list[dict[str, Any]] = []
@@ -449,9 +435,7 @@ def build_ska_resource_manifest() -> dict[str, Any]:
             "allowed_template_links": sorted(_INSTRUCTION_ALLOWED_TEMPLATE_LINKS),
         },
     }
-    payload["manifest_sha256"] = hashlib.sha256(
-        _canonical_bytes(payload)
-    ).hexdigest()
+    payload["manifest_sha256"] = hashlib.sha256(_canonical_bytes(payload)).hexdigest()
     return payload
 
 
@@ -489,9 +473,7 @@ def verify_checked_in_manifest(path: Path | None = None) -> Path:
     try:
         actual = target.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise ValueError(
-            f"agent resource manifest is missing: {target}"
-        ) from exc
+        raise ValueError(f"agent resource manifest is missing: {target}") from exc
     if actual != expected:
         raise ValueError(
             "agent resource manifest drift: regenerate with "
@@ -508,11 +490,7 @@ def _main() -> None:
         help="Verify the checked-in manifest without writing it.",
     )
     args = parser.parse_args()
-    target = (
-        verify_checked_in_manifest()
-        if args.check
-        else regenerate_file()
-    )
+    target = verify_checked_in_manifest() if args.check else regenerate_file()
     print(target)
 
 

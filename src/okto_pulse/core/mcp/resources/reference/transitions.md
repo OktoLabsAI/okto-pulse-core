@@ -72,10 +72,12 @@ Bug lifecycle and the regression gate (Path A/B): see `okto-pulse://reference/ca
 
 ## Code Traceability gates
 
-`code_traceability.mode` resolves to `off`, `advisory`, or `blocking`. It does
-not authorize Pulse Core or Pulse Community to access source code. All source
-facts come from bounded receipts submitted after an authenticated external
-agent performs the preflight and investigation in its own environment.
+`code_traceability.mode` resolves to `advisory` (default) or `blocking`.
+Historical absent, `null`, or `off` values resolve to `advisory`; `off` is no
+longer an authored policy. Neither mode authorizes Pulse Core or Pulse
+Community to access source code. All source facts come from bounded receipts
+submitted after an authenticated external agent performs the preflight and
+investigation in its own environment.
 
 | Transition | Current Code Traceability requirement in `blocking` mode |
 |---|---|
@@ -85,9 +87,9 @@ agent performs the preflight and investigation in its own environment.
 | Card → `validation`/`done` | Every active required Target has an execution disposition bound to a current accepted result receipt. |
 
 In `advisory` mode the same currentness, coverage, and overlap decisions remain
-visible but do not independently block the edge. In `off` mode no Code
-Traceability gate is evaluated. `partial`, `unavailable`, revoked, expired,
-conflicted, or outdated receipts never become silently current. Read full gate
-context and `okto_pulse_get_allowed_transitions` immediately before a move.
+visible but do not independently block the edge. `partial`, `unavailable`,
+revoked, expired, conflicted, or outdated receipts never become silently
+current. Read full gate context and `okto_pulse_get_allowed_transitions`
+immediately before a move.
 
 Canonical protocol: `okto-pulse://reference/code-traceability`.

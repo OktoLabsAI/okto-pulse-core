@@ -87,9 +87,9 @@ def test_every_code_traceability_tool_has_a_closed_specific_schema() -> None:
         "okto_pulse_submit_code_evidence",
         "okto_pulse_supersede_code_evidence",
     ):
-        evidence_properties = server.mcp._tool_manager._tools[
-            evidence_tool
-        ].parameters["properties"]
+        evidence_properties = server.mcp._tool_manager._tools[evidence_tool].parameters[
+            "properties"
+        ]
         assert "excerpt_omitted_reason" not in evidence_properties
 
 
@@ -107,12 +107,83 @@ def test_code_traceability_lazy_docs_are_canonical_and_complete() -> None:
     uri = "okto-pulse://reference/tool-docs/code-traceability"
     registered = {entry[0] for entry in server._RESOURCE_REGISTRY}
     assert uri in registered
-    content = server._load_resource_file(
-        "reference/tool-docs/code-traceability.md"
-    )
+    content = server._load_resource_file("reference/tool-docs/code-traceability.md")
     for tool_name in EXPECTED_TOOLS:
         assert server.tool_docs_uri(tool_name) == uri
         assert tool_name in content
+
+
+def test_code_traceability_guidance_is_operational_and_warns_on_advisory() -> None:
+    normative = server._load_resource_file("reference/code_traceability.md")
+    lazy_docs = server._load_resource_file("reference/tool-docs/code-traceability.md")
+    transitions = server._load_resource_file("reference/transitions.md")
+    spec_gates = server._load_resource_file("reference/spec_gates.md")
+
+    for required in (
+        "## Technical Evidence and Technical Anchors",
+        "Code Evidence",
+        "Implementation Target",
+        "## When the agent must record",
+        "## Operational examples",
+        'mode="advisory"',
+        "Pulse never reconstructs omitted source facts",
+        "repeat the preflight and the entire deterministic investigation",
+        "The first receipt's selector scope did not include this newly created Target",
+        "accepted_target_bound_receipt_id",
+        "retry the exact same payload with the same idempotency key",
+        "Criterion (AC)",
+        "Execution Record: `touched`",
+        "or `superseded`, always with a reason",
+        "expected_spec_version=<spec_version_returned_by_previous_link>",
+        'entity_type="technical_requirement"',
+        'entity_type="functional_requirement"',
+        'entity_type="acceptance_criterion"',
+    ):
+        assert required in normative
+
+    for required in (
+        "## Technical Evidence versus Technical Anchors",
+        "## Mandatory operation and fence order",
+        "Every successful link or disposition returns a new `spec_version`",
+        "A receipt whose",
+        "selector scope predates a Target cannot resolve that Target",
+        "Later entity/source/selector/Target drift",
+        "okto_pulse_submit_implementation_target_execution_receipt",
+    ):
+        assert required in lazy_docs
+
+    normalized_transitions = " ".join(transitions.split())
+    assert "`advisory` (default) or `blocking`" in normalized_transitions
+    assert "`off` is no longer an authored policy" in normalized_transitions
+    assert "In `off` mode no Code" not in transitions
+    assert "historical absent, `null`, or `off` settings resolve" in spec_gates
+    assert "in `off` mode this gate is skipped" not in spec_gates
+
+
+def test_entity_workflows_bridge_to_code_traceability_recording_contract() -> None:
+    expectations = {
+        "workflows/refinements.md": (
+            "Technical Evidence",
+            "meaningful claim",
+            "repeat the whole",
+        ),
+        "workflows/specs.md": (
+            "stable entity IDs",
+            "spec_version",
+            "expected_spec_version",
+        ),
+        "workflows/cards.md": (
+            "Technical Anchors",
+            "Implementation Targets",
+            "Execution Disposition",
+            "selector scope predates that Target",
+        ),
+    }
+    for relative_path, required_fragments in expectations.items():
+        content = server._load_resource_file(relative_path)
+        assert "okto-pulse://reference/code-traceability" in content
+        for fragment in required_fragments:
+            assert fragment in content
 
 
 def test_mcp_adapter_has_no_source_acquisition_capability() -> None:
@@ -132,9 +203,7 @@ def test_mcp_adapter_has_no_source_acquisition_capability() -> None:
         if isinstance(node, ast.Import)
         for alias in node.names
     } | {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+        node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     }
     forbidden = (
         "git",

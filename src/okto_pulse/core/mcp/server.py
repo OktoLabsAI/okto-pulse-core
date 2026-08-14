@@ -1948,30 +1948,26 @@ async def _mcp_code_traceability_projection(
         settings = resolve_code_traceability_settings(
             getattr(board, "settings", None) if board else None
         )
-        blocking = settings.mode == "blocking"
+        blocking = settings.mode.value == "blocking"
         return {
             "subject_type": subject_type,
             "subject_id": subject_id,
             "subject_version": subject_version,
             "gate_readiness": {
-                "mode": settings.mode,
+                "mode": settings.mode.value,
                 "allowed": not blocking,
-                "passed": settings.mode == "off",
-                "blockers": (
-                    []
-                    if settings.mode == "off"
-                    else [
-                        {
-                            "code": "code_investigation_currentness_unknown",
-                            "message": (
-                                "Structured Code Traceability projection is unavailable."
-                            ),
-                            "blocking": blocking,
-                            "details": {"reason": type(exc).__name__},
-                            "remediation": [],
-                        }
-                    ]
-                ),
+                "passed": False,
+                "blockers": [
+                    {
+                        "code": "code_investigation_currentness_unknown",
+                        "message": (
+                            "Structured Code Traceability projection is unavailable."
+                        ),
+                        "blocking": blocking,
+                        "details": {"reason": type(exc).__name__},
+                        "remediation": [],
+                    }
+                ],
             },
         }
 

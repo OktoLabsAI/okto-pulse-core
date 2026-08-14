@@ -278,17 +278,30 @@ When Code Traceability is enabled, use this order before implementation:
 
 1. Read `okto_pulse_get_task_context(profile="full", context_scope="gate")`.
 2. Review relevant Code Evidence and inherited dispositions.
-3. Start the Card preflight request. The authenticated external agent checks
-   real access and capabilities and investigates the source in its own
+3. Start the initial Card preflight request. The authenticated external agent
+   checks real access and capabilities and investigates the source in its own
    environment; Pulse Core and Pulse Community never open or search it.
-4. Submit the agent receipt, then create or adjust semantic Targets.
-5. Submit a resolution receipt for every required Target.
+4. Submit that receipt, then create or adjust semantic Targets against its
+   source head.
+5. Refetch the Card and Target revisions. Start and submit a new Target-bound
+   Card preflight whose selector scope includes those exact Target revisions;
+   submit a Resolution for every required Target from this second receipt.
 6. Review overlaps. Create a dependency or a bounded acknowledgement when the
    policy permits it.
 7. Read `okto_pulse_get_allowed_transitions` and follow only an advertised
    edge before starting execution.
 8. After implementation, submit an Execution Disposition for every active
    required Target before `validation` or `done`.
+
+The UI's **Technical Anchors** are these Implementation Targets. Create one
+per independently resolvable action area with a concrete intent, role,
+path/symbol hint, stable Spec links, and baseline Evidence when available. A
+Target is mutable intent, not proof; the agent must still submit its current
+Resolution and post-work Execution Disposition. In `advisory`, missing records
+do not block the move, but Pulse cannot reconstruct them; later source,
+selector, Target, or dependency drift can force the full investigation to be
+repeated. Never resolve a newly created Target with the initial receipt whose
+selector scope predates that Target.
 
 Run a new external preflight, re-evaluate the Targets, and submit a new receipt
 when a dependency finishes, the observed workspace fingerprint changes, a

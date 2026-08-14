@@ -32,6 +32,20 @@ _WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
+class CodeTraceabilityEnforcement(str, Enum):
+    """Closed board-level enforcement for agent-mediated traceability.
+
+    Code Traceability is always evaluated.  ``ADVISORY`` records actionable
+    findings without rejecting a lifecycle transition, while ``BLOCKING``
+    turns the same findings into gate blockers.  Historical ``off`` values
+    are a persistence compatibility concern and are deliberately not part of
+    this authored domain contract.
+    """
+
+    ADVISORY = "advisory"
+    BLOCKING = "blocking"
+
+
 @dataclass(frozen=True, slots=True)
 class CodeTraceabilityLimits:
     """Closed limits frozen by ``pulse-code-receipt-limits-v1``."""

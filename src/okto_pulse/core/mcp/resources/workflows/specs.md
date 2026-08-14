@@ -201,6 +201,12 @@ Evidence remains factual, immutable, and historical. Before moving a Spec to
    applicable to this Spec version.
 5. Confirm `evidence_disposition_coverage_pct = 100`.
 
+Each Evidence link/disposition mutates the technical Spec version. Use the
+`spec_version` returned by one successful mutation as the
+`expected_spec_version` of the next, or refetch the full Spec context. Link to
+stable entity IDs (FR/TR/AC/etc.), never array positions. The canonical
+resource contains a complete sequential TR/FR/AC example.
+
 Do not move to `review` while inherited Evidence is pending. A link or
 disposition never rewrites the Evidence snapshot, its accepted agent receipt,
 or its observed source state. Pulse Core and Pulse Community do not inspect a

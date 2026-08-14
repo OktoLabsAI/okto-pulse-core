@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "f21962f6c369fa14829fbac7bab0b2d7793b550a37bd2a805ac3b6c955e47962",
+    "content_sha256": "4998445e0ca95ca3fd3660b00d1adca2448a4d7649995b9888d55b37d78232bd",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/code-traceability",
@@ -43,12 +43,12 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "feef13a313ccf76aa289b9be3b32140b799c10ff36ddcd852231081774d79d91",
+  "manifest_sha256": "84e9060f455b652f4184a81a56ec6313f9e7d2c74c2ed2da6bec030954ea6809",
   "manifest_version": "agent-resources/v2",
-  "resource_count": 22,
+  "resource_count": 23,
   "resources": [
     {
-      "content_sha256": "25c648e620cdba4fb6bfd6d68ed7f8c463b5edcbe40991b7a72758256d84deea",
+      "content_sha256": "e74b1a34b702cfb1655dc072e6e2d395d4941a506a6cde86ef266d2f72e04566",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
@@ -61,9 +61,14 @@
       ],
       "required_headings": [
         "# Agent-mediated Code Traceability",
+        "## Technical Evidence and Technical Anchors",
         "## Evidence and Targets",
+        "## When the agent must record",
         "## Mandatory external preflight",
         "## Targets and Resolution receipts",
+        "## Operational examples",
+        "## Completion criteria",
+        "## Advisory mode is non-blocking, not no-op",
         "## Security and untrusted code",
         "## Errors and remediation"
       ],
@@ -190,7 +195,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "a05b44db5afa87fd6a6cb7fd80aba67b698ceebddd1a46e8234bcd0526f9bb4e",
+      "content_sha256": "fa4b5f5789181058fb2e0f62681ec518edd0f7dd6158357033baa46aaea1f539",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/tool-docs/spec",
@@ -210,6 +215,27 @@
         "## Curated Spec Checklist Gate — `/specify/v1`"
       ],
       "uri": "okto-pulse://reference/spec_gates"
+    },
+    {
+      "content_sha256": "ee6ec0925fd175aa9ffd20c26e68d40b982ca86b85aa5663bc999846025cd3f6",
+      "cross_links": [
+        "okto-pulse://reference/code-traceability"
+      ],
+      "required_cross_links": [
+        "okto-pulse://reference/code-traceability"
+      ],
+      "required_headings": [
+        "# Tool docs — Code Traceability",
+        "## Technical Evidence versus Technical Anchors",
+        "## Mandatory operation and fence order",
+        "## `okto_pulse_submit_code_evidence`",
+        "## `okto_pulse_link_code_evidence`",
+        "## `okto_pulse_create_implementation_target`",
+        "## `okto_pulse_submit_implementation_target_resolution`",
+        "## `okto_pulse_submit_implementation_target_execution_receipt`",
+        "## Advisory outcome"
+      ],
+      "uri": "okto-pulse://reference/tool-docs/code-traceability"
     },
     {
       "content_sha256": "5c7d272c990ac9a06f96584e4b010475ea095aecf33d716ca061a9aecf98cec1",
@@ -351,7 +377,7 @@
       "uri": "okto-pulse://reference/tools_catalog"
     },
     {
-      "content_sha256": "03dfcff8a5f02af8d49293f3ef8c781bfff45b110fc2645fb737309b729bf9ab",
+      "content_sha256": "541fc4b8e9424e53bc8b404a5d4ca50fc3d4fc30913dcee2fe660e2bd5f82e67",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -370,7 +396,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "6b6769a3e76f6e856969962e1f49bfb3ab66ebfbb5299c31621d07d37a9c2a36",
+      "content_sha256": "c6f454991b7034eafc912530f46c12d3a8939a58333b7b9d4347f003e0e30065",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -384,7 +410,8 @@
         "okto-pulse://reference/policy-compliance"
       ],
       "required_headings": [
-        "### Quality evidence while executing a card"
+        "### Quality evidence while executing a card",
+        "## 2.12 Agent-mediated implementation targets"
       ],
       "uri": "okto-pulse://workflows/cards"
     },
@@ -442,7 +469,7 @@
       "uri": "okto-pulse://workflows/preflight"
     },
     {
-      "content_sha256": "b64ccb48623a51499d91978eab0dda00d3d2aca41de769367f5957151e2fa010",
+      "content_sha256": "99b1f7c21bedef7615249d62a523d865a3b464e4b8a40b02dbdd567d0aa62a6e",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
@@ -456,12 +483,13 @@
       ],
       "required_headings": [
         "## Lifecycle Ambiguity Results and Pinpointing",
-        "## Operational Research Decision Ledger"
+        "## Operational Research Decision Ledger",
+        "### Agent-mediated Code Traceability sequence"
       ],
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "7df193c09ed4a40625181dd5eb6ec096a961a5c7636fec318fa3cc5df49e9125",
+      "content_sha256": "347ded7f528aa666f7c873d92a0a08a1879bcbea725ae3f0f7a4c4f34be8b202",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
@@ -478,6 +506,7 @@
       ],
       "required_headings": [
         "## 2.3a Detail Saturation — DO NOT Push Forward With Gaps",
+        "## 2.3d Agent-mediated Code Traceability",
         "### Spec Quality — Canonical Agent Flow",
         "#### Surface responsibilities",
         "#### Agent flow by Spec status",
