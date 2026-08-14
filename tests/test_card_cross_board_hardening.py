@@ -297,9 +297,10 @@ async def _call(db_factory, tool_name: str, **kwargs) -> dict:
         },
     )()
     register_mcp_test_runtime(db_factory)
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)
-    ), patch.object(mcp_server, "check_permission", return_value=None):
+    with (
+        patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)),
+        patch.object(mcp_server, "check_permission", return_value=None),
+    ):
         tool = await mcp_server.mcp.get_tool(tool_name)
         return json.loads(await tool.fn(**kwargs))
 
@@ -497,9 +498,7 @@ async def test_copy_knowledge_returns_stable_v2_legacy_write_error(
     _graph,
 ):
     ids = _graph
-    register_knowledge_propagation_port(
-        _LegacyKnowledgeScopePort(v2_active=True)
-    )
+    register_knowledge_propagation_port(_LegacyKnowledgeScopePort(v2_active=True))
 
     result = await _call(
         db_factory,
@@ -574,9 +573,12 @@ async def test_traceability_requires_spec_card_and_actor_board_with_zero_audit(
         spec_b = await db.get(Spec, ids["spec_b"])
         assert spec_a.functional_requirements[0]["linked_task_ids"] == []
         assert spec_b.functional_requirements[0]["linked_task_ids"] == []
-    assert await _traceability_activity_count(
-        db_factory, [ids["source_a"], ids["target_b"]]
-    ) == 0
+    assert (
+        await _traceability_activity_count(
+            db_factory, [ids["source_a"], ids["target_b"]]
+        )
+        == 0
+    )
 
     same_board = await _call(
         db_factory,
@@ -590,9 +592,7 @@ async def test_traceability_requires_spec_card_and_actor_board_with_zero_audit(
     assert same_board["success"] is True
     async with db_factory() as db:
         spec_a = await db.get(Spec, ids["spec_a"])
-        assert spec_a.functional_requirements[0]["linked_task_ids"] == [
-            ids["source_a"]
-        ]
+        assert spec_a.functional_requirements[0]["linked_task_ids"] == [ids["source_a"]]
     assert await _traceability_activity_count(db_factory, [ids["source_a"]]) == 1
 
 
@@ -637,9 +637,7 @@ async def test_card_children_cross_board_are_not_read_written_or_audited(
     )
 
     assert ask == {"error": "Failed to create question (card not found)"}
-    assert add_comment == {
-        "error": "Failed to create comment (card not found)"
-    }
+    assert add_comment == {"error": "Failed to create comment (card not found)"}
     assert list_comments == {"error": "Card not found"}
     assert list_attachments == {"error": "Card not found"}
     assert delete_attachment == {"error": "Attachment not found"}
@@ -752,30 +750,28 @@ async def test_qa_choice_comment_and_upload_children_are_parent_card_scoped(
         )
     storage_provider.assert_not_called()
 
-    assert answer == missing_answer == {
-        "error": "Failed to answer question (not found)"
-    }
-    assert delete_question == missing_delete_question == {
-        "error": "Q&A item not found"
-    }
-    assert add_choice == {
-        "error": "Failed to create choice comment (card not found)"
-    }
-    assert respond == missing_respond == {
-        "error": "Choice comment not found or invalid selection"
-    }
-    assert responses == missing_responses == {
-        "error": "Choice comment not found"
-    }
-    assert update == missing_update == {
-        "error": "Comment not found or not owned by this agent"
-    }
-    assert delete_comment == missing_delete_comment == {
-        "error": "Comment not found or not owned by this agent"
-    }
-    assert upload == {
-        "error": "Failed to upload attachment (card not found)"
-    }
+    assert (
+        answer == missing_answer == {"error": "Failed to answer question (not found)"}
+    )
+    assert delete_question == missing_delete_question == {"error": "Q&A item not found"}
+    assert add_choice == {"error": "Failed to create choice comment (card not found)"}
+    assert (
+        respond
+        == missing_respond
+        == {"error": "Choice comment not found or invalid selection"}
+    )
+    assert responses == missing_responses == {"error": "Choice comment not found"}
+    assert (
+        update
+        == missing_update
+        == {"error": "Comment not found or not owned by this agent"}
+    )
+    assert (
+        delete_comment
+        == missing_delete_comment
+        == {"error": "Comment not found or not owned by this agent"}
+    )
+    assert upload == {"error": "Failed to upload attachment (card not found)"}
     assert "SECRET" not in json.dumps(
         [
             answer,
@@ -899,6 +895,8 @@ async def test_task_reads_and_validation_are_card_scoped_before_child_access(
         "okto_pulse_submit_task_validation",
         board_id=ids["board_b"],
         card_id=ids["source_a"],
+        expected_subject_version=1,
+        idempotency_key="cross-board-validation-must-not-write",
         confidence=90,
         confidence_justification="Scoped validation confidence",
         estimated_completeness=90,
@@ -1053,16 +1051,12 @@ async def test_collaboration_commands_reject_actor_command_board_spoof_before_ch
 
     assert answer.payload == {"error": "Failed to answer question (not found)"}
     assert delete_question.payload == {"error": "Q&A item not found"}
-    assert respond.payload == {
-        "error": "Choice comment not found or invalid selection"
-    }
+    assert respond.payload == {"error": "Choice comment not found or invalid selection"}
     assert responses.payload == {"error": "Choice comment not found"}
     assert delete_comment.payload == {
         "error": "Comment not found or not owned by this agent"
     }
-    assert upload.payload == {
-        "error": "Failed to upload attachment (card not found)"
-    }
+    assert upload.payload == {"error": "Failed to upload attachment (card not found)"}
     cards.get_card.assert_not_awaited()
     qa.get_question.assert_not_awaited()
     qa.answer_question.assert_not_awaited()
@@ -1075,7 +1069,9 @@ async def test_collaboration_commands_reject_actor_command_board_spoof_before_ch
 
 
 @pytest.mark.asyncio
-async def test_same_board_card_children_keep_legacy_success_envelopes(db_factory, _graph):
+async def test_same_board_card_children_keep_legacy_success_envelopes(
+    db_factory, _graph
+):
     ids = _graph
     ask = await _call(
         db_factory,
@@ -1129,7 +1125,64 @@ async def test_same_board_card_children_keep_legacy_success_envelopes(db_factory
     assert [item["id"] for item in attachments] == [ids["attachment_a"]]
     assert validations["total"] == 1
     assert validation["id"] == ids["validation_a"]
+    for projected in (*validations["validations"], validation):
+        assert {"response", "request_digest", "idempotency_key"}.isdisjoint(projected)
     assert conclusions["id"] == ids["source_a"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_task_validation_submit_list_and_get_hide_ledger_plumbing(
+    db_factory,
+    _graph,
+) -> None:
+    from sqlalchemy_test_models import CardStatus
+
+    ids = _graph
+    async with db_factory() as db:
+        card = await db.get(Card, ids["source_a"])
+        assert card is not None
+        card.status = CardStatus.VALIDATION
+        card.validations = []
+        await db.commit()
+        await db.refresh(card)
+        expected_subject_version = int(card.policy_version)
+
+    submitted = await _call(
+        db_factory,
+        "okto_pulse_submit_task_validation",
+        board_id=ids["board_a"],
+        card_id=ids["source_a"],
+        expected_subject_version=expected_subject_version,
+        idempotency_key=f"mcp-public-projection-{ids['source_a']}",
+        confidence=90,
+        confidence_justification="Independent review established high confidence.",
+        estimated_completeness=95,
+        completeness_justification="All required implementation behavior is present.",
+        estimated_drift=2,
+        drift_justification="Only the explicitly approved implementation choices differ.",
+        general_justification="The reviewed implementation satisfies the task contract.",
+        recommendation="reject",
+    )
+    listed = await _call(
+        db_factory,
+        "okto_pulse_list_task_validations",
+        board_id=ids["board_a"],
+        card_id=ids["source_a"],
+    )
+    fetched = await _call(
+        db_factory,
+        "okto_pulse_get_task_validation",
+        board_id=ids["board_a"],
+        card_id=ids["source_a"],
+        validation_id=submitted["id"],
+    )
+
+    assert listed["total"] == 1
+    for projected in (submitted, *listed["validations"], fetched):
+        assert {"response", "request_digest", "idempotency_key"}.isdisjoint(projected)
+        assert projected["id"] == submitted["id"]
+        assert projected["validation_outcome"] == "failed"
+        assert projected["completion_outcome"] == "rejected"
 
 
 @pytest.mark.asyncio
@@ -1195,9 +1248,7 @@ async def test_upload_attachment_preloads_scoped_card_before_storage_writer():
         actor=foreign_actor,
         uow=uow,
     )
-    assert foreign.payload == {
-        "error": "Failed to upload attachment (card not found)"
-    }
+    assert foreign.payload == {"error": "Failed to upload attachment (card not found)"}
     attachments.upload_attachment.assert_not_awaited()
     uow.commit.assert_not_awaited()
 
@@ -1275,7 +1326,7 @@ async def test_card_activity_and_seen_scope_parent_before_aggregate_readers():
             cards=cards,
             compute_card_activity=compute_activity,
             compute_card_seen_status=compute_seen,
-        )
+        ),
     )
     foreign_actor = ActorContext(USER_ID, "mcp", board_id="board-b")
 

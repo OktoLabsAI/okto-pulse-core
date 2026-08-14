@@ -1249,6 +1249,12 @@ class Card(Base):
     # estimated_completeness, completeness_justification, estimated_drift, drift_justification,
     # general_justification, recommendation, outcome, threshold_violations, created_at}]
     validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Append-only rejection history plus the bounded Current cause projection.
+    rejection_records: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    current_rejection_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_rejection_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_rejection_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_rejection_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- Bug card fields ---
     card_type: Mapped[CardType] = mapped_column(

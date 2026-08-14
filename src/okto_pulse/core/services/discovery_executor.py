@@ -736,7 +736,11 @@ async def _exec_activity_log(db: Any, board_id: str) -> dict:
         summary_parts = [f"{actor_label} {verb}"]
         if entity_title:
             summary_parts[0] = f"{actor_label} {verb} '{entity_title}'"
-        details = a.details or {}
+        is_task_validation = a.action in {
+            "validation_submitted",
+            "task_validated",
+        }
+        details = {"redacted": True} if is_task_validation else (a.details or {})
         if details.get("from_status") and details.get("to_status"):
             summary_parts.append(
                 f"{details['from_status']} → {details['to_status']}"
@@ -863,6 +867,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
         CardStatus.STARTED,
         CardStatus.IN_PROGRESS,
         CardStatus.VALIDATION,
+        CardStatus.REJECTED,
         CardStatus.ON_HOLD,
     }
     stale_states = {
@@ -931,6 +936,25 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                         "updated_at": (
                             c.updated_at.isoformat() if c.updated_at else None
                         ),
+                    },
+                }
+            )
+
+        if c.status == CardStatus.REJECTED:
+            rows.append(
+                {
+                    "id": c.id,
+                    "type": "rejected_card",
+                    "title": c.title,
+                    "summary": f"Sprint '{sprint_title}' · rework required",
+                    "meta": {
+                        "entity_type": "card",
+                        "entity_id": c.id,
+                        "entity_title": c.title,
+                        "card_id": c.id,
+                        "card_status": c.status.value,
+                        "sprint_id": c.sprint_id,
+                        "sprint_title": sprint_title,
                     },
                 }
             )

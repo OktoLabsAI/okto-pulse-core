@@ -93,6 +93,7 @@ class CardStatus(str, PyEnum):
     STARTED = "started"
     IN_PROGRESS = "in_progress"
     VALIDATION = "validation"
+    REJECTED = "rejected"
     ON_HOLD = "on_hold"
     DONE = "done"
     CANCELLED = "cancelled"

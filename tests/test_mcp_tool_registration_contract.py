@@ -69,7 +69,22 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     assert "confidence" in validation_desc
     assert "completeness" in validation_desc
     assert "drift" in validation_desc
-    assert "failed remains in" in load("reference/tool-docs/misc.md")
+    validation_docs = load("reference/tool-docs/misc.md")
+    assert "validation_outcome" in validation_docs
+    assert "completion_outcome" in validation_docs
+    assert "routes it to `rejected`" in validation_docs
+    validation_schema = tools["okto_pulse_submit_task_validation"].parameters
+    properties = validation_schema["properties"]
+    assert properties["expected_subject_version"]["minimum"] == 1
+    assert properties["idempotency_key"] == {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+    }
+    assert properties["confidence"]["minimum"] == 0
+    assert properties["confidence"]["maximum"] == 100
+    assert properties["general_justification"]["minLength"] == 20
+    assert properties["recommendation"]["enum"] == ["approve", "reject"]
 
     # canonical-debt list: health drill-down tool must be discoverable.
     debt_list_desc = tools["okto_pulse_kg_canonical_debt_list"].description

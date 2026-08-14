@@ -33,6 +33,7 @@ from okto_pulse.core.kg.cognitive_closeout_gate import (
     ELIGIBLE_CLOSEOUT_ENTITY_TYPES,
 )
 from okto_pulse.core.models.schemas import (
+    CardMove,
     IdeationMove,
     RefinementCreate,
     SpecMove,
@@ -40,6 +41,8 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import (
+    CardOperationError,
+    CardService,
     IdeationService,
     RefinementService,
     SpecService,
@@ -111,6 +114,74 @@ def _install_cognitive_block(services, service_name: str) -> None:
             "cognitive_consolidation_pending: done transition blocked (1)"
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_rejected_rework_preview_matches_unsealed_current_cause_guard(
+    db_factory,
+) -> None:
+    board_id = _id("rejected-preview-board")
+    spec_id = _id("rejected-preview-spec")
+    card_id = _id("rejected-preview-card")
+    await _persist(
+        db_factory,
+        _board(board_id),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Rejected preview spec",
+            status=SpecStatus.IN_PROGRESS,
+            created_by=USER_ID,
+        ),
+        Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Rejected card without a Current cause",
+            status=CardStatus.REJECTED,
+            card_type=CardType.NORMAL,
+            position=0,
+            created_by=USER_ID,
+            validations=[
+                {
+                    "id": "val_legacy_direct_pointer",
+                    "card_id": card_id,
+                    "board_id": board_id,
+                    "expected_subject_version": 1,
+                    "validation_outcome": "failed",
+                    "completion_outcome": "rejected",
+                }
+            ],
+            rejection_records=[],
+            current_rejection_kind="task_validation",
+            current_rejection_id="val_legacy_direct_pointer",
+            current_rejection_code="task_validation_failed",
+            current_rejection_summary="Legacy direct validation pointer.",
+        ),
+    )
+
+    async with db_factory() as db:
+        rework = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="card",
+            entity_id=card_id,
+            to_status="in_progress",
+        )
+        with pytest.raises(CardOperationError) as mutation:
+            await CardService(db).move_card(
+                card_id,
+                USER_ID,
+                CardMove(status=CardStatus.IN_PROGRESS),
+            )
+
+    assert rework.blocked_reason is not None
+    assert rework.blocked_reason.startswith("current_rejection_cause_missing:")
+    assert rework.blocked_facts == {
+        "card_id": card_id,
+        "current_rejection_present": False,
+    }
+    assert mutation.value.code == "current_rejection_cause_missing"
 
 
 @pytest.mark.asyncio
@@ -572,9 +643,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
     cognitive_closeout.assert_not_called()
     async with db_factory() as db:
         persisted = await IdeationService(db).get_ideation(ideation_id)
-        persisted_refinement = await RefinementService(db).get_refinement(
-            refinement_id
-        )
+        persisted_refinement = await RefinementService(db).get_refinement(refinement_id)
         snapshots = await IdeationService(db).list_snapshots(ideation_id)
 
     assert persisted is not None

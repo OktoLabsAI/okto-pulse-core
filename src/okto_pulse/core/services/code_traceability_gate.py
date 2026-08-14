@@ -748,17 +748,15 @@ def resolve_code_traceability_settings(
             details={"reason": "board_settings_not_mapping"},
         )
     try:
-        normalized = dict(raw_board_settings)
-        normalized["code_traceability"] = CodeTraceabilitySettings.from_persisted(
-            normalized.get("code_traceability")
-        ).model_dump(mode="json")
-        board_settings = BoardSettings.model_validate(normalized)
+        settings = CodeTraceabilitySettings.from_persisted(
+            raw_board_settings.get("code_traceability")
+        )
     except ValidationError as exc:
         raise CodeTraceabilityContractError(
             "code_traceability_settings_invalid",
             details={"reason": "board_policy_invalid"},
         ) from exc
-    return board_settings.code_traceability
+    return settings
 
 
 class CodeTraceabilityGateEvaluator:

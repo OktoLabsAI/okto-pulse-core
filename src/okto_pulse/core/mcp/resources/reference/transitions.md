@@ -15,11 +15,15 @@ Executable guideline gate/currentness rules are defined in
 | `not_started` | `started` | Spec must be `in_progress` or later |
 | `started` | `in_progress` | — |
 | `in_progress` | `validation` | — |
-| `validation` | `done` | `okto_pulse_submit_task_validation` with `recommendation=approve` |
-| Any | `on_hold` | — |
-| Any | `cancelled` | — |
+| `validation` | `done` | Internal consequence of a successful `okto_pulse_submit_task_validation` and all completion gates |
+| `validation` | `rejected` | Internal consequence only: failed validation or admitted governed completion blocker; never an inbound manual transition |
+| `rejected` | `in_progress` | Executor accepts the sealed cause and starts a new attempt; this is the only public exit |
+| `started`/`in_progress`/`validation` | `on_hold` | Rejected is excluded; it can only start rework |
+| `not_started`/`started`/`in_progress`/`validation`/`on_hold` | `cancelled` | Rejected and Done are excluded |
 
 **When moving to `validation`**, include: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
+
+`rejected` is available only to Normal and Bug cards. Test-card transitions are unchanged. Direct create, drag/drop, generic move, or permission grants cannot assign Rejected. A same-status `rejected` → `rejected` move is accepted only as a position reorder inside the existing Rejected column; it does not create or alter lifecycle state or causal history.
 
 ## Test cards (`card_type = "test"`)
 
@@ -28,6 +32,7 @@ Executable guideline gate/currentness rules are defined in
 | `not_started` | `started` | Spec must be `validated` or later |
 | `not_started` | `in_progress` | Spec must be `validated` or later (direct start is accepted by the API for executable test cards) |
 | `started` | `in_progress` | Spec must be `validated` or later |
+| `validation` | `in_progress` | Test-only rework; Spec dependencies must still be ready |
 | `started`/`in_progress`/`validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift |
 
 Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validation-gate skip, scenario updates on locked specs: see `okto-pulse://reference/card_types`.

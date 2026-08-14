@@ -41,6 +41,7 @@ from okto_pulse.core.services.analytics_contract import (
 from okto_pulse.core.services.coverage_calculator import (
     spec_saturation_envelope_from_coverage,
 )
+from okto_pulse.core.models.schemas import project_task_validation_public
 
 
 def _af(field: str, operator: str, value: Any = None) -> AnalyticsFilter:
@@ -1116,6 +1117,7 @@ async def compute_blockers(
         CardStatus.STARTED,
         CardStatus.IN_PROGRESS,
         CardStatus.VALIDATION,
+        CardStatus.REJECTED,
         CardStatus.ON_HOLD,
     }
     stale_states = {CardStatus.STARTED, CardStatus.IN_PROGRESS, CardStatus.VALIDATION}
@@ -1157,6 +1159,22 @@ async def compute_blockers(
                     "reason": "Card explicitly paused via status=on_hold",
                     "evidence": {
                         "updated_at": c.updated_at.isoformat() if c.updated_at else None
+                    },
+                }
+            )
+
+        if c.status == CardStatus.REJECTED:
+            blockers.append(
+                {
+                    "type": "rework_required",
+                    "card_id": c.id,
+                    "card_title": c.title,
+                    "card_status": c.status.value,
+                    "reason": getattr(c, "current_rejection_summary", None)
+                    or "A governed completion attempt requires rework",
+                    "evidence": {
+                        "cause_kind": getattr(c, "current_rejection_kind", None),
+                        "cause_code": getattr(c, "current_rejection_code", None),
                     },
                 }
             )
@@ -3705,7 +3723,15 @@ async def _card_detail(db: Any, board_id: str, card_id: str) -> dict:
         "completeness": concl.get("completeness") if concl else None,
         "drift": concl.get("drift") if concl else None,
         "conclusions": card.conclusions,
-        "validations": getattr(card, "validations", None) or [],
+        "validations": [
+            project_task_validation_public(
+                item,
+                card_id=str(card.id),
+                board_id=str(board_id),
+            )
+            for item in (getattr(card, "validations", None) or [])
+            if isinstance(item, dict)
+        ],
         "cycle_hours": cycle_hours,
         "created_at": card.created_at.isoformat() if card.created_at else None,
         "updated_at": card.updated_at.isoformat() if card.updated_at else None,

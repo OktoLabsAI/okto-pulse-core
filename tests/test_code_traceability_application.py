@@ -27,6 +27,8 @@ from okto_pulse.core.application.use_cases.code_traceability import (
     StartCodeInvestigationUseCase,
     SubmitCodeEvidenceUseCase,
     SubmitCodeInvestigationReceiptUseCase,
+    _execution_card_version_or_replay,
+    _resolution_card_version_or_replay,
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeEvidenceAttestationBasis,
@@ -2424,6 +2426,19 @@ class FakeCardService:
         )
 
 
+class FakeRejectedCardService:
+    async def get_card(self, card_id: str):
+        if card_id != "card-1":
+            return None
+        return SimpleNamespace(
+            id=card_id,
+            board_id="board-1",
+            policy_version=5,
+            spec_id="spec-1",
+            status="rejected",
+        )
+
+
 class FakeSpecService:
     async def get_spec(self, spec_id: str):
         if spec_id != "spec-1":
@@ -2462,6 +2477,78 @@ class FakeUnitOfWork:
 
     async def commit(self) -> None:
         self.commit_count += 1
+
+
+@pytest.mark.asyncio
+async def test_blocking_rejected_card_allows_preflight_and_resolution_only() -> None:
+    class BlockingBoardService:
+        async def get_board(self, board_id: str):
+            return SimpleNamespace(
+                id=board_id,
+                settings={"code_traceability": {"mode": "blocking"}},
+            )
+
+    investigations = FakeInvestigationStore()
+    traceability = FakeTraceabilityStore(investigations)
+    uow = FakeUnitOfWork(investigations, traceability)
+    uow.services.cards = FakeRejectedCardService()
+    uow.services.boards = BlockingBoardService()
+    actor = ActorContext(
+        "agent-1",
+        "mcp",
+        actor_kind="agent",
+        board_id="board-1",
+        permissions=("code_traceability.investigation.start",),
+    )
+
+    started = await StartCodeInvestigationUseCase(
+        CodeInvestigationService(
+            challenge_policy=challenge_policy(),
+            clock=MutableClock(),
+            id_factory=StableIds(),
+        )
+    ).execute(
+        StartCodeInvestigationInput(
+            board_id="board-1",
+            subject_type=CodeTraceabilitySubjectType.CARD,
+            subject_id="card-1",
+            expected_subject_version=5,
+            source_ref=None,
+            idempotency_key="rejected-preflight-5",
+        ),
+        actor=actor,
+        uow=uow,  # type: ignore[arg-type]
+    )
+    assert started.request.subject_version == 5
+
+    resolution_command = SimpleNamespace(
+        board_id="board-1",
+        card_id="card-1",
+        target_id="target-1",
+        investigation_receipt_id="receipt-current-5",
+        idempotency_key="resolution-current-5",
+    )
+    assert (
+        await _resolution_card_version_or_replay(
+            resolution_command, actor=actor, uow=uow  # type: ignore[arg-type]
+        )
+        == 5
+    )
+
+    execution_command = SimpleNamespace(
+        board_id="board-1",
+        card_id="card-1",
+        target_id="target-1",
+        result_investigation_receipt_id="receipt-current-5",
+        idempotency_key="execution-current-5",
+    )
+    with pytest.raises(ImplementationTargetInvalid) as blocked:
+        await _execution_card_version_or_replay(
+            execution_command, actor=actor, uow=uow  # type: ignore[arg-type]
+        )
+    assert blocked.value.details == {
+        "reason": "card_rejected_rework_handoff_required"
+    }
 
 
 @pytest.mark.asyncio

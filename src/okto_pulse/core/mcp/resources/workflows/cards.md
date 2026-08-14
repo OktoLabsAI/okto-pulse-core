@@ -233,8 +233,8 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 ### Implementor Workflow
 
 1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Check `validation_config.required`.
-2. **MANDATORY for restarts** — if the card has a failed validation, read `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, `general_justification` before changing the implementation.
-3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, a normal card moves to `started` and then `in_progress`. Resume directly to `in_progress` only from an advertised current-state edge.
+2. **MANDATORY for rework** — a failed admitted completion is status `rejected`. Read `current_rejection_summary` plus the referenced validation's `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, and `general_justification`. Editing implementation while Rejected is forbidden because it would erase the human handoff boundary. In blocking Code Traceability mode, the rejection's version bump can make an existing Target resolution outdated: investigation preflight and Target resolution renewal are the only allowed technical writes while Rejected; Target create/update, execution receipts, evidence dispositions, and implementation content remain frozen.
+3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, a normal card moves to `started` and then `in_progress`. A Rejected card has exactly one exit: move it to `in_progress` before changing implementation. That clears only the Current pointer; causal history remains append-only.
 4. Implement the task.
 5. Link artifacts — attach knowledge bases, mockups, or comments as work progresses.
 6. Move to validation — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)`.
@@ -245,12 +245,12 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 1. Confirm the card is in `validation` before analyzing. Find queued cards with `okto_pulse_list_cards_by_status(board_id, status="validation")`; if a candidate is not in that status, the implementor has not completed the handoff and validation must not start.
 2. Get full gate context for each card — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Inspect `reviewer_separation` before acting; it is evaluated for the current agent against the card creator, assignee, and executor report author.
 3. Analyze the work — review implementation against card description and spec requirements. When `reviewer_separation.mode="enforce"` and `allowed=false`, hand the validation to an independent principal instead of retrying.
-4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, ...)` with:
+4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, expected_subject_version, idempotency_key, ...)` with:
    - `confidence` (0-100) + `confidence_justification`
    - `estimated_completeness` (0-100) + `completeness_justification`
    - `estimated_drift` (0-100) + `drift_justification`
    - `general_justification` + `recommendation` (`"approve"` or `"reject"`)
-5. System routes automatically — you do NOT need to move the card.
+5. System routes automatically — `completion_outcome=completed` moves to `done`; `completion_outcome=rejected` moves Normal/Bug to `rejected` with one sealed Current cause. Test cards remain on their separate scenario workflow. Infrastructure/authorization/concurrency errors persist neither validation nor rejection.
 
 ### Reviewer Separation Modes
 

@@ -50,7 +50,7 @@ Cache the resource within the session; re-fetch when you switch domains — reso
 
 ## Card Status Transitions
 
-Every status change has pre-requisites (e.g. `validation` → `done` requires `okto_pulse_submit_task_validation`; `approved` → `validated` requires all coverage gates passing). Before any move, fetch `okto-pulse://reference/transitions` for the full matrix (normal/test cards, sprints, specs). Ideation/refinement status flows live in their workflow files (`okto-pulse://workflows/{ideations,refinements}`).
+Every status change has pre-requisites. For a normal Task or Bug in `validation`, call `okto_pulse_submit_task_validation`: an admitted successful assessment with every governed completion gate satisfied completes the card, while a failed assessment or completion gate moves it to `rejected`. `rejected` is an explicit rework queue, not a request to resubmit the same evidence; inspect its Current rejection cause, correct the work, and use the sole public exit `rejected` → `in_progress` before a new validation cycle. Test Cards retain their separate `validation` → `in_progress` rework edge and never enter `rejected`. Spec `approved` → `validated` still requires all coverage gates passing. Before any move, fetch `okto-pulse://reference/transitions` for the full matrix (normal/test cards, sprints, specs). Ideation/refinement status flows live in their workflow files (`okto-pulse://workflows/{ideations,refinements}`).
 
 ---
 

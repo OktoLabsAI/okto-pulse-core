@@ -154,6 +154,9 @@ from okto_pulse.core.services.main import (
     TopicOperationError,
     scenario_has_authenticated_required_evidence,
 )
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 from okto_pulse.core.services.reference_resolution import (
     resolve_entity_context_references,
     resolve_spec_references,
@@ -1690,6 +1693,10 @@ _TASK_GATE_CARD_SELECT_FIELDS = (
     "linked_test_task_ids",
     "spec_id",
     "sprint_id",
+    "current_rejection_kind",
+    "current_rejection_id",
+    "current_rejection_code",
+    "current_rejection_summary",
     # Gate history is projected as five scalar JSON objects plus an exact
     # count.  The persistence adapter must not return the complete JSON body.
     "validations_count",
@@ -2649,7 +2656,6 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
-
     wanted = _parse_include(include)
 
     from okto_pulse.core.application.use_cases import (
@@ -3337,7 +3343,7 @@ async def okto_pulse_create_card(
     spec_id: str,
     description: str = "",
     details: str = "",
-    status: str = "not_started",
+    status: Literal["not_started", "started"] = "not_started",
     priority: str = "none",
     assignee_id: str = "",
     labels: list[str] | str = "",
@@ -3373,14 +3379,15 @@ async def okto_pulse_create_card(
     )
     from okto_pulse.core.models.schemas import CardCreate
 
-    try:
-        card_status = CardStatus(status)
-    except ValueError:
+    if status not in (CardStatus.NOT_STARTED.value, CardStatus.STARTED.value):
         return json.dumps(
             {
-                "error": f"Invalid status. Must be one of: {[s.value for s in CardStatus]}"
+                "error": "card_initial_status_invalid",
+                "detail": "A card can only be created in not_started or started.",
+                "allowed_statuses": ["not_started", "started"],
             }
         )
+    card_status = CardStatus(status)
 
     try:
         card_priority = CardPriority(priority)
@@ -3791,6 +3798,9 @@ async def okto_pulse_get_task_context(
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
+    can_read_task_validations = (
+        check_permission(ctx.permissions, "card.validation.read") is None
+    )
 
     from okto_pulse.core.mcp.projection_envelope import (
         resolve_profile as _resolve_profile,
@@ -3849,7 +3859,7 @@ async def okto_pulse_get_task_context(
             return json.dumps({"error": "Card not found"})
         _gate_validations: list[dict[str, Any]] = []
         _gate_validation_count = 0
-        if _gate_scope:
+        if _gate_scope and can_read_task_validations:
             _gate_validations, _gate_validation_count = _gate_recent_validations(card)
         if _inc_kb and not _gate_scope:
             from okto_pulse.core.application.effective_knowledge_read import (
@@ -3897,6 +3907,24 @@ async def okto_pulse_get_task_context(
                 "due_date": card.due_date.isoformat() if card.due_date else None,
                 "created_by": card.created_by,
                 "created_at": card.created_at.isoformat(),
+                **(
+                    {
+                        "current_rejection_kind": getattr(
+                            card, "current_rejection_kind", None
+                        ),
+                        "current_rejection_id": getattr(
+                            card, "current_rejection_id", None
+                        ),
+                        "current_rejection_code": getattr(
+                            card, "current_rejection_code", None
+                        ),
+                        "current_rejection_summary": getattr(
+                            card, "current_rejection_summary", None
+                        ),
+                    }
+                    if can_read_task_validations
+                    else {}
+                ),
             },
         }
 
@@ -4310,22 +4338,23 @@ async def okto_pulse_get_task_context(
         # Task validations — critical for agents picking up cards that failed validation.
         # Gate keeps only the latest window in the assembly and carries the real
         # total separately; the projector then applies its established field denylist.
-        _task_validations = (
-            _gate_validations if _gate_scope else (card.validations or [])
-        )
-        if _gate_scope:
-            result["validations"] = _gate_validations
-            result["validation_history"] = {
-                "total_count": _gate_validation_count,
-            }
-            _gate_manifest_inventory["validations"] = {
-                "presence": "present" if _gate_validation_count else "empty",
-                "materialization": "bounded_window",
-                "reason": "latest_gate_window_only",
-                "item_count": _gate_validation_count,
-            }
-        else:
-            result["validations"] = list(_task_validations)
+        if can_read_task_validations:
+            _task_validations = (
+                _gate_validations if _gate_scope else (card.validations or [])
+            )
+            if _gate_scope:
+                result["validations"] = _gate_validations
+                result["validation_history"] = {
+                    "total_count": _gate_validation_count,
+                }
+                _gate_manifest_inventory["validations"] = {
+                    "presence": "present" if _gate_validation_count else "empty",
+                    "materialization": "bounded_window",
+                    "reason": "latest_gate_window_only",
+                    "item_count": _gate_validation_count,
+                }
+            else:
+                result["validations"] = list(_task_validations)
 
         # Validation gate config (resolved from sprint -> spec -> board hierarchy)
         board_obj = await _gate_select_application_record(
@@ -4456,6 +4485,18 @@ async def okto_pulse_get_task_context(
                 context_scope=_resolved_context_scope,
             )
 
+        if not can_read_task_validations:
+            result.pop("validations", None)
+            result.pop("validation_history", None)
+            for field_name in (
+                "current_rejection_kind",
+                "current_rejection_id",
+                "current_rejection_code",
+                "current_rejection_summary",
+                "rejection_records",
+            ):
+                result["card"].pop(field_name, None)
+
         from okto_pulse.core.mcp.context_projection import (
             build_bounded_task_content_manifest,
             project_task_context,
@@ -4482,6 +4523,23 @@ async def okto_pulse_get_task_context(
                 profile=profile,
                 context_scope=_resolved_context_scope,
             )
+        # The projector intentionally normalizes validation containers for
+        # ordinary authorized contexts.  Re-apply the permission boundary
+        # after projection so that this normalization cannot manufacture an
+        # empty validation/history signal for actors denied the dedicated leaf.
+        if not can_read_task_validations:
+            projected.pop("validations", None)
+            projected.pop("validation_history", None)
+            projected_card = projected.get("card")
+            if isinstance(projected_card, dict):
+                for field_name in (
+                    "current_rejection_kind",
+                    "current_rejection_id",
+                    "current_rejection_code",
+                    "current_rejection_summary",
+                    "rejection_records",
+                ):
+                    projected_card.pop(field_name, None)
         # Compact separators make the advertised profile byte budget a wire-level
         # bound too (the projection counter uses the same compact JSON contract).
         if _gate_scope:
@@ -4702,9 +4760,18 @@ async def okto_pulse_move_card(
     board_id: str,
     card_id: str,
     status: Annotated[
-        str,
+        Literal[
+            "not_started",
+            "started",
+            "in_progress",
+            "validation",
+            "on_hold",
+            "done",
+            "cancelled",
+            "rejected",
+        ],
         Field(
-            description="Target column; moving to validation/done requires the execution-report fields"
+            description="Public target column; moving to validation/done requires the execution-report fields. rejected is accepted only for same-column reorder of an already Rejected card; it is never a manual lifecycle destination."
         ),
     ],
     position: int = -1,
@@ -4739,7 +4806,9 @@ async def okto_pulse_move_card(
     drift_justification so the reviewer can validate the claim. Use -1 for
     completeness/drift when no execution report is required (e.g. moving to
     on_hold or started). status='cancelled' requires cancellation_reason;
-    reopening clears it. Errors: resource_gate_missing_resources;
+    reopening clears it. status='rejected' is valid only to reorder a card
+    already in Rejected; every inbound transition to Rejected is refused.
+    Errors: resource_gate_missing_resources;
     missing_regression_test_task (bug -> in_progress);
     impact_evidence_required (mode 'require' without a populated block).
     """
@@ -4750,14 +4819,25 @@ async def okto_pulse_move_card(
     from okto_pulse.core.domain.enums import CardStatus
     from okto_pulse.core.models.schemas import CardMove
 
-    try:
-        card_status = CardStatus(status)
-    except ValueError:
+    public_targets = (
+        "not_started",
+        "started",
+        "in_progress",
+        "validation",
+        "on_hold",
+        "done",
+        "cancelled",
+        "rejected",
+    )
+    if status not in public_targets:
         return json.dumps(
             {
-                "error": f"Invalid status. Must be one of: {[s.value for s in CardStatus]}"
+                "error": "card_move_target_status_invalid",
+                "message": "Status is not a supported Card move target.",
+                "allowed_statuses": list(public_targets),
             }
         )
+    card_status = CardStatus(status)
 
     from okto_pulse.core.application.use_cases import (
         McpMoveCardCommand,
@@ -5460,7 +5540,7 @@ async def okto_pulse_list_cards_by_status(
 ) -> str:
     """List cards on the board with optional filters and pagination.
 
-    status: empty = all, or one of not_started/started/in_progress/validation/on_hold/done/cancelled/open.
+    status: empty = all, or one of not_started/started/in_progress/validation/rejected/on_hold/done/cancelled/open.
     Use 'open' for all cards NOT in done/cancelled. Archived cards are excluded
     unless include_archived=true. Max limit is 200.
     """
@@ -12226,6 +12306,15 @@ async def _load_mcp_spec_card_for_link(
     except EntityNotFoundError as exc:
         entity = "Spec" if exc.entity_type == "spec" else "Card"
         return None, None, json.dumps({"error": f"{entity} not found"})
+    try:
+        require_card_operational_mutation_allowed(
+            card,
+            operation="link_card_traceability",
+        )
+    except CardOperationError as exc:
+        return None, None, json.dumps(
+            {"error": exc.code, **exc.to_dict(), **exc.facts}
+        )
     return spec, card, None
 
 
@@ -18900,14 +18989,16 @@ async def okto_pulse_suggest_sprints(
 async def okto_pulse_submit_task_validation(
     board_id: str,
     card_id: str,
-    confidence: int,
-    confidence_justification: str,
-    estimated_completeness: int,
-    completeness_justification: str,
-    estimated_drift: int,
-    drift_justification: str,
-    general_justification: str,
-    recommendation: str,
+    expected_subject_version: Annotated[int, Field(ge=1)],
+    idempotency_key: Annotated[str, Field(min_length=1, max_length=255)],
+    confidence: Annotated[int, Field(ge=0, le=100)],
+    confidence_justification: Annotated[str, Field(min_length=10)],
+    estimated_completeness: Annotated[int, Field(ge=0, le=100)],
+    completeness_justification: Annotated[str, Field(min_length=10)],
+    estimated_drift: Annotated[int, Field(ge=0, le=100)],
+    drift_justification: Annotated[str, Field(min_length=10)],
+    general_justification: Annotated[str, Field(min_length=20)],
+    recommendation: Literal["approve", "reject"],
 ) -> str:
     """
     Submit a task validation for a card in 'validation' status.
@@ -18921,9 +19012,11 @@ async def okto_pulse_submit_task_validation(
     ``off`` accept the submission and persist the complete decision. Legacy
     boards with no setting resolve to ``off`` with
     ``source=legacy_absent_compat``. The system then
-    automatically routes the card: success → done; failed remains in
-    validation so the validator feedback stays visible and the executor can
-    decide whether to move the card back for rework."""
+    automatically routes the card: successful completion → done; a failed
+    validation or other admitted completion blocker → rejected. Rejected is a
+    rework handoff: an executor must first move it to in_progress. Exact
+    retries use ``idempotency_key`` and are resolved before the mutable status
+    check; ``expected_subject_version`` is the optimistic concurrency fence."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -18941,6 +19034,8 @@ async def okto_pulse_submit_task_validation(
             return json.dumps({"error": f"{name} must be between 0 and 100"})
 
     data = {
+        "expected_subject_version": expected_subject_version,
+        "idempotency_key": idempotency_key,
         "confidence": confidence,
         "confidence_justification": confidence_justification,
         "estimated_completeness": estimated_completeness,
@@ -20120,9 +20215,10 @@ async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, "card.validation.read")
-    if perm_err:
-        return _perm_error(perm_err)
+    for required_permission in ("card.entity.read", "card.validation.read"):
+        perm_err = check_permission(ctx.permissions, required_permission)
+        if perm_err:
+            return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases import (
         EntityNotFoundError,
@@ -20167,9 +20263,10 @@ async def okto_pulse_get_task_validation(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, "card.validation.read")
-    if perm_err:
-        return _perm_error(perm_err)
+    for required_permission in ("card.entity.read", "card.validation.read"):
+        perm_err = check_permission(ctx.permissions, required_permission)
+        if perm_err:
+            return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases import (
         EntityNotFoundError,
@@ -24458,6 +24555,15 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
     }
 )
 
+_LAZY_COMPACT_DESCRIPTION_OVERRIDES = {
+    "okto_pulse_submit_task_validation": (
+        "Evaluate a Normal/Bug card in Validation on confidence, completeness, "
+        "and drift. An admitted failed assessment or completion gate routes the "
+        "card to Rejected; exact retries use the version fence and idempotency key. "
+        "Read `okto-pulse://reference/tool-docs/misc` before use."
+    ),
+}
+
 
 def _compact_reviewed_tool_descriptions() -> None:
     catalog = mcp.resolve()
@@ -24473,8 +24579,9 @@ def _compact_reviewed_tool_descriptions() -> None:
         tool = catalog._tool_manager._tools[tool_name]
         catalog._tool_manager._tools[tool_name] = dataclass_replace(
             tool,
-            description=(
-                f"Run `{tool_name}`. Read `{tool_docs_uri(tool_name)}` before use."
+            description=_LAZY_COMPACT_DESCRIPTION_OVERRIDES.get(
+                tool_name,
+                f"Run `{tool_name}`. Read `{tool_docs_uri(tool_name)}` before use.",
             ),
         )
 

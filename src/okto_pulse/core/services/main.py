@@ -35,6 +35,16 @@ from okto_pulse.core.domain.card_transition import (
     test_completion_block,
     validation_gate_block,
 )
+from okto_pulse.core.domain.card_completion import (
+    CardCompletionOutcome,
+    CardRejectionCause,
+    CardRejectionKind,
+    CardRejectionRecord,
+    CompletionGateFailure,
+    TaskValidationOutcome,
+    current_rejection_cause,
+    decide_card_completion,
+)
 from okto_pulse.core.domain.enums import (
     CardStatus,
     CardType,
@@ -74,6 +84,7 @@ from okto_pulse.core.domain.spec_dependency import (
     transition_starts_spec_execution,
 )
 from okto_pulse.core.domain.sdlc_registry import (
+    is_internal_transition_allowed,
     is_transition_allowed,
     transition_contracts,
     transition_map,
@@ -145,6 +156,7 @@ from okto_pulse.core.models.schemas import (
     SprintUpdate,
     TopicCreate,
     TopicUpdate,
+    project_task_validation_public,
 )
 from okto_pulse.core.services.application_schemas import (
     PersistedTestScenarioSpecUpdate,
@@ -186,9 +198,11 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     evaluate_coverage_confirmation_consumability,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
-    BugWorkflowRemediationMessage,
     BugWorkflowRemediationMessageBuilder,
-    serialize_bug_workflow_remediation,
+)
+from okto_pulse.core.services.card_errors import CardOperationError
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
 )
 from okto_pulse.core.services.cancellation import apply_cancellation_policy
 from okto_pulse.core.services.card_traceability import (
@@ -561,6 +575,7 @@ async def evaluate_code_traceability_transition(
                 "started",
                 "in_progress",
                 "validation",
+                "rejected",
             }:
                 blocking.append(card_id)
         blocking_card_ids = tuple(blocking)
@@ -1580,6 +1595,20 @@ def _cognitive_blocking_count(result: Any) -> int:
     return len(blocking_items)
 
 
+class GovernedCompletionBlocked(ValueError):
+    """A known, human-actionable gate blocker that may cause Rejected."""
+
+    def __init__(self, code: str, summary: str, *, reason_codes: tuple[str, ...] = ()):
+        self.code = code
+        self.summary = summary
+        self.reason_codes = reason_codes or (code,)
+        super().__init__(f"{code}: {summary}")
+
+
+class CompletionInfrastructureUnavailable(ValueError):
+    """Technical gate failure; it must never be persisted as a rejection."""
+
+
 def _evaluate_cognitive_closeout_or_raise(
     *,
     gate_factory: Callable[[], Any],
@@ -1611,7 +1640,7 @@ def _evaluate_cognitive_closeout_or_raise(
             graph_state=graph_state,
         )
     except Exception as exc:
-        raise ValueError(
+        raise CompletionInfrastructureUnavailable(
             f"cognitive_status_unavailable: {target_label} done transition "
             f"blocked ({type(exc).__name__})"
         ) from exc
@@ -1635,9 +1664,12 @@ def _evaluate_cognitive_closeout_or_raise(
         )
     else:
         detail = "by active cognitive consolidation items"
-    raise ValueError(
-        f"{reason}: {target_label} done transition blocked {detail} ({blocking_count})"
+    summary = (
+        f"{target_label} done transition blocked {detail} ({blocking_count})"
     )
+    if reason == "cognitive_status_unavailable":
+        raise CompletionInfrastructureUnavailable(f"{reason}: {summary}")
+    raise GovernedCompletionBlocked(reason, summary)
 
 
 def _build_default_cognitive_readiness_service() -> Any:
@@ -1698,8 +1730,8 @@ async def _evaluate_cognitive_readiness_or_raise(
     )
     from okto_pulse.core.kg.cognitive_readiness import GATE_BLOCKING_TIERS
 
-    def _unavailable(reason: str) -> ValueError:
-        return ValueError(
+    def _unavailable(reason: str) -> CompletionInfrastructureUnavailable:
+        return CompletionInfrastructureUnavailable(
             f"cognitive_readiness_unavailable: {target_label} done transition "
             f"blocked — {reason} (blocking policy active)"
         )
@@ -1750,10 +1782,10 @@ async def _evaluate_cognitive_readiness_or_raise(
                 f"readiness evaluation failed for {ref} ({type(exc).__name__})"
             ) from exc
         if verdict.blocking and verdict.tier in blocking_tiers:
-            raise ValueError(
-                f"{verdict.tier}: {target_label} done transition blocked by "
-                "cognitive readiness "
-                f"({verdict.readiness_signal or verdict.reason_code or verdict.tier})"
+            raise GovernedCompletionBlocked(
+                str(verdict.tier),
+                f"{target_label} done transition blocked by cognitive readiness "
+                f"({verdict.readiness_signal or verdict.reason_code or verdict.tier})",
             )
 
 
@@ -2935,51 +2967,6 @@ class BoardService:
         await _application_add(self.db, log)
 
 
-class CardOperationError(ValueError):
-    """Typed card workflow error for API/MCP callers."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        *,
-        remediation: str | None = None,
-        facts: dict[str, Any] | None = None,
-        workflow_remediation: BugWorkflowRemediationMessage | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.remediation = remediation
-        self.facts = facts or {}
-        self.workflow_remediation = workflow_remediation
-
-    def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "code": self.code,
-            "message": self.message,
-        }
-        if self.remediation:
-            payload["remediation"] = self.remediation
-        if self.facts:
-            payload["facts"] = self.facts
-        if self.workflow_remediation:
-            serialized = serialize_bug_workflow_remediation(self.workflow_remediation)
-            if serialized:
-                payload["remediation_message"] = serialized
-                for key in (
-                    "reason_code",
-                    "remediation_path",
-                    "next_action",
-                    "semantic_gap_required",
-                    "eligible_scenarios_count",
-                    "hotfix_lane_status",
-                    "actions",
-                ):
-                    payload[key] = serialized[key]
-        return payload
-
-
 def _structured_item_ids(values: object) -> set[str]:
     if not isinstance(values, list):
         return set()
@@ -3773,6 +3760,7 @@ class CardService:
         card = await self.get_card(card_id)
         if not card:
             return None
+        require_card_operational_mutation_allowed(card, operation="update_card")
 
         update_data = data.model_dump(exclude_unset=True)
         if "status" in update_data:
@@ -4095,6 +4083,13 @@ class CardService:
         )
         if existing:
             return existing[0]
+        card = await self.get_card(card_id)
+        if card is None:
+            raise ValueError("Card not found")
+        require_card_operational_mutation_allowed(
+            card,
+            operation="add_dependency",
+        )
         # Check circular
         if await self._would_create_cycle(card_id, depends_on_id):
             raise CardOperationError(
@@ -4120,6 +4115,14 @@ class CardService:
                 _apf("depends_on_id", "eq", depends_on_id),
             ),
         )
+        if rows:
+            card = await self.get_card(card_id)
+            if card is None:
+                raise ValueError("Card not found")
+            require_card_operational_mutation_allowed(
+                card,
+                operation="remove_dependency",
+            )
         for row in rows:
             await _application_delete(self.db, row)
         return bool(rows)
@@ -4296,6 +4299,481 @@ class CardService:
             },
         }
 
+    @staticmethod
+    def _card_subject_version(card: ApplicationRecord) -> int:
+        value = getattr(card, "policy_version", None)
+        if value is None:
+            value = getattr(card, "version", 1)
+        return int(value or 1)
+
+    @staticmethod
+    def _task_validation_request_digest(
+        *,
+        card: ApplicationRecord,
+        reviewer_id: str,
+        expected_subject_version: int,
+        data: Mapping[str, Any],
+    ) -> str:
+        from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+
+        return canonical_sha256(
+            {
+                "contract": "task-validation-submit/v2",
+                "board_id": card.board_id,
+                "card_id": card.id,
+                "reviewer_id": reviewer_id,
+                "expected_subject_version": expected_subject_version,
+                "confidence": data.get("confidence"),
+                "confidence_justification": data.get("confidence_justification"),
+                "estimated_completeness": data.get("estimated_completeness"),
+                "completeness_justification": data.get(
+                    "completeness_justification"
+                ),
+                "estimated_drift": data.get("estimated_drift"),
+                "drift_justification": data.get("drift_justification"),
+                "general_justification": data.get("general_justification"),
+                "recommendation": data.get("recommendation"),
+            }
+        )
+    @staticmethod
+    def _task_validation_replay(
+        card: ApplicationRecord,
+        *,
+        idempotency_key: str,
+        request_digest: str,
+    ) -> dict[str, Any] | None:
+        for validation in reversed(list(getattr(card, "validations", None) or [])):
+            if not isinstance(validation, dict):
+                continue
+            if validation.get("idempotency_key") != idempotency_key:
+                continue
+            if validation.get("request_digest") != request_digest:
+                raise CardOperationError(
+                    "task_validation_idempotency_conflict",
+                    "The idempotency key was already used with a different request.",
+                    remediation="retry_with_a_new_idempotency_key",
+                    facts={"card_id": card.id, "idempotency_key": idempotency_key},
+                )
+            return project_task_validation_public(
+                validation,
+                card_id=str(card.id),
+                board_id=str(card.board_id),
+                replayed=True,
+            )
+        return None
+
+    async def _bug_regression_completion_failure(
+        self,
+        *,
+        card: ApplicationRecord,
+        board: ApplicationRecord | None,
+    ) -> CompletionGateFailure | None:
+        """Re-evaluate the governed Bug regression gate before completion.
+
+        The ordinary move gate runs when a Bug first enters execution.  Task
+        Validation is the completion decision point, so it must evaluate the
+        same persisted lineage again: a link/scenario/amendment may have become
+        invalid while the Bug was being implemented.  This helper is purposely
+        read-only.  Infrastructure failures propagate and roll back the submit;
+        only known domain blockers are converted into a rejection cause.
+        """
+
+        settings = (getattr(board, "settings", None) or {}) if board else {}
+        raw_severity = getattr(card, "severity", None)
+        severity_value = getattr(raw_severity, "value", raw_severity) or "minor"
+        facts = CardTransitionFacts(
+            card_id=card.id,
+            old_status=CardStatus.NOT_STARTED,
+            new_status=CardStatus.IN_PROGRESS,
+            card_type=getattr(card, "card_type", CardType.NORMAL),
+            spec_id=getattr(card, "spec_id", None),
+            require_test_task_for_bug=bool(
+                settings.get("require_test_task_for_bug", True)
+            ),
+            bug_test_gate_min_severity=str(
+                settings.get("bug_test_gate_min_severity", "minor")
+            ),
+            severity=str(severity_value),
+        )
+        if not bug_regression_gate_applies(facts):
+            return None
+
+        direct_test_ids = [
+            str(value) for value in (getattr(card, "linked_test_task_ids", None) or [])
+        ]
+        amendment_rows = (
+            await AmendmentRevisionService(self.db).list_for_bug(
+                board_id=card.board_id,
+                original_spec_id=card.spec_id,
+                origin_bug_id=card.id,
+            )
+            if getattr(card, "spec_id", None)
+            else []
+        )
+        amendment_facts = [
+            AmendmentLineageFact.from_row(row) for row in amendment_rows
+        ]
+        effective_test_ids = (
+            direct_test_ids or _amendment_regression_test_task_ids(amendment_rows)
+        )
+        if not effective_test_ids:
+            return CompletionGateFailure(
+                code="missing_regression_test_task",
+                summary=(
+                    "Bug completion requires at least one current regression Test "
+                    "card linked directly or through an eligible amendment."
+                ),
+                reason_codes=("missing_regression_test_task",),
+            )
+
+        spec = (
+            await _application_get(self.db, "spec", card.spec_id)
+            if getattr(card, "spec_id", None)
+            else None
+        )
+        if spec is None:
+            return CompletionGateFailure(
+                code="bug_spec_missing",
+                summary="Bug regression eligibility cannot be evaluated without its Spec.",
+                reason_codes=("bug_spec_missing",),
+            )
+        origin_task = (
+            await _application_get(self.db, "card", card.origin_task_id)
+            if getattr(card, "origin_task_id", None)
+            else None
+        )
+        if origin_task is None:
+            return CompletionGateFailure(
+                code="origin_task_missing",
+                summary=(
+                    "Bug regression eligibility cannot be evaluated without a current "
+                    "origin Task."
+                ),
+                reason_codes=("origin_task_missing",),
+            )
+
+        linked_test_tasks: list[ApplicationRecord] = []
+        candidate_scenario_ids: list[str] = []
+        bug_created_at = getattr(card, "created_at", None)
+        for test_task_id in effective_test_ids:
+            test_task = await _application_get(self.db, "card", test_task_id)
+            if test_task is None:
+                return CompletionGateFailure(
+                    code="linked_test_task_missing",
+                    summary="A linked regression Test card no longer exists.",
+                    reason_codes=("linked_test_task_missing",),
+                )
+            test_card_type = getattr(test_task, "card_type", CardType.NORMAL)
+            if getattr(test_card_type, "value", test_card_type) != CardType.TEST.value:
+                return CompletionGateFailure(
+                    code="linked_test_task_type_invalid",
+                    summary="A linked regression card is not a Test card.",
+                    reason_codes=("linked_test_task_type_invalid",),
+                )
+            scenario_ids = [
+                str(value)
+                for value in (getattr(test_task, "test_scenario_ids", None) or [])
+            ]
+            if not scenario_ids:
+                return CompletionGateFailure(
+                    code="linked_test_task_scenarios_missing",
+                    summary="A linked regression Test card has no Test Scenario.",
+                    reason_codes=("linked_test_task_scenarios_missing",),
+                )
+            test_created_at = getattr(test_task, "created_at", None)
+            if (
+                bug_created_at is not None
+                and test_created_at is not None
+                and test_created_at.isoformat() < bug_created_at.isoformat()
+            ):
+                return CompletionGateFailure(
+                    code="regression_test_predates_bug",
+                    summary="A linked regression Test card predates this Bug.",
+                    reason_codes=("regression_test_predates_bug",),
+                )
+            linked_test_tasks.append(test_task)
+            candidate_scenario_ids.extend(scenario_ids)
+
+        original_scenario_ids = {
+            str(scenario["id"])
+            for scenario in (getattr(spec, "test_scenarios", None) or [])
+            if isinstance(scenario, dict) and scenario.get("id") is not None
+        }
+        missing_scenario_ids = {
+            scenario_id
+            for scenario_id in candidate_scenario_ids
+            if scenario_id not in original_scenario_ids
+        }
+        candidate_spec_ids_by_scenario_id: dict[str, str] = {}
+        if missing_scenario_ids:
+            other_specs = await _application_list(
+                self.db,
+                "spec",
+                filters=(
+                    _apf("board_id", "eq", card.board_id),
+                    _apf("id", "ne", card.spec_id),
+                ),
+            )
+            for other_spec in other_specs:
+                for scenario in getattr(other_spec, "test_scenarios", None) or []:
+                    if not isinstance(scenario, dict) or scenario.get("id") is None:
+                        continue
+                    scenario_id = str(scenario["id"])
+                    if scenario_id in missing_scenario_ids:
+                        candidate_spec_ids_by_scenario_id.setdefault(
+                            scenario_id, other_spec.id
+                        )
+
+        gate_result = BugRegressionGateValidator().validate_linked_test_tasks(
+            bug_card=card,
+            linked_test_tasks=linked_test_tasks,
+            spec=spec,
+            origin_task=origin_task,
+            candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
+            amendment_facts=amendment_facts,
+        )
+        if gate_result.allowed:
+            return None
+
+        eligibility = gate_result.eligibility
+        reason_codes = [gate_result.decision.value]
+        reason_codes.extend(
+            item.reason.value for item in eligibility.rejected_scenarios
+        )
+        if eligibility.coverage_pending_scenarios:
+            reason_codes.append("coverage_pending")
+        reason_codes.extend(str(value) for value in eligibility.missing_links)
+        rejected_ids = ", ".join(
+            item.scenario_id for item in eligibility.rejected_scenarios
+        )
+        summary = (
+            "Bug regression evidence is not completion-ready: "
+            f"{gate_result.decision.value}."
+        )
+        if rejected_ids:
+            summary += f" Rejected scenarios: {rejected_ids}."
+        return CompletionGateFailure(
+            code=gate_result.decision.value,
+            summary=summary,
+            reason_codes=tuple(reason_codes),
+        )
+
+    async def _task_completion_gate_failures(
+        self,
+        *,
+        card: ApplicationRecord,
+        board: ApplicationRecord | None,
+    ) -> tuple[CompletionGateFailure, ...]:
+        """Evaluate known domain gates without turning technical errors into rejection."""
+
+        failures: list[CompletionGateFailure] = []
+        bug_regression_failure = await self._bug_regression_completion_failure(
+            card=card,
+            board=board,
+        )
+        if bug_regression_failure is not None:
+            failures.append(bug_regression_failure)
+
+        # Re-evaluate the board's declared-impact completion posture against the
+        # executor report that admitted this card to Validation.  A missing
+        # report remains the explicit legacy compatibility path handled below
+        # by the historical task-validation conclusion fallback; a present
+        # report, however, cannot bypass a subsequently enforced ``require``
+        # setting merely because it crossed the lane earlier.
+        from okto_pulse.core.services.impact_evidence import (
+            resolve_impact_evidence_mode,
+        )
+
+        execution_reports = [
+            entry
+            for entry in (getattr(card, "conclusions", None) or [])
+            if isinstance(entry, Mapping)
+            and entry.get("source") == "move_to_validation"
+        ]
+        impact_mode, _impact_mode_source = resolve_impact_evidence_mode(board)
+        if execution_reports and impact_mode == "require":
+            impact_evidence = execution_reports[-1].get("impact_evidence")
+            impact_populated = isinstance(impact_evidence, Mapping) and any(
+                bool(impact_evidence.get(section))
+                for section in ("files", "symbols", "surfaces", "tests")
+            )
+            if not impact_populated:
+                failures.append(
+                    CompletionGateFailure(
+                        code="impact_evidence_required",
+                        summary=(
+                            "The current executor report lacks the impact evidence "
+                            "required by this board for task completion."
+                        ),
+                        reason_codes=("impact_evidence_required",),
+                    )
+                )
+        spec = (
+            await _application_get(self.db, "spec", card.spec_id)
+            if getattr(card, "spec_id", None)
+            else None
+        )
+        if spec is not None:
+            maturity = spec_maturity_block(
+                CardTransitionFacts(
+                    card_id=card.id,
+                    old_status=CardStatus.VALIDATION,
+                    new_status=CardStatus.DONE,
+                    card_type=getattr(card, "card_type", CardType.NORMAL),
+                    spec_id=card.spec_id,
+                    spec_title=spec.title,
+                    spec_status=spec.status,
+                )
+            )
+            if maturity is not None:
+                failures.append(
+                    CompletionGateFailure(
+                        code=maturity.code,
+                        summary=maturity.detail,
+                        reason_codes=(maturity.code,),
+                    )
+                )
+            sprints = await _application_list(
+                self.db,
+                "sprint",
+                filters=(
+                    _apf("spec_id", "eq", card.spec_id),
+                    _apf("archived", "is_false"),
+                ),
+            )
+            if sprints:
+                sprint = (
+                    await _application_get(self.db, "sprint", card.sprint_id)
+                    if getattr(card, "sprint_id", None)
+                    else None
+                )
+                sprint_block = sprint_assignment_block(
+                    CardTransitionFacts(
+                        card_id=card.id,
+                        old_status=CardStatus.VALIDATION,
+                        new_status=CardStatus.DONE,
+                        card_type=getattr(card, "card_type", CardType.NORMAL),
+                        spec_id=card.spec_id,
+                        spec_status=spec.status,
+                        sprint_count=len(sprints),
+                        sprint_id=getattr(card, "sprint_id", None),
+                        sprint_exists=sprint is not None if card.sprint_id else True,
+                        sprint_status=sprint.status if sprint is not None else None,
+                        sprint_title=sprint.title if sprint is not None else None,
+                        sprint_is_hotfix=(
+                            sprint.lane_type == SprintLaneType.HOTFIX
+                            if sprint is not None
+                            else False
+                        ),
+                        hotfix_count=sum(
+                            1
+                            for item in sprints
+                            if item.lane_type == SprintLaneType.HOTFIX
+                        ),
+                    )
+                )
+                if sprint_block is not None:
+                    failures.append(
+                        CompletionGateFailure(
+                            code=sprint_block.code,
+                            summary=sprint_block.detail,
+                            reason_codes=(sprint_block.code,),
+                        )
+                    )
+
+        dependencies_met, blocking_dependencies = await self.check_dependencies_met(
+            card.id
+        )
+        if not dependencies_met:
+            failures.append(
+                CompletionGateFailure(
+                    code="dependencies_incomplete",
+                    summary=(
+                        "Card dependencies must be done or cancelled before completion: "
+                        + ", ".join(str(item) for item in blocking_dependencies)
+                    ),
+                    reason_codes=("dependencies_incomplete",),
+                )
+            )
+
+        traceability = await evaluate_code_traceability_transition(
+            self.db,
+            board=board,
+            subject=card,
+            subject_type=CodeTraceabilitySubjectType.CARD,
+            from_status=CardStatus.VALIDATION.value,
+            to_status=CardStatus.DONE.value,
+            enforce=False,
+        )
+        if traceability is not None and not traceability.allowed:
+            blocking_trace = tuple(
+                blocker for blocker in traceability.blockers if blocker.blocking
+            )
+            failures.extend(
+                CompletionGateFailure(
+                    code=blocker.code,
+                    summary=blocker.message,
+                    reason_codes=(blocker.code,),
+                )
+                for blocker in blocking_trace
+            )
+
+        try:
+            await self._validate_cognitive_done(card, board)
+        except GovernedCompletionBlocked as exc:
+            failures.append(
+                CompletionGateFailure(
+                    code=exc.code,
+                    summary=exc.summary,
+                    reason_codes=tuple(exc.reason_codes),
+                )
+            )
+
+        from okto_pulse.core.domain.guideline_semantic_transition import (
+            PolicyTransitionRejected,
+        )
+
+        try:
+            await GuidelineService(self.db).enforce_policy_transition(
+                board_id=card.board_id,
+                entity_type="card",
+                subject_id=card.id,
+                from_status=CardStatus.VALIDATION.value,
+                to_status=CardStatus.DONE.value,
+            )
+        except PolicyTransitionRejected as exc:
+            reason_codes = tuple(
+                str(getattr(code, "value", code)) for code in exc.reason_codes
+            )
+            failures.append(
+                CompletionGateFailure(
+                    code=reason_codes[0] if reason_codes else "policy_compliance_blocked",
+                    summary="Policy compliance blocked task completion.",
+                    reason_codes=reason_codes,
+                )
+            )
+
+        from okto_pulse.core.services.resource_gate_contracts import (
+            ResourceGateViolation,
+        )
+
+        try:
+            await ResourceGateService(self.db).validate_or_raise_entity_completion(
+                card.board_id,
+                "card",
+                card.id,
+                phase="task_validation_success",
+            )
+        except ResourceGateViolation as exc:
+            failures.append(
+                CompletionGateFailure(
+                    code=exc.code,
+                    summary=str(exc),
+                    reason_codes=(exc.code,),
+                )
+            )
+        return tuple(failures)
+
     async def submit_task_validation(
         self,
         card_id: str,
@@ -4305,8 +4783,10 @@ class CardService:
     ) -> dict:
         """Submit a task validation for a card in 'validation' status.
 
-        Executes threshold check, computes outcome, persists validation,
-        and routes card (success→done, failed stays in validation).
+        Executes a fenced, idempotent completion decision.  An admitted
+        domain rejection is persisted with its cause and routes Normal/Bug
+        cards to ``rejected``; technical failures leave both status and
+        validation history untouched.
         """
         import uuid as _uuid
 
@@ -4314,12 +4794,46 @@ class CardService:
         if not card:
             raise ValueError("Card not found")
 
+        current_subject_version = self._card_subject_version(card)
+        expected_subject_version = int(
+            data.get("expected_subject_version", current_subject_version)
+        )
+        idempotency_key = str(
+            data.get("idempotency_key")
+            or f"legacy:{reviewer_id}:{_uuid.uuid4().hex}"
+        ).strip()
+        request_digest = self._task_validation_request_digest(
+            card=card,
+            reviewer_id=reviewer_id,
+            expected_subject_version=expected_subject_version,
+            data=data,
+        )
+        replay = self._task_validation_replay(
+            card,
+            idempotency_key=idempotency_key,
+            request_digest=request_digest,
+        )
+        if replay is not None:
+            return replay
+
         if card.status != CardStatus.VALIDATION:
             raise ValueError(
                 f"Card is not in 'validation' status (currently '{card.status.value}'). "
                 f"Only cards in 'validation' status can receive validations."
             )
         old_status = card.status
+
+        if expected_subject_version != current_subject_version:
+            raise CardOperationError(
+                "task_validation_subject_version_conflict",
+                "The card changed after the validation request was prepared.",
+                remediation="reload_card_and_retry_validation",
+                facts={
+                    "card_id": card.id,
+                    "expected_subject_version": expected_subject_version,
+                    "actual_subject_version": current_subject_version,
+                },
+            )
 
         if getattr(card, "card_type", CardType.NORMAL) == CardType.TEST:
             # R4-IMP1: normalized contract pointing at the test-card operational
@@ -4412,15 +4926,16 @@ class CardService:
         else:
             outcome = "success"
 
-        if outcome == "success":
-            await self._validate_cognitive_done(card, board)
-            await GuidelineService(self.db).enforce_policy_transition(
-                board_id=card.board_id,
-                entity_type="card",
-                subject_id=card.id,
-                from_status=old_status.value,
-                to_status=CardStatus.DONE.value,
+        gate_failures: tuple[CompletionGateFailure, ...] = ()
+        if outcome == TaskValidationOutcome.SUCCESS.value:
+            gate_failures = await self._task_completion_gate_failures(
+                card=card,
+                board=board,
             )
+        decision = decide_card_completion(
+            validation_outcome=outcome,
+            gate_failures=gate_failures,
+        )
 
         # Build validation entry.
         # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
@@ -4431,13 +4946,16 @@ class CardService:
         # names; the legacy aliases can be removed in a future cleanup.
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
         _general = data["general_justification"].strip()
+        reviewer_display_name = str(reviewer_name or reviewer_id).strip()[:255]
         validation = {
             "id": validation_id,
             "card_id": card_id,
             "board_id": card.board_id,
             # Reviewer — legacy name + clean alias for frontend
             "reviewer_id": reviewer_id,
+            "reviewer_name": reviewer_display_name,
             "evaluator_id": reviewer_id,
+            "evaluator_name": reviewer_display_name,
             # Confidence
             "confidence": confidence,
             "confidence_justification": data["confidence_justification"].strip(),
@@ -4462,8 +4980,53 @@ class CardService:
             # against board/spec/sprint settings changed later.
             "resolved_thresholds": dict(config),
             "reviewer_separation": reviewer_separation.to_dict(),
+            "expected_subject_version": expected_subject_version,
+            "idempotency_key": idempotency_key,
+            "request_digest": request_digest,
+            "validation_outcome": decision.validation_outcome.value,
+            "completion_outcome": decision.completion_outcome.value,
+            "completion_gate_failures": [
+                {
+                    "code": failure.code,
+                    "summary": failure.summary,
+                    "reason_codes": list(failure.reason_codes),
+                }
+                for failure in decision.gate_failures
+            ],
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        # The card row is the serialization point for both the append-only
+        # validation ledger and the lifecycle consequence.  The replay lookup
+        # above deliberately precedes this mutable-state fence.
+        if not await _application_fence(
+            self.db,
+            "card",
+            card.id,
+            expected_values={
+                "board_id": card.board_id,
+                "status": CardStatus.VALIDATION,
+                "policy_version": expected_subject_version,
+            },
+        ):
+            refreshed = await self.get_card(card_id)
+            if refreshed is not None:
+                replay = self._task_validation_replay(
+                    refreshed,
+                    idempotency_key=idempotency_key,
+                    request_digest=request_digest,
+                )
+                if replay is not None:
+                    return replay
+            raise CardOperationError(
+                "task_validation_subject_version_conflict",
+                "The card changed while the validation was being submitted.",
+                remediation="reload_card_and_retry_validation",
+                facts={
+                    "card_id": card.id,
+                    "expected_subject_version": expected_subject_version,
+                },
+            )
 
         # Persist validation (append-only)
         validations = list(card.validations or [])
@@ -4517,38 +5080,148 @@ class CardService:
                     session=self.db,
                 )
 
-        # Route card based on outcome (atomic with validation persist).
-        # NC-7 fix: outcome=failed keeps the card in VALIDATION instead of
-        # bouncing back to NOT_STARTED. This avoids forcing the operator to
-        # re-walk the whole state machine just to retry a threshold tweak;
-        # the failed validation entry is appended to card.validations so the
-        # history is preserved.
-        if outcome == "success":
-            await ResourceGateService(self.db).validate_or_raise_entity_completion(
-                card.board_id,
-                "card",
-                card.id,
-                phase="task_validation_success",
-            )
-            card.status = CardStatus.DONE
-        else:
-            card.status = CardStatus.VALIDATION
-
-        # Auto-position at end of target column
-        status_cards = await _application_list(
-            self.db,
-            "card",
-            filters=(
-                _apf("board_id", "eq", card.board_id),
-                _apf("status", "eq", card.status),
-            ),
+        target_status = (
+            CardStatus.DONE
+            if decision.completion_outcome is CardCompletionOutcome.COMPLETED
+            else CardStatus.REJECTED
         )
-        max_pos = max((item.position for item in status_cards), default=-1)
-        card.position = max_pos + 1
+        rejection_cause: CardRejectionCause | None = None
+        rejection_record: CardRejectionRecord | None = None
+        if target_status is CardStatus.REJECTED:
+            card_type = getattr(card, "card_type", CardType.NORMAL)
+            card_type_value = getattr(card_type, "value", str(card_type))
+            if not is_internal_transition_allowed(
+                "card",
+                old_status.value,
+                target_status.value,
+                card_type=card_type_value,
+            ):
+                raise RuntimeError("task_rejection_internal_edge_not_admitted")
+            validation_failed = (
+                decision.validation_outcome is TaskValidationOutcome.FAILED
+            )
+            first_failure = decision.gate_failures[0] if decision.gate_failures else None
+            rejection_record = CardRejectionRecord(
+                id=f"rej_{_uuid.uuid4().hex[:12]}",
+                card_id=card.id,
+                board_id=card.board_id,
+                kind=(
+                    CardRejectionKind.TASK_VALIDATION
+                    if validation_failed
+                    else CardRejectionKind.COMPLETION_GATE
+                ),
+                source_id=validation_id,
+                code=(
+                    "task_validation_failed"
+                    if validation_failed
+                    else first_failure.code
+                ),
+                summary=(
+                    _general
+                    or "Task validation failed its recommendation or score thresholds."
+                    if validation_failed
+                    else first_failure.summary
+                ),
+                reason_codes=(
+                    tuple(
+                        code
+                        for code, applies in (
+                            ("confidence_below", confidence < config["min_confidence"]),
+                            (
+                                "completeness_below",
+                                completeness < config["min_completeness"],
+                            ),
+                            ("drift_above", drift > config["max_drift"]),
+                            ("reject_recommendation", recommendation == "reject"),
+                        )
+                        if applies
+                    )
+                    if validation_failed
+                    else tuple(
+                        code
+                        for failure in decision.gate_failures
+                        for code in failure.reason_codes
+                    )
+                ),
+                created_by=reviewer_id,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                subject_version=expected_subject_version,
+            )
+            records = list(getattr(card, "rejection_records", None) or [])
+            records.append(rejection_record.as_dict())
+            card.rejection_records = records
+            card.mark_dirty("rejection_records")
+            rejection_cause = CardRejectionCause(
+                kind=rejection_record.kind,
+                id=rejection_record.id,
+                code=rejection_record.code,
+                summary=rejection_record.summary,
+            )
+            card.current_rejection_kind = rejection_cause.kind.value
+            card.current_rejection_id = rejection_cause.id
+            card.current_rejection_code = rejection_cause.code
+            card.current_rejection_summary = rejection_cause.summary
+            for field_name in (
+                "current_rejection_kind",
+                "current_rejection_id",
+                "current_rejection_code",
+                "current_rejection_summary",
+            ):
+                card.mark_dirty(field_name)
+        else:
+            for field_name in (
+                "current_rejection_kind",
+                "current_rejection_id",
+                "current_rejection_code",
+                "current_rejection_summary",
+            ):
+                setattr(card, field_name, None)
+                card.mark_dirty(field_name)
+
+        response = project_task_validation_public({
+            **validation,
+            "card_status": target_status.value,
+            "resolved_thresholds": config,
+            "validation_outcome": decision.validation_outcome.value,
+            "completion_outcome": decision.completion_outcome.value,
+            "completion_gate_failures": validation["completion_gate_failures"],
+            "rejection_cause": (
+                rejection_cause.as_dict() if rejection_cause is not None else None
+            ),
+            "subject_version": expected_subject_version + 1,
+            "replayed": False,
+        })
+        # Persist the exact business response as part of the same append-only
+        # ledger value before the resequencer's single flush.  Adding it after
+        # that flush would leave only an in-memory nested JSON mutation and
+        # break replay after Done/Rejected in a new transaction.
+        validation["response"] = dict(response)
+        card.validations = validations
+        card.mark_dirty("validations")
+
+        # The Core resequencer owns both status mutation and dense target/source
+        # positioning.  Keeping this in the same UoW prevents a visible card
+        # from occupying two lifecycle lanes after a rejection.
+        await self.resequence_columns(
+            card.board_id,
+            [
+                ColumnResequenceOp(
+                    card_id=card.id,
+                    from_status=old_status,
+                    to_status=target_status,
+                    placement="end",
+                )
+            ],
+            extra_columns=(old_status, target_status),
+            records={card.id: card},
+        )
 
         if old_status != card.status:
             from okto_pulse.core.events import publish as event_publish
-            from okto_pulse.core.events.types import CardMoved
+            from okto_pulse.core.events.types import (
+                CardCompletionRejected,
+                CardMoved,
+            )
 
             await event_publish(
                 CardMoved(
@@ -4562,6 +5235,26 @@ class CardService:
                 ),
                 session=self.db,
             )
+            if rejection_cause is not None:
+                await event_publish(
+                    CardCompletionRejected(
+                        board_id=card.board_id,
+                        actor_id=reviewer_id,
+                        card_id=card.id,
+                        spec_id=card.spec_id,
+                        cause_kind=rejection_cause.kind.value,
+                        cause_id=rejection_cause.id,
+                        cause_code=rejection_cause.code,
+                        cause_summary=rejection_cause.summary,
+                        reason_codes=(
+                            tuple(rejection_record.reason_codes)
+                            if rejection_record is not None
+                            else ("task_validation_failed",)
+                        ),
+                        rejected_by=reviewer_id,
+                    ),
+                    session=self.db,
+                )
 
         # Activity log
         await self._log_activity(
@@ -4574,6 +5267,9 @@ class CardService:
             details={
                 "validation_id": validation_id,
                 "outcome": outcome,
+                "validation_outcome": decision.validation_outcome.value,
+                "completion_outcome": decision.completion_outcome.value,
+                "rejection_cause": response["rejection_cause"],
                 "recommendation": recommendation,
                 "confidence": confidence,
                 "estimated_completeness": completeness,
@@ -4584,18 +5280,21 @@ class CardService:
             },
         )
 
-        return {
-            **validation,
-            "card_status": card.status.value,
-            "resolved_thresholds": config,
-        }
+        return dict(response)
 
     async def list_task_validations(self, card_id: str) -> list[dict]:
         """List all validations for a card in reverse chronological order."""
         card = await self.get_card(card_id)
         if not card:
             raise ValueError("Card not found")
-        validations = list(card.validations or [])
+        validations = [
+            project_task_validation_public(
+                validation,
+                card_id=str(card.id),
+                board_id=str(card.board_id),
+            )
+            for validation in list(card.validations or [])
+        ]
         validations.reverse()
         return validations
 
@@ -4607,14 +5306,18 @@ class CardService:
         if not card:
             raise ValueError("Card not found")
         for v in card.validations or []:
-            if v.get("id") == validation_id:
-                return v
+            if isinstance(v, Mapping) and v.get("id") == validation_id:
+                return project_task_validation_public(
+                    v,
+                    card_id=str(card.id),
+                    board_id=str(card.board_id),
+                )
         return None
 
     async def delete_task_validation(
         self, card_id: str, validation_id: str, user_id: str
     ) -> bool:
-        """Delete a validation entry. Requires card.validation.delete permission."""
+        """Reject deletion of admitted validations; causal evidence is append-only."""
         card = await self.get_card(card_id)
         if not card:
             raise ValueError("Card not found")
@@ -4630,54 +5333,16 @@ class CardService:
         if target is None:
             return False
 
-        target_outcome = str(target.get("outcome") or "").lower()
-        if card.status == CardStatus.DONE and target_outcome == "success":
-            board = await _application_get(self.db, "board", card.board_id)
-            spec = (
-                await _application_get(self.db, "spec", card.spec_id)
-                if card.spec_id
-                else None
-            )
-            sprint = (
-                await _application_get(self.db, "sprint", card.sprint_id)
-                if card.sprint_id
-                else None
-            )
-            validation_config = self._resolve_validation_config(
-                card,
-                spec,
-                sprint,
-                getattr(board, "settings", None) or {},
-            )
-            successful_validations = sum(
-                1
-                for validation in validations
-                if str(validation.get("outcome") or "").lower() == "success"
-            )
-            if validation_config["required"] and successful_validations <= 1:
-                raise CardOperationError(
-                    "task_validation_history_required",
-                    (
-                        "The last successful validation of a completed card "
-                        "cannot be deleted while task validation is required."
-                    ),
-                    remediation=(
-                        "Reopen the card through move_card, or retain at least "
-                        "one successful validation as completion evidence."
-                    ),
-                    facts={
-                        "card_id": card.id,
-                        "validation_id": validation_id,
-                        "card_status": card.status.value,
-                        "successful_validations": successful_validations,
-                        "validation_required_from": validation_config["resolved_from"],
-                    },
-                )
-
-        new_validations = [v for v in validations if v.get("id") != validation_id]
-        card.validations = new_validations
-        card.mark_dirty("validations")
-        return True
+        raise CardOperationError(
+            "task_validation_history_append_only",
+            "Admitted task validations are immutable causal history and cannot be deleted.",
+            remediation="submit_a_new_validation_attempt_after_rework",
+            facts={
+                "card_id": card.id,
+                "validation_id": validation_id,
+                "current_rejection_id": getattr(card, "current_rejection_id", None),
+            },
+        )
 
     async def confirm_amendment_coverage(
         self,
@@ -5501,7 +6166,8 @@ class CardService:
             allowed_values = [
                 edge.to_status
                 for edge in transition_contracts("card", old_status.value)
-                if not edge.card_types or str(card_type_value) in edge.card_types
+                if edge.visibility == "public"
+                and (not edge.card_types or str(card_type_value) in edge.card_types)
             ]
             raise CardOperationError(
                 "card_transition_not_allowed",
@@ -5523,6 +6189,17 @@ class CardService:
                     "to_status": data.status.value,
                     "allowed_statuses": allowed_values,
                 },
+            )
+        if (
+            old_status is CardStatus.REJECTED
+            and data.status is CardStatus.IN_PROGRESS
+            and current_rejection_cause(card) is None
+        ):
+            raise CardOperationError(
+                "current_rejection_cause_missing",
+                "Rejected cards require a sealed Current cause before rework can start.",
+                remediation="repair_rejected_card_cause_before_rework",
+                facts={"card_id": card.id},
             )
         old_position = card.position
 
@@ -6531,6 +7208,18 @@ class CardService:
             actor_id=user_id,
         )
 
+        if old_status is CardStatus.REJECTED and data.status is CardStatus.IN_PROGRESS:
+            # Preserve append-only rejection_records/validation history while
+            # ending the bounded Current projection for this rework handoff.
+            for field_name in (
+                "current_rejection_kind",
+                "current_rejection_id",
+                "current_rejection_code",
+                "current_rejection_summary",
+            ):
+                setattr(card, field_name, None)
+                card.mark_dirty(field_name)
+
         # position < -1 was rejected at the top of this method, before any
         # read, mutation or event (authorized narrowing, QA 6afdc547). All
         # selectors are forwarded; the resequencer enforces their mutual
@@ -6664,6 +7353,7 @@ class CardService:
         card = await self.get_card(card_id)
         if not card:
             return False
+        require_card_operational_mutation_allowed(card, operation="delete_card")
 
         board_id = card.board_id
 
@@ -6696,6 +7386,29 @@ class CardService:
                     "next_action": "remove_or_relineage_hotfix_before_bug_delete",
                 },
             )
+
+        # This delete may also rewrite Bug regression links. Resolve and guard
+        # every affected Bug before staging any parent-Spec or Card mutation.
+        referencing_bugs: list[ApplicationRecord] = []
+        if getattr(card, "card_type", CardType.NORMAL) != CardType.BUG:
+            bugs = await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("board_id", "eq", board_id),
+                    _apf("card_type", "eq", CardType.BUG),
+                ),
+            )
+            referencing_bugs = [
+                bug
+                for bug in bugs
+                if card_id in (getattr(bug, "linked_test_task_ids", None) or [])
+            ]
+            for bug in referencing_bugs:
+                require_card_operational_mutation_allowed(
+                    bug,
+                    operation="delete_linked_regression_test_card",
+                )
 
         # Cascade cleanup: strip card_id from every reference list on the
         # parent spec. Must run BEFORE db.delete(card) so any validator
@@ -6730,20 +7443,10 @@ class CardService:
         # Cascade cleanup: bug cards on the same board may reference this
         # card via their columnar linked_test_task_ids. Non-bug cards only —
         # deleting a bug card doesn't leave references elsewhere.
-        if getattr(card, "card_type", CardType.NORMAL) != CardType.BUG:
-            bugs = await _application_list(
-                self.db,
-                "card",
-                filters=(
-                    _apf("board_id", "eq", board_id),
-                    _apf("card_type", "eq", CardType.BUG),
-                ),
-            )
-            for bug in bugs:
-                linked = bug.linked_test_task_ids or []
-                if card_id in linked:
-                    bug.linked_test_task_ids = [tid for tid in linked if tid != card_id]
-                    bug.mark_dirty("linked_test_task_ids")
+        for bug in referencing_bugs:
+            linked = bug.linked_test_task_ids or []
+            bug.linked_test_task_ids = [tid for tid in linked if tid != card_id]
+            bug.mark_dirty("linked_test_task_ids")
 
         resolved_actor_name = actor_name or await resolve_actor_name(
             self.db,
@@ -7108,6 +7811,10 @@ class AttachmentService:
         card = await _application_get(self.db, "card", card_id)
         if not card:
             return None
+        require_card_operational_mutation_allowed(
+            card,
+            operation="upload_attachment",
+        )
 
         # Delegate to the registered storage provider
         storage = get_storage_provider()
@@ -7150,6 +7857,12 @@ class AttachmentService:
         attachment = await self.get_attachment(attachment_id)
         if not attachment:
             return False
+        card = await _application_get(self.db, "card", attachment.card_id)
+        if card is not None:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="delete_attachment",
+            )
 
         receipt = await self.delete_attachment_object(attachment)
         try:
@@ -8500,6 +9213,25 @@ class SpecService:
         if len(remaining) == len(scenarios):
             raise ValueError(f"scenario_not_found: {scenario_id}")
 
+        # Preflight every affected card before update_spec stages the first
+        # mutation. Removing a scenario also rewrites Card traceability and is
+        # forbidden while any referencing card is in the Rejected handoff.
+        cards = await _application_list(
+            self.db,
+            "card",
+            filters=(_apf("spec_id", "eq", spec_id),),
+        )
+        referencing_cards = [
+            card
+            for card in cards
+            if scenario_id in (getattr(card, "test_scenario_ids", None) or [])
+        ]
+        for card in referencing_cards:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="delete_linked_test_scenario",
+            )
+
         updated_spec = await self.update_spec(
             spec_id,
             user_id,
@@ -8511,18 +9243,12 @@ class SpecService:
 
         # Cascade: drop the scenario id from every card that references it, in
         # the SAME transaction → all-or-nothing, no orphan in Card.test_scenario_ids.
-        cards = await _application_list(
-            self.db,
-            "card",
-            filters=(_apf("spec_id", "eq", spec_id),),
-        )
         cards_unlinked: list[str] = []
-        for card in cards:
+        for card in referencing_cards:
             ids = list(card.test_scenario_ids or [])
-            if scenario_id in ids:
-                card.test_scenario_ids = [i for i in ids if i != scenario_id]
-                card.mark_dirty("test_scenario_ids")
-                cards_unlinked.append(card.id)
+            card.test_scenario_ids = [i for i in ids if i != scenario_id]
+            card.mark_dirty("test_scenario_ids")
+            cards_unlinked.append(card.id)
 
         await _application_add(
             self.db,
@@ -9450,6 +10176,10 @@ class SpecService:
         card = await _application_get(self.db, "card", card_id)
         if card is None:
             raise ValueError("Card not found")
+        require_card_operational_mutation_allowed(
+            card,
+            operation="link_card_traceability",
+        )
         card_status = getattr(
             getattr(card, "status", None), "value", getattr(card, "status", None)
         )
@@ -9560,6 +10290,14 @@ class SpecService:
             raise ValueError(
                 "This spec is archived. Restore it first before unlinking tasks."
             )
+
+        card = await _application_get(self.db, "card", card_id)
+        if card is None or getattr(card, "board_id", None) != spec.board_id:
+            raise ValueError("Card not found")
+        require_card_operational_mutation_allowed(
+            card,
+            operation="unlink_card_traceability",
+        )
 
         scenarios = [
             dict(item) if isinstance(item, dict) else item
@@ -10293,6 +11031,11 @@ class SpecService:
             filters=(_apf("spec_id", "eq", spec_id),),
         )
         for linked_card in linked_cards:
+            require_card_operational_mutation_allowed(
+                linked_card,
+                operation="delete_spec_unlink_card",
+            )
+        for linked_card in linked_cards:
             await _reset_v2_knowledge_for_relink(
                 self.db,
                 board_id=spec.board_id,
@@ -10388,6 +11131,7 @@ class SpecService:
         card = await _application_get(self.db, "card", card_id)
         if not card or card.board_id != spec.board_id:
             return False
+        require_card_operational_mutation_allowed(card, operation="link_card_to_spec")
         old_spec_id = card.spec_id
         actor_id = user_id or card.created_by
         knowledge_v2_relinked = await _reset_v2_knowledge_for_relink(
@@ -10438,6 +11182,10 @@ class SpecService:
         card = await _application_get(self.db, "card", card_id)
         if not card or not card.spec_id:
             return False
+        require_card_operational_mutation_allowed(
+            card,
+            operation="unlink_card_from_spec",
+        )
         old_spec_id = card.spec_id
         await _reset_v2_knowledge_for_relink(
             self.db,
@@ -16953,6 +17701,11 @@ class ArchiveService:
     async def archive_tree(self, entity_type: str, entity_id: str) -> dict[str, int]:
         """Archive an entity and all its descendants."""
         tree = await self._resolve_tree(entity_type, entity_id)
+        for card in tree["cards"]:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="archive_tree",
+            )
 
         spec_ids = tuple(str(spec.id) for spec in tree["specs"])
         if spec_ids:
@@ -17157,6 +17910,11 @@ class ArchiveService:
         )
 
         tree = await self._resolve_tree(entity_type, entity_id)
+        for card in tree["cards"]:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="restore_tree",
+            )
 
         spec_board_ids = sorted(
             {str(spec.board_id) for spec in tree["specs"] if spec.archived}
@@ -18518,14 +19276,19 @@ class SprintService:
                 },
             )
 
-        for dependent in origin_dependents:
-            dependent.origin_sprint_id = None
-
         assigned_cards = await _application_list(
             self.db,
             "card",
             filters=(_apf("sprint_id", "eq", sprint_id),),
         )
+        for card in assigned_cards:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="delete_sprint_unassign_card",
+            )
+
+        for dependent in origin_dependents:
+            dependent.origin_sprint_id = None
         for card in assigned_cards:
             card.sprint_id = None
         await _application_flush(self.db)
@@ -18617,6 +19380,11 @@ class SprintService:
             cards_to_assign.append(card)
 
         moved_cards = [card for card in cards_to_assign if card.sprint_id != sprint_id]
+        for card in moved_cards:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="assign_card_to_sprint",
+            )
         source_cards: dict[str, list[Card]] = {}
         for card in moved_cards:
             if card.sprint_id:
@@ -18738,6 +19506,11 @@ class SprintService:
                 and card.sprint_id == sprint_id
             ):
                 cards.append(card)
+        for card in cards:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="unassign_card_from_sprint",
+            )
         for card in cards:
             card.sprint_id = None
         if cards:

@@ -321,6 +321,10 @@ SURFACES: dict[str, SurfaceSpec] = {
             "created_at",
             "updated_at",
             "open_qa_count",
+            "current_rejection_kind",
+            "current_rejection_id",
+            "current_rejection_code",
+            "current_rejection_summary",
         ),
     ),
     "kanban_column": SurfaceSpec(
@@ -364,6 +368,10 @@ SURFACES: dict[str, SurfaceSpec] = {
             "linked_test_task_ids",
             "archived",
             "open_qa_count",
+            "current_rejection_kind",
+            "current_rejection_id",
+            "current_rejection_code",
+            "current_rejection_summary",
         ),
     ),
     "spec_lookup": SurfaceSpec(

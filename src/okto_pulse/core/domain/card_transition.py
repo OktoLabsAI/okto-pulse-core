@@ -17,6 +17,7 @@ CARD_STATUS_ORDER = {
     CardStatus.STARTED: 1,
     CardStatus.IN_PROGRESS: 2,
     CardStatus.VALIDATION: 2,
+    CardStatus.REJECTED: 2,
     CardStatus.DONE: 3,
     CardStatus.ON_HOLD: 2,
     CardStatus.CANCELLED: 3,

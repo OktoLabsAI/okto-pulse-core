@@ -2205,6 +2205,9 @@ class DeterministicWorker:
         card_type = card.get("card_type") or "normal"
         result = WorkerResult()
         raw_parts = [card.get("title") or "", card.get("description") or ""]
+        rework_signal = str(card.get("status") or "").lower() == "rejected"
+        if rework_signal:
+            raw_parts.append("Lifecycle: Rejected — rework required.")
 
         if card_type == "bug":
             node_type = "Bug"
@@ -2229,7 +2232,16 @@ class DeterministicWorker:
             candidate_id=card_cid,
             node_type=node_type,
             title=card.get("title") or f"Card {cid}",
-            content=card.get("description") or "",
+            content="\n\n".join(
+                part
+                for part in (
+                    card.get("description") or "",
+                    "Lifecycle: Rejected — rework required."
+                    if rework_signal
+                    else "",
+                )
+                if part
+            ),
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
             priority_boost=boost,

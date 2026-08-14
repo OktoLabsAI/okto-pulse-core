@@ -25,6 +25,11 @@ from okto_pulse.core.discovery_params_schema import (
 from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityEnforcement,
 )
+from okto_pulse.core.domain.card_completion import (
+    REJECTION_CODE_MAX_LENGTH,
+    REJECTION_ID_MAX_LENGTH,
+    REJECTION_SUMMARY_MAX_LENGTH,
+)
 from okto_pulse.core.domain.enums import (
     BugSeverity,
     CardPriority,
@@ -2751,6 +2756,12 @@ DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationRespon
 # ============================================================================
 
 
+CardInitialStatus: TypeAlias = Literal[
+    CardStatus.NOT_STARTED,
+    CardStatus.STARTED,
+]
+
+
 class CardCreate(BaseModel):
     """Schema for creating a card."""
 
@@ -2766,7 +2777,7 @@ class CardCreate(BaseModel):
     details: str | None = Field(
         None, description="Descricao tecnica detalhada, markdown suportado."
     )
-    status: CardStatus = Field(
+    status: CardInitialStatus = Field(
         CardStatus.NOT_STARTED,
         description=(
             "Status inicial do card no board: somente not_started ou started. "
@@ -3179,6 +3190,18 @@ class ConclusionEntry(ConclusionEntrySummary):
         return data
 
 
+CardMoveTargetStatus: TypeAlias = Literal[
+    CardStatus.NOT_STARTED,
+    CardStatus.STARTED,
+    CardStatus.IN_PROGRESS,
+    CardStatus.VALIDATION,
+    CardStatus.ON_HOLD,
+    CardStatus.DONE,
+    CardStatus.CANCELLED,
+    CardStatus.REJECTED,
+]
+
+
 class CardMove(BaseModel):
     """Schema for moving a card between columns.
 
@@ -3263,9 +3286,9 @@ class CardMove(BaseModel):
         }
     )
 
-    status: CardStatus = Field(
+    status: CardMoveTargetStatus = Field(
         ...,
-        description="Novo status do card: not_started, started, in_progress, validation, on_hold, done, cancelled.",
+        description="Novo status público do card: not_started, started, in_progress, validation, on_hold, done ou cancelled. rejected é aceito somente quando o card já está rejected, para reordenar dentro da mesma coluna; nenhuma transição pode ter rejected como destino manual.",
     )
     position: int | None = Field(
         None,
@@ -3380,6 +3403,15 @@ class CardMove(BaseModel):
     )
 
 
+class CardRejectionCauseResponse(BaseModel):
+    """Bounded human-facing cause for a card currently awaiting rework."""
+
+    kind: str
+    id: str = Field(..., min_length=1, max_length=REJECTION_ID_MAX_LENGTH)
+    code: str = Field(..., min_length=1, max_length=REJECTION_CODE_MAX_LENGTH)
+    summary: str = Field(..., min_length=1, max_length=REJECTION_SUMMARY_MAX_LENGTH)
+
+
 class CardResponse(BaseSchema):
     """Schema for card response."""
 
@@ -3427,12 +3459,37 @@ class CardResponse(BaseSchema):
     linked_test_task_ids: list[str] | None = None
     skip_task_requirement_link_gate: bool = False
     validations: list[dict] | None = None
+    rejection_records: list[dict] = Field(default_factory=list)
+    current_rejection_kind: str | None = None
+    current_rejection_id: str | None = Field(
+        default=None, max_length=REJECTION_ID_MAX_LENGTH
+    )
+    current_rejection_code: str | None = Field(
+        default=None, max_length=REJECTION_CODE_MAX_LENGTH
+    )
+    current_rejection_summary: str | None = Field(
+        default=None, max_length=REJECTION_SUMMARY_MAX_LENGTH
+    )
     archived: bool = False
     pre_archive_status: str | None = None
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
+
+    @field_validator("rejection_records", mode="before")
+    @classmethod
+    def normalize_rejection_records(cls, value: list[dict] | None) -> list[dict]:
+        return list(value or [])
+
+    @field_validator("validations", mode="before")
+    @classmethod
+    def project_public_task_validations(
+        cls, value: list[dict] | None
+    ) -> list[dict] | None:
+        if value is None:
+            return None
+        return [project_task_validation_public(item) for item in value]
 
     @field_validator("knowledge_bases", mode="before")
     @classmethod
@@ -3488,6 +3545,16 @@ class CardSummary(BaseSchema):
     archived: bool
     # Count of unanswered Q&A (answered_at IS NULL) — drives the badge.
     open_qa_count: int = Field(..., ge=0)
+    current_rejection_kind: str | None = None
+    current_rejection_id: str | None = Field(
+        default=None, max_length=REJECTION_ID_MAX_LENGTH
+    )
+    current_rejection_code: str | None = Field(
+        default=None, max_length=REJECTION_CODE_MAX_LENGTH
+    )
+    current_rejection_summary: str | None = Field(
+        default=None, max_length=REJECTION_SUMMARY_MAX_LENGTH
+    )
 
 
 class CardPageItem(BaseSchema):
@@ -3528,6 +3595,16 @@ class CardPageItem(BaseSchema):
     created_at: datetime
     updated_at: datetime
     open_qa_count: int = Field(..., ge=0)
+    current_rejection_kind: str | None = None
+    current_rejection_id: str | None = Field(
+        default=None, max_length=REJECTION_ID_MAX_LENGTH
+    )
+    current_rejection_code: str | None = Field(
+        default=None, max_length=REJECTION_CODE_MAX_LENGTH
+    )
+    current_rejection_summary: str | None = Field(
+        default=None, max_length=REJECTION_SUMMARY_MAX_LENGTH
+    )
 
 
 # ============================================================================
@@ -3538,6 +3615,15 @@ class CardPageItem(BaseSchema):
 class TaskValidationSubmit(BaseModel):
     """Request body for submitting a task validation."""
 
+    expected_subject_version: int = Field(
+        ...,
+        ge=1,
+        validation_alias=AliasChoices(
+            "expected_subject_version", "expected_card_version"
+        ),
+        description="Optimistic card subject-version fence.",
+    )
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
     confidence: int = Field(
         ..., ge=0, le=100, description="Confianca do validador na avaliacao (0-100)."
     )
@@ -3583,23 +3669,182 @@ class TaskValidationSubmit(BaseModel):
 class TaskValidationResponse(BaseModel):
     """Response for a task validation."""
 
+    model_config = ConfigDict(extra="ignore")
+
     id: str
     card_id: str
     board_id: str
-    reviewer_id: str
-    confidence: int
-    confidence_justification: str
-    estimated_completeness: int
-    completeness_justification: str
-    estimated_drift: int
-    drift_justification: str
-    general_justification: str
-    recommendation: str
-    outcome: str
-    threshold_violations: list[str]
-    created_at: str
+    # Historical rows predating the governed validation contract can be sparse.
+    # The submit input remains strict; public history reads are deliberately
+    # tolerant while still stripping all internal ledger fields.
+    reviewer_id: str | None = None
+    reviewer_name: str | None = Field(default=None, max_length=255)
+    evaluator_id: str | None = None
+    evaluator_name: str | None = Field(default=None, max_length=255)
+    confidence: int | None = None
+    confidence_justification: str | None = None
+    estimated_completeness: int | None = None
+    completeness: int | None = None
+    completeness_justification: str | None = None
+    estimated_drift: int | None = None
+    drift: int | None = None
+    drift_justification: str | None = None
+    general_justification: str | None = None
+    summary: str | None = None
+    recommendation: str | None = None
+    outcome: str | None = None
+    verdict: str | None = None
+    validation_outcome: str | None = None
+    completion_outcome: str | None = None
+    threshold_violations: list[str] = Field(default_factory=list)
+    created_at: str | None = None
     card_status: str | None = None
     resolved_thresholds: dict | None = None
+    reviewer_separation: dict | None = None
+    expected_subject_version: int | None = None
+    completion_gate_failures: list[dict] = Field(default_factory=list)
+    rejection_cause: CardRejectionCauseResponse | None = None
+    subject_version: int | None = None
+    replayed: bool = False
+
+
+class TaskValidationListResponse(BaseModel):
+    """Public reverse-chronological Task Validation history envelope."""
+
+    card_id: str
+    total: int = Field(..., ge=0)
+    validations: list[TaskValidationResponse] = Field(default_factory=list)
+
+
+_CARD_VALIDATION_REDACTION = {
+    "validations": None,
+    "rejection_records": [],
+    "current_rejection_kind": None,
+    "current_rejection_id": None,
+    "current_rejection_code": None,
+    "current_rejection_summary": None,
+    "validations_count": 0,
+    "validations_fail_count": 0,
+    "validations_has_pass": False,
+    "first_pass_confidence": None,
+    "first_pass_completeness": None,
+    "first_pass_drift": None,
+}
+
+
+def redact_card_validation_projection(value: Any) -> Any:
+    """Remove validation bodies, causal summaries and aggregate score signals.
+
+    The helper is shared by full-card and paginated/column boundaries.  It
+    preserves lifecycle status (including ``rejected``) while making the
+    dedicated ``card.validation.read`` permission authoritative for every
+    human or agent-facing validation signal.
+    """
+
+    if isinstance(value, BaseModel):
+        fields = value.__class__.model_fields
+        updates = {
+            key: item
+            for key, item in _CARD_VALIDATION_REDACTION.items()
+            if key in fields
+        }
+        return value.model_copy(update=updates)
+    if isinstance(value, Mapping):
+        projected = dict(value)
+        for key, item in _CARD_VALIDATION_REDACTION.items():
+            if key in projected:
+                projected[key] = list(item) if isinstance(item, list) else item
+        return projected
+    return value
+
+
+_TASK_VALIDATION_PRIVATE_FIELDS = frozenset(
+    {"response", "request_digest", "idempotency_key"}
+)
+
+
+def project_task_validation_public(
+    value: Mapping[str, Any] | BaseModel,
+    *,
+    card_id: str | None = None,
+    board_id: str | None = None,
+    replayed: bool | None = None,
+) -> dict[str, Any]:
+    """Project one persisted Task Validation into its public, replay-stable DTO.
+
+    New entries validate through :class:`TaskValidationResponse`. Historical
+    rows are intentionally read-tolerant: known clean aliases are normalized,
+    context-known card/board identities are filled, and whatever canonical
+    fields are actually present are returned. Ledger plumbing is removed on
+    every path, including legacy nested ``response`` snapshots.
+    """
+
+    if isinstance(value, BaseModel):
+        raw = value.model_dump(mode="python")
+    elif isinstance(value, Mapping):
+        raw = dict(value)
+    else:
+        return {}
+
+    nested = raw.get("response")
+    merged = {
+        key: item
+        for key, item in raw.items()
+        if key not in _TASK_VALIDATION_PRIVATE_FIELDS
+    }
+    if isinstance(nested, Mapping):
+        merged.update(
+            {
+                key: item
+                for key, item in nested.items()
+                if key not in _TASK_VALIDATION_PRIVATE_FIELDS
+            }
+        )
+    if card_id and not merged.get("card_id"):
+        merged["card_id"] = card_id
+    if board_id and not merged.get("board_id"):
+        merged["board_id"] = board_id
+
+    alias_pairs = (
+        ("reviewer_id", "evaluator_id"),
+        ("reviewer_name", "evaluator_name"),
+        ("estimated_completeness", "completeness"),
+        ("estimated_drift", "drift"),
+        ("general_justification", "summary"),
+    )
+    for canonical, alias in alias_pairs:
+        if merged.get(canonical) is None and merged.get(alias) is not None:
+            merged[canonical] = merged[alias]
+        if merged.get(alias) is None and merged.get(canonical) is not None:
+            merged[alias] = merged[canonical]
+    if merged.get("outcome") is None and merged.get("verdict") in {"pass", "fail"}:
+        merged["outcome"] = (
+            "success" if merged["verdict"] == "pass" else "failed"
+        )
+    if merged.get("verdict") is None and merged.get("outcome") in {
+        "success",
+        "failed",
+    }:
+        merged["verdict"] = (
+            "pass" if merged["outcome"] == "success" else "fail"
+        )
+    merged.setdefault("threshold_violations", [])
+    merged.setdefault("completion_gate_failures", [])
+    if replayed is not None:
+        merged["replayed"] = replayed
+    else:
+        merged["replayed"] = bool(merged.get("replayed", False))
+
+    try:
+        return TaskValidationResponse.model_validate(merged).model_dump(
+            mode="json",
+            exclude_none=False,
+        )
+    except (TypeError, ValueError):
+        # Legacy task validations can predate required identity/score fields.
+        # Preserve only reviewed public keys; never fall back to the raw dict.
+        allowed = set(TaskValidationResponse.model_fields)
+        return {key: item for key, item in merged.items() if key in allowed}
 
 
 # ============================================================================

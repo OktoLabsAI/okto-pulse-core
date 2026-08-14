@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
 from okto_pulse.core.domain.enums import (
     CardStatus,
@@ -37,6 +37,7 @@ class TransitionContract:
     reason_codes: tuple[str, ...] = ("transition_not_allowed",)
     card_types: tuple[str, ...] = ()
     policy_compliance: bool = False
+    visibility: Literal["public", "internal"] = "public"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,7 @@ def _edge(
     reason_codes: Sequence[str] = ("transition_not_allowed",),
     card_types: Sequence[str] = (),
     policy_compliance: bool = False,
+    visibility: Literal["public", "internal"] = "public",
 ) -> TransitionContract:
     return TransitionContract(
         to_status=to_status,
@@ -71,6 +73,7 @@ def _edge(
         reason_codes=tuple(reason_codes),
         card_types=tuple(card_types),
         policy_compliance=policy_compliance,
+        visibility=visibility,
     )
 
 
@@ -452,13 +455,32 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                 "validation": [
                     _edge(
                         "in_progress",
-                        gate="rework",
+                        gate="test_rework",
                         preconditions=("spec_dependencies_ready",),
                         capabilities=("reopen",),
                         reason_codes=(
                             "spec_dependencies_incomplete",
                             "transition_not_allowed",
                         ),
+                        card_types=("test",),
+                    ),
+                    _edge(
+                        "rejected",
+                        gate="completion_rejection",
+                        preconditions=("sealed_rejection_cause",),
+                        capabilities=("record_consequence",),
+                        effects=(
+                            "status_changed",
+                            "rejection_cause_sealed",
+                            "activity_logged",
+                        ),
+                        reason_codes=(
+                            "task_validation_failed",
+                            "completion_gate_blocked",
+                            "transition_not_allowed",
+                        ),
+                        card_types=("normal", "bug"),
+                        visibility="internal",
                     ),
                     _edge(
                         "done",
@@ -513,6 +535,29 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "spec_dependencies_incomplete",
                             "transition_not_allowed",
                         ),
+                    )
+                ],
+                "rejected": [
+                    _edge(
+                        "in_progress",
+                        gate="rework_handoff",
+                        preconditions=(
+                            "current_rejection_cause_present",
+                            "spec_dependencies_ready",
+                        ),
+                        capabilities=("rework",),
+                        effects=(
+                            "status_changed",
+                            "current_rejection_cleared",
+                            "rework_started",
+                            "activity_logged",
+                        ),
+                        reason_codes=(
+                            "current_rejection_cause_missing",
+                            "spec_dependencies_incomplete",
+                            "transition_not_allowed",
+                        ),
+                        card_types=("normal", "bug"),
                     )
                 ],
                 "cancelled": [
@@ -659,7 +704,9 @@ def transition_map(entity_type: str) -> dict[Enum, list[Enum]]:
     definition = lifecycle_definition(entity_type)
     return {
         definition.status_enum(from_status): [
-            definition.status_enum(edge.to_status) for edge in edges
+            definition.status_enum(edge.to_status)
+            for edge in edges
+            if edge.visibility == "public"
         ]
         for from_status, edges in definition.transitions.items()
     }
@@ -678,7 +725,7 @@ def transition_permission_flag(
     # and the mutation service; requiring a card_type here would make valid
     # subtype-specific edges impossible to authorize.
     if not any(
-        edge.to_status == target_status
+        edge.to_status == target_status and edge.visibility == "public"
         for edge in transition_contracts(normalized_entity, current_status)
     ):
         raise ValueError(
@@ -701,6 +748,7 @@ def transition_permission_flags(entity_type: str | None = None) -> tuple[str, ..
         for definition in definitions
         for current_status, edges in definition.transitions.items()
         for edge in edges
+        if edge.visibility == "public"
     )
 
 
@@ -732,6 +780,24 @@ def is_transition_allowed(
 
     return any(
         edge.to_status == target_status
+        and edge.visibility == "public"
+        and (not edge.card_types or card_type in edge.card_types)
+        for edge in transition_contracts(entity_type, current_status)
+    )
+
+
+def is_internal_transition_allowed(
+    entity_type: str,
+    current_status: str,
+    target_status: str,
+    *,
+    card_type: str | None = None,
+) -> bool:
+    """Admit a consequence-only edge that transports must never expose."""
+
+    return any(
+        edge.to_status == target_status
+        and edge.visibility == "internal"
         and (not edge.card_types or card_type in edge.card_types)
         for edge in transition_contracts(entity_type, current_status)
     )
@@ -758,6 +824,7 @@ __all__ = [
     "LifecycleDefinition",
     "SDLC_REGISTRY",
     "TransitionContract",
+    "is_internal_transition_allowed",
     "is_transition_allowed",
     "lifecycle_definition",
     "lifecycle_state_permission_registry",

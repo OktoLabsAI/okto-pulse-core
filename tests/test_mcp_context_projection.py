@@ -829,6 +829,133 @@ async def test_get_task_context_default_summary_and_full_passthrough():
 
 
 @pytest.mark.asyncio
+async def test_task_context_current_rejection_requires_validation_read():
+    from unittest.mock import AsyncMock, patch
+
+    db_factory = get_session_factory()
+    board_id = _id("ctx-rejected-board")
+    spec_id = _id("ctx-rejected-spec")
+    card_id = _id("ctx-rejected-card")
+    secret = "private reviewer cause must not leak"
+    validation_id = _id("validation")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Rejected context", owner_id=USER_ID))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec",
+                status=SpecStatus.IN_PROGRESS,
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Rejected card",
+                status=CardStatus.REJECTED,
+                card_type=CardType.NORMAL,
+                created_by=USER_ID,
+                validations=[
+                    {
+                        "id": validation_id,
+                        "outcome": "failed",
+                        "general_justification": secret,
+                    }
+                ],
+                rejection_records=[
+                    {
+                        "id": "rejection-1",
+                        "kind": "task_validation",
+                        "source_id": validation_id,
+                        "code": "task_validation_failed",
+                        "summary": secret,
+                    }
+                ],
+                current_rejection_kind="task_validation",
+                current_rejection_id="rejection-1",
+                current_rejection_code="task_validation_failed",
+                current_rejection_summary=secret,
+            )
+        )
+        await db.commit()
+
+    traceability_projection = AsyncMock(
+        return_value={"subject_type": "card", "subject_id": card_id}
+    )
+
+    def deny_validation_read(_permissions, operation):
+        return "card.validation.read is required" if operation == "card.validation.read" else None
+
+    with patch.object(
+        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+    ), patch.object(
+        mcp_server, "check_permission", side_effect=deny_validation_read
+    ), patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        traceability_projection,
+    ):
+        denied_full = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
+        )
+        denied_gate = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
+            context_scope="gate",
+        )
+
+    for result in (denied_full, denied_gate):
+        assert result["card"]["status"] == "rejected"
+        assert "validations" not in result
+        assert "validation_history" not in result
+        assert "current_rejection_kind" not in result["card"]
+        assert "current_rejection_id" not in result["card"]
+        assert "current_rejection_code" not in result["card"]
+        assert "current_rejection_summary" not in result["card"]
+        assert secret not in json.dumps(result)
+
+    with patch.object(
+        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
+    ), patch.object(
+        mcp_server, "check_permission", return_value=None
+    ), patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        traceability_projection,
+    ):
+        allowed_full = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
+        )
+        allowed_gate = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=card_id,
+            profile="full",
+            context_scope="gate",
+        )
+
+    for result in (allowed_full, allowed_gate):
+        assert result["card"]["current_rejection_kind"] == "task_validation"
+        assert result["card"]["current_rejection_id"] == "rejection-1"
+        assert result["card"]["current_rejection_code"] == "task_validation_failed"
+        assert result["card"]["current_rejection_summary"] == secret
+        assert result["validations"][0]["id"] == validation_id
+    assert allowed_gate["validation_history"]["total_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies():
     from unittest.mock import AsyncMock, MagicMock, patch
 

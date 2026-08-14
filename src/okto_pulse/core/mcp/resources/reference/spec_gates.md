@@ -456,6 +456,15 @@ When the **Task Validation Gate** is enabled (`validation_config.required == tru
 
 **Threshold violations auto-fail the validation regardless of the reviewer's recommendation.** Even with `recommendation="approve"`, the validation fails if any threshold is violated.
 
+The response separates `validation_outcome` from `completion_outcome`: a
+quality review can pass while another governed completion gate rejects the
+completion. An admitted rejection atomically stores its cause and moves a
+Normal/Bug card to `rejected`; validators never move it back themselves. The
+executor reads the Current cause, moves `rejected` → `in_progress`, records a
+new conclusion, and hands off a new validation attempt. Every call carries
+`expected_subject_version` and `idempotency_key`; exact retries resolve before
+the mutable status check, while key reuse with a different payload fails.
+
 The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`).
 
 **Independent reviewer policy:** `reviewer_separation_mode` is resolved from the board before any task-validation mutation. The full task context projects the current caller's `reviewer_separation` decision against card creator, assignee, and executor identities. `enforce` blocks with the action-required code `reviewer_separation_required`; `warn` and `off` proceed and persist the decision in the append-only validation. Legacy persisted boards with the setting absent resolve explicitly to `off` / `legacy_absent_compat`; new boards and new default-board template versions use `enforce` unless configured otherwise.

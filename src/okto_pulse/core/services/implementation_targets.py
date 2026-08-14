@@ -295,7 +295,7 @@ class ImplementationTargetService:
                 details={"reason": "spec_version_conflict"}
             )
         normalized_status = str(getattr(card_status, "value", card_status)).lower()
-        if normalized_status in {"validation", "done"}:
+        if normalized_status in {"validation", "rejected", "done"}:
             raise ImplementationTargetInvalid(
                 details={"reason": "target_read_only", "card_status": normalized_status}
             )
@@ -457,7 +457,7 @@ class ImplementationTargetService:
                 }
             )
         normalized_status = str(getattr(card_status, "value", card_status)).lower()
-        if normalized_status in {"validation", "done"}:
+        if normalized_status in {"validation", "rejected", "done"}:
             raise ImplementationTargetInvalid(
                 details={"reason": "target_read_only", "card_status": normalized_status}
             )

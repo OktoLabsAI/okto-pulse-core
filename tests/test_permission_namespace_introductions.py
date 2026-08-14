@@ -47,7 +47,7 @@ def test_new_namespace_manifests_are_ordered_and_registered() -> None:
     leaves = [leaf for manifest in NEW_MANIFESTS for leaf in manifest.leaves]
     assert len(leaves) == len(set(leaves)) == 110
     assert set(leaves) <= set(ALL_FLAGS)
-    assert len(ALL_FLAGS) == 585
+    assert len(ALL_FLAGS) == 587
 
 
 def test_every_new_leaf_has_one_authority_and_explicit_builtin_grants() -> None:

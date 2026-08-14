@@ -49,6 +49,9 @@ from okto_pulse.core.services.knowledge_propagation import (
     KnowledgeRefreshByKnowledgeIdsCommand,
     deterministic_knowledge_target_id,
 )
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 
 
 _CARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -535,6 +538,10 @@ async def _load_card_for_v2_write(
     )
     if card is None:
         raise EntityNotFoundError("card", card_id)
+    require_card_operational_mutation_allowed(
+        card,
+        operation="mutate_card_knowledge_assignments",
+    )
     return card
 
 

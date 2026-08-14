@@ -30,6 +30,9 @@ from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
 from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 
 
 @dataclass(frozen=True)
@@ -358,6 +361,11 @@ class MarkResourceNotApplicableUseCase:
         )
         if command.entity_type in {"ideation", "refinement", "spec"}:
             require_draft_mutation(entity, subject_type=command.entity_type)
+        elif command.entity_type == "card":
+            require_card_operational_mutation_allowed(
+                entity,
+                operation="resource_gate.mark_not_applicable",
+            )
         data = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
             command.entity_type,
@@ -390,6 +398,11 @@ class ClearResourceNotApplicableUseCase:
         )
         if command.entity_type in {"ideation", "refinement", "spec"}:
             require_draft_mutation(entity, subject_type=command.entity_type)
+        elif command.entity_type == "card":
+            require_card_operational_mutation_allowed(
+                entity,
+                operation="resource_gate.clear_not_applicable",
+            )
         data = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,
             command.entity_type,

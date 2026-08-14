@@ -49,7 +49,7 @@ Args:
         For bug cards, this is auto-resolved from the origin task if not provided.
     description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
     details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
-    status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
+    status: Initial card status - only not_started or started. Use move_card for later public lifecycle transitions; rejected is consequence-only and cannot be assigned on create.
     priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
     assignee_id: User ID to assign (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
@@ -188,6 +188,9 @@ Every returned entry carries a `type` so the agent can act directly:
 - `dependency_blocked` — card is active while at least one `depends_on`
   target is not DONE.
 - `on_hold` — card is explicitly paused (status=on_hold).
+- `rework_required` — a Rejected normal/bug card has a sealed Current cause
+  and needs an executor to start a new implementation attempt. Rejected cards
+  are deliberately excluded from `stale`.
 - `stale` — card is started/in_progress/validation and hasn't been
   touched for more than `stale_hours`.
 - `spec_pending_validation` — spec is approved but has no 'approve'
@@ -210,7 +213,7 @@ Returns:
 
 List cards on the board with optional filters and pagination.
 
-status: empty = all, or one of not_started/started/in_progress/validation/on_hold/done/cancelled/open.
+status: empty = all, or one of not_started/started/in_progress/validation/rejected/on_hold/done/cancelled/open.
 Use 'open' for all cards NOT in done/cancelled. Max limit is 200.
 
 ## `okto_pulse_move_card`
@@ -224,6 +227,11 @@ Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
 completeness_justification, drift (0-100), and drift_justification so the
 reviewer can validate the claim. Use -1 for completeness/drift when no
 execution report is required (e.g. moving to on_hold or started).
+
+`status="rejected"` is accepted only for a same-status position reorder of a
+card that is already Rejected. It cannot be used to enter Rejected manually;
+the only lifecycle writer for that state is an admitted Task Validation/
+completion decision.
 
 ### `impact_evidence` (optional, schema_version=1)
 

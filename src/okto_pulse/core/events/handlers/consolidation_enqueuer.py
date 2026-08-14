@@ -83,7 +83,11 @@ _CARD_TO_SPEC_EVENTS = {"card.linked_to_spec", "card.unlinked_from_spec"}
 # BOTH the card itself (status/conclusion lives on the card node) AND the
 # parent spec (aggregated children-state on the spec node). Orphan cards
 # (spec_id is None) skip the spec-side enqueue gracefully.
-_CARD_DUAL_TARGET_EVENTS = {"card.moved", "card.conclusion_added"}
+_CARD_DUAL_TARGET_EVENTS = {
+    "card.moved",
+    "card.conclusion_added",
+    "card.completion_rejected",
+}
 
 _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
 
@@ -93,6 +97,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "card.created",
     "card.moved",
     "card.conclusion_added",
+    "card.completion_rejected",
     "card.cancelled",
     "card.restored",
     "card.linked_to_spec",

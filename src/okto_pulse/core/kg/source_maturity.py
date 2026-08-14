@@ -265,6 +265,19 @@ def classify_source_for_kg(
             reason_code="canonical_status_matched",
         )
 
+    if kind in {"task", "bug"} and status == "rejected":
+        # Rejected is live, explicitly unfinished work.  It must remain in the
+        # working partition until the executor accepts the rework handoff;
+        # aging it out would hide the board's actionable state from discovery.
+        return SourceMaturityClassification(
+            artifact_type=kind,
+            artifact_status=status,
+            graph_layer=GRAPH_LAYER_WORKING,
+            maturity_status=MATURITY_WORKING_IMMATURE,
+            disposition=DISPOSITION_WORKING,
+            reason_code=f"{kind}_rejected_rework_required",
+        )
+
     ttl_base = _parse_dt(updated_at)
     expires_at = None
     if ttl_base is not None and working_ttl_days > 0:

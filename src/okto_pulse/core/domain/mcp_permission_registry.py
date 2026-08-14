@@ -504,10 +504,15 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy(
         "okto_pulse_get_task_context",
         "card.entity.context_read",
+        "card.validation.read",
         "spec.integration_requirements.read",
         "spec.observability_requirements.read",
     ),
-    _policy("okto_pulse_get_task_validation", "card.validation.read"),
+    _policy(
+        "okto_pulse_get_task_validation",
+        "card.entity.read",
+        "card.validation.read",
+    ),
     _policy("okto_pulse_get_traceability_report", "spec.entity.read"),
     _policy("okto_pulse_get_unseen_summary", "board.mentions_read"),
     _policy(
@@ -775,7 +780,11 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_list_spec_evaluations", "spec.evaluations.read"),
     _policy("okto_pulse_list_spec_validations", "spec.validation.read"),
     _policy("okto_pulse_list_sprint_evaluations", "sprint.evaluations.read"),
-    _policy("okto_pulse_list_task_validations", "card.validation.read"),
+    _policy(
+        "okto_pulse_list_task_validations",
+        "card.entity.read",
+        "card.validation.read",
+    ),
     _policy("okto_pulse_list_test_scenarios", "spec.tests.read"),
     _policy("okto_pulse_mark_as_seen", "board.mentions_mark_seen"),
     _policy(
@@ -797,9 +806,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_move_card", *transition_permission_flags("card")),
     _policy("okto_pulse_move_ideation", *transition_permission_flags("ideation")),
-    _policy(
-        "okto_pulse_move_refinement", *transition_permission_flags("refinement")
-    ),
+    _policy("okto_pulse_move_refinement", *transition_permission_flags("refinement")),
     _policy("okto_pulse_move_spec", *transition_permission_flags("spec")),
     _policy("okto_pulse_move_sprint", *transition_permission_flags("sprint")),
     _policy("okto_pulse_move_story", *transition_permission_flags("story")),
@@ -906,7 +913,11 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_submit_spec_evaluation", "spec.evaluations.submit"),
     _policy("okto_pulse_submit_spec_validation", "spec.validation.submit"),
     _policy("okto_pulse_submit_sprint_evaluation", "sprint.evaluations.submit"),
-    _policy("okto_pulse_submit_task_validation", "card.validation.submit"),
+    _policy(
+        "okto_pulse_submit_task_validation",
+        "card.validation.submit",
+        "card.validation.read",
+    ),
     _policy("okto_pulse_suggest_sprints", "board.read"),
     _policy(
         "okto_pulse_supersede_code_evidence",

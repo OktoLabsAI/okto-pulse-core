@@ -20,7 +20,75 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
 )
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    decide_authorization,
+    resolve_actor_permissions,
+)
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.models.schemas import (
+    project_task_validation_public,
+    redact_card_validation_projection,
+)
+
+
+async def _can_read_task_validations(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> bool:
+    permissions = await resolve_actor_permissions(actor, uow, board_id)
+    return decide_authorization(
+        actor,
+        PermissionRequirement("card.validation.read"),
+        permissions,
+    ).allowed
+
+
+def _redacted_task_validation_gate() -> dict[str, Any]:
+    """Stable empty aggregate for analytics callers without the read leaf."""
+
+    return {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": None,
+        "avg_attempts_per_card": None,
+        "first_pass_rate": None,
+        "avg_scores": {
+            "confidence": None,
+            "completeness": None,
+            "drift": None,
+        },
+        "rejection_reasons": {
+            "confidence_below": 0,
+            "completeness_below": 0,
+            "drift_above": 0,
+            "reject_recommendation": 0,
+        },
+        "cards_with_validation": 0,
+        "per_card": [],
+        "redacted": True,
+    }
+
+
+def _redact_rejection_causes(data: Any) -> Any:
+    """Return blocker analytics without Task Validation causal details."""
+
+    if not isinstance(data, dict):
+        return data
+    projected = dict(data)
+    projected_blockers: list[Any] = []
+    for blocker in data.get("blockers", []):
+        if not isinstance(blocker, dict) or blocker.get("type") != "rework_required":
+            projected_blockers.append(blocker)
+            continue
+        item = dict(blocker)
+        item["reason"] = "A governed completion attempt requires rework"
+        item["evidence"] = {}
+        projected_blockers.append(item)
+    projected["blockers"] = projected_blockers
+    return projected
 
 
 async def _ensure_board_access(
@@ -59,11 +127,18 @@ class BoardBlockersUseCase:
     ) -> BoardBlockersResult:
 
         await _ensure_board_access(uow, command.board_id, actor)
-        return BoardBlockersResult(
-            await uow.services.analytics.blockers(command.board_id,
+        data = await uow.services.analytics.blockers(
+            command.board_id,
                 stale_hours=command.stale_hours,
                 filter_type=command.filter_type,
             )
+        can_read_validations = await _can_read_task_validations(
+            uow,
+            command.board_id,
+            actor,
+        )
+        return BoardBlockersResult(
+            data if can_read_validations else _redact_rejection_causes(data)
         )
 
 
@@ -273,10 +348,14 @@ class BoardValidationsUseCase:
     ) -> BoardValidationsResult:
 
         await _ensure_board_access(uow, command.board_id, actor)
-        return BoardValidationsResult(
-            await uow.services.analytics.validations(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
-            )
+        data = await uow.services.analytics.validations(
+            command.board_id,
+            dt_from=command.dt_from,
+            dt_to=command.dt_to,
         )
+        if not await _can_read_task_validations(uow, command.board_id, actor):
+            data = {**data, "task_validation_gate": _redacted_task_validation_gate()}
+        return BoardValidationsResult(data)
 
 
 class BoardSpecAnalyticsCommand:
@@ -504,4 +583,20 @@ class BoardEntityDetailUseCase:
         )
         if data is None:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
+        if command.entity_type == "card":
+            if await _can_read_task_validations(uow, command.board_id, actor):
+                data = {
+                    **data,
+                    "validations": [
+                        project_task_validation_public(
+                            item,
+                            card_id=command.entity_id,
+                            board_id=command.board_id,
+                        )
+                        for item in data.get("validations", [])
+                        if isinstance(item, dict)
+                    ],
+                }
+            else:
+                data = redact_card_validation_projection(data)
         return BoardEntityDetailResult(data)

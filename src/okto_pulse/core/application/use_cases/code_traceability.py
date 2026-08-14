@@ -145,6 +145,9 @@ from okto_pulse.core.services.code_traceability_observability import (
     METRIC_CODE_INVESTIGATION_RECEIPT_TOTAL,
     observe_code_traceability_metric,
 )
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 from okto_pulse.core.ports.code_investigation import (
     CodeInvestigationReceiptQuery,
 )
@@ -392,7 +395,40 @@ async def _evidence_parent_version_or_replay(
         subject_id=command.parent_id,
         uow=uow,
     )
+    if command.parent_type is CodeTraceabilitySubjectType.CARD:
+        require_card_operational_mutation_allowed(
+            parent,
+            operation="code_traceability.evidence.submit",
+        )
     return _record_version(parent, entity_type=command.parent_type.value)
+
+
+async def _require_evidence_card_parent_mutable(
+    *,
+    board_id: str,
+    evidence_id: str,
+    operation: str,
+    uow: PulseUnitOfWork,
+) -> object | None:
+    """Freeze a Card-owned evidence mutation; non-Card evidence is unaffected."""
+
+    evidence = await uow.services.code_traceability.get_evidence(
+        board_id=board_id,
+        evidence_id=evidence_id,
+    )
+    if (
+        evidence is None
+        or evidence.parent_type is not CodeTraceabilitySubjectType.CARD
+    ):
+        return evidence
+    card = await _load_subject(
+        board_id=board_id,
+        subject_type=CodeTraceabilitySubjectType.CARD,
+        subject_id=evidence.parent_id,
+        uow=uow,
+    )
+    require_card_operational_mutation_allowed(card, operation=operation)
+    return evidence
 
 
 async def _resolution_card_version_or_replay(
@@ -416,6 +452,10 @@ async def _resolution_card_version_or_replay(
         subject_id=command.card_id,
         uow=uow,
     )
+    # A rejection bumps the card subject version.  Resolution is the bounded,
+    # non-execution operation that may renew an existing target against that
+    # Current version before the card can leave Rejected under blocking mode.
+    # Target create/update and execution receipt writers remain frozen.
     return _record_version(card, entity_type="card")
 
 
@@ -451,6 +491,10 @@ async def _execution_card_version_or_replay(
         subject_id=command.card_id,
         uow=uow,
     )
+    if str(getattr(getattr(card, "status", None), "value", getattr(card, "status", ""))).lower() == "rejected":
+        raise ImplementationTargetInvalid(
+            details={"reason": "card_rejected_rework_handoff_required"}
+        )
     return _record_version(card, entity_type="card")
 
 
@@ -1017,6 +1061,22 @@ class RevokeCodeEvidenceUseCase:
             board_id=command.board_id,
             operation="code_traceability.evidence.revoke",
         )
+        current = await uow.services.code_traceability.get_evidence(
+            board_id=command.board_id,
+            evidence_id=command.evidence_id,
+        )
+        exact_replay = (
+            current is not None
+            and current.lifecycle_status is CodeTraceabilityLifecycleStatus.REVOKED
+            and current.revocation_reason == command.reason
+        )
+        if not exact_replay:
+            await _require_evidence_card_parent_mutable(
+                board_id=command.board_id,
+                evidence_id=command.evidence_id,
+                operation="code_traceability.evidence.revoke",
+                uow=uow,
+            )
         result = await self._evidence_service.revoke(
             command,
             store=uow.services.code_traceability,
@@ -1062,6 +1122,12 @@ class LinkCodeEvidenceToSpecUseCase:
             uow=uow,
         )
         _require_spec_entity(spec, command.entity_type, command.entity_id)
+        await _require_evidence_card_parent_mutable(
+            board_id=command.board_id,
+            evidence_id=command.evidence_id,
+            operation="code_traceability.spec_link.create",
+            uow=uow,
+        )
         result = await self._evidence_service.link_to_spec(
             command,
             current_spec_version=_record_version(spec, entity_type="spec"),
@@ -1128,6 +1194,17 @@ class UnlinkCodeEvidenceFromSpecUseCase:
             subject_id=command.spec_id,
             uow=uow,
         )
+        link = await uow.services.code_traceability.get_spec_link(
+            board_id=command.board_id,
+            link_id=command.link_id,
+        )
+        if link is not None:
+            await _require_evidence_card_parent_mutable(
+                board_id=command.board_id,
+                evidence_id=link.evidence_id,
+                operation="code_traceability.spec_link.delete",
+                uow=uow,
+            )
         result = await self._evidence_service.unlink_from_spec(
             command,
             current_spec_version=_record_version(spec, entity_type="spec"),
@@ -1180,6 +1257,12 @@ class SetCodeEvidenceDispositionUseCase:
             subject_id=command.spec_id,
             uow=uow,
         )
+        await _require_evidence_card_parent_mutable(
+            board_id=command.board_id,
+            evidence_id=command.evidence_id,
+            operation="code_traceability.spec_link.set_disposition",
+            uow=uow,
+        )
         result = await self._evidence_service.set_disposition(
             command,
             current_spec_version=_record_version(spec, entity_type="spec"),
@@ -1230,6 +1313,12 @@ class ClearCodeEvidenceDispositionUseCase:
             board_id=command.board_id,
             subject_type=CodeTraceabilitySubjectType.SPEC,
             subject_id=command.spec_id,
+            uow=uow,
+        )
+        await _require_evidence_card_parent_mutable(
+            board_id=command.board_id,
+            evidence_id=command.evidence_id,
+            operation="code_traceability.spec_link.clear_disposition",
             uow=uow,
         )
         result = await self._evidence_service.clear_disposition(
@@ -1838,12 +1927,33 @@ class AcknowledgeImplementationOverlapUseCase:
             board_id=command.board_id,
             operation="code_traceability.overlap.acknowledge",
         )
-        await _load_subject(
+        card = await _load_subject(
             board_id=command.board_id,
             subject_type=CodeTraceabilitySubjectType.CARD,
             subject_id=command.card_id,
             uow=uow,
         )
+        existing_acknowledgements = (
+            await uow.services.code_traceability.list_overlap_acknowledgements(
+                board_id=command.board_id,
+                card_id=command.card_id,
+            )
+        )
+        exact_replay = any(
+            {item.target_a_id, item.target_b_id}
+            == {command.target_a_id, command.target_b_id}
+            and {item.resolution_a_id, item.resolution_b_id}
+            == {command.resolution_a_id, command.resolution_b_id}
+            and item.disposition is command.disposition
+            and item.justification == command.justification
+            and item.created_by == actor.actor_id
+            for item in existing_acknowledgements
+        )
+        if not exact_replay:
+            require_card_operational_mutation_allowed(
+                card,
+                operation="code_traceability.overlap.acknowledge",
+            )
         result = await self._overlap_service.acknowledge(
             command,
             created_by=actor.actor_id,
@@ -1906,6 +2016,24 @@ class MarkCodeTraceabilityNotApplicableUseCase:
             entity_id=command.entity_id,
             uow=uow,
         )
+        if command.entity_type is CodeTraceabilityWaiverEntityType.CARD:
+            existing = await uow.services.code_traceability.get_active_waiver(
+                board_id=command.board_id,
+                entity_type=command.entity_type,
+                entity_id=command.entity_id,
+                scope=command.scope,
+            )
+            exact_replay = (
+                existing is not None
+                and existing.reason_code is command.reason_code
+                and existing.justification == command.justification
+                and existing.created_by == actor.actor_id
+            )
+            if not exact_replay:
+                require_card_operational_mutation_allowed(
+                    entity,
+                    operation="code_traceability.waiver.create",
+                )
         result = await self._waiver_service.mark_not_applicable(
             command,
             created_by=actor.actor_id,
@@ -1963,17 +2091,38 @@ class ClearCodeTraceabilityNotApplicableUseCase:
             board_id=command.board_id,
             operation="code_traceability.waiver.clear",
         )
+        existing = await uow.services.code_traceability.get_waiver(
+            board_id=command.board_id,
+            waiver_id=command.waiver_id,
+        )
+        entity = None
+        if existing is not None:
+            entity = await _load_waiver_entity(
+                board_id=command.board_id,
+                entity_type=existing.entity_type,
+                entity_id=existing.entity_id,
+                uow=uow,
+            )
+            if (
+                existing.active
+                and existing.entity_type is CodeTraceabilityWaiverEntityType.CARD
+            ):
+                require_card_operational_mutation_allowed(
+                    entity,
+                    operation="code_traceability.waiver.clear",
+                )
         result = await self._waiver_service.clear_not_applicable(
             command,
             cleared_by=actor.actor_id,
             store=uow.services.code_traceability,
         )
-        entity = await _load_waiver_entity(
-            board_id=command.board_id,
-            entity_type=result.waiver.entity_type,
-            entity_id=result.waiver.entity_id,
-            uow=uow,
-        )
+        if entity is None:
+            entity = await _load_waiver_entity(
+                board_id=command.board_id,
+                entity_type=result.waiver.entity_type,
+                entity_id=result.waiver.entity_id,
+                uow=uow,
+            )
         await _publish_mutation_event(
             uow,
             CodeTraceabilityWaiverCleared,
@@ -2084,6 +2233,7 @@ class GetCodeTraceabilityProjectionUseCase:
                     "started",
                     "in_progress",
                     "validation",
+                    "rejected",
                 }:
                     blocking.append(card_id)
             blocking_card_ids = tuple(blocking)

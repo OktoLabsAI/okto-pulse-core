@@ -45,6 +45,9 @@ from okto_pulse.core.domain.spec_dependency import (
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import SpecUpdate
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 
 
 _SPEC_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -818,7 +821,11 @@ class LinkCardToSpecUseCase:
     ) -> LinkCardToSpecResult:
         service = uow.services.specs
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
-        await _require_spec_board_card(uow.services, command.card_id, spec)
+        card = await _require_spec_board_card(uow.services, command.card_id, spec)
+        require_card_operational_mutation_allowed(
+            card,
+            operation="link_card_to_spec",
+        )
         linked = await service.link_card(
             command.spec_id, command.card_id, user_id=actor.actor_id
         )
@@ -1332,7 +1339,11 @@ class LinkTaskToIntegrationRequirementUseCase:
 
         spec_service = uow.services.specs
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
-        await _require_spec_board_card(uow.services, command.card_id, spec)
+        card = await _require_spec_board_card(uow.services, command.card_id, spec)
+        require_card_operational_mutation_allowed(
+            card,
+            operation="link_task_to_integration_requirement",
+        )
 
         await _check_requirement_link_permissions(
             uow.services,
@@ -1406,7 +1417,11 @@ class LinkTaskToObservabilityRequirementUseCase:
 
         spec_service = uow.services.specs
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
-        await _require_spec_board_card(uow.services, command.card_id, spec)
+        card = await _require_spec_board_card(uow.services, command.card_id, spec)
+        require_card_operational_mutation_allowed(
+            card,
+            operation="link_task_to_observability_requirement",
+        )
 
         await _check_requirement_link_permissions(
             uow.services,

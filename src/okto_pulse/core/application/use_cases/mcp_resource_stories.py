@@ -22,12 +22,17 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
     transition_permission_requirement,
 )
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 
 
 async def _require_resource_subject_draft(
     uow: PulseUnitOfWork,
     entity_type: str,
     entity_id: str,
+    *,
+    operation: str,
 ) -> None:
     if entity_type == "ideation":
         entity = await uow.services.ideations.get_ideation(entity_id)
@@ -35,11 +40,16 @@ async def _require_resource_subject_draft(
         entity = await uow.services.refinements.get_refinement(entity_id)
     elif entity_type == "spec":
         entity = await uow.services.specs.get_spec(entity_id)
+    elif entity_type == "card":
+        entity = await uow.services.cards.get_card(entity_id)
     else:
         return
     if entity is None:
         raise ValueError(f"{entity_type}_not_found")
-    require_draft_mutation(entity, subject_type=entity_type)
+    if entity_type == "card":
+        require_card_operational_mutation_allowed(entity, operation=operation)
+    else:
+        require_draft_mutation(entity, subject_type=entity_type)
 
 
 @dataclass(frozen=True)
@@ -91,7 +101,10 @@ class McpMarkResourceNotApplicableUseCase:
     ) -> McpPayloadResult:
 
         await _require_resource_subject_draft(
-            uow, command.entity_type, command.entity_id
+            uow,
+            command.entity_type,
+            command.entity_id,
+            operation="resource_gate.mark_not_applicable",
         )
         result = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
@@ -125,7 +138,10 @@ class McpClearResourceNotApplicableUseCase:
     ) -> McpPayloadResult:
 
         await _require_resource_subject_draft(
-            uow, command.entity_type, command.entity_id
+            uow,
+            command.entity_type,
+            command.entity_id,
+            operation="resource_gate.clear_not_applicable",
         )
         result = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,

@@ -5,20 +5,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     Card,
     CardStatus,
+    CardType,
     DomainEventRow,
     Spec,
     SpecStatus,
 )
 from okto_pulse.community.adapters.sqlalchemy_models import SpecDependency
 from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
-from okto_pulse.core.models.schemas import CardCreate
+from okto_pulse.core.models.schemas import CardCreate, CardMove
 from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import CardService
 
@@ -125,6 +126,31 @@ def _started_card(title: str, *, spec_id: str) -> CardCreate:
         spec_id=spec_id,
         status=CardStatus.STARTED,
     )
+
+
+async def _seed_validation_test_card(
+    db_factory,  # noqa: ANN001
+    *,
+    board_id: str,
+    spec_id: str,
+    case: str,
+) -> str:
+    card_id = f"skm-cs-{case}-test-card"
+    async with db_factory() as db:
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Test card awaiting rework",
+                status=CardStatus.VALIDATION,
+                card_type=CardType.TEST,
+                position=0,
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+    return card_id
 
 
 @pytest.mark.asyncio
@@ -248,3 +274,101 @@ async def test_create_started_later_failure_rolls_back_marker_and_all_effects(
             select(Spec.last_started_edition).where(Spec.id == source_id)
         )
     assert durable_marker is None
+
+
+@pytest.mark.asyncio
+async def test_test_card_validation_rework_still_enforces_spec_precedence(
+    db_factory,  # noqa: ANN001
+) -> None:
+    board_id, source_id, target_id = await _seed_specs(
+        db_factory,
+        case="test-rework-block",
+        blocked=True,
+    )
+    card_id = await _seed_validation_test_card(
+        db_factory,
+        board_id=board_id,
+        spec_id=source_id,
+        case="test-rework-block",
+    )
+
+    async with db_factory() as db:
+        with pytest.raises(SpecDependencyOperationError) as caught:
+            await CardService(db).move_card(
+                card_id,
+                USER_ID,
+                CardMove(status=CardStatus.IN_PROGRESS),
+            )
+
+    assert caught.value.code == "spec_dependencies_incomplete"
+    assert caught.value.facts["blocking_dependencies"][0]["target_spec_id"] == target_id
+    assert await _effect_counts(db_factory, board_id=board_id) == (1, 0, 0)
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        marker = await db.scalar(
+            select(Spec.last_started_edition).where(Spec.id == source_id)
+        )
+    assert card is not None
+    assert card.status is CardStatus.VALIDATION
+    assert marker is None
+
+
+@pytest.mark.asyncio
+async def test_test_card_validation_rework_fences_concurrent_spec_edition_change(
+    db_factory,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    board_id, source_id, _target_id = await _seed_specs(
+        db_factory,
+        case="test-rework-fence",
+        blocked=False,
+    )
+    card_id = await _seed_validation_test_card(
+        db_factory,
+        board_id=board_id,
+        spec_id=source_id,
+        case="test-rework-fence",
+    )
+
+    from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+    original = SpecDependencyService.require_ready_for_execution
+
+    async def change_edition_before_locked_recheck(
+        service: SpecDependencyService,
+        **kwargs,  # noqa: ANN003
+    ):
+        # Simulate a lifecycle writer winning after CardService captured its
+        # optimistic identity and before the dependency graph fence re-check.
+        await service.persistence._session.execute(  # noqa: SLF001
+            update(Spec).where(Spec.id == source_id).values(edition=4)
+        )
+        return await original(service, **kwargs)
+
+    monkeypatch.setattr(
+        SpecDependencyService,
+        "require_ready_for_execution",
+        change_edition_before_locked_recheck,
+    )
+
+    async with db_factory() as db:
+        with pytest.raises(SpecDependencyOperationError) as caught:
+            await CardService(db).move_card(
+                card_id,
+                USER_ID,
+                CardMove(status=CardStatus.IN_PROGRESS),
+            )
+
+    assert caught.value.code == "spec_dependency_state_conflict"
+    assert caught.value.facts == {
+        "spec_id": source_id,
+        "expected_spec_edition": 3,
+        "current_spec_edition": 4,
+    }
+    assert await _effect_counts(db_factory, board_id=board_id) == (1, 0, 0)
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        edition = await db.scalar(select(Spec.edition).where(Spec.id == source_id))
+    assert card is not None
+    assert card.status is CardStatus.VALIDATION
+    assert edition == 3

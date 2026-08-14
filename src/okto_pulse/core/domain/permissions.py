@@ -580,9 +580,7 @@ MCP_GAPS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     preset_grants=_explicit_preset_grants(
         _MCP_GAPS_PERMISSION_LEAVES,
         {
-            "Executor": (
-                "story.mockups.read",
-            ),
+            "Executor": ("story.mockups.read",),
             "Validator": (
                 "ideation.knowledge.read",
                 "story.mockups.read",
@@ -792,9 +790,10 @@ _RETIRED_STATE_PERMISSION_LEAVES: tuple[str, ...] = (
     "ideation.interact_in.refined",
     "refinement.interact_in.in_progress",
 )
-if not _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES <= set(
-    transition_permission_flags()
-):
+if not (
+    _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES
+    - set(_RETIRED_TRANSITION_PERMISSION_LEAVES)
+) <= set(transition_permission_flags()):
     raise PermissionContractViolation(
         "historical transition fingerprint is not present in SDLC_REGISTRY"
     )
@@ -808,9 +807,78 @@ _NEW_SDLC_STATE_PERMISSION_LEAVES: tuple[str, ...] = (
     "ideation.interact_in.review",
     "ideation.interact_in.approved",
 )
+# Frozen fingerprint of SDLC-TRANSITIONS/v1.  Do not derive this manifest from
+# the live registry: adding or retiring a lifecycle edge must create a new
+# fail-closed introduction generation instead of rewriting historical policy.
 _SDLC_TRANSITION_PERMISSION_LEAVES: tuple[str, ...] = (
-    *_NEW_SDLC_TRANSITION_PERMISSION_LEAVES,
-    *_NEW_SDLC_STATE_PERMISSION_LEAVES,
+    "ideation.move.draft_to_review",
+    "ideation.move.draft_to_cancelled",
+    "ideation.move.review_to_draft",
+    "ideation.move.review_to_approved",
+    "ideation.move.review_to_cancelled",
+    "ideation.move.approved_to_review",
+    "ideation.move.approved_to_evaluating",
+    "ideation.move.approved_to_cancelled",
+    "ideation.move.evaluating_to_approved",
+    "ideation.move.evaluating_to_done",
+    "ideation.move.evaluating_to_cancelled",
+    "ideation.move.done_to_draft",
+    "ideation.move.cancelled_to_draft",
+    "refinement.move.draft_to_review",
+    "refinement.move.draft_to_cancelled",
+    "refinement.move.review_to_draft",
+    "refinement.move.review_to_cancelled",
+    "refinement.move.approved_to_review",
+    "refinement.move.approved_to_cancelled",
+    "refinement.move.done_to_draft",
+    "refinement.move.cancelled_to_draft",
+    "spec.move.draft_to_cancelled",
+    "spec.move.review_to_draft",
+    "spec.move.review_to_cancelled",
+    "spec.move.approved_to_review",
+    "spec.move.approved_to_cancelled",
+    "spec.move.validated_to_approved",
+    "spec.move.validated_to_cancelled",
+    "spec.move.in_progress_to_validated",
+    "spec.move.in_progress_to_draft",
+    "spec.move.in_progress_to_cancelled",
+    "spec.move.done_to_draft",
+    "spec.move.cancelled_to_draft",
+    "card.move.not_started_to_in_progress",
+    "card.move.not_started_to_cancelled",
+    "card.move.started_to_not_started",
+    "card.move.started_to_validation",
+    "card.move.started_to_on_hold",
+    "card.move.started_to_cancelled",
+    "card.move.in_progress_to_started",
+    "card.move.in_progress_to_cancelled",
+    "card.move.validation_to_in_progress",
+    "card.move.on_hold_to_started",
+    "card.move.on_hold_to_cancelled",
+    "card.move.done_to_in_progress",
+    "card.move.cancelled_to_not_started",
+    "sprint.move.draft_to_cancelled",
+    "sprint.move.active_to_draft",
+    "sprint.move.active_to_cancelled",
+    "sprint.move.review_to_active",
+    "sprint.move.review_to_cancelled",
+    "sprint.move.closed_to_draft",
+    "sprint.move.cancelled_to_draft",
+    "test_scenario.move.draft_to_ready",
+    "test_scenario.move.draft_to_automated",
+    "test_scenario.move.draft_to_passed",
+    "test_scenario.move.draft_to_failed",
+    "test_scenario.move.ready_to_draft",
+    "test_scenario.move.ready_to_automated",
+    "test_scenario.move.ready_to_passed",
+    "test_scenario.move.ready_to_failed",
+    "test_scenario.move.automated_to_ready",
+    "test_scenario.move.automated_to_passed",
+    "test_scenario.move.failed_to_ready",
+    "test_scenario.move.failed_to_passed",
+    "test_scenario.move.passed_to_ready",
+    "ideation.interact_in.review",
+    "ideation.interact_in.approved",
 )
 
 
@@ -845,6 +913,7 @@ _EXECUTOR_TRANSITION_GRANTS = (
         ("in_progress", "on_hold"),
         ("on_hold", "in_progress"),
         ("in_progress", "validation"),
+        ("rejected", "in_progress"),
     ),
     *_transitions_to("card", "cancelled"),
 )
@@ -919,6 +988,7 @@ _TRANSITION_HISTORICAL_AUTHORITY = {
 def _introduced_sdlc_grants(*flags: str) -> tuple[str, ...]:
     introduced = set(_SDLC_TRANSITION_PERMISSION_LEAVES)
     return tuple(flag for flag in flags if flag in introduced)
+
 
 SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="SDLC-TRANSITIONS/v1",
@@ -1092,6 +1162,31 @@ SKM_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
+TASK_REJECTED_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="TASK-REJECTED/v1",
+    leaves=(
+        "card.interact_in.rejected",
+        "card.move.rejected_to_in_progress",
+    ),
+    preset_grants=_explicit_preset_grants(
+        (
+            "card.interact_in.rejected",
+            "card.move.rejected_to_in_progress",
+        ),
+        {
+            "Executor": (
+                "card.interact_in.rejected",
+                "card.move.rejected_to_in_progress",
+            ),
+        },
+    ),
+    historical_authorities=(
+        ("card.interact_in.rejected", "card.entity.read"),
+        ("card.move.rejected_to_in_progress", "card.entity.edit_fields"),
+    ),
+)
+
+
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
@@ -1104,6 +1199,7 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
     SKM_PERMISSION_INTRODUCTION_V1,
+    TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
 )
 
 
@@ -2288,9 +2384,7 @@ _CANONICAL_TO_LEGACY_TOKENS: dict[str, tuple[str, ...]] = {
         if canonical in mapped
     )
     for canonical in {
-        canonical
-        for mapped in LEGACY_PERMISSION_MAP.values()
-        for canonical in mapped
+        canonical for mapped in LEGACY_PERMISSION_MAP.values() for canonical in mapped
     }
 }
 
@@ -2778,9 +2872,7 @@ def normalize_agent_permission_overrides(
     legacy_cancel_all_entities = {
         entity_type
         for entity_type in ("ideation", "refinement", "spec", "card", "sprint")
-        if _permission_value_presence(
-            working, f"{entity_type}.move.any_to_cancelled"
-        )
+        if _permission_value_presence(working, f"{entity_type}.move.any_to_cancelled")
         == (True, True)
     }
     for flag_path in _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES:
@@ -2921,15 +3013,17 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     - Full Control: unrestricted
     - Spec:       defines WHAT to build — owns ideation/refinement/spec content,
                   plans sprints, drafts card breakdown. Never submits gates.
-    - Executor:   implements normal cards. Moves not_started→validation. Never
-                  submits gates, never crosses into validation→done.
+    - Executor:   implements normal cards. Moves not_started→validation and
+                  accepts a Rejected rework handoff via rejected→in_progress.
+                  Never submits gates or assigns Rejected directly.
     - QA:         owns test scenarios and test card lifecycle. Reads specs,
                   asks questions. Never submits any gate.
     - Validator:  exclusive gate-holder. Submits spec_validation, spec_evaluation,
                   sprint_evaluation, task_validation. Owns approved→validated,
                   validated→in_progress, in_progress→done (spec) and the backward
-                  unlock transitions. On cards, only touches validation status
-                  and only moves validation→done or validation→not_started.
+                  unlock transitions. On cards, submits task validation; the
+                  completion decision routes Validation→Done/Rejected
+                  internally. Never moves a Rejected card manually.
     """
     import copy
 
@@ -3413,8 +3507,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     # submit, task_validation submit, spec promotions (approved→validated,
     # validated→in_progress, in_progress→done), spec backward unlock
     # (approved→draft, validated→draft), sprint review→closed.
-    # Cards: ONLY interact_in validation. ONLY move validation→done or
-    # validation→not_started (user requirement — strict).
+    # Cards: ONLY interact_in validation and submit the completion decision.
+    # The service routes Validation→Done/Rejected internally; Validator never
+    # assigns or moves a Rejected card manually.
     # Cannot: create/edit anything, touch cards outside validation status,
     # move specs forward without the gate.
     validator = _build_preset_flags(
@@ -3509,8 +3604,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.activity_read",
             # interact_in ONLY validation — hard user requirement
             "card.interact_in.validation",
-            # moves ONLY validation → {done, not_started} — hard user requirement.
-            # submit_task_validation auto-routes via these flags.
+            # submit_task_validation owns the governed decision and routes the
+            # card internally. The compatibility validation→done edge remains
+            # available only when the board disables the task-validation gate.
             # KG — Validator investigates deeply and consolidates autonomously.
             # Cypher to trace supersedence/contradictions during spec validation;
             # full session to commit decisions emerged from the gate. Admin stays
@@ -3747,12 +3843,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         },
         {
             "name": "Executor",
-            "description": "Implement normal cards. Moves not_started→validation. Cannot submit gates or promote validation→done.",
+            "description": "Implement normal cards. Moves not_started→validation and accepts Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
             "flags": executor,
         },
         {
             "name": "Validator",
-            "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations. On cards, only touches validation status.",
+            "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations; Task Validation routes cards internally to Done or Rejected. Never moves Rejected cards manually.",
             "flags": validator,
         },
         {
@@ -3802,6 +3898,11 @@ def get_builtin_presets() -> list[dict[str, Any]]:
                 flag_path,
                 flag_path in allowed_transitions,
             )
+        for flag_path in (
+            *_RETIRED_TRANSITION_PERMISSION_LEAVES,
+            *_RETIRED_STATE_PERMISSION_LEAVES,
+        ):
+            _delete_permission_value(definition["flags"], flag_path)
     return definitions
 
 
@@ -4133,6 +4234,7 @@ __all__ = [
     "SKA_PERMISSION_INTRODUCTION_V1",
     "SKB3_PERMISSION_INTRODUCTION_V1",
     "SKM_PERMISSION_INTRODUCTION_V1",
+    "TASK_REJECTED_PERMISSION_INTRODUCTION_V1",
     "SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1",
     "STRUCTURED_SPEC_ENTITY_OPERATIONS",
     "STRUCTURED_SPEC_ENTITY_TYPES",

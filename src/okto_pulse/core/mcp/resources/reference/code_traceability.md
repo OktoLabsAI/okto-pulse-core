@@ -534,6 +534,11 @@ Lists persisted Target intent and current lifecycle metadata.
 
 Accepts an authenticated external agent resolution bound to Target revision,
 Card version, request selector scope, and current source head.
+For a Card in `rejected`, this bounded resolution renewal remains available so
+blocking mode can establish a Current Target resolution for the rejection's new
+Card version before `rejected → in_progress`. It does not authorize source-code
+work: Target create/update and execution receipt submission remain frozen until
+the executor accepts the handoff and moves the Card to `in_progress`.
 
 ## `okto_pulse_get_implementation_overlaps`
 

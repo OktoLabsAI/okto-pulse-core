@@ -374,7 +374,8 @@ def allowed_transitions_for_status(
             policy_compliance=edge.policy_compliance,
         )
         for edge in transition_contracts(normalized, current_status)
-        if not edge.card_types or card_type in edge.card_types
+        if edge.visibility == "public"
+        and (not edge.card_types or card_type in edge.card_types)
     ]
 
 
@@ -384,7 +385,9 @@ def allowed_transition_edges() -> dict[str, dict[str, list[str]]]:
     edges: dict[str, dict[str, list[str]]] = {}
     for entity_type, authority in SDLC_REGISTRY.items():
         edges[entity_type] = {
-            from_status: [edge.to_status for edge in to_statuses]
+            from_status: [
+                edge.to_status for edge in to_statuses if edge.visibility == "public"
+            ]
             for from_status, to_statuses in authority.transitions.items()
         }
     return edges
@@ -694,6 +697,11 @@ class ListAllowedTransitionsUseCase:
             dependency_readiness=dependency_readiness,
         )
         blocked_facts = None
+        if str(blocked_reason or "").startswith("current_rejection_cause_missing:"):
+            blocked_facts = {
+                "card_id": str(entity.id),
+                "current_rejection_present": False,
+            }
         if (
             dependency_readiness is not None
             and not dependency_readiness.ready
@@ -1374,6 +1382,16 @@ class ListAllowedTransitionsUseCase:
     ) -> str | None:
         target = CardStatus(target_status)
         old_status = card.status
+        if old_status == CardStatus.REJECTED and target == CardStatus.IN_PROGRESS:
+            from okto_pulse.core.domain.card_completion import (
+                current_rejection_cause,
+            )
+
+            if current_rejection_cause(card) is None:
+                return (
+                    "current_rejection_cause_missing: Rejected cards require a "
+                    "sealed Current cause before rework can start."
+                )
         raw_type = getattr(card, "card_type", CardType.NORMAL)
         card_type = (
             raw_type

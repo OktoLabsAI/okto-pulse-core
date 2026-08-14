@@ -32,6 +32,39 @@ _SENSITIVE_KEY_FRAGMENTS = (
     "token",
 )
 
+_TASK_VALIDATION_ACTIVITY_ACTIONS = frozenset(
+    {"validation_submitted", "task_validated"}
+)
+
+
+def redact_task_validation_activity(value: Any) -> Any:
+    """Hide Task Validation facts while preserving a generic audit signal.
+
+    The board/card activity feeds are not themselves validation-read surfaces.
+    Callers denied ``card.validation.read`` may still learn that an action
+    happened, but not its scores, recommendation, outcome or rejection cause.
+    """
+
+    action = (
+        value.get("action")
+        if isinstance(value, Mapping)
+        else getattr(value, "action", None)
+    )
+    if action not in _TASK_VALIDATION_ACTIVITY_ACTIONS:
+        return value
+    summary = "Task validation submitted"
+    details = {"redacted": True}
+    if isinstance(value, Mapping):
+        projected = dict(value)
+        projected["summary"] = summary
+        if "details" in projected:
+            projected["details"] = details
+        return projected
+    model_copy = getattr(value, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(update={"summary": summary, "details": details})
+    return value
+
 
 def _clip(text: str, max_chars: int = SUMMARY_MAX_CHARS) -> str:
     if len(text) <= max_chars:
@@ -149,13 +182,24 @@ def activity_log_summary(action: str, details: Any) -> str:
 
     if action == "validation_submitted":
         outcome = _scalar_text(details.get("outcome")) or "?"
+        completion = _scalar_text(details.get("completion_outcome"))
         card_title = _scalar_text(details.get("card_title"), max_chars=50)
         confidence = _scalar_text(details.get("confidence"))
         parts = [f"outcome={outcome}"]
+        if completion:
+            parts.append(f"completion={completion}")
         if card_title:
             parts.append(f'card="{card_title}"')
         if confidence:
             parts.append(f"confidence={confidence}")
+        cause = details.get("rejection_cause")
+        if isinstance(cause, Mapping):
+            code = _scalar_text(cause.get("code"), max_chars=48)
+            summary = _scalar_text(cause.get("summary"), max_chars=80)
+            if code:
+                parts.append(f"cause={code}")
+            if summary:
+                parts.append(summary)
         return _clip(" ".join(parts))
 
     if action in ("spec_validation_submitted", "spec_validated"):

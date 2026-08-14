@@ -464,7 +464,10 @@ def transition_starts_card_execution(
         (CardStatus.STARTED.value, CardStatus.IN_PROGRESS.value),
         (CardStatus.ON_HOLD.value, CardStatus.STARTED.value),
         (CardStatus.ON_HOLD.value, CardStatus.IN_PROGRESS.value),
+        # Test cards retain their established validation rework edge. Normal
+        # and Bug cards use the explicit Rejected handoff below.
         (CardStatus.VALIDATION.value, CardStatus.IN_PROGRESS.value),
+        (CardStatus.REJECTED.value, CardStatus.IN_PROGRESS.value),
         (CardStatus.DONE.value, CardStatus.IN_PROGRESS.value),
     }
 

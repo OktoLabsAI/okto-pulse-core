@@ -258,6 +258,12 @@ opaque cursor.
 Submit an external-agent resolution bound to the current Target revision,
 Card version, request selector scope, and current source head.
 
+This resolution renewal and its investigation preflight are permitted while a
+Card is `rejected`, because rejection advances the Card version and blocking
+mode needs a Current resolution before the only exit to `in_progress`. This is
+not permission to change implementation: Target create/update and execution
+receipt submission remain frozen until the rework handoff is accepted.
+
 - `resolved`/`moved`: relative path required, confidence `>=0.95`, no more
   than one candidate.
 - `stale`: reason and path/candidate required, confidence `0.80-<0.95`.

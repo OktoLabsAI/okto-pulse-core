@@ -507,6 +507,20 @@ class CardMoved(DomainEvent):
     moved_by: Optional[str] = None
 
 
+class CardCompletionRejected(DomainEvent):
+    """A governed completion attempt produced an actionable rework cause."""
+
+    event_type: ClassVar[str] = "card.completion_rejected"
+    card_id: str
+    spec_id: Optional[str] = None
+    cause_kind: Literal["task_validation", "completion_gate"]
+    cause_id: str
+    cause_code: str
+    cause_summary: str
+    reason_codes: tuple[str, ...] = ()
+    rejected_by: Optional[str] = None
+
+
 class CardConclusionAdded(DomainEvent):
     """Fired when a card receives a non-empty execution conclusion.
 
@@ -1190,6 +1204,7 @@ EVENT_TYPES: list[str] = [
     ArtifactArchiveChanged.event_type,
     CardCreated.event_type,
     CardMoved.event_type,
+    CardCompletionRejected.event_type,
     CardConclusionAdded.event_type,
     CardCancelled.event_type,
     CardRestored.event_type,
@@ -1256,6 +1271,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     ArtifactArchiveChanged.event_type: ArtifactArchiveChanged,
     CardCreated.event_type: CardCreated,
     CardMoved.event_type: CardMoved,
+    CardCompletionRejected.event_type: CardCompletionRejected,
     CardConclusionAdded.event_type: CardConclusionAdded,
     CardCancelled.event_type: CardCancelled,
     CardRestored.event_type: CardRestored,

@@ -1257,7 +1257,25 @@ def _append_card_entity_node(result: WorkerResult, card: Any) -> str:
                 candidate_id=cid,
                 node_type="Bug" if card_type == "bug" else "Entity",
                 title=card.title or f"Card {card.id}",
-                content=card.description or "",
+                content="\n\n".join(
+                    part
+                    for part in (
+                        card.description or "",
+                        (
+                            "Lifecycle: Rejected — rework required."
+                            if str(
+                                getattr(
+                                    getattr(card, "status", None),
+                                    "value",
+                                    getattr(card, "status", ""),
+                                )
+                            ).lower()
+                            == "rejected"
+                            else ""
+                        ),
+                    )
+                    if part
+                ),
                 source_artifact_ref=f"card:{card.id}",
                 graph_layer=graph_layer,
                 maturity_status=maturity_status,
