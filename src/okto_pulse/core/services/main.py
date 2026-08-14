@@ -1744,9 +1744,7 @@ def _evaluate_cognitive_closeout_or_raise(
         )
     else:
         detail = "by active cognitive consolidation items"
-    summary = (
-        f"{target_label} done transition blocked {detail} ({blocking_count})"
-    )
+    summary = f"{target_label} done transition blocked {detail} ({blocking_count})"
     if reason == "cognitive_status_unavailable":
         raise CompletionInfrastructureUnavailable(f"{reason}: {summary}")
     raise GovernedCompletionBlocked(reason, summary)
@@ -1947,9 +1945,10 @@ class SpecLockedError(Exception):
     """Raised when a content-edit operation is attempted on a locked spec.
 
     A spec is locked when its current_validation_id points to a validation
-    record with outcome='success'. To edit, the spec must be moved back to
-    draft or approved (any backward transition from validated/in_progress/done),
-    which atomically clears current_validation_id but preserves validations history.
+    record with outcome='success'. To edit, the spec must enter ``draft``,
+    which starts a new lifecycle edition, atomically clears
+    ``current_validation_id`` and preserves validation history. Same-edition
+    lifecycle moves, including a move back to ``approved``, preserve Current.
     For an eligible existing scenario, leave spec content unchanged for Path A regression evidence;
     use amendment lineage when expected behavior changed.
     """
@@ -1964,7 +1963,8 @@ class SpecLockedError(Exception):
         self.current_validation_id = current_validation_id
         self.message = message or (
             "Spec is locked because validation passed. "
-            "Move the spec back to draft or approved to edit (validation will be cleared, history preserved)."
+            "Move the spec to draft to open a new edition "
+            "(Current validation will be cleared; history is preserved)."
         )
         super().__init__(self.message)
 
@@ -4406,15 +4406,14 @@ class CardService:
                 "confidence": data.get("confidence"),
                 "confidence_justification": data.get("confidence_justification"),
                 "estimated_completeness": data.get("estimated_completeness"),
-                "completeness_justification": data.get(
-                    "completeness_justification"
-                ),
+                "completeness_justification": data.get("completeness_justification"),
                 "estimated_drift": data.get("estimated_drift"),
                 "drift_justification": data.get("drift_justification"),
                 "general_justification": data.get("general_justification"),
                 "recommendation": data.get("recommendation"),
             }
         )
+
     @staticmethod
     def _task_validation_replay(
         card: ApplicationRecord,
@@ -4490,11 +4489,9 @@ class CardService:
             if getattr(card, "spec_id", None)
             else []
         )
-        amendment_facts = [
-            AmendmentLineageFact.from_row(row) for row in amendment_rows
-        ]
-        effective_test_ids = (
-            direct_test_ids or _amendment_regression_test_task_ids(amendment_rows)
+        amendment_facts = [AmendmentLineageFact.from_row(row) for row in amendment_rows]
+        effective_test_ids = direct_test_ids or _amendment_regression_test_task_ids(
+            amendment_rows
         )
         if not effective_test_ids:
             return CompletionGateFailure(
@@ -4827,7 +4824,9 @@ class CardService:
             )
             failures.append(
                 CompletionGateFailure(
-                    code=reason_codes[0] if reason_codes else "policy_compliance_blocked",
+                    code=reason_codes[0]
+                    if reason_codes
+                    else "policy_compliance_blocked",
                     summary="Policy compliance blocked task completion.",
                     reason_codes=reason_codes,
                 )
@@ -4879,8 +4878,7 @@ class CardService:
             data.get("expected_subject_version", current_subject_version)
         )
         idempotency_key = str(
-            data.get("idempotency_key")
-            or f"legacy:{reviewer_id}:{_uuid.uuid4().hex}"
+            data.get("idempotency_key") or f"legacy:{reviewer_id}:{_uuid.uuid4().hex}"
         ).strip()
         request_digest = self._task_validation_request_digest(
             card=card,
@@ -5180,7 +5178,9 @@ class CardService:
             validation_failed = (
                 decision.validation_outcome is TaskValidationOutcome.FAILED
             )
-            first_failure = decision.gate_failures[0] if decision.gate_failures else None
+            first_failure = (
+                decision.gate_failures[0] if decision.gate_failures else None
+            )
             rejection_record = CardRejectionRecord(
                 id=f"rej_{_uuid.uuid4().hex[:12]}",
                 card_id=card.id,
@@ -5258,19 +5258,21 @@ class CardService:
                 setattr(card, field_name, None)
                 card.mark_dirty(field_name)
 
-        response = project_task_validation_public({
-            **validation,
-            "card_status": target_status.value,
-            "resolved_thresholds": config,
-            "validation_outcome": decision.validation_outcome.value,
-            "completion_outcome": decision.completion_outcome.value,
-            "completion_gate_failures": validation["completion_gate_failures"],
-            "rejection_cause": (
-                rejection_cause.as_dict() if rejection_cause is not None else None
-            ),
-            "subject_version": expected_subject_version + 1,
-            "replayed": False,
-        })
+        response = project_task_validation_public(
+            {
+                **validation,
+                "card_status": target_status.value,
+                "resolved_thresholds": config,
+                "validation_outcome": decision.validation_outcome.value,
+                "completion_outcome": decision.completion_outcome.value,
+                "completion_gate_failures": validation["completion_gate_failures"],
+                "rejection_cause": (
+                    rejection_cause.as_dict() if rejection_cause is not None else None
+                ),
+                "subject_version": expected_subject_version + 1,
+                "replayed": False,
+            }
+        )
         # Persist the exact business response as part of the same append-only
         # ledger value before the resequencer's single flush.  Adding it after
         # that flush would leave only an in-memory nested JSON mutation and

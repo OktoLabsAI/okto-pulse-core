@@ -339,11 +339,9 @@ def _gate_for(entity_type: str, from_status: Enum, to_status: Enum) -> str:
             return "spec_evaluation"
         if from_value == "in_progress" and to_value == "done":
             return "coverage_and_tasks"
-        if from_value in {"validated", "in_progress", "done"} and to_value in {
-            "draft",
-            "review",
-            "approved",
-        }:
+        if from_value in {"approved", "validated", "in_progress", "done"} and (
+            to_value == "draft"
+        ):
             return "unlock_content"
     if entity_type == "ideation" and from_value == "evaluating" and to_value == "done":
         return "ambiguity_resource_cognitive"
@@ -705,17 +703,13 @@ class ListAllowedTransitionsUseCase:
         if (
             dependency_readiness is not None
             and not dependency_readiness.ready
-            and str(blocked_reason or "").startswith(
-                "spec_dependencies_incomplete:"
-            )
+            and str(blocked_reason or "").startswith("spec_dependencies_incomplete:")
         ):
             blocked_facts = spec_dependency_blocking_facts(
                 spec_id=str(dependency_readiness.spec_id),
                 blockers=dependency_readiness.blockers,
                 blocking_count=dependency_readiness.blocking_count,
-                archived_blocking_count=(
-                    dependency_readiness.archived_blocking_count
-                ),
+                archived_blocking_count=(dependency_readiness.archived_blocking_count),
                 unfinished_blocking_count=(
                     dependency_readiness.unfinished_blocking_count
                 ),
@@ -849,11 +843,9 @@ class ListAllowedTransitionsUseCase:
 
         if target_status == "in_progress":
             if dependency_readiness is None:
-                dependency_readiness = (
-                    await services.spec_dependencies.get_readiness(
-                        board_id=spec.board_id,
-                        spec_id=spec.id,
-                    )
+                dependency_readiness = await services.spec_dependencies.get_readiness(
+                    board_id=spec.board_id,
+                    spec_id=spec.id,
                 )
             if not dependency_readiness.ready:
                 guidance, _remediation = spec_dependency_blocked_guidance(
@@ -1411,16 +1403,11 @@ class ListAllowedTransitionsUseCase:
         dependency_archived_blocking_count = 0
         dependency_unfinished_blocking_count = 0
         dependency_blockers_truncated = False
-        if (
-            spec is not None
-            and transition_starts_card_execution(old_status, target)
-        ):
+        if spec is not None and transition_starts_card_execution(old_status, target):
             if dependency_readiness is None:
-                dependency_readiness = (
-                    await services.spec_dependencies.get_readiness(
-                        board_id=card.board_id,
-                        spec_id=spec.id,
-                    )
+                dependency_readiness = await services.spec_dependencies.get_readiness(
+                    board_id=card.board_id,
+                    spec_id=spec.id,
                 )
             dependency_blockers = tuple(dependency_readiness.blockers)
             dependency_blocking_count = dependency_readiness.blocking_count

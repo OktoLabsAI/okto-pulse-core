@@ -552,8 +552,11 @@ with the specific coverage violation. If coverage passes, it computes outcome:
 
 On SUCCESS, the spec is atomically promoted from 'approved' to 'validated'
 and enters the content lock (update_spec and related tools will raise
-SpecLockedError). To edit after a success, move the spec back to draft or
-approved — the validation will be cleared but the full history is preserved.
+SpecLockedError). Same-edition lifecycle moves and Code
+Investigation/Evidence/waiver events preserve Current. To edit after a success,
+move the spec to draft; that opens a new edition, clears Current, and preserves
+the full history. An explicit successor submission is the only other operation
+that replaces Current.
 
 ANTI-PATTERN WARNING: inflating scores to make the gate pass is a grave
 violation of the detail saturation principle. If outcome=failed, iterate

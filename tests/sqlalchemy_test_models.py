@@ -38,6 +38,7 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     StoryStatus,
 )
+
 Base = declarative_base()
 
 if TYPE_CHECKING:
@@ -339,21 +340,30 @@ class ResourceNotApplicable(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     entity_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     resource_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     justification: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_channel: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ui")
+    source_channel: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="ui"
+    )
     active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     cleared_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cleared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     clear_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     board: Mapped["Board"] = relationship("Board")
@@ -373,14 +383,25 @@ class Topic(Base):
         Index("ix_topics_board_archived", "board_id", "archived"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     board: Mapped["Board"] = relationship("Board", back_populates="topics")
     stories: Mapped[list["Story"]] = relationship("Story", back_populates="topic")
@@ -401,20 +422,38 @@ class Story(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
-    topic_id: Mapped[str] = mapped_column(String(36), ForeignKey("topics.id", ondelete="RESTRICT"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    topic_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("topics.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     actor: Mapped[str | None] = mapped_column(String(255), nullable=True)
     goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     benefit: Mapped[str | None] = mapped_column(Text, nullable=True)
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[StoryStatus] = mapped_column(StoryStatusType(), default=StoryStatus.DRAFT, nullable=False)
+    status: Mapped[StoryStatus] = mapped_column(
+        StoryStatusType(), default=StoryStatus.DRAFT, nullable=False
+    )
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     screen_mockups: Mapped[list | None] = mapped_column(JSON, nullable=True)
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -436,15 +475,36 @@ class StoryIdeationLink(Base):
         Index("ix_story_ideation_links_board", "board_id"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
-    story_id: Mapped[str] = mapped_column(String(36), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False, index=True)
-    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    story_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("stories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ideation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     story: Mapped["Story"] = relationship("Story", back_populates="ideation_links")
-    ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="story_links")
+    ideation: Mapped["Ideation"] = relationship(
+        "Ideation", back_populates="story_links"
+    )
     board: Mapped["Board"] = relationship("Board")
 
 
@@ -458,22 +518,37 @@ class Ideation(Base):
 
     __tablename__ = "ideations"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     problem_statement: Mapped[str | None] = mapped_column(Text, nullable=True)
     proposed_approach: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Scope assessment: {"domains": 1-5, "ambiguity": 1-5, "dependencies": 1-5}
     scope_assessment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    complexity: Mapped[IdeationComplexity | None] = mapped_column(IdeationComplexityType(), nullable=True)
-    status: Mapped[IdeationStatus] = mapped_column(IdeationStatusType(), default=IdeationStatus.DRAFT, nullable=False)
+    complexity: Mapped[IdeationComplexity | None] = mapped_column(
+        IdeationComplexityType(), nullable=True
+    )
+    status: Mapped[IdeationStatus] = mapped_column(
+        IdeationStatusType(), default=IdeationStatus.DRAFT, nullable=False
+    )
     edition: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Screen mockups: [{id, title, description, screen_type, html_content, annotations, order}]
     screen_mockups: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -484,26 +559,38 @@ class Ideation(Base):
     # ideation ambiguity gate. Explicit top-level column — NOT stored inside
     # scope_assessment (which is evaluation-owned). Default false; the write
     # path works while the ideation is in evaluating status.
-    skip_ambiguity_gate: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_ambiguity_gate: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     skip_ambiguity_gate_edition: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="ideations")
-    refinements: Mapped[list["Refinement"]] = relationship("Refinement", back_populates="ideation", cascade="all, delete-orphan")
+    refinements: Mapped[list["Refinement"]] = relationship(
+        "Refinement", back_populates="ideation", cascade="all, delete-orphan"
+    )
     specs: Mapped[list["Spec"]] = relationship("Spec", back_populates="ideation")
-    qa_items: Mapped[list["IdeationQAItem"]] = relationship("IdeationQAItem", back_populates="ideation", cascade="all, delete-orphan")
+    qa_items: Mapped[list["IdeationQAItem"]] = relationship(
+        "IdeationQAItem", back_populates="ideation", cascade="all, delete-orphan"
+    )
     knowledge_bases: Mapped[list["IdeationKnowledgeBase"]] = relationship(
         "IdeationKnowledgeBase", back_populates="ideation", cascade="all, delete-orphan"
     )
-    history: Mapped[list["IdeationHistory"]] = relationship("IdeationHistory", back_populates="ideation", cascade="all, delete-orphan")
-    snapshots: Mapped[list["IdeationSnapshot"]] = relationship("IdeationSnapshot", back_populates="ideation", cascade="all, delete-orphan")
+    history: Mapped[list["IdeationHistory"]] = relationship(
+        "IdeationHistory", back_populates="ideation", cascade="all, delete-orphan"
+    )
+    snapshots: Mapped[list["IdeationSnapshot"]] = relationship(
+        "IdeationSnapshot", back_populates="ideation", cascade="all, delete-orphan"
+    )
     architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
         "ArchitectureDesign", back_populates="ideation", cascade="all, delete-orphan"
     )
@@ -524,8 +611,15 @@ class IdeationSnapshot(Base):
         UniqueConstraint("ideation_id", "version", name="uq_ideation_snapshot_version"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    ideation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     # Full state capture
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -538,7 +632,9 @@ class IdeationSnapshot(Base):
     # Q&A snapshot (list of {question, answer, asked_by, answered_by})
     qa_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="snapshots")
 
@@ -548,8 +644,15 @@ class IdeationHistory(Base):
 
     __tablename__ = "ideation_history"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    ideation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     actor_type: Mapped[str] = mapped_column(String(50), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -557,7 +660,9 @@ class IdeationHistory(Base):
     changes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="history")
 
@@ -567,18 +672,33 @@ class IdeationQAItem(Base):
 
     __tablename__ = "ideation_qa_items"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    ideation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     question: Mapped[str] = mapped_column(Text, nullable=False)
-    question_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'text'"))
+    question_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'text'")
+    )
     choices: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    allow_free_text: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    allow_free_text: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected: Mapped[list | None] = mapped_column(JSON, nullable=True)
     asked_by: Mapped[str] = mapped_column(String(255), nullable=False)
     answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    answered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     revision: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -602,12 +722,21 @@ class IdeationKnowledgeBase(Base):
 
     __tablename__ = "ideation_knowledge_bases"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    ideation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    mime_type: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="text/markdown"
+    )
     governance_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -619,13 +748,21 @@ class IdeationKnowledgeBase(Base):
     # overwritten by the immediate parent); immediate_parent_kb_id = the direct
     # parent. source_kb_id stays == immediate parent for back-compat.
     root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    immediate_parent_kb_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="knowledge_bases")
+    ideation: Mapped["Ideation"] = relationship(
+        "Ideation", back_populates="knowledge_bases"
+    )
 
 
 # ============================================================================
@@ -638,22 +775,40 @@ class Refinement(Base):
 
     __tablename__ = "refinements"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    ideation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     in_scope: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     out_of_scope: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[RefinementStatus] = mapped_column(RefinementStatusType(), default=RefinementStatus.DRAFT, nullable=False)
+    status: Mapped[RefinementStatus] = mapped_column(
+        RefinementStatusType(), default=RefinementStatus.DRAFT, nullable=False
+    )
     edition: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Screen mockups: [{id, title, description, screen_type, html_content, annotations, order}]
     screen_mockups: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -672,16 +827,30 @@ class Refinement(Base):
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
-    ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="refinements")
+    ideation: Mapped["Ideation"] = relationship(
+        "Ideation", back_populates="refinements"
+    )
     specs: Mapped[list["Spec"]] = relationship("Spec", back_populates="refinement")
-    qa_items: Mapped[list["RefinementQAItem"]] = relationship("RefinementQAItem", back_populates="refinement", cascade="all, delete-orphan")
-    history: Mapped[list["RefinementHistory"]] = relationship("RefinementHistory", back_populates="refinement", cascade="all, delete-orphan")
-    snapshots: Mapped[list["RefinementSnapshot"]] = relationship("RefinementSnapshot", back_populates="refinement", cascade="all, delete-orphan")
-    knowledge_bases: Mapped[list["RefinementKnowledgeBase"]] = relationship("RefinementKnowledgeBase", back_populates="refinement", cascade="all, delete-orphan")
+    qa_items: Mapped[list["RefinementQAItem"]] = relationship(
+        "RefinementQAItem", back_populates="refinement", cascade="all, delete-orphan"
+    )
+    history: Mapped[list["RefinementHistory"]] = relationship(
+        "RefinementHistory", back_populates="refinement", cascade="all, delete-orphan"
+    )
+    snapshots: Mapped[list["RefinementSnapshot"]] = relationship(
+        "RefinementSnapshot", back_populates="refinement", cascade="all, delete-orphan"
+    )
+    knowledge_bases: Mapped[list["RefinementKnowledgeBase"]] = relationship(
+        "RefinementKnowledgeBase",
+        back_populates="refinement",
+        cascade="all, delete-orphan",
+    )
     architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
         "ArchitectureDesign", back_populates="refinement", cascade="all, delete-orphan"
     )
@@ -692,11 +861,20 @@ class RefinementSnapshot(Base):
 
     __tablename__ = "refinement_snapshots"
     __table_args__ = (
-        UniqueConstraint("refinement_id", "version", name="uq_refinement_snapshot_version"),
+        UniqueConstraint(
+            "refinement_id", "version", name="uq_refinement_snapshot_version"
+        ),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    refinement_id: Mapped[str] = mapped_column(String(36), ForeignKey("refinements.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    refinement_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("refinements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -707,9 +885,13 @@ class RefinementSnapshot(Base):
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     qa_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    refinement: Mapped["Refinement"] = relationship("Refinement", back_populates="snapshots")
+    refinement: Mapped["Refinement"] = relationship(
+        "Refinement", back_populates="snapshots"
+    )
 
 
 class RefinementKnowledgeBase(Base):
@@ -717,12 +899,21 @@ class RefinementKnowledgeBase(Base):
 
     __tablename__ = "refinement_knowledge_bases"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    refinement_id: Mapped[str] = mapped_column(String(36), ForeignKey("refinements.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    refinement_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("refinements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    mime_type: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="text/markdown"
+    )
     governance_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -734,13 +925,21 @@ class RefinementKnowledgeBase(Base):
     # overwritten by the immediate parent); immediate_parent_kb_id = the direct
     # parent. source_kb_id stays == immediate parent for back-compat.
     root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    immediate_parent_kb_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    refinement: Mapped["Refinement"] = relationship("Refinement", back_populates="knowledge_bases")
+    refinement: Mapped["Refinement"] = relationship(
+        "Refinement", back_populates="knowledge_bases"
+    )
 
 
 class RefinementHistory(Base):
@@ -748,8 +947,15 @@ class RefinementHistory(Base):
 
     __tablename__ = "refinement_history"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    refinement_id: Mapped[str] = mapped_column(String(36), ForeignKey("refinements.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    refinement_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("refinements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     actor_type: Mapped[str] = mapped_column(String(50), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -757,9 +963,13 @@ class RefinementHistory(Base):
     changes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    refinement: Mapped["Refinement"] = relationship("Refinement", back_populates="history")
+    refinement: Mapped["Refinement"] = relationship(
+        "Refinement", back_populates="history"
+    )
 
 
 class RefinementQAItem(Base):
@@ -767,18 +977,33 @@ class RefinementQAItem(Base):
 
     __tablename__ = "refinement_qa_items"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    refinement_id: Mapped[str] = mapped_column(String(36), ForeignKey("refinements.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    refinement_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("refinements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     question: Mapped[str] = mapped_column(Text, nullable=False)
-    question_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'text'"))
+    question_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'text'")
+    )
     choices: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    allow_free_text: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    allow_free_text: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected: Mapped[list | None] = mapped_column(JSON, nullable=True)
     asked_by: Mapped[str] = mapped_column(String(255), nullable=False)
     answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    answered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     revision: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -794,7 +1019,9 @@ class RefinementQAItem(Base):
         server_default=text("false"),
     )
 
-    refinement: Mapped["Refinement"] = relationship("Refinement", back_populates="qa_items")
+    refinement: Mapped["Refinement"] = relationship(
+        "Refinement", back_populates="qa_items"
+    )
 
 
 # ============================================================================
@@ -811,13 +1038,22 @@ class Spec(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     ideation_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("ideations.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("ideations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     refinement_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("refinements.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("refinements.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     source_refinement_snapshot_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True
@@ -852,11 +1088,17 @@ class Spec(Base):
     #   linked_requirements, linked_task_ids, status, notes}]
     decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # If true, spec can move to Done without full test coverage — set by user only
-    skip_test_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_test_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # If true, cards can start without full FR→BR coverage — set by user only
-    skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_rules_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # If true, cards can start without full TR→Task coverage
-    skip_trs_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_trs_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # Decisions coverage gate — default False (enforced) since ideação #10
     # Fase 1 para paridade com TR/BR/Contract. Specs migradas pré-ideação #10
     # mantêm True via migration backward-compat.
@@ -864,23 +1106,35 @@ class Spec(Base):
         nullable=False, default=False, server_default=text("false")
     )
     # If true, spec can move to validated without full API contract coverage
-    skip_contract_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_contract_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # If true, spec can move forward without full IR→Task coverage
-    skip_ir_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_ir_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # If true, spec can move forward without full OR→Task coverage
-    skip_or_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_or_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     skip_code_evidence_coverage: Mapped[bool] = mapped_column(
         nullable=False, server_default=text("false")
     )
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
-    skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_qualitative_validation: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # Minimum avg score for qualitative validation (None = use board or default 70)
     validation_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Task validation gate: when True, cards must pass through "validation" before "done"
     require_task_validation: Mapped[bool | None] = mapped_column(nullable=True)
     # Threshold overrides for task validation (null = inherit from board)
-    validation_min_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    validation_min_completeness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_min_confidence: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    validation_min_completeness: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     validation_max_drift: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Qualitative evaluations: [{id, evaluator_id, evaluator_name, evaluator_type, dimensions, overall_score, overall_justification, recommendation, stale, created_at}]
     evaluations: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -890,7 +1144,7 @@ class Spec(Base):
     #  ambiguity, ambiguity_justification, general_justification, recommendation,
     #  outcome, threshold_violations, resolved_thresholds, created_at}
     validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # Pointer to the current active validation id — NULL when cleared by backward move.
+    # Pointer to the current validation — NULL only for a new Draft edition.
     # Content lock is ACTIVE when this is non-NULL and the pointed record has outcome='success'.
     current_validation_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Archive support
@@ -899,7 +1153,9 @@ class Spec(Base):
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[SpecStatus] = mapped_column(
         SpecStatusType(), default=SpecStatus.DRAFT, nullable=False
@@ -926,10 +1182,16 @@ class Spec(Base):
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="specs")
-    ideation: Mapped["Ideation | None"] = relationship("Ideation", back_populates="specs")
-    refinement: Mapped["Refinement | None"] = relationship("Refinement", back_populates="specs")
+    ideation: Mapped["Ideation | None"] = relationship(
+        "Ideation", back_populates="specs"
+    )
+    refinement: Mapped["Refinement | None"] = relationship(
+        "Refinement", back_populates="specs"
+    )
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="spec")
-    sprints: Mapped[list["Sprint"]] = relationship("Sprint", back_populates="spec", cascade="all, delete-orphan")
+    sprints: Mapped[list["Sprint"]] = relationship(
+        "Sprint", back_populates="spec", cascade="all, delete-orphan"
+    )
     knowledge_bases: Mapped[list["SpecKnowledgeBase"]] = relationship(
         "SpecKnowledgeBase", back_populates="spec", cascade="all, delete-orphan"
     )
@@ -953,13 +1215,18 @@ class SpecHistory(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     spec_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("specs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     # e.g. "created", "updated", "status_changed", "cards_derived",
     #      "knowledge_added", "knowledge_removed",
     #      "qa_added", "qa_answered"
-    actor_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "user" | "agent"
+    actor_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "user" | "agent"
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Field-level changes: [{"field": "title", "old": "...", "new": "..."}, ...]
@@ -993,7 +1260,10 @@ class SpecQAItem(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     spec_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("specs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     question_type: Mapped[str] = mapped_column(
@@ -1043,12 +1313,17 @@ class SpecKnowledgeBase(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     spec_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("specs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    mime_type: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="text/markdown"
+    )
     governance_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -1060,7 +1335,9 @@ class SpecKnowledgeBase(Base):
     # overwritten by the immediate parent); immediate_parent_kb_id = the direct
     # parent. source_kb_id stays == immediate parent for back-compat.
     root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    immediate_parent_kb_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -1084,24 +1361,46 @@ class Sprint(Base):
 
     __tablename__ = "sprints"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    spec_id: Mapped[str] = mapped_column(String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=False, index=True)
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    spec_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("specs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     spec_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    status: Mapped[SprintStatus] = mapped_column(SprintStatusType(), default=SprintStatus.DRAFT, nullable=False)
+    status: Mapped[SprintStatus] = mapped_column(
+        SprintStatusType(), default=SprintStatus.DRAFT, nullable=False
+    )
     lane_type: Mapped[SprintLaneType] = mapped_column(
         SprintLaneTypeType(),
         default=SprintLaneType.NORMAL,
         server_default=text("'normal'"),
         nullable=False,
     )
-    origin_sprint_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True)
-    origin_bug_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cards.id", ondelete="SET NULL"), nullable=True)
+    origin_sprint_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True
+    )
+    origin_bug_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("cards.id", ondelete="SET NULL"), nullable=True
+    )
     # Dates
-    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    start_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    end_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Sprint-specific fields
     objective: Mapped[str | None] = mapped_column(Text, nullable=True)
     expected_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1112,14 +1411,24 @@ class Sprint(Base):
     # Qualitative evaluations: [{id, evaluator_id, evaluator_name, evaluator_type, dimensions, overall_score, overall_justification, recommendation, stale, created_at}]
     evaluations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Skip flags (same pattern as Spec)
-    skip_test_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
-    skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
-    skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_test_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
+    skip_rules_coverage: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
+    skip_qualitative_validation: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     validation_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Task validation gate override (null = inherit from spec/board)
     require_task_validation: Mapped[bool | None] = mapped_column(nullable=True)
-    validation_min_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    validation_min_completeness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_min_confidence: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    validation_min_completeness: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     validation_max_drift: Mapped[int | None] = mapped_column(Integer, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -1128,11 +1437,17 @@ class Sprint(Base):
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     @property
     def normal_sprint_created(self) -> bool:
@@ -1147,8 +1462,12 @@ class Sprint(Base):
         back_populates="sprint",
         foreign_keys="Card.sprint_id",
     )
-    qa_items: Mapped[list["SprintQAItem"]] = relationship("SprintQAItem", back_populates="sprint", cascade="all, delete-orphan")
-    history: Mapped[list["SprintHistory"]] = relationship("SprintHistory", back_populates="sprint", cascade="all, delete-orphan")
+    qa_items: Mapped[list["SprintQAItem"]] = relationship(
+        "SprintQAItem", back_populates="sprint", cascade="all, delete-orphan"
+    )
+    history: Mapped[list["SprintHistory"]] = relationship(
+        "SprintHistory", back_populates="sprint", cascade="all, delete-orphan"
+    )
 
 
 class SprintHistory(Base):
@@ -1156,8 +1475,15 @@ class SprintHistory(Base):
 
     __tablename__ = "sprint_history"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    sprint_id: Mapped[str] = mapped_column(String(36), ForeignKey("sprints.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    sprint_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("sprints.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     actor_type: Mapped[str] = mapped_column(String(50), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1165,7 +1491,9 @@ class SprintHistory(Base):
     changes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     sprint: Mapped["Sprint"] = relationship("Sprint", back_populates="history")
 
@@ -1175,18 +1503,33 @@ class SprintQAItem(Base):
 
     __tablename__ = "sprint_qa_items"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    sprint_id: Mapped[str] = mapped_column(String(36), ForeignKey("sprints.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    sprint_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("sprints.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     question: Mapped[str] = mapped_column(Text, nullable=False)
-    question_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'text'"))
+    question_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'text'")
+    )
     choices: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    allow_free_text: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    allow_free_text: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected: Mapped[list | None] = mapped_column(JSON, nullable=True)
     asked_by: Mapped[str] = mapped_column(String(255), nullable=False)
     answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    answered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     sprint: Mapped["Sprint"] = relationship("Sprint", back_populates="qa_items")
 
@@ -1205,13 +1548,22 @@ class Card(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     spec_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("specs.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("specs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     sprint_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("sprints.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1220,7 +1572,10 @@ class Card(Base):
         CardStatusType(), default=CardStatus.NOT_STARTED, nullable=False
     )
     priority: Mapped[CardPriority] = mapped_column(
-        CardPriorityType(), default=CardPriority.NONE, nullable=False, server_default="none"
+        CardPriorityType(),
+        default=CardPriority.NONE,
+        nullable=False,
+        server_default="none",
     )
     position: Mapped[int] = mapped_column(Integer, default=0)  # Order within column
     assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -1231,7 +1586,9 @@ class Card(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Test scenario IDs from the linked spec that this card addresses
     test_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -1254,9 +1611,13 @@ class Card(Base):
     validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Append-only rejection history plus the bounded Current cause projection.
     rejection_records: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    current_rejection_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_rejection_kind: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     current_rejection_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    current_rejection_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_rejection_code: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
     current_rejection_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- Bug card fields ---
@@ -1286,7 +1647,9 @@ class Card(Base):
     # Cancellation justification (ITEM 17): required when moving to 'cancelled';
     # reopening (cancelled -> any other status) clears all three fields.
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
@@ -1346,13 +1709,40 @@ class ArchitectureDesign(Base):
         Index("ix_architecture_designs_source", "source_ref", "source_version"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     parent_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    ideation_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=True, index=True)
-    refinement_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("refinements.id", ondelete="CASCADE"), nullable=True, index=True)
-    spec_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=True, index=True)
-    card_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=True, index=True)
+    ideation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("ideations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    refinement_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("refinements.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    spec_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("specs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    card_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     global_description: Mapped[str] = mapped_column(Text, nullable=False)
     entities: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -1363,27 +1753,51 @@ class ArchitectureDesign(Base):
     source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_design_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     stale: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
-    breaking_change_flag: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
-    requires_arch_review: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    breaking_change_flag: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
+    requires_arch_review: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    ideation: Mapped["Ideation | None"] = relationship("Ideation", back_populates="architecture_designs")
-    refinement: Mapped["Refinement | None"] = relationship("Refinement", back_populates="architecture_designs")
-    spec: Mapped["Spec | None"] = relationship("Spec", back_populates="architecture_designs")
-    card: Mapped["Card | None"] = relationship("Card", back_populates="architecture_designs")
+    ideation: Mapped["Ideation | None"] = relationship(
+        "Ideation", back_populates="architecture_designs"
+    )
+    refinement: Mapped["Refinement | None"] = relationship(
+        "Refinement", back_populates="architecture_designs"
+    )
+    spec: Mapped["Spec | None"] = relationship(
+        "Spec", back_populates="architecture_designs"
+    )
+    card: Mapped["Card | None"] = relationship(
+        "Card", back_populates="architecture_designs"
+    )
     diagram_payloads: Mapped[list["ArchitectureDiagramPayload"]] = relationship(
-        "ArchitectureDiagramPayload", back_populates="design", cascade="all, delete-orphan"
+        "ArchitectureDiagramPayload",
+        back_populates="design",
+        cascade="all, delete-orphan",
     )
     versions: Mapped[list["ArchitectureDesignVersion"]] = relationship(
-        "ArchitectureDesignVersion", back_populates="design", cascade="all, delete-orphan"
+        "ArchitectureDesignVersion",
+        back_populates="design",
+        cascade="all, delete-orphan",
     )
     finding_runs: Mapped[list["ArchitectureFindingRun"]] = relationship(
         "ArchitectureFindingRun", back_populates="design", cascade="all, delete-orphan"
     )
-    warning_acknowledgements: Mapped[list["ArchitectureWarningAcknowledgement"]] = relationship(
-        "ArchitectureWarningAcknowledgement", back_populates="design", cascade="all, delete-orphan"
+    warning_acknowledgements: Mapped[list["ArchitectureWarningAcknowledgement"]] = (
+        relationship(
+            "ArchitectureWarningAcknowledgement",
+            back_populates="design",
+            cascade="all, delete-orphan",
+        )
     )
 
     @property
@@ -1414,26 +1828,50 @@ class ArchitectureDiagramPayload(Base):
 
     __tablename__ = "architecture_diagram_payloads"
     __table_args__ = (
-        UniqueConstraint("design_id", "diagram_id", name="uq_architecture_payload_design_diagram"),
+        UniqueConstraint(
+            "design_id", "diagram_id", name="uq_architecture_payload_design_diagram"
+        ),
         Index("ix_architecture_payload_board", "board_id"),
         Index("ix_architecture_payload_storage_key", "storage_key"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    design_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("architecture_designs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     diagram_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
-    storage_backend: Mapped[str] = mapped_column(String(50), nullable=False, server_default="database")
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    storage_backend: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default="database"
+    )
     storage_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     format: Mapped[str] = mapped_column(String(50), nullable=False)
-    adapter_payload_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    adapter_payload_json: Mapped[dict | list | None] = mapped_column(
+        JSON, nullable=True
+    )
     payload_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="diagram_payloads")
+    design: Mapped["ArchitectureDesign"] = relationship(
+        "ArchitectureDesign", back_populates="diagram_payloads"
+    )
 
 
 class ArchitectureDesignVersion(Base):
@@ -1445,16 +1883,29 @@ class ArchitectureDesignVersion(Base):
         Index("ix_architecture_design_versions_design", "design_id"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    design_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("architecture_designs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     envelope_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
-    diagram_refs_snapshot: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    diagram_refs_snapshot: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="versions")
+    design: Mapped["ArchitectureDesign"] = relationship(
+        "ArchitectureDesign", back_populates="versions"
+    )
 
 
 class ArchitectureFindingRun(Base):
@@ -1462,27 +1913,57 @@ class ArchitectureFindingRun(Base):
 
     __tablename__ = "architecture_finding_runs"
     __table_args__ = (
-        UniqueConstraint("design_id", "critic_run_id", name="uq_architecture_finding_run_design_critic"),
+        UniqueConstraint(
+            "design_id",
+            "critic_run_id",
+            name="uq_architecture_finding_run_design_critic",
+        ),
         Index("ix_architecture_finding_runs_board_design", "board_id", "design_id"),
         Index("ix_architecture_finding_runs_current", "design_id", "is_current"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
-    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    design_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("architecture_designs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     design_version: Mapped[int] = mapped_column(Integer, nullable=False)
     critic_run_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    is_current: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
-    active_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
-    resolved_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
-    superseded_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    is_current: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
+    active_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    resolved_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    superseded_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     validator_summary: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    actor_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="user")
+    actor_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="user"
+    )
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="finding_runs")
+    design: Mapped["ArchitectureDesign"] = relationship(
+        "ArchitectureDesign", back_populates="finding_runs"
+    )
     findings: Mapped[list["ArchitectureFinding"]] = relationship(
         "ArchitectureFinding", back_populates="run", cascade="all, delete-orphan"
     )
@@ -1493,20 +1974,44 @@ class ArchitectureFinding(Base):
 
     __tablename__ = "architecture_findings"
     __table_args__ = (
-        UniqueConstraint("design_id", "critic_run_id", "finding_key", name="uq_architecture_finding_run_key"),
+        UniqueConstraint(
+            "design_id",
+            "critic_run_id",
+            "finding_key",
+            name="uq_architecture_finding_run_key",
+        ),
         Index("ix_architecture_findings_design_lifecycle", "design_id", "lifecycle"),
         Index("ix_architecture_findings_board_code", "board_id", "warning_code"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_finding_runs.id", ondelete="CASCADE"), nullable=False, index=True)
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
-    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("architecture_finding_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    design_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("architecture_designs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     design_version: Mapped[int] = mapped_column(Integer, nullable=False)
     critic_run_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     finding_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     warning_code: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="warning")
+    severity: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="warning"
+    )
     message: Mapped[str] = mapped_column(Text, nullable=False)
     suggested_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
     path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1516,10 +2021,16 @@ class ArchitectureFinding(Base):
     diagram_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     lifecycle: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     raw_warning: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    run: Mapped["ArchitectureFindingRun"] = relationship("ArchitectureFindingRun", back_populates="findings")
+    run: Mapped["ArchitectureFindingRun"] = relationship(
+        "ArchitectureFindingRun", back_populates="findings"
+    )
 
 
 class ArchitectureWarningAcknowledgement(Base):
@@ -1537,19 +2048,37 @@ class ArchitectureWarningAcknowledgement(Base):
         Index("ix_architecture_warning_ack_design_run", "design_id", "critic_run_id"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
-    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    design_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("architecture_designs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     design_version: Mapped[int] = mapped_column(Integer, nullable=False)
     critic_run_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     finding_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    actor_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="user")
+    actor_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="user"
+    )
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     statement: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="warning_acknowledgements")
+    design: Mapped["ArchitectureDesign"] = relationship(
+        "ArchitectureDesign", back_populates="warning_acknowledgements"
+    )
 
 
 class CardDependency(Base):
@@ -1564,10 +2093,16 @@ class CardDependency(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     card_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     depends_on_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1591,7 +2126,10 @@ class Attachment(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     card_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -1616,7 +2154,10 @@ class QAItem(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     card_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1648,7 +2189,10 @@ class Comment(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     card_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1685,14 +2229,19 @@ class Agent(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     objective: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Legacy NOT NULL column kept for schema compatibility. New writes store a
     # non-recoverable marker; authentication uses api_key_hash.
-    api_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    api_key: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -1724,10 +2273,16 @@ class AgentBoard(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     agent_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     granted_by: Mapped[str] = mapped_column(String(255), nullable=False)
     granted_at: Mapped[datetime] = mapped_column(
@@ -1787,7 +2342,10 @@ class AgentSeenItem(Base):
         index=True,
     )
     agent_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     item_type: Mapped[str] = mapped_column(
         String(50), nullable=False
@@ -1808,7 +2366,10 @@ class BoardShare(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     realm_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1839,10 +2400,15 @@ class Guideline(Base):
         String(20), nullable=False, server_default=text("'global'")
     )
     board_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -1860,16 +2426,24 @@ class BoardGuideline(Base):
     """Association table linking guidelines to boards."""
 
     __tablename__ = "board_guidelines"
-    __table_args__ = (UniqueConstraint("board_id", "guideline_id", name="uq_board_guideline"),)
+    __table_args__ = (
+        UniqueConstraint("board_id", "guideline_id", name="uq_board_guideline"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     guideline_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("guidelines.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("guidelines.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     added_at: Mapped[datetime] = mapped_column(
@@ -1883,7 +2457,9 @@ class BoardGuideline(Base):
 
     # Relationships
     board: Mapped["Board"] = relationship("Board")
-    guideline: Mapped["Guideline"] = relationship("Guideline", back_populates="board_links")
+    guideline: Mapped["Guideline"] = relationship(
+        "Guideline", back_populates="board_links"
+    )
 
 
 class DesignSystem(Base):
@@ -1902,11 +2478,16 @@ class DesignSystem(Base):
         String(20), nullable=False, server_default=text("'global'")
     )
     board_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'active'")
     )
@@ -1932,10 +2513,16 @@ class BoardDesignSystem(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     design_system_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("design_systems.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("design_systems.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     design_system_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -1965,8 +2552,12 @@ class DesignSystemGateAudit(Base):
     mode: Mapped[str] = mapped_column(String(20), nullable=False)
     outcome: Mapped[str] = mapped_column(String(20), nullable=False)
     reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    expected_design_system_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    expected_design_system_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expected_design_system_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
+    expected_design_system_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     provided_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1984,7 +2575,9 @@ class ActivityLog(Base):
     board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     action: Mapped[str] = mapped_column(String(100), nullable=False)
-    actor_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "user" or "agent"
+    actor_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "user" or "agent"
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -2025,9 +2618,7 @@ class DefaultBoardConfiguration(Base):
     # Design System default ref consumed by the design-system adapter (card #4).
     # Shape: {design_system_id, version, snapshot, gate_mode}.
     design_system_default_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    spec_checklist_mode: Mapped[str | None] = mapped_column(
-        String(20), nullable=True
-    )
+    spec_checklist_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -2080,22 +2671,35 @@ class AmendmentHotfixRevision(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     # The original done/locked spec the amendment corrects. Plain ref (no FK
     # cascade) so the amendment record is durable and the original spec is never
     # mutated or coupled to the amendment's lifecycle.
-    original_spec_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    original_spec_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, index=True
+    )
     origin_bug_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     # Exact-membership lineage sets (G1: membership is exact, never loose match).
     origin_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     affected_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    revision_spec_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
-    regression_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    regression_test_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    revision_spec_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    regression_scenario_ids: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    regression_test_task_ids: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
     # Automated regression artifacts (e.g. a pytest node id) — first-class so a
     # tooling/test-infra regression counts as evidence, not only a product scenario.
-    automated_regression_refs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    automated_regression_refs: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
     status: Mapped[AmendmentRevisionStatus] = mapped_column(
         AmendmentRevisionStatusType(),
         default=AmendmentRevisionStatus.DRAFT,
@@ -2177,8 +2781,10 @@ class ConsolidationQueue(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
     artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -2199,17 +2805,16 @@ class ConsolidationQueue(Base):
         String(50), nullable=False, default="state_transition"
     )
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="pending", index=True,
+        String(20),
+        nullable=False,
+        default="pending",
+        index=True,
     )  # pending | claimed | done | paused | failed
     triggered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    triggered_by_event: Mapped[str | None] = mapped_column(
-        String(100), nullable=True
-    )
-    claimed_by_session_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True
-    )
+    triggered_by_event: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    claimed_by_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -2260,8 +2865,10 @@ class ArtifactDeletionTombstone(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
     artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -2296,15 +2903,22 @@ class CanonicalDebt(Base):
             name="uq_canonical_debt_artifact_target_hash",
         ),
         Index("ix_canonical_debt_board_state", "board_id", "canonical_state"),
-        Index("ix_canonical_debt_board_artifact", "board_id", "artifact_type", "artifact_id"),
+        Index(
+            "ix_canonical_debt_board_artifact",
+            "board_id",
+            "artifact_type",
+            "artifact_id",
+        ),
     )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
     artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -2365,8 +2979,10 @@ class ConsolidationDeadLetter(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
     artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -2376,7 +2992,9 @@ class ConsolidationDeadLetter(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False)
     errors: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     dead_lettered_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -2392,8 +3010,10 @@ class ConsolidationAudit(Base):
 
     session_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
     artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -2402,7 +3022,9 @@ class ConsolidationAudit(Base):
         DateTime(timezone=True), nullable=False
     )
     committed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True,
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
     )
     nodes_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     nodes_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -2431,7 +3053,8 @@ class KuzuNodeRef(Base):
     session_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("consolidation_audit.session_id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     kuzu_node_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -2464,7 +3087,9 @@ class GlobalUpdateOutbox(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     processed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True,
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
     )
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -2648,8 +3273,10 @@ class DomainEventRow(Base):
     )
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     actor_type: Mapped[str] = mapped_column(
@@ -2657,8 +3284,10 @@ class DomainEventRow(Base):
     )
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-        server_default=func.now(), index=True,
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
     )
 
 
@@ -2670,7 +3299,9 @@ class DomainEventHandlerExecution(Base):
     __tablename__ = "domain_event_handler_executions"
     __table_args__ = (
         UniqueConstraint(
-            "event_id", "handler_name", name="uq_deh_event_handler",
+            "event_id",
+            "handler_name",
+            name="uq_deh_event_handler",
         ),
         Index("ix_deh_status_next_attempt", "status", "next_attempt_at"),
     )
@@ -2679,20 +3310,25 @@ class DomainEventHandlerExecution(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     event_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("domain_events.id", ondelete="CASCADE"),
+        String(36),
+        ForeignKey("domain_events.id", ondelete="CASCADE"),
         nullable=False,
     )
     handler_name: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'pending'"),
+        String(20),
+        nullable=False,
+        server_default=text("'pending'"),
     )  # pending | processing | done | failed | dlq
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     next_attempt_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
 
 
@@ -2752,13 +3388,16 @@ class DiscoverySavedSearch(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     query: Mapped[str | None] = mapped_column(Text, nullable=True)
     intent_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("discovery_intents.id", ondelete="SET NULL"),
+        String(36),
+        ForeignKey("discovery_intents.id", ondelete="SET NULL"),
         nullable=True,
     )
     filters_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -2777,7 +3416,9 @@ class DiscoverySearchHistory(Base):
     __table_args__ = (
         Index(
             "ix_search_history_board_user_time",
-            "board_id", "user_id", "searched_at",
+            "board_id",
+            "user_id",
+            "searched_at",
         ),
     )
 
@@ -2785,13 +3426,15 @@ class DiscoverySearchHistory(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     board_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        String(36),
+        ForeignKey("boards.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id: Mapped[str] = mapped_column(String(36), nullable=False)
     query: Mapped[str | None] = mapped_column(Text, nullable=True)
     intent_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("discovery_intents.id", ondelete="SET NULL"),
+        String(36),
+        ForeignKey("discovery_intents.id", ondelete="SET NULL"),
         nullable=True,
     )
     result_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -2819,30 +3462,41 @@ class KGTickRun(Base):
     """
 
     __tablename__ = "kg_tick_runs"
-    __table_args__ = (
-        Index("idx_kg_tick_runs_completed_at", "completed_at"),
-    )
+    __table_args__ = (Index("idx_kg_tick_runs_completed_at", "completed_at"),)
 
     tick_id: Mapped[str] = mapped_column(
-        String(64), primary_key=True,
+        String(64),
+        primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(),
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     nodes_recomputed: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0"),
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     boards_processed: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0"),
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
     boards_failed: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0"),
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
 
 
@@ -2889,7 +3543,9 @@ class QualityAssessmentReceiptFixture(Base):
     taxonomy_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
     policy_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
     input_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    canonicalization_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    canonicalization_version: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
     ruleset_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     taxonomy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     analyzer_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -2897,8 +3553,12 @@ class QualityAssessmentReceiptFixture(Base):
     run_identity_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
     authority_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    predecessor_receipt_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    predecessor_receipt_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     contract_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     head_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -2914,7 +3574,9 @@ class QualityAssessmentHeadFixture(Base):
     assessment_kind: Mapped[str] = mapped_column(String(50), primary_key=True)
     receipt_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class ResearchDecisionEntryFixture(Base):
@@ -2942,7 +3604,9 @@ class ResearchDecisionEntryFixture(Base):
         nullable=True,
     )
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class ResearchDecisionHeadFixture(Base):
@@ -2958,5 +3622,6 @@ class ResearchDecisionHeadFixture(Base):
     refinement_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

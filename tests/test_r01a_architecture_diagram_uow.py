@@ -47,8 +47,8 @@ from okto_pulse.core.services.architecture import CARD_ARCHITECTURE_READ_ONLY_ME
 USER = "r01a-fu5-s1c-user"
 PREFIX = "/api/v1"
 SPEC_LOCKED_DETAIL = (
-    "Spec is locked because validation passed. Move it back to draft or approved "
-    "to edit architecture."
+    "Spec is locked because validation passed. Move it to Draft to open a new "
+    "edition before editing architecture."
 )
 _ENDPOINTS = (
     "get_architecture_diagram_payload",
@@ -267,7 +267,9 @@ def _missing(kind: str = "design") -> str:
 async def test_get_diagram_payload_200(client) -> None:
     ids = await _seed_parents()
     design_id = await _seed_design("ideation", ids["ideation"])
-    resp = client.get(f"{PREFIX}/architecture/{design_id}/diagrams/{_DIAGRAM_ID}/payload")
+    resp = client.get(
+        f"{PREFIX}/architecture/{design_id}/diagrams/{_DIAGRAM_ID}/payload"
+    )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["design_id"] == design_id
@@ -284,7 +286,9 @@ async def test_get_diagram_payload_200(client) -> None:
 
 @pytest.mark.asyncio
 async def test_get_diagram_payload_404_design_missing(client) -> None:
-    resp = client.get(f"{PREFIX}/architecture/{_missing()}/diagrams/{_DIAGRAM_ID}/payload")
+    resp = client.get(
+        f"{PREFIX}/architecture/{_missing()}/diagrams/{_DIAGRAM_ID}/payload"
+    )
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Architecture design not found"
 
@@ -506,6 +510,7 @@ async def test_get_diagram_payload_use_case_raises_for_missing_design() -> None:
         EntityNotFoundError,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):
@@ -528,6 +533,7 @@ async def test_copy_use_case_raises_for_missing_card() -> None:
         EntityNotFoundError,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError) as excinfo:

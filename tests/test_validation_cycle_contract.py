@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Mapping
 
 import pytest
 
@@ -40,6 +41,7 @@ from okto_pulse.core.inbound.human_validation_cycle_error import (
 )
 from okto_pulse.core.models.validation_cycle import (
     project_requirement_lint_preflight,
+    project_validation_check_summary,
     project_validation_cycle,
     project_validation_technical_audit,
 )
@@ -290,6 +292,7 @@ def test_validation_cycle_projection_separates_current_and_previous_results() ->
         "curated_checklist",
         "policy_compliance",
     ]
+    assert all(item["details"] == {} for item in payload["checks"])
     assert payload["submission_fence"] == {
         "expected_validation_edition": 3,
         "expected_subject_version": 17,
@@ -325,6 +328,7 @@ def test_partial_spec_projection_omits_the_hidden_validation_section() -> None:
             "result_type": "requirement_lint",
             "status": "needs_attention",
             "summary": "2 findings",
+            "details": {},
         }
     ]
     assert payload["remaining_actions"] == []
@@ -468,6 +472,200 @@ def test_human_summary_recursively_rejects_technical_audit_keys(
             subject_edition=1,
             status="approved",
             summary=summary,  # type: ignore[arg-type]
+        )
+
+
+def test_established_result_summary_does_not_inherit_new_details_limits() -> None:
+    result = ValidationCycleResultSummary(
+        result_id="result-1",
+        result_type=ValidationCycleResultType.AMBIGUITY_ASSESSMENT,
+        subject_edition=1,
+        status="completed",
+        summary={"justification": "x" * 5000},
+    )
+
+    assert result.summary["justification"] == "x" * 5000
+
+
+def test_policy_check_details_are_bounded_immutable_and_json_projected() -> None:
+    check = ValidationCycleCheckSummary(
+        result_type=ValidationCycleResultType.POLICY_COMPLIANCE,
+        status="in_progress",
+        summary="1 of 2 completed",
+        details={
+            "counts": {
+                "applicable": 2,
+                "completed": 1,
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "pending": 1,
+                "context_only": 0,
+                "inconsistent": 0,
+            },
+            "applicable_bindings": [
+                {
+                    "binding_id": "binding-1",
+                    "guideline_id": "guideline-1",
+                    "revision_id": "revision-3",
+                    "title": "Secure delivery",
+                    "enforcement": "blocking",
+                    "minimum_confidence": 80,
+                    "status": "passed",
+                    "metrics": [
+                        {
+                            "metric_id": "metric-1",
+                            "code": "minimum_confidence",
+                            "title": "Minimum confidence",
+                            "description": "Required confidence for this policy.",
+                            "evaluation_rubric": "Meet or exceed the threshold.",
+                            "direction": "minimum",
+                            "default_threshold": 70,
+                            "effective_threshold": 80,
+                            "threshold_source": "override",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert check.details["counts"]["applicable"] == 2  # type: ignore[index]
+    with pytest.raises(TypeError):
+        check.details["counts"]["applicable"] = 3  # type: ignore[index]
+    assert project_validation_check_summary(check) == {
+        "result_type": "policy_compliance",
+        "status": "in_progress",
+        "summary": "1 of 2 completed",
+        "details": {
+            "counts": {
+                "applicable": 2,
+                "completed": 1,
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "pending": 1,
+                "context_only": 0,
+                "inconsistent": 0,
+            },
+            "applicable_bindings": [
+                {
+                    "binding_id": "binding-1",
+                    "guideline_id": "guideline-1",
+                    "revision_id": "revision-3",
+                    "title": "Secure delivery",
+                    "enforcement": "blocking",
+                    "minimum_confidence": 80,
+                    "status": "passed",
+                    "metrics": [
+                        {
+                            "metric_id": "metric-1",
+                            "code": "minimum_confidence",
+                            "title": "Minimum confidence",
+                            "description": "Required confidence for this policy.",
+                            "evaluation_rubric": "Meet or exceed the threshold.",
+                            "direction": "minimum",
+                            "default_threshold": 70,
+                            "effective_threshold": 80,
+                            "threshold_source": "override",
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "details",
+    (
+        {"policy_receipt_id": "hidden"},
+        {"applicable_bindings": [{"configuration_digest": _DIGEST}]},
+        {"head_revision": 2},
+    ),
+)
+def test_policy_check_details_reject_technical_audit_plumbing(
+    details: Mapping[str, object],
+) -> None:
+    with pytest.raises(
+        ValidationCycleContractError,
+        match="validation_cycle_summary_contains_technical_audit",
+    ):
+        ValidationCycleCheckSummary(
+            result_type=ValidationCycleResultType.POLICY_COMPLIANCE,
+            status="passed",
+            summary="All policies passed",
+            details=details,
+        )
+
+
+def test_policy_check_details_reject_unbounded_collections() -> None:
+    with pytest.raises(
+        ValidationCycleContractError,
+        match="validation_cycle_check_details_invalid",
+    ):
+        ValidationCycleCheckSummary(
+            result_type=ValidationCycleResultType.POLICY_COMPLIANCE,
+            status="pending",
+            summary="Pending",
+            details={"applicable_bindings": [{} for _ in range(101)]},
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_policy_check_details_reject_non_finite_numbers(value: float) -> None:
+    with pytest.raises(
+        ValidationCycleContractError,
+        match="validation_cycle_check_details_invalid",
+    ):
+        ValidationCycleCheckSummary(
+            result_type=ValidationCycleResultType.POLICY_COMPLIANCE,
+            status="passed",
+            summary="All policies passed",
+            details={"counts": {"invalid": value}},
+        )
+
+
+@pytest.mark.parametrize("value", [-(2**63) - 1, 2**63])
+def test_policy_check_details_reject_unbounded_integers(value: int) -> None:
+    with pytest.raises(
+        ValidationCycleContractError,
+        match="validation_cycle_check_details_invalid",
+    ):
+        ValidationCycleCheckSummary(
+            result_type=ValidationCycleResultType.POLICY_COMPLIANCE,
+            status="passed",
+            summary="All policies passed",
+            details={"counts": {"invalid": value}},
+        )
+
+
+@pytest.mark.parametrize("details", [{"value": "\ud800"}, {"\ud800": "value"}])
+def test_policy_check_details_reject_non_utf8_unicode(
+    details: Mapping[str, object],
+) -> None:
+    with pytest.raises(
+        ValidationCycleContractError,
+        match="validation_cycle_check_details_invalid",
+    ):
+        ValidationCycleCheckSummary(
+            result_type=ValidationCycleResultType.POLICY_COMPLIANCE,
+            status="passed",
+            summary="All policies passed",
+            details=details,
+        )
+
+
+def test_check_details_are_scoped_to_policy_compliance() -> None:
+    with pytest.raises(
+        ValidationCycleContractError,
+        match="validation_cycle_check_details_not_supported",
+    ):
+        ValidationCycleCheckSummary(
+            result_type=ValidationCycleResultType.REQUIREMENT_LINT,
+            status="passed",
+            summary="No findings",
+            details={"counts": {"passed": 1}},
         )
 
 

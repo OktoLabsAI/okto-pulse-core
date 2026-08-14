@@ -174,7 +174,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "draft",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=(*_NEW_EDITION_EFFECTS[:-1], "version_bumped", "activity_logged"),
+                        effects=(
+                            *_NEW_EDITION_EFFECTS[:-1],
+                            "version_bumped",
+                            "activity_logged",
+                        ),
                     )
                 ],
                 "cancelled": [
@@ -243,7 +247,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "draft",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=(*_NEW_EDITION_EFFECTS[:-1], "version_bumped", "activity_logged"),
+                        effects=(
+                            *_NEW_EDITION_EFFECTS[:-1],
+                            "version_bumped",
+                            "activity_logged",
+                        ),
                     )
                 ],
                 "cancelled": [
@@ -296,7 +304,10 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "validated": [
-                    _edge("approved", gate="unlock_content", capabilities=("reopen",)),
+                    # Returning to Approved permits a successor assessment in
+                    # the same edition. It preserves Current and does not
+                    # unlock Spec content; only entering Draft does that.
+                    _edge("approved"),
                     _edge(
                         "in_progress",
                         gate="spec_evaluation",
@@ -320,7 +331,9 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                     _edge("cancelled", **_CANCEL),
                 ],
                 "in_progress": [
-                    _edge("validated", gate="reopen", capabilities=("reopen",)),
+                    # This is a same-edition lifecycle move. Current validation
+                    # and the content lock remain authoritative.
+                    _edge("validated"),
                     _edge(
                         "draft",
                         gate="unlock_content",
@@ -354,7 +367,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "draft",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=(*_NEW_EDITION_EFFECTS[:-1], "version_bumped", "activity_logged"),
+                        effects=(
+                            *_NEW_EDITION_EFFECTS[:-1],
+                            "version_bumped",
+                            "activity_logged",
+                        ),
                     )
                 ],
                 "cancelled": [
@@ -435,7 +452,9 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         capabilities=("reopen",),
                         card_types=("normal",),
                     ),
-                    _edge("validation", gate="task_validation", capabilities=("validate",)),
+                    _edge(
+                        "validation", gate="task_validation", capabilities=("validate",)
+                    ),
                     _edge(
                         "done",
                         gate="completion",
@@ -565,7 +584,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         "not_started",
                         gate="reopen",
                         capabilities=("reopen",),
-                        effects=("status_changed", "cancellation_cleared", "activity_logged"),
+                        effects=(
+                            "status_changed",
+                            "cancellation_cleared",
+                            "activity_logged",
+                        ),
                     )
                 ],
             },
@@ -580,7 +603,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         gate="sprint_activation",
                         preconditions=("at_least_one_card", "scope_valid"),
                         capabilities=("start",),
-                        reason_codes=("sprint_empty", "scope_invalid", "transition_not_allowed"),
+                        reason_codes=(
+                            "sprint_empty",
+                            "scope_invalid",
+                            "transition_not_allowed",
+                        ),
                     ),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -591,7 +618,10 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         gate="sprint_review",
                         preconditions=("scoped_tests_ready",),
                         capabilities=("request_review",),
-                        reason_codes=("scoped_tests_incomplete", "transition_not_allowed"),
+                        reason_codes=(
+                            "scoped_tests_incomplete",
+                            "transition_not_allowed",
+                        ),
                     ),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -686,7 +716,9 @@ def lifecycle_definition(entity_type: str) -> LifecycleDefinition:
         ) from exc
 
 
-def transition_contracts(entity_type: str, current_status: str) -> tuple[TransitionContract, ...]:
+def transition_contracts(
+    entity_type: str, current_status: str
+) -> tuple[TransitionContract, ...]:
     definition = lifecycle_definition(entity_type)
     try:
         definition.status_enum(current_status)

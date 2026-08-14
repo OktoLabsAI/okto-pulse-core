@@ -6,7 +6,7 @@ Covers:
 - Recommendation reject overrides passing thresholds
 - Append-only validation history
 - Content lock: edits blocked after successful validation
-- Lock release: backward move clears current_validation_id
+- Validation ownership: same-edition moves preserve Current; Draft clears it
 - list_validations: returns all with active flag
 - Input validation: score ranges, justification lengths
 - Board-level custom thresholds
@@ -55,6 +55,7 @@ from okto_pulse.core.ports.application_persistence import (
 from okto_pulse.core.services.main import (
     CardService,
     SpecService,
+    spec_is_content_locked,
 )
 from okto_pulse.core.services import main as main_service
 
@@ -1403,7 +1404,7 @@ class TestAppendOnlyHistory:
             )
             assert result2["outcome"] == "success"
 
-            # Move back to approved for third submission
+            # Open a new Draft edition, then return to Approved for submission.
             await _move_spec(
                 service,
                 db,
@@ -1720,7 +1721,7 @@ class TestContentLock:
 
 @pytest.mark.asyncio
 class TestLockRelease:
-    """Moving spec back to approved/draft clears the lock."""
+    """Only a new Draft edition clears the current validation lock."""
 
     async def test_backward_move_clears_lock(self, db_factory):
         """Moving from validated → draft clears current_validation_id."""
@@ -1852,7 +1853,10 @@ class TestLockRelease:
                 data=_valid_submit_data(),
             )
             spec = await service.get_spec(lr_spec_id)
-            assert spec.current_validation_id is not None
+            current_id = spec.current_validation_id
+            current_edition = spec.edition
+            assert current_id is not None
+            assert spec_is_content_locked(spec) is True
 
             # Move back to approved (not draft)
             await _move_spec(
@@ -1863,8 +1867,58 @@ class TestLockRelease:
                 SpecMove(status=SpecStatus.APPROVED),
             )
             spec = await service.get_spec(lr_spec_id)
-        assert spec.current_validation_id is not None
+        assert spec.current_validation_id == current_id
+        assert spec.edition == current_edition
+        assert spec_is_content_locked(spec) is True
         assert spec.status == SpecStatus.APPROVED
+
+    async def test_forward_execution_lifecycle_preserves_current_validation(
+        self,
+        db_factory,
+    ):
+        """validated -> in_progress -> done remains in the validated edition."""
+
+        board_id = str(uuid.uuid4())
+        spec_id = str(uuid.uuid4())
+        await _seed_board(db_factory, board_id=board_id, spec_id=spec_id)
+        async with db_factory() as db:
+            service = SpecService(db)
+            validation = await _submit_spec_validation(
+                service,
+                db,
+                spec_id=spec_id,
+                reviewer_id=USER_ID,
+                reviewer_name="Tester",
+                data=_valid_submit_data(),
+            )
+            current_id = validation["id"]
+            validated = await service.get_spec(spec_id)
+            initial_edition = validated.edition
+            validated.skip_qualitative_validation = True
+
+            in_progress = await _move_spec(
+                service,
+                db,
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.IN_PROGRESS),
+            )
+            assert in_progress.current_validation_id == current_id
+            assert in_progress.edition == initial_edition
+            assert spec_is_content_locked(in_progress) is True
+
+            done = await _move_spec(
+                service,
+                db,
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.DONE),
+            )
+
+        assert done.status == SpecStatus.DONE
+        assert done.current_validation_id == current_id
+        assert done.edition == initial_edition
+        assert spec_is_content_locked(done) is True
 
 
 # ===========================================================================

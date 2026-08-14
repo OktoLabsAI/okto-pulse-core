@@ -161,7 +161,12 @@ create a second human-facing lifecycle state.
 1-5 — a value like `5` is read literally as 5/100 and will usually fail the
 gate.
 
-**Single source for gate mechanics** — canonical flow, atomic `outcome` computation, content lock, and the reopen path (`okto_pulse_move_spec` back to `draft`, starting a new edition and clearing `current_validation_id`): `okto-pulse://reference/spec_gates`.
+**Single source for gate mechanics** — canonical flow, atomic `outcome`
+computation, content lock, and the reopen path (`okto_pulse_move_spec` back to
+`draft`, starting a new edition and clearing `current_validation_id`):
+`okto-pulse://reference/spec_gates`. Forward execution moves and Code
+Investigation/Evidence/waiver events preserve Current; they do not open a new
+human validation edition.
 
 ## 2.3b Spec Evaluation — Quality Gate for Execution
 

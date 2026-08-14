@@ -53,6 +53,7 @@ def project_validation_check_summary(
         "result_type": value.result_type.value,
         "status": value.status,
         "summary": value.summary,
+        "details": _thaw_json(value.details),
     }
 
 

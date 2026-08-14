@@ -8,6 +8,7 @@ technical versions are available only through the result-scoped audit read.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,6 +32,16 @@ _TECHNICAL_SUMMARY_KEYS = frozenset(
         "stale_reasons",
     }
 )
+_TECHNICAL_DETAIL_KEYS = _TECHNICAL_SUMMARY_KEYS | {
+    "receipt_ids",
+    "digest",
+}
+_SUMMARY_MAX_DEPTH = 6
+_SUMMARY_MAX_COLLECTION_ITEMS = 100
+_SUMMARY_MAX_KEY_LENGTH = 128
+_SUMMARY_MAX_TEXT_LENGTH = 4096
+_DETAIL_MIN_INTEGER = -(2**63)
+_DETAIL_MAX_INTEGER = 2**63 - 1
 
 
 class ValidationCycleContractError(ValueError):
@@ -75,7 +86,16 @@ def _sha256(value: object, code: str) -> str:
     return normalized
 
 
+def _technical_detail_key(key: str) -> bool:
+    normalized = key.lower()
+    return normalized in _TECHNICAL_DETAIL_KEYS or normalized.endswith(
+        ("_digest", "_digests", "_receipt_id", "_receipt_ids")
+    )
+
+
 def _freeze_summary_value(value: object, code: str) -> object:
+    """Freeze the established result-summary contract without new limits."""
+
     if isinstance(value, Mapping):
         normalized: dict[str, object] = {}
         for raw_key, raw_value in value.items():
@@ -95,10 +115,75 @@ def _freeze_summary_value(value: object, code: str) -> object:
     raise ValidationCycleContractError(code)
 
 
+def _freeze_details_value(value: object, code: str, *, depth: int = 0) -> object:
+    """Freeze the new bounded, JSON-safe Policy Compliance detail envelope."""
+
+    if depth > _SUMMARY_MAX_DEPTH:
+        raise ValidationCycleContractError(code)
+    if isinstance(value, Mapping):
+        if len(value) > _SUMMARY_MAX_COLLECTION_ITEMS:
+            raise ValidationCycleContractError(code)
+        normalized: dict[str, object] = {}
+        for raw_key, raw_value in value.items():
+            if not isinstance(raw_key, str) or not raw_key.strip():
+                raise ValidationCycleContractError(code)
+            key = raw_key.strip()
+            if len(key) > _SUMMARY_MAX_KEY_LENGTH or key in normalized:
+                raise ValidationCycleContractError(code)
+            try:
+                key.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise ValidationCycleContractError(code) from exc
+            if _technical_detail_key(key):
+                raise ValidationCycleContractError(
+                    "validation_cycle_summary_contains_technical_audit"
+                )
+            normalized[key] = _freeze_details_value(
+                raw_value,
+                code,
+                depth=depth + 1,
+            )
+        return MappingProxyType(normalized)
+    if isinstance(value, (tuple, list)):
+        if len(value) > _SUMMARY_MAX_COLLECTION_ITEMS:
+            raise ValidationCycleContractError(code)
+        return tuple(
+            _freeze_details_value(item, code, depth=depth + 1) for item in value
+        )
+    if isinstance(value, str):
+        if len(value) > _SUMMARY_MAX_TEXT_LENGTH:
+            raise ValidationCycleContractError(code)
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValidationCycleContractError(code) from exc
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if not _DETAIL_MIN_INTEGER <= value <= _DETAIL_MAX_INTEGER:
+            raise ValidationCycleContractError(code)
+        return value
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValidationCycleContractError(code)
+    if value is None or isinstance(value, float):
+        return value
+    raise ValidationCycleContractError(code)
+
+
 def _summary(value: object, code: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ValidationCycleContractError(code)
     frozen = _freeze_summary_value(value, code)
+    if not isinstance(frozen, Mapping):  # pragma: no cover - guarded above
+        raise ValidationCycleContractError(code)
+    return frozen
+
+
+def _details(value: object, code: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValidationCycleContractError(code)
+    frozen = _freeze_details_value(value, code)
     if not isinstance(frozen, Mapping):  # pragma: no cover - guarded above
         raise ValidationCycleContractError(code)
     return frozen
@@ -245,6 +330,7 @@ class ValidationCycleCheckSummary:
     result_type: ValidationCycleResultType
     status: str
     summary: str
+    details: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.result_type not in VALIDATION_CHECK_RESULT_TYPES:
@@ -263,6 +349,18 @@ class ValidationCycleCheckSummary:
                 maximum=4096,
             ),
         )
+        details = _details(
+            self.details,
+            "validation_cycle_check_details_invalid",
+        )
+        if (
+            self.result_type is not ValidationCycleResultType.POLICY_COMPLIANCE
+            and details
+        ):
+            raise ValidationCycleContractError(
+                "validation_cycle_check_details_not_supported"
+            )
+        object.__setattr__(self, "details", details)
 
 
 @dataclass(frozen=True, slots=True)

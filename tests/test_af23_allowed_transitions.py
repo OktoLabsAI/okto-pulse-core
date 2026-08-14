@@ -176,6 +176,26 @@ def test_refinement_scope_metadata_is_not_projected_on_ideation() -> None:
     assert "in_scope_present" in refinement_review.preconditions
 
 
+def test_spec_same_edition_reverse_moves_do_not_advertise_content_unlock() -> None:
+    validated = {
+        item.to_status: item
+        for item in allowed_transitions_for_status("spec", "validated")
+    }
+    in_progress = {
+        item.to_status: item
+        for item in allowed_transitions_for_status("spec", "in_progress")
+    }
+
+    assert validated["approved"].gate == "none"
+    assert "reopen" not in validated["approved"].capabilities
+    assert "current_validations_cleared" not in validated["approved"].effects
+    assert in_progress["validated"].gate == "none"
+    assert "reopen" not in in_progress["validated"].capabilities
+    assert "current_validations_cleared" not in in_progress["validated"].effects
+    assert in_progress["draft"].gate == "unlock_content"
+    assert "current_validations_cleared" in in_progress["draft"].effects
+
+
 def test_docs_only_forward_subset_reports_reverse_and_unlock_drift() -> None:
     docs_only_subset = {
         "ideation": {
@@ -300,9 +320,13 @@ async def test_use_case_resolves_entity_status_and_exposes_unlock_edges() -> Non
         "draft",
         "cancelled",
     ]
-    assert any(
-        item["gate"] == "unlock_content" for item in payload["allowed_transitions"]
-    )
+    transitions = {item["to_status"]: item for item in payload["allowed_transitions"]}
+    assert transitions["draft"]["gate"] == "unlock_content"
+    assert "reopen" in transitions["draft"]["capabilities"]
+    assert "current_validations_cleared" in transitions["draft"]["effects"]
+    assert transitions["approved"]["gate"] == "none"
+    assert "reopen" not in transitions["approved"]["capabilities"]
+    assert "current_validations_cleared" not in transitions["approved"]["effects"]
     in_progress = next(
         item
         for item in payload["allowed_transitions"]

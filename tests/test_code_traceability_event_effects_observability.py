@@ -103,11 +103,14 @@ async def test_publish_stages_in_caller_uow_and_suppresses_replays():
     event = _revocation_event()
 
     assert await publish_code_traceability_mutation(uow, event) is True
-    assert await publish_code_traceability_mutation(
-        uow,
-        event,
-        replayed=True,
-    ) is False
+    assert (
+        await publish_code_traceability_mutation(
+            uow,
+            event,
+            replayed=True,
+        )
+        is False
+    )
     assert published == [event]
 
 
@@ -118,23 +121,15 @@ def test_every_traceability_event_has_consolidation_and_effect_handlers():
         assert "CodeTraceabilityEventEffectsHandler" in names
 
 
-def test_effect_plan_invalidates_validation_for_links_currentness_and_waivers():
-    expected = {
-        "code_investigation.receipt_submitted",
-        "code_investigation.receipt_revoked",
-        "code_evidence.superseded",
-        "code_evidence.revoked",
-        "code_evidence.linked",
-        "code_evidence.unlinked",
-        "code_evidence.disposition_changed",
-        "code_traceability.waiver_created",
-        "code_traceability.waiver_cleared",
-    }
-    for event_type in CODE_TRACEABILITY_EVENT_TYPES:
-        plan = code_traceability_event_effect_plan(event_type)
-        assert plan.invalidate_read_models is True
-        assert plan.record_activity is True
-        assert plan.invalidate_spec_validation is (event_type in expected)
+@pytest.mark.parametrize("event_type", sorted(CODE_TRACEABILITY_EVENT_TYPES))
+def test_every_traceability_event_preserves_spec_validation_authority(
+    event_type: str,
+) -> None:
+    plan = code_traceability_event_effect_plan(event_type)
+
+    assert plan.invalidate_read_models is True
+    assert plan.record_activity is True
+    assert not hasattr(plan, "invalidate_spec_validation")
 
 
 @pytest.mark.asyncio

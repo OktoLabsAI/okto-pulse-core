@@ -75,9 +75,9 @@ def _assert_locked_error(raw: str, *, tool_name: str) -> None:
         "error": "spec_locked",
         "code": "spec_locked",
         "message": (
-            "Spec is locked because validation passed. Move the spec back to "
-            "draft or approved to edit (validation will be cleared, history "
-            "preserved)."
+            "Spec is locked because validation passed. Move the spec to draft "
+            "to open a new edition (Current validation will be cleared; history "
+            "is preserved)."
         ),
         "details": {
             "spec_id": "spec-locked",
@@ -350,7 +350,9 @@ async def test_locked_spec_write_variants_share_one_canonical_envelope(
 
 
 @pytest.mark.asyncio
-async def test_safe_spec_update_normalizes_locked_error_unless_fallback_requests_it() -> None:
+async def test_safe_spec_update_normalizes_locked_error_unless_fallback_requests_it() -> (
+    None
+):
     class _LockedService:
         async def update_spec(self, *args: Any, **kwargs: Any) -> Any:
             del args, kwargs
@@ -408,9 +410,7 @@ async def test_update_spec_lineage_failure_uses_typed_mcp_envelope(
     assert json.loads(raw) == {
         "error": "spec_ideation_not_done",
         "code": "spec_ideation_not_done",
-        "message": (
-            "A Spec can only be created from an ideation in status 'done'."
-        ),
+        "message": ("A Spec can only be created from an ideation in status 'done'."),
         "facts": {
             "ideation_id": "idea-draft",
             "ideation_status": "draft",

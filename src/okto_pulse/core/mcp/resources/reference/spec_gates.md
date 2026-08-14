@@ -343,6 +343,15 @@ evidence and do not define the canonical five-metric gate.
 - `okto_pulse_list_spec_validations(board_id, spec_id)` — returns Current and Previous results by lifecycle edition; legacy SQL `NULL` editions are history-only under Previous.
 - `okto_pulse_move_spec(board_id, spec_id, status="draft")` — the single-hop reopen path. It starts a new edition, clears `current_validation_id`, and preserves earlier results under Previous.
 
+Current Spec Validation is owned by this human validation lifecycle. It stays
+Current through same-edition moves, including `validated -> in_progress ->
+done` and `validated -> approved`, and through technical version changes.
+Code Investigation receipts, Code Evidence links/dispositions/currentness,
+and traceability waiver events update their own projections but never clear or
+supersede the Spec Validation pointer. Only entering `draft` from a non-Draft
+state opens a new edition and clears Current; an explicit successor validation
+submission replaces Current within an edition.
+
 ## Curated Spec Checklist Gate — `/specify/v1`
 
 Every board resolves one versioned binding for target `spec`, phase

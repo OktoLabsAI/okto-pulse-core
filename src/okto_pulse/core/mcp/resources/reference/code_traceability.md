@@ -149,8 +149,9 @@ stable Functional Requirement (FR), Technical Requirement (TR), Acceptance
 Criterion (AC), Business Rule (BR), Decision, API Contract, Integration
 Requirement (IR), Observability Requirement (OR), or Test Scenario they
 support. Links pin the source Refinement version, Evidence digest, and Spec
-version. Link changes bump the Spec version and invalidate prior validation
-evidence.
+version. Link changes bump the technical Spec version and can stale
+traceability-owned fences or projections. They never clear or supersede the
+Current human Spec Validation for the lifecycle edition.
 
 Each successful link or disposition increments the technical Spec `version`.
 Use the returned `spec_version` as the next `expected_spec_version`, or refetch
@@ -409,6 +410,14 @@ coverage. It does not admit an incomplete bounded projection or disable a
 traceability/currentness control that applies independently. Agents can read
 this flag from Spec context but must resolve coverage rather than author the
 skip.
+
+Code Traceability and Spec Validation have independent lifecycles. Submitting
+or revoking an Investigation receipt; linking, unlinking, dispositioning,
+superseding, or revoking Evidence; and creating or clearing a waiver refresh
+traceability projections and audit activity only. None of those events clears
+`current_validation_id` or makes the human Spec Validation Previous. Current
+persists through `validated -> in_progress -> done`; only a new Draft edition
+clears it, while an explicit successor validation submission replaces it.
 
 Pulse never reconstructs omitted source facts. Without persisted Technical
 Evidence and Technical Anchors, downstream humans and agents cannot reliably

@@ -14,31 +14,15 @@ from okto_pulse.core.runtime_context import (
 
 @dataclass(frozen=True, slots=True)
 class CodeTraceabilityEventEffectPlan:
-    """Bounded effects derived only from an event type."""
+    """Bounded traceability-owned effects derived only from an event type.
+
+    Spec Validation is lifecycle-owned.  Technical traceability events may
+    refresh their own projections and activity, but they have no authority to
+    clear or supersede the current human validation result.
+    """
 
     invalidate_read_models: bool = True
     record_activity: bool = True
-    invalidate_spec_validation: bool = False
-
-
-_SPEC_VALIDATION_INVALIDATION_EVENTS = frozenset(
-    {
-        # Receipt/evidence currentness can invalidate an already-linked claim
-        # even though the link row itself did not change.  The edition adapter
-        # resolves affected Specs from receipt/evidence IDs.
-        "code_investigation.receipt_submitted",
-        "code_investigation.receipt_revoked",
-        "code_evidence.superseded",
-        "code_evidence.revoked",
-        "code_evidence.linked",
-        "code_evidence.unlinked",
-        "code_evidence.disposition_changed",
-        # Waivers change gate semantics.  The adapter uses subject_type/id to
-        # invalidate only the relevant Spec/Card validation projections.
-        "code_traceability.waiver_created",
-        "code_traceability.waiver_cleared",
-    }
-)
 
 
 def code_traceability_event_effect_plan(
@@ -48,11 +32,7 @@ def code_traceability_event_effect_plan(
 
     if event_type not in CODE_TRACEABILITY_EVENT_TYPES:
         raise ValueError("code_traceability_event_type_invalid")
-    return CodeTraceabilityEventEffectPlan(
-        invalidate_spec_validation=(
-            event_type in _SPEC_VALIDATION_INVALIDATION_EVENTS
-        )
-    )
+    return CodeTraceabilityEventEffectPlan()
 
 
 @runtime_checkable
@@ -81,8 +61,7 @@ def register_code_traceability_event_effects_port(
     register_runtime_value(_RUNTIME_KEY, port)
 
 
-def get_code_traceability_event_effects_port(
-) -> CodeTraceabilityEventEffectsPort:
+def get_code_traceability_event_effects_port() -> CodeTraceabilityEventEffectsPort:
     port = resolve_runtime_value(_RUNTIME_KEY)
     if port is None:
         raise CodeTraceabilityEventEffectsProviderMissing()
