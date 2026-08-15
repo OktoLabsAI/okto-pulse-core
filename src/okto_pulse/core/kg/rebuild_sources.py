@@ -70,6 +70,52 @@ REBUILD_DIRNAME = "rebuild"
 MANIFEST_DIRNAME = "manifests"
 MANIFEST_REF_PREFIX = "rebuild_manifest_"
 
+_LEGACY_PREDIGEST_V3_MANIFEST_KEYS = frozenset(
+    {
+        "board_id",
+        "canonical_source_count",
+        "created_at",
+        "has_non_deterministic_inputs",
+        "legacy_unknown",
+        "legacy_unknown_count",
+        "manifest_ref",
+        "manifest_schema_version",
+        "preflight_hash",
+        "skipped_by_maturity",
+        "skipped_by_maturity_count",
+        "skipped_cancelled_count",
+        "skipped_expired_working",
+        "skipped_expired_working_count",
+        "source_set_hash",
+        "sources",
+        "working_source_count",
+        "working_sources",
+    }
+)
+_LEGACY_PREDIGEST_V3_ROW_KEYS = frozenset(
+    {
+        "artifact_type",
+        "content_hash",
+        "created_at",
+        "disposition",
+        "expires_at",
+        "graph_layer",
+        "id",
+        "maturity_status",
+        "reason_code",
+        "source_artifact_status",
+        "source_ref",
+        "source_version",
+    }
+)
+_LEGACY_PREDIGEST_V3_PARTITIONS = (
+    "sources",
+    "working_sources",
+    "skipped_by_maturity",
+    "skipped_expired_working",
+    "legacy_unknown",
+)
+
 
 class RebuildSourceManifestVerificationError(RuntimeError):
     """Base error for fail-closed recovery manifest loading."""
@@ -387,6 +433,131 @@ def _manifest_payload_digest(payload: Mapping[str, Any]) -> str:
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _canonical_json_snapshot(payload: object, *, code: str) -> tuple[Any, bytes]:
+    """Deep-copy one JSON value and return its canonical encoded form."""
+
+    try:
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        return json.loads(encoded), encoded
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RebuildSourceManifestIntegrityError(code) from exc
+
+
+def _require_sha256(value: object, *, code: str) -> str:
+    if (
+        type(value) is not str
+        or len(value) != 64
+        or any(character not in _PREFLIGHT_HASH_PATTERN for character in value)
+    ):
+        raise RebuildSourceManifestIntegrityError(code)
+    return value
+
+
+def _legacy_predigest_v3_cognitive_digest(
+    value: object,
+) -> dict[str, Any]:
+    """Validate the exact optional cognitive hash member of a v3 source set."""
+
+    if type(value) is not dict:
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid"
+        )
+    if not value:
+        return {}
+    if set(value) != {"count", "digest"}:
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid"
+        )
+    count = value.get("count")
+    if type(count) is not int or count <= 0:
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid"
+        )
+    digest = _require_sha256(
+        value.get("digest"),
+        code="rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid",
+    )
+    return {"count": count, "digest": digest}
+
+
+def _legacy_predigest_v3_row(payload: object) -> RebuildSourceRow:
+    if type(payload) is not dict or set(payload) != _LEGACY_PREDIGEST_V3_ROW_KEYS:
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_row_shape_invalid"
+        )
+    string_fields = _LEGACY_PREDIGEST_V3_ROW_KEYS - {"expires_at"}
+    if any(type(payload.get(field)) is not str for field in string_fields):
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_row_type_invalid"
+        )
+    expires_at = payload.get("expires_at")
+    if expires_at is not None and type(expires_at) is not str:
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_row_type_invalid"
+        )
+    required_nonempty = {
+        "artifact_type",
+        "content_hash",
+        "created_at",
+        "disposition",
+        "graph_layer",
+        "id",
+        "maturity_status",
+        "source_ref",
+        "source_version",
+    }
+    if any(not payload[field] for field in required_nonempty):
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_row_value_invalid"
+        )
+    try:
+        datetime.fromisoformat(payload["created_at"])
+        if expires_at is not None:
+            datetime.fromisoformat(expires_at)
+    except ValueError as exc:
+        raise RebuildSourceManifestIntegrityError(
+            "rebuild_source_manifest_legacy_predigest_row_timestamp_invalid"
+        ) from exc
+    return RebuildSourceRow(**payload)
+
+
+def _legacy_predigest_v3_payload(
+    manifest: RebuildSourceManifest,
+) -> dict[str, Any]:
+    """Serialize exactly as the pre-envelope v3 writer did."""
+
+    return {
+        "manifest_ref": manifest.manifest_ref,
+        "board_id": manifest.board_id,
+        "source_set_hash": manifest.source_set_hash,
+        "preflight_hash": manifest.preflight_hash,
+        "sources": [source.to_dict() for source in manifest.sources],
+        "working_sources": [source.to_dict() for source in manifest.working_sources],
+        "skipped_by_maturity": [
+            source.to_dict() for source in manifest.skipped_by_maturity
+        ],
+        "skipped_expired_working": [
+            source.to_dict() for source in manifest.skipped_expired_working
+        ],
+        "legacy_unknown": [source.to_dict() for source in manifest.legacy_unknown],
+        "skipped_cancelled_count": manifest.skipped_cancelled_count,
+        "has_non_deterministic_inputs": manifest.has_non_deterministic_inputs,
+        "created_at": manifest.created_at,
+        "manifest_schema_version": manifest.manifest_schema_version,
+        "canonical_source_count": len(manifest.sources),
+        "working_source_count": len(manifest.working_sources),
+        "skipped_by_maturity_count": len(manifest.skipped_by_maturity),
+        "skipped_expired_working_count": len(manifest.skipped_expired_working),
+        "legacy_unknown_count": len(manifest.legacy_unknown),
+    }
 
 
 # --- Counter (OR or_2d295e26 / or_01279a1c) -----------------------------------
@@ -1294,6 +1465,182 @@ class KGRebuildSourceManifest:
         ):
             raise RebuildSourceManifestIntegrityError(
                 "rebuild_source_manifest_integrity_invalid"
+            )
+        return manifest
+
+    def load_verified_legacy_predigest_v3(
+        self,
+        manifest_ref: str,
+        *,
+        expected_board_id: str,
+        expected_preflight_hash: str,
+        expected_canonical_payload_sha256: str,
+        cognitive_digest: dict[str, Any],
+    ) -> RebuildSourceManifest:
+        """Verify the exact v3 serializer emitted before envelope digests.
+
+        This is a recovery-only compatibility seam.  It deliberately does not
+        relax :meth:`load_verified`: current v3 manifests must still carry
+        ``payload_digest``.  The caller must bind the canonical JSON snapshot
+        it inspected and supply the durable cognitive digest from the original
+        manifest cut; both are required to reproduce ``source_set_hash``.
+        """
+
+        try:
+            validate_manifest_ref(manifest_ref)
+            validate_preflight_hash(expected_preflight_hash)
+        except ValueError as exc:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_identity_invalid"
+            ) from exc
+        if type(expected_board_id) is not str or not expected_board_id:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_identity_invalid"
+            )
+        expected_canonical_payload_sha256 = _require_sha256(
+            expected_canonical_payload_sha256,
+            code=("rebuild_source_manifest_legacy_predigest_canonical_digest_invalid"),
+        )
+        normalized_cognitive_digest = _legacy_predigest_v3_cognitive_digest(
+            cognitive_digest
+        )
+        key = self._manifest_key(manifest_ref)
+        try:
+            exists = self.artifact_store.exists(key)
+        except Exception as exc:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_storage_unverifiable"
+            ) from exc
+        if not exists:
+            raise RebuildSourceManifestNotFoundError(
+                "rebuild_source_manifest_legacy_predigest_not_found"
+            )
+        try:
+            raw_payload = self.artifact_store.read_json(key)
+        except Exception as exc:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_storage_unverifiable"
+            ) from exc
+        payload, canonical_payload = _canonical_json_snapshot(
+            raw_payload,
+            code="rebuild_source_manifest_legacy_predigest_payload_invalid",
+        )
+        if type(payload) is not dict or set(payload) != (
+            _LEGACY_PREDIGEST_V3_MANIFEST_KEYS
+        ):
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_shape_invalid"
+            )
+        if not secrets.compare_digest(
+            hashlib.sha256(canonical_payload).hexdigest(),
+            expected_canonical_payload_sha256,
+        ):
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_canonical_digest_mismatch"
+            )
+        if (
+            type(payload.get("manifest_ref")) is not str
+            or payload["manifest_ref"] != manifest_ref
+            or type(payload.get("board_id")) is not str
+            or payload["board_id"] != expected_board_id
+            or type(payload.get("preflight_hash")) is not str
+            or payload["preflight_hash"] != expected_preflight_hash
+            or type(payload.get("manifest_schema_version")) is not int
+            or payload["manifest_schema_version"] != 3
+            or type(payload.get("created_at")) is not str
+            or type(payload.get("has_non_deterministic_inputs")) is not bool
+            or type(payload.get("skipped_cancelled_count")) is not int
+            or payload["skipped_cancelled_count"] < 0
+        ):
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_identity_invalid"
+            )
+        _require_sha256(
+            payload.get("source_set_hash"),
+            code="rebuild_source_manifest_legacy_predigest_source_hash_invalid",
+        )
+        try:
+            created_at = datetime.fromisoformat(payload["created_at"])
+        except ValueError as exc:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_timestamp_invalid"
+            ) from exc
+        if created_at.tzinfo is None:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_timestamp_invalid"
+            )
+
+        partitions: dict[str, tuple[RebuildSourceRow, ...]] = {}
+        for partition in _LEGACY_PREDIGEST_V3_PARTITIONS:
+            raw_rows = payload.get(partition)
+            if type(raw_rows) is not list:
+                raise RebuildSourceManifestIntegrityError(
+                    "rebuild_source_manifest_legacy_predigest_partition_invalid"
+                )
+            partitions[partition] = tuple(
+                _legacy_predigest_v3_row(row) for row in raw_rows
+            )
+        count_bindings = {
+            "canonical_source_count": "sources",
+            "working_source_count": "working_sources",
+            "skipped_by_maturity_count": "skipped_by_maturity",
+            "skipped_expired_working_count": "skipped_expired_working",
+            "legacy_unknown_count": "legacy_unknown",
+        }
+        for count_field, partition in count_bindings.items():
+            if type(payload.get(count_field)) is not int or payload[count_field] != len(
+                partitions[partition]
+            ):
+                raise RebuildSourceManifestIntegrityError(
+                    "rebuild_source_manifest_legacy_predigest_count_invalid"
+                )
+        if payload["has_non_deterministic_inputs"] != bool(
+            partitions["legacy_unknown"]
+        ):
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_nondeterministic_invalid"
+            )
+
+        manifest = RebuildSourceManifest(
+            manifest_ref=payload["manifest_ref"],
+            board_id=payload["board_id"],
+            source_set_hash=payload["source_set_hash"],
+            preflight_hash=payload["preflight_hash"],
+            sources=partitions["sources"],
+            skipped_cancelled_count=payload["skipped_cancelled_count"],
+            has_non_deterministic_inputs=payload["has_non_deterministic_inputs"],
+            created_at=payload["created_at"],
+            manifest_schema_version=payload["manifest_schema_version"],
+            working_sources=partitions["working_sources"],
+            skipped_by_maturity=partitions["skipped_by_maturity"],
+            skipped_expired_working=partitions["skipped_expired_working"],
+            legacy_unknown=partitions["legacy_unknown"],
+        )
+        reserialized, canonical_reserialized = _canonical_json_snapshot(
+            _legacy_predigest_v3_payload(manifest),
+            code="rebuild_source_manifest_legacy_predigest_reserialization_invalid",
+        )
+        if reserialized != payload or canonical_reserialized != canonical_payload:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_reserialization_mismatch"
+            )
+        reconstructed = RebuildSourceSet(
+            board_id=manifest.board_id,
+            sources=manifest.sources,
+            skipped_cancelled_count=manifest.skipped_cancelled_count,
+            has_non_deterministic_inputs=manifest.has_non_deterministic_inputs,
+            generated_at=manifest.created_at,
+            working_sources=manifest.working_sources,
+            skipped_by_maturity=manifest.skipped_by_maturity,
+            skipped_expired_working=manifest.skipped_expired_working,
+            legacy_unknown=manifest.legacy_unknown,
+            cognitive_durable_digest=normalized_cognitive_digest,
+        )
+        if not secrets.compare_digest(
+            _compose_source_set_hash(reconstructed), manifest.source_set_hash
+        ):
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_legacy_predigest_source_hash_mismatch"
             )
         return manifest
 

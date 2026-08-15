@@ -6,6 +6,7 @@ OR or_2d295e26 + or_f9b83da6.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -769,6 +770,330 @@ def test_manifest_load_verified_round_trip_and_typed_missing(tmp_path: Path):
             expected_board_id="b1",
             expected_preflight_hash="b" * 64,
             cognitive_digest=source_set.cognitive_durable_digest,
+        )
+
+
+def _legacy_predigest_v3_fixture(tmp_path: Path):
+    from okto_pulse.core.kg.rebuild_sources import (
+        RebuildSourceRow,
+        RebuildSourceSet,
+        _compose_source_set_hash,
+    )
+
+    board_id = "15877207-c147-4805-96d7-d53a625571df"
+    manifest_ref = "rebuild_manifest_fGjaboUTQf9nPdfjb-f3dQ"
+    preflight_hash = "5a4931caab0f43b2b451b297fb8385b4730606e4e753fee170ed539c54dd48f4"
+    created_at = "2026-08-15T02:32:44.964484+00:00"
+    cognitive_digest = {
+        "count": 219,
+        "digest": "1f037b917a05d01e9c38ee152d4fe60e6ac08cb569637103a5c7f4052debe04d",
+    }
+    canonical = RebuildSourceRow(
+        artifact_type="spec",
+        source_ref="spec:14b7ee81-1a40-5957-bbda-0f5a223bdf6a",
+        source_version="74",
+        content_hash="1" * 64,
+        created_at="2026-08-14T23:20:00+00:00",
+        id="14b7ee81-1a40-5957-bbda-0f5a223bdf6a",
+        source_artifact_status="done",
+    )
+    legacy = RebuildSourceRow(
+        artifact_type="refinement",
+        source_ref="refinement:legacy",
+        source_version="1",
+        content_hash="2" * 64,
+        created_at="2026-08-14T23:21:00+00:00",
+        id="legacy-refinement",
+        source_artifact_status="unknown",
+        graph_layer="none",
+        maturity_status="legacy_unknown",
+        disposition="legacy_unknown",
+        reason_code="legacy_status_unknown",
+    )
+    source_set = RebuildSourceSet(
+        board_id=board_id,
+        sources=(canonical,),
+        skipped_cancelled_count=3,
+        has_non_deterministic_inputs=True,
+        generated_at=created_at,
+        legacy_unknown=(legacy,),
+        cognitive_durable_digest=cognitive_digest,
+    )
+    payload = {
+        "manifest_ref": manifest_ref,
+        "board_id": board_id,
+        "source_set_hash": _compose_source_set_hash(source_set),
+        "preflight_hash": preflight_hash,
+        "sources": [canonical.to_dict()],
+        "working_sources": [],
+        "skipped_by_maturity": [],
+        "skipped_expired_working": [],
+        "legacy_unknown": [legacy.to_dict()],
+        "skipped_cancelled_count": 3,
+        "has_non_deterministic_inputs": True,
+        "created_at": created_at,
+        "manifest_schema_version": 3,
+        "canonical_source_count": 1,
+        "working_source_count": 0,
+        "skipped_by_maturity_count": 0,
+        "skipped_expired_working_count": 0,
+        "legacy_unknown_count": 1,
+    }
+    canonical_payload = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    canonical_sha256 = hashlib.sha256(canonical_payload).hexdigest()
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    store.artifact_store.write_json_atomic(store._manifest_key(manifest_ref), payload)
+    return (
+        store,
+        manifest_ref,
+        board_id,
+        preflight_hash,
+        payload,
+        cognitive_digest,
+        canonical_sha256,
+    )
+
+
+def test_load_verified_legacy_predigest_v3_accepts_real_like_fixture(
+    tmp_path: Path,
+) -> None:
+    (
+        store,
+        manifest_ref,
+        board_id,
+        preflight_hash,
+        _payload,
+        cognitive_digest,
+        canonical_sha256,
+    ) = _legacy_predigest_v3_fixture(tmp_path)
+
+    manifest = store.load_verified_legacy_predigest_v3(
+        manifest_ref,
+        expected_board_id=board_id,
+        expected_preflight_hash=preflight_hash,
+        expected_canonical_payload_sha256=canonical_sha256,
+        cognitive_digest=cognitive_digest,
+    )
+
+    assert manifest.manifest_schema_version == 3
+    assert manifest.payload_digest == ""
+    with pytest.raises(
+        RebuildSourceManifestIntegrityError,
+        match="rebuild_source_manifest_integrity_invalid",
+    ):
+        store.load_verified(
+            manifest_ref,
+            expected_board_id=board_id,
+            expected_preflight_hash=preflight_hash,
+            cognitive_digest=cognitive_digest,
+        )
+
+
+@pytest.mark.parametrize(
+    ("cognitive_digest", "code"),
+    (
+        (None, "legacy_predigest_cognitive_digest_invalid"),
+        ({"count": 219}, "legacy_predigest_cognitive_digest_invalid"),
+        (
+            {"count": 219, "digest": "0" * 64},
+            "legacy_predigest_source_hash_mismatch",
+        ),
+    ),
+)
+def test_load_verified_legacy_predigest_v3_requires_exact_cognitive_digest(
+    tmp_path: Path,
+    cognitive_digest: object,
+    code: str,
+) -> None:
+    (
+        store,
+        manifest_ref,
+        board_id,
+        preflight_hash,
+        _payload,
+        _expected_cognitive_digest,
+        canonical_sha256,
+    ) = _legacy_predigest_v3_fixture(tmp_path)
+
+    with pytest.raises(RebuildSourceManifestIntegrityError, match=code):
+        store.load_verified_legacy_predigest_v3(
+            manifest_ref,
+            expected_board_id=board_id,
+            expected_preflight_hash=preflight_hash,
+            expected_canonical_payload_sha256=canonical_sha256,
+            cognitive_digest=cognitive_digest,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "code"),
+    (
+        (
+            lambda payload: payload["sources"][0].__setitem__("content_hash", "3" * 64),
+            "legacy_predigest_source_hash_mismatch",
+        ),
+        (
+            lambda payload: payload.__setitem__("unexpected", True),
+            "legacy_predigest_shape_invalid",
+        ),
+        (
+            lambda payload: payload.__setitem__("canonical_source_count", True),
+            "legacy_predigest_count_invalid",
+        ),
+        (
+            lambda payload: payload["sources"][0].__setitem__("source_version", 74),
+            "legacy_predigest_row_type_invalid",
+        ),
+    ),
+    ids=("row-hash", "extra-key", "bool-count", "row-type"),
+)
+def test_load_verified_legacy_predigest_v3_rejects_tamper_and_noncanonical_shape(
+    tmp_path: Path,
+    mutate,
+    code: str,
+) -> None:
+    (
+        store,
+        manifest_ref,
+        board_id,
+        preflight_hash,
+        payload,
+        cognitive_digest,
+        _canonical_sha256,
+    ) = _legacy_predigest_v3_fixture(tmp_path)
+    mutated = json.loads(json.dumps(payload))
+    mutate(mutated)
+    canonical_sha256 = hashlib.sha256(
+        json.dumps(
+            mutated,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    store.artifact_store.write_json_atomic(store._manifest_key(manifest_ref), mutated)
+
+    with pytest.raises(RebuildSourceManifestIntegrityError, match=code):
+        store.load_verified_legacy_predigest_v3(
+            manifest_ref,
+            expected_board_id=board_id,
+            expected_preflight_hash=preflight_hash,
+            expected_canonical_payload_sha256=canonical_sha256,
+            cognitive_digest=cognitive_digest,
+        )
+
+
+def test_load_verified_legacy_predigest_v3_rejects_wrong_canonical_binding(
+    tmp_path: Path,
+) -> None:
+    (
+        store,
+        manifest_ref,
+        board_id,
+        preflight_hash,
+        _payload,
+        cognitive_digest,
+        _canonical_sha256,
+    ) = _legacy_predigest_v3_fixture(tmp_path)
+
+    with pytest.raises(
+        RebuildSourceManifestIntegrityError,
+        match="legacy_predigest_canonical_digest_mismatch",
+    ):
+        store.load_verified_legacy_predigest_v3(
+            manifest_ref,
+            expected_board_id=board_id,
+            expected_preflight_hash=preflight_hash,
+            expected_canonical_payload_sha256="0" * 64,
+            cognitive_digest=cognitive_digest,
+        )
+
+
+def test_load_verified_legacy_predigest_v3_has_typed_missing_error(
+    tmp_path: Path,
+) -> None:
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+
+    with pytest.raises(
+        RebuildSourceManifestNotFoundError,
+        match="legacy_predigest_not_found",
+    ):
+        store.load_verified_legacy_predigest_v3(
+            "rebuild_manifest_missing",
+            expected_board_id="b1",
+            expected_preflight_hash="b" * 64,
+            expected_canonical_payload_sha256="c" * 64,
+            cognitive_digest={},
+        )
+
+
+@pytest.mark.parametrize(
+    ("board_id", "preflight_hash"),
+    (("other-board", None), (None, "0" * 64)),
+    ids=("board", "preflight"),
+)
+def test_load_verified_legacy_predigest_v3_rejects_wrong_identity(
+    tmp_path: Path,
+    board_id: str | None,
+    preflight_hash: str | None,
+) -> None:
+    (
+        store,
+        manifest_ref,
+        expected_board_id,
+        expected_preflight_hash,
+        _payload,
+        cognitive_digest,
+        canonical_sha256,
+    ) = _legacy_predigest_v3_fixture(tmp_path)
+
+    with pytest.raises(
+        RebuildSourceManifestIntegrityError,
+        match="legacy_predigest_identity_invalid",
+    ):
+        store.load_verified_legacy_predigest_v3(
+            manifest_ref,
+            expected_board_id=board_id or expected_board_id,
+            expected_preflight_hash=preflight_hash or expected_preflight_hash,
+            expected_canonical_payload_sha256=canonical_sha256,
+            cognitive_digest=cognitive_digest,
+        )
+
+
+def test_load_verified_legacy_predigest_v3_rejects_current_manifest(
+    tmp_path: Path,
+) -> None:
+    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
+        board_id="b1"
+    )
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    manifest = store.build(source_set=source_set, preflight_hash="b" * 64)
+    payload = store.artifact_store.read_json(store._manifest_key(manifest.manifest_ref))
+    assert payload is not None
+    canonical_sha256 = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(
+        RebuildSourceManifestIntegrityError,
+        match="legacy_predigest_shape_invalid",
+    ):
+        store.load_verified_legacy_predigest_v3(
+            manifest.manifest_ref,
+            expected_board_id="b1",
+            expected_preflight_hash="b" * 64,
+            expected_canonical_payload_sha256=canonical_sha256,
+            cognitive_digest={},
         )
 
 
