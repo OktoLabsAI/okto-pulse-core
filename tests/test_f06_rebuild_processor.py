@@ -1058,6 +1058,85 @@ def test_f06_legacy_queue_only_retry_reuses_same_durable_intent() -> None:
     assert effects.compensation_intent == intent
 
 
+def test_f06_legacy_queue_only_retry_crash_persists_resumable_intent() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    failed_compensation = RebuildEffectReceipt(
+        effect_key=f"{command.run_id}:compensate",
+        effect="compensate",
+        ok=False,
+        code="transient_queue_failure",
+    )
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.COMPENSATION_FAILED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_failure_detail=(
+            "legacy_blocked_after_enqueue_predecessor_already_restored"
+        ),
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts={
+            **_legacy_blocked_receipts(command),
+            intent.effect_key: intent,
+            failed_compensation.effect_key: failed_compensation,
+        },
+    )
+    original_save = effects.save_checkpoint
+    crashed = False
+
+    def crash_after_retry_intent(checkpoint: RebuildCheckpoint) -> None:
+        nonlocal crashed
+        original_save(checkpoint)
+        if checkpoint.state is RebuildState.COMPENSATING and not crashed:
+            crashed = True
+            raise SimulatedProcessCrash("crash after retry intent")
+
+    effects.save_checkpoint = crash_after_retry_intent  # type: ignore[method-assign]
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    )
+
+    with pytest.raises(SimulatedProcessCrash, match="crash after retry intent"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+
+    durable = effects.checkpoints[command.run_id]
+    assert durable.state is RebuildState.COMPENSATING
+    assert f"{command.run_id}:compensate" not in durable.receipts
+    assert durable.receipts[intent.effect_key] == intent
+
+    effects.save_checkpoint = original_save  # type: ignore[method-assign]
+    resumed = processor.reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+
+    assert resumed.state is RebuildState.FAILED
+    assert resumed.code is RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+    validate_legacy_manual_restore_queue_only_outcome(
+        resumed,
+        command=command,
+        intent_receipt=intent,
+    )
+
+
 def test_f06_legacy_queue_only_first_admission_rejects_compensation_metadata() -> None:
     clock = FakeClock()
     effects = FakeEffects(clock, [])

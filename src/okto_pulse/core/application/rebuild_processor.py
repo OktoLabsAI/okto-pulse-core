@@ -804,6 +804,12 @@ class RebuildProcessor:
 
         receipts = dict(checkpoint.receipts)
         receipts[intent_receipt.effect_key] = intent_receipt
+        # A failed compensation receipt describes the completed prior attempt,
+        # not the new durable COMPENSATING intent.  Remove it before saving the
+        # retry phase so a crash at this boundary remains a valid, resumable
+        # COMPENSATING-without-receipt state.  The immutable technical audit of
+        # the earlier failure is retained by the effects adapter.
+        receipts.pop(f"{command.run_id}:compensate", None)
         checkpoint = replace(
             checkpoint,
             state=RebuildState.COMPENSATING,
