@@ -799,7 +799,7 @@ class RebuildProcessor:
                 promotion_allowed=False,
                 receipts=tuple(checkpoint.receipts.values()),
                 compensation_actions=expected_actions,
-                detail="legacy_manual_restore_queue_only_reconciled",
+                detail="legacy_blocked_after_enqueue_predecessor_already_restored",
             )
 
         receipts = dict(checkpoint.receipts)
@@ -1586,7 +1586,7 @@ def validate_legacy_manual_restore_queue_only_outcome(
         or outcome.code is not RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
         or outcome.promotion_allowed
         or outcome.compensation_actions != (CompensationAction.CANCEL_ENQUEUED_SOURCES,)
-        or outcome.detail != "legacy_manual_restore_queue_only_reconciled"
+        or outcome.detail != "legacy_blocked_after_enqueue_predecessor_already_restored"
         or len(outcome.receipts) != len(expected_keys)
         or set(receipts) != expected_keys
         or receipts.get(canonical_intent.effect_key) != canonical_intent

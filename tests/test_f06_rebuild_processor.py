@@ -17,6 +17,7 @@ from okto_pulse.core.application.rebuild_processor import (
     RebuildPlan,
     RebuildProcessor,
     RebuildState,
+    validate_legacy_manual_restore_queue_only_outcome,
 )
 
 
@@ -866,6 +867,7 @@ def test_f06_fail_existing_compensates_only_the_persisted_attempt(
 
     assert outcome.code is RebuildOutcomeCode.MANIFEST_DRIFT
     assert outcome.state is RebuildState.FAILED
+    assert outcome.detail == "manifest unavailable during authorized resume"
     assert effects.calls == ["compensate", "audit:manifest_drift"]
     assert effects.compensation_failed_state is state
     assert effects.compensation_actions == expected_actions
@@ -920,6 +922,12 @@ def test_f06_legacy_manually_restored_blocked_enqueue_cancels_queue_only() -> No
 
     assert outcome.state is RebuildState.FAILED
     assert outcome.code is RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+    assert outcome.detail == "legacy_blocked_after_enqueue_predecessor_already_restored"
+    validate_legacy_manual_restore_queue_only_outcome(
+        outcome,
+        command=command,
+        intent_receipt=intent,
+    )
     assert outcome.compensation_actions == (CompensationAction.CANCEL_ENQUEUED_SOURCES,)
     assert effects.compensation_failed_state is RebuildState.ENQUEUED
     assert effects.compensation_intent == intent
@@ -1150,6 +1158,7 @@ def test_f06_legacy_queue_only_terminal_replay_requires_exact_receipt() -> None:
         recovery_reason="adopt governed manual restore and fence legacy queue",
     )
     assert outcome.code is RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+    assert outcome.detail == "legacy_blocked_after_enqueue_predecessor_already_restored"
     assert effects.calls == ["audit:legacy_manual_restore_queue_only_reconciled"]
 
 

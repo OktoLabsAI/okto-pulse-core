@@ -367,7 +367,7 @@ def _legacy_queue_only_outcome(
         promotion_allowed=False,
         compensation_actions=(F06CompensationAction.CANCEL_ENQUEUED_SOURCES,),
         receipts=receipts,
-        detail="legacy_manual_restore_queue_only_reconciled",
+        detail="legacy_blocked_after_enqueue_predecessor_already_restored",
     )
 
 
