@@ -505,7 +505,6 @@ def _legacy_predigest_v3_row(payload: object) -> RebuildSourceRow:
         )
     required_nonempty = {
         "artifact_type",
-        "content_hash",
         "created_at",
         "disposition",
         "graph_layer",

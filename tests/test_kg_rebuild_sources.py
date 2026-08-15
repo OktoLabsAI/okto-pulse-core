@@ -801,7 +801,7 @@ def _legacy_predigest_v3_fixture(tmp_path: Path):
         artifact_type="refinement",
         source_ref="refinement:legacy",
         source_version="1",
-        content_hash="2" * 64,
+        content_hash="",
         created_at="2026-08-14T23:21:00+00:00",
         id="legacy-refinement",
         source_artifact_status="unknown",
