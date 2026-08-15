@@ -49,15 +49,58 @@ _CARD_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset(
 DETERMINISTIC_SOURCE_ARTIFACT_TYPES = _DETERMINISTIC_SOURCE_ARTIFACT_TYPES
 CARD_SOURCE_ARTIFACT_TYPES = _CARD_SOURCE_ARTIFACT_TYPES
 
+# Only rebuild ingestion consumes this dependency rank. Ordinary event-driven
+# queue writes retain their existing priority/timestamp fairness. Values leave
+# gaps so future governed source kinds can be inserted without reordering the
+# established parent-before-child contract.
+_REBUILD_SOURCE_DEPENDENCY_RANK: dict[str, int] = {
+    "board": 0,
+    "story": 0,
+    "ideation": 10,
+    "refinement": 20,
+    "spec": 30,
+    "sprint": 40,
+    "task": 50,
+    "test": 50,
+    "bug": 50,
+    "card": 50,
+    "amendment_hotfix_revision": 60,
+    "code_investigation_receipt": 60,
+    "code_evidence": 70,
+    "implementation_target": 80,
+}
+REBUILD_SOURCE_DEPENDENCY_RANK = _REBUILD_SOURCE_DEPENDENCY_RANK
+
 
 def _queue_artifact_type(source_artifact_type: str) -> str:
-    return "card" if source_artifact_type in _CARD_SOURCE_ARTIFACT_TYPES else source_artifact_type
+    return (
+        "card"
+        if source_artifact_type in _CARD_SOURCE_ARTIFACT_TYPES
+        else source_artifact_type
+    )
 
 
 def queue_artifact_type(source_artifact_type: str) -> str:
     """Public facade for rebuild queue artifact-type mapping."""
 
     return _queue_artifact_type(source_artifact_type)
+
+
+def rebuild_source_order_key(source: Mapping[str, Any]) -> tuple[int, str, str]:
+    """Return a stable parent-before-child key for one rebuild source.
+
+    The key is intentionally not part of the normal queue priority contract.
+    Edition adapters use it only while assigning timestamps to rows created or
+    reset by one explicit rebuild batch.
+    """
+
+    artifact_type = str(source.get("artifact_type", ""))
+    artifact_id = str(source.get("id", ""))
+    return (
+        _REBUILD_SOURCE_DEPENDENCY_RANK.get(artifact_type, 100),
+        _queue_artifact_type(artifact_type),
+        artifact_id,
+    )
 
 
 def _expected_layers_from_sources(
@@ -67,7 +110,11 @@ def _expected_layers_from_sources(
 
     out: dict[str, int] = {}
     for row in sources or ():
-        layer = row.get("graph_layer") if hasattr(row, "get") else getattr(row, "graph_layer", None)
+        layer = (
+            row.get("graph_layer")
+            if hasattr(row, "get")
+            else getattr(row, "graph_layer", None)
+        )
         key = str(layer or "unclassified")
         out[key] = out.get(key, 0) + 1
     return out
@@ -84,7 +131,9 @@ def expected_layers_from_sources(
 __all__ = [
     "CARD_SOURCE_ARTIFACT_TYPES",
     "DETERMINISTIC_SOURCE_ARTIFACT_TYPES",
+    "REBUILD_SOURCE_DEPENDENCY_RANK",
     "expected_layers_from_sources",
+    "rebuild_source_order_key",
     "queue_artifact_type",
     "_CARD_SOURCE_ARTIFACT_TYPES",
     "_DETERMINISTIC_SOURCE_ARTIFACT_TYPES",

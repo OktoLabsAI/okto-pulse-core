@@ -28,15 +28,15 @@ Layout:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
@@ -438,8 +438,9 @@ class RebuildReportStore:
             artifact_id=report_id,
         )
 
-    def _new_report_id(self) -> str:
-        return f"{REPORT_REF_PREFIX}{uuid.uuid4().hex}"
+    def _report_id(self, *, board_id: str, run_id: str) -> str:
+        binding = f"{board_id}\x1f{run_id}".encode("utf-8")
+        return f"{REPORT_REF_PREFIX}{hashlib.sha256(binding).hexdigest()[:32]}"
 
     def persist(self, *, payload: RebuildReportPayload) -> ReportPersistResult:
         """Persist the report. Returns ``stored`` with a fresh report_ref
@@ -510,15 +511,37 @@ class RebuildReportStore:
 
         with self._lock:
             try:
-                report_id = self._new_report_id()
-                persisted_at = datetime.now(timezone.utc).isoformat()
-                record = {
-                    "report_id": report_id,
-                    "persisted_at": persisted_at,
-                    **persistable,
-                }
+                report_id = self._report_id(board_id=board_id, run_id=run_id)
                 report_key = self._report_key(board_id, report_id)
-                self.artifact_store.write_json_atomic(report_key, record)
+                existing = self.artifact_store.read_json(report_key)
+                replayed = existing is not None
+                if existing is not None:
+                    expected_existing = {
+                        key: value
+                        for key, value in existing.items()
+                        if key not in {"report_id", "persisted_at"}
+                    }
+                    expected_summary = dict(expected_existing.get("summary") or {})
+                    replay_summary = dict(persistable.get("summary") or {})
+                    for timestamp_field in ("started_at", "finished_at"):
+                        expected_summary.pop(timestamp_field, None)
+                        replay_summary.pop(timestamp_field, None)
+                    expected_existing["summary"] = expected_summary
+                    replay_payload = dict(persistable)
+                    replay_payload["summary"] = replay_summary
+                    if expected_existing != replay_payload:
+                        raise RuntimeError("rebuild_report_run_binding_conflict")
+                    persisted_at = str(existing.get("persisted_at") or "")
+                    if not persisted_at:
+                        raise RuntimeError("rebuild_report_persisted_at_missing")
+                else:
+                    persisted_at = datetime.now(timezone.utc).isoformat()
+                    record = {
+                        "report_id": report_id,
+                        "persisted_at": persisted_at,
+                        **persistable,
+                    }
+                    self.artifact_store.write_json_atomic(report_key, record)
                 report_ref = self.artifact_store.reference(report_key)
             except Exception as exc:
                 logger.error(
@@ -547,16 +570,17 @@ class RebuildReportStore:
                     detail=f"persist_exception={type(exc).__name__}",
                 )
 
-        _bump_persist(
-            board_id=board_id,
-            status=status,
-            outcome=ReportPersistOutcome.STORED.value,
-        )
-        _bump_report(
-            board_id=board_id,
-            status=status,
-            event=ReportEvent.CREATED.value,
-        )
+        if not replayed:
+            _bump_persist(
+                board_id=board_id,
+                status=status,
+                outcome=ReportPersistOutcome.STORED.value,
+            )
+            _bump_report(
+                board_id=board_id,
+                status=status,
+                event=ReportEvent.CREATED.value,
+            )
         return ReportPersistResult(
             outcome=ReportPersistOutcome.STORED.value,
             report_ref=report_ref,
@@ -564,7 +588,7 @@ class RebuildReportStore:
             board_id=board_id,
             run_id=run_id,
             persisted_at=persisted_at,
-            detail=None,
+            detail="already_stored" if replayed else None,
         )
 
     def load(self, report_ref: str) -> dict[str, Any] | None:
@@ -591,6 +615,30 @@ class RebuildReportStore:
             event=ReportEvent.OPENED.value,
         )
         return record
+
+    def inspect_for_run(self, *, board_id: str, run_id: str) -> dict[str, Any] | None:
+        """Read deterministic terminal-report evidence without usage effects.
+
+        Recovery admission uses this bounded probe to distinguish a rebuild
+        checkpoint that is still safe to compensate from a terminal phase that
+        may already have persisted a report.  The latter must be reconciled,
+        never rolled back merely because its source manifest later drifted.
+        """
+
+        report_id = self._report_id(board_id=board_id, run_id=run_id)
+        record = self.artifact_store.read_json(self._report_key(board_id, report_id))
+        if record is None:
+            return None
+        summary = record.get("summary")
+        if not isinstance(summary, Mapping) or any(
+            (
+                summary.get("board_id") != board_id,
+                summary.get("run_id") != run_id,
+                record.get("report_id") != report_id,
+            )
+        ):
+            raise RuntimeError("rebuild_report_run_binding_conflict")
+        return dict(record)
 
 
 # --- Terminal state guard ----------------------------------------------------

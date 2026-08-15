@@ -23224,13 +23224,15 @@ async def okto_pulse_kg_global_discovery_recovery_run(
 # KG REBUILD FAMILY (spec R2a 959115c0 — IMPL-3)
 #
 # Three MCP twins for the REST /kg/rebuild/{preflight,confirm,run} lane.
+# Preflight is diagnostic; online confirm/run fail closed and direct operators
+# to the local recovery-only one-shot executor.
 # Each tool:
 #   * authenticates + scopes to the board via _get_agent_ctx (same as tick)
 #   * calls the rebuild-scoped admission predicate from kg_rebuild.py
 #     (_refuse_rebuild_if_quarantined) — quarantined → refuse, recovery_needed → pass
-#   * delegates 100 % of business logic to the shared REST service objects
-#     (RebuildPreflightService / RebuildConfirmationStore / KGRebuildService)
-#   * resolves rebuild artifacts through the edition-composed artifact store
+#   * delegates diagnostic classification to RebuildPreflightService
+#   * never persists a manifest or issues/consumes a confirmation online
+#   * directs execution to the isolated local one-shot recovery process
 #   * serialises all results to JSON strings (MCP transport contract)
 #
 # Pattern: okto_pulse_kg_tick_run_now (lines 12457-12564) — twin structure,
@@ -23239,6 +23241,31 @@ async def okto_pulse_kg_global_discovery_recovery_run(
 
 _rebuild_logger = logging.getLogger("okto_pulse.mcp.rebuild")
 
+_RECOVERY_EXECUTION_REQUIRED = "recovery_execution_required"
+_RECOVERY_EXECUTOR_ACTION = "run_local_offline_kg_recovery_executor"
+_RECOVERY_EXECUTOR_REMEDIATION = (
+    "Stop Pulse/API/MCP and SDLC writers. Run the installed "
+    "okto-pulse-kg-recovery-only command in three stages: inspect the live "
+    "data home, rehearse against a physical isolated copy while writing a "
+    "rehearsal receipt, then within 2 hours execute against that exact live "
+    "home with the single-use receipt and reviewed install fingerprint. See "
+    "okto-pulse://reference/kg-health; never retry confirm/run online."
+)
+
+
+def _recovery_execution_required_payload() -> dict[str, str]:
+    return {
+        "error": _RECOVERY_EXECUTION_REQUIRED,
+        "outcome": _RECOVERY_EXECUTION_REQUIRED,
+        "reason": (
+            "Board KG rebuild is supported only by the local one-shot recovery "
+            "executor while Pulse and SDLC source writers are offline."
+        ),
+        "execution_mode": "recovery_only_offline",
+        "operator_action": _RECOVERY_EXECUTOR_ACTION,
+        "remediation": _RECOVERY_EXECUTOR_REMEDIATION,
+    }
+
 
 @mcp.tool()
 async def okto_pulse_kg_rebuild_preflight(
@@ -23246,12 +23273,12 @@ async def okto_pulse_kg_rebuild_preflight(
 ) -> str:
     """Run the KG rebuild preflight for a board. REST twin: POST
     /api/v1/kg/rebuild/preflight. Read-only check (TR13): enumerates real
-    sources via BoardSourceReader, classifies the KG health state and persists
-    the immutable manifest required by /confirm. Admission: quarantined graph
+    sources via BoardSourceReader and classifies the KG health state without
+    persisting a manifest. Admission: quarantined graph
     refuses; board recovery_needed admits; discovery-only redirects. Returns outcome, action_required,
-    base_state, eligible_source_count, preflight_hash, manifest_ref,
-    source_set_hash; pass manifest_ref + preflight_hash to
-    okto_pulse_kg_rebuild_confirm. Errors: rebuild_refused_quarantined.
+    base_state, eligible_source_count and preflight_hash; manifest_ref and
+    source_set_hash are null online. Do not call online confirm/run: stop Pulse and use the
+    governed local one-shot recovery executor. Errors: rebuild_refused_quarantined.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -23261,15 +23288,12 @@ async def okto_pulse_kg_rebuild_preflight(
         build_source_store as _build_source_store,
         refuse_rebuild_if_quarantined as _refuse_rebuild_if_quarantined,
     )
-    from okto_pulse.core.kg.rebuild_audit import (
-        require_rebuild_audit_artifact_store,
-    )
 
     # Admission gate + FR9 health probe — MCP-FU5 strangler: the single session
     # block is extracted into RebuildAdmissionGateUseCase over the MCP
     # UnitOfWork (admission helper injected so the use case stays Clean Core).
-    # The threadpool enumeration / RebuildPreflightService / manifest persistence
-    # below are UNCHANGED — no transactional-scope change.
+    # Threadpool enumeration + RebuildPreflightService remain read-only; the
+    # one-shot process owns manifest persistence after proving offline isolation.
     from okto_pulse.core.application.use_cases import (
         RebuildAdmissionGateCommand,
         RebuildAdmissionGateUseCase,
@@ -23280,10 +23304,7 @@ async def okto_pulse_kg_rebuild_preflight(
         RebuildPreflightService,
         RebuildSourceSummary,
     )
-    from okto_pulse.core.kg.rebuild_sources import (
-        KGRebuildSourceManifest,
-        RebuildSourceEnumerator,
-    )
+    from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -23362,32 +23383,21 @@ async def okto_pulse_kg_rebuild_preflight(
         )
         return json.dumps({"error": "preflight_service_failed", "detail": str(exc)})
 
-    try:
-        manifest_store = KGRebuildSourceManifest(
-            artifact_store=require_rebuild_audit_artifact_store()
-        )
-        manifest = await asyncio.to_thread(
-            manifest_store.build,
-            source_set=source_set,
-            preflight_hash=result.preflight_hash,
-        )
-    except Exception as exc:
-        _rebuild_logger.error(
-            "kg.rebuild.preflight.manifest_failed board=%s err=%s", board_id, exc
-        )
-        return json.dumps({"error": "preflight_manifest_failed", "detail": str(exc)})
-
     payload = result.to_dict()
-    payload["manifest_ref"] = manifest.manifest_ref
-    payload["source_set_hash"] = manifest.source_set_hash
-    payload.setdefault("outcome", "confirmation_required")
-    payload.setdefault("action_required", "call_okto_pulse_kg_rebuild_confirm")
+    payload["preflight_outcome"] = payload.get("outcome", result.outcome)
+    payload["outcome"] = "diagnostic_complete"
+    payload["manifest_ref"] = None
+    payload["source_set_hash"] = None
+    payload["action_required"] = _RECOVERY_EXECUTOR_ACTION
+    payload["execution_mode"] = "recovery_only_offline"
+    payload["operator_action"] = _RECOVERY_EXECUTOR_ACTION
+    payload["remediation"] = _RECOVERY_EXECUTOR_REMEDIATION
 
     _rebuild_logger.info(
         "kg.rebuild.preflight.done board=%s outcome=%s manifest_ref=%s",
         board_id,
         result.outcome,
-        manifest.manifest_ref,
+        None,
     )
     return json.dumps(payload, default=str)
 
@@ -23399,13 +23409,13 @@ async def okto_pulse_kg_rebuild_confirm(
     preflight_hash: str,
     manifest_ref: str,
 ) -> str:
-    """Issue the single-use confirmation token for a KG rebuild. REST twin:
-    POST /api/v1/kg/rebuild/confirm. Loads the manifest persisted by
-    /preflight via manifest_ref (NEVER re-enumerates), verifies that
-    preflight_hash matches (SHA-256 hex from /preflight), and issues the
-    confirmation token — pass it to okto_pulse_kg_rebuild_run. board_id and
-    operation must match the /preflight call; a hash/manifest mismatch fails
-    closed.
+    """Validate request syntax, then deny online confirmation.
+
+    REST twin: POST /api/v1/kg/rebuild/confirm. A valid online request returns
+    ``recovery_execution_required`` without issuing a token. The governed local
+    one-shot executor performs fresh internal authorization or resumes the one
+    verified active receipt before a governed fresh run, after Pulse and SDLC
+    writers are offline. Online refs are not its inputs.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -23423,22 +23433,11 @@ async def okto_pulse_kg_rebuild_confirm(
     if authorization_error is not None:
         return authorization_error
 
-    actor_id = getattr(ctx, "agent_id", None) or (
-        ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
-    )
-
-    from okto_pulse.core.kg.rebuild_audit import (
-        require_rebuild_audit_artifact_store,
-    )
     from okto_pulse.core.kg.rebuild_confirmation import (
         CANONICAL_OPERATIONS,
-        RebuildConfirmationStore,
     )
     from okto_pulse.core.kg.rebuild_service import SUPPORTED_REBUILD_OPERATIONS
-    from okto_pulse.core.kg.rebuild_sources import (
-        KGRebuildSourceManifest,
-        validate_preflight_hash,
-    )
+    from okto_pulse.core.kg.rebuild_sources import validate_preflight_hash
 
     if operation not in CANONICAL_OPERATIONS:
         return json.dumps(
@@ -23463,58 +23462,7 @@ async def okto_pulse_kg_rebuild_confirm(
         validate_preflight_hash(preflight_hash)
     except ValueError as exc:
         return json.dumps({"error": "invalid_preflight_hash", "reason": str(exc)})
-
-    def _load_and_issue():
-        artifact_store = require_rebuild_audit_artifact_store()
-        manifest_store = KGRebuildSourceManifest(artifact_store=artifact_store)
-        manifest = manifest_store.load(manifest_ref)
-        if manifest is None:
-            return {
-                "error": "manifest_not_found",
-                "reason": "manifest_ref does not exist",
-            }
-        if manifest.board_id != board_id:
-            return {
-                "error": "manifest_board_mismatch",
-                "reason": "manifest_ref belongs to a different board",
-            }
-        if manifest.preflight_hash != preflight_hash:
-            return {
-                "error": "preflight_hash_mismatch",
-                "reason": "preflight_hash does not match manifest binding",
-            }
-
-        store = RebuildConfirmationStore(artifact_store=artifact_store)
-        token = store.issue(
-            board_id=board_id,
-            actor_id=actor_id,
-            operation=operation,
-            preflight_hash=preflight_hash,
-            manifest_ref=manifest.manifest_ref,
-        )
-        return {
-            "outcome": "confirmation_issued",
-            "action_required": "call_okto_pulse_kg_rebuild_run",
-            "confirmation_id": token.confirmation_id,
-            "manifest_ref": manifest.manifest_ref,
-            "source_set_hash": manifest.source_set_hash,
-            "expires_at": token.expires_at,
-        }
-
-    try:
-        result = await asyncio.to_thread(_load_and_issue)
-    except Exception as exc:
-        _rebuild_logger.error(
-            "kg.rebuild.confirm.failed board=%s err=%s", board_id, exc
-        )
-        return json.dumps({"error": "confirm_failed", "detail": str(exc)})
-
-    _rebuild_logger.info(
-        "kg.rebuild.confirm.done board=%s confirmation_id=%s",
-        board_id,
-        result.get("confirmation_id"),
-    )
-    return json.dumps(result, default=str)
+    return json.dumps(_recovery_execution_required_payload())
 
 
 async def _run_rebuild_service_cooperatively(
@@ -23578,213 +23526,30 @@ async def okto_pulse_kg_rebuild_run(
     manifest_ref: str,
     reason: str,
 ) -> str:
-    """Execute the KG rebuild. REST twin: POST /api/v1/kg/rebuild/run. Consumes
-    the single-use token from okto_pulse_kg_rebuild_confirm and runs the
-    rebuild under the KG-01 admin lane; NEVER mutates the graph if the token
-    is invalid, the manifest changed or the exclusive lock fails.
-    confirmation_id/operation/preflight_hash/manifest_ref must match
-    /confirm; reason is audit-only (max 512 chars). Admission gate (FR8):
-    refuses before token consumption on quarantined graph; board
-    recovery_needed admits, discovery-only refuses.
-    Errors: rebuild_refused_quarantined.
+    """Deny online KG rebuild execution without consuming the token.
+
+    REST twin: POST /api/v1/kg/rebuild/run. Request data cannot carry or mint
+    the opaque recovery capability. Returns ``recovery_execution_required`` and
+    directs the operator to the governed local one-shot recovery executor; do
+    not retry in a loop.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
 
-    actor_id = getattr(ctx, "agent_id", None) or (
-        ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
-    )
-
-    from okto_pulse.core.application.kg_rebuild import (
-        build_rebuild_step_adapter as _build_rebuild_step_adapter,
-        build_source_store as _build_source_store,
-        provider_missing_payload as _provider_missing_payload,
-        refuse_rebuild_if_quarantined as _refuse_rebuild_if_quarantined,
-    )
-
-    # FR8 — admission gate before consuming the token. MCP-FU5 strangler: the
-    # single session block is extracted into RebuildAdmissionGateUseCase over the
-    # MCP UnitOfWork (admission helper injected → use case stays Clean Core). The
-    # token-consumption / KGRebuildService orchestration below is UNCHANGED.
-    from okto_pulse.core.application.use_cases import (
-        RebuildAdmissionGateCommand,
-        RebuildAdmissionGateUseCase,
-    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    _gate_actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=_gate_actor) as _gate_uow:
-        refusal = (
-            await RebuildAdmissionGateUseCase().execute(
-                RebuildAdmissionGateCommand(
-                    board_id,
-                    refuse_fn=_refuse_rebuild_if_quarantined,
-                    scheduler_control=get_scheduler_control_for_mcp(),
-                ),
-                actor=_gate_actor,
-                uow=_gate_uow,
-            )
-        ).refusal
-    if refusal is not None:
-        return json.dumps(refusal)
-
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.rebuild_audit import (
-        CognitivePendingMarker,
-        ConfirmationConsumptionAuditRecorder,
-        KGRebuiltEventPublisher,
-        build_kg_rebuilt_event_handler,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    authorization_error = await _authorize_kg_operation(
+        actor,
+        operation="kg.operations.rebuild.run",
+        legacy_operation="kg.admin.settings_write",
+        board_id=board_id,
     )
-    from okto_pulse.core.kg.rebuild_confirmation import RebuildConfirmationStore
-    from okto_pulse.core.kg.rebuild_generation import (
-        KGGenerationPromotionGuard,
-        RebuildAuditKGGenerationRepository,
-    )
-    from okto_pulse.core.kg.rebuild_report import (
-        RebuildReportStore,
-        RebuildReportTerminalStateGuard,
-    )
-    from okto_pulse.core.kg.rebuild_service import KGRebuildService
-    from okto_pulse.core.kg.rebuild_sources import (
-        KGRebuildSourceManifest,
-        RebuildSourceEnumerator,
-    )
-    from okto_pulse.core.kg.safe_write_lifecycle import (
-        HealthProbe,
-        KGSafeWriteLifecycle,
-        LockOwnerProbe,
-    )
-    from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+    if authorization_error is not None:
+        return authorization_error
 
-    lock = KGSingleWriterLock()
-
-    def _always_owner(bid: str, owner_token: str) -> bool:
-        m = lock.inspect(board_id=bid)
-        return m is not None and m.owner_token == owner_token
-
-    safe_lifecycle = KGSafeWriteLifecycle(
-        step_adapter=get_kg_registry().graph_lifecycle.apply_step,
-        owner_probe=LockOwnerProbe(is_active_owner=_always_owner),
-        health_probe=HealthProbe(classify=lambda b, g, status, step: "at_risk"),
-    )
-
-    source_store_fetch = _build_source_store()
-    enumerator = RebuildSourceEnumerator(source_store=source_store_fetch)
-    try:
-        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
-    except Exception as exc:
-        from okto_pulse.core.composition import RuntimeProviderMissing
-
-        if isinstance(exc, RuntimeProviderMissing):
-            return json.dumps(_provider_missing_payload(exc))
-        raise
-
-    manifest_store_obj = KGRebuildSourceManifest(artifact_store=artifact_store)
-
-    try:
-        _step_adapter_with_sources = _build_rebuild_step_adapter(
-            manifest_store_obj=manifest_store_obj,
-        )
-    except Exception as exc:
-        from okto_pulse.core.composition import RuntimeProviderMissing
-
-        if isinstance(exc, RuntimeProviderMissing):
-            return json.dumps(_provider_missing_payload(exc))
-        raise
-    audit_recorder = ConfirmationConsumptionAuditRecorder(
-        artifact_store=artifact_store,
-    )
-    event_publisher = KGRebuiltEventPublisher(
-        artifact_store=artifact_store,
-    )
-    cognitive_marker = CognitivePendingMarker(
-        artifact_store=artifact_store,
-    )
-
-    def _source_resolver(event_payload):
-        m = manifest_store_obj.load(event_payload.get("manifest_ref", ""))
-        if m is None:
-            return ()
-        return tuple(row.to_dict() for row in m.materializable_sources)
-
-    event_handler = build_kg_rebuilt_event_handler(
-        publisher=event_publisher,
-        cognitive_marker=cognitive_marker,
-        source_resolver=_source_resolver,
-    )
-    from okto_pulse.core.kg.orphan_integrity import OrphanNodeScanner
-
-    orphan_scanner = OrphanNodeScanner()
-
-    service = KGRebuildService(
-        base_dir=None,
-        single_writer_lock=lock,
-        safe_write_lifecycle=safe_lifecycle,
-        quarantine_service=None,
-        confirmation_store=RebuildConfirmationStore(
-            audit_recorder=audit_recorder,
-            artifact_store=artifact_store,
-        ),
-        manifest_store=manifest_store_obj,
-        source_enumerator=enumerator,
-        rebuild_step_adapter=_step_adapter_with_sources,
-        generation_repository=RebuildAuditKGGenerationRepository(
-            artifact_store=artifact_store
-        ),
-        promotion_guard=KGGenerationPromotionGuard,
-        report_store=RebuildReportStore(artifact_store=artifact_store),
-        terminal_state_guard=RebuildReportTerminalStateGuard,
-        event_emitter=event_handler,
-        orphan_scan_provider=lambda board_id, generation_id: orphan_scanner.scan(
-            board_id=board_id,
-            generation_id=generation_id,
-        ),
-        artifact_store=artifact_store,
-    )
-
-    try:
-        result = await _run_rebuild_service_cooperatively(
-            service,
-            board_id=board_id,
-            confirmation_id=confirmation_id,
-            actor_id=actor_id,
-            operation=operation,
-            preflight_hash=preflight_hash,
-            manifest_ref=manifest_ref,
-            reason=reason,
-        )
-    except Exception as exc:
-        _rebuild_logger.error("kg.rebuild.run.failed board=%s err=%s", board_id, exc)
-        return json.dumps({"error": "rebuild_run_failed", "detail": str(exc)})
-
-    _rebuild_logger.info(
-        "kg.rebuild.run.done board=%s outcome=%s run_id=%s",
-        board_id,
-        result.outcome,
-        result.run_id,
-    )
-    return json.dumps(
-        {
-            "run_id": result.run_id,
-            "outcome": result.outcome,
-            "reason": result.reason,
-            "audit_ref": result.audit_ref,
-            "previous_kg_generation_id": result.previous_kg_generation_id,
-            "current_kg_generation_id": result.current_kg_generation_id,
-            "started_at": result.started_at,
-            "finished_at": result.finished_at,
-            "affected_files": list(result.affected_files),
-            "report_ref": result.report_ref,
-            "report_id": result.report_id,
-            "publishable_status": result.publishable_status,
-            "promotion_outcome": result.promotion_outcome,
-            "operator_action": result.operator_action,
-            "action_required": (result.operator_action or "call_okto_pulse_kg_health"),
-            "event_emitted": result.event_emitted,
-        },
-        default=str,
-    )
+    return json.dumps(_recovery_execution_required_payload())
 
 
 @mcp.tool()

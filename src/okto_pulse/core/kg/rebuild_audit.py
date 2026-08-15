@@ -207,9 +207,10 @@ def validate_kg_rebuilt_event(payload: Mapping[str, Any]) -> tuple[bool, str | N
     """Validate payload against api_6fcc64aa request_body.
 
     Returns ``(True, None)`` on success, ``(False, reason)`` otherwise.
-    The validator is strict about required fields, kg_generation_id
-    being a UUID v4 and counts being a dict — operational ids may be
-    None per the api contract (e.g. first-ever rebuild has no previous).
+    The validator is strict about required fields and counts. A completed
+    event must identify the promoted UUID v4. A report-backed terminal failure
+    may carry ``kg_generation_id=None`` only when it identifies the valid
+    candidate generation that was deliberately not promoted.
     """
 
     from okto_pulse.core.kg.rebuild_generation import (
@@ -223,7 +224,14 @@ def validate_kg_rebuilt_event(payload: Mapping[str, Any]) -> tuple[bool, str | N
     if not isinstance(payload.get("board_id"), str) or not payload["board_id"]:
         return False, "board_id_must_be_non_empty_string"
     kg_gen = payload.get("kg_generation_id")
-    if not isinstance(kg_gen, str) or not is_valid_kg_generation_id(kg_gen):
+    status = payload.get("status")
+    if kg_gen is None:
+        if status == "completed":
+            return False, "completed_kg_generation_id_must_be_uuid_v4"
+        candidate = payload.get("candidate_kg_generation_id")
+        if not isinstance(candidate, str) or not is_valid_kg_generation_id(candidate):
+            return False, "non_promoted_candidate_generation_id_must_be_uuid_v4"
+    elif not isinstance(kg_gen, str) or not is_valid_kg_generation_id(kg_gen):
         return False, "kg_generation_id_must_be_uuid_v4"
     prev_gen = payload.get("previous_kg_generation_id")
     if prev_gen is not None and (
@@ -244,6 +252,10 @@ def validate_kg_rebuilt_event(payload: Mapping[str, Any]) -> tuple[bool, str | N
     return True, None
 
 
+# Adapters MUST deduplicate by the deterministic ``event_id`` carried in the
+# payload. A process can crash after the external adapter accepts delivery but
+# before the local success marker is durable; retrying that same logical event
+# is therefore intentional and must not create a second downstream event.
 KGRebuiltPublishAdapter = Callable[[Mapping[str, Any]], bool]
 
 
@@ -326,15 +338,59 @@ class KGRebuiltEventPublisher:
             )
 
         try:
-            event_id = f"evt_{uuid.uuid4().hex}"
-            audit_payload = {
+            run_id = str(event_payload.get("run_id") or "")
+            event_id = (
+                "evt_"
+                + hashlib.sha256(f"{board_id}\x1f{run_id}".encode("utf-8")).hexdigest()[
+                    :32
+                ]
+                if run_id
+                else f"evt_{uuid.uuid4().hex}"
+            )
+            audit_key = self._audit_key(board_id, event_id)
+            existing = self.artifact_store.read_json(audit_key)
+            expected_event = {
                 "event_id": event_id,
                 "event": "kg.rebuilt",
-                "persisted_at": datetime.now(timezone.utc).isoformat(),
                 **dict(event_payload),
             }
-            audit_key = self._audit_key(board_id, event_id)
-            self.artifact_store.write_json_atomic(audit_key, audit_payload)
+            if existing is not None:
+                observed_event = {
+                    key: value
+                    for key, value in existing.items()
+                    if key
+                    not in {
+                        "persisted_at",
+                        "delivered_at",
+                        "delivery_outcome",
+                        "delivery_detail",
+                    }
+                }
+                replay_event = dict(expected_event)
+                for timestamp_field in ("started_at", "finished_at"):
+                    observed_event.pop(timestamp_field, None)
+                    replay_event.pop(timestamp_field, None)
+                if observed_event != replay_event:
+                    raise RuntimeError("kg_rebuilt_event_run_binding_conflict")
+                if (
+                    existing.get("delivery_outcome")
+                    == EventPublishOutcome.PUBLISHED.value
+                ):
+                    return EventPublishResult(
+                        accepted=True,
+                        outcome=EventPublishOutcome.PUBLISHED.value,
+                        event_ref=event_id,
+                        audit_ref=self.artifact_store.reference(audit_key),
+                        detail="already_published",
+                    )
+                audit_payload = dict(existing)
+            else:
+                audit_payload = {
+                    **expected_event,
+                    "persisted_at": datetime.now(timezone.utc).isoformat(),
+                    "delivery_outcome": "pending",
+                }
+                self.artifact_store.write_json_atomic(audit_key, audit_payload)
             audit_ref = self.artifact_store.reference(audit_key)
         except Exception as exc:
             logger.error(
@@ -357,6 +413,21 @@ class KGRebuiltEventPublisher:
         try:
             ok = self.publish_adapter(audit_payload)
         except Exception as exc:
+            try:
+                self.artifact_store.write_json_atomic(
+                    audit_key,
+                    {
+                        **audit_payload,
+                        "delivery_outcome": EventPublishOutcome.PUBLISH_FAILED.value,
+                        "delivery_detail": f"publish_adapter_exception={type(exc).__name__}",
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "kg.rebuilt.publish_failure_marker_failed board=%s event=%s",
+                    board_id,
+                    event_id,
+                )
             logger.error(
                 "kg.rebuilt.publish_adapter_failed board=%s err=%s",
                 board_id,
@@ -377,6 +448,21 @@ class KGRebuiltEventPublisher:
             )
 
         if not ok:
+            try:
+                self.artifact_store.write_json_atomic(
+                    audit_key,
+                    {
+                        **audit_payload,
+                        "delivery_outcome": EventPublishOutcome.PUBLISH_FAILED.value,
+                        "delivery_detail": "publish_adapter_returned_false",
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "kg.rebuilt.publish_failure_marker_failed board=%s event=%s",
+                    board_id,
+                    event_id,
+                )
             _bump_event(
                 board_id=board_id,
                 status=status,
@@ -389,6 +475,34 @@ class KGRebuiltEventPublisher:
                 audit_ref=audit_ref,
                 error_code=EventPublishErrorCode.EVENT_PUBLISH_FAILED.value,
                 detail="publish_adapter_returned_false",
+            )
+
+        delivered = {
+            **audit_payload,
+            "delivery_outcome": EventPublishOutcome.PUBLISHED.value,
+            "delivery_detail": None,
+            "delivered_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            self.artifact_store.write_json_atomic(audit_key, delivered)
+        except Exception as exc:
+            logger.exception(
+                "kg.rebuilt.publish_success_marker_failed board=%s event=%s",
+                board_id,
+                event_id,
+            )
+            _bump_event(
+                board_id=board_id,
+                status=status,
+                outcome=EventPublishOutcome.PUBLISH_FAILED.value,
+            )
+            return EventPublishResult(
+                accepted=False,
+                outcome=EventPublishOutcome.PUBLISH_FAILED.value,
+                event_ref=event_id,
+                audit_ref=audit_ref,
+                error_code=EventPublishErrorCode.EVENT_PUBLISH_FAILED.value,
+                detail=f"success_marker_exception={type(exc).__name__}",
             )
 
         _bump_event(
@@ -697,8 +811,7 @@ class CognitivePendingOverlaySnapshotService:
         )
         if (
             not callable(bounded_list)
-            or bounded_implementation
-            is RebuildAuditArtifactStore.list_json_bounded
+            or bounded_implementation is RebuildAuditArtifactStore.list_json_bounded
         ):
             raise CognitivePendingOverlaySnapshotError(
                 "cognitive_overlay_bounded_reader_unavailable",
@@ -781,6 +894,8 @@ class CognitivePendingOverlaySnapshotService:
             revision_fingerprint=before,
             exclusions=tuple(captured),
         )
+
+
 _materialized_samples_lock = runtime_lock("kg.rebuild_audit.materialized.samples")
 
 
@@ -1786,8 +1901,7 @@ class CognitiveConsolidationItemStore:
         )
         if (
             not callable(revisioned_replace)
-            or implementation
-            is RebuildAuditArtifactStore.replace_json_with_revision
+            or implementation is RebuildAuditArtifactStore.replace_json_with_revision
         ):
             # Backward-compatible normal ledger operation for an older edition
             # adapter.  Mark the overlay explicitly *unfenced* so Global
@@ -3140,6 +3254,26 @@ class KGRebuiltHandlerResult:
     mark: PendingMarkResult | None
     skipped_reason: str | None = None
 
+    @property
+    def accepted(self) -> bool:
+        """Prove the complete terminal delivery, not only event publication.
+
+        A non-promoted terminal outcome intentionally has no generation to
+        mark, so accepted publication closes that lane.  A promoted generation
+        is accepted only after its cognitive marker record is durable; an empty
+        but valid source set still produces that record with ``SKIPPED`` and no
+        error.  Resolver/adapter/storage failures therefore remain retryable
+        under the same deterministic event id.
+        """
+
+        if not self.publish.accepted:
+            return False
+        if self.skipped_reason == "missing_kg_generation_id":
+            return True
+        if self.skipped_reason is not None or self.mark is None:
+            return False
+        return self.mark.error_code is None and bool(self.mark.record_ref)
+
 
 def build_kg_rebuilt_event_handler(
     *,
@@ -3161,7 +3295,10 @@ def build_kg_rebuilt_event_handler(
     3. If kg_generation_id is missing (e.g. event for FAILED outcome
        without a promoted generation), returns early — there is no
        generation to mark pending for.
-    4. Otherwise calls ``cognitive_marker.mark_for_generation(...)`` with
+    4. Resolves the manifest-bound source set. Resolver failure is returned as
+       a non-accepted composite result; it is never converted to a valid empty
+       board.
+    5. Otherwise calls ``cognitive_marker.mark_for_generation(...)`` with
        sources resolved via ``source_resolver(event_payload)`` and
        ``event_ref`` from the publish result so the cognitive record
        points back at the durable audit row.
@@ -3195,7 +3332,11 @@ def build_kg_rebuilt_event_handler(
                 event_payload.get("board_id"),
                 exc,
             )
-            sources = ()
+            return KGRebuiltHandlerResult(
+                publish=publish_result,
+                mark=None,
+                skipped_reason=f"source_resolver_exception={type(exc).__name__}",
+            )
 
         board_id = str(event_payload.get("board_id", ""))
         mark_result = cognitive_marker.mark_for_generation(

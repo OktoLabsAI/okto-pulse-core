@@ -3,7 +3,7 @@
 import uuid
 from typing import Any, Sequence
 
-from sqlalchemy import case, delete, exists, func, or_, select
+from sqlalchemy import case, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import selectinload
 
@@ -63,6 +63,7 @@ def _record(row: Any) -> ConsolidationQueueRecord:
         claimed_by_session_id=row.claimed_by_session_id,
         triggered_at=row.triggered_at,
         priority=str(getattr(row.priority, "value", row.priority)),
+        source=str(getattr(row, "source", None) or "state_transition"),
         work_kind=str(row.work_kind),
         generation=int(row.generation or 0),
         payload=dict(row.payload) if isinstance(row.payload, dict) else row.payload,
@@ -222,6 +223,7 @@ class TestSqlAlchemyConsolidationPersistence:
         artifact_type: str,
         artifact_id: str,
         work_kind: str,
+        source: str,
         generation: int,
         delete_event_id: str | None,
     ) -> bool:
@@ -235,6 +237,7 @@ class TestSqlAlchemyConsolidationPersistence:
             ConsolidationQueue.artifact_type == artifact_type,
             ConsolidationQueue.artifact_id == artifact_id,
             ConsolidationQueue.work_kind == work_kind,
+            ConsolidationQueue.source == source,
             ConsolidationQueue.generation == generation,
             (
                 ConsolidationQueue.delete_event_id.is_(None)
@@ -275,6 +278,9 @@ class TestSqlAlchemyConsolidationPersistence:
         *,
         entry_id: str,
         claim_token: str,
+        board_id: str,
+        source: str,
+        work_kind: str,
         generation: int,
         delete_event_id: str | None,
     ) -> bool:
@@ -290,8 +296,51 @@ class TestSqlAlchemyConsolidationPersistence:
                 ConsolidationQueue.id == entry_id,
                 ConsolidationQueue.status == "claimed",
                 ConsolidationQueue.claim_token == claim_token,
+                ConsolidationQueue.board_id == board_id,
+                ConsolidationQueue.source == source,
+                ConsolidationQueue.work_kind == work_kind,
                 ConsolidationQueue.generation == generation,
                 delete_event_predicate,
+            )
+        )
+        return int(result.rowcount or 0) == 1
+
+    async def repend_claimed_queue_entry(
+        self,
+        context,
+        *,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        source: str,
+        work_kind: str,
+        generation: int,
+        delete_event_id: str | None,
+    ) -> bool:
+        delete_event_predicate = (
+            ConsolidationQueue.delete_event_id.is_(None)
+            if delete_event_id is None
+            else ConsolidationQueue.delete_event_id == delete_event_id
+        )
+        result = await context.execute(
+            update(ConsolidationQueue)
+            .where(
+                ConsolidationQueue.id == entry_id,
+                ConsolidationQueue.status == "claimed",
+                ConsolidationQueue.claim_token == claim_token,
+                ConsolidationQueue.board_id == board_id,
+                ConsolidationQueue.source == source,
+                ConsolidationQueue.work_kind == work_kind,
+                ConsolidationQueue.generation == generation,
+                delete_event_predicate,
+            )
+            .values(
+                status="pending",
+                claimed_at=None,
+                claim_timeout_at=None,
+                worker_id=None,
+                claimed_by_session_id=None,
+                claim_token=None,
             )
         )
         return int(result.rowcount or 0) == 1
@@ -492,6 +541,17 @@ class TestSqlAlchemyConsolidationPersistence:
             if isinstance(row.settings, dict)
             and row.settings.get("dlq_auto_drain_enabled")
         )
+
+    async def board_administrative_rebuild_source(
+        self,
+        context,
+        *,
+        board_id: str,
+    ) -> str | None:
+        # This test adapter has no administrative reservation table. Focused
+        # reservation tests inject a store that implements the real lookup.
+        del context, board_id
+        return None
 
     async def count_dead_letters(self, context, *, board_id: str) -> int:
         value = await context.scalar(

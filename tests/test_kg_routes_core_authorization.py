@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -56,7 +57,16 @@ class _Kg:
         self._events.append(f"writer:cancel:{board_id}")
         return {"status": "cancelled"}
 
-    async def right_to_erasure(self, board_id: str) -> dict[str, int]:
+    @asynccontextmanager
+    async def board_erasure_scope(self, _board_id: str, *, actor_id: str):
+        assert actor_id == "actor-kg"
+        yield SimpleNamespace(ensure_owned=lambda: None)
+
+    async def right_to_erasure(
+        self,
+        board_id: str,
+        **_kwargs: object,
+    ) -> dict[str, int]:
         self._events.append(f"writer:delete:{board_id}")
         return {"nodes": 0}
 
@@ -303,3 +313,55 @@ async def test_kg_writer_accepts_flat_historical_authority_during_migration(
 
     assert events == [f"lookup:{BOARD_ID}", f"writer:{writer_name}:{BOARD_ID}"]
     uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_board_kg_holds_erasure_scope_and_global_writer_fence() -> None:
+    events: list[str] = []
+    uow = _Uow(events)
+
+    class _Lease:
+        def ensure_owned(self) -> None:
+            events.append("fence:ensure")
+
+    class _FencedKg(_Kg):
+        @asynccontextmanager
+        async def board_erasure_scope(self, board_id: str, *, actor_id: str):
+            events.append(f"fence:enter:{board_id}:{actor_id}")
+            try:
+                yield _Lease()
+            finally:
+                events.append("fence:exit")
+
+        async def right_to_erasure(
+            self,
+            board_id: str,
+            **kwargs: object,
+        ) -> dict[str, int]:
+            assert kwargs == {"global_writer_guarded": True}
+            events.append(f"writer:delete:{board_id}")
+            return {"nodes": 0}
+
+    uow.services.kg = _FencedKg(events)
+    actor = ActorContext(
+        "actor-kg",
+        "rest",
+        board_id=BOARD_ID,
+        realm_id=LOCAL_REALM_ID,
+        permissions=["kg.admin.wipe_board"],
+    )
+
+    await DeleteBoardKgUseCase().execute(
+        DeleteBoardKgCommand(BOARD_ID),
+        actor=actor,
+        uow=uow,
+    )
+
+    assert events == [
+        f"lookup:{BOARD_ID}",
+        f"fence:enter:{BOARD_ID}:actor-kg",
+        "fence:ensure",
+        f"writer:delete:{BOARD_ID}",
+        "fence:ensure",
+        "fence:exit",
+    ]

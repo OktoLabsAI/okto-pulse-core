@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "1e3579507f1b08904a25e5d50d271345282e0c7b72f1df7ca02599c44fb274e7",
+    "content_sha256": "2f4753ad748556f3520ee18bbcf000f911b59f77a804672dbef1033df644eac0",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/code-traceability",
@@ -43,7 +43,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "d21c6c2b9d471a636f784dfe288076a351a47db976df81c0ec25bba8544c8446",
+  "manifest_sha256": "8d9daa5907e2fbc67363f5b7f997f67f19c7b5c8b481f76226fe3730166db451",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
@@ -75,7 +75,7 @@
       "uri": "okto-pulse://reference/code-traceability"
     },
     {
-      "content_sha256": "898394c15bd59e89809817239040ce5902d8e3b76fab4413f88e88a77e8b6b72",
+      "content_sha256": "b6191815c4c6cf7ae4ce2fd44bebbf8ee70a686c746fb327d1c7f9dbe9beafda",
       "cross_links": [
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",

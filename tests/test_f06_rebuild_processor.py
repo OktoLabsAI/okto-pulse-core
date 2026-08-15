@@ -176,6 +176,44 @@ def test_f06_stalled_drain_compensates_without_promotion() -> None:
     assert "promote" not in effects.calls
 
 
+def test_f06_post_drain_manifest_drift_compensates_before_restore_or_promotion() -> (
+    None
+):
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        source_revalidate=lambda: False,
+    )
+
+    outcome = processor.execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.MANIFEST_DRIFT
+    assert outcome.promotion_allowed is False
+    assert "restore" not in effects.calls
+    assert "promote" not in effects.calls
+    assert effects.calls == [
+        "snapshot",
+        "quarantine",
+        "enqueue",
+        "observe",
+        "compensate",
+        "audit:manifest_drift",
+    ]
+    assert CompensationAction.RESTORE_QUARANTINE in effects.compensation_actions
+    assert outcome.promotion_allowed is False
+    assert CompensationAction.CANCEL_ENQUEUED_SOURCES in outcome.compensation_actions
+    assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
+    assert effects.compensation_failed_state is RebuildState.DRAINING
+    assert "promote" not in effects.calls
+
+
 def test_f06_known_queue_blocker_compensates_without_waiting_for_stall() -> None:
     clock = FakeClock()
     effects = FakeEffects(clock, [11])
@@ -187,6 +225,47 @@ def test_f06_known_queue_blocker_compensates_without_waiting_for_stall() -> None
     assert outcome.detail == "queue blocked:graph_memory_pressure"
     assert effects.calls.count("observe") == 1
     assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
+    assert "promote" not in effects.calls
+
+
+def test_f06_new_dead_letter_blocks_even_when_queue_depth_is_zero() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    effects.blocking_reason = "rebuild_new_dead_letter"
+
+    outcome = _processor(effects, clock).execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.DRAIN_STALLED
+    assert outcome.detail == "queue blocked:rebuild_new_dead_letter"
+    assert effects.calls.count("observe") == 1
+    assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
+    assert "restore" not in effects.calls
+    assert "promote" not in effects.calls
+
+
+def test_f06_non_increasing_observation_sequence_compensates_fail_closed() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [1])
+
+    def stale_observation(
+        command,
+        *,
+        after_sequence,
+        max_wait_seconds,  # noqa: ANN001, ANN202
+    ):
+        del command, max_wait_seconds
+        effects.calls.append("observe")
+        return QueueObservation(1, clock(), after_sequence)
+
+    effects.wait_for_queue_observation = stale_observation  # type: ignore[method-assign]
+
+    outcome = _processor(effects, clock).execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.EFFECT_FAILED
+    assert outcome.detail == "queue_observation_sequence_not_increasing"
+    assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
+    assert "compensate" in effects.calls
+    assert "restore" not in effects.calls
     assert "promote" not in effects.calls
 
 
@@ -239,6 +318,463 @@ def test_f06_lease_loss_after_enqueue_blocks_without_unsafe_compensation() -> No
     assert "compensate" not in effects.calls
     assert "observe" not in effects.calls
     assert "promote" not in effects.calls
+
+
+def test_f06_drain_handoff_rebinds_writer_before_restore_and_promotion() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [2, 0])
+    events: list[str] = []
+    writer_released = False
+
+    original_restore = effects.restore
+    original_promote = effects.promote
+
+    def restore(command, *, effect_key):  # noqa: ANN001, ANN201
+        events.append(f"restore:{command.owner_token}")
+        return original_restore(command, effect_key=effect_key)
+
+    def promote(command, *, effect_key):  # noqa: ANN001, ANN201
+        events.append(f"promote:{command.owner_token}")
+        return original_promote(command, effect_key=effect_key)
+
+    effects.restore = restore  # type: ignore[method-assign]
+    effects.promote = promote  # type: ignore[method-assign]
+
+    def renew() -> bool:
+        assert writer_released is False
+        events.append("renew")
+        return True
+
+    def release() -> bool:
+        nonlocal writer_released
+        events.append("release:token-a")
+        writer_released = True
+        return True
+
+    def reacquire() -> str:
+        nonlocal writer_released
+        events.append("reacquire:token-b")
+        writer_released = False
+        return "token-b"
+
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        lease_renew=renew,
+        release_writer_for_drain=release,
+        reacquire_writer_after_drain=reacquire,
+    ).execute(_command(owner_token="token-a"))
+
+    assert outcome.code is RebuildOutcomeCode.COMPLETED
+    assert events.index("release:token-a") < events.index("reacquire:token-b")
+    assert events.index("reacquire:token-b") < events.index("restore:token-b")
+    assert events.index("restore:token-b") < events.index("promote:token-b")
+    checkpoint = effects.checkpoints["run-1"]
+    assert checkpoint.command.owner_token == "token-b"
+    assert checkpoint.writer_handoff_count == 1
+    assert checkpoint.writer_reacquire_count == 1
+
+
+def test_f06_drain_failure_reacquires_before_compensation() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [4, 4, 4, 4])
+    events: list[str] = []
+    original_compensate = effects.compensate
+
+    def compensate(command, *, effect_key):  # noqa: ANN001, ANN201
+        checkpoint = effects.checkpoints["run-1"]
+        events.append(f"compensate:{checkpoint.command.owner_token}")
+        return original_compensate(command, effect_key=effect_key)
+
+    effects.compensate = compensate  # type: ignore[method-assign]
+
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        lease_renew=lambda: True,
+        release_writer_for_drain=lambda: events.append("release") or True,
+        reacquire_writer_after_drain=lambda: events.append("reacquire") or "token-b",
+    ).execute(_command(owner_token="token-a"))
+
+    assert outcome.code is RebuildOutcomeCode.DRAIN_STALLED
+    assert events[-2:] == ["reacquire", "compensate:token-b"]
+    assert "promote" not in effects.calls
+
+
+def test_f06_compensation_receipt_is_durable_before_post_effect_fence_loss() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [4, 4, 4, 4])
+    compensation_applied = False
+    original_compensate = effects.compensate
+
+    def compensate(command, *, effect_key):  # noqa: ANN001, ANN201
+        nonlocal compensation_applied
+        receipt = original_compensate(command, effect_key=effect_key)
+        compensation_applied = True
+        return receipt
+
+    effects.compensate = compensate  # type: ignore[method-assign]
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        lease_renew=lambda: not compensation_applied,
+    )
+
+    outcome = processor.execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    checkpoint = effects.checkpoints["run-1"]
+    receipt = checkpoint.receipts["run-1:compensate"]
+    assert receipt.ok is True
+    assert effects.calls.count("compensate") == 1
+    assert "restore" not in effects.calls
+    assert "promote" not in effects.calls
+
+
+def test_f06_reacquire_contention_blocks_without_compensation_or_promotion() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        lease_renew=lambda: True,
+        release_writer_for_drain=lambda: True,
+        reacquire_writer_after_drain=lambda: None,
+    ).execute(_command(owner_token="token-a"))
+
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.state is RebuildState.BLOCKED
+    assert outcome.compensation_actions == ()
+    assert "restore" not in effects.calls
+    assert "promote" not in effects.calls
+    assert "compensate" not in effects.calls
+    checkpoint = effects.checkpoints["run-1"]
+    assert checkpoint.writer_handoff_count == 1
+    assert checkpoint.writer_reacquire_count == 0
+
+
+def test_f06_handoff_checkpoint_failure_still_reacquires_before_raising() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    events: list[str] = []
+    original_save = effects.save_checkpoint
+
+    def save(checkpoint: RebuildCheckpoint) -> None:
+        if (
+            checkpoint.writer_handoff_count == 1
+            and checkpoint.writer_reacquire_count == 0
+        ):
+            events.append("handoff-save-failed")
+            raise RuntimeError("checkpoint unavailable")
+        original_save(checkpoint)
+
+    effects.save_checkpoint = save  # type: ignore[method-assign]
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        release_writer_for_drain=lambda: events.append("release-a") or True,
+        reacquire_writer_after_drain=lambda: events.append("reacquire-b") or "token-b",
+    )
+
+    with pytest.raises(RuntimeError, match="checkpoint unavailable"):
+        processor.execute(_command(owner_token="token-a"))
+
+    assert events == ["release-a", "handoff-save-failed", "reacquire-b"]
+    assert effects.calls == ["snapshot", "quarantine", "enqueue"]
+
+
+@pytest.mark.parametrize("reacquire_mode", ("raises", "returns_none"))
+def test_f06_crash_during_drain_is_not_masked_by_reacquire_failure(
+    reacquire_mode: str,
+) -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [1])
+    events: list[str] = []
+
+    def crash_during_observation(*_args, **_kwargs):  # noqa: ANN201
+        raise SimulatedProcessCrash("original-drain-crash")
+
+    def reacquire():  # noqa: ANN201
+        events.append("reacquire-attempted")
+        if reacquire_mode == "raises":
+            raise RuntimeError("reacquire-failed")
+        return None
+
+    effects.wait_for_queue_observation = crash_during_observation  # type: ignore[method-assign]
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        release_writer_for_drain=lambda: True,
+        reacquire_writer_after_drain=reacquire,
+    )
+
+    with pytest.raises(SimulatedProcessCrash, match="original-drain-crash"):
+        processor.execute(_command(owner_token="token-a"))
+
+    assert events == ["reacquire-attempted"]
+
+
+def test_f06_reservation_loss_during_drain_blocks_without_compensation() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [3])
+    reservation_owned = True
+    events: list[str] = []
+    original_observe = effects.wait_for_queue_observation
+
+    def observe(*args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        nonlocal reservation_owned
+        observation = original_observe(*args, **kwargs)
+        reservation_owned = False
+        return observation
+
+    effects.wait_for_queue_observation = observe  # type: ignore[method-assign]
+
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: reservation_owned,
+        release_writer_for_drain=lambda: events.append("release-a") or True,
+        # The service callback refuses token B after proving reservation loss.
+        reacquire_writer_after_drain=lambda: events.append("reacquire-refused"),
+    ).execute(_command(owner_token="token-a"))
+
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.state is RebuildState.BLOCKED
+    assert events == ["release-a", "reacquire-refused"]
+    assert "compensate" not in effects.calls
+    assert "restore" not in effects.calls
+    assert "promote" not in effects.calls
+    assert not any(call.startswith("audit:") for call in effects.calls)
+
+
+def test_f06_reservation_loss_during_failed_effect_blocks_before_compensation() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    reservation_owned = True
+    original_restore = effects.restore
+
+    def restore(command, *, effect_key):  # noqa: ANN001, ANN201
+        nonlocal reservation_owned
+        effects.fail_effect = "restore"
+        receipt = original_restore(command, effect_key=effect_key)
+        reservation_owned = False
+        return receipt
+
+    effects.restore = restore  # type: ignore[method-assign]
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        orchestration_renew=lambda: reservation_owned,
+    ).execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.state is RebuildState.BLOCKED
+    assert "compensate" not in effects.calls
+    assert "promote" not in effects.calls
+    assert not any(call.startswith("audit:") for call in effects.calls)
+
+
+def test_f06_compensated_checkpoint_requires_a_fresh_manifest_attempt() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    command = _command()
+    compensate = RebuildEffectReceipt(
+        effect_key="run-1:compensate",
+        effect="compensate",
+        ok=True,
+        code="compensated",
+    )
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=command,
+        state=RebuildState.FAILED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts={compensate.effect_key: compensate},
+    )
+
+    outcome = _processor(effects, clock).execute(command)
+
+    assert outcome.code is RebuildOutcomeCode.RESUME_REQUIRES_NEW_MANIFEST
+    assert outcome.state is RebuildState.BLOCKED
+    assert outcome.detail == "rebuild_resume_requires_new_manifest"
+    assert effects.calls == ["audit:rebuild_resume_requires_new_manifest"]
+
+
+def test_f06_compensating_checkpoint_without_receipt_resumes_original_cleanup() -> None:
+    clock = FakeClock()
+
+    class _CrashBeforeCompensation(FakeEffects):
+        def __init__(self) -> None:
+            super().__init__(clock, [0])
+            self.failed_once = False
+
+        def save_checkpoint(self, checkpoint: RebuildCheckpoint) -> None:
+            super().save_checkpoint(checkpoint)
+            if checkpoint.state is RebuildState.COMPENSATING and not self.failed_once:
+                self.failed_once = True
+                raise SimulatedProcessCrash("crash after compensation intent")
+
+    effects = _CrashBeforeCompensation()
+    effects.fail_effect = "restore"
+
+    with pytest.raises(SimulatedProcessCrash, match="compensation intent"):
+        _processor(effects, clock).execute(_command())
+
+    interrupted = effects.checkpoints["run-1"]
+    assert interrupted.state is RebuildState.COMPENSATING
+    assert interrupted.compensation_failed_state is RebuildState.RESTORED
+    assert interrupted.compensation_failure_code is RebuildOutcomeCode.RESTORE_FAILED
+    assert interrupted.compensation_failure_detail == "forced_failure"
+    assert interrupted.compensation_actions == (
+        CompensationAction.CANCEL_ENQUEUED_SOURCES,
+        CompensationAction.RESTORE_QUARANTINE,
+        CompensationAction.DISCARD_CANDIDATE_GENERATION,
+    )
+    assert "compensate" not in effects.calls
+
+    resumed = _processor(effects, clock).execute(_command())
+
+    assert resumed.code is RebuildOutcomeCode.RESTORE_FAILED
+    assert resumed.state is RebuildState.FAILED
+    assert effects.compensation_failed_state is RebuildState.RESTORED
+    assert effects.calls.count("compensate") == 1
+    assert effects.checkpoints["run-1"].receipts["run-1:compensate"].ok
+
+
+def test_f06_failed_compensation_receipt_retries_instead_of_closing_attempt() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    command = _command()
+    failed_receipt = RebuildEffectReceipt(
+        effect_key="run-1:compensate",
+        effect="compensate",
+        ok=False,
+        code="compensation_incomplete",
+    )
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=command,
+        state=RebuildState.COMPENSATION_FAILED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.DRAINING,
+        compensation_failure_code=RebuildOutcomeCode.HARD_TIMEOUT,
+        compensation_failure_detail="queue did not drain",
+        compensation_actions=(
+            CompensationAction.CANCEL_ENQUEUED_SOURCES,
+            CompensationAction.RESTORE_QUARANTINE,
+            CompensationAction.DISCARD_CANDIDATE_GENERATION,
+        ),
+        receipts={failed_receipt.effect_key: failed_receipt},
+    )
+
+    resumed = _processor(effects, clock).execute(command)
+
+    assert resumed.code is RebuildOutcomeCode.HARD_TIMEOUT
+    assert resumed.detail == "queue did not drain"
+    assert resumed.state is RebuildState.FAILED
+    assert effects.calls[0] == "compensate"
+    assert "audit:rebuild_resume_requires_new_manifest" not in effects.calls
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_actions"),
+    (
+        (
+            RebuildState.QUARANTINED,
+            (
+                CompensationAction.RESTORE_QUARANTINE,
+                CompensationAction.DISCARD_CANDIDATE_GENERATION,
+            ),
+        ),
+        (
+            RebuildState.ENQUEUED,
+            (
+                CompensationAction.CANCEL_ENQUEUED_SOURCES,
+                CompensationAction.RESTORE_QUARANTINE,
+                CompensationAction.DISCARD_CANDIDATE_GENERATION,
+            ),
+        ),
+        (
+            RebuildState.DRAINING,
+            (
+                CompensationAction.CANCEL_ENQUEUED_SOURCES,
+                CompensationAction.RESTORE_QUARANTINE,
+                CompensationAction.DISCARD_CANDIDATE_GENERATION,
+            ),
+        ),
+        (
+            RebuildState.COMPLETED,
+            (
+                CompensationAction.CANCEL_ENQUEUED_SOURCES,
+                CompensationAction.DEMOTE_CANDIDATE_GENERATION,
+                CompensationAction.RESTORE_QUARANTINE,
+                CompensationAction.DISCARD_CANDIDATE_GENERATION,
+            ),
+        ),
+    ),
+)
+def test_f06_fail_existing_compensates_only_the_persisted_attempt(
+    state: RebuildState,
+    expected_actions: tuple[CompensationAction, ...],
+) -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [0])
+    command = _command(owner_token="writer-b")
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token="writer-a"),
+        state=state,
+        started_at=clock(),
+        last_progress_at=clock(),
+    )
+
+    outcome = _processor(effects, clock).fail_existing(
+        command,
+        code=RebuildOutcomeCode.MANIFEST_DRIFT,
+        detail="manifest unavailable during authorized resume",
+    )
+
+    assert outcome.code is RebuildOutcomeCode.MANIFEST_DRIFT
+    assert outcome.state is RebuildState.FAILED
+    assert effects.calls == ["compensate", "audit:manifest_drift"]
+    assert effects.compensation_failed_state is state
+    assert effects.compensation_actions == expected_actions
+    assert not any(
+        call in effects.calls
+        for call in (
+            "snapshot",
+            "quarantine",
+            "enqueue",
+            "observe",
+            "restore",
+            "promote",
+        )
+    )
 
 
 def test_f06_hard_timeout_is_monotonic_even_while_progressing() -> None:

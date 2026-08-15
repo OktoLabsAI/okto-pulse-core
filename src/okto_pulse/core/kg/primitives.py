@@ -3946,9 +3946,7 @@ def _do_graph_commit(
                             if rollback_error is not None
                             else None
                         ),
-                        "compensation_failure_type": type(
-                            compensation_error
-                        ).__name__,
+                        "compensation_failure_type": type(compensation_error).__name__,
                     },
                     retryable=True,
                 ) from compensation_error

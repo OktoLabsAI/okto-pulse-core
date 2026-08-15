@@ -271,8 +271,8 @@ async def test_cancelled_graph_scan_drains_before_lifecycle_and_reraise(
         await task
 
     assert events == [
-        "snapshot",
         "callback",
+        "snapshot",
         "graph_started",
         "graph_finished",
         "lifecycle",

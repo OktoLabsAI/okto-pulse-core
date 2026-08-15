@@ -65,21 +65,13 @@ async def s3_board(db_factory):
 @pytest_asyncio.fixture
 async def s3_clean(db_factory, s3_board):
     async with db_factory() as session:
-        await session.execute(
-            ConsolidationQueue.__table__.delete()
-        )
-        await session.execute(
-            ConsolidationDeadLetter.__table__.delete()
-        )
+        await session.execute(ConsolidationQueue.__table__.delete())
+        await session.execute(ConsolidationDeadLetter.__table__.delete())
         await session.commit()
     yield
     async with db_factory() as session:
-        await session.execute(
-            ConsolidationQueue.__table__.delete()
-        )
-        await session.execute(
-            ConsolidationDeadLetter.__table__.delete()
-        )
+        await session.execute(ConsolidationQueue.__table__.delete())
+        await session.execute(ConsolidationDeadLetter.__table__.delete())
         await session.commit()
 
 
@@ -124,7 +116,8 @@ async def health_client():
 
 @pytest.mark.asyncio
 async def test_ac9_health_endpoint_returns_all_expected_keys(
-    health_client, s3_clean,
+    health_client,
+    s3_clean,
 ):
     """AC9: GET /api/v1/kg/queue/health returns the health keys with the
     correct types (queue_depth INT, claimed_boards LIST, alert_active BOOL,
@@ -133,11 +126,20 @@ async def test_ac9_health_endpoint_returns_all_expected_keys(
     assert resp.status_code == 200
     body = resp.json()
     expected_keys = {
-        "queue_depth", "oldest_pending_age_s", "claimed_count", "claimed_boards",
-        "dead_letter_count", "global_outbox_dead_letter_count",
-        "claims_per_min_1m", "claims_per_min_5m",
-        "alert_threshold", "alert_active", "alert_fired_total",
-        "workers_active", "workers_idle", "workers_draining_count",
+        "queue_depth",
+        "oldest_pending_age_s",
+        "claimed_count",
+        "claimed_boards",
+        "dead_letter_count",
+        "global_outbox_dead_letter_count",
+        "claims_per_min_1m",
+        "claims_per_min_5m",
+        "alert_threshold",
+        "alert_active",
+        "alert_fired_total",
+        "workers_active",
+        "workers_idle",
+        "workers_draining_count",
         "kuzu_lock_retries_5m",
     }
     assert set(body.keys()) == expected_keys
@@ -160,19 +162,29 @@ async def test_ac9_health_reflects_queue_state(db_factory, health_client, s3_cle
     async with db_factory() as session:
         # 2 pending on board S3, 1 claimed on board S3
         for i in range(2):
-            session.add(ConsolidationQueue(
+            session.add(
+                ConsolidationQueue(
+                    board_id=BOARD_ID_S3,
+                    artifact_type="card",
+                    artifact_id=f"card-pend-{i}",
+                    priority="normal",
+                    source="test",
+                    status="pending",
+                    triggered_at=now - timedelta(seconds=10 * (i + 1)),
+                )
+            )
+        session.add(
+            ConsolidationQueue(
                 board_id=BOARD_ID_S3,
-                artifact_type="card", artifact_id=f"card-pend-{i}",
-                priority="normal", source="test", status="pending",
-                triggered_at=now - timedelta(seconds=10 * (i + 1)),
-            ))
-        session.add(ConsolidationQueue(
-            board_id=BOARD_ID_S3,
-            artifact_type="card", artifact_id="card-claimed",
-            priority="normal", source="test", status="claimed",
-            triggered_at=now - timedelta(seconds=2),
-            claimed_at=now,
-        ))
+                artifact_type="card",
+                artifact_id="card-claimed",
+                priority="normal",
+                source="test",
+                status="claimed",
+                triggered_at=now - timedelta(seconds=2),
+                claimed_at=now,
+            )
+        )
         await session.commit()
 
     resp = await health_client.get("/api/v1/kg/queue/health")
@@ -190,7 +202,9 @@ async def test_ac9_health_reflects_queue_state(db_factory, health_client, s3_cle
 
 @pytest.mark.asyncio
 async def test_alert_active_toggles_with_depth(
-    db_factory, health_client, s3_clean,
+    db_factory,
+    health_client,
+    s3_clean,
 ):
     """alert_active = (queue_depth >= alert_threshold). When 100 items
     pending and threshold=100 → alert_active=True; when threshold=200 → False."""
@@ -199,12 +213,17 @@ async def test_alert_active_toggles_with_depth(
     now = datetime.now(timezone.utc)
     async with db_factory() as session:
         for i in range(100):
-            session.add(ConsolidationQueue(
-                board_id=BOARD_ID_S3,
-                artifact_type="card", artifact_id=f"card-alert-{i:03d}",
-                priority="normal", source="test", status="pending",
-                triggered_at=now,
-            ))
+            session.add(
+                ConsolidationQueue(
+                    board_id=BOARD_ID_S3,
+                    artifact_type="card",
+                    artifact_id=f"card-alert-{i:03d}",
+                    priority="normal",
+                    source="test",
+                    status="pending",
+                    triggered_at=now,
+                )
+            )
         await session.commit()
 
     resp = await health_client.get("/api/v1/kg/queue/health")
@@ -289,39 +308,107 @@ def test_ac3_batch_selector_never_tops_up_with_same_or_claimed_board():
 
 
 @pytest.mark.asyncio
+async def test_admin_reservation_admits_only_exact_rebuild_membership():
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.processors.consolidation import (
+        _filter_administratively_reserved_entries,
+    )
+
+    class _Store:
+        async def board_administrative_rebuild_source(self, _db, *, board_id):
+            if board_id == "reserved":
+                return "rebuild:manifest-current"
+            return None
+
+    entries = [
+        SimpleNamespace(
+            id="current",
+            board_id="reserved",
+            work_kind="consolidate",
+            source="rebuild:manifest-current",
+        ),
+        SimpleNamespace(
+            id="old",
+            board_id="reserved",
+            work_kind="consolidate",
+            source="rebuild:manifest-old",
+        ),
+        SimpleNamespace(
+            id="live",
+            board_id="reserved",
+            work_kind="consolidate",
+            source="event:card.updated",
+        ),
+        SimpleNamespace(
+            id="delete",
+            board_id="reserved",
+            work_kind="stale_reconcile",
+            source="governed_delete",
+        ),
+        SimpleNamespace(
+            id="other-board",
+            board_id="open",
+            work_kind="consolidate",
+            source="event:spec.updated",
+        ),
+    ]
+
+    selected = await _filter_administratively_reserved_entries(
+        _Store(),
+        object(),
+        entries,
+    )
+
+    assert [entry.id for entry in selected] == ["current", "other-board"]
+
+
+@pytest.mark.asyncio
 async def test_ac3_claim_filters_out_already_claimed_boards(
-    db_factory, s3_clean,
+    db_factory,
+    s3_clean,
 ):
     """AC3: when a board has a claimed item, the next claim on the same
     board is gated by claim_board_aware filter (NOT IN claimed_boards)."""
     now = datetime.now(timezone.utc)
     async with db_factory() as session:
         # 2 items on the same board: 1 already claimed, 1 still pending
-        session.add(ConsolidationQueue(
-            board_id=BOARD_ID_S3,
-            artifact_type="card", artifact_id="card-claimed",
-            priority="normal", source="test", status="claimed",
-            triggered_at=now, claimed_at=now,
-            claim_timeout_at=now + timedelta(seconds=300),
-        ))
-        session.add(ConsolidationQueue(
-            board_id=BOARD_ID_S3,
-            artifact_type="card", artifact_id="card-pending-same-board",
-            priority="normal", source="test", status="pending",
-            triggered_at=now,
-        ))
+        session.add(
+            ConsolidationQueue(
+                board_id=BOARD_ID_S3,
+                artifact_type="card",
+                artifact_id="card-claimed",
+                priority="normal",
+                source="test",
+                status="claimed",
+                triggered_at=now,
+                claimed_at=now,
+                claim_timeout_at=now + timedelta(seconds=300),
+            )
+        )
+        session.add(
+            ConsolidationQueue(
+                board_id=BOARD_ID_S3,
+                artifact_type="card",
+                artifact_id="card-pending-same-board",
+                priority="normal",
+                source="test",
+                status="pending",
+                triggered_at=now,
+            )
+        )
         await session.commit()
 
         # Run the same SQL the worker uses to claim board-aware:
         from sqlalchemy import select as _select
+
         claimed_subq = (
             _select(ConsolidationQueue.board_id)
             .where(ConsolidationQueue.status == "claimed")
             .scalar_subquery()
         )
         result = await session.execute(
-            _select(ConsolidationQueue)
-            .where(
+            _select(ConsolidationQueue).where(
                 ConsolidationQueue.status == "pending",
                 ConsolidationQueue.board_id.notin_(claimed_subq),
             )
@@ -338,7 +425,8 @@ async def test_ac3_claim_filters_out_already_claimed_boards(
 
 @pytest.mark.asyncio
 async def test_ac13_claim_board_aware_prefers_distinct_boards(
-    db_factory, s3_clean,
+    db_factory,
+    s3_clean,
 ):
     """AC13: 5 items pending (3 board-A + 2 board-B), no current claims.
     Board-aware claim returns items from BOTH boards before exhausting one."""
@@ -354,19 +442,29 @@ async def test_ac13_claim_board_aware_prefers_distinct_boards(
         await session.commit()
 
         for i in range(3):
-            session.add(ConsolidationQueue(
-                board_id=BOARD_A,
-                artifact_type="card", artifact_id=f"card-A-{i}",
-                priority="normal", source="test", status="pending",
-                triggered_at=now,
-            ))
+            session.add(
+                ConsolidationQueue(
+                    board_id=BOARD_A,
+                    artifact_type="card",
+                    artifact_id=f"card-A-{i}",
+                    priority="normal",
+                    source="test",
+                    status="pending",
+                    triggered_at=now,
+                )
+            )
         for i in range(2):
-            session.add(ConsolidationQueue(
-                board_id=BOARD_B,
-                artifact_type="card", artifact_id=f"card-B-{i}",
-                priority="normal", source="test", status="pending",
-                triggered_at=now,
-            ))
+            session.add(
+                ConsolidationQueue(
+                    board_id=BOARD_B,
+                    artifact_type="card",
+                    artifact_id=f"card-B-{i}",
+                    priority="normal",
+                    source="test",
+                    status="pending",
+                    triggered_at=now,
+                )
+            )
         await session.commit()
 
         # The board-aware query (without subquery filter, since no claim

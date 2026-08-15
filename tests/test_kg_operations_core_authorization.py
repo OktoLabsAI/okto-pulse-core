@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
 
@@ -189,7 +190,16 @@ class _KgWriterSpy:
         self._write("historical.cancel")
         return {}
 
-    async def right_to_erasure(self, _board_id: str) -> dict[str, Any]:
+    @asynccontextmanager
+    async def board_erasure_scope(self, _board_id: str, *, actor_id: str):
+        del actor_id
+        yield SimpleNamespace(ensure_owned=lambda: None)
+
+    async def right_to_erasure(
+        self,
+        _board_id: str,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
         self._write("board.erase")
         return {}
 
@@ -221,9 +231,7 @@ class _KgWriterSpy:
         self._write("queue.connectivity_reprocess")
         return {}
 
-    async def invoke_rebuild_admission(
-        self, *_args: Any, **_kwargs: Any
-    ) -> None:
+    async def invoke_rebuild_admission(self, *_args: Any, **_kwargs: Any) -> None:
         self._write("rebuild.admission")
 
 
@@ -449,9 +457,7 @@ async def test_code_traceability_dlq_reprocess_requires_all_read_leaves_and_comm
         }
 
     allowed_uow = _Uow()
-    allowed_uow.services.kg = SimpleNamespace(
-        reprocess_dead_letter_rows=_reprocess
-    )
+    allowed_uow.services.kg = SimpleNamespace(reprocess_dead_letter_rows=_reprocess)
     result = await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
         command,
         actor=ActorContext(
@@ -823,9 +829,7 @@ _READ_CASES: tuple[
     (
         list_stale_canonical_parity,
         list_stale_canonical_parity.ListStaleCanonicalParityUseCase(),
-        lambda: list_stale_canonical_parity.ListStaleCanonicalParityCommand(
-            BOARD_ID
-        ),
+        lambda: list_stale_canonical_parity.ListStaleCanonicalParityCommand(BOARD_ID),
         "kg.operations.integrity.read",
         "kg.admin.settings_read",
         True,

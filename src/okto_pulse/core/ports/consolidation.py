@@ -35,6 +35,43 @@ class ConsolidationQueueRecord:
     delete_event_id: str | None = None
     claim_token: str | None = None
     triggered_by_event: str | None = None
+    # Added after the original positional surface.  Keep this at the tail so
+    # integrations that still construct queue records positionally do not
+    # silently shift ``work_kind``/generation/payload into the wrong fields.
+    source: str = "state_transition"
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationClaimScope:
+    """Exact queue membership admitted by an offline recovery processor.
+
+    This scope is intentionally narrower than the ordinary runner contract:
+    one board, one rebuild source fence and only consolidation work.  It is
+    consumed directly by recovery tooling; it does not authorize global
+    stale-claim recovery or DLQ auto-drain.
+    """
+
+    board_id: str
+    source: str
+    work_kind: str = "consolidate"
+
+    def __post_init__(self) -> None:
+        if not self.board_id.strip():
+            raise ValueError("consolidation_claim_scope_board_id_required")
+        if self.work_kind != "consolidate":
+            raise ValueError("consolidation_claim_scope_work_kind_invalid")
+        if (
+            not self.source.startswith("rebuild:")
+            or not self.source.removeprefix("rebuild:").strip()
+        ):
+            raise ValueError("consolidation_claim_scope_source_invalid")
+
+    def admits(self, entry: ConsolidationQueueRecord) -> bool:
+        return (
+            entry.board_id == self.board_id
+            and entry.source == self.source
+            and entry.work_kind == self.work_kind
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,9 +190,7 @@ class CurrentResearchDecisionSummary:
             "decision": self.decision,
             "rationale": self.rationale,
             "confidence": self.confidence,
-            "evidence_absence_justification": (
-                self.evidence_absence_justification
-            ),
+            "evidence_absence_justification": (self.evidence_absence_justification),
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -243,6 +278,56 @@ class ConsolidationPersistencePort(Protocol):
         self, context: Any, *, now: datetime
     ) -> tuple[ConsolidationQueueRecord, ...]: ...
 
+    async def list_ready_pending_exact(
+        self,
+        context: Any,
+        *,
+        now: datetime,
+        board_id: str,
+        source: str,
+        work_kind: str,
+    ) -> tuple[ConsolidationQueueRecord, ...]:
+        """List only exact recovery membership before any row is claimed."""
+
+        ...
+
+    async def list_claimed_exact(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        source: str,
+        work_kind: str,
+    ) -> tuple[ConsolidationQueueRecord, ...]:
+        """List only claimed members of one offline recovery fence."""
+
+        ...
+
+    async def claim_ready_pending_exact(
+        self,
+        context: Any,
+        *,
+        entry_id: str,
+        board_id: str,
+        source: str,
+        work_kind: str,
+        generation: int,
+        now: datetime,
+        claim_timeout_at: datetime,
+        worker_id: str,
+        claim_token: str,
+    ) -> ConsolidationQueueRecord | None:
+        """CAS one exact ready row into claimed state."""
+
+        ...
+
+    async def board_administrative_rebuild_source(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+    ) -> str | None: ...
+
     async def get_queue_entry(
         self, context: Any, *, entry_id: str
     ) -> ConsolidationQueueRecord | None: ...
@@ -257,6 +342,7 @@ class ConsolidationPersistencePort(Protocol):
         artifact_type: str,
         artifact_id: str,
         work_kind: str,
+        source: str,
         generation: int,
         delete_event_id: str | None,
     ) -> bool:
@@ -276,6 +362,9 @@ class ConsolidationPersistencePort(Protocol):
         *,
         entry_id: str,
         claim_token: str,
+        board_id: str,
+        source: str,
+        work_kind: str,
         generation: int,
         delete_event_id: str | None,
     ) -> bool:
@@ -284,6 +373,27 @@ class ConsolidationPersistencePort(Protocol):
         Returns ``True`` only when exactly one row matched the id, claimed
         status, claim token, generation and null-safe delete-event identity.
         """
+        ...
+
+    async def repend_claimed_queue_entry(
+        self,
+        context: Any,
+        *,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        source: str,
+        work_kind: str,
+        generation: int,
+        delete_event_id: str | None,
+    ) -> bool:
+        """Neutrally release an exact claim after an administrative fence.
+
+        Implementations must compare every supplied identity in one atomic
+        update, preserve source/payload/attempts and clear claim ownership and
+        timing fields while returning the row to ``pending``.
+        """
+
         ...
 
     async def save_queue_entries(
@@ -305,9 +415,7 @@ class ConsolidationPersistencePort(Protocol):
 
     async def board_exists(self, context: Any, *, board_id: str) -> bool: ...
 
-    async def list_dlq_auto_drain_board_ids(
-        self, context: Any
-    ) -> tuple[str, ...]: ...
+    async def list_dlq_auto_drain_board_ids(self, context: Any) -> tuple[str, ...]: ...
 
     async def count_dead_letters(self, context: Any, *, board_id: str) -> int: ...
 
@@ -330,7 +438,9 @@ def register_consolidation_persistence_port(
 
 
 def get_consolidation_persistence_port() -> ConsolidationPersistencePort:
-    return require_runtime_value(_RUNTIME_KEY, "consolidation_persistence_port_not_configured")
+    return require_runtime_value(
+        _RUNTIME_KEY, "consolidation_persistence_port_not_configured"
+    )
 
 
 def reset_consolidation_persistence_port_for_tests() -> None:
@@ -338,6 +448,7 @@ def reset_consolidation_persistence_port_for_tests() -> None:
 
 
 __all__ = [
+    "ConsolidationClaimScope",
     "ConsolidationPersistencePort",
     "ConsolidationPoisonRow",
     "ConsolidationProjectionInputs",

@@ -35,7 +35,7 @@ import json
 import logging
 import secrets
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Iterable, Mapping
@@ -69,6 +69,30 @@ logger = logging.getLogger("okto_pulse.kg.rebuild_sources")
 REBUILD_DIRNAME = "rebuild"
 MANIFEST_DIRNAME = "manifests"
 MANIFEST_REF_PREFIX = "rebuild_manifest_"
+
+
+class RebuildSourceManifestVerificationError(RuntimeError):
+    """Base error for fail-closed recovery manifest loading."""
+
+
+class RebuildSourceManifestNotFoundError(RebuildSourceManifestVerificationError):
+    """The exact manifest reference has no durable artifact."""
+
+
+class RebuildSourceManifestIntegrityError(RebuildSourceManifestVerificationError):
+    """A durable manifest exists but its identity or payload is invalid."""
+
+
+class RebaselineEvidenceError(RuntimeError):
+    """Base error for governed, run-bound rebaseline evidence."""
+
+
+class RebaselineEvidenceFenceLostError(RebaselineEvidenceError):
+    """Administrative authority expired inside the durable transaction."""
+
+
+class RebaselineEvidenceConflictError(RebaselineEvidenceError):
+    """A deterministic evidence id is already bound to different content."""
 
 
 # val_d0da4a75 rework: preflight_hash MUST be lowercase SHA256 hex
@@ -318,6 +342,7 @@ class RebuildSourceManifest:
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    payload_digest: str = ""
 
     @property
     def materializable_sources(self) -> tuple[RebuildSourceRow, ...]:
@@ -340,12 +365,28 @@ class RebuildSourceManifest:
             "has_non_deterministic_inputs": self.has_non_deterministic_inputs,
             "created_at": self.created_at,
             "manifest_schema_version": self.manifest_schema_version,
+            "payload_digest": self.payload_digest,
             "canonical_source_count": len(self.sources),
             "working_source_count": len(self.working_sources),
             "skipped_by_maturity_count": len(self.skipped_by_maturity),
             "skipped_expired_working_count": len(self.skipped_expired_working),
             "legacy_unknown_count": len(self.legacy_unknown),
         }
+
+
+def _manifest_payload_digest(payload: Mapping[str, Any]) -> str:
+    """Bind every persisted manifest field, including the recovery cut."""
+
+    canonical = dict(payload)
+    canonical.pop("payload_digest", None)
+    return hashlib.sha256(
+        json.dumps(
+            canonical,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 # --- Counter (OR or_2d295e26 / or_01279a1c) -----------------------------------
@@ -699,9 +740,7 @@ def cognitive_durable_digest_from_rows(
             item["record_fingerprint"] = row["record_fingerprint"]
         canonical.append(item)
     digest = hashlib.sha256(
-        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     return {"count": len(canonical), "digest": digest}
 
@@ -804,6 +843,7 @@ class RevalidationResult:
     rebaselined_source_refs: tuple[str, ...] = ()
     from_manifest_schema_version: int = 0
     to_manifest_schema_version: int = 0
+    to_source_set_hash: str = ""
     hash_fields_v1: tuple[str, ...] = ()
     hash_fields_v2: tuple[str, ...] = ()
     hash_fields_v3: tuple[str, ...] = ()
@@ -818,6 +858,7 @@ class RevalidationResult:
             "rebaselined_source_refs": list(self.rebaselined_source_refs),
             "from_manifest_schema_version": self.from_manifest_schema_version,
             "to_manifest_schema_version": self.to_manifest_schema_version,
+            "to_source_set_hash": self.to_source_set_hash,
             "hash_fields_v1": list(self.hash_fields_v1),
             "hash_fields_v2": list(self.hash_fields_v2),
             "hash_fields_v3": list(self.hash_fields_v3),
@@ -877,24 +918,72 @@ def _append_spec_manifest_rebaseline_audit(
     result: "RevalidationResult",
     recorded_at: str,
     artifact_store: RebuildAuditArtifactStore | None = None,
-) -> None:
+    evidence_id: str | None = None,
+    fence_valid: Callable[[], bool] | None = None,
+) -> bool:
+    """Append one rebaseline record and report whether it was newly durable.
+
+    ``evidence_id`` enables the recovery service's exactly-once, run-bound
+    evidence path.  Its fence predicate is deliberately evaluated *inside*
+    the artifact store's serialized transformer: a writer that waited behind
+    board erasure cannot recreate this board-scoped audit after its
+    reservation or graph-writer lease expired.
+
+    The optional arguments preserve the historical helper contract used by
+    non-recovery callers: without an evidence id each invocation appends one
+    independent record.
+    """
     record = {
         "board_id": board_id,
         "manifest_ref": manifest_ref,
         "recorded_at": recorded_at,
         **result.to_dict(),
     }
+    if evidence_id is not None:
+        if not isinstance(evidence_id, str) or not evidence_id:
+            raise ValueError("rebaseline evidence_id must be non-empty")
+        record["evidence_id"] = evidence_id
     resolved_store = resolve_rebuild_audit_artifact_store(
         base_dir=base_dir,
         artifact_store=artifact_store,
     )
     key = _rebaseline_audit_key(board_id)
+    appended = False
 
     def _append(current: dict[str, Any] | None) -> dict[str, Any]:
+        nonlocal appended
+        if fence_valid is not None and not fence_valid():
+            raise RebaselineEvidenceFenceLostError("rebaseline_audit_fence_lost")
         records = []
         if current and isinstance(current.get("records"), list):
             records = list(current["records"])
+        if evidence_id is not None:
+            existing = [
+                item
+                for item in records
+                if isinstance(item, Mapping) and item.get("evidence_id") == evidence_id
+            ]
+            if existing:
+                expected = {
+                    key: value for key, value in record.items() if key != "recorded_at"
+                }
+                observed = {
+                    key: value
+                    for key, value in dict(existing[0]).items()
+                    if key != "recorded_at"
+                }
+                if len(existing) != 1 or observed != expected:
+                    raise RebaselineEvidenceConflictError(
+                        "rebaseline_audit_evidence_conflict"
+                    )
+                return current or {
+                    "board_id": board_id,
+                    "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
+                    "updated_at": str(existing[0].get("recorded_at") or recorded_at),
+                    "records": records,
+                }
         records.append(record)
+        appended = True
         return {
             "board_id": board_id,
             "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
@@ -903,6 +992,7 @@ def _append_spec_manifest_rebaseline_audit(
         }
 
     resolved_store.replace_json(key, _append)
+    return appended
 
 
 def read_spec_manifest_rebaseline_audit(
@@ -991,6 +1081,10 @@ class KGRebuildSourceManifest:
             skipped_expired_working=source_set.skipped_expired_working,
             legacy_unknown=source_set.legacy_unknown,
         )
+        manifest = replace(
+            manifest,
+            payload_digest=_manifest_payload_digest(manifest.to_dict()),
+        )
 
         self.artifact_store.write_json_atomic(
             self._manifest_key(manifest_ref), manifest.to_dict()
@@ -1005,6 +1099,78 @@ class KGRebuildSourceManifest:
             len(source_set.sources),
         )
         return manifest
+
+    def validate_integrity(
+        self,
+        *,
+        manifest: RebuildSourceManifest,
+        expected_manifest_ref: str,
+        expected_board_id: str,
+        expected_preflight_hash: str,
+        cognitive_durable_digest: Mapping[str, Any] | None = None,
+    ) -> bool:
+        """Verify identity fields and recompute the hash from stored rows.
+
+        A declared ``source_set_hash`` is not authority by itself. Rebuild must
+        prove that the exact persisted partitions still compose that digest
+        before the manifest can authorize a queue or confirmation receipt.
+        """
+
+        from okto_pulse.core.kg.board_source_store import (
+            SPEC_SOURCE_MANIFEST_VERSION,
+        )
+
+        if manifest.manifest_ref != expected_manifest_ref:
+            return False
+        if manifest.board_id != expected_board_id:
+            return False
+        if manifest.preflight_hash != expected_preflight_hash:
+            return False
+        if manifest.manifest_schema_version not in (
+            1,
+            2,
+            SPEC_SOURCE_MANIFEST_VERSION,
+        ):
+            return False
+        # Current manifests require the canonical envelope digest. Legacy v1
+        # and v2 artifacts predate it; when present it is still verified, and
+        # when absent their exact persisted partitions remain bound by the
+        # historical source_set_hash below. The live compatibility projection
+        # is independently proved by ``classify_revalidation`` before use.
+        if manifest.payload_digest and not secrets.compare_digest(
+            manifest.payload_digest, _manifest_payload_digest(manifest.to_dict())
+        ):
+            return False
+        if (
+            manifest.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
+            and not manifest.payload_digest
+        ):
+            return False
+        try:
+            created_at = datetime.fromisoformat(manifest.created_at)
+        except (TypeError, ValueError):
+            return False
+        if created_at.tzinfo is None:
+            return False
+        if manifest.has_non_deterministic_inputs != bool(manifest.legacy_unknown):
+            return False
+        reconstructed = RebuildSourceSet(
+            board_id=manifest.board_id,
+            sources=manifest.sources,
+            skipped_cancelled_count=manifest.skipped_cancelled_count,
+            has_non_deterministic_inputs=manifest.has_non_deterministic_inputs,
+            generated_at=manifest.created_at,
+            working_sources=manifest.working_sources,
+            skipped_by_maturity=manifest.skipped_by_maturity,
+            skipped_expired_working=manifest.skipped_expired_working,
+            legacy_unknown=manifest.legacy_unknown,
+            cognitive_durable_digest=(
+                dict(cognitive_durable_digest or {})
+                if manifest.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
+                else {}
+            ),
+        )
+        return _compose_source_set_hash(reconstructed) == manifest.source_set_hash
 
     def load(self, manifest_ref: str) -> RebuildSourceManifest | None:
         # val_d0da4a75 #2: reject path-traversal / alias attempts.
@@ -1081,19 +1247,70 @@ class KGRebuildSourceManifest:
                 skipped_by_maturity=_rows("skipped_by_maturity"),
                 skipped_expired_working=_rows("skipped_expired_working"),
                 legacy_unknown=_rows("legacy_unknown"),
+                payload_digest=str(data.get("payload_digest") or ""),
             )
         except (KeyError, TypeError, ValueError):
             return None
 
-    def revalidate(
+    def load_verified(
+        self,
+        manifest_ref: str,
+        *,
+        expected_board_id: str,
+        expected_preflight_hash: str,
+        cognitive_digest: Mapping[str, Any] | None = None,
+    ) -> RebuildSourceManifest:
+        """Load one manifest and prove its complete recovery binding.
+
+        Missing storage and corrupt/tampered storage are intentionally distinct
+        typed failures so the offline executor can stop without guessing.  The
+        verification includes the canonical payload digest (therefore the cut
+        timestamp and nondeterministic-input flag), identity fields, schema,
+        every persisted source partition, and the cognitive durable digest.
+        """
+
+        try:
+            validate_manifest_ref(manifest_ref)
+        except ValueError as exc:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_ref_invalid"
+            ) from exc
+        key = self._manifest_key(manifest_ref)
+        if not self.artifact_store.exists(key):
+            raise RebuildSourceManifestNotFoundError(
+                "rebuild_source_manifest_not_found"
+            )
+        manifest = self.load(manifest_ref)
+        if manifest is None:
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_payload_invalid"
+            )
+        if not self.validate_integrity(
+            manifest=manifest,
+            expected_manifest_ref=manifest_ref,
+            expected_board_id=expected_board_id,
+            expected_preflight_hash=expected_preflight_hash,
+            cognitive_durable_digest=cognitive_digest,
+        ):
+            raise RebuildSourceManifestIntegrityError(
+                "rebuild_source_manifest_integrity_invalid"
+            )
+        return manifest
+
+    def classify_revalidation(
         self,
         *,
         manifest: RebuildSourceManifest,
         current_source_set: RebuildSourceSet,
     ) -> RevalidationResult:
-        """Classify the current source set against a stored manifest — KG-02.3
-        calls this before mutation (IR ir_1959b2e1 run_validation contract),
-        with exact manifest-v1/v2/v3 compatibility:
+        """Purely classify a live source set against a stored manifest.
+
+        This method never writes an artifact and never increments a counter.
+        Recovery discovery and terminal-receipt reconciliation must use this
+        seam because they run before (or intentionally avoid) governed board
+        mutation authority.
+
+        The classification has exact manifest-v1/v2/v3 compatibility:
 
         * EQUIVALENT — a v3 manifest matches the current v3 hash.
         * REBASELINE — a v1 or v2 manifest matches the corresponding transient
@@ -1119,9 +1336,7 @@ class KGRebuildSourceManifest:
             )
             if compatibility_hash == manifest.source_set_hash:
                 compatibility_field = (
-                    "content_hash_v1"
-                    if schema_version == 1
-                    else "content_hash_v2"
+                    "content_hash_v1" if schema_version == 1 else "content_hash_v2"
                 )
                 rebaselined = tuple(
                     row.source_ref
@@ -1143,49 +1358,125 @@ class KGRebuildSourceManifest:
                     SPEC_CONTENT_COLUMNS_V2,
                 )
 
-                result = RevalidationResult(
+                return RevalidationResult(
                     SourceSetRevalidation.REBASELINE,
                     rebaselined_source_refs=rebaselined,
                     from_manifest_schema_version=schema_version,
                     to_manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
+                    to_source_set_hash=_compose_source_set_hash(current_source_set),
                     hash_fields_v1=SPEC_CONTENT_COLUMNS_V1,
                     hash_fields_v2=SPEC_CONTENT_COLUMNS_V2,
                     hash_fields_v3=SOURCE_PROJECTION_HASH_FIELDS_V3,
                 )
+        return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
+
+    def record_rebaseline(
+        self,
+        *,
+        manifest: RebuildSourceManifest,
+        result: RevalidationResult,
+        evidence_id: str,
+        fence_valid: Callable[[], bool],
+        recorded_at: str | None = None,
+    ) -> bool:
+        """Persist exactly-once governed evidence for one recovery run.
+
+        ``evidence_id`` is supplied by the service as a deterministic
+        run+manifest binding.  An exact durable retry is a no-op; a conflicting
+        record fails closed.  The counter increments only after the first
+        append has become durable.
+        """
+
+        if result.outcome is not SourceSetRevalidation.REBASELINE:
+            raise ValueError("only REBASELINE results may be recorded")
+        if result.from_manifest_schema_version != manifest.manifest_schema_version:
+            raise ValueError("rebaseline result manifest schema mismatch")
+        if len(result.to_source_set_hash) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in result.to_source_set_hash
+        ):
+            raise ValueError("rebaseline target source_set_hash invalid")
+        appended = _append_spec_manifest_rebaseline_audit(
+            self.base_dir,
+            board_id=manifest.board_id,
+            manifest_ref=manifest.manifest_ref,
+            result=result,
+            recorded_at=recorded_at or datetime.now(timezone.utc).isoformat(),
+            artifact_store=self.artifact_store,
+            evidence_id=evidence_id,
+            fence_valid=fence_valid,
+        )
+        if appended:
+            _bump_rebaseline(board_id=manifest.board_id)
+            logger.info(
+                "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
+                "from_version=%d to_version=%d rebaselined=%d evidence=%s",
+                manifest.board_id,
+                result.from_manifest_schema_version,
+                result.to_manifest_schema_version,
+                len(result.rebaselined_source_refs),
+                evidence_id,
+            )
+        return appended
+
+    def revalidate(
+        self,
+        *,
+        manifest: RebuildSourceManifest,
+        current_source_set: RebuildSourceSet,
+    ) -> RevalidationResult:
+        """Compatibility API that classifies and records legacy rebaseline.
+
+        Recovery discovery and the governed rebuild service use
+        :meth:`classify_revalidation` plus :meth:`record_rebaseline` instead.
+        This method retains the pre-existing observable behavior for callers
+        outside that lane.
+        """
+
+        result = self.classify_revalidation(
+            manifest=manifest,
+            current_source_set=current_source_set,
+        )
+        if result.outcome is SourceSetRevalidation.REBASELINE:
+            appended = _append_spec_manifest_rebaseline_audit(
+                self.base_dir,
+                board_id=manifest.board_id,
+                manifest_ref=manifest.manifest_ref,
+                result=result,
+                recorded_at=datetime.now(timezone.utc).isoformat(),
+                artifact_store=self.artifact_store,
+            )
+            if appended:
                 _bump_rebaseline(board_id=manifest.board_id)
-                _append_spec_manifest_rebaseline_audit(
-                    self.base_dir,
-                    board_id=manifest.board_id,
-                    manifest_ref=manifest.manifest_ref,
-                    result=result,
-                    recorded_at=datetime.now(timezone.utc).isoformat(),
-                    artifact_store=self.artifact_store,
-                )
                 logger.info(
                     "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
                     "from_version=%d to_version=%d rebaselined=%d",
                     manifest.board_id,
-                    schema_version,
-                    SPEC_SOURCE_MANIFEST_VERSION,
-                    len(rebaselined),
+                    result.from_manifest_schema_version,
+                    result.to_manifest_schema_version,
+                    len(result.rebaselined_source_refs),
                 )
-                return result
+        elif result.outcome is SourceSetRevalidation.MANIFEST_DRIFT:
+            from okto_pulse.core.kg.board_source_store import (
+                SPEC_SOURCE_MANIFEST_VERSION,
+            )
 
-        supported_versions = (1, 2, SPEC_SOURCE_MANIFEST_VERSION)
-        _bump_enum(
-            board_id=manifest.board_id,
-            outcome=(
-                EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value
-                if schema_version in supported_versions
-                else EnumerationOutcome.UNSUPPORTED_SCHEMA_VERSION.value
-            ),
-            reason=(
-                "manifest_drift"
-                if schema_version in supported_versions
-                else "unsupported_manifest_schema"
-            ),
-        )
-        return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
+            supported_versions = (1, 2, SPEC_SOURCE_MANIFEST_VERSION)
+            schema_version = manifest.manifest_schema_version
+            _bump_enum(
+                board_id=manifest.board_id,
+                outcome=(
+                    EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value
+                    if schema_version in supported_versions
+                    else EnumerationOutcome.UNSUPPORTED_SCHEMA_VERSION.value
+                ),
+                reason=(
+                    "manifest_drift"
+                    if schema_version in supported_versions
+                    else "unsupported_manifest_schema"
+                ),
+            )
+        return result
 
 
 __all__ = [
@@ -1196,8 +1487,14 @@ __all__ = [
     "MANIFEST_REF_PREFIX",
     "REBUILD_DIRNAME",
     "REBUILD_ARTIFACT_TYPES",
+    "RebaselineEvidenceConflictError",
+    "RebaselineEvidenceError",
+    "RebaselineEvidenceFenceLostError",
     "RebuildSourceEnumerator",
     "RebuildSourceManifest",
+    "RebuildSourceManifestIntegrityError",
+    "RebuildSourceManifestNotFoundError",
+    "RebuildSourceManifestVerificationError",
     "RebuildSourceRow",
     "RebuildSourceSet",
     "RevalidationResult",

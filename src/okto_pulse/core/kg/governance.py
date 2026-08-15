@@ -84,10 +84,14 @@ class BoardErasureLease:
         writer_lock: Any,
         owner_token: str,
         ttl_seconds: int,
+        operation_reservation: Any | None = None,
+        reservation_token: str | None = None,
     ) -> None:
         self.board_id = board_id
         self._writer_lock = writer_lock
         self._owner_token = owner_token
+        self._operation_reservation = operation_reservation
+        self._reservation_token = reservation_token
         self._ttl_seconds = ttl_seconds
         self._lost = False
         self._renew_lock = Lock()
@@ -104,7 +108,20 @@ class BoardErasureLease:
             if self._lost:
                 return False
             try:
-                renewed = self._writer_lock.renew(
+                reservation_renewed = True
+                if (
+                    self._operation_reservation is not None
+                    and self._reservation_token is not None
+                ):
+                    reservation_renewed = self._operation_reservation.renew(
+                        board_id=self.board_id,
+                        owner_token=self._reservation_token,
+                        ttl_seconds=self._ttl_seconds,
+                    )
+                if not reservation_renewed:
+                    self._lost = True
+                    return False
+                writer_renewed = self._writer_lock.renew(
                     board_id=self.board_id,
                     owner_token=self._owner_token,
                     ttl_seconds=self._ttl_seconds,
@@ -112,9 +129,10 @@ class BoardErasureLease:
             except Exception:
                 self._lost = True
                 raise
+            renewed = bool(reservation_renewed and writer_renewed)
             if not renewed:
                 self._lost = True
-            return bool(renewed)
+            return renewed
 
     def ensure_owned(self) -> None:
         if self._lost or not self.renew():
@@ -165,29 +183,71 @@ async def board_erasure_scope(
 
     from okto_pulse.core.kg.single_writer_lock import (
         DEFAULT_TTL_SECONDS,
+        KGAdministrativeOperationReservation,
         KGSingleWriterLock,
     )
     from okto_pulse.core.kg.write_barrier import under_safe_write
 
     operation = "board_delete_erasure"
     writer_lock = KGSingleWriterLock()
-    acquisition = writer_lock.acquire(
+    operation_reservation = KGAdministrativeOperationReservation(
+        write_lock_port=writer_lock.bind_write_lock_port()
+    )
+    reservation_acquisition = operation_reservation.acquire(
         board_id=board_id,
-        operation=operation,
-        owner_id=f"{actor_id}:board-delete:{uuid.uuid4().hex}",
+        operation=f"{operation}.reservation",
+        owner_id=f"{actor_id}:board-delete-reservation:{uuid.uuid4().hex}",
         ttl_seconds=DEFAULT_TTL_SECONDS,
         admin_lane=True,
     )
-    if not acquisition.acquired or not acquisition.owner_token:
+    if not reservation_acquisition.acquired or not reservation_acquisition.owner_token:
         raise BoardErasureLockContention(
+            f"board_erasure_reservation_contention board={board_id} "
+            f"current_owner={reservation_acquisition.current_owner}"
+        )
+    try:
+        acquisition = writer_lock.acquire(
+            board_id=board_id,
+            operation=operation,
+            owner_id=f"{actor_id}:board-delete:{uuid.uuid4().hex}",
+            ttl_seconds=DEFAULT_TTL_SECONDS,
+            admin_lane=True,
+        )
+    except BaseException:
+        try:
+            operation_reservation.release(
+                board_id=board_id,
+                owner_token=reservation_acquisition.owner_token,
+            )
+        except BaseException:
+            logger.exception(
+                "board_erasure.writer_acquire_reservation_release_failed board=%s",
+                board_id,
+            )
+        raise
+    if not acquisition.acquired or not acquisition.owner_token:
+        contention = BoardErasureLockContention(
             f"board_erasure_lock_contention board={board_id} "
             f"current_owner={acquisition.current_owner}"
         )
+        try:
+            operation_reservation.release(
+                board_id=board_id,
+                owner_token=reservation_acquisition.owner_token,
+            )
+        except BaseException:
+            logger.exception(
+                "board_erasure.writer_contention_reservation_release_failed board=%s",
+                board_id,
+            )
+        raise contention
 
     lease = BoardErasureLease(
         board_id=board_id,
         writer_lock=writer_lock,
         owner_token=acquisition.owner_token,
+        operation_reservation=operation_reservation,
+        reservation_token=reservation_acquisition.owner_token,
         ttl_seconds=DEFAULT_TTL_SECONDS,
     )
     stop_heartbeat = asyncio.Event()
@@ -247,16 +307,40 @@ async def board_erasure_scope(
                             board_id,
                         )
     finally:
-        released = writer_lock.release(
-            board_id=board_id,
-            owner_token=acquisition.owner_token,
-        )
-        if not released:
-            logger.error(
-                "board_erasure.release_failed board=%s owner_token=%s",
-                board_id,
-                acquisition.owner_token,
+        try:
+            released = writer_lock.release(
+                board_id=board_id,
+                owner_token=acquisition.owner_token,
             )
+            if not released:
+                logger.error(
+                    "board_erasure.release_failed board=%s owner_token=%s",
+                    board_id,
+                    acquisition.owner_token,
+                )
+        except BaseException:
+            logger.exception(
+                "board_erasure.release_exception board=%s",
+                board_id,
+            )
+        finally:
+            try:
+                reservation_released = operation_reservation.release(
+                    board_id=board_id,
+                    owner_token=reservation_acquisition.owner_token,
+                )
+                if not reservation_released:
+                    logger.error(
+                        "board_erasure.reservation_release_failed board=%s "
+                        "owner_token=%s",
+                        board_id,
+                        reservation_acquisition.owner_token,
+                    )
+            except BaseException:
+                logger.exception(
+                    "board_erasure.reservation_release_exception board=%s",
+                    board_id,
+                )
 
 
 def _historical_progress_state(

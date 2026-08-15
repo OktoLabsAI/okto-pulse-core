@@ -31,18 +31,10 @@ from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_IMPACT_CONTRACT_VERSION,
 )
 
-POLICY_BINDING_MATERIALIZED_EVENT_TYPE = (
-    "board.semantic_policy_binding_materialized.v2"
-)
-POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION = (
-    "policy-binding-materialized/v2"
-)
-SEMANTIC_GUIDELINE_PROJECTION_EVENT_TYPE = (
-    "guideline.semantic_kg_projection_changed.v1"
-)
-SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION = (
-    "semantic-guideline-kg-projection/v1"
-)
+POLICY_BINDING_MATERIALIZED_EVENT_TYPE = "board.semantic_policy_binding_materialized.v2"
+POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION = "policy-binding-materialized/v2"
+SEMANTIC_GUIDELINE_PROJECTION_EVENT_TYPE = "guideline.semantic_kg_projection_changed.v1"
+SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION = "semantic-guideline-kg-projection/v1"
 
 
 def _utcnow() -> datetime:
@@ -205,9 +197,7 @@ class PolicyAdoptionChanged(DomainEvent):
         """Revision represented by this materialized policy transition."""
 
         value = (
-            self.to_revision_id
-            if self.operation == "adopt"
-            else self.from_revision_id
+            self.to_revision_id if self.operation == "adopt" else self.from_revision_id
         )
         assert value is not None
         return value
@@ -347,9 +337,7 @@ class PolicyBindingMaterialized(DomainEvent):
 
     @model_validator(mode="after")
     def validate_binding_evidence(self) -> PolicyBindingMaterialized:
-        if self.event_schema_version != (
-            POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION
-        ):
+        if self.event_schema_version != (POLICY_BINDING_MATERIALIZED_SCHEMA_VERSION):
             raise ValueError("policy_binding_materialized_evidence_invalid")
         normalized = BoardGuidelineBinding(
             binding_id=self.binding_id,
@@ -459,10 +447,7 @@ class SemanticGuidelineProjectionChanged(DomainEvent):
 
     @model_validator(mode="after")
     def validate_projection_intent(self) -> SemanticGuidelineProjectionChanged:
-        if (
-            self.event_schema_version
-            != SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION
-        ):
+        if self.event_schema_version != SEMANTIC_GUIDELINE_PROJECTION_SCHEMA_VERSION:
             raise ValueError("semantic_guideline_projection_evidence_invalid")
         if self.occurred_at.tzinfo is None or self.occurred_at.utcoffset() is None:
             raise ValueError("semantic_guideline_projection_time_invalid")
@@ -1010,9 +995,7 @@ class ImplementationTargetResolutionSubmitted(CodeTraceabilityDomainEvent):
 
 
 class ImplementationTargetExecutionReceiptSubmitted(CodeTraceabilityDomainEvent):
-    event_type: ClassVar[str] = (
-        "implementation_target.execution_receipt_submitted"
-    )
+    event_type: ClassVar[str] = "implementation_target.execution_receipt_submitted"
     execution_record_id: _TraceabilityId
     target_id: _TraceabilityId
     card_id: _TraceabilityId

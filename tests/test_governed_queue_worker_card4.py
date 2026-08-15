@@ -15,6 +15,7 @@ from okto_pulse.core.application.processors.consolidation import (
     _process_queue_entry,
 )
 from okto_pulse.core.ports.consolidation import (
+    ConsolidationClaimScope,
     ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
     get_consolidation_persistence_port,
@@ -33,6 +34,7 @@ def _entry(
     claim_token: str | None = None,
     board_id: str = "card4-board",
     artifact_id: str = "card4-spec",
+    source: str = "state_transition",
 ) -> ConsolidationQueueRecord:
     return ConsolidationQueueRecord(
         id=entry_id,
@@ -54,6 +56,7 @@ def _entry(
         payload=payload,
         delete_event_id=delete_event_id,
         claim_token=claim_token,
+        source=source,
     )
 
 
@@ -76,6 +79,30 @@ def _valid_reconcile_entry(**overrides: Any) -> ConsolidationQueueRecord:
     return _entry(**values)
 
 
+def test_queue_record_preserves_original_positional_work_kind_abi() -> None:
+    now = datetime.now(timezone.utc)
+    record = ConsolidationQueueRecord(
+        "entry-positional",
+        "board-positional",
+        "spec",
+        "spec-positional",
+        "pending",
+        0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        now,
+        "high",
+        "stale_sweep",
+    )
+
+    assert record.work_kind == "stale_sweep"
+    assert record.source == "state_transition"
+
+
 class _MemoryConsolidationStore:
     def __init__(
         self,
@@ -83,6 +110,7 @@ class _MemoryConsolidationStore:
         *,
         fence_result: bool = True,
         ack_result: bool = True,
+        reservation_sources: tuple[str | None, ...] = (),
     ) -> None:
         self.entries = {entry.id: entry for entry in entries}
         self.fence_result = fence_result
@@ -92,6 +120,9 @@ class _MemoryConsolidationStore:
         self.load_calls: list[tuple[str, str]] = []
         self.commit_count = 0
         self.rollback_count = 0
+        self.reservation_sources = list(reservation_sources)
+        self.current_reservation_source: str | None = None
+        self.repend_calls: list[dict[str, Any]] = []
 
     async def load_artifact(self, _context, *, artifact_type, artifact_id):
         self.load_calls.append((artifact_type, artifact_id))
@@ -115,6 +146,80 @@ class _MemoryConsolidationStore:
         return tuple(
             entry for entry in self.entries.values() if entry.status == "pending"
         )
+
+    async def list_ready_pending_exact(
+        self,
+        _context,
+        *,
+        now,
+        board_id,
+        source,
+        work_kind,
+    ):
+        del now
+        return tuple(
+            entry
+            for entry in self.entries.values()
+            if entry.status == "pending"
+            and entry.board_id == board_id
+            and entry.source == source
+            and entry.work_kind == work_kind
+        )
+
+    async def list_claimed_exact(
+        self,
+        _context,
+        *,
+        board_id,
+        source,
+        work_kind,
+    ):
+        return tuple(
+            entry
+            for entry in self.entries.values()
+            if entry.status == "claimed"
+            and entry.board_id == board_id
+            and entry.source == source
+            and entry.work_kind == work_kind
+        )
+
+    async def claim_ready_pending_exact(
+        self,
+        _context,
+        *,
+        entry_id,
+        board_id,
+        source,
+        work_kind,
+        generation,
+        now,
+        claim_timeout_at,
+        worker_id,
+        claim_token,
+    ):
+        entry = self.entries.get(entry_id)
+        if not (
+            entry is not None
+            and entry.status == "pending"
+            and entry.board_id == board_id
+            and entry.source == source
+            and entry.work_kind == work_kind
+            and entry.generation == generation
+        ):
+            return None
+        entry.status = "claimed"
+        entry.claimed_at = now
+        entry.claim_timeout_at = claim_timeout_at
+        entry.worker_id = worker_id
+        entry.claimed_by_session_id = worker_id
+        entry.claim_token = claim_token
+        return entry
+
+    async def board_administrative_rebuild_source(self, _context, *, board_id):
+        del board_id
+        if self.reservation_sources:
+            self.current_reservation_source = self.reservation_sources.pop(0)
+        return self.current_reservation_source
 
     async def list_stale_claims(self, _context, *, now, legacy_cutoff):
         del legacy_cutoff
@@ -142,6 +247,28 @@ class _MemoryConsolidationStore:
         if self.ack_result:
             self.entries.pop(str(identity["entry_id"]), None)
         return self.ack_result
+
+    async def repend_claimed_queue_entry(self, _context, **identity):
+        self.repend_calls.append(identity)
+        entry = self.entries.get(str(identity["entry_id"]))
+        if not (
+            entry is not None
+            and entry.status == "claimed"
+            and entry.claim_token == identity["claim_token"]
+            and entry.board_id == identity["board_id"]
+            and entry.source == identity["source"]
+            and entry.work_kind == identity["work_kind"]
+            and entry.generation == identity["generation"]
+            and entry.delete_event_id == identity["delete_event_id"]
+        ):
+            return False
+        entry.status = "pending"
+        entry.claimed_at = None
+        entry.claim_timeout_at = None
+        entry.worker_id = None
+        entry.claimed_by_session_id = None
+        entry.claim_token = None
+        return True
 
     async def delete_queue_entry(self, _context, *, entry_id):
         raise AssertionError(f"legacy non-CAS ACK used for {entry_id}")
@@ -406,8 +533,70 @@ async def test_lost_claim_is_neutral_before_stale_reconcile_write(monkeypatch):
     assert len(store.fence_calls) == 1
     assert store.ack_calls == []
     assert failure_calls == []
-    assert entry.status == "claimed"
+    assert entry.status == "pending"
+    assert entry.claim_token is None
     assert entry.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_stale_reconcile_claim_cas_runs_after_graph_writer(monkeypatch):
+    from okto_pulse.core.kg import canonical_stale_reconciler
+
+    entry = _valid_reconcile_entry(status="claimed", claim_token="claim-order")
+    store = _MemoryConsolidationStore((entry,))
+    events: list[str] = []
+
+    async def _claim_cas(*_args, **_kwargs):
+        events.append("claim-cas")
+        return True
+
+    async def _reconcile(_db, **kwargs):
+        events.append("reconcile")
+        kwargs["before_graph_write"]()
+        return SimpleNamespace(
+            incomplete=False,
+            failed_types=(),
+            **_complete_target_contract(),
+        )
+
+    async def _durable(**_kwargs):
+        events.append("durable")
+
+    lease = SimpleNamespace(
+        ensure_owned=lambda **_kwargs: events.append("lease-check"),
+        durability_applied=True,
+    )
+
+    def _enter(_mutation_ref):
+        events.append("graph-writer")
+        return lease
+
+    monkeypatch.setattr(store, "queue_claim_is_current_and_unfenced", _claim_cas)
+    monkeypatch.setattr(
+        canonical_stale_reconciler,
+        "reconcile_stale_canonical",
+        _reconcile,
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_ensure_board_graph_durable",
+        _durable,
+    )
+
+    with _registered(store):
+        assert await consolidation._process_stale_reconcile_entry(
+            object(),
+            entry,
+            enter_graph_write=_enter,
+        )
+
+    assert events == [
+        "graph-writer",
+        "claim-cas",
+        "reconcile",
+        "lease-check",
+        "durable",
+    ]
 
 
 @pytest.mark.asyncio
@@ -446,9 +635,14 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
     async def _abort(**_kwargs):
         observed.append("abort")
 
-    async def _publish(**_kwargs):
-        observed.append("publish")
-        return SimpleNamespace(nodes_added=1, edges_added=0)
+    @contextmanager
+    def _writer(*_args, **_kwargs):
+        observed.append("graph-writer")
+        yield SimpleNamespace()
+
+    async def _claim_cas(*_args, **_kwargs):
+        observed.append("claim-cas")
+        return False
 
     monkeypatch.setattr(consolidation, "_run_deterministic_worker", _extract)
     monkeypatch.setattr(
@@ -473,10 +667,11 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
         "_abort_open_consolidation_after_fence",
         _abort,
     )
+    monkeypatch.setattr(consolidation, "guarded_board_write", _writer)
     monkeypatch.setattr(
         consolidation,
-        "_commit_consolidation_with_board_graph_lifecycle",
-        _publish,
+        "_queue_claim_is_current_and_unfenced",
+        _claim_cas,
     )
 
     with _registered(store):
@@ -484,7 +679,7 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
             await _process_queue_entry(object(), entry)
 
     assert store.load_calls == [("spec", entry.artifact_id)]
-    assert observed == ["extract", "abort"]
+    assert observed == ["extract", "graph-writer", "claim-cas", "abort"]
 
 
 @pytest.mark.asyncio
@@ -517,10 +712,88 @@ async def test_legacy_processed_count_requires_ack_cas_rowcount_one(
     assert ack == {
         "entry_id": entry.id,
         "claim_token": entry.claim_token,
+        "board_id": entry.board_id,
+        "source": entry.source,
+        "work_kind": entry.work_kind,
         "generation": 0,
         "delete_event_id": None,
     }
     assert (entry.id not in store.entries) is ack_result
+
+
+@pytest.mark.asyncio
+async def test_live_claim_is_neutrally_repended_when_rebuild_reserves_before_step2(
+    monkeypatch,
+) -> None:
+    rebuild_source = "rebuild:manifest-card4"
+    live = _entry(entry_id="live-preclaimed-race")
+    rebuild = _entry(
+        entry_id="exact-rebuild-row",
+        artifact_id="rebuild-spec",
+        source=rebuild_source,
+    )
+    store = _MemoryConsolidationStore(
+        (live, rebuild),
+        reservation_sources=(
+            None,  # Step 1 lists/claims the ordinary row.
+            rebuild_source,  # Reservation appears before Step 2.
+            rebuild_source,
+            rebuild_source,
+            rebuild_source,
+        ),
+    )
+
+    async def _success(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(consolidation, "_process_queue_entry_serialized", _success)
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        assert await processor.process_batch() == 0
+        assert live.status == "pending"
+        assert live.claim_token is None
+        assert live.source == "state_transition"
+        assert rebuild.status == "pending"
+
+        assert await processor.process_batch() == 1
+
+    assert rebuild.id not in store.entries
+    assert live.id in store.entries
+    assert live.status == "pending"
+    assert len(store.repend_calls) == 1
+
+
+def test_under_writer_reservation_probe_admits_only_exact_rebuild_source(
+    monkeypatch,
+) -> None:
+    expires = datetime.now(timezone.utc).timestamp() + 60
+
+    class _Reservation:
+        def bind_write_lock_port(self):
+            return object()
+
+        def inspect(self, *, board_id):
+            assert board_id == "card4-board"
+            return SimpleNamespace(
+                operation="kg02_rebuild_reservation:manifest-card4",
+                expires_at_epoch=expires,
+            )
+
+    monkeypatch.setattr(
+        consolidation,
+        "KGAdministrativeOperationReservation",
+        _Reservation,
+    )
+
+    exact = _entry(source="rebuild:manifest-card4")
+    consolidation._ensure_entry_admitted_by_reservation_under_writer(exact)
+
+    with pytest.raises(
+        consolidation._QueueClaimLostOrFenced,
+        match="rebuild_reservation_scope_mismatch_under_writer",
+    ):
+        consolidation._ensure_entry_admitted_by_reservation_under_writer(_entry())
 
 
 @pytest.mark.asyncio
@@ -555,6 +828,82 @@ async def test_recovery_clears_token_and_reclaim_uses_fresh_token(monkeypatch):
     assert observed_tokens[0] != old_token
     assert store.ack_calls == []
     assert entry.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_exact_recovery_repends_killed_claim_and_replays_logical_commit_once(
+    monkeypatch,
+) -> None:
+    source = "rebuild:manifest-crash-recovery"
+    entry = _entry(
+        entry_id="claimed-before-process-kill",
+        status="claimed",
+        claim_token="dead-process-token",
+        source=source,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    logical_graph_commits = {f"spec:{entry.artifact_id}"}
+
+    async def _idempotent_replay(_db, claimed_entry, **_kwargs):
+        logical_graph_commits.add(f"spec:{claimed_entry.artifact_id}")
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _idempotent_replay,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        recovered = await processor.recover_exact_claims(
+            claim_scope=scope,
+            recovery_authority_probe=lambda: True,
+        )
+        assert recovered == 1
+        assert entry.status == "pending"
+        assert entry.claim_token is None
+        assert entry.attempts == 0
+
+        assert await processor.process_batch(claim_scope=scope) == 1
+
+    assert entry.id not in store.entries
+    assert logical_graph_commits == {f"spec:{entry.artifact_id}"}
+    assert len(store.repend_calls) == 1
+    assert store.repend_calls[0]["claim_token"] == "dead-process-token"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("authority,reservation", [(False, "exact"), (True, None)])
+async def test_exact_recovery_requires_offline_authority_and_matching_reservation(
+    authority: bool,
+    reservation: str | None,
+) -> None:
+    source = "rebuild:manifest-crash-recovery"
+    entry = _entry(
+        entry_id="claimed-fenced",
+        status="claimed",
+        claim_token="still-owned",
+        source=source,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source if reservation == "exact" else reservation
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store), pytest.raises(RuntimeError):
+        await processor.recover_exact_claims(
+            claim_scope=ConsolidationClaimScope(
+                board_id=entry.board_id,
+                source=source,
+            ),
+            recovery_authority_probe=lambda: authority,
+        )
+
+    assert entry.status == "claimed"
+    assert entry.claim_token == "still-owned"
+    assert store.repend_calls == []
 
 
 @pytest.mark.asyncio

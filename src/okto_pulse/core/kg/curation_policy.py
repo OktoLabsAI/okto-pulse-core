@@ -11,10 +11,10 @@ not confidence, defines the default —
 * ``auto``          — deterministic, non-destructive; may run unattended
                       (the daily decay tick recomputes scores, destroys
                       nothing).
-* ``propose_only``  — irreversible or state-mutating; requires an explicit
-                      confirmation artifact (CLI ``--confirm``/``--approve``,
-                      the rebuild's preflight→confirm token, a DLQ item id
-                      listed first). This is the FAIL-CLOSED DEFAULT for any
+* ``propose_only``  — irreversible or state-mutating; requires explicit
+                      governed authority (CLI ``--confirm``/``--approve``,
+                      the rebuild's opaque offline recovery capability, a DLQ
+                      item id listed first). This is the FAIL-CLOSED DEFAULT for any
                       operation not classified below.
 * ``forbidden``     — never runs through this surface (physical hard-delete
                       with bulk edge re-point — the mutation class behind
@@ -60,8 +60,8 @@ CURATION_POLICY: Mapping[str, str] = MappingProxyType(
         # list→reprocess(id) pair IS the propose→confirm artifact.
         "kg_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
         "kg_connectivity_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
-        # Rebuild already carries the strongest confirm-gate in the tree
-        # (preflight→confirm→run with immutable manifest hash).
+        # Rebuild is recovery-only/offline: the local one-shot owns preflight,
+        # immutable manifest, confirmation, and an opaque execution capability.
         "kg_rebuild_run": CURATION_LEVEL_PROPOSE_ONLY,
         # Deterministic, non-destructive score recompute.
         "kg_decay_tick": CURATION_LEVEL_AUTO,

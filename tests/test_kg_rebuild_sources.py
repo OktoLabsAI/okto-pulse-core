@@ -37,6 +37,8 @@ from okto_pulse.core.kg.rebuild_sources import (
     EnumerationOutcome,
     KGRebuildSourceManifest,
     RebuildSourceEnumerator,
+    RebuildSourceManifestIntegrityError,
+    RebuildSourceManifestNotFoundError,
     get_enumeration_count,
     get_enumeration_counter_labels,
     reset_enumeration_counter,
@@ -53,6 +55,7 @@ BoardSourceStore = _board_source_reader.BoardSourceStore
 # ---------------------------------------------------------------------------
 # IMPL-2 compatibility helper — see test_kg_rebuild_service.py for details.
 # ---------------------------------------------------------------------------
+
 
 def _make_rebuild_test_app(board_id: str = "b-test"):
     """Return a FastAPI app with the UoW overridden for FR10/FR9 gates."""
@@ -74,10 +77,7 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
             return "editor" if candidate_board_id == board_id else None
 
     async def _resolve_user_permissions(user_id, candidate_board_id):
-        if (
-            user_id != "user-lifecycle-test"
-            or candidate_board_id != board_id
-        ):
+        if user_id != "user-lifecycle-test" or candidate_board_id != board_id:
             return []
         return [
             "kg.operations.rebuild.preflight",
@@ -189,7 +189,12 @@ def test_enumerate_orders_by_artifact_type_then_created_at_then_id_then_version(
         _row(artifact_type="spec", id_="s-2", created_at="2026-05-02"),
         _row(artifact_type="spec", id_="s-1", created_at="2026-05-01"),
         _row(artifact_type="decision", id_="s-1:d-1", created_at="2026-05-01"),
-        _row(artifact_type="refinement", id_="r-1", created_at="2026-05-01", status="done"),
+        _row(
+            artifact_type="refinement",
+            id_="r-1",
+            created_at="2026-05-01",
+            status="done",
+        ),
         _row(artifact_type="test", id_="tc-1", created_at="2026-05-01", status="done"),
         _row(artifact_type="task", id_="t-1", created_at="2026-05-01", status="done"),
     ]
@@ -223,12 +228,36 @@ def test_closed_sprint_is_working_not_canonical():
 
 def test_ideation_and_intermediate_statuses_stay_out_of_canonical():
     rows = [
-        _row(artifact_type="ideation", id_="i-1", status="done", created_at="2026-06-12"),
-        _row(artifact_type="spec", id_="s-draft", status="draft", created_at="2026-06-12"),
-        _row(artifact_type="spec", id_="s-review", status="review", created_at="2026-06-12"),
-        _row(artifact_type="spec", id_="s-approved", status="approved", created_at="2026-06-12"),
-        _row(artifact_type="spec", id_="s-validated", status="validated", created_at="2026-06-12"),
-        _row(artifact_type="refinement", id_="r-review", status="review", created_at="2026-06-12"),
+        _row(
+            artifact_type="ideation", id_="i-1", status="done", created_at="2026-06-12"
+        ),
+        _row(
+            artifact_type="spec", id_="s-draft", status="draft", created_at="2026-06-12"
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-review",
+            status="review",
+            created_at="2026-06-12",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-approved",
+            status="approved",
+            created_at="2026-06-12",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-validated",
+            status="validated",
+            created_at="2026-06-12",
+        ),
+        _row(
+            artifact_type="refinement",
+            id_="r-review",
+            status="review",
+            created_at="2026-06-12",
+        ),
     ]
     # working_ttl_days=0 isolates the MATURITY/PARTITION contract from the working
     # TTL (which is covered deterministically by test_working_ttl_expiry_* /
@@ -320,17 +349,16 @@ def test_rebuild_legacy_missing_hash_is_not_canonical():
 
 def test_legacy_unknown_warning_is_aggregated_once_per_enumeration(caplog):
     rows = [
-        _row(artifact_type="decision", id_=f"decision-{index}")
-        for index in range(12)
+        _row(artifact_type="decision", id_=f"decision-{index}") for index in range(12)
     ] + [
         _row(id_="missing-hash-a", content_hash=""),
         _row(id_="missing-hash-b", content_hash=""),
     ]
 
     with caplog.at_level("WARNING", logger="okto_pulse.kg.rebuild_sources"):
-        result = RebuildSourceEnumerator(
-            source_store=lambda _board_id: rows
-        ).enumerate(board_id="board-legacy-diagnostics")
+        result = RebuildSourceEnumerator(source_store=lambda _board_id: rows).enumerate(
+            board_id="board-legacy-diagnostics"
+        )
 
     records = [
         record
@@ -372,9 +400,24 @@ def test_regression_fresh_working_sources_are_not_dropped_from_partition():
     source regardless of wall-clock.
     """
     rows = [
-        _row(artifact_type="ideation", id_="i-1", status="done", created_at="2020-01-01T00:00:00Z"),
-        _row(artifact_type="spec", id_="s-approved", status="approved", created_at="2020-01-01T00:00:00Z"),
-        _row(artifact_type="spec", id_="s-done", status="done", created_at="2020-01-01T00:00:00Z"),
+        _row(
+            artifact_type="ideation",
+            id_="i-1",
+            status="done",
+            created_at="2020-01-01T00:00:00Z",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-approved",
+            status="approved",
+            created_at="2020-01-01T00:00:00Z",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-done",
+            status="done",
+            created_at="2020-01-01T00:00:00Z",
+        ),
     ]
     enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
     result = enum.enumerate(board_id="b1")
@@ -386,7 +429,11 @@ def test_regression_fresh_working_sources_are_not_dropped_from_partition():
     assert [r.id for r in result.sources] == ["s-done"]
     assert result.skipped_expired_working == ()
     # canonical + working are both materializable — none dropped.
-    assert {r.id for r in result.materializable_sources} == {"i-1", "s-approved", "s-done"}
+    assert {r.id for r in result.materializable_sources} == {
+        "i-1",
+        "s-approved",
+        "s-done",
+    }
     assert result.working_source_count == 1
     assert result.skipped_by_maturity_count == 1
 
@@ -448,12 +495,8 @@ def test_working_ttl_override_keeps_recent_effective_working_source():
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["done-current"]
-    assert [r.id for r in result.skipped_expired_working] == [
-        "approved-old-default"
-    ]
-    assert [r.id for r in result.skipped_by_maturity] == [
-        "approved-old-override"
-    ]
+    assert [r.id for r in result.skipped_expired_working] == ["approved-old-default"]
+    assert [r.id for r in result.skipped_by_maturity] == ["approved-old-override"]
     assert result.skipped_by_maturity[0].expires_at is not None
 
 
@@ -501,9 +544,7 @@ def test_enumerate_raises_when_source_store_fails():
     with pytest.raises(RuntimeError):
         enum.enumerate(board_id="b1")
     assert (
-        get_enumeration_count(
-            "b1", EnumerationOutcome.SOURCE_STORE_UNAVAILABLE.value
-        )
+        get_enumeration_count("b1", EnumerationOutcome.SOURCE_STORE_UNAVAILABLE.value)
         == 1
     )
 
@@ -532,10 +573,22 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
             "(id, board_id, status, created_at, title, description, version, decisions) "
             "VALUES "
             "('s1', 'b1', 'done', '2026-05-01T00:00:00Z', 'Spec', 'D', 2, ?)",
-            (json.dumps([
-                {"id": "dec-active", "title": "Use hosted KG", "status": "active"},
-                {"id": "dec-old", "title": "Use local KG", "status": "superseded"},
-            ]),),
+            (
+                json.dumps(
+                    [
+                        {
+                            "id": "dec-active",
+                            "title": "Use hosted KG",
+                            "status": "active",
+                        },
+                        {
+                            "id": "dec-old",
+                            "title": "Use local KG",
+                            "status": "superseded",
+                        },
+                    ]
+                ),
+            ),
         )
         conn.execute(
             "INSERT INTO refinements "
@@ -588,12 +641,12 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
         "ideation",
         "story",
         "spec",
-            "refinement",
-            "task",
-            "test",
-            "bug",
-            "decision",
-        }
+        "refinement",
+        "task",
+        "test",
+        "bug",
+        "decision",
+    }
 
     enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
     source_set = enum.enumerate(board_id="b1")
@@ -689,6 +742,106 @@ def test_manifest_load_returns_byte_identical_record(tmp_path: Path):
 def test_manifest_load_returns_none_for_missing(tmp_path: Path):
     store = KGRebuildSourceManifest(base_dir=tmp_path)
     assert store.load("does_not_exist") is None
+
+
+def test_manifest_load_verified_round_trip_and_typed_missing(tmp_path: Path):
+    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
+        board_id="b1"
+    )
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    manifest = store.build(source_set=source_set, preflight_hash="b" * 64)
+
+    assert (
+        store.load_verified(
+            manifest.manifest_ref,
+            expected_board_id="b1",
+            expected_preflight_hash="b" * 64,
+            cognitive_digest=source_set.cognitive_durable_digest,
+        )
+        == manifest
+    )
+    with pytest.raises(
+        RebuildSourceManifestNotFoundError,
+        match="rebuild_source_manifest_not_found",
+    ):
+        store.load_verified(
+            "rebuild_manifest_missing",
+            expected_board_id="b1",
+            expected_preflight_hash="b" * 64,
+            cognitive_digest=source_set.cognitive_durable_digest,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered"),
+    (
+        ("manifest_ref", "rebuild_manifest_other"),
+        ("board_id", "other-board"),
+        ("preflight_hash", "c" * 64),
+        ("manifest_schema_version", 999),
+        ("created_at", "2099-01-01T00:00:00+00:00"),
+        ("has_non_deterministic_inputs", True),
+    ),
+    ids=(
+        "manifest-ref",
+        "board",
+        "preflight",
+        "schema",
+        "created-at",
+        "nondeterministic-flag",
+    ),
+)
+def test_manifest_load_verified_rejects_identity_and_payload_tamper(
+    tmp_path: Path,
+    field: str,
+    tampered: object,
+) -> None:
+    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
+        board_id="b1"
+    )
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    manifest = store.build(source_set=source_set, preflight_hash="d" * 64)
+    key = store._manifest_key(manifest.manifest_ref)
+    payload = store.artifact_store.read_json(key)
+    assert payload is not None
+    payload[field] = tampered
+    store.artifact_store.write_json_atomic(key, payload)
+
+    with pytest.raises(RebuildSourceManifestIntegrityError):
+        store.load_verified(
+            manifest.manifest_ref,
+            expected_board_id="b1",
+            expected_preflight_hash="d" * 64,
+            cognitive_digest=source_set.cognitive_durable_digest,
+        )
+
+
+def test_manifest_load_verified_recomputes_partition_hash_after_valid_digest(
+    tmp_path: Path,
+) -> None:
+    from okto_pulse.core.kg.rebuild_sources import _manifest_payload_digest
+
+    source_set = RebuildSourceEnumerator(source_store=lambda _b: [_row()]).enumerate(
+        board_id="b1"
+    )
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    manifest = store.build(source_set=source_set, preflight_hash="e" * 64)
+    key = store._manifest_key(manifest.manifest_ref)
+    payload = store.artifact_store.read_json(key)
+    assert payload is not None
+    payload["sources"][0]["content_hash"] = "tampered-source-row"
+    # Recomputing the envelope digest is insufficient: the stored partitions
+    # must still compose the manifest's authorization-bound source_set_hash.
+    payload["payload_digest"] = _manifest_payload_digest(payload)
+    store.artifact_store.write_json_atomic(key, payload)
+
+    with pytest.raises(RebuildSourceManifestIntegrityError):
+        store.load_verified(
+            manifest.manifest_ref,
+            expected_board_id="b1",
+            expected_preflight_hash="e" * 64,
+            cognitive_digest=source_set.cognitive_durable_digest,
+        )
 
 
 def test_manifest_revalidate_detects_drift(tmp_path: Path):
@@ -807,22 +960,29 @@ def test_issue_and_consume_happy_path(tmp_path: Path):
 def test_second_consume_returns_replayed(tmp_path: Path):
     store = _store(tmp_path)
     token = store.issue(
-        board_id="b1", actor_id="user-1", operation="rebuild",
-        preflight_hash="c" * 64, manifest_ref="m",
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m",
     )
     first = store.consume(
         confirmation_id=token.confirmation_id,
-        expected_board_id="b1", expected_actor_id="user-1",
+        expected_board_id="b1",
+        expected_actor_id="user-1",
         expected_operation="rebuild",
-        expected_preflight_hash="c" * 64, expected_manifest_ref="m",
+        expected_preflight_hash="c" * 64,
+        expected_manifest_ref="m",
     )
     assert first.outcome == ConfirmationOutcome.CONSUMED.value
 
     second = store.consume(
         confirmation_id=token.confirmation_id,
-        expected_board_id="b1", expected_actor_id="user-1",
+        expected_board_id="b1",
+        expected_actor_id="user-1",
         expected_operation="rebuild",
-        expected_preflight_hash="c" * 64, expected_manifest_ref="m",
+        expected_preflight_hash="c" * 64,
+        expected_manifest_ref="m",
     )
     # Second attempt hits MISSING because consume unlinks atomically
     # — equivalent to REPLAYED from the caller's perspective.
@@ -833,27 +993,126 @@ def test_second_consume_returns_replayed(tmp_path: Path):
     assert second.token is None
 
 
+def test_revoke_unconsumed_is_scope_bound_idempotent_and_burns_raw_token(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    token = store.issue(
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m",
+    )
+    scope = {
+        "expected_board_id": "b1",
+        "expected_actor_id": "user-1",
+        "expected_operation": "rebuild",
+        "expected_preflight_hash": "c" * 64,
+        "expected_manifest_ref": "m",
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="rebuild_confirmation_revocation_scope_mismatch:board_id",
+    ):
+        store.revoke_unconsumed(
+            confirmation_id=token.confirmation_id,
+            **{**scope, "expected_board_id": "other-board"},
+        )
+    # A wrong cleanup scope never burns the true owner's token.
+    assert store.revoke_unconsumed(
+        confirmation_id=token.confirmation_id,
+        **scope,
+    )
+    assert store.revoke_unconsumed(
+        confirmation_id=token.confirmation_id,
+        **scope,
+    )
+    consumed = store.consume(
+        confirmation_id=token.confirmation_id,
+        **scope,
+    )
+    assert consumed.outcome == ConfirmationOutcome.MISSING.value
+
+
+def test_revoke_unconsumed_completes_receipt_before_unlink_crash_cut(
+    tmp_path: Path,
+) -> None:
+    from okto_pulse.core.kg.rebuild_audit import confirmation_fingerprint
+
+    store = _store(tmp_path)
+    token = store.issue(
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash="d" * 64,
+        manifest_ref="m",
+    )
+    confirmation_ref = confirmation_fingerprint(token.confirmation_id)
+    receipt_key = RebuildAuditKey(
+        namespace="confirmation_audit",
+        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+        artifact_id=f"revoked_{confirmation_ref.removeprefix('conf_fp_')}",
+    )
+    store.artifact_store.write_json_atomic(
+        receipt_key,
+        {
+            "schema_version": "kg_rebuild_confirmation_revocation.v1",
+            "state": "revoked_unconsumed",
+            "confirmation_ref": confirmation_ref,
+            "board_id": "b1",
+            "actor_id": "user-1",
+            "operation": "rebuild",
+            "preflight_hash": "d" * 64,
+            "manifest_ref": "m",
+        },
+    )
+
+    assert store.revoke_unconsumed(
+        confirmation_id=token.confirmation_id,
+        expected_board_id="b1",
+        expected_actor_id="user-1",
+        expected_operation="rebuild",
+        expected_preflight_hash="d" * 64,
+        expected_manifest_ref="m",
+    )
+    assert (
+        store.consume(
+            confirmation_id=token.confirmation_id,
+            expected_board_id="b1",
+            expected_actor_id="user-1",
+            expected_operation="rebuild",
+            expected_preflight_hash="d" * 64,
+            expected_manifest_ref="m",
+        ).outcome
+        == ConfirmationOutcome.MISSING.value
+    )
+
+
 def test_expired_token_is_rejected(tmp_path: Path):
     store = _store(tmp_path, ttl=30)  # min ttl
     # Forge a manifest with expires_at in the past via the store path.
     token = store.issue(
-        board_id="b1", actor_id="u", operation="rebuild",
-        preflight_hash="c" * 64, manifest_ref="m",
+        board_id="b1",
+        actor_id="u",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m",
     )
     # Manipulate the on-disk record to expire immediately.
-    path = (
-        tmp_path / "rebuild" / "confirmations"
-        / f"{token.confirmation_id}.json"
-    )
+    path = tmp_path / "rebuild" / "confirmations" / f"{token.confirmation_id}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data["expires_at"] = "2020-01-01T00:00:00+00:00"
     path.write_text(json.dumps(data), encoding="utf-8")
 
     result = store.consume(
         confirmation_id=token.confirmation_id,
-        expected_board_id="b1", expected_actor_id="u",
+        expected_board_id="b1",
+        expected_actor_id="u",
         expected_operation="rebuild",
-        expected_preflight_hash="c" * 64, expected_manifest_ref="m",
+        expected_preflight_hash="c" * 64,
+        expected_manifest_ref="m",
     )
     assert result.outcome == ConfirmationOutcome.EXPIRED.value
     assert result.token is None
@@ -861,20 +1120,26 @@ def test_expired_token_is_rejected(tmp_path: Path):
     assert not path.exists()
 
 
-@pytest.mark.parametrize("field,actual,expected", [
-    ("board_id", "b-other", "b1"),
-    ("actor_id", "other-user", "user-1"),
-    ("operation", "reset", "rebuild"),
-    ("preflight_hash", "d" * 64, "c" * 64),
-    ("manifest_ref", "m-other", "m"),
-])
+@pytest.mark.parametrize(
+    "field,actual,expected",
+    [
+        ("board_id", "b-other", "b1"),
+        ("actor_id", "other-user", "user-1"),
+        ("operation", "reset", "rebuild"),
+        ("preflight_hash", "d" * 64, "c" * 64),
+        ("manifest_ref", "m-other", "m"),
+    ],
+)
 def test_scope_mismatch_blocks_consumption(
     tmp_path: Path, field: str, actual: str, expected: str
 ):
     store = _store(tmp_path)
     token = store.issue(
-        board_id="b1", actor_id="user-1", operation="rebuild",
-        preflight_hash="c" * 64, manifest_ref="m",
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m",
     )
     kwargs = {
         "expected_board_id": "b1",
@@ -891,10 +1156,7 @@ def test_scope_mismatch_blocks_consumption(
 
     # Crucially: the token is NOT unlinked, so the true owner can
     # still consume it within TTL.
-    path = (
-        tmp_path / "rebuild" / "confirmations"
-        / f"{token.confirmation_id}.json"
-    )
+    path = tmp_path / "rebuild" / "confirmations" / f"{token.confirmation_id}.json"
     assert path.exists()
 
 
@@ -902,8 +1164,11 @@ def test_unknown_operation_rejected_at_issue(tmp_path: Path):
     store = _store(tmp_path)
     with pytest.raises(ValueError):
         store.issue(
-            board_id="b1", actor_id="u", operation="bogus",
-            preflight_hash="c" * 64, manifest_ref="m",
+            board_id="b1",
+            actor_id="u",
+            operation="bogus",
+            preflight_hash="c" * 64,
+            manifest_ref="m",
         )
 
 
@@ -911,9 +1176,11 @@ def test_missing_confirmation_returns_missing(tmp_path: Path):
     store = _store(tmp_path)
     result = store.consume(
         confirmation_id="conf_does_not_exist",
-        expected_board_id="b1", expected_actor_id="u",
+        expected_board_id="b1",
+        expected_actor_id="u",
         expected_operation="rebuild",
-        expected_preflight_hash="c" * 64, expected_manifest_ref="m",
+        expected_preflight_hash="c" * 64,
+        expected_manifest_ref="m",
     )
     assert result.outcome == ConfirmationOutcome.MISSING.value
     assert result.token is None
@@ -931,7 +1198,11 @@ def test_ttl_bounds_rejected(tmp_path: Path):
 
 def test_confirmation_counter_labels_match_or_shape():
     assert get_confirmation_counter_labels() == (
-        "board_id", "operation", "outcome", "reason", "actor_type",
+        "board_id",
+        "operation",
+        "outcome",
+        "reason",
+        "actor_type",
     )
 
 
@@ -939,33 +1210,47 @@ def test_confirmation_counter_includes_actor_type_bucket(tmp_path: Path):
     """Actor bucketing: agent vs human goes into the safe label."""
     store = _store(tmp_path)
     token_agent = store.issue(
-        board_id="b1", actor_id="agent-001", operation="rebuild",
-        preflight_hash="c" * 64, manifest_ref="m",
+        board_id="b1",
+        actor_id="agent-001",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m",
     )
     store.consume(
         confirmation_id=token_agent.confirmation_id,
-        expected_board_id="b1", expected_actor_id="agent-001",
+        expected_board_id="b1",
+        expected_actor_id="agent-001",
         expected_operation="rebuild",
-        expected_preflight_hash="c" * 64, expected_manifest_ref="m",
+        expected_preflight_hash="c" * 64,
+        expected_manifest_ref="m",
     )
 
     token_human = store.issue(
-        board_id="b1", actor_id="alice@org.com", operation="rebuild",
-        preflight_hash="c" * 64, manifest_ref="m2",
+        board_id="b1",
+        actor_id="alice@org.com",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m2",
     )
     store.consume(
         confirmation_id=token_human.confirmation_id,
-        expected_board_id="b1", expected_actor_id="alice@org.com",
+        expected_board_id="b1",
+        expected_actor_id="alice@org.com",
         expected_operation="rebuild",
-        expected_preflight_hash="c" * 64, expected_manifest_ref="m2",
+        expected_preflight_hash="c" * 64,
+        expected_manifest_ref="m2",
     )
 
     assert (
-        get_confirmation_count("b1", ConfirmationOutcome.CONSUMED.value, actor_type="agent")
+        get_confirmation_count(
+            "b1", ConfirmationOutcome.CONSUMED.value, actor_type="agent"
+        )
         == 1
     )
     assert (
-        get_confirmation_count("b1", ConfirmationOutcome.CONSUMED.value, actor_type="human")
+        get_confirmation_count(
+            "b1", ConfirmationOutcome.CONSUMED.value, actor_type="human"
+        )
         == 1
     )
 
@@ -973,8 +1258,11 @@ def test_confirmation_counter_includes_actor_type_bucket(tmp_path: Path):
 def test_confirmation_counter_never_includes_raw_confirmation_id(tmp_path: Path):
     store = _store(tmp_path)
     token = store.issue(
-        board_id="b1", actor_id="u", operation="rebuild",
-        preflight_hash="c" * 64, manifest_ref="m",
+        board_id="b1",
+        actor_id="u",
+        operation="rebuild",
+        preflight_hash="c" * 64,
+        manifest_ref="m",
     )
     samples = get_confirmation_samples()
     for s in samples:
@@ -1014,8 +1302,11 @@ def _client_with_router(board_id: str = "b-life"):
     from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
 
     async def _fake_health(_board_id, _db, scheduler_control=None):
-        return {"graph_state": "healthy", "metric_status": "available",
-                "current_kg_generation_id": None}
+        return {
+            "graph_state": "healthy",
+            "metric_status": "available",
+            "current_kg_generation_id": None,
+        }
 
     # Monkeypatch at module level (safe: tests run in same process, sequential).
     _original_health = kg_rebuild_mod.get_kg_health
@@ -1057,10 +1348,14 @@ def _client_with_router(board_id: str = "b-life"):
     return _CtxClient()
 
 
-def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
-    """val_d0da4a75 #1: /preflight is the manifest issuance point.
-    Response MUST include manifest_ref + source_set_hash, and the
-    manifest must be loadable via the canonical store."""
+def test_online_preflight_is_diagnostic_and_does_not_persist_manifest():
+    """Online preflight returns diagnostics but no reusable execution refs."""
+    artifact_store = require_rebuild_audit_artifact_store()
+    prefix = RebuildAuditKey(
+        namespace="source_manifest",
+        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    )
+    before = list(artifact_store.list_json(prefix))
     with _client_with_router(board_id="b-life") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/preflight",
@@ -1068,31 +1363,33 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
         )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["manifest_ref"].startswith("rebuild_manifest_")
-    assert len(body["source_set_hash"]) == 64
+    assert body["outcome"] == "diagnostic_complete"
+    assert body["preflight_outcome"]
+    assert body["manifest_ref"] is None
+    assert body["source_set_hash"] is None
     assert len(body["preflight_hash"]) == 64
+    assert list(artifact_store.list_json(prefix)) == before
 
-    # Manifest is loadable from the canonical store.
-    store = KGRebuildSourceManifest(
-        artifact_store=require_rebuild_audit_artifact_store()
+
+def test_online_confirm_denies_without_creating_manifest_or_confirmation():
+    """Online confirm is terminally denied and emits no execution artifact."""
+    artifact_store = require_rebuild_audit_artifact_store()
+    manifest_prefix = RebuildAuditKey(
+        namespace="source_manifest",
+        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
     )
-    manifest = store.load(body["manifest_ref"])
-    assert manifest is not None
-    assert manifest.board_id == "b-life"
-    assert manifest.preflight_hash == body["preflight_hash"]
-    assert manifest.source_set_hash == body["source_set_hash"]
-
-
-def test_confirm_uses_existing_manifest_does_not_recreate():
-    """val_d0da4a75 #1: /confirm loads the manifest_ref produced by
-    /preflight; it MUST NOT enumerate or build a new manifest."""
+    confirmation_prefix = RebuildAuditKey(
+        namespace="confirmation_token",
+        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    )
+    before_manifests = list(artifact_store.list_json(manifest_prefix))
+    before_confirmations = list(artifact_store.list_json(confirmation_prefix))
     with _client_with_router(board_id="b-confirm-isolated") as client:
         pre = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-confirm-isolated"},
         )
         assert pre.status_code == 200
-        manifest_ref = pre.json()["manifest_ref"]
         preflight_hash = pre.json()["preflight_hash"]
 
         conf = client.post(
@@ -1101,32 +1398,17 @@ def test_confirm_uses_existing_manifest_does_not_recreate():
                 "board_id": "b-confirm-isolated",
                 "operation": "rebuild",
                 "preflight_hash": preflight_hash,
-                "manifest_ref": manifest_ref,
+                "manifest_ref": "diagnostic-only",
             },
         )
-    assert conf.status_code == 200, conf.text
-    body = conf.json()
-    assert body["manifest_ref"] == manifest_ref  # SAME ref echoed back
-
-    # Only ONE manifest exists in the store for this board (no
-    # recreation by confirm).
-    artifact_store = require_rebuild_audit_artifact_store()
-    payloads = artifact_store.list_json(
-        RebuildAuditKey(
-            namespace="source_manifest",
-            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
-        )
-    )
-    matching = sum(
-        1
-        for payload in payloads
-        if payload.get("board_id") == "b-confirm-isolated"
-    )
-    assert matching == 1, f"expected exactly 1 manifest, got {matching}"
+    assert conf.status_code == 409, conf.text
+    assert conf.json()["detail"]["error"] == "recovery_execution_required"
+    assert list(artifact_store.list_json(manifest_prefix)) == before_manifests
+    assert list(artifact_store.list_json(confirmation_prefix)) == before_confirmations
 
 
-def test_confirm_fails_when_manifest_ref_not_found():
-    """val_d0da4a75 regression: confirm must reject unknown manifest_ref."""
+def test_online_confirm_does_not_load_unknown_manifest_ref():
+    """A syntactically valid legacy ref is not loaded by online confirm."""
     with _client_with_router(board_id="b1") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/confirm",
@@ -1137,33 +1419,30 @@ def test_confirm_fails_when_manifest_ref_not_found():
                 "manifest_ref": "rebuild_manifest_does_not_exist",
             },
         )
-    assert resp.status_code == 400
+    assert resp.status_code == 409
     detail = resp.json()["detail"]
-    assert detail["error"] == "manifest_not_found"
+    assert detail["error"] == "recovery_execution_required"
 
 
-def test_confirm_fails_when_preflight_hash_mismatch():
-    """val_d0da4a75 regression: confirm must reject when preflight_hash
-    does not match the manifest's bound hash."""
+def test_online_confirm_does_not_bind_diagnostic_preflight_hash():
+    """A canonical hash is syntax-only and still receives the typed denial."""
     with _client_with_router(board_id="b-mismatch") as client:
-        pre = client.post(
+        client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-mismatch"},
         )
-        manifest_ref = pre.json()["manifest_ref"]
-
         resp = client.post(
             "/api/v1/kg/rebuild/confirm",
             json={
                 "board_id": "b-mismatch",
                 "operation": "rebuild",
                 "preflight_hash": "0" * 64,  # not the real one
-                "manifest_ref": manifest_ref,
+                "manifest_ref": "diagnostic-only",
             },
         )
-    assert resp.status_code == 400
+    assert resp.status_code == 409
     detail = resp.json()["detail"]
-    assert detail["error"] == "preflight_hash_mismatch"
+    assert detail["error"] == "recovery_execution_required"
 
 
 def test_confirm_rejects_invalid_preflight_hash_shape():
@@ -1205,7 +1484,9 @@ def test_manifest_load_rejects_path_traversal_and_alias(tmp_path: Path):
         "rebuild_manifest_",  # empty suffix
         legit.manifest_ref + "/..",
     ):
-        assert store.load(ref) is None, f"expected None for traversal-shaped ref: {ref!r}"
+        assert store.load(ref) is None, (
+            f"expected None for traversal-shaped ref: {ref!r}"
+        )
 
     # The legitimate ref still works.
     assert store.load(legit.manifest_ref) is not None
