@@ -166,6 +166,7 @@ SURFACES: dict[str, SurfaceSpec] = {
             "updated_at",
             "labels",
             "archived",
+            "open_qa_count",
             "scope_assessment",
         ),
     ),
@@ -192,6 +193,7 @@ SURFACES: dict[str, SurfaceSpec] = {
             "updated_at",
             "labels",
             "archived",
+            "open_qa_count",
         ),
     ),
     "refinement_board": SurfaceSpec(
@@ -225,6 +227,7 @@ SURFACES: dict[str, SurfaceSpec] = {
             "labels",
             "archived",
             "ideation_title",
+            "open_qa_count",
         ),
     ),
     "spec_list": SurfaceSpec(
@@ -249,6 +252,7 @@ SURFACES: dict[str, SurfaceSpec] = {
             "updated_at",
             "labels",
             "archived",
+            "open_qa_count",
         ),
     ),
     "sprint_list": SurfaceSpec(
@@ -270,6 +274,7 @@ SURFACES: dict[str, SurfaceSpec] = {
             "created_at",
             "updated_at",
             "archived",
+            "open_qa_count",
         ),
     ),
     "card_list": SurfaceSpec(

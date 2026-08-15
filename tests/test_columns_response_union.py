@@ -35,6 +35,18 @@ CARD = {
     "linked_test_task_ids": None,
     "archived": False,
     "open_qa_count": 0,
+    "current_rejection_kind": None,
+    "current_rejection_id": None,
+    "current_rejection_code": None,
+    "current_rejection_summary": None,
+}
+
+OPTIONAL_CARD_FIELDS = {
+    "open_qa_count",
+    "current_rejection_kind",
+    "current_rejection_id",
+    "current_rejection_code",
+    "current_rejection_summary",
 }
 
 COLUMN_META = {
@@ -72,19 +84,19 @@ SCHEMA = ColumnsResponseUnion.model_json_schema()
 
 def _matching_variants(payload: dict) -> int:
     return sum(
-        jsonschema.Draft202012Validator(
-            {"$defs": SCHEMA["$defs"], **variant}
-        ).is_valid(payload)
+        jsonschema.Draft202012Validator({"$defs": SCHEMA["$defs"], **variant}).is_valid(
+            payload
+        )
         for variant in SCHEMA["oneOf"]
     )
 
 
-def test_card_summary_is_the_canonical_22_field_projection() -> None:
+def test_card_summary_is_the_canonical_projection() -> None:
     schema = CardSummary.model_json_schema()
     expected = set(CARD)
 
     assert set(schema["properties"]) == expected
-    assert set(schema["required"]) == expected
+    assert set(schema["required"]) == expected - OPTIONAL_CARD_FIELDS
 
 
 @pytest.mark.parametrize(
@@ -102,7 +114,9 @@ def test_valid_shape_matches_exactly_one_variant(
     assert "anyOf" not in SCHEMA
     assert len(SCHEMA["oneOf"]) == 3
     assert _matching_variants(payload) == 1
-    assert type(ColumnsResponseUnion.model_validate(payload).root).__name__ == runtime_type
+    assert (
+        type(ColumnsResponseUnion.model_validate(payload).root).__name__ == runtime_type
+    )
     jsonschema.Draft202012Validator(SCHEMA).validate(payload)
 
 

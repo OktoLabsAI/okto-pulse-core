@@ -753,9 +753,9 @@ QualitySummaryMap: TypeAlias = dict[AssessmentKind, QualityAssessmentSummary]
 class IdeationPageItem(BaseSchema):
     """Lean Ideation projection for paginated lists (FR4).
 
-    Row-derivable fields only — relationship collections
-    (``architecture_designs``) and join-derived badge counts stay off the
-    paginated projection; ``scope_assessment`` rides the ORM column.
+    Relationship collections such as ``architecture_designs`` stay off the
+    paginated projection. Bounded SQL-derived badge counts are projected
+    explicitly; ``scope_assessment`` rides the ORM column.
     """
 
     id: str
@@ -773,6 +773,11 @@ class IdeationPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     scope_assessment: dict | None = None
     quality_summaries: QualitySummaryMap | None = Field(
         default=None,
@@ -797,6 +802,11 @@ class RefinementPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     quality_summaries: QualitySummaryMap | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -834,6 +844,11 @@ class SpecPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     quality_summaries: QualitySummaryMap | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -855,6 +870,11 @@ class SprintPageItem(BaseSchema):
     created_at: datetime
     updated_at: datetime
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class StorySummary(BaseSchema):
@@ -1476,7 +1496,11 @@ class IdeationSummary(BaseSchema):
     # from_attributes off the ORM column (no service change needed).
     scope_assessment: dict | None = None
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     # Count of non-archived, non-cancelled child refinements — drives the
     # "No refinement" derivation-pending badge.
     active_refinement_count: int = 0
@@ -1895,7 +1919,11 @@ class RefinementSummary(BaseSchema):
     """Schema for refinement summary."""
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     # Count of non-archived, non-cancelled child specs — drives the
     # "Sem spec" derivation-pending badge.
     active_spec_count: int = 0
@@ -2380,7 +2408,11 @@ class SpecSummary(BaseSchema):
     """Schema for spec summary (without nested cards)."""
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     id: str
     board_id: str
     title: str
@@ -3522,10 +3554,9 @@ CardCreateResponse: TypeAlias = CardResponse | CardCreateKnowledgeMutationRespon
 class CardSummary(BaseSchema):
     """Canonical lean card projection used by all three columns shapes.
 
-    Every field is required at the transport boundary, including nullable
-    fields.  That keeps the opt-in projection explicit and prevents response
-    serialization from silently manufacturing defaults that were not read
-    from persistence.
+    Persisted fields are explicit at the transport boundary. Sensitive
+    projections such as ``open_qa_count`` are omitted when the actor lacks
+    their dedicated read capability.
     """
 
     id: str
@@ -3551,7 +3582,11 @@ class CardSummary(BaseSchema):
     linked_test_task_ids: list[str] | None
     archived: bool
     # Count of unanswered Q&A (answered_at IS NULL) — drives the badge.
-    open_qa_count: int = Field(..., ge=0)
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     current_rejection_kind: str | None = None
     current_rejection_id: str | None = Field(
         default=None, max_length=REJECTION_ID_MAX_LENGTH
@@ -3567,9 +3602,10 @@ class CardSummary(BaseSchema):
 class CardPageItem(BaseSchema):
     """Authoritative lightweight DTO for the paginated board card list.
 
-    All fields are required in the projection, while nullable ORM columns and
-    metrics that do not exist until a validation/conclusion occurs remain
-    explicitly nullable.
+    Persisted fields are required in the projection, while nullable ORM
+    columns and metrics that do not exist until a validation/conclusion occurs
+    remain explicitly nullable. Sensitive derived fields are omitted when the
+    actor lacks their dedicated read capability.
     """
 
     id: str
@@ -3601,7 +3637,11 @@ class CardPageItem(BaseSchema):
     last_conclusion_drift: int | None = Field(..., ge=0, le=100)
     created_at: datetime
     updated_at: datetime
-    open_qa_count: int = Field(..., ge=0)
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     current_rejection_kind: str | None = None
     current_rejection_id: str | None = Field(
         default=None, max_length=REJECTION_ID_MAX_LENGTH
@@ -4729,7 +4769,11 @@ class SprintSummary(BaseSchema):
     """Schema for sprint summary (used in lists and spec responses)."""
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     id: str
     spec_id: str
     board_id: str
