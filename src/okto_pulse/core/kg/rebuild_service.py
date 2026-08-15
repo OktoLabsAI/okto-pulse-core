@@ -52,6 +52,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import sys
 import threading
 import time
 from contextlib import ExitStack
@@ -121,6 +122,16 @@ def _canonical_f06_rebuild_command(
 
 class RebuildConfirmationReceiptIntegrityError(RuntimeError):
     """The active recovery receipt exists but fails its run-bound contract."""
+
+
+class RebuildLeaseCleanupError(RuntimeError):
+    """One or more owned rebuild fences could not be cleanly relinquished."""
+
+    def __init__(self, *, failed_steps: Sequence[str]) -> None:
+        self.failed_steps = tuple(failed_steps)
+        super().__init__(
+            "kg_rebuild_lease_cleanup_failed:" + ",".join(self.failed_steps)
+        )
 
 
 class ClosedRebuildReconciliation(str, Enum):
@@ -913,12 +924,17 @@ class _RebuildLeaseHeartbeat:
     def start(self) -> None:
         if self._thread is not None:
             return
-        self._thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run,
             name=f"kg-rebuild-lease:{self._board_id}",
             daemon=True,
         )
-        self._thread.start()
+        self._thread = thread
+        try:
+            thread.start()
+        except BaseException:
+            self._thread = None
+            raise
 
     def renew_now(self) -> bool:
         if self._lost.is_set():
@@ -942,13 +958,152 @@ class _RebuildLeaseHeartbeat:
     def stop(self) -> None:
         self._stop.set()
         thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=max(1.0, self._interval_seconds * 2))
+        if thread is None:
+            return
+        if thread is threading.current_thread():
+            raise RuntimeError("kg_rebuild_lease_heartbeat_stop_from_worker")
+        thread.join(timeout=max(1.0, self._interval_seconds * 2))
+        if thread.is_alive():
+            raise RuntimeError("kg_rebuild_lease_heartbeat_stop_timeout")
+        self._thread = None
 
     def _run(self) -> None:
         while not self._stop.wait(self._interval_seconds):
             if not self.renew_now():
                 return
+
+
+def _cleanup_rebuild_leases(
+    *,
+    board_id: str,
+    context: str,
+    writer_heartbeat: _RebuildLeaseHeartbeat | None = None,
+    reservation_heartbeat: _RebuildLeaseHeartbeat | None = None,
+    close_write_guard: Callable[[], None] | None = None,
+    release_writer: Callable[[], bool] | None = None,
+    release_reservation: Callable[[], bool] | None = None,
+    primary_error: BaseException | None = None,
+) -> None:
+    """Stop all renewers before ordered release and surface every failure.
+
+    A release is forbidden if either heartbeat could still be running. Cleanup
+    failures on a successful body become :class:`RebuildLeaseCleanupError`.
+    When a ``BaseException`` is already escaping, it remains the primary error
+    and the cleanup failure is attached as its explicit cause.
+    """
+
+    failures: list[tuple[str, BaseException]] = []
+    heartbeats_stopped = True
+
+    def _record(step: str, error: BaseException) -> None:
+        failures.append((step, error))
+        logger.error(
+            "kg.rebuild.%s_cleanup_failed board=%s step=%s err=%s",
+            context,
+            board_id,
+            step,
+            error,
+        )
+
+    for step, heartbeat in (
+        ("writer_heartbeat_stop", writer_heartbeat),
+        ("reservation_heartbeat_stop", reservation_heartbeat),
+    ):
+        if heartbeat is None:
+            continue
+        try:
+            heartbeat.stop()
+        except BaseException as exc:
+            heartbeats_stopped = False
+            _record(step, exc)
+
+    if close_write_guard is not None:
+        try:
+            close_write_guard()
+        except BaseException as exc:
+            _record("write_guard_close", exc)
+
+    if heartbeats_stopped:
+        for step, release in (
+            ("writer_release", release_writer),
+            ("reservation_release", release_reservation),
+        ):
+            if release is None:
+                continue
+            try:
+                released = bool(release())
+            except BaseException as exc:
+                _record(step, exc)
+            else:
+                if not released:
+                    _record(
+                        step,
+                        RuntimeError(f"kg_rebuild_{step}_returned_false"),
+                    )
+
+    if not failures:
+        return
+
+    failed_steps = tuple(step for step, _error in failures)
+    cleanup_error = RebuildLeaseCleanupError(failed_steps=failed_steps)
+    wrapped_failures: list[Exception] = []
+    for step, error in failures:
+        wrapped = RuntimeError(f"kg_rebuild_lease_cleanup_step_failed:{step}")
+        wrapped.__cause__ = error
+        wrapped_failures.append(wrapped)
+    cleanup_group = ExceptionGroup(
+        "kg rebuild lease cleanup failures",
+        wrapped_failures,
+    )
+    cleanup_error.__cause__ = cleanup_group
+
+    if primary_error is not None:
+        previous_cause = primary_error.__cause__
+        try:
+            if previous_cause is None:
+                primary_error.__cause__ = cleanup_error
+            else:
+                primary_error.__cause__ = BaseExceptionGroup(
+                    "primary cause and rebuild cleanup failure",
+                    [previous_cause, cleanup_error],
+                )
+            primary_error.__suppress_context__ = True
+        except BaseException:
+            raise BaseExceptionGroup(
+                "rebuild operation and cleanup failed",
+                [primary_error, cleanup_error],
+            )
+        return
+    raise cleanup_error from cleanup_group
+
+
+def _release_writer_or_prove_relinquished(
+    *,
+    single_writer_lock: Any,
+    board_id: str,
+    owner_token: str,
+) -> bool:
+    """Release the exact writer token or prove it is no longer authoritative.
+
+    A token-CAS ``False`` is cleanup success only when an authoritative inspect
+    proves that an unrelated successor owns the writer.  ``None`` is ambiguous
+    (the adapter may conflate absence with an unreadable/corrupt manifest) and
+    therefore fails closed.  Drain handoff absence is handled separately by
+    the caller's durable in-process ``lease_active=False`` state, which omits
+    this release entirely.  The exact old token remaining is also a failure,
+    and a foreign successor is never removed.
+    """
+
+    released = bool(
+        single_writer_lock.release(
+            board_id=board_id,
+            owner_token=owner_token,
+        )
+    )
+    if released:
+        return True
+    current = single_writer_lock.inspect(board_id=board_id)
+    return current is not None and current.owner_token != owner_token
 
 
 class _TerminalFenceLost(RuntimeError):
@@ -1154,6 +1309,7 @@ class KGRebuildService:
         writer_heartbeat: _RebuildLeaseHeartbeat | None = None
         owner_token: str | None = None
         guard_stack = ExitStack()
+        primary_error: BaseException | None = None
         try:
             reservation_heartbeat.start()
             deadline = time.monotonic() + self.lease_reacquire_timeout_seconds
@@ -1271,50 +1427,33 @@ class KGRebuildService:
                     "legacy_manual_restore_queue_only_post_effect_fence_lost"
                 )
             return outcome
+        except BaseException as exc:
+            primary_error = exc
+            raise
         finally:
-            try:
-                guard_stack.close()
-            finally:
-                if writer_heartbeat is not None:
-                    try:
-                        writer_heartbeat.stop()
-                    except BaseException:
-                        logger.exception(
-                            "kg.rebuild.legacy_queue_only_writer_heartbeat_"
-                            "stop_failed board=%s",
-                            normalized_board_id,
-                        )
-                if owner_token is not None:
-                    try:
-                        self.single_writer_lock.release(
+            _cleanup_rebuild_leases(
+                board_id=normalized_board_id,
+                context="legacy_queue_only",
+                writer_heartbeat=writer_heartbeat,
+                reservation_heartbeat=reservation_heartbeat,
+                close_write_guard=guard_stack.close,
+                release_writer=(
+                    (
+                        lambda: _release_writer_or_prove_relinquished(
+                            single_writer_lock=self.single_writer_lock,
                             board_id=normalized_board_id,
                             owner_token=owner_token,
                         )
-                    except BaseException:
-                        logger.exception(
-                            "kg.rebuild.legacy_queue_only_writer_release_failed "
-                            "board=%s",
-                            normalized_board_id,
-                        )
-                try:
-                    reservation_heartbeat.stop()
-                except BaseException:
-                    logger.exception(
-                        "kg.rebuild.legacy_queue_only_reservation_heartbeat_"
-                        "stop_failed board=%s",
-                        normalized_board_id,
                     )
-                try:
-                    operation_reservation.release(
-                        board_id=normalized_board_id,
-                        owner_token=reservation_token,
-                    )
-                except BaseException:
-                    logger.exception(
-                        "kg.rebuild.legacy_queue_only_reservation_release_failed "
-                        "board=%s",
-                        normalized_board_id,
-                    )
+                    if owner_token is not None
+                    else None
+                ),
+                release_reservation=lambda: operation_reservation.release(
+                    board_id=normalized_board_id,
+                    owner_token=reservation_token,
+                ),
+                primary_error=primary_error,
+            )
 
     def resume_authorized_run(
         self,
@@ -1570,45 +1709,34 @@ class KGRebuildService:
             )
             reservation_heartbeat.start()
         except BaseException:
-            if reservation_heartbeat is not None:
-                try:
-                    reservation_heartbeat.stop()
-                except BaseException:
-                    logger.exception(
-                        "kg.rebuild.reservation_setup_heartbeat_stop_failed board=%s",
-                        board_id,
-                    )
-            try:
-                operation_reservation.release(
+            _cleanup_rebuild_leases(
+                board_id=board_id,
+                context="reservation_setup",
+                reservation_heartbeat=reservation_heartbeat,
+                release_reservation=lambda: operation_reservation.release(
                     board_id=board_id,
                     owner_token=reservation_token,
-                )
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.reservation_setup_release_failed board=%s",
-                    board_id,
-                )
+                ),
+                primary_error=sys.exception(),
+            )
             raise
         assert reservation_heartbeat is not None
 
-        def _cleanup_initial_reservation() -> None:
-            try:
-                reservation_heartbeat.stop()
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.initial_reservation_heartbeat_stop_failed board=%s",
-                    board_id,
-                )
-            try:
-                operation_reservation.release(
+        def _cleanup_initial_reservation(
+            primary_error: BaseException | None = None,
+        ) -> None:
+            _cleanup_rebuild_leases(
+                board_id=board_id,
+                context="initial_reservation",
+                reservation_heartbeat=reservation_heartbeat,
+                release_reservation=lambda: operation_reservation.release(
                     board_id=board_id,
                     owner_token=reservation_token,
-                )
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.initial_reservation_release_failed board=%s",
-                    board_id,
-                )
+                ),
+                primary_error=(
+                    primary_error if primary_error is not None else sys.exception()
+                ),
+            )
 
         # Acquire graph writer A before loading/revalidating any source
         # manifest and before consuming the one-shot confirmation. This is the
@@ -1683,18 +1811,26 @@ class KGRebuildService:
 
         owner_token = acquisition.owner_token
 
-        def _cleanup_initial_ownership() -> None:
-            try:
-                self.single_writer_lock.release(
+        def _cleanup_initial_ownership(
+            primary_error: BaseException | None = None,
+        ) -> None:
+            _cleanup_rebuild_leases(
+                board_id=board_id,
+                context="initial_ownership",
+                reservation_heartbeat=reservation_heartbeat,
+                release_writer=lambda: _release_writer_or_prove_relinquished(
+                    single_writer_lock=self.single_writer_lock,
                     board_id=board_id,
                     owner_token=owner_token,
-                )
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.initial_writer_release_failed board=%s",
-                    board_id,
-                )
-            _cleanup_initial_reservation()
+                ),
+                release_reservation=lambda: operation_reservation.release(
+                    board_id=board_id,
+                    owner_token=reservation_token,
+                ),
+                primary_error=(
+                    primary_error if primary_error is not None else sys.exception()
+                ),
+            )
 
         confirmation_receipt_key = rebuild_active_confirmation_receipt_key(
             board_id=board_id,
@@ -1769,8 +1905,11 @@ class KGRebuildService:
                     raise ValueError("receipt started_at must be timezone-aware")
                 started_at = authorized_started_at.astimezone(timezone.utc)
             except (TypeError, ValueError):
-                _cleanup_initial_ownership()
-                raise RuntimeError("authorized_resume_started_at_invalid") from None
+                invalid_started_at = RuntimeError(
+                    "authorized_resume_started_at_invalid"
+                )
+                _cleanup_initial_ownership(primary_error=invalid_started_at)
+                raise invalid_started_at from invalid_started_at.__cause__
             if not _recovery_execution_valid():
                 try:
                     return self._emit_audit_and_counter(
@@ -2286,14 +2425,20 @@ class KGRebuildService:
                     )
                 )
                 if not terminal_binding_matches:
-                    _cleanup_initial_ownership()
-                    raise RuntimeError("rebuild_terminal_audit_binding_mismatch")
+                    terminal_binding_error = RuntimeError(
+                        "rebuild_terminal_audit_binding_mismatch"
+                    )
+                    _cleanup_initial_ownership(primary_error=terminal_binding_error)
+                    raise terminal_binding_error from terminal_binding_error.__cause__
             terminal_declares_success = is_rebuild_terminal_audit_frozen(terminal_audit)
             terminal_is_frozen = False
             if terminal_declares_success:
                 if self.generation_repository is None:
-                    _cleanup_initial_ownership()
-                    raise RuntimeError("rebuild_terminal_generation_repository_missing")
+                    missing_repository_error = RuntimeError(
+                        "rebuild_terminal_generation_repository_missing"
+                    )
+                    _cleanup_initial_ownership(primary_error=missing_repository_error)
+                    raise missing_repository_error from missing_repository_error.__cause__
                 try:
                     terminal_is_frozen = self.generation_repository.get_current(
                         board_id
@@ -2302,8 +2447,11 @@ class KGRebuildService:
                     _cleanup_initial_ownership()
                     raise
                 if not terminal_is_frozen:
-                    _cleanup_initial_ownership()
-                    raise RuntimeError("rebuild_terminal_generation_pointer_conflict")
+                    pointer_conflict_error = RuntimeError(
+                        "rebuild_terminal_generation_pointer_conflict"
+                    )
+                    _cleanup_initial_ownership(primary_error=pointer_conflict_error)
+                    raise pointer_conflict_error from pointer_conflict_error.__cause__
             terminal_is_closed = is_rebuild_terminal_audit_closed(terminal_audit)
             if (
                 recovery_failure_code is not None
@@ -2486,12 +2634,18 @@ class KGRebuildService:
         confirmation_receipt["confirmation_ref"] = authorized_confirmation_ref
         authorized_receipt = dict(existing_receipt or confirmation_receipt)
 
+        terminal_cleanup_attempted = False
+
         def _finalise_with_release(**kwargs: Any) -> RebuildRunResult:
+            nonlocal terminal_cleanup_attempted
+            terminal_cleanup_attempted = True
             return self._finalise_with_release(
                 confirmation_ref_override=authorized_confirmation_ref,
                 archive_confirmation_receipt=lambda: _archive_confirmation_receipt(
                     authorized_receipt
                 ),
+                close_write_guard=write_guard_stack.close,
+                writer_release_required=writer_release_required,
                 **kwargs,
             )
 
@@ -2621,53 +2775,35 @@ class KGRebuildService:
         step_result_holder: dict[str, Any] = {}
         lease_heartbeat: _RebuildLeaseHeartbeat | None = None
         lease_active = True
+        writer_release_required = True
         write_guard_stack = ExitStack()
 
         def _cleanup_setup_failure() -> None:
-            """Best-effort reverse-order cleanup for every setup crash."""
+            """Stop both renewers, close the guard and release in fence order."""
 
-            try:
-                write_guard_stack.close()
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.setup_guard_cleanup_failed board=%s",
-                    board_id,
-                )
-            if lease_heartbeat is not None:
-                try:
-                    lease_heartbeat.stop()
-                except BaseException:
-                    logger.exception(
-                        "kg.rebuild.setup_writer_heartbeat_stop_failed board=%s",
-                        board_id,
+            _cleanup_rebuild_leases(
+                board_id=board_id,
+                context="setup",
+                writer_heartbeat=lease_heartbeat,
+                reservation_heartbeat=reservation_heartbeat,
+                close_write_guard=write_guard_stack.close,
+                release_writer=(
+                    (
+                        lambda: _release_writer_or_prove_relinquished(
+                            single_writer_lock=self.single_writer_lock,
+                            board_id=board_id,
+                            owner_token=owner_token,
+                        )
                     )
-            try:
-                self.single_writer_lock.release(
-                    board_id=board_id,
-                    owner_token=owner_token,
-                )
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.setup_writer_release_failed board=%s",
-                    board_id,
-                )
-            try:
-                reservation_heartbeat.stop()
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.setup_reservation_heartbeat_stop_failed board=%s",
-                    board_id,
-                )
-            try:
-                operation_reservation.release(
+                    if writer_release_required
+                    else None
+                ),
+                release_reservation=lambda: operation_reservation.release(
                     board_id=board_id,
                     owner_token=reservation_token,
-                )
-            except BaseException:
-                logger.exception(
-                    "kg.rebuild.setup_reservation_release_failed board=%s",
-                    board_id,
-                )
+                ),
+                primary_error=sys.exception(),
+            )
 
         # KG-02.4 — pre-supply candidate generation if the repository is
         # wired, so the step adapter and downstream report carry a real
@@ -2847,7 +2983,7 @@ class KGRebuildService:
             )
 
         def _release_writer_for_drain() -> bool:
-            nonlocal lease_active, lease_heartbeat
+            nonlocal lease_active, lease_heartbeat, writer_release_required
             if not lease_active or lease_heartbeat is None:
                 return False
             if not _renew_operation_reservation():
@@ -2886,13 +3022,15 @@ class KGRebuildService:
                     "kg.rebuild.drain_handoff_release_failed board=%s",
                     board_id,
                 )
-                lease_active = False
                 return False
-            lease_active = False
+            if released:
+                lease_active = False
+                writer_release_required = False
             return released
 
         def _reacquire_writer_after_drain() -> str | None:
             nonlocal lease_active, lease_heartbeat, owner_token
+            nonlocal writer_release_required
             if lease_active:
                 return owner_token
             if not _renew_operation_reservation():
@@ -2915,6 +3053,7 @@ class KGRebuildService:
                     # local owner before any later reservation probe can fail.
                     owner_token = candidate_token
                     lease_active = True
+                    writer_release_required = True
                     if not _renew_operation_reservation():
                         try:
                             released = bool(
@@ -2924,6 +3063,7 @@ class KGRebuildService:
                                 )
                             )
                             lease_active = not released
+                            writer_release_required = not released
                         except BaseException:
                             # Keep B as the authoritative cleanup token. The
                             # service finalizer retries release in all paths.
@@ -2943,27 +3083,11 @@ class KGRebuildService:
                             under_safe_write(board_id, owner_token, operation)
                         )
                     except BaseException:
-                        if lease_heartbeat is not None:
-                            try:
-                                lease_heartbeat.stop()
-                            except BaseException:
-                                logger.exception(
-                                    "kg.rebuild.reacquire_heartbeat_stop_failed "
-                                    "board=%s",
-                                    board_id,
-                                )
-                        lease_heartbeat = None
-                        lease_active = False
-                        try:
-                            self.single_writer_lock.release(
-                                board_id=board_id,
-                                owner_token=owner_token,
-                            )
-                        except BaseException:
-                            logger.exception(
-                                "kg.rebuild.reacquire_writer_release_failed board=%s",
-                                board_id,
-                            )
+                        # Preserve the B heartbeat handle and ownership state.
+                        # The common cleanup path must stop/join both renewers
+                        # before it closes guards or attempts either release.
+                        # Detaching here after a stop timeout could otherwise
+                        # release B while its worker thread is still renewing.
                         raise
                     lease_active = True
                     return owner_token
@@ -3374,6 +3498,8 @@ class KGRebuildService:
                         writer_fenced=False,
                     )
         except Exception as exc:
+            if terminal_cleanup_attempted:
+                raise
             # Catch-all so we never leak the lock.
             return _finalise_with_release(
                 run_id=run_id,
@@ -3401,6 +3527,8 @@ class KGRebuildService:
                 writer_fenced=lease_active,
             )
         except BaseException:
+            if terminal_cleanup_attempted:
+                raise
             # Process-terminating/cancellation exceptions are not converted to
             # domain outcomes, but the in-process lease and reservation still
             # must not survive them.  The processor reacquires token B before a
@@ -3502,8 +3630,10 @@ class KGRebuildService:
         reservation_token: str | None = None,
         reservation_heartbeat: _RebuildLeaseHeartbeat | None = None,
         writer_fenced: bool = True,
+        writer_release_required: bool = True,
         confirmation_ref_override: str | None = None,
         archive_confirmation_receipt: Callable[[], None] | None = None,
+        close_write_guard: Callable[[], None] | None = None,
     ) -> RebuildRunResult:
         reservation_fenced = bool(operation_reservation and reservation_token)
 
@@ -3560,6 +3690,7 @@ class KGRebuildService:
                 )
                 return False
 
+        primary_error: BaseException | None = None
         try:
             if writer_fenced and not _renew_terminal_fences():
                 outcome = RebuildOutcome.REBUILD_FAILED
@@ -3750,49 +3881,40 @@ class KGRebuildService:
             ):
                 archive_confirmation_receipt()
             return final_result
+        except BaseException as exc:
+            primary_error = exc
+            raise
         finally:
-            # Always release the lock — even when report/audit finalisation
-            # fails. Stop the heartbeat immediately before release so it cannot
-            # renew a token that has already been relinquished.
-            if lease_heartbeat is not None:
-                try:
-                    lease_heartbeat.stop()
-                except BaseException:
-                    logger.exception(
-                        "kg.rebuild.writer_heartbeat_stop_failed board=%s",
-                        board_id,
+            _cleanup_rebuild_leases(
+                board_id=board_id,
+                context="finalise",
+                writer_heartbeat=lease_heartbeat,
+                reservation_heartbeat=reservation_heartbeat,
+                close_write_guard=close_write_guard,
+                release_writer=(
+                    (
+                        lambda: _release_writer_or_prove_relinquished(
+                            single_writer_lock=self.single_writer_lock,
+                            board_id=board_id,
+                            owner_token=owner_token,
+                        )
                     )
-            try:
-                self.single_writer_lock.release(
-                    board_id=board_id,
-                    owner_token=owner_token,
-                )
-            except BaseException as exc:
-                logger.error(
-                    "kg.rebuild.lock_release_failed board=%s err=%s",
-                    board_id,
-                    exc,
-                )
-            if reservation_heartbeat is not None:
-                try:
-                    reservation_heartbeat.stop()
-                except BaseException:
-                    logger.exception(
-                        "kg.rebuild.reservation_heartbeat_stop_failed board=%s",
-                        board_id,
+                    if writer_release_required
+                    else None
+                ),
+                release_reservation=(
+                    (
+                        lambda: operation_reservation.release(
+                            board_id=board_id,
+                            owner_token=reservation_token,
+                        )
                     )
-            if operation_reservation is not None and reservation_token is not None:
-                try:
-                    operation_reservation.release(
-                        board_id=board_id,
-                        owner_token=reservation_token,
-                    )
-                except BaseException as exc:
-                    logger.error(
-                        "kg.rebuild.reservation_release_failed board=%s err=%s",
-                        board_id,
-                        exc,
-                    )
+                    if operation_reservation is not None
+                    and reservation_token is not None
+                    else None
+                ),
+                primary_error=primary_error,
+            )
 
     # --- KG-02.4 report-first terminal gate -------------------------------
 
@@ -4358,6 +4480,7 @@ __all__ = [
     "REBUILD_DIRNAME",
     "RebuildBlockReason",
     "RebuildConfirmationReceiptIntegrityError",
+    "RebuildLeaseCleanupError",
     "RebuildOutcome",
     "RebuildRunResult",
     "RebuildStepAdapter",

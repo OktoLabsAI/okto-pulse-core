@@ -7,6 +7,7 @@ or_37cebd03.
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from pathlib import Path
 
@@ -40,6 +41,7 @@ from okto_pulse.core.kg.rebuild_service import (
     KGRebuildService,
     LegacyManualRestoreQueueOnlyInput,
     RebuildBlockReason,
+    RebuildLeaseCleanupError,
     RebuildOutcome,
     RebuildStepInput,
     RebuildStepResult,
@@ -47,6 +49,11 @@ from okto_pulse.core.kg.rebuild_service import (
     get_rebuild_run_counter_labels,
     get_rebuild_run_samples,
     reset_rebuild_run_counter,
+)
+from okto_pulse.core.kg.rebuild_service import (
+    _RebuildLeaseHeartbeat,
+    _cleanup_rebuild_leases,
+    _release_writer_or_prove_relinquished,
 )
 from okto_pulse.core.kg.rebuild_sources import (
     KGRebuildSourceManifest,
@@ -470,6 +477,390 @@ def test_legacy_manual_restore_queue_only_releases_both_fences_on_base_exception
                 recovery_capability=capability,
             )
     assert lock.inspect(board_id="b1") is None
+    assert reservation.inspect(board_id="b1") is None
+
+
+def test_cleanup_waits_for_both_heartbeat_threads_before_ordered_release() -> None:
+    writer_entered = threading.Event()
+    reservation_entered = threading.Event()
+    allow_renew_exit = threading.Event()
+    events: list[str] = []
+    failures: list[BaseException] = []
+
+    def _blocked_renew(entered: threading.Event) -> bool:
+        entered.set()
+        if not allow_renew_exit.wait(timeout=5):
+            raise AssertionError("test did not release heartbeat callback")
+        return True
+
+    writer_heartbeat = _RebuildLeaseHeartbeat(
+        lambda: _blocked_renew(writer_entered),
+        board_id="b1",
+        interval_seconds=0.001,
+    )
+    reservation_heartbeat = _RebuildLeaseHeartbeat(
+        lambda: _blocked_renew(reservation_entered),
+        board_id="b1",
+        interval_seconds=0.001,
+    )
+    writer_heartbeat.start()
+    reservation_heartbeat.start()
+    assert writer_entered.wait(timeout=2)
+    assert reservation_entered.wait(timeout=2)
+
+    def _release_writer() -> bool:
+        assert writer_heartbeat._thread is None  # noqa: SLF001
+        assert reservation_heartbeat._thread is None  # noqa: SLF001
+        events.append("writer_release")
+        return True
+
+    def _release_reservation() -> bool:
+        assert writer_heartbeat._thread is None  # noqa: SLF001
+        assert reservation_heartbeat._thread is None  # noqa: SLF001
+        events.append("reservation_release")
+        return True
+
+    def _cleanup() -> None:
+        try:
+            _cleanup_rebuild_leases(
+                board_id="b1",
+                context="test",
+                writer_heartbeat=writer_heartbeat,
+                reservation_heartbeat=reservation_heartbeat,
+                release_writer=_release_writer,
+                release_reservation=_release_reservation,
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+
+    cleanup_thread = threading.Thread(target=_cleanup)
+    cleanup_thread.start()
+    assert writer_heartbeat._stop.wait(timeout=2)  # noqa: SLF001
+    assert events == []
+    allow_renew_exit.set()
+    cleanup_thread.join(timeout=5)
+
+    assert not cleanup_thread.is_alive()
+    assert failures == []
+    assert events == ["writer_release", "reservation_release"]
+
+
+def test_writer_release_false_with_ambiguous_absence_fails_closed(
+    tmp_path: Path,
+) -> None:
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "locks",
+        write_lock_port=FakeWriteLockPort(),
+    )
+    acquired = lock.acquire(
+        board_id="b1",
+        operation="writer-a",
+        owner_id="owner-a",
+        ttl_seconds=60,
+    )
+    assert acquired.acquired and acquired.owner_token
+    assert lock.release(board_id="b1", owner_token=acquired.owner_token)
+
+    assert not _release_writer_or_prove_relinquished(
+        single_writer_lock=lock,
+        board_id="b1",
+        owner_token=acquired.owner_token,
+    )
+
+
+def test_writer_release_false_preserves_and_accepts_foreign_successor(
+    tmp_path: Path,
+) -> None:
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "locks",
+        write_lock_port=FakeWriteLockPort(),
+    )
+    writer_a = lock.acquire(
+        board_id="b1",
+        operation="writer-a",
+        owner_id="owner-a",
+        ttl_seconds=60,
+    )
+    assert writer_a.acquired and writer_a.owner_token
+    assert lock.release(board_id="b1", owner_token=writer_a.owner_token)
+    writer_b = lock.acquire(
+        board_id="b1",
+        operation="writer-b",
+        owner_id="owner-b",
+        ttl_seconds=60,
+    )
+    assert writer_b.acquired and writer_b.owner_token
+
+    assert _release_writer_or_prove_relinquished(
+        single_writer_lock=lock,
+        board_id="b1",
+        owner_token=writer_a.owner_token,
+    )
+    current = lock.inspect(board_id="b1")
+    assert current is not None
+    assert current.owner_token == writer_b.owner_token
+    assert lock.release(board_id="b1", owner_token=writer_b.owner_token)
+
+
+def test_writer_release_false_rejects_exact_token_still_present(tmp_path: Path) -> None:
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "locks",
+        write_lock_port=FakeWriteLockPort(),
+    )
+    acquired = lock.acquire(
+        board_id="b1",
+        operation="writer-a",
+        owner_id="owner-a",
+        ttl_seconds=60,
+    )
+    assert acquired.acquired and acquired.owner_token
+
+    class _FalseWithoutRelease:
+        def release(self, **_kwargs):  # noqa: ANN003, ANN201
+            return False
+
+        def inspect(self, **kwargs):  # noqa: ANN003, ANN201
+            return lock.inspect(**kwargs)
+
+    assert not _release_writer_or_prove_relinquished(
+        single_writer_lock=_FalseWithoutRelease(),
+        board_id="b1",
+        owner_token=acquired.owner_token,
+    )
+    current = lock.inspect(board_id="b1")
+    assert current is not None
+    assert current.owner_token == acquired.owner_token
+    assert lock.release(board_id="b1", owner_token=acquired.owner_token)
+
+
+@pytest.mark.parametrize(
+    ("failed_step", "expected_failed_steps"),
+    (
+        ("writer", ("writer_release",)),
+        ("reservation", ("reservation_release",)),
+    ),
+)
+def test_legacy_terminal_outcome_is_not_returned_when_release_returns_false(
+    tmp_path: Path,
+    failed_step: str,
+    expected_failed_steps: tuple[str, ...],
+) -> None:
+    from dataclasses import replace
+
+    durable_terminal_effect = {"written": False}
+
+    def _adapter(req: LegacyManualRestoreQueueOnlyInput) -> F06RebuildOutcome:
+        durable_terminal_effect["written"] = True
+        return _legacy_queue_only_outcome(req)
+
+    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
+        tmp_path,
+        adapter=_adapter,
+    )
+
+    class _WriterReleaseResult:
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(lock, name)
+
+        def release(self, **kwargs):  # noqa: ANN003, ANN201
+            if failed_step == "writer":
+                return False
+            return lock.release(**kwargs)
+
+    class _ReservationReleaseResult:
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(reservation, name)
+
+        def release(self, **kwargs):  # noqa: ANN003, ANN201
+            released = reservation.release(**kwargs)
+            return False if failed_step == "reservation" else released
+
+    service = replace(
+        service,
+        single_writer_lock=_WriterReleaseResult(),
+        operation_reservation=_ReservationReleaseResult(),
+    )
+    with issue_recovery_execution_capability(
+        board_id="b1",
+        lifetime_probe=lambda: True,
+    ) as capability:
+        with pytest.raises(RebuildLeaseCleanupError) as caught:
+            service.legacy_manual_restore_queue_only(
+                board_id="b1",
+                intent_id=digest,
+                actor_id="offline-operator",
+                reason="adopt exact manual restore and cancel legacy queue",
+                command=command,
+                intent_receipt=intent,
+                recovery_capability=capability,
+            )
+
+    assert durable_terminal_effect["written"] is True
+    assert caught.value.failed_steps == expected_failed_steps
+    writer_manifest = lock.inspect(board_id="b1")
+    if failed_step == "writer":
+        assert writer_manifest is not None
+        assert lock.release(board_id="b1", owner_token=writer_manifest.owner_token)
+    else:
+        assert writer_manifest is None
+    assert reservation.inspect(board_id="b1") is None
+
+
+def test_legacy_cleanup_failure_is_chained_without_replacing_base_exception(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    class _Fatal(BaseException):
+        pass
+
+    def _adapter(_req):  # noqa: ANN001, ANN202
+        raise _Fatal("primary interruption")
+
+    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
+        tmp_path,
+        adapter=_adapter,
+    )
+
+    class _FalseWithoutWriterRelease:
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(lock, name)
+
+        def release(self, **kwargs):  # noqa: ANN003, ANN201
+            del kwargs
+            return False
+
+    service = replace(service, single_writer_lock=_FalseWithoutWriterRelease())
+    with issue_recovery_execution_capability(
+        board_id="b1",
+        lifetime_probe=lambda: True,
+    ) as capability:
+        with pytest.raises(_Fatal, match="primary interruption") as caught:
+            service.legacy_manual_restore_queue_only(
+                board_id="b1",
+                intent_id=digest,
+                actor_id="offline-operator",
+                reason="adopt exact manual restore and cancel legacy queue",
+                command=command,
+                intent_receipt=intent,
+                recovery_capability=capability,
+            )
+
+    assert isinstance(caught.value.__cause__, RebuildLeaseCleanupError)
+    assert caught.value.__cause__.failed_steps == ("writer_release",)
+    writer_manifest = lock.inspect(board_id="b1")
+    assert writer_manifest is not None
+    assert lock.release(board_id="b1", owner_token=writer_manifest.owner_token)
+    assert reservation.inspect(board_id="b1") is None
+
+
+def test_run_releases_writer_and_reservation_after_base_exception(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    class _Fatal(BaseException):
+        pass
+
+    def _step(_request):  # noqa: ANN001, ANN202
+        raise _Fatal("fatal rebuild interruption")
+
+    service, manifest_store, confirmation_store, lock = _build_service(
+        tmp_path,
+        step_adapter=_step,
+    )
+    reservation = KGAdministrativeOperationReservation(
+        write_lock_port=lock.bind_write_lock_port()
+    )
+    service = replace(service, operation_reservation=reservation)
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    with pytest.raises(_Fatal, match="fatal rebuild interruption") as caught:
+        service.run(
+            confirmation_id=confirmation_id,
+            board_id="b1",
+            actor_id="user-1",
+            operation="rebuild",
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason="exercise fatal cleanup",
+        )
+
+    assert caught.value.__cause__ is None
+    assert lock.inspect(board_id="b1") is None
+    assert reservation.inspect(board_id="b1") is None
+
+
+def test_run_terminal_cleanup_failure_is_not_reinterpreted_or_released_twice(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    def _step(_request):  # noqa: ANN001, ANN202
+        raise ValueError("ordinary step failure")
+
+    service, manifest_store, confirmation_store, lock = _build_service(
+        tmp_path,
+        step_adapter=_step,
+    )
+    reservation = KGAdministrativeOperationReservation(
+        write_lock_port=lock.bind_write_lock_port()
+    )
+    release_calls = {"writer": 0, "reservation": 0}
+
+    class _FalseWithoutWriterRelease:
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(lock, name)
+
+        def release(self, **kwargs):  # noqa: ANN003, ANN201
+            del kwargs
+            release_calls["writer"] += 1
+            return False
+
+    class _TrackedReservation:
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(reservation, name)
+
+        def release(self, **kwargs):  # noqa: ANN003, ANN201
+            release_calls["reservation"] += 1
+            return reservation.release(**kwargs)
+
+    service = replace(
+        service,
+        single_writer_lock=_FalseWithoutWriterRelease(),
+        operation_reservation=_TrackedReservation(),
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    with pytest.raises(RebuildLeaseCleanupError) as caught:
+        service.run(
+            confirmation_id=confirmation_id,
+            board_id="b1",
+            actor_id="user-1",
+            operation="rebuild",
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason="terminal cleanup is single shot",
+        )
+
+    assert caught.value.failed_steps == ("writer_release",)
+    assert release_calls == {"writer": 1, "reservation": 1}
+    audits = list((tmp_path / "rebuild" / "audit").glob("run_*.json"))
+    assert len(audits) == 1
+    assert json.loads(audits[0].read_text(encoding="utf-8"))["outcome"] == (
+        RebuildOutcome.REBUILD_FAILED.value
+    )
+    writer_manifest = lock.inspect(board_id="b1")
+    assert writer_manifest is not None
+    assert lock.release(board_id="b1", owner_token=writer_manifest.owner_token)
     assert reservation.inspect(board_id="b1") is None
 
 
@@ -2309,6 +2700,270 @@ def test_run_delegates_admin_lease_to_real_worker_guard_and_rebinds_fence(
     assert any(token == reacquired_token and ok for token, ok in renew_events)
 
 
+def test_run_accepts_released_writer_a_when_reacquire_b_is_contended(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    write_lock_port = FakeWriteLockPort()
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "handoff-contention-locks",
+        write_lock_port=write_lock_port,
+    )
+    original_release = lock.release
+    released_tokens: list[str] = []
+    initial_token = ""
+    successor_token = ""
+
+    def _release_spy(*, board_id: str, owner_token: str) -> bool:
+        released_tokens.append(owner_token)
+        return original_release(board_id=board_id, owner_token=owner_token)
+
+    monkeypatch.setattr(lock, "release", _release_spy)
+
+    def _step(req: RebuildStepInput) -> RebuildStepResult:
+        nonlocal initial_token, successor_token
+        assert req.release_writer_for_drain is not None
+        assert req.reacquire_writer_after_drain is not None
+        initial_token = req.owner_token
+        assert req.release_writer_for_drain()
+        successor = lock.acquire(
+            board_id=req.board_id,
+            operation="ordinary-successor",
+            owner_id="other-writer",
+            ttl_seconds=60,
+        )
+        assert successor.acquired and successor.owner_token
+        successor_token = successor.owner_token
+        assert req.reacquire_writer_after_drain() is None
+        return RebuildStepResult(ok=False, detail="writer B contended")
+
+    service, manifest_store, confirmation_store, _ = _build_service(
+        tmp_path,
+        step_adapter=_step,
+        single_writer_lock=lock,
+    )
+    service = replace(
+        service,
+        lease_reacquire_timeout_seconds=0.02,
+        lease_reacquire_poll_interval_seconds=0.001,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="writer-free handoff with contended writer B",
+    )
+
+    assert result.outcome == RebuildOutcome.REBUILD_FAILED.value
+    assert result.reason == RebuildBlockReason.LEASE_LOST.value
+    # Token A was durably released during handoff, so final cleanup trusts its
+    # own lease_active=False state and never performs an ambiguous second CAS.
+    assert released_tokens.count(initial_token) == 1
+    current = lock.inspect(board_id="b1")
+    assert current is not None
+    assert current.owner_token == successor_token
+    assert original_release(board_id="b1", owner_token=successor_token)
+
+
+def test_run_base_exception_after_successful_handoff_does_not_release_writer_a_twice(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Fatal(BaseException):
+        pass
+
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "handoff-fatal-locks",
+        write_lock_port=FakeWriteLockPort(),
+    )
+    original_release = lock.release
+    released_tokens: list[str] = []
+    initial_token = ""
+
+    def _release_spy(*, board_id: str, owner_token: str) -> bool:
+        released_tokens.append(owner_token)
+        return original_release(board_id=board_id, owner_token=owner_token)
+
+    monkeypatch.setattr(lock, "release", _release_spy)
+
+    def _step(req: RebuildStepInput) -> RebuildStepResult:
+        nonlocal initial_token
+        assert req.release_writer_for_drain is not None
+        initial_token = req.owner_token
+        assert req.release_writer_for_drain()
+        raise _Fatal("fatal after writer-A handoff")
+
+    service, manifest_store, confirmation_store, _ = _build_service(
+        tmp_path,
+        step_adapter=_step,
+        single_writer_lock=lock,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    with pytest.raises(_Fatal, match="fatal after writer-A handoff") as caught:
+        service.run(
+            confirmation_id=confirmation_id,
+            board_id="b1",
+            actor_id="user-1",
+            operation="rebuild",
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason="base exception after writer-A handoff",
+        )
+
+    assert caught.value.__cause__ is None
+    assert released_tokens.count(initial_token) == 1
+    assert lock.inspect(board_id="b1") is None
+
+
+def test_reacquired_writer_b_is_not_released_when_heartbeat_join_times_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    import okto_pulse.core.kg.write_barrier as write_barrier_module
+
+    class _Fatal(BaseException):
+        pass
+
+    write_lock_port = FakeWriteLockPort()
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "reacquire-guard-failure-locks",
+        write_lock_port=write_lock_port,
+    )
+    reservation = KGAdministrativeOperationReservation(write_lock_port=write_lock_port)
+    original_release = lock.release
+    original_renew = lock.renew
+    original_under_safe_write = write_barrier_module.under_safe_write
+    release_calls: list[str] = []
+    initial_token = ""
+    writer_b_token = ""
+    writer_b_renew_entered = threading.Event()
+    allow_writer_b_renew_exit = threading.Event()
+    writer_b_renew_exited = threading.Event()
+    guard_calls = 0
+
+    def _release_spy(*, board_id: str, owner_token: str) -> bool:
+        release_calls.append(owner_token)
+        return original_release(board_id=board_id, owner_token=owner_token)
+
+    def _renew_spy(*, board_id: str, owner_token: str, ttl_seconds: int) -> bool:
+        if initial_token and owner_token != initial_token:
+            writer_b_renew_entered.set()
+            if not allow_writer_b_renew_exit.wait(timeout=5):
+                raise AssertionError("test did not release writer-B renew callback")
+            try:
+                return original_renew(
+                    board_id=board_id,
+                    owner_token=owner_token,
+                    ttl_seconds=ttl_seconds,
+                )
+            finally:
+                writer_b_renew_exited.set()
+        return original_renew(
+            board_id=board_id,
+            owner_token=owner_token,
+            ttl_seconds=ttl_seconds,
+        )
+
+    class _FailingWriterBGuard:
+        def __enter__(self):  # noqa: ANN204
+            assert writer_b_renew_entered.wait(timeout=2)
+            raise _Fatal("writer-B guard enter failed")
+
+        def __exit__(self, *_args):  # noqa: ANN002, ANN204
+            return False
+
+    def _under_safe_write(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        nonlocal guard_calls
+        guard_calls += 1
+        if guard_calls == 1:
+            return original_under_safe_write(*args, **kwargs)
+        return _FailingWriterBGuard()
+
+    monkeypatch.setattr(lock, "release", _release_spy)
+    monkeypatch.setattr(lock, "renew", _renew_spy)
+    monkeypatch.setattr(write_barrier_module, "under_safe_write", _under_safe_write)
+
+    def _step(req: RebuildStepInput) -> RebuildStepResult:
+        nonlocal initial_token, writer_b_token
+        assert req.release_writer_for_drain is not None
+        assert req.reacquire_writer_after_drain is not None
+        initial_token = req.owner_token
+        assert req.release_writer_for_drain()
+        try:
+            req.reacquire_writer_after_drain()
+        finally:
+            manifest = lock.inspect(board_id=req.board_id)
+            assert manifest is not None
+            writer_b_token = manifest.owner_token
+        raise AssertionError("reacquire must raise from the writer-B guard")
+
+    service, manifest_store, confirmation_store, _ = _build_service(
+        tmp_path,
+        step_adapter=_step,
+        single_writer_lock=lock,
+    )
+    service = replace(
+        service,
+        operation_reservation=reservation,
+        lease_heartbeat_interval_seconds=0.001,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    try:
+        with pytest.raises(_Fatal, match="writer-B guard enter failed") as caught:
+            service.run(
+                confirmation_id=confirmation_id,
+                board_id="b1",
+                actor_id="user-1",
+                operation="rebuild",
+                preflight_hash=preflight_hash,
+                manifest_ref=manifest_ref,
+                reason="writer-B heartbeat must join before release",
+            )
+
+        assert isinstance(caught.value.__cause__, RebuildLeaseCleanupError)
+        assert caught.value.__cause__.failed_steps == ("writer_heartbeat_stop",)
+        assert writer_b_token
+        assert writer_b_token not in release_calls
+        current = lock.inspect(board_id="b1")
+        assert current is not None
+        assert current.owner_token == writer_b_token
+        assert reservation.inspect(board_id="b1") is not None
+    finally:
+        allow_writer_b_renew_exit.set()
+        assert writer_b_renew_exited.wait(timeout=2)
+        if writer_b_token:
+            original_release(board_id="b1", owner_token=writer_b_token)
+        reservation_manifest = reservation.inspect(board_id="b1")
+        if reservation_manifest is not None:
+            reservation.release(
+                board_id="b1",
+                owner_token=reservation_manifest.owner_token,
+            )
+
+
 def test_run_waits_for_inflight_worker_before_initial_admin_writer(
     tmp_path: Path,
 ) -> None:
@@ -3628,20 +4283,18 @@ def test_terminal_orphan_scan_losing_writer_blocks_report_promotion_and_event(
     )
     persist_count_before = get_persist_count("b1")
 
-    result = service.run(
-        confirmation_id=confirmation_id,
-        board_id="b1",
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=preflight_hash,
-        manifest_ref=manifest_ref,
-        reason="lose writer during orphan scan",
-    )
+    with pytest.raises(RebuildLeaseCleanupError) as caught:
+        service.run(
+            confirmation_id=confirmation_id,
+            board_id="b1",
+            actor_id="user-1",
+            operation="rebuild",
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason="lose writer during orphan scan",
+        )
 
-    assert result.outcome == RebuildOutcome.REBUILD_FAILED.value
-    assert result.reason == RebuildBlockReason.LEASE_LOST.value
-    assert result.report_ref is None
-    assert result.current_kg_generation_id is None
+    assert caught.value.failed_steps == ("writer_release",)
     assert generation_repo.get_current("b1") is None
     assert events == []
     assert get_persist_count("b1") == persist_count_before
@@ -4005,23 +4658,20 @@ def test_terminal_fence_loss_after_report_persist_preserves_report_receipt(
         manifest_store,
         service.source_enumerator,
     )
-    result = service.run(
-        confirmation_id=confirmation_id,
-        board_id="b1",
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=preflight_hash,
-        manifest_ref=manifest_ref,
-        reason="lose fence after report persist",
-    )
+    with pytest.raises(RebuildLeaseCleanupError) as caught:
+        service.run(
+            confirmation_id=confirmation_id,
+            board_id="b1",
+            actor_id="user-1",
+            operation="rebuild",
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason="lose fence after report persist",
+        )
 
-    assert result.outcome == RebuildOutcome.REBUILD_FAILED.value
-    assert result.reason == RebuildBlockReason.LEASE_LOST.value
-    assert result.report_ref is not None
-    assert Path(result.report_ref).exists()
-    assert result.report_id is not None
-    assert result.current_kg_generation_id is None
-    assert result.event_emitted is False
+    assert caught.value.failed_steps == ("writer_release",)
+    report_files = list((tmp_path / "rebuild" / "reports").glob("*.json"))
+    assert len(report_files) == 1
     assert generation_repo.get_current("b1") is None
     assert events == []
 
@@ -4070,24 +4720,21 @@ def test_terminal_fence_loss_after_generation_promotion_preserves_pointer(
         manifest_store,
         service.source_enumerator,
     )
-    result = service.run(
-        confirmation_id=confirmation_id,
-        board_id="b1",
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=preflight_hash,
-        manifest_ref=manifest_ref,
-        reason="lose fence after promotion",
-    )
+    with pytest.raises(RebuildLeaseCleanupError) as caught:
+        service.run(
+            confirmation_id=confirmation_id,
+            board_id="b1",
+            actor_id="user-1",
+            operation="rebuild",
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason="lose fence after promotion",
+        )
 
     durable_current = generation_repo.get_current("b1")
     assert durable_current is not None
-    assert result.outcome == RebuildOutcome.REBUILD_FAILED.value
-    assert result.reason == RebuildBlockReason.LEASE_LOST.value
-    assert result.report_ref is not None
-    assert result.current_kg_generation_id == durable_current
-    assert result.promotion_outcome == "promoted"
-    assert result.event_emitted is False
+    assert caught.value.failed_steps == ("writer_release",)
+    assert len(list((tmp_path / "rebuild" / "reports").glob("*.json"))) == 1
     assert events == []
 
 
