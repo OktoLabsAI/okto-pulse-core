@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import json
 from types import MappingProxyType
 from typing import Protocol
 
@@ -45,6 +46,9 @@ class RebuildOutcomeCode(str, Enum):
     EFFECT_FAILED = "effect_failed"
     COMPENSATION_FAILED = "compensation_failed"
     RESUME_REQUIRES_NEW_MANIFEST = "rebuild_resume_requires_new_manifest"
+    LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED = (
+        "legacy_manual_restore_queue_only_reconciled"
+    )
 
 
 class CompensationAction(str, Enum):
@@ -199,6 +203,7 @@ class CompensationCommand:
         repr=False,
         compare=False,
     )
+    reconciliation_intent: RebuildEffectReceipt | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +284,20 @@ class RebuildEffects(Protocol):
 
 Clock = Callable[[], datetime]
 ReceiptReplayRequired = Callable[[str, RebuildEffectReceipt], bool]
+LegacyBlockedIntentProbe = Callable[[RebuildCommand, RebuildEffectReceipt], bool]
+
+
+_LEGACY_BLOCKED_INTENT_EFFECT = "legacy_manually_restored_blocked_after_enqueue_intent"
+_LEGACY_BLOCKED_INTENT_CODE = "legacy_manual_restore_queue_only_authorized"
+_LEGACY_BLOCKED_COMPENSATION_CODE = (
+    RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED.value
+)
+_LEGACY_BLOCKED_RECONCILIATION_KIND = "legacy_manual_restore_queue_only"
+_LEGACY_BLOCKED_PREAPPLIED_ACTIONS = (
+    CompensationAction.RESTORE_QUARANTINE.value,
+    CompensationAction.DISCARD_CANDIDATE_GENERATION.value,
+)
+_LEGACY_BLOCKED_REMAINING_ACTIONS = (CompensationAction.CANCEL_ENQUEUED_SOURCES.value,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +324,7 @@ class RebuildProcessor:
         reacquire_writer_after_drain: Callable[[], str | None] | None = None,
         source_revalidate: Callable[[], bool] | None = None,
         receipt_replay_required: ReceiptReplayRequired | None = None,
+        legacy_blocked_intent_probe: LegacyBlockedIntentProbe | None = None,
     ) -> None:
         if (release_writer_for_drain is None) != (reacquire_writer_after_drain is None):
             raise ValueError(
@@ -321,6 +341,7 @@ class RebuildProcessor:
         self._reacquire_writer_after_drain = reacquire_writer_after_drain
         self._source_revalidate = source_revalidate
         self._receipt_replay_required = receipt_replay_required
+        self._legacy_blocked_intent_probe = legacy_blocked_intent_probe
 
     def execute(self, command: RebuildCommand) -> RebuildOutcome:
         if command.salvage_pending:
@@ -349,6 +370,17 @@ class RebuildProcessor:
             # are deliberately excluded from checkpoint identity/persistence.
             # Reattach them from the live invocation before any resumed effect.
             checkpoint = replace(checkpoint, command=command)
+
+        if self._has_legacy_blocked_intent(checkpoint):
+            return self._finish(
+                checkpoint.command,
+                RebuildState.BLOCKED,
+                RebuildOutcomeCode.LEASE_LOST,
+                promotion_allowed=False,
+                receipts=tuple(checkpoint.receipts.values()),
+                detail="legacy_blocked_recovery_authority_required",
+                record_audit=False,
+            )
 
         # Compensation invalidates the materialization attempt represented by
         # this manifest checkpoint.  Reusing its successful enqueue receipt
@@ -596,6 +628,8 @@ class RebuildProcessor:
         if checkpoint.command != command:
             raise ValueError("run_id already belongs to a different rebuild command")
         checkpoint = replace(checkpoint, command=command)
+        if self._has_legacy_blocked_intent(checkpoint):
+            raise RuntimeError("legacy_blocked_recovery_authority_required")
         compensated = any(
             receipt.effect == "compensate" and receipt.ok
             for receipt in checkpoint.receipts.values()
@@ -615,6 +649,368 @@ class RebuildProcessor:
         }:
             return self._resume_compensation(checkpoint)
         return self._fail(checkpoint, code, detail)
+
+    def reconcile_manually_restored_blocked_after_enqueue(
+        self,
+        command: RebuildCommand,
+        *,
+        intent_receipt: RebuildEffectReceipt,
+        recovery_actor_id: str,
+        recovery_reason: str,
+    ) -> RebuildOutcome:
+        """Cancel only a legacy queue whose predecessor was already restored.
+
+        This seam is deliberately narrower than :meth:`fail_existing`.  Some
+        pre-receipt rebuilds persisted ``BLOCKED`` after enqueue and were later
+        restored by the governed manual quarantine tool.  Re-running ordinary
+        compensation would restore the old snapshot a second time and erase
+        graph evolution that happened after that restore.  The edition-owned
+        recovery runner must instead persist and re-prove a physical-evidence
+        intent, then this state machine fences only the exact remaining queue.
+
+        The intent receipt is part of the durable checkpoint before the first
+        cancellation mutation.  A crash therefore resumes the same intent and
+        can never widen generic ``BLOCKED`` compensation semantics.
+        """
+
+        intent_receipt = self._canonical_legacy_intent_receipt(intent_receipt)
+        checkpoint = self._effects.load_checkpoint(command.run_id)
+        if checkpoint is None:
+            raise RuntimeError("legacy_blocked_checkpoint_required")
+        if checkpoint.command != command:
+            raise ValueError("run_id already belongs to a different rebuild command")
+        checkpoint = replace(checkpoint, command=command)
+        self._validate_legacy_blocked_receipts(checkpoint, intent_receipt)
+        self._validate_legacy_blocked_intent(
+            command,
+            intent_receipt,
+            recovery_actor_id=recovery_actor_id,
+            recovery_reason=recovery_reason,
+        )
+        if (
+            self._lease_renew is None
+            or self._orchestration_renew is None
+            or self._legacy_blocked_intent_probe is None
+        ):
+            raise RuntimeError("legacy_blocked_recovery_authority_required")
+
+        existing_intent = checkpoint.receipts.get(intent_receipt.effect_key)
+        expected_actions = (CompensationAction.CANCEL_ENQUEUED_SOURCES,)
+        compensation = checkpoint.receipts.get(f"{command.run_id}:compensate")
+        if existing_intent is None:
+            expected_prefix = {
+                f"{command.run_id}:snapshot",
+                f"{command.run_id}:quarantine",
+                f"{command.run_id}:enqueue",
+            }
+            if (
+                set(checkpoint.receipts) != expected_prefix
+                or checkpoint.state is not RebuildState.BLOCKED
+                or checkpoint.compensation_failed_state is not None
+                or checkpoint.compensation_failure_code is not None
+                or checkpoint.compensation_failure_detail is not None
+                or checkpoint.compensation_actions
+            ):
+                raise RuntimeError("legacy_blocked_first_admission_invalid")
+        else:
+            if existing_intent != intent_receipt:
+                raise RuntimeError("legacy_blocked_intent_conflict")
+            if (
+                checkpoint.compensation_actions != expected_actions
+                or checkpoint.compensation_failed_state is not RebuildState.ENQUEUED
+                or checkpoint.compensation_failure_code
+                is not RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+                or checkpoint.state
+                not in {
+                    RebuildState.COMPENSATING,
+                    RebuildState.COMPENSATION_FAILED,
+                    RebuildState.FAILED,
+                }
+            ):
+                raise RuntimeError("legacy_blocked_compensation_context_invalid")
+            if checkpoint.state is RebuildState.COMPENSATING:
+                state_receipt_valid = compensation is None
+            elif checkpoint.state is RebuildState.COMPENSATION_FAILED:
+                state_receipt_valid = bool(
+                    compensation is not None
+                    and not compensation.ok
+                    and compensation.code != _LEGACY_BLOCKED_COMPENSATION_CODE
+                )
+            else:
+                state_receipt_valid = bool(compensation is not None and compensation.ok)
+                if state_receipt_valid:
+                    self._validate_legacy_blocked_compensation_receipt(
+                        checkpoint.command,
+                        intent_receipt,
+                        compensation,
+                    )
+            if not state_receipt_valid:
+                raise RuntimeError("legacy_blocked_state_receipt_mismatch")
+
+        fence_failure = self._check_legacy_recovery_fences(checkpoint)
+        if fence_failure is not None:
+            return fence_failure
+        try:
+            probe_receipt = self._canonical_legacy_intent_receipt(intent_receipt)
+            intent_current = bool(
+                self._legacy_blocked_intent_probe(command, probe_receipt)
+            )
+        except BaseException:
+            intent_current = False
+            probe_receipt = None
+        if probe_receipt != intent_receipt:
+            intent_current = False
+        if not intent_current:
+            raise RuntimeError("legacy_blocked_intent_not_current")
+        # The physical proof may perform I/O or wait behind the artifact-store
+        # transaction. Re-prove both mutation fences after it returns.
+        fence_failure = self._check_legacy_recovery_fences(checkpoint)
+        if fence_failure is not None:
+            return fence_failure
+        self._validate_legacy_blocked_intent(
+            command,
+            intent_receipt,
+            recovery_actor_id=recovery_actor_id,
+            recovery_reason=recovery_reason,
+        )
+        refreshed_checkpoint = self._effects.load_checkpoint(command.run_id)
+        if (
+            refreshed_checkpoint is None
+            or replace(
+                refreshed_checkpoint,
+                command=command,
+            )
+            != checkpoint
+        ):
+            raise RuntimeError("legacy_blocked_checkpoint_changed_during_probe")
+
+        if compensation is not None and compensation.ok:
+            if existing_intent is None or checkpoint.state is not RebuildState.FAILED:
+                raise RuntimeError("legacy_blocked_compensation_context_invalid")
+            self._validate_legacy_blocked_compensation_receipt(
+                checkpoint.command,
+                intent_receipt,
+                compensation,
+            )
+            return self._finish(
+                checkpoint.command,
+                RebuildState.FAILED,
+                RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED,
+                promotion_allowed=False,
+                receipts=tuple(checkpoint.receipts.values()),
+                compensation_actions=expected_actions,
+                detail="legacy_manual_restore_queue_only_reconciled",
+            )
+
+        receipts = dict(checkpoint.receipts)
+        receipts[intent_receipt.effect_key] = intent_receipt
+        checkpoint = replace(
+            checkpoint,
+            state=RebuildState.COMPENSATING,
+            compensation_failed_state=RebuildState.ENQUEUED,
+            compensation_failure_code=(
+                RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+            ),
+            compensation_failure_detail=(
+                "legacy_blocked_after_enqueue_predecessor_already_restored"
+            ),
+            compensation_actions=expected_actions,
+            receipts=MappingProxyType(receipts),
+        )
+        self._effects.save_checkpoint(checkpoint)
+        return self._resume_compensation(checkpoint)
+
+    @staticmethod
+    def _canonical_legacy_intent_receipt(
+        receipt: RebuildEffectReceipt,
+    ) -> RebuildEffectReceipt:
+        try:
+            encoded = json.dumps(
+                dict(receipt.details),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            details = json.loads(encoded)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("legacy_blocked_intent_noncanonical") from exc
+        if not isinstance(details, dict):
+            raise RuntimeError("legacy_blocked_intent_noncanonical")
+        return replace(receipt, details=MappingProxyType(details))
+
+    @staticmethod
+    def _validate_legacy_blocked_receipts(
+        checkpoint: RebuildCheckpoint,
+        intent_receipt: RebuildEffectReceipt,
+    ) -> None:
+        run_id = checkpoint.command.run_id
+        expected = {
+            f"{run_id}:snapshot": "snapshot",
+            f"{run_id}:quarantine": "quarantine",
+            f"{run_id}:enqueue": "enqueue",
+        }
+        allowed = {
+            *expected,
+            intent_receipt.effect_key,
+            f"{run_id}:compensate",
+        }
+        if not set(checkpoint.receipts).issubset(allowed):
+            raise RuntimeError("legacy_blocked_receipt_set_invalid")
+        if (
+            checkpoint.writer_handoff_count != 0
+            or checkpoint.writer_reacquire_count != 0
+        ):
+            raise RuntimeError("legacy_blocked_writer_history_invalid")
+        for effect_key, effect_name in expected.items():
+            receipt = checkpoint.receipts.get(effect_key)
+            if (
+                receipt is None
+                or receipt.effect_key != effect_key
+                or receipt.effect != effect_name
+                or not receipt.ok
+            ):
+                raise RuntimeError("legacy_blocked_receipt_prefix_invalid")
+        compensation = checkpoint.receipts.get(f"{run_id}:compensate")
+        if compensation is not None and (
+            compensation.effect_key != f"{run_id}:compensate"
+            or compensation.effect != "compensate"
+        ):
+            raise RuntimeError("legacy_blocked_compensation_receipt_invalid")
+
+    @staticmethod
+    def _validate_legacy_blocked_intent(
+        command: RebuildCommand,
+        receipt: RebuildEffectReceipt,
+        *,
+        recovery_actor_id: str,
+        recovery_reason: str,
+    ) -> None:
+        effect_key = f"{command.run_id}:{_LEGACY_BLOCKED_INTENT_EFFECT}"
+        details = dict(receipt.details)
+        normalized_actor = str(recovery_actor_id).strip()
+        normalized_reason = str(recovery_reason).strip()
+        intent_digest = str(details.get("intent_digest") or "")
+        if (
+            receipt.effect_key != effect_key
+            or receipt.effect != _LEGACY_BLOCKED_INTENT_EFFECT
+            or not receipt.ok
+            or receipt.code != _LEGACY_BLOCKED_INTENT_CODE
+            or str(details.get("legacy_run_id") or "") != command.run_id
+            or str(details.get("board_id") or "") != command.board_id
+            or str(details.get("manifest_ref") or "") != command.manifest_ref
+            or str(details.get("intent_ref") or "") == ""
+            or len(intent_digest) != 64
+            or any(character not in "0123456789abcdef" for character in intent_digest)
+            or str(details.get("recovery_run_id") or "") == ""
+            or normalized_actor == ""
+            or normalized_reason == ""
+            or str(details.get("recovery_actor_id") or "") != normalized_actor
+            or str(details.get("recovery_reason") or "") != normalized_reason
+            or tuple(details.get("preapplied_actions") or ())
+            != _LEGACY_BLOCKED_PREAPPLIED_ACTIONS
+            or tuple(details.get("remaining_actions") or ())
+            != _LEGACY_BLOCKED_REMAINING_ACTIONS
+        ):
+            raise RuntimeError("legacy_blocked_intent_invalid")
+
+    @staticmethod
+    def _validate_legacy_blocked_compensation_receipt(
+        command: RebuildCommand,
+        intent_receipt: RebuildEffectReceipt,
+        receipt: RebuildEffectReceipt,
+    ) -> None:
+        expected_key = f"{command.run_id}:compensate"
+        details = dict(receipt.details)
+        intent_details = dict(intent_receipt.details)
+        queue = details.get("queue")
+        intent_queue = intent_details.get("queue")
+        queue_details = dict(queue) if isinstance(queue, Mapping) else {}
+        intent_queue_details = (
+            dict(intent_queue) if isinstance(intent_queue, Mapping) else {}
+        )
+        intent_rows = intent_queue_details.get("rows")
+        expected_row_count = (
+            len(intent_rows)
+            if isinstance(intent_rows, Sequence)
+            and not isinstance(intent_rows, (str, bytes, bytearray))
+            else -1
+        )
+        terminal_fingerprint = str(queue_details.get("terminal_fingerprint") or "")
+        count_fields = (
+            "pending_compensated",
+            "claimed_compensated",
+            "already_compensated",
+            "active_remaining",
+            "live_intents_restored",
+            "total_compensated",
+            "expected_row_count",
+        )
+        counts_are_ints = all(
+            type(queue_details.get(field)) is int and queue_details[field] >= 0
+            for field in count_fields
+        )
+        if (
+            receipt.effect_key != expected_key
+            or receipt.effect != "compensate"
+            or not receipt.ok
+            or receipt.code != _LEGACY_BLOCKED_COMPENSATION_CODE
+            or set(details)
+            != {
+                "actions",
+                "reconciliation_kind",
+                "intent_digest",
+                "queue",
+            }
+            or tuple(details.get("actions") or ()) != _LEGACY_BLOCKED_REMAINING_ACTIONS
+            or details.get("reconciliation_kind") != _LEGACY_BLOCKED_RECONCILIATION_KIND
+            or details.get("intent_digest") != intent_details.get("intent_digest")
+            or set(queue_details)
+            != {
+                "source",
+                "expected_row_count",
+                "terminal_fingerprint",
+                "pending_compensated",
+                "claimed_compensated",
+                "already_compensated",
+                "active_remaining",
+                "live_intents_restored",
+                "total_compensated",
+                "evidence_digest",
+            }
+            or not counts_are_ints
+            or expected_row_count < 1
+            or queue_details.get("source") != intent_queue_details.get("source")
+            or queue_details.get("expected_row_count") != expected_row_count
+            or len(terminal_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in terminal_fingerprint
+            )
+            or queue_details.get("evidence_digest")
+            != intent_details.get("intent_digest")
+            or queue_details.get("active_remaining") != 0
+            or queue_details.get("live_intents_restored") != 0
+            or (
+                queue_details.get("pending_compensated", 0)
+                + queue_details.get("claimed_compensated", 0)
+                + queue_details.get("already_compensated", 0)
+                != expected_row_count
+            )
+            or queue_details.get("total_compensated")
+            != (
+                queue_details.get("pending_compensated", 0)
+                + queue_details.get("claimed_compensated", 0)
+            )
+        ):
+            raise RuntimeError("legacy_blocked_compensation_receipt_invalid")
+
+    @staticmethod
+    def _has_legacy_blocked_intent(checkpoint: RebuildCheckpoint) -> bool:
+        return any(
+            receipt.effect == _LEGACY_BLOCKED_INTENT_EFFECT
+            for receipt in checkpoint.receipts.values()
+        )
 
     def _run_effect(
         self,
@@ -853,6 +1249,32 @@ class RebuildProcessor:
             )
         return None
 
+    def _check_legacy_recovery_fences(
+        self,
+        checkpoint: RebuildCheckpoint,
+    ) -> RebuildOutcome | None:
+        """Probe the nominal lane without creating generic recovery state."""
+
+        detail = self._orchestration_failure_detail()
+        if detail is None and self._lease_renew is not None:
+            try:
+                if not self._lease_renew():
+                    detail = "single-writer lease lost"
+            except Exception as exc:
+                detail = f"lease renewal failed:{type(exc).__name__}"
+        if detail is None:
+            return None
+        return self._finish(
+            checkpoint.command,
+            checkpoint.state,
+            RebuildOutcomeCode.LEASE_LOST,
+            promotion_allowed=False,
+            compensation_actions=checkpoint.compensation_actions,
+            receipts=tuple(checkpoint.receipts.values()),
+            detail=detail,
+            record_audit=False,
+        )
+
     def _mutation_guard(self) -> bool:
         """Return whether compensation may perform its next mutation."""
 
@@ -884,6 +1306,23 @@ class RebuildProcessor:
         # No compensation is legal after the writer fence is lost.  Preserve
         # the durable checkpoint and require governed recovery/manual salvage
         # instead of mutating graph storage with a stale token.
+        if self._has_legacy_blocked_intent(checkpoint):
+            # The nominal recovery lane encodes its resumable phase
+            # bijectively: COMPENSATING means no durable terminal receipt,
+            # COMPENSATION_FAILED means an explicitly failed receipt, and
+            # FAILED means the exact queue-only receipt is durable. Rewriting
+            # any of these to generic BLOCKED would make a post-effect fence
+            # loss impossible to resume safely under a fresh capability.
+            return self._finish(
+                checkpoint.command,
+                checkpoint.state,
+                RebuildOutcomeCode.LEASE_LOST,
+                promotion_allowed=False,
+                compensation_actions=checkpoint.compensation_actions,
+                receipts=tuple(checkpoint.receipts.values()),
+                detail=detail,
+                record_audit=False,
+            )
         reservation_lost = detail.startswith("orchestration reservation")
         checkpoint = (
             replace(checkpoint, state=RebuildState.BLOCKED)
@@ -972,7 +1411,16 @@ class RebuildProcessor:
             actions=actions,
             receipt_keys=tuple(checkpoint.receipts),
             mutation_guard=self._mutation_guard,
+            reconciliation_intent=next(
+                (
+                    receipt
+                    for receipt in checkpoint.receipts.values()
+                    if receipt.effect == _LEGACY_BLOCKED_INTENT_EFFECT
+                ),
+                None,
+            ),
         )
+        reconciliation_intent = command.reconciliation_intent
         try:
             receipt = self._effects.compensate(command, effect_key=effect_key)
         except Exception as exc:
@@ -982,6 +1430,27 @@ class RebuildProcessor:
                 ok=False,
                 code=f"{type(exc).__name__}:{exc}",
             )
+        if reconciliation_intent is not None and receipt.ok:
+            try:
+                self._validate_legacy_blocked_compensation_receipt(
+                    checkpoint.command,
+                    reconciliation_intent,
+                    receipt,
+                )
+            except RuntimeError:
+                receipt = RebuildEffectReceipt(
+                    effect_key=effect_key,
+                    effect="compensate",
+                    ok=False,
+                    code="legacy_blocked_compensation_receipt_invalid",
+                    details=MappingProxyType(
+                        {
+                            "intent_digest": dict(reconciliation_intent.details).get(
+                                "intent_digest"
+                            ),
+                        }
+                    ),
+                )
         receipts = dict(checkpoint.receipts)
         receipts[effect_key] = receipt
         terminal_state = (
@@ -1000,6 +1469,13 @@ class RebuildProcessor:
         fence_failure = self._check_fences(checkpoint)
         if fence_failure is not None:
             return fence_failure
+        terminal_code = code
+        terminal_detail = detail
+        if reconciliation_intent is not None and not receipt.ok:
+            terminal_code = RebuildOutcomeCode.COMPENSATION_FAILED
+            terminal_detail = (
+                f"legacy_manual_restore_queue_only_compensation_failed:{receipt.code}"
+            )
         return self._finish(
             checkpoint.command,
             terminal_state,
@@ -1007,11 +1483,11 @@ class RebuildProcessor:
             # compensation receipt carry the independent secondary failure;
             # replacing the code here would mask actionable causes such as a
             # cognitive-preservation integrity error.
-            code,
+            terminal_code,
             promotion_allowed=False,
             compensation_actions=actions,
             receipts=tuple(checkpoint.receipts.values()),
-            detail=detail,
+            detail=terminal_detail,
         )
 
     @staticmethod
@@ -1074,6 +1550,64 @@ class RebuildProcessor:
         return outcome
 
 
+def canonicalize_legacy_manual_restore_queue_only_intent_receipt(
+    receipt: RebuildEffectReceipt,
+) -> RebuildEffectReceipt:
+    """Return an isolated canonical snapshot of one nominal recovery intent."""
+
+    return RebuildProcessor._canonical_legacy_intent_receipt(receipt)
+
+
+def validate_legacy_manual_restore_queue_only_outcome(
+    outcome: RebuildOutcome,
+    *,
+    command: RebuildCommand,
+    intent_receipt: RebuildEffectReceipt,
+) -> None:
+    """Prove the adapter returned the exact durable queue-only terminal set."""
+
+    canonical_intent = RebuildProcessor._canonical_legacy_intent_receipt(intent_receipt)
+    expected_keys = {
+        f"{command.run_id}:snapshot",
+        f"{command.run_id}:quarantine",
+        f"{command.run_id}:enqueue",
+        canonical_intent.effect_key,
+        f"{command.run_id}:compensate",
+    }
+    if type(outcome) is not RebuildOutcome or any(
+        type(receipt) is not RebuildEffectReceipt for receipt in outcome.receipts
+    ):
+        raise RuntimeError("legacy_manual_restore_queue_only_outcome_invalid")
+    receipts = {receipt.effect_key: receipt for receipt in outcome.receipts}
+    if (
+        outcome.run_id != command.run_id
+        or outcome.board_id != command.board_id
+        or outcome.state is not RebuildState.FAILED
+        or outcome.code is not RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        or outcome.promotion_allowed
+        or outcome.compensation_actions != (CompensationAction.CANCEL_ENQUEUED_SOURCES,)
+        or outcome.detail != "legacy_manual_restore_queue_only_reconciled"
+        or len(outcome.receipts) != len(expected_keys)
+        or set(receipts) != expected_keys
+        or receipts.get(canonical_intent.effect_key) != canonical_intent
+    ):
+        raise RuntimeError("legacy_manual_restore_queue_only_outcome_invalid")
+    for effect in ("snapshot", "quarantine", "enqueue"):
+        effect_key = f"{command.run_id}:{effect}"
+        receipt = receipts[effect_key]
+        if (
+            receipt.effect_key != effect_key
+            or receipt.effect != effect
+            or not receipt.ok
+        ):
+            raise RuntimeError("legacy_manual_restore_queue_only_outcome_invalid")
+    RebuildProcessor._validate_legacy_blocked_compensation_receipt(
+        command,
+        canonical_intent,
+        receipts[f"{command.run_id}:compensate"],
+    )
+
+
 __all__ = [
     "CompensationAction",
     "CompensationCommand",
@@ -1093,4 +1627,6 @@ __all__ = [
     "RebuildState",
     "evaluate_queue_depth",
     "start_queue_drain",
+    "canonicalize_legacy_manual_restore_queue_only_intent_receipt",
+    "validate_legacy_manual_restore_queue_only_outcome",
 ]

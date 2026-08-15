@@ -50,6 +50,7 @@ None on outcomes other than COMPLETED.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -59,6 +60,21 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
+from okto_pulse.core.application.rebuild_processor import (
+    RebuildCommand as F06RebuildCommand,
+)
+from okto_pulse.core.application.rebuild_processor import (
+    RebuildEffectReceipt as F06RebuildEffectReceipt,
+)
+from okto_pulse.core.application.rebuild_processor import (
+    RebuildOutcome as F06RebuildOutcome,
+)
+from okto_pulse.core.application.rebuild_processor import (
+    canonicalize_legacy_manual_restore_queue_only_intent_receipt,
+)
+from okto_pulse.core.application.rebuild_processor import (
+    validate_legacy_manual_restore_queue_only_outcome,
+)
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
@@ -76,6 +92,31 @@ REBUILD_DIRNAME = "rebuild"
 AUDIT_DIRNAME = "audit"
 MAX_REBUILD_CONFIRMATION_RECEIPT_BYTES = 128 * 1024
 REBUILD_CONFIRMATION_RECEIPT_SCHEMA = "kg_rebuild_confirmation_receipt.v1"
+
+
+def _canonical_f06_rebuild_command(
+    command: F06RebuildCommand,
+) -> F06RebuildCommand:
+    if type(command) is not F06RebuildCommand:
+        raise RuntimeError("legacy_manual_restore_queue_only_command_type_invalid")
+    try:
+        encoded = json.dumps(
+            list(command.source_rows),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        decoded = json.loads(encoded)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "legacy_manual_restore_queue_only_command_noncanonical"
+        ) from exc
+    if not isinstance(decoded, list) or any(
+        not isinstance(row, dict) for row in decoded
+    ):
+        raise RuntimeError("legacy_manual_restore_queue_only_command_noncanonical")
+    return replace(command, source_rows=tuple(dict(row) for row in decoded))
 
 
 class RebuildConfirmationReceiptIntegrityError(RuntimeError):
@@ -798,6 +839,34 @@ class RebuildStepResult:
 RebuildStepAdapter = Callable[[RebuildStepInput], RebuildStepResult]
 
 
+@dataclass(frozen=True, slots=True)
+class LegacyManualRestoreQueueOnlyInput:
+    """Exact adapter input for the offline legacy queue-only lane.
+
+    The adapter receives no confirmation, manifest-store, lifecycle,
+    quarantine, report, event, generation or audit primitive. It may only
+    re-prove the nominal intent and drive the F06 queue-only reconciliation
+    under the two live administrative fences.
+    """
+
+    board_id: str
+    intent_id: str
+    actor_id: str
+    reason: str
+    owner_token: str = field(repr=False)
+    command: F06RebuildCommand
+    intent_receipt: F06RebuildEffectReceipt
+    lease_renew: Callable[[], bool] = field(repr=False, compare=False)
+    orchestration_renew: Callable[[], bool] = field(repr=False, compare=False)
+    mutation_guard: Callable[[], bool] = field(repr=False, compare=False)
+
+
+LegacyManualRestoreQueueOnlyAdapter = Callable[
+    [LegacyManualRestoreQueueOnlyInput],
+    F06RebuildOutcome,
+]
+
+
 def _default_step_adapter(req: RebuildStepInput) -> RebuildStepResult:
     """Stub step — accepts and returns ok. KG-02.5 replaces with the
     deterministic rebuilder. Tests inject their own to exercise
@@ -933,6 +1002,9 @@ class KGRebuildService:
     lease_reacquire_poll_interval_seconds: float = 0.05
     operation_reservation: Any | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
+    legacy_manual_restore_queue_only_adapter: (
+        LegacyManualRestoreQueueOnlyAdapter | None
+    ) = None
 
     def __post_init__(self) -> None:
         if (
@@ -954,6 +1026,295 @@ class KGRebuildService:
         )
 
     # --- public API --------------------------------------------------------
+
+    def legacy_manual_restore_queue_only(
+        self,
+        *,
+        board_id: str,
+        intent_id: str,
+        actor_id: str,
+        reason: str,
+        command: F06RebuildCommand,
+        intent_receipt: F06RebuildEffectReceipt,
+        recovery_capability: object | None = None,
+    ) -> F06RebuildOutcome:
+        """Reconcile one legacy post-enqueue queue without touching the graph.
+
+        This internal recovery-only seam deliberately bypasses ``run`` and
+        ``resume_authorized_run``. A governed manual restore already handled
+        the old graph candidate, so confirmation, manifest revalidation,
+        lifecycle, quarantine, generation/report/event and run-audit paths are
+        forbidden here. The only adapter call occurs under an opaque one-run
+        recovery capability, administrative reservation, graph writer and
+        same-thread safe-write guard.
+        """
+
+        from okto_pulse.core.kg.recovery_execution import (
+            validate_recovery_execution_capability,
+        )
+        from okto_pulse.core.kg.single_writer_lock import (
+            KGAdministrativeOperationReservation,
+        )
+        from okto_pulse.core.kg.write_barrier import under_safe_write
+
+        original_command = command
+        original_intent_receipt = intent_receipt
+        if (
+            type(command) is not F06RebuildCommand
+            or type(intent_receipt) is not F06RebuildEffectReceipt
+        ):
+            raise RuntimeError("legacy_manual_restore_queue_only_binding_invalid")
+        command = _canonical_f06_rebuild_command(command)
+        intent_receipt = canonicalize_legacy_manual_restore_queue_only_intent_receipt(
+            intent_receipt
+        )
+        normalized_board_id = str(board_id).strip()
+        normalized_intent_id = str(intent_id).strip()
+        normalized_actor_id = str(actor_id).strip()
+        normalized_reason = str(reason).strip()
+        adapter = self.legacy_manual_restore_queue_only_adapter
+        if adapter is None:
+            raise RuntimeError("legacy_manual_restore_queue_only_adapter_required")
+        if (
+            not normalized_board_id
+            or len(normalized_intent_id) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in normalized_intent_id
+            )
+            or not normalized_actor_id
+            or not normalized_reason
+            or str(getattr(command, "board_id", "")) != normalized_board_id
+            or dict(getattr(intent_receipt, "details", {})).get("intent_digest")
+            != normalized_intent_id
+        ):
+            raise RuntimeError("legacy_manual_restore_queue_only_binding_invalid")
+
+        operation_run_id = f"legacy_manual_restore_queue_only:{normalized_intent_id}"
+
+        def _recovery_valid() -> bool:
+            return validate_recovery_execution_capability(
+                recovery_capability,
+                board_id=normalized_board_id,
+                run_id=operation_run_id,
+            )
+
+        if not _recovery_valid():
+            raise RuntimeError("legacy_manual_restore_queue_only_authority_required")
+
+        bind_write_lock_port = getattr(
+            self.single_writer_lock,
+            "bind_write_lock_port",
+            None,
+        )
+        bound_write_lock_port = (
+            bind_write_lock_port() if callable(bind_write_lock_port) else None
+        )
+        operation_reservation = self.operation_reservation
+        if operation_reservation is None:
+            operation_reservation = KGAdministrativeOperationReservation(
+                base_dir=self.base_dir,
+                write_lock_port=bound_write_lock_port,
+            )
+        bind_reservation_port = getattr(
+            operation_reservation,
+            "bind_write_lock_port",
+            None,
+        )
+        if callable(bind_reservation_port):
+            bind_reservation_port()
+
+        reservation = operation_reservation.acquire(
+            board_id=normalized_board_id,
+            operation=f"kg02_rebuild_reservation:{operation_run_id}",
+            owner_id=normalized_actor_id,
+            ttl_seconds=self.lock_ttl_seconds,
+            admin_lane=True,
+        )
+        if not reservation.acquired or not reservation.owner_token:
+            raise RuntimeError("legacy_manual_restore_queue_only_lock_contention")
+        reservation_token = reservation.owner_token
+        heartbeat_interval_seconds = (
+            self.lease_heartbeat_interval_seconds
+            if self.lease_heartbeat_interval_seconds is not None
+            else max(0.1, min(30.0, self.lock_ttl_seconds / 3))
+        )
+        reservation_heartbeat = _RebuildLeaseHeartbeat(
+            lambda: (
+                _recovery_valid()
+                and operation_reservation.renew(
+                    board_id=normalized_board_id,
+                    owner_token=reservation_token,
+                    ttl_seconds=self.lock_ttl_seconds,
+                )
+            ),
+            board_id=normalized_board_id,
+            interval_seconds=heartbeat_interval_seconds,
+        )
+        writer_heartbeat: _RebuildLeaseHeartbeat | None = None
+        owner_token: str | None = None
+        guard_stack = ExitStack()
+        try:
+            reservation_heartbeat.start()
+            deadline = time.monotonic() + self.lease_reacquire_timeout_seconds
+            while True:
+                if not reservation_heartbeat.renew_now():
+                    raise RuntimeError(
+                        "legacy_manual_restore_queue_only_reservation_lost"
+                    )
+                acquisition = self.single_writer_lock.acquire(
+                    board_id=normalized_board_id,
+                    operation=f"kg02_rebuild:{operation_run_id}",
+                    owner_id=normalized_actor_id,
+                    ttl_seconds=self.lock_ttl_seconds,
+                    admin_lane=True,
+                )
+                if acquisition.acquired and acquisition.owner_token:
+                    owner_token = acquisition.owner_token
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        "legacy_manual_restore_queue_only_writer_contention"
+                    )
+                time.sleep(min(self.lease_reacquire_poll_interval_seconds, remaining))
+            assert owner_token is not None
+
+            writer_heartbeat = _RebuildLeaseHeartbeat(
+                lambda: self.single_writer_lock.renew(
+                    board_id=normalized_board_id,
+                    owner_token=owner_token,
+                    ttl_seconds=self.lock_ttl_seconds,
+                ),
+                board_id=normalized_board_id,
+                interval_seconds=heartbeat_interval_seconds,
+            )
+            writer_heartbeat.start()
+
+            def _writer_renew() -> bool:
+                return bool(
+                    writer_heartbeat is not None and writer_heartbeat.renew_now()
+                )
+
+            def _reservation_renew() -> bool:
+                return bool(_recovery_valid() and reservation_heartbeat.renew_now())
+
+            def _mutation_guard() -> bool:
+                return bool(_reservation_renew() and _writer_renew())
+
+            if not _mutation_guard():
+                raise RuntimeError("legacy_manual_restore_queue_only_fence_lost")
+            try:
+                command_still_current = (
+                    _canonical_f06_rebuild_command(original_command) == command
+                )
+                intent_still_current = (
+                    canonicalize_legacy_manual_restore_queue_only_intent_receipt(
+                        original_intent_receipt
+                    )
+                    == intent_receipt
+                )
+            except RuntimeError:
+                command_still_current = False
+                intent_still_current = False
+            if not command_still_current or not intent_still_current:
+                raise RuntimeError("legacy_manual_restore_queue_only_binding_changed")
+            guard_stack.enter_context(
+                under_safe_write(
+                    normalized_board_id,
+                    owner_token,
+                    operation_run_id,
+                )
+            )
+            adapter_command = _canonical_f06_rebuild_command(command)
+            adapter_intent = (
+                canonicalize_legacy_manual_restore_queue_only_intent_receipt(
+                    intent_receipt
+                )
+            )
+            outcome = adapter(
+                LegacyManualRestoreQueueOnlyInput(
+                    board_id=normalized_board_id,
+                    intent_id=normalized_intent_id,
+                    actor_id=normalized_actor_id,
+                    reason=normalized_reason,
+                    owner_token=owner_token,
+                    command=adapter_command,
+                    intent_receipt=adapter_intent,
+                    lease_renew=_writer_renew,
+                    orchestration_renew=_reservation_renew,
+                    mutation_guard=_mutation_guard,
+                )
+            )
+            if (
+                _canonical_f06_rebuild_command(adapter_command) != command
+                or canonicalize_legacy_manual_restore_queue_only_intent_receipt(
+                    adapter_intent
+                )
+                != intent_receipt
+            ):
+                raise RuntimeError(
+                    "legacy_manual_restore_queue_only_adapter_binding_mutated"
+                )
+            try:
+                validate_legacy_manual_restore_queue_only_outcome(
+                    outcome,
+                    command=command,
+                    intent_receipt=intent_receipt,
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    "legacy_manual_restore_queue_only_outcome_invalid"
+                ) from exc
+            if not _mutation_guard():
+                raise RuntimeError(
+                    "legacy_manual_restore_queue_only_post_effect_fence_lost"
+                )
+            return outcome
+        finally:
+            try:
+                guard_stack.close()
+            finally:
+                if writer_heartbeat is not None:
+                    try:
+                        writer_heartbeat.stop()
+                    except BaseException:
+                        logger.exception(
+                            "kg.rebuild.legacy_queue_only_writer_heartbeat_"
+                            "stop_failed board=%s",
+                            normalized_board_id,
+                        )
+                if owner_token is not None:
+                    try:
+                        self.single_writer_lock.release(
+                            board_id=normalized_board_id,
+                            owner_token=owner_token,
+                        )
+                    except BaseException:
+                        logger.exception(
+                            "kg.rebuild.legacy_queue_only_writer_release_failed "
+                            "board=%s",
+                            normalized_board_id,
+                        )
+                try:
+                    reservation_heartbeat.stop()
+                except BaseException:
+                    logger.exception(
+                        "kg.rebuild.legacy_queue_only_reservation_heartbeat_"
+                        "stop_failed board=%s",
+                        normalized_board_id,
+                    )
+                try:
+                    operation_reservation.release(
+                        board_id=normalized_board_id,
+                        owner_token=reservation_token,
+                    )
+                except BaseException:
+                    logger.exception(
+                        "kg.rebuild.legacy_queue_only_reservation_release_failed "
+                        "board=%s",
+                        normalized_board_id,
+                    )
 
     def resume_authorized_run(
         self,
@@ -3991,6 +4352,8 @@ __all__ = [
     "ClosedRebuildReconciliation",
     "KGRebuildService",
     "KGRebuiltEventEmitter",
+    "LegacyManualRestoreQueueOnlyAdapter",
+    "LegacyManualRestoreQueueOnlyInput",
     "OrphanScanProvider",
     "REBUILD_DIRNAME",
     "RebuildBlockReason",

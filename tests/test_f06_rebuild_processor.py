@@ -45,6 +45,7 @@ class FakeEffects:
         self.calls: list[str] = []
         self.compensation_actions: tuple[CompensationAction, ...] = ()
         self.compensation_failed_state: RebuildState | None = None
+        self.compensation_intent: RebuildEffectReceipt | None = None
         self.crash_after: str | None = None
         self.crashed = False
         self.receipt_creations: dict[str, int] = {}
@@ -110,6 +111,35 @@ class FakeEffects:
         self.calls.append("compensate")
         self.compensation_actions = command.actions
         self.compensation_failed_state = command.failed_state
+        self.compensation_intent = command.reconciliation_intent
+        if command.reconciliation_intent is not None:
+            intent_details = dict(command.reconciliation_intent.details)
+            intent_digest = intent_details["intent_digest"]
+            queue = dict(intent_details["queue"])
+            expected_row_count = len(queue["rows"])
+            return RebuildEffectReceipt(
+                effect_key,
+                "compensate",
+                True,
+                code="legacy_manual_restore_queue_only_reconciled",
+                details={
+                    "actions": ["cancel_enqueued_sources"],
+                    "reconciliation_kind": "legacy_manual_restore_queue_only",
+                    "intent_digest": intent_digest,
+                    "queue": {
+                        "source": queue["source"],
+                        "expected_row_count": expected_row_count,
+                        "terminal_fingerprint": "b" * 64,
+                        "pending_compensated": 1,
+                        "claimed_compensated": 1,
+                        "already_compensated": 0,
+                        "active_remaining": 0,
+                        "live_intents_restored": 0,
+                        "total_compensated": 2,
+                        "evidence_digest": intent_digest,
+                    },
+                },
+            )
         return RebuildEffectReceipt(effect_key, "compensate", True)
 
     def record_audit(self, outcome, *, effect_key):  # noqa: ANN001, ANN201
@@ -140,6 +170,81 @@ def _processor(effects: FakeEffects, clock: FakeClock) -> RebuildProcessor:
             hard_timeout_seconds=8,
             observation_wait_seconds=1,
         ),
+    )
+
+
+def _legacy_blocked_receipts(
+    command: RebuildCommand,
+) -> dict[str, RebuildEffectReceipt]:
+    return {
+        f"{command.run_id}:{effect}": RebuildEffectReceipt(
+            effect_key=f"{command.run_id}:{effect}",
+            effect=effect,
+            ok=True,
+        )
+        for effect in ("snapshot", "quarantine", "enqueue")
+    }
+
+
+def _legacy_blocked_intent(command: RebuildCommand) -> RebuildEffectReceipt:
+    return RebuildEffectReceipt(
+        effect_key=(
+            f"{command.run_id}:legacy_manually_restored_blocked_after_enqueue_intent"
+        ),
+        effect="legacy_manually_restored_blocked_after_enqueue_intent",
+        ok=True,
+        code="legacy_manual_restore_queue_only_authorized",
+        details={
+            "legacy_run_id": command.run_id,
+            "board_id": command.board_id,
+            "manifest_ref": command.manifest_ref,
+            "intent_ref": "legacy-intent-1",
+            "intent_digest": "a" * 64,
+            "recovery_run_id": "offline-recovery-1",
+            "recovery_actor_id": "board-owner",
+            "recovery_reason": "adopt governed manual restore and fence legacy queue",
+            "preapplied_actions": [
+                "restore_quarantine",
+                "discard_candidate_generation",
+            ],
+            "remaining_actions": ["cancel_enqueued_sources"],
+            "queue": {
+                "source": f"rebuild:{command.manifest_ref}",
+                "rows": [{"id": "queue-1"}, {"id": "queue-2"}],
+            },
+        },
+    )
+
+
+def _legacy_queue_only_compensation(
+    command: RebuildCommand,
+    intent: RebuildEffectReceipt,
+) -> RebuildEffectReceipt:
+    intent_details = dict(intent.details)
+    intent_digest = intent_details["intent_digest"]
+    queue = dict(intent_details["queue"])
+    return RebuildEffectReceipt(
+        f"{command.run_id}:compensate",
+        "compensate",
+        True,
+        code="legacy_manual_restore_queue_only_reconciled",
+        details={
+            "actions": ["cancel_enqueued_sources"],
+            "reconciliation_kind": "legacy_manual_restore_queue_only",
+            "intent_digest": intent_digest,
+            "queue": {
+                "source": queue["source"],
+                "expected_row_count": len(queue["rows"]),
+                "terminal_fingerprint": "b" * 64,
+                "pending_compensated": 1,
+                "claimed_compensated": 1,
+                "already_compensated": 0,
+                "active_remaining": 0,
+                "live_intents_restored": 0,
+                "total_compensated": 2,
+                "evidence_digest": intent_digest,
+            },
+        },
     )
 
 
@@ -775,6 +880,654 @@ def test_f06_fail_existing_compensates_only_the_persisted_attempt(
             "promote",
         )
     )
+
+
+def test_f06_legacy_manually_restored_blocked_enqueue_cancels_queue_only() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=_legacy_blocked_receipts(command),
+    )
+    original_compensate = effects.compensate
+
+    def compensate(command_arg, *, effect_key):  # noqa: ANN001, ANN201
+        durable = effects.checkpoints[command.run_id]
+        assert durable.state is RebuildState.COMPENSATING
+        assert durable.receipts[intent.effect_key] == intent
+        return original_compensate(command_arg, effect_key=effect_key)
+
+    effects.compensate = compensate  # type: ignore[method-assign]
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    )
+
+    outcome = processor.reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+
+    assert outcome.state is RebuildState.FAILED
+    assert outcome.code is RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+    assert outcome.compensation_actions == (CompensationAction.CANCEL_ENQUEUED_SOURCES,)
+    assert effects.compensation_failed_state is RebuildState.ENQUEUED
+    assert effects.compensation_intent == intent
+    assert CompensationAction.RESTORE_QUARANTINE not in effects.compensation_actions
+    assert (
+        CompensationAction.DISCARD_CANDIDATE_GENERATION
+        not in effects.compensation_actions
+    )
+
+
+def test_f06_legacy_blocked_intent_requires_exact_prefix_and_live_authority() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    receipts = _legacy_blocked_receipts(command)
+    receipts.pop(f"{command.run_id}:enqueue")
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=receipts,
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: True,
+    )
+
+    with pytest.raises(RuntimeError, match="legacy_blocked_receipt_prefix_invalid"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert "compensate" not in effects.calls
+
+    effects.checkpoints[command.run_id] = replace(
+        effects.checkpoints[command.run_id],
+        receipts=_legacy_blocked_receipts(command),
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: False,
+    )
+    with pytest.raises(RuntimeError, match="legacy_blocked_intent_not_current"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert "compensate" not in effects.calls
+
+
+def test_f06_generic_execute_never_resumes_legacy_queue_only_intent() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.COMPENSATING,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_failure_detail="legacy blocked queue reconciliation",
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts={**_legacy_blocked_receipts(command), intent.effect_key: intent},
+    )
+
+    outcome = _processor(effects, clock).execute(command)
+
+    assert outcome.state is RebuildState.BLOCKED
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.detail == "legacy_blocked_recovery_authority_required"
+    assert effects.calls == []
+
+
+def test_f06_legacy_queue_only_retry_reuses_same_durable_intent() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.COMPENSATING,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_failure_detail="legacy blocked queue reconciliation",
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts={**_legacy_blocked_receipts(command), intent.effect_key: intent},
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    )
+
+    outcome = processor.reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+
+    assert outcome.state is RebuildState.FAILED
+    assert effects.calls == [
+        "compensate",
+        "audit:legacy_manual_restore_queue_only_reconciled",
+    ]
+    assert effects.compensation_intent == intent
+
+
+def test_f06_legacy_queue_only_first_admission_rejects_compensation_metadata() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts=_legacy_blocked_receipts(command),
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: True,
+    )
+
+    with pytest.raises(RuntimeError, match="legacy_blocked_first_admission_invalid"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.calls == []
+
+
+def test_f06_legacy_queue_only_terminal_replay_requires_exact_receipt() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    generic_compensation = RebuildEffectReceipt(
+        f"{command.run_id}:compensate",
+        "compensate",
+        True,
+    )
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.FAILED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_failure_detail=(
+            "legacy_blocked_after_enqueue_predecessor_already_restored"
+        ),
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts={
+            **_legacy_blocked_receipts(command),
+            intent.effect_key: intent,
+            generic_compensation.effect_key: generic_compensation,
+        },
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="legacy_blocked_compensation_receipt_invalid",
+    ):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.calls == []
+
+    exact = _legacy_queue_only_compensation(command, intent)
+    effects.checkpoints[command.run_id] = replace(
+        effects.checkpoints[command.run_id],
+        receipts={
+            **_legacy_blocked_receipts(command),
+            intent.effect_key: intent,
+            exact.effect_key: exact,
+        },
+    )
+    outcome = processor.reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+    assert outcome.code is RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+    assert effects.calls == ["audit:legacy_manual_restore_queue_only_reconciled"]
+
+
+def test_f06_legacy_queue_only_invalid_effect_receipt_cannot_emit_nominal_audit() -> (
+    None
+):
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=_legacy_blocked_receipts(command),
+    )
+
+    def _invalid_compensate(_command, *, effect_key):  # noqa: ANN001, ANN202
+        effects.calls.append("compensate")
+        return RebuildEffectReceipt(effect_key, "compensate", True)
+
+    effects.compensate = _invalid_compensate  # type: ignore[method-assign]
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    )
+
+    outcome = processor.reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+
+    assert outcome.state is RebuildState.COMPENSATION_FAILED
+    assert outcome.code is RebuildOutcomeCode.COMPENSATION_FAILED
+    assert effects.calls == ["compensate", "audit:compensation_failed"]
+    durable = effects.checkpoints[command.run_id]
+    invalid = durable.receipts[f"{command.run_id}:compensate"]
+    assert invalid.ok is False
+    assert invalid.code == "legacy_blocked_compensation_receipt_invalid"
+
+
+def test_f06_legacy_queue_only_rejects_blocked_intent_without_durable_context() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts={**_legacy_blocked_receipts(command), intent.effect_key: intent},
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="legacy_blocked_compensation_context_invalid",
+    ):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.calls == []
+
+
+def test_f06_legacy_queue_only_terminal_replay_reproves_physical_intent() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    compensation = _legacy_queue_only_compensation(command, intent)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.FAILED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_failure_detail=(
+            "legacy_blocked_after_enqueue_predecessor_already_restored"
+        ),
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts={
+            **_legacy_blocked_receipts(command),
+            intent.effect_key: intent,
+            compensation.effect_key: compensation,
+        },
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: False,
+    )
+
+    with pytest.raises(RuntimeError, match="legacy_blocked_intent_not_current"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.calls == []
+
+
+def test_f06_legacy_queue_only_rejects_mutated_probe_payload_and_checkpoint() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    original = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=_legacy_blocked_receipts(command),
+    )
+    effects.checkpoints[command.run_id] = original
+
+    def _mutate_probe(_command, receipt):  # noqa: ANN001, ANN202
+        dict(receipt.details["queue"])["rows"].append({"id": "forged"})
+        return True
+
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=_mutate_probe,
+    )
+    with pytest.raises(RuntimeError, match="legacy_blocked_intent_not_current"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.checkpoints[command.run_id] == original
+    assert effects.calls == []
+
+    def _mutate_checkpoint(_command, _receipt):  # noqa: ANN001, ANN202
+        effects.checkpoints[command.run_id] = replace(original, last_sequence=1)
+        return True
+
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=_mutate_checkpoint,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="legacy_blocked_checkpoint_changed_during_probe",
+    ):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.calls == []
+
+
+def test_f06_legacy_queue_only_post_effect_fence_loss_preserves_terminal_replay() -> (
+    None
+):
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=_legacy_blocked_receipts(command),
+    )
+    writer_renewals = iter((True, True, True, False))
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: next(writer_renewals),
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    )
+
+    lost = processor.reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+
+    assert lost.code is RebuildOutcomeCode.LEASE_LOST
+    assert lost.state is RebuildState.FAILED
+    durable = effects.checkpoints[command.run_id]
+    assert durable.state is RebuildState.FAILED
+    assert durable.receipts[f"{command.run_id}:compensate"].ok is True
+    assert effects.calls == ["compensate"]
+
+    resumed = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    ).reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+    assert resumed.code is RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+    assert effects.calls == [
+        "compensate",
+        "audit:legacy_manual_restore_queue_only_reconciled",
+    ]
+
+
+def test_f06_legacy_queue_only_initial_fence_loss_writes_no_generic_audit() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    checkpoint = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=_legacy_blocked_receipts(command),
+    )
+    effects.checkpoints[command.run_id] = checkpoint
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: False,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: True,
+    ).reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.state is RebuildState.BLOCKED
+    assert effects.checkpoints[command.run_id] == checkpoint
+    assert effects.calls == []
+
+
+@pytest.mark.parametrize(
+    ("state", "receipt_mode"),
+    [
+        (RebuildState.FAILED, "absent"),
+        (RebuildState.COMPENSATING, "success"),
+        (RebuildState.COMPENSATION_FAILED, "absent"),
+    ],
+)
+def test_f06_legacy_queue_only_state_and_terminal_receipt_are_bijective(
+    state: RebuildState,
+    receipt_mode: str,
+) -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    receipts = {**_legacy_blocked_receipts(command), intent.effect_key: intent}
+    if receipt_mode == "success":
+        terminal = _legacy_queue_only_compensation(command, intent)
+        receipts[terminal.effect_key] = terminal
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=state,
+        started_at=clock(),
+        last_progress_at=clock(),
+        compensation_failed_state=RebuildState.ENQUEUED,
+        compensation_failure_code=(
+            RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
+        ),
+        compensation_failure_detail=(
+            "legacy_blocked_after_enqueue_predecessor_already_restored"
+        ),
+        compensation_actions=(CompensationAction.CANCEL_ENQUEUED_SOURCES,),
+        receipts=receipts,
+    )
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: True,
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, _receipt: True,
+    )
+
+    with pytest.raises(RuntimeError, match="legacy_blocked_state_receipt_mismatch"):
+        processor.reconcile_manually_restored_blocked_after_enqueue(
+            command,
+            intent_receipt=intent,
+            recovery_actor_id="board-owner",
+            recovery_reason="adopt governed manual restore and fence legacy queue",
+        )
+    assert effects.calls == []
+
+
+@pytest.mark.parametrize(
+    ("receipt_ok", "expected_state"),
+    [
+        (None, RebuildState.COMPENSATING),
+        (False, RebuildState.COMPENSATION_FAILED),
+    ],
+)
+def test_f06_legacy_queue_only_fence_loss_preserves_resumable_phase(
+    receipt_ok: bool | None,
+    expected_state: RebuildState,
+) -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [])
+    command = _command(owner_token="writer-b")
+    intent = _legacy_blocked_intent(command)
+    effects.checkpoints[command.run_id] = RebuildCheckpoint(
+        command=replace(command, owner_token=None),
+        state=RebuildState.BLOCKED,
+        started_at=clock(),
+        last_progress_at=clock(),
+        receipts=_legacy_blocked_receipts(command),
+    )
+    if receipt_ok is False:
+
+        def _failed_compensate(_command, *, effect_key):  # noqa: ANN001, ANN202
+            effects.calls.append("compensate")
+            return RebuildEffectReceipt(
+                effect_key,
+                "compensate",
+                False,
+                code="simulated_queue_failure",
+            )
+
+        effects.compensate = _failed_compensate  # type: ignore[method-assign]
+        writer_renewals = iter((True, True, True, False))
+    else:
+        writer_renewals = iter((True, True, False))
+    outcome = RebuildProcessor(
+        effects,
+        clock=clock,
+        lease_renew=lambda: next(writer_renewals),
+        orchestration_renew=lambda: True,
+        legacy_blocked_intent_probe=lambda _command, receipt: receipt == intent,
+    ).reconcile_manually_restored_blocked_after_enqueue(
+        command,
+        intent_receipt=intent,
+        recovery_actor_id="board-owner",
+        recovery_reason="adopt governed manual restore and fence legacy queue",
+    )
+
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.state is expected_state
+    durable = effects.checkpoints[command.run_id]
+    assert durable.state is expected_state
+    assert durable.receipts[intent.effect_key] == intent
+    assert all(not call.startswith("audit:") for call in effects.calls)
 
 
 def test_f06_hard_timeout_is_monotonic_even_while_progressing() -> None:
