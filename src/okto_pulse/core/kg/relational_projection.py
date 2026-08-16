@@ -8,12 +8,14 @@ cleanup never relies on a broad ``STARTS WITH`` ownership guess.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import re
 
 
 RELATIONAL_PROJECTION_NAMESPACE_RDL = "rdl"
 RELATIONAL_PROJECTION_OWNER_TYPE = "refinement"
 RELATIONAL_PROJECTION_SYSTEM_ACTOR_PREFIX = "system:"
+RELATIONAL_PROJECTION_RULE_VERSION = "v2.0"
 
 _RDL_REF_PATTERN = re.compile(
     r"^refinement:(?P<owner_id>[^:]+):rdl:(?P<ledger_id>[^:]+):"
@@ -21,6 +23,10 @@ _RDL_REF_PATTERN = re.compile(
 )
 _RDL_BELONGS_TO_RULE_PATTERN = re.compile(
     r"^belongs_to/relational_rdl_(?P<kind>decision|alternative)"
+    r"@v?(?P<version>[0-9]+\.[0-9]+(?:\.[0-9]+)?)$"
+)
+_RDL_RELATES_TO_RULE_PATTERN = re.compile(
+    r"^relates_to/relational_rdl_alternative"
     r"@v?(?P<version>[0-9]+\.[0-9]+(?:\.[0-9]+)?)$"
 )
 
@@ -35,6 +41,42 @@ class RelationalProjectionIdentity:
     ledger_id: str
     node_type: str
     alternative_hash: str | None = None
+
+
+def relational_projection_candidate_id(source_artifact_ref: str) -> str:
+    """Return the closed deterministic candidate id for one projection ref."""
+
+    value = str(source_artifact_ref or "")
+    return f"relproj_{hashlib.sha256(value.encode('utf-8')).hexdigest()[:32]}"
+
+
+def relational_projection_edge_id(
+    edge_type: str,
+    from_candidate_id: str,
+    to_candidate_id: str,
+) -> str:
+    """Return the closed deterministic edge id used by the RDL projector."""
+
+    identity = f"{edge_type}:{from_candidate_id}:{to_candidate_id}"
+    return f"relproj_edge_{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:32]}"
+
+
+def relational_projection_belongs_to_rule(node_type: str) -> str:
+    """Return the sole current ownership rule for an RDL node type."""
+
+    normalized = str(node_type or "")
+    if normalized not in {"Decision", "Alternative"}:
+        raise ValueError("relational_projection_rule_node_type_invalid")
+    return (
+        f"belongs_to/relational_rdl_{normalized.casefold()}"
+        f"@{RELATIONAL_PROJECTION_RULE_VERSION}"
+    )
+
+
+def relational_projection_alternative_relation_rule() -> str:
+    """Return the sole current Decision-to-Alternative relation rule."""
+
+    return f"relates_to/relational_rdl_alternative@{RELATIONAL_PROJECTION_RULE_VERSION}"
 
 
 def parse_relational_projection_ref(
@@ -90,12 +132,26 @@ def relational_projection_rule_node_type(rule_id: str) -> str | None:
     return "Decision" if match.group("kind") == "decision" else "Alternative"
 
 
+def is_relational_projection_alternative_relation_rule(rule_id: str) -> bool:
+    """Return whether ``rule_id`` is the exact versioned RDL relation rule."""
+
+    return (
+        _RDL_RELATES_TO_RULE_PATTERN.fullmatch(str(rule_id or "").strip()) is not None
+    )
+
+
 __all__ = [
     "RELATIONAL_PROJECTION_NAMESPACE_RDL",
     "RELATIONAL_PROJECTION_OWNER_TYPE",
+    "RELATIONAL_PROJECTION_RULE_VERSION",
     "RELATIONAL_PROJECTION_SYSTEM_ACTOR_PREFIX",
     "RelationalProjectionIdentity",
+    "is_relational_projection_alternative_relation_rule",
     "is_relational_projection_node",
     "parse_relational_projection_ref",
+    "relational_projection_candidate_id",
+    "relational_projection_belongs_to_rule",
+    "relational_projection_alternative_relation_rule",
+    "relational_projection_edge_id",
     "relational_projection_rule_node_type",
 ]

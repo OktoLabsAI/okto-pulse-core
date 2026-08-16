@@ -4,12 +4,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, Sequence
+from enum import Enum
+import json
+import re
+from typing import Any, Callable, Protocol, Sequence
 
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
     require_runtime_value,
     reset_runtime_values,
+)
+
+
+_EXACT_REBUILD_SOURCE_ARTIFACT_TYPES = frozenset(
+    {
+        "story",
+        "ideation",
+        "refinement",
+        "spec",
+        "sprint",
+        "task",
+        "test",
+        "bug",
+        "card",
+        "amendment_hotfix_revision",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
+    }
 )
 
 
@@ -54,6 +76,10 @@ class ConsolidationClaimScope:
     board_id: str
     source: str
     work_kind: str = "consolidate"
+    # Stable across a crash/reacquired reservation for this exact governed
+    # rebuild run.  The current ephemeral reservation token/epoch is proven
+    # separately by ``reservation_authority_probe`` at every mutation fence.
+    reservation_lineage_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.board_id.strip():
@@ -65,6 +91,15 @@ class ConsolidationClaimScope:
             or not self.source.removeprefix("rebuild:").strip()
         ):
             raise ValueError("consolidation_claim_scope_source_invalid")
+        if self.reservation_lineage_id is not None and (
+            type(self.reservation_lineage_id) is not str
+            or len(self.reservation_lineage_id) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.reservation_lineage_id
+            )
+        ):
+            raise ValueError("consolidation_claim_scope_reservation_lineage_invalid")
 
     def admits(self, entry: ConsolidationQueueRecord) -> bool:
         return (
@@ -72,6 +107,313 @@ class ConsolidationClaimScope:
             and entry.source == self.source
             and entry.work_kind == self.work_kind
         )
+
+
+class ExactConsolidationDisposition(str, Enum):
+    ACKED = "acked"
+    RETRY_SCHEDULED = "retry_scheduled"
+    TERMINAL_FAILURE = "terminal_failure"
+    NEUTRAL_FENCE_LOSS = "neutral_fence_loss"
+
+
+class ExactConsolidationResultOrigin(str, Enum):
+    NEW = "new"
+    REPLAYED = "replayed"
+
+
+class ExactConsolidationMutationState(str, Enum):
+    UNCHANGED = "unchanged"
+    COMMITTED = "committed"
+    COMPENSATED = "compensated"
+    AMBIGUOUS = "ambiguous"
+
+
+@dataclass(frozen=True, slots=True)
+class ExactConsolidationRowResult:
+    queue_id: str
+    board_id: str
+    source: str
+    reservation_lineage_id: str
+    work_kind: str
+    artifact_type: str
+    artifact_id: str
+    generation: int
+    membership_source_ref: str
+    membership_source_version: str
+    membership_content_hash: str
+    attempt_ordinal: int
+    disposition: ExactConsolidationDisposition
+    origin: ExactConsolidationResultOrigin
+    mutation_state: ExactConsolidationMutationState
+    error_code: str | None = None
+    error_message: str | None = None
+    next_retry_at: datetime | None = None
+    diagnostic_json: str | None = None
+
+    def __post_init__(self) -> None:
+        string_fields = (
+            self.queue_id,
+            self.board_id,
+            self.source,
+            self.reservation_lineage_id,
+            self.work_kind,
+            self.artifact_type,
+            self.artifact_id,
+            self.membership_source_ref,
+            self.membership_source_version,
+            self.membership_content_hash,
+        )
+        if any(type(value) is not str or not value for value in string_fields):
+            raise TypeError("exact_consolidation_row_identity_invalid")
+        membership_artifact_type, separator, membership_artifact_id = (
+            self.membership_source_ref.partition(":")
+        )
+        membership_queue_type = (
+            "card"
+            if membership_artifact_type in {"task", "test", "bug", "card"}
+            else membership_artifact_type
+        )
+        if type(self.generation) is not int or self.generation < 0:
+            raise TypeError("exact_consolidation_row_generation_invalid")
+        if type(self.attempt_ordinal) is not int or self.attempt_ordinal < 1:
+            raise TypeError("exact_consolidation_row_attempt_invalid")
+        if type(self.disposition) is not ExactConsolidationDisposition:
+            raise TypeError("exact_consolidation_row_disposition_invalid")
+        if type(self.origin) is not ExactConsolidationResultOrigin:
+            raise TypeError("exact_consolidation_row_origin_invalid")
+        if type(self.mutation_state) is not ExactConsolidationMutationState:
+            raise TypeError("exact_consolidation_row_mutation_state_invalid")
+        if (self.error_code is None) is not (self.error_message is None):
+            raise ValueError("exact_consolidation_row_error_invalid")
+        if self.error_code is not None and (
+            type(self.error_code) is not str
+            or not self.error_code
+            or len(self.error_code) > 128
+            or re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,127}", self.error_code) is None
+            or type(self.error_message) is not str
+            or not self.error_message
+            or len(self.error_message) > 480
+        ):
+            raise ValueError("exact_consolidation_row_error_invalid")
+        if self.diagnostic_json is not None:
+            if (
+                type(self.diagnostic_json) is not str
+                or not self.diagnostic_json
+                or len(self.diagnostic_json) > 16384
+            ):
+                raise ValueError("exact_consolidation_row_diagnostic_invalid")
+            try:
+                diagnostic = json.loads(self.diagnostic_json)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("exact_consolidation_row_diagnostic_invalid") from exc
+            if (
+                type(diagnostic) is not dict
+                or json.dumps(
+                    diagnostic,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                != self.diagnostic_json
+            ):
+                raise ValueError("exact_consolidation_row_diagnostic_invalid")
+        if self.next_retry_at is not None and (
+            type(self.next_retry_at) is not datetime
+            or self.next_retry_at.tzinfo is None
+            or self.next_retry_at.utcoffset() is None
+        ):
+            raise TypeError("exact_consolidation_row_retry_at_invalid")
+        if (
+            not self.source.startswith("rebuild:")
+            or not self.source.removeprefix("rebuild:").strip()
+            or self.work_kind != "consolidate"
+            or len(self.reservation_lineage_id) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.reservation_lineage_id
+            )
+            or separator != ":"
+            or ":" in membership_artifact_id
+            or membership_artifact_id != self.artifact_id
+            or membership_artifact_type not in _EXACT_REBUILD_SOURCE_ARTIFACT_TYPES
+            or membership_queue_type != self.artifact_type
+            or not self.membership_source_version.strip()
+            or len(self.membership_content_hash) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.membership_content_hash
+            )
+        ):
+            raise ValueError("exact_consolidation_row_binding_invalid")
+        has_error = self.error_code is not None
+        if self.disposition is ExactConsolidationDisposition.ACKED:
+            valid_semantics = (
+                self.origin is ExactConsolidationResultOrigin.NEW
+                and self.mutation_state is ExactConsolidationMutationState.COMMITTED
+                and not has_error
+                and self.next_retry_at is None
+                and self.diagnostic_json is None
+            )
+        elif self.disposition is ExactConsolidationDisposition.RETRY_SCHEDULED:
+            valid_semantics = (
+                self.origin
+                in {
+                    ExactConsolidationResultOrigin.NEW,
+                    ExactConsolidationResultOrigin.REPLAYED,
+                }
+                and self.mutation_state is ExactConsolidationMutationState.UNCHANGED
+                and has_error
+                and self.next_retry_at is not None
+            )
+        elif self.disposition is ExactConsolidationDisposition.TERMINAL_FAILURE:
+            valid_semantics = (
+                self.origin
+                in {
+                    ExactConsolidationResultOrigin.NEW,
+                    ExactConsolidationResultOrigin.REPLAYED,
+                }
+                and self.mutation_state
+                in {
+                    ExactConsolidationMutationState.UNCHANGED,
+                    ExactConsolidationMutationState.COMPENSATED,
+                    ExactConsolidationMutationState.AMBIGUOUS,
+                }
+                and has_error
+                and self.next_retry_at is None
+            )
+        else:
+            valid_semantics = (
+                self.origin is ExactConsolidationResultOrigin.NEW
+                and self.mutation_state
+                in {
+                    ExactConsolidationMutationState.UNCHANGED,
+                    ExactConsolidationMutationState.COMPENSATED,
+                    ExactConsolidationMutationState.AMBIGUOUS,
+                }
+                and has_error
+                and self.next_retry_at is None
+            )
+        if not valid_semantics:
+            raise ValueError("exact_consolidation_row_semantics_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ExactConsolidationBatchResult:
+    claim_scope: ConsolidationClaimScope
+    rows: tuple[ExactConsolidationRowResult, ...]
+
+    def __post_init__(self) -> None:
+        if type(self.claim_scope) is not ConsolidationClaimScope:
+            raise TypeError("exact_consolidation_batch_scope_invalid")
+        if type(self.rows) is not tuple or any(
+            type(row) is not ExactConsolidationRowResult for row in self.rows
+        ):
+            raise TypeError("exact_consolidation_batch_rows_invalid")
+        if any(
+            row.board_id != self.claim_scope.board_id
+            or row.source != self.claim_scope.source
+            or row.work_kind != self.claim_scope.work_kind
+            or row.reservation_lineage_id != self.claim_scope.reservation_lineage_id
+            for row in self.rows
+        ):
+            raise ValueError("exact_consolidation_batch_scope_mismatch")
+        if self.claim_scope.reservation_lineage_id is None:
+            raise ValueError("exact_consolidation_batch_reservation_lineage_required")
+        if len({row.queue_id for row in self.rows}) != len(self.rows):
+            raise ValueError("exact_consolidation_batch_duplicate_queue_id")
+
+    @property
+    def acked_count(self) -> int:
+        return sum(
+            row.disposition is ExactConsolidationDisposition.ACKED for row in self.rows
+        )
+
+    @property
+    def new_attempt_count(self) -> int:
+        return sum(
+            row.origin is ExactConsolidationResultOrigin.NEW for row in self.rows
+        )
+
+    @property
+    def replayed_count(self) -> int:
+        return sum(
+            row.origin is ExactConsolidationResultOrigin.REPLAYED for row in self.rows
+        )
+
+    @property
+    def terminal_failures(self) -> tuple[ExactConsolidationRowResult, ...]:
+        return tuple(
+            row
+            for row in self.rows
+            if row.disposition is ExactConsolidationDisposition.TERMINAL_FAILURE
+        )
+
+    @property
+    def retry_scheduled(self) -> tuple[ExactConsolidationRowResult, ...]:
+        return tuple(
+            row
+            for row in self.rows
+            if row.disposition is ExactConsolidationDisposition.RETRY_SCHEDULED
+        )
+
+    @property
+    def earliest_retry_at(self) -> datetime | None:
+        values = [
+            row.next_retry_at
+            for row in self.retry_scheduled
+            if row.next_retry_at is not None
+        ]
+        return min(values) if values else None
+
+
+class ExactConsolidationPostCommitError(RuntimeError):
+    """A durable exact row outcome whose graph cleanup could not complete.
+
+    ``batch_result`` is the authoritative partial result through the durable
+    transaction, including the affected row. Recovery orchestration must use
+    it for totality/gating and then compensate the enclosing F06 operation;
+    it must never infer committed identities from queue-depth deltas.
+    """
+
+    __slots__ = ("_batch_result", "_error_code", "_failed_queue_id")
+
+    def __init__(
+        self,
+        *,
+        batch_result: ExactConsolidationBatchResult,
+        failed_queue_id: str,
+        error_code: str,
+    ) -> None:
+        if type(batch_result) is not ExactConsolidationBatchResult:
+            raise TypeError("exact_post_commit_batch_result_invalid")
+        if type(failed_queue_id) is not str or not failed_queue_id:
+            raise TypeError("exact_post_commit_queue_id_invalid")
+        if type(error_code) is not str or not error_code:
+            raise TypeError("exact_post_commit_error_code_invalid")
+        matching = tuple(
+            row for row in batch_result.rows if row.queue_id == failed_queue_id
+        )
+        if (
+            len(matching) != 1
+            or matching[0].origin is not ExactConsolidationResultOrigin.NEW
+        ):
+            raise ValueError("exact_post_commit_failed_row_invalid")
+        self._batch_result = batch_result
+        self._failed_queue_id = failed_queue_id
+        self._error_code = error_code
+        super().__init__(error_code)
+
+    @property
+    def batch_result(self) -> ExactConsolidationBatchResult:
+        return self._batch_result
+
+    @property
+    def failed_queue_id(self) -> str:
+        return self._failed_queue_id
+
+    @property
+    def error_code(self) -> str:
+        return self._error_code
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +633,18 @@ class ConsolidationPersistencePort(Protocol):
 
         ...
 
+    async def list_pending_exact(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        source: str,
+        work_kind: str,
+    ) -> tuple[ConsolidationQueueRecord, ...]:
+        """List all pending exact members, including delayed dispositions."""
+
+        ...
+
     async def list_claimed_exact(
         self,
         context: Any,
@@ -396,6 +750,43 @@ class ConsolidationPersistencePort(Protocol):
 
         ...
 
+    async def save_exact_rebuild_disposition(
+        self,
+        context: Any,
+        *,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        source: str,
+        work_kind: str,
+        generation: int,
+        delete_event_id: str | None,
+        expected_attempts: int,
+        expected_last_error: str | None,
+        expected_next_retry_at: datetime | None,
+        expected_payload: dict[str, Any],
+        reservation_authority_probe: Callable[[], bool],
+        payload: dict[str, Any],
+        attempts: int,
+        last_error: str,
+        next_retry_at: datetime | None,
+    ) -> ConsolidationQueueRecord | None:
+        """CAS a claimed exact row to pending with its durable disposition.
+
+        Implementations must compare the complete claim identity and exact
+        prior payload, then invoke the token/epoch-bound reservation probe
+        immediately before mutation in the same transaction. The durable
+        marker binds the stable run lineage instead of that ephemeral token,
+        so a governed successor lease for the same run can replay it. They
+        replace payload/retry fields, clear claim ownership, and return the
+        stored row. ``None`` is a neutral ownership/fence loss. Core re-proves
+        the current ephemeral authority immediately before and after commit.
+        """
+
+        ...
+
     async def save_queue_entries(
         self, context: Any, entries: Sequence[ConsolidationQueueRecord]
     ) -> None: ...
@@ -456,6 +847,12 @@ __all__ = [
     "CurrentQualityAssessmentSummary",
     "CurrentResearchDecisionSummary",
     "CurrentSpecDependencyProjection",
+    "ExactConsolidationBatchResult",
+    "ExactConsolidationDisposition",
+    "ExactConsolidationMutationState",
+    "ExactConsolidationPostCommitError",
+    "ExactConsolidationResultOrigin",
+    "ExactConsolidationRowResult",
     "get_consolidation_persistence_port",
     "register_consolidation_persistence_port",
     "reset_consolidation_persistence_port_for_tests",

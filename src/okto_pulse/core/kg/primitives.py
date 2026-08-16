@@ -49,6 +49,13 @@ from okto_pulse.core.kg.node_identity import (
     mint_node_id,
     normalize_text,
 )
+from okto_pulse.core.kg.relational_projection import (
+    parse_relational_projection_ref,
+    relational_projection_alternative_relation_rule,
+    relational_projection_belongs_to_rule,
+    relational_projection_candidate_id,
+    relational_projection_edge_id,
+)
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
     CONNECTIVITY_ERROR_CODE,
@@ -1430,6 +1437,7 @@ def _validate_graph_connectivity_before_commit(
     explicit_override_candidate_ids: frozenset[str],
     writer_path: str,
     kg_health_state: str,
+    deterministic_rdl_alternative_candidate_ids: frozenset[str] = frozenset(),
 ) -> dict:
     """Validate zero-orphan invariants before any graph backend mutation.
 
@@ -1549,6 +1557,9 @@ def _validate_graph_connectivity_before_commit(
         edges=guard_edges,
         existing_node_refs=existing_refs,
         generation_id="",
+        deterministic_rdl_alternative_candidate_ids=(
+            deterministic_rdl_alternative_candidate_ids
+        ),
     )
     response = result.to_response()
     response["checked_nodes"] = len(guard_nodes)
@@ -1586,6 +1597,223 @@ def _validate_graph_connectivity_before_commit(
         session_id=session_id,
         details=details,
     )
+
+
+def _validated_deterministic_rdl_alternative_grants(
+    *,
+    agent_id: str,
+    session_artifact_type: str,
+    session_artifact_id: str,
+    node_candidates: dict,
+    edge_candidates: dict,
+    relational_projection_candidate_ids: frozenset[str],
+    relational_projection_active_set_intent: object | None,
+) -> frozenset[str]:
+    """Prove the narrow server-owned RDL Alternative writer exception.
+
+    ``Alternative`` remains cognitive-owned in the generic registry.  The one
+    deterministic producer is the current relational RDL projection, already
+    admitted by ``begin_consolidation``.  Re-prove its closed identities and
+    provenance at the graph boundary so an arbitrary deterministic candidate,
+    prefix collision, or mutable intent cannot inherit that authority.
+    """
+
+    intent = relational_projection_active_set_intent
+    if (
+        type(node_candidates) is not dict
+        or type(edge_candidates) is not dict
+        or type(relational_projection_candidate_ids) is not frozenset
+        or any(
+            type(candidate_id) is not str or not candidate_id
+            for candidate_id in relational_projection_candidate_ids
+        )
+        or any(
+            type(candidate_id) is not str
+            or not candidate_id
+            or str(getattr(candidate, "candidate_id", "")) != candidate_id
+            for candidate_id, candidate in node_candidates.items()
+        )
+        or any(
+            type(candidate_id) is not str
+            or not candidate_id
+            or str(getattr(candidate, "candidate_id", "")) != candidate_id
+            for candidate_id, candidate in edge_candidates.items()
+        )
+        or agent_id != "system:historical_consolidation"
+        or session_artifact_type != "refinement"
+        or intent is None
+        or type(getattr(intent, "owner_type", None)) is not str
+        or type(getattr(intent, "owner_id", None)) is not str
+        or type(getattr(intent, "namespace", None)) is not str
+        or getattr(intent, "owner_type") != "refinement"
+        or getattr(intent, "owner_id") != session_artifact_id
+        or getattr(intent, "namespace") != "rdl"
+        or type(getattr(intent, "active_refs", None)) is not tuple
+        or type(getattr(intent, "active_edges", None)) is not tuple
+        or getattr(intent, "active_edges")
+    ):
+        return frozenset()
+
+    active_refs = getattr(intent, "active_refs")
+    refs_by_candidate: dict[str, object] = {}
+    parsed_by_candidate: dict[str, object] = {}
+    for ref in active_refs:
+        candidate_id = getattr(ref, "candidate_id", None)
+        node_type = getattr(ref, "node_type", None)
+        source_ref = getattr(ref, "source_artifact_ref", None)
+        if (
+            type(candidate_id) is not str
+            or not candidate_id
+            or candidate_id in refs_by_candidate
+            or type(node_type) is not str
+            or type(source_ref) is not str
+        ):
+            return frozenset()
+        parsed = parse_relational_projection_ref(source_ref)
+        candidate = node_candidates.get(candidate_id)
+        if (
+            parsed is None
+            or parsed.owner_id != session_artifact_id
+            or parsed.owner_type != "refinement"
+            or parsed.namespace != "rdl"
+            or parsed.node_type != node_type
+            or relational_projection_candidate_id(source_ref) != candidate_id
+            or candidate is None
+            or _enum_value(getattr(candidate, "node_type", "")) != node_type
+            or str(getattr(candidate, "source_artifact_ref", "") or "") != source_ref
+        ):
+            return frozenset()
+        refs_by_candidate[candidate_id] = ref
+        parsed_by_candidate[candidate_id] = parsed
+
+    if frozenset(refs_by_candidate) != relational_projection_candidate_ids:
+        return frozenset()
+
+    owner_candidates = [
+        candidate_id
+        for candidate_id, candidate in node_candidates.items()
+        if _enum_value(getattr(candidate, "node_type", "")) == "Entity"
+        and str(getattr(candidate, "source_artifact_ref", "") or "")
+        == f"refinement:{session_artifact_id}"
+    ]
+    if len(owner_candidates) != 1:
+        return frozenset()
+    owner_candidate_id = owner_candidates[0]
+
+    def _edges(*, edge_type: str, from_id: str, to_id: str) -> list[object]:
+        return [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == edge_type
+            and str(getattr(edge, "from_candidate_id", "")) == from_id
+            and str(getattr(edge, "to_candidate_id", "")) == to_id
+        ]
+
+    decision_ids = [
+        candidate_id
+        for candidate_id, parsed in parsed_by_candidate.items()
+        if getattr(parsed, "node_type") == "Decision"
+    ]
+    for decision_id in decision_ids:
+        decision_belongs = _edges(
+            edge_type="belongs_to",
+            from_id=decision_id,
+            to_id=owner_candidate_id,
+        )
+        all_outgoing_belongs = [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == "belongs_to"
+            and str(getattr(edge, "from_candidate_id", "")) == decision_id
+        ]
+        if len(decision_belongs) != 1 or len(all_outgoing_belongs) != 1:
+            return frozenset()
+        belongs = decision_belongs[0]
+        if (
+            str(getattr(belongs, "candidate_id", ""))
+            != relational_projection_edge_id(
+                "belongs_to",
+                decision_id,
+                owner_candidate_id,
+            )
+            or str(getattr(belongs, "rule_id", "") or "")
+            != relational_projection_belongs_to_rule("Decision")
+            or str(getattr(belongs, "layer", "") or "") != "deterministic"
+            or str(getattr(belongs, "created_by", "") or "") != "worker_layer1"
+        ):
+            return frozenset()
+
+    granted: set[str] = set()
+    for alternative_id, parsed in parsed_by_candidate.items():
+        if getattr(parsed, "node_type") != "Alternative":
+            continue
+        belongs_edges = _edges(
+            edge_type="belongs_to",
+            from_id=alternative_id,
+            to_id=owner_candidate_id,
+        )
+        all_outgoing_belongs = [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == "belongs_to"
+            and str(getattr(edge, "from_candidate_id", "")) == alternative_id
+        ]
+        if len(belongs_edges) != 1 or len(all_outgoing_belongs) != 1:
+            return frozenset()
+        belongs = belongs_edges[0]
+        if (
+            str(getattr(belongs, "candidate_id", ""))
+            != relational_projection_edge_id(
+                "belongs_to",
+                alternative_id,
+                owner_candidate_id,
+            )
+            or str(getattr(belongs, "rule_id", "") or "")
+            != relational_projection_belongs_to_rule("Alternative")
+            or str(getattr(belongs, "layer", "") or "") != "deterministic"
+            or str(getattr(belongs, "created_by", "") or "") != "worker_layer1"
+        ):
+            return frozenset()
+
+        ledger_id = getattr(parsed, "ledger_id")
+        decision_ids = [
+            candidate_id
+            for candidate_id, decision_parsed in parsed_by_candidate.items()
+            if getattr(decision_parsed, "node_type") == "Decision"
+            and getattr(decision_parsed, "ledger_id") == ledger_id
+        ]
+        if len(decision_ids) != 1:
+            return frozenset()
+        decision_id = decision_ids[0]
+        relation_edges = _edges(
+            edge_type="relates_to",
+            from_id=decision_id,
+            to_id=alternative_id,
+        )
+        all_incoming_relations = [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == "relates_to"
+            and str(getattr(edge, "to_candidate_id", "")) == alternative_id
+        ]
+        if len(relation_edges) != 1 or len(all_incoming_relations) != 1:
+            return frozenset()
+        relation = relation_edges[0]
+        if (
+            str(getattr(relation, "candidate_id", ""))
+            != relational_projection_edge_id(
+                "relates_to",
+                decision_id,
+                alternative_id,
+            )
+            or str(getattr(relation, "rule_id", "") or "")
+            != relational_projection_alternative_relation_rule()
+            or str(getattr(relation, "layer", "") or "") != "deterministic"
+            or str(getattr(relation, "created_by", "") or "") != "worker_layer1"
+        ):
+            return frozenset()
+        granted.add(alternative_id)
+    return frozenset(granted)
 
 
 def _infer_artifact_type_from_source_ref(source_ref: str | None) -> str | None:
@@ -2761,6 +2989,21 @@ def _do_graph_commit(
             session_id=session_id,
             graph_scope=graph_scope,
         )
+        deterministic_rdl_alternative_grants = (
+            _validated_deterministic_rdl_alternative_grants(
+                agent_id=agent_id,
+                session_artifact_type=session_artifact_type,
+                session_artifact_id=session_artifact_id,
+                node_candidates=node_candidates,
+                edge_candidates=edge_candidates,
+                relational_projection_candidate_ids=(
+                    relational_projection_candidate_ids
+                ),
+                relational_projection_active_set_intent=(
+                    relational_projection_active_set_intent
+                ),
+            )
+        )
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
             board_id=board_id,
@@ -2771,6 +3014,9 @@ def _do_graph_commit(
             explicit_override_candidate_ids=explicit_override_candidate_ids,
             writer_path=writer_path,
             kg_health_state=kg_health_state,
+            deterministic_rdl_alternative_candidate_ids=(
+                deterministic_rdl_alternative_grants
+            ),
         )
         for endpoint, (node_id, node_type) in resolved_dependency_endpoints.items():
             candidate_to_graph_id[endpoint] = node_id

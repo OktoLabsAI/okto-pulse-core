@@ -21,9 +21,12 @@ Fallback Confidence Cap`).
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import re
 import sys
 import uuid
+from copy import deepcopy
 from contextlib import ExitStack
 from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
@@ -33,6 +36,12 @@ from typing import Any, Callable, Mapping
 from okto_pulse.core.ports.consolidation import (
     ConsolidationClaimScope,
     ConsolidationQueueRecord,
+    ExactConsolidationBatchResult,
+    ExactConsolidationDisposition,
+    ExactConsolidationMutationState,
+    ExactConsolidationPostCommitError,
+    ExactConsolidationResultOrigin,
+    ExactConsolidationRowResult,
     get_consolidation_persistence_port,
 )
 from okto_pulse.core.ports.delivery_ledger import (
@@ -75,6 +84,7 @@ from okto_pulse.core.kg.primitives import (
 )
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
+from okto_pulse.core.kg.connectivity_guard import CONNECTIVITY_ERROR_CODE
 from okto_pulse.core.kg.interfaces.graph_errors import (
     GraphError,
     graph_memory_pressure_retry_after_seconds,
@@ -101,6 +111,10 @@ from okto_pulse.core.kg.single_writer_lock import (
     KGAdministrativeOperationReservation,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.board_rebuild_adapter import (
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES,
+    queue_artifact_type,
+)
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_NONE,
@@ -135,6 +149,179 @@ from okto_pulse.core.ports.relational_effects import (
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 _REBUILD_RESERVATION_OPERATION_PREFIX = "kg02_rebuild_reservation:"
+_EXACT_REBUILD_DISPOSITION_KEY = "_exact_rebuild_disposition"
+_EXACT_REBUILD_DISPOSITION_SCHEMA_VERSION = 1
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _exact_rebuild_membership(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+) -> tuple[str, str, str]:
+    payload = entry.payload
+    membership = payload.get("_rebuild_membership") if type(payload) is dict else None
+    if type(membership) is not dict or set(membership) != {
+        "content_hash",
+        "run_id",
+        "source_ref",
+        "source_version",
+    }:
+        raise RuntimeError("exact_rebuild_membership_invalid")
+    run_id = membership.get("run_id")
+    source_ref = membership.get("source_ref")
+    source_version = membership.get("source_version")
+    content_hash = membership.get("content_hash")
+    source_artifact_type, separator, source_artifact_id = (
+        source_ref.partition(":") if type(source_ref) is str else ("", "", "")
+    )
+    if (
+        type(run_id) is not str
+        or run_id != claim_scope.source.removeprefix("rebuild:")
+        or type(source_ref) is not str
+        or separator != ":"
+        or ":" in source_artifact_id
+        or source_artifact_id != entry.artifact_id
+        or source_artifact_type not in DETERMINISTIC_SOURCE_ARTIFACT_TYPES
+        or queue_artifact_type(source_artifact_type) != entry.artifact_type
+        or type(source_version) is not str
+        or not source_version.strip()
+        or type(content_hash) is not str
+        or _SHA256_RE.fullmatch(content_hash) is None
+    ):
+        raise RuntimeError("exact_rebuild_membership_invalid")
+    return source_ref, source_version, content_hash
+
+
+def _snapshot_exact_queue_record(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+) -> ConsolidationQueueRecord:
+    """Detach and type-check an exact row before crossing an await boundary."""
+
+    if type(entry) is not ConsolidationQueueRecord:
+        raise RuntimeError("exact_rebuild_queue_record_type_invalid")
+    snapshot = deepcopy(entry)
+    required_strings = (
+        snapshot.id,
+        snapshot.board_id,
+        snapshot.artifact_type,
+        snapshot.artifact_id,
+        snapshot.status,
+        snapshot.priority,
+        snapshot.work_kind,
+        snapshot.source,
+    )
+    optional_strings = (
+        snapshot.last_error,
+        snapshot.worker_id,
+        snapshot.claimed_by_session_id,
+        snapshot.delete_event_id,
+        snapshot.claim_token,
+        snapshot.triggered_by_event,
+    )
+    timestamps = (
+        snapshot.next_retry_at,
+        snapshot.claimed_at,
+        snapshot.claim_timeout_at,
+        snapshot.triggered_at,
+    )
+    if (
+        any(type(value) is not str or not value for value in required_strings)
+        or any(
+            value is not None and type(value) is not str for value in optional_strings
+        )
+        or any(
+            value is not None and type(value) is not datetime for value in timestamps
+        )
+        or type(snapshot.attempts) is not int
+        or snapshot.attempts < 0
+        or type(snapshot.generation) is not int
+        or snapshot.generation < 0
+        or type(snapshot.payload) is not dict
+        or not claim_scope.admits(snapshot)
+    ):
+        raise RuntimeError("exact_rebuild_queue_record_invalid")
+    _exact_rebuild_membership(snapshot, claim_scope)
+    return snapshot
+
+
+def _exact_disposition_attempt(entry: ConsolidationQueueRecord) -> int:
+    payload = entry.payload if isinstance(entry.payload, dict) else {}
+    marker = payload.get(_EXACT_REBUILD_DISPOSITION_KEY)
+    if isinstance(marker, dict):
+        previous = marker.get("attempt_ordinal")
+        if type(previous) is int and previous >= 1:
+            return previous + 1
+    attempts = entry.attempts
+    return (attempts if type(attempts) is int and attempts >= 0 else 0) + 1
+
+
+def _exact_failure_diagnostic(exc: BaseException) -> str | None:
+    if not isinstance(exc, KGPrimitiveError) or not isinstance(exc.details, dict):
+        return None
+    connectivity = exc.details.get("connectivity")
+    if not isinstance(connectivity, dict):
+        return None
+    violations = connectivity.get("violations")
+    first = violations[0] if type(violations) is list and violations else None
+    value = {
+        "violation_count": len(violations) if type(violations) is list else 0,
+        "first_violation": first if type(first) is dict else None,
+    }
+    rendered = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    if len(rendered) <= 16384:
+        return rendered
+    return json.dumps(
+        {"first_violation": None, "violation_count": value["violation_count"]},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _exact_row_result(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+    *,
+    attempt_ordinal: int,
+    disposition: ExactConsolidationDisposition,
+    origin: ExactConsolidationResultOrigin,
+    mutation_state: ExactConsolidationMutationState,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    next_retry_at: datetime | None = None,
+    diagnostic_json: str | None = None,
+) -> ExactConsolidationRowResult:
+    lineage_id = claim_scope.reservation_lineage_id
+    if lineage_id is None:
+        raise RuntimeError("exact_rebuild_reservation_lineage_id_required")
+    source_ref, source_version, content_hash = _exact_rebuild_membership(
+        entry,
+        claim_scope,
+    )
+    return ExactConsolidationRowResult(
+        queue_id=entry.id,
+        board_id=entry.board_id,
+        source=_queue_source(entry),
+        reservation_lineage_id=lineage_id,
+        work_kind=_work_kind(entry),
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        generation=_generation(entry),
+        membership_source_ref=source_ref,
+        membership_source_version=source_version,
+        membership_content_hash=content_hash,
+        attempt_ordinal=attempt_ordinal,
+        disposition=disposition,
+        origin=origin,
+        mutation_state=mutation_state,
+        error_code=error_code,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
+        diagnostic_json=diagnostic_json,
+    )
 
 
 def _ensure_entry_admitted_by_reservation_under_writer(
@@ -207,6 +394,10 @@ _GraphWriteEnter = Callable[[str], GuardedWriteLease]
 
 class _QueueClaimLostOrFenced(RuntimeError):
     """Neutral worker outcome: ownership or deletion generation changed."""
+
+
+class _ExactAuthorityLostAfterCommit(_QueueClaimLostOrFenced):
+    """The exact transaction committed, then its ephemeral authority changed."""
 
 
 _DLQ_WRITER_TTL_SECONDS = 30
@@ -348,6 +539,275 @@ def _delete_event_id(entry: ConsolidationQueueRecord) -> str | None:
 def _claim_token(entry: ConsolidationQueueRecord) -> str | None:
     value = getattr(entry, "claim_token", None)
     return str(value) if value else None
+
+
+def _same_instant(left: datetime | None, right: datetime | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    if left.tzinfo is None:
+        left = left.replace(tzinfo=timezone.utc)
+    if right.tzinfo is None:
+        right = right.replace(tzinfo=timezone.utc)
+    return left.astimezone(timezone.utc) == right.astimezone(timezone.utc)
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _load_exact_disposition(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+) -> ExactConsolidationRowResult | None:
+    payload = entry.payload
+    marker = (
+        payload.get(_EXACT_REBUILD_DISPOSITION_KEY)
+        if isinstance(payload, dict)
+        else None
+    )
+    if marker is None:
+        return None
+    expected_keys = {
+        "artifact_id",
+        "artifact_type",
+        "attempt_ordinal",
+        "board_id",
+        "diagnostic_json",
+        "disposition",
+        "error_code",
+        "error_message",
+        "generation",
+        "membership_content_hash",
+        "membership_source_ref",
+        "membership_source_version",
+        "mutation_state",
+        "next_retry_at",
+        "queue_attempts",
+        "queue_id",
+        "reservation_lineage_id",
+        "retryable",
+        "schema_version",
+        "source",
+        "work_kind",
+    }
+    if type(marker) is not dict or set(marker) != expected_keys:
+        raise RuntimeError("exact_rebuild_disposition_invalid")
+    source_ref, source_version, content_hash = _exact_rebuild_membership(
+        entry,
+        claim_scope,
+    )
+    exact_values = {
+        "schema_version": _EXACT_REBUILD_DISPOSITION_SCHEMA_VERSION,
+        "queue_id": entry.id,
+        "board_id": entry.board_id,
+        "source": _queue_source(entry),
+        "reservation_lineage_id": claim_scope.reservation_lineage_id,
+        "work_kind": _work_kind(entry),
+        "artifact_type": entry.artifact_type,
+        "artifact_id": entry.artifact_id,
+        "generation": _generation(entry),
+        "membership_source_ref": source_ref,
+        "membership_source_version": source_version,
+        "membership_content_hash": content_hash,
+    }
+    if any(
+        type(marker.get(key)) is not type(value) or marker.get(key) != value
+        for key, value in exact_values.items()
+    ):
+        raise RuntimeError("exact_rebuild_disposition_binding_invalid")
+    attempt_ordinal = marker.get("attempt_ordinal")
+    if type(attempt_ordinal) is not int or attempt_ordinal < 1:
+        raise RuntimeError("exact_rebuild_disposition_attempt_invalid")
+    try:
+        disposition = ExactConsolidationDisposition(marker.get("disposition"))
+        mutation_state = ExactConsolidationMutationState(marker.get("mutation_state"))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("exact_rebuild_disposition_kind_invalid") from exc
+    if disposition not in {
+        ExactConsolidationDisposition.RETRY_SCHEDULED,
+        ExactConsolidationDisposition.TERMINAL_FAILURE,
+    }:
+        raise RuntimeError("exact_rebuild_disposition_kind_invalid")
+    retryable = marker.get("retryable")
+    if type(retryable) is not bool or retryable is not (
+        disposition is ExactConsolidationDisposition.RETRY_SCHEDULED
+    ):
+        raise RuntimeError("exact_rebuild_disposition_retryable_invalid")
+    error_code = marker.get("error_code")
+    error_message = marker.get("error_message")
+    diagnostic_json = marker.get("diagnostic_json")
+    if (
+        type(error_code) is not str
+        or not error_code
+        or len(error_code) > 128
+        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,127}", error_code) is None
+        or type(error_message) is not str
+        or not error_message
+        or len(error_message) > 480
+        or (diagnostic_json is not None and type(diagnostic_json) is not str)
+        or (diagnostic_json is not None and len(diagnostic_json) > 16384)
+    ):
+        raise RuntimeError("exact_rebuild_disposition_error_invalid")
+    if diagnostic_json is not None:
+        try:
+            diagnostic = json.loads(diagnostic_json)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("exact_rebuild_disposition_error_invalid") from exc
+        if (
+            type(diagnostic) is not dict
+            or json.dumps(
+                diagnostic,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            != diagnostic_json
+        ):
+            raise RuntimeError("exact_rebuild_disposition_error_invalid")
+    queue_attempts = marker.get("queue_attempts")
+    if (
+        type(queue_attempts) is not int
+        or queue_attempts < 0
+        or type(entry.attempts) is not int
+        or entry.attempts != queue_attempts
+        or attempt_ordinal != queue_attempts
+        or entry.status != "pending"
+        or entry.claim_token is not None
+        or entry.claimed_at is not None
+        or entry.claim_timeout_at is not None
+        or entry.worker_id is not None
+        or entry.claimed_by_session_id is not None
+        or entry.last_error != f"{error_code}:{error_message[:480]}"
+    ):
+        raise RuntimeError("exact_rebuild_disposition_queue_state_invalid")
+    retry_value = marker.get("next_retry_at")
+    next_retry_at: datetime | None
+    if retry_value is None:
+        next_retry_at = None
+    elif type(retry_value) is str:
+        try:
+            next_retry_at = datetime.fromisoformat(retry_value)
+        except ValueError as exc:
+            raise RuntimeError("exact_rebuild_disposition_retry_at_invalid") from exc
+    else:
+        raise RuntimeError("exact_rebuild_disposition_retry_at_invalid")
+    if next_retry_at is not None and (
+        next_retry_at.tzinfo is None or next_retry_at.utcoffset() is None
+    ):
+        raise RuntimeError("exact_rebuild_disposition_retry_at_invalid")
+    if disposition is ExactConsolidationDisposition.RETRY_SCHEDULED:
+        retry_shape_valid = next_retry_at is not None
+    else:
+        retry_shape_valid = next_retry_at is None
+    if not retry_shape_valid or not _same_instant(next_retry_at, entry.next_retry_at):
+        raise RuntimeError("exact_rebuild_disposition_retry_at_invalid")
+    return _exact_row_result(
+        entry,
+        claim_scope,
+        attempt_ordinal=attempt_ordinal,
+        disposition=disposition,
+        origin=ExactConsolidationResultOrigin.REPLAYED,
+        mutation_state=mutation_state,
+        error_code=error_code,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
+        diagnostic_json=diagnostic_json,
+    )
+
+
+async def _persist_exact_disposition(
+    store: Any,
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+    *,
+    disposition: ExactConsolidationDisposition,
+    mutation_state: ExactConsolidationMutationState,
+    error_code: str,
+    error_message: str,
+    next_retry_at: datetime | None,
+    diagnostic_json: str | None,
+    reservation_authority_probe: Callable[[], bool],
+) -> ExactConsolidationRowResult:
+    if next_retry_at is not None:
+        next_retry_at = _aware_utc(next_retry_at)
+    claim_token = _claim_token(entry)
+    writer = getattr(store, "save_exact_rebuild_disposition", None)
+    if claim_token is None or not callable(writer):
+        raise RuntimeError("exact_rebuild_disposition_cas_unsupported")
+    attempt_ordinal = _exact_disposition_attempt(entry)
+    result = _exact_row_result(
+        entry,
+        claim_scope,
+        attempt_ordinal=attempt_ordinal,
+        disposition=disposition,
+        origin=ExactConsolidationResultOrigin.NEW,
+        mutation_state=mutation_state,
+        error_code=error_code,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
+        diagnostic_json=diagnostic_json,
+    )
+    if type(entry.attempts) is not int or entry.attempts < 0:
+        raise RuntimeError("exact_rebuild_queue_attempts_invalid")
+    attempts = result.attempt_ordinal
+    marker = {
+        "schema_version": _EXACT_REBUILD_DISPOSITION_SCHEMA_VERSION,
+        "queue_id": result.queue_id,
+        "board_id": result.board_id,
+        "source": result.source,
+        "reservation_lineage_id": result.reservation_lineage_id,
+        "work_kind": result.work_kind,
+        "artifact_type": result.artifact_type,
+        "artifact_id": result.artifact_id,
+        "generation": result.generation,
+        "membership_source_ref": result.membership_source_ref,
+        "membership_source_version": result.membership_source_version,
+        "membership_content_hash": result.membership_content_hash,
+        "attempt_ordinal": result.attempt_ordinal,
+        "queue_attempts": attempts,
+        "disposition": result.disposition.value,
+        "retryable": disposition is ExactConsolidationDisposition.RETRY_SCHEDULED,
+        "mutation_state": result.mutation_state.value,
+        "error_code": error_code,
+        "error_message": error_message,
+        "next_retry_at": next_retry_at.isoformat() if next_retry_at else None,
+        "diagnostic_json": diagnostic_json,
+    }
+    expected_payload = deepcopy(entry.payload or {})
+    payload = deepcopy(expected_payload)
+    payload[_EXACT_REBUILD_DISPOSITION_KEY] = marker
+    stored = await writer(
+        db,
+        entry_id=entry.id,
+        claim_token=claim_token,
+        board_id=entry.board_id,
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        source=_queue_source(entry),
+        work_kind=_work_kind(entry),
+        generation=_generation(entry),
+        delete_event_id=_delete_event_id(entry),
+        expected_attempts=entry.attempts,
+        expected_last_error=entry.last_error,
+        expected_next_retry_at=entry.next_retry_at,
+        expected_payload=expected_payload,
+        reservation_authority_probe=reservation_authority_probe,
+        payload=payload,
+        attempts=attempts,
+        last_error=f"{error_code}:{error_message[:480]}",
+        next_retry_at=next_retry_at,
+    )
+    if stored is None:
+        raise _QueueClaimLostOrFenced(
+            f"exact_rebuild_disposition_claim_lost entry_id={entry.id}"
+        )
+    replay = _load_exact_disposition(stored, claim_scope)
+    if replay is None:
+        raise RuntimeError("exact_rebuild_disposition_not_persisted")
+    return result
 
 
 def _observe_spec_dependency_projection_lag_after_ack(
@@ -3008,11 +3468,20 @@ class ConsolidationProcessor:
         board scan is involved.
         """
 
+        if (
+            type(claim_scope) is not ConsolidationClaimScope
+            or claim_scope.reservation_lineage_id is None
+        ):
+            raise TypeError("consolidation_exact_recovery_lineage_required")
+        if not callable(recovery_authority_probe):
+            raise TypeError("consolidation_exact_recovery_authority_required")
+
         def _authority_valid() -> bool:
             try:
-                return bool(recovery_authority_probe())
+                result = recovery_authority_probe()
             except BaseException:
                 return False
+            return type(result) is bool and result
 
         if not _authority_valid():
             raise RuntimeError("consolidation_exact_recovery_authority_required")
@@ -3104,6 +3573,52 @@ class ConsolidationProcessor:
         *,
         claim_scope: ConsolidationClaimScope | None = None,
     ) -> int:
+        """Process one ordinary/backward-compatible consolidation batch."""
+
+        result = await self._process_batch(
+            claim_scope=claim_scope,
+            exact_protocol=False,
+            reservation_authority_probe=None,
+        )
+        if type(result) is not int:
+            raise RuntimeError("consolidation_batch_result_invalid")
+        return result
+
+    async def process_exact_batch(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        reservation_authority_probe: Callable[[], bool],
+    ) -> ExactConsolidationBatchResult:
+        """Process one offline-rebuild batch with durable typed dispositions.
+
+        ``claim_scope.reservation_lineage_id`` is stable for the governed run;
+        ``reservation_authority_probe`` proves the currently held ephemeral
+        reservation token/epoch and must not degrade to a source-only check.
+        """
+
+        if type(claim_scope) is not ConsolidationClaimScope:
+            raise TypeError("exact_consolidation_claim_scope_invalid")
+        if claim_scope.reservation_lineage_id is None:
+            raise TypeError("exact_consolidation_reservation_lineage_id_required")
+        if not callable(reservation_authority_probe):
+            raise TypeError("exact_consolidation_reservation_authority_required")
+        result = await self._process_batch(
+            claim_scope=claim_scope,
+            exact_protocol=True,
+            reservation_authority_probe=reservation_authority_probe,
+        )
+        if type(result) is not ExactConsolidationBatchResult:
+            raise RuntimeError("exact_consolidation_batch_result_invalid")
+        return result
+
+    async def _process_batch(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope | None,
+        exact_protocol: bool,
+        reservation_authority_probe: Callable[[], bool] | None,
+    ) -> int | ExactConsolidationBatchResult:
         """Process up to batch_size pending entries. Returns count processed.
 
         Spec bdcda842 (Sprint 2):
@@ -3128,7 +3643,55 @@ class ConsolidationProcessor:
         """
         from okto_pulse.core.infra.config import get_settings
 
+        if exact_protocol and (
+            claim_scope is None
+            or claim_scope.reservation_lineage_id is None
+            or not callable(reservation_authority_probe)
+        ):
+            raise TypeError("exact_consolidation_claim_scope_required")
+
+        def _exact_authority_valid() -> bool:
+            if not exact_protocol:
+                return True
+            assert reservation_authority_probe is not None
+            try:
+                result = reservation_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        def _require_exact_authority(phase: str) -> None:
+            if not _exact_authority_valid():
+                raise _QueueClaimLostOrFenced(
+                    f"exact_rebuild_reservation_authority_lost phase={phase}"
+                )
+
+        async def _commit_batch_transaction(
+            store: Any,
+            db: Any,
+            *,
+            phase: str,
+            committed_callback: Callable[[], None] | None = None,
+        ) -> None:
+            if exact_protocol and not _exact_authority_valid():
+                await store.rollback(db)
+                raise _QueueClaimLostOrFenced(
+                    "exact_rebuild_reservation_authority_lost "
+                    f"phase=before_{phase}_commit"
+                )
+            await store.commit(db)
+            if committed_callback is not None:
+                committed_callback()
+            if exact_protocol and not _exact_authority_valid():
+                raise _ExactAuthorityLostAfterCommit(
+                    "exact_rebuild_reservation_authority_lost "
+                    f"phase=after_{phase}_commit"
+                )
+
+        if exact_protocol:
+            _require_exact_authority("before_batch_read")
         processed = 0
+        exact_rows: list[ExactConsolidationRowResult] = []
         self._last_attempted_count = 0
         settings = get_settings()
         claim_timeout_s = settings.kg_queue_claim_timeout_s
@@ -3136,6 +3699,82 @@ class ConsolidationProcessor:
         # Step 1: Claim entries (fast DB update, single session).
         async with self.relational_scope_factory() as db:
             store = get_consolidation_persistence_port()
+            if exact_protocol:
+                assert claim_scope is not None
+                reservation_reader = getattr(
+                    store,
+                    "board_administrative_rebuild_source",
+                    None,
+                )
+                pending_lister = getattr(store, "list_pending_exact", None)
+                claimed_lister = getattr(store, "list_claimed_exact", None)
+                if (
+                    not callable(reservation_reader)
+                    or not callable(pending_lister)
+                    or not callable(claimed_lister)
+                ):
+                    raise RuntimeError("consolidation_exact_disposition_unsupported")
+                reserved_source = await reservation_reader(
+                    db,
+                    board_id=claim_scope.board_id,
+                )
+                if reserved_source != claim_scope.source:
+                    raise RuntimeError("consolidation_exact_claim_reservation_mismatch")
+                pending_exact = tuple(
+                    _snapshot_exact_queue_record(entry, claim_scope)
+                    for entry in await pending_lister(
+                        db,
+                        board_id=claim_scope.board_id,
+                        source=claim_scope.source,
+                        work_kind=claim_scope.work_kind,
+                    )
+                )
+                if len({entry.id for entry in pending_exact}) != len(
+                    pending_exact
+                ) or any(
+                    not claim_scope.admits(entry) or entry.status != "pending"
+                    for entry in pending_exact
+                ):
+                    raise RuntimeError("consolidation_exact_pending_scope_mismatch")
+                claimed_exact = tuple(
+                    _snapshot_exact_queue_record(entry, claim_scope)
+                    for entry in await claimed_lister(
+                        db,
+                        board_id=claim_scope.board_id,
+                        source=claim_scope.source,
+                        work_kind=claim_scope.work_kind,
+                    )
+                )
+                if claimed_exact:
+                    raise RuntimeError(
+                        "consolidation_exact_claimed_rows_require_recovery"
+                    )
+                discovered_dispositions: list[ExactConsolidationRowResult] = []
+                replayed: list[ExactConsolidationRowResult] = []
+                replay_now = _aware_utc(self._now())
+                for pending_entry in pending_exact:
+                    _exact_rebuild_membership(pending_entry, claim_scope)
+                    replay = _load_exact_disposition(pending_entry, claim_scope)
+                    if replay is None:
+                        continue
+                    discovered_dispositions.append(replay)
+                    if (
+                        replay.disposition
+                        is ExactConsolidationDisposition.RETRY_SCHEDULED
+                        and replay.next_retry_at is not None
+                        and _aware_utc(replay.next_retry_at) > replay_now
+                    ):
+                        replayed.append(replay)
+                if any(
+                    row.disposition is ExactConsolidationDisposition.TERMINAL_FAILURE
+                    for row in discovered_dispositions
+                ):
+                    self._last_attempted_count = 0
+                    return ExactConsolidationBatchResult(
+                        claim_scope=claim_scope,
+                        rows=tuple(discovered_dispositions),
+                    )
+                exact_rows.extend(replayed)
             pending_depth = await store.count_pending(db)
 
             if pending_depth > 200:
@@ -3187,6 +3826,15 @@ class ConsolidationProcessor:
                 )
                 if any(not claim_scope.admits(entry) for entry in ready_entries):
                     raise RuntimeError("consolidation_exact_claim_scope_mismatch")
+            if not exact_protocol and any(
+                _queue_source(entry).startswith("rebuild:")
+                and isinstance(entry.payload, dict)
+                and _EXACT_REBUILD_DISPOSITION_KEY in entry.payload
+                for entry in ready_entries
+            ):
+                raise RuntimeError(
+                    "exact_rebuild_disposition_requires_process_exact_batch"
+                )
             ready_entries = tuple(
                 await _filter_administratively_reserved_entries(
                     store,
@@ -3230,6 +3878,8 @@ class ConsolidationProcessor:
                         source=reserved_source,
                     )
                 if entry_claim_scope is not None:
+                    if exact_protocol:
+                        _require_exact_authority("before_queue_claim_cas")
                     exact_claim = getattr(
                         store,
                         "claim_ready_pending_exact",
@@ -3250,7 +3900,14 @@ class ConsolidationProcessor:
                         claim_token=claim_token,
                     )
                     if claimed is not None:
-                        claimed_entries.append(claimed)
+                        claimed_entries.append(
+                            _snapshot_exact_queue_record(
+                                claimed,
+                                entry_claim_scope,
+                            )
+                            if exact_protocol
+                            else claimed
+                        )
                     continue
                 entry.status = "claimed"
                 entry.claimed_at = now
@@ -3266,13 +3923,13 @@ class ConsolidationProcessor:
             entries = claimed_entries
             if blind_claim_entries:
                 await store.save_queue_entries(db, blind_claim_entries)
-            await store.commit(db)
+            await _commit_batch_transaction(store, db, phase="queue_claim")
             self._last_attempted_count = len(entries)
 
             # Spec bdcda842 (TR13): claims_per_min sliding window for
             # /api/v1/kg/queue/health. Recorded after a successful claim
             # commit so retries don't double-count.
-            if entries:
+            if entries and not exact_protocol:
                 from okto_pulse.core.services.queue_health_service import (
                     record_claim,
                 )
@@ -3285,12 +3942,42 @@ class ConsolidationProcessor:
         for entry in entries:
             deferred_session_ids: list[str] = []
             relational_commit_confirmed = False
+            post_commit_cleanup_failed = False
+            pending_exact_disposition: ExactConsolidationRowResult | None = None
             try:
                 acknowledged = False
                 delivery_transfer: tuple[DeliveryTransferReceipt, str] | None = None
                 stale_reconcile_telemetry: dict[str, object] = {}
                 graph_write_stack = ExitStack()
                 graph_write_lease: GuardedWriteLease | None = None
+
+                def _post_commit_blocker(
+                    error_code: str,
+                ) -> ExactConsolidationPostCommitError:
+                    assert claim_scope is not None
+                    if acknowledged:
+                        durable_row = _exact_row_result(
+                            entry,
+                            claim_scope,
+                            attempt_ordinal=_exact_disposition_attempt(entry),
+                            disposition=ExactConsolidationDisposition.ACKED,
+                            origin=ExactConsolidationResultOrigin.NEW,
+                            mutation_state=ExactConsolidationMutationState.COMMITTED,
+                        )
+                    elif pending_exact_disposition is not None:
+                        durable_row = pending_exact_disposition
+                    else:
+                        raise RuntimeError(
+                            "exact_consolidation_post_commit_outcome_missing"
+                        )
+                    return ExactConsolidationPostCommitError(
+                        batch_result=ExactConsolidationBatchResult(
+                            claim_scope=claim_scope,
+                            rows=(*exact_rows, durable_row),
+                        ),
+                        failed_queue_id=entry.id,
+                        error_code=error_code,
+                    )
 
                 def _enter_graph_write(
                     mutation_ref: str,
@@ -3313,6 +4000,8 @@ class ConsolidationProcessor:
                         )
                     )
                     _ensure_entry_admitted_by_reservation_under_writer(entry)
+                    if exact_protocol:
+                        _require_exact_authority("under_graph_writer")
                     return graph_write_lease
 
                 try:
@@ -3323,8 +4012,38 @@ class ConsolidationProcessor:
                             db,
                             entry,
                         ):
-                            await _repend_exact_claim(store, db, entry)
-                            await store.commit(db)
+                            if not exact_protocol or _exact_authority_valid():
+                                await _repend_exact_claim(store, db, entry)
+                                await _commit_batch_transaction(
+                                    store,
+                                    db,
+                                    phase="reservation_loss_repend",
+                                )
+                            else:
+                                await store.rollback(db)
+                            if exact_protocol:
+                                assert claim_scope is not None
+                                exact_rows.append(
+                                    _exact_row_result(
+                                        entry,
+                                        claim_scope,
+                                        attempt_ordinal=(
+                                            _exact_disposition_attempt(entry)
+                                        ),
+                                        disposition=(
+                                            ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                        ),
+                                        origin=ExactConsolidationResultOrigin.NEW,
+                                        mutation_state=(
+                                            ExactConsolidationMutationState.UNCHANGED
+                                        ),
+                                        error_code="administrative_reservation_lost",
+                                        error_message=(
+                                            "Exact rebuild reservation no longer "
+                                            "admits the claimed row."
+                                        ),
+                                    )
+                                )
                             continue
                         outcome = await _process_queue_entry_serialized(
                             db,
@@ -3356,6 +4075,12 @@ class ConsolidationProcessor:
                         else:
                             success = outcome is True
                             fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                            if exact_protocol and fresh is not None:
+                                assert claim_scope is not None
+                                fresh = _snapshot_exact_queue_record(
+                                    fresh,
+                                    claim_scope,
+                                )
                             if fresh is None:
                                 # Once a graph commit has been deferred, a missing
                                 # queue row is an ownership loss.  Roll back the
@@ -3375,7 +4100,36 @@ class ConsolidationProcessor:
                                 if _work_kind(entry) == "stale_reconcile":
                                     await store.rollback(db)
                                 else:
-                                    await store.commit(db)
+                                    await _commit_batch_transaction(
+                                        store,
+                                        db,
+                                        phase="missing_queue_row",
+                                    )
+                                if exact_protocol:
+                                    assert claim_scope is not None
+                                    exact_rows.append(
+                                        _exact_row_result(
+                                            entry,
+                                            claim_scope,
+                                            attempt_ordinal=(
+                                                _exact_disposition_attempt(entry)
+                                            ),
+                                            disposition=(
+                                                ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                            ),
+                                            origin=(ExactConsolidationResultOrigin.NEW),
+                                            mutation_state=(
+                                                ExactConsolidationMutationState.AMBIGUOUS
+                                                if deferred_session_ids
+                                                else ExactConsolidationMutationState.UNCHANGED
+                                            ),
+                                            error_code="queue_claim_missing",
+                                            error_message=(
+                                                "The exact queue row disappeared "
+                                                "before acknowledgement."
+                                            ),
+                                        )
+                                    )
                                 continue
 
                             if success:
@@ -3408,6 +4162,10 @@ class ConsolidationProcessor:
                                     else:
                                         # Legacy consolidation retains its
                                         # standalone exact compare-and-delete ACK.
+                                        if exact_protocol:
+                                            _require_exact_authority(
+                                                "before_queue_ack_cas"
+                                            )
                                         acknowledged = (
                                             await store.ack_claimed_queue_entry(
                                                 db,
@@ -3420,7 +4178,9 @@ class ConsolidationProcessor:
                                                 delete_event_id=_delete_event_id(entry),
                                             )
                                         )
-                                if deferred_session_ids and not acknowledged:
+                                if not acknowledged and (
+                                    deferred_session_ids or exact_protocol
+                                ):
                                     await store.rollback(db)
                                     raise _QueueClaimLostOrFenced(
                                         "queue_ack_lost_after_graph_commit "
@@ -3440,26 +4200,56 @@ class ConsolidationProcessor:
                                 generation=_generation(entry),
                                 delete_event_id=_delete_event_id(entry),
                             ):
-                                await self._mark_failed(
-                                    db,
-                                    fresh,
-                                    error_text=_stale_reconcile_failure_error(
-                                        existing_error=fresh.last_error,
-                                        reconcile_details=(stale_reconcile_telemetry),
-                                    ),
-                                    max_attempts=max_attempts,
+                                error_text = _stale_reconcile_failure_error(
+                                    existing_error=fresh.last_error,
+                                    reconcile_details=(stale_reconcile_telemetry),
                                 )
+                                if exact_protocol:
+                                    assert claim_scope is not None
+                                    pending_exact_disposition = await _persist_exact_disposition(
+                                        store,
+                                        db,
+                                        fresh,
+                                        claim_scope,
+                                        disposition=(
+                                            ExactConsolidationDisposition.TERMINAL_FAILURE
+                                        ),
+                                        mutation_state=(
+                                            ExactConsolidationMutationState.AMBIGUOUS
+                                        ),
+                                        error_code="consolidation_returned_false",
+                                        error_message=error_text,
+                                        next_retry_at=None,
+                                        diagnostic_json=None,
+                                        reservation_authority_probe=(
+                                            _exact_authority_valid
+                                        ),
+                                    )
+                                else:
+                                    await self._mark_failed(
+                                        db,
+                                        fresh,
+                                        error_text=error_text,
+                                        max_attempts=max_attempts,
+                                    )
 
                         if deferred_session_ids:
 
-                            async def _commit_and_finalize() -> None:
+                            def _record_relational_commit() -> None:
                                 nonlocal relational_commit_confirmed
+                                relational_commit_confirmed = True
+
+                            async def _commit_and_finalize() -> None:
                                 if graph_write_lease is not None:
                                     graph_write_lease.ensure_owned(
                                         failure_phase=("before_relational_ack"),
                                     )
-                                await store.commit(db)
-                                relational_commit_confirmed = True
+                                await _commit_batch_transaction(
+                                    store,
+                                    db,
+                                    phase="relational_ack",
+                                    committed_callback=_record_relational_commit,
+                                )
                                 for deferred_session_id in deferred_session_ids:
                                     await finalize_deferred_consolidation(
                                         deferred_session_id,
@@ -3477,11 +4267,21 @@ class ConsolidationProcessor:
                                 ),
                             )
                         else:
+
+                            def _record_relational_commit() -> None:
+                                nonlocal relational_commit_confirmed
+                                relational_commit_confirmed = True
+
                             if graph_write_lease is not None:
                                 graph_write_lease.ensure_owned(
                                     failure_phase="before_relational_ack",
                                 )
-                            await store.commit(db)
+                            await _commit_batch_transaction(
+                                store,
+                                db,
+                                phase="relational_ack",
+                                committed_callback=_record_relational_commit,
+                            )
                             if graph_write_lease is not None:
                                 graph_write_lease.ensure_owned(
                                     failure_phase="after_relational_ack",
@@ -3538,6 +4338,8 @@ class ConsolidationProcessor:
                                 ),
                             )
                         except BaseException:
+                            if relational_commit_confirmed:
+                                post_commit_cleanup_failed = True
                             logger.exception(
                                 "consolidation.deferred_cleanup_failed entry=%s "
                                 "relational_commit_confirmed=%s sessions=%s",
@@ -3602,7 +4404,10 @@ class ConsolidationProcessor:
                 finally:
                     graph_write_stack.__exit__(*sys.exc_info())
 
-                if acknowledged and deferred_session_ids:
+                if pending_exact_disposition is not None:
+                    exact_rows.append(pending_exact_disposition)
+
+                if acknowledged and deferred_session_ids and not exact_protocol:
                     # Maintenance is best-effort and uses rollback internally.
                     # Isolate it from the already-durable cognitive ledger,
                     # consolidation audit/outbox and queue ACK.
@@ -3625,11 +4430,12 @@ class ConsolidationProcessor:
                             entry.artifact_id,
                         )
                 if acknowledged:
-                    _observe_spec_dependency_projection_lag_after_ack(
-                        entry,
-                        projected_at=self._now(),
-                    )
-                    if delivery_transfer is not None:
+                    if not exact_protocol:
+                        _observe_spec_dependency_projection_lag_after_ack(
+                            entry,
+                            projected_at=self._now(),
+                        )
+                    if delivery_transfer is not None and not exact_protocol:
                         receipt, circuit_reason = delivery_transfer
                         _log_stale_reconcile_delivery_transfer(
                             entry,
@@ -3637,21 +4443,92 @@ class ConsolidationProcessor:
                             circuit_reason=circuit_reason,
                         )
                     processed += 1
+                    if exact_protocol:
+                        assert claim_scope is not None
+                        exact_rows.append(
+                            _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=_exact_disposition_attempt(entry),
+                                disposition=ExactConsolidationDisposition.ACKED,
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.COMMITTED
+                                ),
+                            )
+                        )
             except _QueueClaimLostOrFenced as exc:
                 logger.info(
                     "consolidation.claim_lost_or_fenced entry=%s reason=%s",
                     entry.id,
                     exc,
                 )
+                if exact_protocol:
+                    assert claim_scope is not None
+                    if (
+                        isinstance(exc, _ExactAuthorityLostAfterCommit)
+                        and relational_commit_confirmed
+                    ):
+                        if post_commit_cleanup_failed:
+                            raise _post_commit_blocker(
+                                "exact_consolidation_post_commit_finalization_failed"
+                            ) from exc
+                        if acknowledged:
+                            exact_rows.append(
+                                _exact_row_result(
+                                    entry,
+                                    claim_scope,
+                                    attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                    disposition=(ExactConsolidationDisposition.ACKED),
+                                    origin=ExactConsolidationResultOrigin.NEW,
+                                    mutation_state=(
+                                        ExactConsolidationMutationState.COMMITTED
+                                    ),
+                                )
+                            )
+                        elif pending_exact_disposition is not None:
+                            exact_rows.append(pending_exact_disposition)
+                        else:
+                            raise RuntimeError(
+                                "exact_consolidation_committed_outcome_missing"
+                            ) from exc
+                        continue
                 try:
                     async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
-                        await _repend_exact_claim(store, db, entry)
-                        await store.commit(db)
+                        if not exact_protocol or _exact_authority_valid():
+                            await _repend_exact_claim(store, db, entry)
+                            await _commit_batch_transaction(
+                                store,
+                                db,
+                                phase="claim_loss_repend",
+                            )
+                        else:
+                            await store.rollback(db)
                 except Exception:
                     logger.exception(
                         "consolidation.claim_repend_failed entry=%s",
                         entry.id,
+                    )
+                if exact_protocol:
+                    assert claim_scope is not None
+                    exact_rows.append(
+                        _exact_row_result(
+                            entry,
+                            claim_scope,
+                            attempt_ordinal=_exact_disposition_attempt(entry),
+                            disposition=(
+                                ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                            ),
+                            origin=ExactConsolidationResultOrigin.NEW,
+                            mutation_state=(
+                                ExactConsolidationMutationState.AMBIGUOUS
+                                if deferred_session_ids
+                                else ExactConsolidationMutationState.UNCHANGED
+                            ),
+                            error_code="queue_claim_lost_or_fenced",
+                            error_message=str(exc)[:480],
+                        )
                     )
             except StaleSweepClaimConflict as exc:
                 logger.info(
@@ -3667,10 +4544,42 @@ class ConsolidationProcessor:
                     exc,
                     exc_info=True,
                 )
+                if exact_protocol and relational_commit_confirmed:
+                    assert claim_scope is not None
+                    if post_commit_cleanup_failed:
+                        raise _post_commit_blocker(
+                            "exact_consolidation_post_commit_finalization_failed"
+                        ) from exc
+                    if acknowledged:
+                        exact_rows.append(
+                            _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=_exact_disposition_attempt(entry),
+                                disposition=ExactConsolidationDisposition.ACKED,
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.COMMITTED
+                                ),
+                            )
+                        )
+                    elif pending_exact_disposition is not None:
+                        exact_rows.append(pending_exact_disposition)
+                    else:
+                        raise _post_commit_blocker(
+                            "exact_consolidation_post_commit_outcome_missing"
+                        ) from exc
+                    continue
                 try:
                     async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
                         fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                        if exact_protocol and fresh is not None:
+                            assert claim_scope is not None
+                            fresh = _snapshot_exact_queue_record(
+                                fresh,
+                                claim_scope,
+                            )
                         token = _claim_token(entry)
                         claim_is_current = bool(
                             fresh is not None
@@ -3689,14 +4598,49 @@ class ConsolidationProcessor:
                                 delete_event_id=_delete_event_id(entry),
                             )
                         )
+                        persisted_exact_disposition: (
+                            ExactConsolidationRowResult | None
+                        ) = None
                         if claim_is_current and fresh is not None:
                             if not await _claim_admitted_by_current_reservation(
                                 store,
                                 db,
                                 entry,
                             ):
-                                await _repend_exact_claim(store, db, entry)
-                                await store.commit(db)
+                                if not exact_protocol or _exact_authority_valid():
+                                    await _repend_exact_claim(store, db, entry)
+                                    await _commit_batch_transaction(
+                                        store,
+                                        db,
+                                        phase="failure_reservation_loss_repend",
+                                    )
+                                else:
+                                    await store.rollback(db)
+                                if exact_protocol:
+                                    assert claim_scope is not None
+                                    exact_rows.append(
+                                        _exact_row_result(
+                                            entry,
+                                            claim_scope,
+                                            attempt_ordinal=(
+                                                _exact_disposition_attempt(entry)
+                                            ),
+                                            disposition=(
+                                                ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                            ),
+                                            origin=(ExactConsolidationResultOrigin.NEW),
+                                            mutation_state=(
+                                                ExactConsolidationMutationState.AMBIGUOUS
+                                            ),
+                                            error_code=(
+                                                "administrative_reservation_lost"
+                                            ),
+                                            error_message=(
+                                                "Exact rebuild reservation was "
+                                                "lost while persisting failure."
+                                            ),
+                                        )
+                                    )
                                 continue
                             error_text = (
                                 f"{exc.code}:{str(exc)[:480]}"
@@ -3706,7 +4650,61 @@ class ConsolidationProcessor:
                             retry_after_s = graph_memory_pressure_retry_after_seconds(
                                 exc
                             )
-                            if (
+                            if exact_protocol:
+                                assert claim_scope is not None
+                                error_code = (
+                                    str(exc.code)
+                                    if isinstance(exc, (GraphError, KGPrimitiveError))
+                                    else type(exc).__name__
+                                )
+                                error_message = str(exc)[:480] or error_code
+                                if (
+                                    isinstance(exc, KGPrimitiveError)
+                                    and exc.code
+                                    == "relational_projection_endpoint_pending"
+                                ):
+                                    disposition = (
+                                        ExactConsolidationDisposition.RETRY_SCHEDULED
+                                    )
+                                    mutation_state = (
+                                        ExactConsolidationMutationState.UNCHANGED
+                                    )
+                                    next_retry_at = self._now() + timedelta(
+                                        seconds=(
+                                            _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS
+                                        )
+                                    )
+                                else:
+                                    disposition = (
+                                        ExactConsolidationDisposition.TERMINAL_FAILURE
+                                    )
+                                    mutation_state = (
+                                        ExactConsolidationMutationState.UNCHANGED
+                                        if isinstance(exc, KGPrimitiveError)
+                                        and exc.code == CONNECTIVITY_ERROR_CODE
+                                        else ExactConsolidationMutationState.AMBIGUOUS
+                                    )
+                                    next_retry_at = None
+                                persisted_exact_disposition = (
+                                    await _persist_exact_disposition(
+                                        store,
+                                        db,
+                                        fresh,
+                                        claim_scope,
+                                        disposition=disposition,
+                                        mutation_state=mutation_state,
+                                        error_code=error_code,
+                                        error_message=error_message,
+                                        next_retry_at=next_retry_at,
+                                        diagnostic_json=(
+                                            _exact_failure_diagnostic(exc)
+                                        ),
+                                        reservation_authority_probe=(
+                                            _exact_authority_valid
+                                        ),
+                                    )
+                                )
+                            elif (
                                 isinstance(exc, KGPrimitiveError)
                                 and exc.code == "relational_projection_endpoint_pending"
                             ):
@@ -3729,10 +4727,89 @@ class ConsolidationProcessor:
                                     error_text=error_text,
                                     max_attempts=max_attempts,
                                 )
-                        await store.commit(db)
+                        elif exact_protocol:
+                            assert claim_scope is not None
+                            persisted_exact_disposition = _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                disposition=(
+                                    ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                ),
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.AMBIGUOUS
+                                ),
+                                error_code=(
+                                    "queue_row_missing_after_exception"
+                                    if fresh is None
+                                    else "queue_claim_changed_after_exception"
+                                ),
+                                error_message=(
+                                    "The exact queue identity was no longer "
+                                    "owned while classifying a processing error."
+                                ),
+                            )
+                        await _commit_batch_transaction(
+                            store,
+                            db,
+                            phase="failure_disposition",
+                        )
+                        if persisted_exact_disposition is not None:
+                            exact_rows.append(persisted_exact_disposition)
+                except _ExactAuthorityLostAfterCommit as disposition_loss:
+                    if exact_protocol and persisted_exact_disposition is not None:
+                        exact_rows.append(persisted_exact_disposition)
+                    elif exact_protocol:
+                        assert claim_scope is not None
+                        exact_rows.append(
+                            _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                disposition=(
+                                    ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                ),
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.AMBIGUOUS
+                                ),
+                                error_code="queue_claim_lost_or_fenced",
+                                error_message=str(disposition_loss)[:480],
+                            )
+                        )
+                except _QueueClaimLostOrFenced as disposition_loss:
+                    if exact_protocol:
+                        assert claim_scope is not None
+                        exact_rows.append(
+                            _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                disposition=(
+                                    ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                ),
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.AMBIGUOUS
+                                ),
+                                error_code="queue_claim_lost_or_fenced",
+                                error_message=str(disposition_loss)[:480],
+                            )
+                        )
                 except Exception:
-                    pass
+                    if exact_protocol:
+                        raise
 
+        if exact_protocol:
+            assert claim_scope is not None
+            result = ExactConsolidationBatchResult(
+                claim_scope=claim_scope,
+                rows=tuple(exact_rows),
+            )
+            if result.new_attempt_count != self._last_attempted_count:
+                raise RuntimeError("exact_consolidation_batch_totality_invalid")
+            return result
         return processed
 
     async def _defer_relational_projection_endpoint(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager, nullcontext
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -10,14 +11,21 @@ from typing import Any
 import pytest
 
 from okto_pulse.core.application.processors import consolidation
+from okto_pulse.core.ports import consolidation as consolidation_ports
 from okto_pulse.core.application.processors.consolidation import (
     ConsolidationProcessor,
     _process_queue_entry,
+)
+from okto_pulse.core.kg.board_rebuild_adapter import (
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES,
 )
 from okto_pulse.core.ports.consolidation import (
     ConsolidationClaimScope,
     ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
+    ExactConsolidationDisposition,
+    ExactConsolidationMutationState,
+    ExactConsolidationResultOrigin,
     get_consolidation_persistence_port,
     register_consolidation_persistence_port,
 )
@@ -79,6 +87,27 @@ def _valid_reconcile_entry(**overrides: Any) -> ConsolidationQueueRecord:
     return _entry(**values)
 
 
+def _exact_rebuild_entry(**overrides: Any) -> ConsolidationQueueRecord:
+    source = str(overrides.get("source", "rebuild:run-card4-exact"))
+    artifact_id = str(overrides.get("artifact_id", "card4-spec"))
+    payload = {
+        "_rebuild_membership": {
+            "content_hash": "a" * 64,
+            "run_id": source.removeprefix("rebuild:"),
+            "source_ref": f"spec:{artifact_id}",
+            "source_version": "7",
+        }
+    }
+    values: dict[str, Any] = {
+        "entry_id": "card4-exact-entry",
+        "artifact_id": artifact_id,
+        "source": source,
+        "payload": payload,
+    }
+    values.update(overrides)
+    return _entry(**values)
+
+
 def test_queue_record_preserves_original_positional_work_kind_abi() -> None:
     now = datetime.now(timezone.utc)
     record = ConsolidationQueueRecord(
@@ -103,6 +132,137 @@ def test_queue_record_preserves_original_positional_work_kind_abi() -> None:
     assert record.source == "state_transition"
 
 
+def test_exact_row_result_rejects_unemittable_public_state_combinations() -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-dto-matrix")
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=entry.source,
+        reservation_lineage_id="b" * 64,
+    )
+    ack = consolidation._exact_row_result(
+        entry,
+        scope,
+        attempt_ordinal=1,
+        disposition=ExactConsolidationDisposition.ACKED,
+        origin=ExactConsolidationResultOrigin.NEW,
+        mutation_state=ExactConsolidationMutationState.COMMITTED,
+    )
+
+    invalid_variants = (
+        {"origin": ExactConsolidationResultOrigin.REPLAYED},
+        {"mutation_state": ExactConsolidationMutationState.AMBIGUOUS},
+        {"error_code": "", "error_message": ""},
+        {
+            "disposition": ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS,
+            "origin": ExactConsolidationResultOrigin.REPLAYED,
+            "mutation_state": ExactConsolidationMutationState.UNCHANGED,
+            "error_code": "fence_lost",
+            "error_message": "fence lost",
+        },
+        {
+            "disposition": ExactConsolidationDisposition.TERMINAL_FAILURE,
+            "mutation_state": ExactConsolidationMutationState.COMMITTED,
+            "error_code": "terminal",
+            "error_message": "terminal",
+        },
+        {
+            "disposition": ExactConsolidationDisposition.TERMINAL_FAILURE,
+            "mutation_state": ExactConsolidationMutationState.UNCHANGED,
+            "error_code": "terminal",
+            "error_message": "terminal",
+            "diagnostic_json": '{"z":1,"a":2}',
+        },
+        {
+            "artifact_type": "foo",
+            "membership_source_ref": f"foo:{entry.artifact_id}",
+        },
+    )
+    for changes in invalid_variants:
+        with pytest.raises((TypeError, ValueError)):
+            replace(ack, **changes)
+
+
+def test_exact_post_commit_error_is_part_of_public_port_contract() -> None:
+    assert "ExactConsolidationPostCommitError" in consolidation_ports.__all__
+    assert consolidation_ports._EXACT_REBUILD_SOURCE_ARTIFACT_TYPES == (
+        DETERMINISTIC_SOURCE_ARTIFACT_TYPES
+    )
+
+
+@pytest.mark.parametrize("source_artifact_type", ("task", "test", "bug", "card"))
+@pytest.mark.asyncio
+async def test_exact_card_queue_preserves_canonical_membership_source_alias(
+    monkeypatch,
+    source_artifact_type: str,
+) -> None:
+    entry = _exact_rebuild_entry(
+        entry_id=f"card4-exact-{source_artifact_type}-membership",
+    )
+    entry.artifact_type = "card"
+    assert entry.payload is not None
+    entry.payload["_rebuild_membership"]["source_ref"] = (
+        f"{source_artifact_type}:{entry.artifact_id}"
+    )
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="c" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _terminal(_db, _entry, **_kwargs):
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert len(result.terminal_failures) == 1
+    assert result.terminal_failures[0].artifact_type == "card"
+    assert result.terminal_failures[0].membership_source_ref == (
+        f"{source_artifact_type}:{entry.artifact_id}"
+    )
+
+
+@pytest.mark.parametrize(
+    "queue_artifact_type,source_ref",
+    (
+        ("card", "spec:card4-spec"),
+        ("card", "task:different-card"),
+        ("card", "task:card4-spec:forged"),
+        ("spec", "task:card4-spec"),
+    ),
+    ids=("wrong-prefix", "wrong-id", "extra-separator", "wrong-queue-type"),
+)
+def test_exact_membership_rejects_queue_alias_and_identity_tampering(
+    queue_artifact_type: str,
+    source_ref: str,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-membership-tamper")
+    entry.artifact_type = queue_artifact_type
+    assert entry.payload is not None
+    entry.payload["_rebuild_membership"]["source_ref"] = source_ref
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=entry.source,
+        reservation_lineage_id="d" * 64,
+    )
+
+    with pytest.raises(RuntimeError, match="exact_rebuild_membership_invalid"):
+        consolidation._exact_rebuild_membership(entry, scope)
+
+
 class _MemoryConsolidationStore:
     def __init__(
         self,
@@ -123,6 +283,7 @@ class _MemoryConsolidationStore:
         self.reservation_sources = list(reservation_sources)
         self.current_reservation_source: str | None = None
         self.repend_calls: list[dict[str, Any]] = []
+        self.exact_disposition_calls: list[dict[str, Any]] = []
 
     async def load_artifact(self, _context, *, artifact_type, artifact_id):
         self.load_calls.append((artifact_type, artifact_id))
@@ -156,7 +317,24 @@ class _MemoryConsolidationStore:
         source,
         work_kind,
     ):
-        del now
+        return tuple(
+            entry
+            for entry in self.entries.values()
+            if entry.status == "pending"
+            and entry.board_id == board_id
+            and entry.source == source
+            and entry.work_kind == work_kind
+            and (entry.next_retry_at is None or entry.next_retry_at <= now)
+        )
+
+    async def list_pending_exact(
+        self,
+        _context,
+        *,
+        board_id,
+        source,
+        work_kind,
+    ):
         return tuple(
             entry
             for entry in self.entries.values()
@@ -248,6 +426,47 @@ class _MemoryConsolidationStore:
             self.entries.pop(str(identity["entry_id"]), None)
         return self.ack_result
 
+    async def save_exact_rebuild_disposition(
+        self,
+        _context,
+        **identity,
+    ):
+        self.exact_disposition_calls.append(identity)
+        entry = self.entries.get(str(identity["entry_id"]))
+        authority_probe = identity["reservation_authority_probe"]
+        authority_valid = authority_probe() if callable(authority_probe) else False
+        if not (
+            entry is not None
+            and entry.status == "claimed"
+            and entry.claim_token == identity["claim_token"]
+            and entry.board_id == identity["board_id"]
+            and entry.artifact_type == identity["artifact_type"]
+            and entry.artifact_id == identity["artifact_id"]
+            and entry.source == identity["source"]
+            and entry.work_kind == identity["work_kind"]
+            and entry.generation == identity["generation"]
+            and entry.delete_event_id == identity["delete_event_id"]
+            and entry.attempts == identity["expected_attempts"]
+            and entry.last_error == identity["expected_last_error"]
+            and entry.next_retry_at == identity["expected_next_retry_at"]
+            and entry.payload == identity["expected_payload"]
+            and self.current_reservation_source == identity["source"]
+            and type(authority_valid) is bool
+            and authority_valid
+        ):
+            return None
+        entry.payload = identity["payload"]
+        entry.attempts = identity["attempts"]
+        entry.last_error = identity["last_error"]
+        entry.next_retry_at = identity["next_retry_at"]
+        entry.status = "pending"
+        entry.claimed_at = None
+        entry.claim_timeout_at = None
+        entry.worker_id = None
+        entry.claimed_by_session_id = None
+        entry.claim_token = None
+        return entry
+
     async def repend_claimed_queue_entry(self, _context, **identity):
         self.repend_calls.append(identity)
         entry = self.entries.get(str(identity["entry_id"]))
@@ -293,6 +512,31 @@ def _registered(store: _MemoryConsolidationStore):
         yield
     finally:
         register_consolidation_persistence_port(previous)
+
+
+async def _process_exact(
+    processor: ConsolidationProcessor,
+    scope: ConsolidationClaimScope,
+    *,
+    reservation_authority_probe=None,
+):
+    if reservation_authority_probe is None:
+        reservation_authority_probe = _always_authorized
+    if scope.reservation_lineage_id is None:
+        scope = ConsolidationClaimScope(
+            board_id=scope.board_id,
+            source=scope.source,
+            work_kind=scope.work_kind,
+            reservation_lineage_id="f" * 64,
+        )
+    return await processor.process_exact_batch(
+        claim_scope=scope,
+        reservation_authority_probe=reservation_authority_probe,
+    )
+
+
+def _always_authorized() -> bool:
+    return True
 
 
 def _patch_graph_write_shell(monkeypatch, *, lifecycle_calls: list[str]) -> None:
@@ -843,7 +1087,11 @@ async def test_exact_recovery_repends_killed_claim_and_replays_logical_commit_on
     )
     store = _MemoryConsolidationStore((entry,))
     store.current_reservation_source = source
-    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="6" * 64,
+    )
     logical_graph_commits = {f"spec:{entry.artifact_id}"}
 
     async def _idempotent_replay(_db, claimed_entry, **_kwargs):
@@ -897,6 +1145,7 @@ async def test_exact_recovery_requires_offline_authority_and_matching_reservatio
             claim_scope=ConsolidationClaimScope(
                 board_id=entry.board_id,
                 source=source,
+                reservation_lineage_id="7" * 64,
             ),
             recovery_authority_probe=lambda: authority,
         )
@@ -931,3 +1180,932 @@ async def test_stale_sweep_is_claimable_with_legacy_consolidate(monkeypatch):
     assert processed_ids == [legacy.id, sweep.id]
     assert legacy.id not in store.entries
     assert sweep.id not in store.entries
+
+
+@pytest.mark.asyncio
+async def test_exact_batch_persists_connectivity_terminal_and_replays_without_claim(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry()
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="8" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    process_calls = 0
+
+    async def _connectivity_failure(_db, _entry, **_kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "Alternative is outside the deterministic ownership contract.",
+            details={
+                "connectivity": {
+                    "violations": [
+                        {
+                            "candidate_id": "forged-alternative",
+                            "reason_code": "writer_not_connectivity_owner",
+                        }
+                    ]
+                }
+            },
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _connectivity_failure,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        first = await _process_exact(processor, scope)
+        second = await _process_exact(processor, scope)
+
+    assert process_calls == 1
+    assert first.new_attempt_count == 1
+    assert first.replayed_count == 0
+    assert first.acked_count == 0
+    assert len(first.terminal_failures) == 1
+    row = first.terminal_failures[0]
+    assert row.origin is ExactConsolidationResultOrigin.NEW
+    assert row.mutation_state is ExactConsolidationMutationState.UNCHANGED
+    assert row.error_code == consolidation.CONNECTIVITY_ERROR_CODE
+    assert "writer_not_connectivity_owner" in (row.diagnostic_json or "")
+    assert second.new_attempt_count == 0
+    assert second.replayed_count == 1
+    assert second.terminal_failures[0].origin is (
+        ExactConsolidationResultOrigin.REPLAYED
+    )
+    assert entry.status == "pending"
+    assert entry.attempts == 1
+    assert entry.claim_token is None
+    assert len(store.exact_disposition_calls) == 1
+    assert store.ack_calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_retry_marker_waits_without_reclaim_then_replaces_after_due(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-retry")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    current = [datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)]
+    clock = SimpleNamespace(now=lambda: current[0])
+    process_calls = 0
+
+    async def _retry_then_ack(_db, _entry, **_kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        if process_calls == 1:
+            raise consolidation.KGPrimitiveError(
+                "relational_projection_endpoint_pending",
+                "The prerequisite projection is not materialized yet.",
+            )
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _retry_then_ack,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1, clock=clock)
+
+    with _registered(store):
+        first = await _process_exact(processor, scope)
+        waiting = await _process_exact(processor, scope)
+        current[0] += timedelta(seconds=2)
+        completed = await _process_exact(processor, scope)
+
+    assert process_calls == 2
+    assert len(first.retry_scheduled) == 1
+    assert first.retry_scheduled[0].attempt_ordinal == 1
+    assert first.retry_scheduled[0].mutation_state is (
+        ExactConsolidationMutationState.UNCHANGED
+    )
+    assert waiting.replayed_count == 1
+    assert waiting.new_attempt_count == 0
+    assert waiting.retry_scheduled[0].origin is ExactConsolidationResultOrigin.REPLAYED
+    assert completed.acked_count == 1
+    assert completed.rows[0].attempt_ordinal == 2
+    assert completed.rows[0].disposition is ExactConsolidationDisposition.ACKED
+    assert entry.id not in store.entries
+    assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_ordinary_batch_refuses_durable_exact_disposition(monkeypatch) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-marker-ordinary")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _terminal(_db, _entry, **_kwargs):
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        await _process_exact(processor, scope)
+        with pytest.raises(
+            RuntimeError,
+            match="exact_rebuild_disposition_requires_process_exact_batch",
+        ):
+            await processor.process_batch(claim_scope=scope)
+
+    assert entry.status == "pending"
+    assert entry.claim_token is None
+    assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_batch_skips_global_claim_and_post_commit_maintenance(
+    monkeypatch,
+) -> None:
+    from okto_pulse.core.services import queue_health_service
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-no-maintenance")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    maintenance_calls: list[str] = []
+    claim_metric_calls: list[datetime] = []
+
+    async def _success_with_deferred_session(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-exact")
+        return True
+
+    async def _finalize(_session_id, **_kwargs):
+        return None
+
+    async def _maintenance(_db, *, entry, session_id):
+        maintenance_calls.append(f"{entry.id}:{session_id}")
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success_with_deferred_session,
+    )
+    monkeypatch.setattr(consolidation, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(consolidation, "_run_post_commit_maintenance", _maintenance)
+    monkeypatch.setattr(
+        queue_health_service,
+        "record_claim",
+        lambda *, now: claim_metric_calls.append(now),
+    )
+
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert result.acked_count == 1
+    assert maintenance_calls == []
+    assert claim_metric_calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_batch_requires_crash_claim_recovery_before_processing() -> None:
+    entry = _exact_rebuild_entry(
+        entry_id="card4-exact-crash-claim",
+        status="claimed",
+        claim_token="dead-owner-token",
+    )
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with (
+        _registered(store),
+        pytest.raises(
+            RuntimeError,
+            match="consolidation_exact_claimed_rows_require_recovery",
+        ),
+    ):
+        await _process_exact(processor, scope)
+
+    assert entry.status == "claimed"
+    assert entry.claim_token == "dead-owner-token"
+    assert store.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_exact_batch_rejects_tampered_terminal_marker_before_claim(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-tampered-marker")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _terminal(_db, _entry, **_kwargs):
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        await _process_exact(processor, scope)
+        assert entry.payload is not None
+        entry.payload["_exact_rebuild_disposition"]["queue_attempts"] = True
+        with pytest.raises(
+            RuntimeError,
+            match="exact_rebuild_disposition_queue_state_invalid",
+        ):
+            await _process_exact(processor, scope)
+
+    assert entry.status == "pending"
+    assert entry.claim_token is None
+    assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_batch_reservation_loss_repends_without_disposition_or_effect(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-reservation-loss")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore(
+        (entry,),
+        reservation_sources=(source, source, source, None),
+    )
+    process_calls = 0
+
+    async def _must_not_process(_db, _entry, **_kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _must_not_process,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert process_calls == 0
+    assert result.new_attempt_count == 1
+    assert result.rows[0].disposition is (
+        ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    )
+    assert result.rows[0].mutation_state is ExactConsolidationMutationState.UNCHANGED
+    assert entry.status == "pending"
+    assert entry.claim_token is None
+    assert entry.payload == {
+        "_rebuild_membership": {
+            "content_hash": "a" * 64,
+            "run_id": source.removeprefix("rebuild:"),
+            "source_ref": f"spec:{entry.artifact_id}",
+            "source_version": "7",
+        }
+    }
+    assert store.exact_disposition_calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_false_outcome_uses_terminal_marker_not_generic_failure_path(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-false")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _false(_db, _entry, **_kwargs):
+        return False
+
+    async def _generic_failure_forbidden(*_args, **_kwargs):
+        raise AssertionError("exact processing entered generic debt/DLQ path")
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _false,
+    )
+    monkeypatch.setattr(
+        ConsolidationProcessor,
+        "_mark_failed",
+        _generic_failure_forbidden,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert len(result.terminal_failures) == 1
+    assert result.terminal_failures[0].error_code == "consolidation_returned_false"
+    assert result.terminal_failures[0].mutation_state is (
+        ExactConsolidationMutationState.AMBIGUOUS
+    )
+    assert entry.status == "pending"
+    assert entry.attempts == 1
+    assert entry.claim_token is None
+    assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_disposition_cas_rejects_payload_mutation_after_fresh_read(
+    monkeypatch,
+) -> None:
+    class _PayloadRaceStore(_MemoryConsolidationStore):
+        async def save_exact_rebuild_disposition(self, context, **identity):
+            stored = self.entries[str(identity["entry_id"])]
+            assert stored.payload is not None
+            stored.payload["_rebuild_membership"]["content_hash"] = "b" * 64
+            return await super().save_exact_rebuild_disposition(context, **identity)
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-payload-race")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _PayloadRaceStore((entry,))
+    store.current_reservation_source = source
+
+    async def _terminal(_db, _entry, **_kwargs):
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert len(result.rows) == 1
+    assert result.rows[0].disposition is (
+        ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    )
+    assert result.rows[0].membership_content_hash == "a" * 64
+    assert entry.status == "claimed"
+    assert entry.claim_token is not None
+    assert entry.payload is not None
+    assert entry.payload["_rebuild_membership"]["content_hash"] == "b" * 64
+    assert "_exact_rebuild_disposition" not in entry.payload
+
+
+@pytest.mark.asyncio
+async def test_exact_baseexception_leaves_claim_for_governed_recovery_then_acks(
+    monkeypatch,
+) -> None:
+    class _SimulatedProcessCrash(BaseException):
+        pass
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-baseexception")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="9" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _crash(_db, _entry, **_kwargs):
+        raise _SimulatedProcessCrash()
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _crash,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        with pytest.raises(_SimulatedProcessCrash):
+            await _process_exact(processor, scope)
+        assert entry.status == "claimed"
+        assert entry.claim_token is not None
+        assert (
+            await processor.recover_exact_claims(
+                claim_scope=scope,
+                recovery_authority_probe=lambda: True,
+            )
+            == 1
+        )
+        assert entry.status == "pending"
+        assert entry.claim_token is None
+
+        async def _success(_db, _entry, **_kwargs):
+            return True
+
+        monkeypatch.setattr(
+            consolidation,
+            "_process_queue_entry_serialized",
+            _success,
+        )
+        result = await _process_exact(processor, scope)
+
+    assert result.acked_count == 1
+    assert entry.id not in store.entries
+    assert store.exact_disposition_calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_ack_cas_loss_returns_one_neutral_row_and_repends(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-loss")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,), ack_result=False)
+    store.current_reservation_source = source
+
+    async def _success(_db, _entry, **_kwargs):
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert processor.last_attempted_count == 1
+    assert result.new_attempt_count == 1
+    assert len(result.rows) == 1
+    assert result.rows[0].disposition is (
+        ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    )
+    assert result.rows[0].mutation_state is ExactConsolidationMutationState.UNCHANGED
+    assert entry.status == "pending"
+    assert entry.claim_token is None
+    assert len(store.ack_calls) == 1
+    assert len(store.repend_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_marker_replays_under_successor_token_in_same_lineage(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-lineage-successor")
+    source = entry.source
+    lineage_id = "c" * 64
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id=lineage_id,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    current_authority = ["token-a"]
+    process_calls = 0
+
+    async def _terminal(_db, _entry, **_kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        first = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-a",
+        )
+        current_authority[0] = "token-b"
+        resumed = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-b",
+        )
+
+    assert process_calls == 1
+    assert first.new_attempt_count == 1
+    assert resumed.new_attempt_count == 0
+    assert resumed.replayed_count == 1
+    assert resumed.terminal_failures[0].reservation_lineage_id == lineage_id
+
+
+@pytest.mark.asyncio
+async def test_exact_marker_rejects_foreign_lineage_with_same_rebuild_source(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-foreign-lineage")
+    source = entry.source
+    original_scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="d" * 64,
+    )
+    foreign_scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="e" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _terminal(_db, _entry, **_kwargs):
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        await _process_exact(processor, original_scope)
+        with pytest.raises(
+            RuntimeError,
+            match="exact_rebuild_disposition_binding_invalid",
+        ):
+            await _process_exact(processor, foreign_scope)
+
+    assert entry.status == "pending"
+    assert entry.claim_token is None
+    assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_same_source_authority_replacement_before_disposition_cas_is_neutral(
+    monkeypatch,
+) -> None:
+    current_authority = ["token-a"]
+
+    class _AuthorityReplacementStore(_MemoryConsolidationStore):
+        async def save_exact_rebuild_disposition(self, context, **identity):
+            current_authority[0] = "token-b"
+            return await super().save_exact_rebuild_disposition(context, **identity)
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-authority-pre-cas")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="1" * 64,
+    )
+    store = _AuthorityReplacementStore((entry,))
+    store.current_reservation_source = source
+
+    async def _terminal(_db, _entry, **_kwargs):
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-a",
+        )
+
+    assert result.new_attempt_count == 1
+    assert len(result.rows) == 1
+    assert result.rows[0].disposition is (
+        ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    )
+    assert entry.status == "claimed"
+    assert entry.claim_token is not None
+    assert entry.payload is not None
+    assert "_exact_rebuild_disposition" not in entry.payload
+
+
+@pytest.mark.asyncio
+async def test_exact_authority_is_reproved_under_graph_writer_before_effect(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-authority-under-writer")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="3" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    current_authority = ["token-a"]
+    mutation_calls: list[str] = []
+
+    monkeypatch.setattr(
+        consolidation,
+        "guarded_board_write",
+        lambda *_args, **_kwargs: nullcontext(
+            SimpleNamespace(
+                durability_applied=False,
+                ensure_owned=lambda **_kwargs: None,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_ensure_entry_admitted_by_reservation_under_writer",
+        lambda _entry: None,
+    )
+
+    async def _attempt_graph_effect(_db, _entry, **kwargs):
+        current_authority[0] = "token-b"
+        kwargs["enter_graph_write"]("exact-authority-test")
+        mutation_calls.append("mutated")
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _attempt_graph_effect,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-a",
+        )
+
+    assert mutation_calls == []
+    assert result.new_attempt_count == 1
+    assert len(result.rows) == 1
+    assert result.rows[0].disposition is (
+        ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    )
+    assert entry.status == "claimed"
+    assert entry.claim_token is not None
+
+
+@pytest.mark.asyncio
+async def test_exact_authority_replacement_after_disposition_commit_returns_one_neutral_and_replays(
+    monkeypatch,
+) -> None:
+    current_authority = ["token-a"]
+
+    class _PostCommitReplacementStore(_MemoryConsolidationStore):
+        async def commit(self, context) -> None:
+            await super().commit(context)
+            if self.commit_count == 2:
+                current_authority[0] = "token-b"
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-authority-post-commit")
+    source = entry.source
+    lineage_id = "2" * 64
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id=lineage_id,
+    )
+    store = _PostCommitReplacementStore((entry,))
+    store.current_reservation_source = source
+    process_calls = 0
+
+    async def _terminal(_db, _entry, **_kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        raise consolidation.KGPrimitiveError(
+            consolidation.CONNECTIVITY_ERROR_CODE,
+            "deterministic terminal",
+        )
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _terminal,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        fenced = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-a",
+        )
+        resumed = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-b",
+        )
+
+    assert process_calls == 1
+    assert fenced.new_attempt_count == 1
+    assert len(fenced.terminal_failures) == 1
+    assert fenced.rows[0].disposition is (
+        ExactConsolidationDisposition.TERMINAL_FAILURE
+    )
+    assert resumed.new_attempt_count == 0
+    assert resumed.replayed_count == 1
+    assert resumed.terminal_failures[0].reservation_lineage_id == lineage_id
+
+
+@pytest.mark.asyncio
+async def test_exact_post_commit_authority_loss_finalizes_instead_of_compensating_graph(
+    monkeypatch,
+) -> None:
+    current_authority = ["token-a"]
+
+    class _PostCommitReplacementStore(_MemoryConsolidationStore):
+        async def commit(self, context) -> None:
+            await super().commit(context)
+            if self.commit_count == 2:
+                current_authority[0] = "token-b"
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-graph-post-commit")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="4" * 64,
+    )
+    store = _PostCommitReplacementStore((entry,))
+    store.current_reservation_source = source
+    finalized: list[str] = []
+    compensated: list[str] = []
+
+    async def _success_with_deferred_graph(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-durable")
+        return True
+
+    async def _finalize(session_id, **_kwargs):
+        finalized.append(session_id)
+
+    async def _abort(session_id, **_kwargs):
+        compensated.append(session_id)
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success_with_deferred_graph,
+    )
+    monkeypatch.setattr(consolidation, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-a",
+        )
+
+    assert result.new_attempt_count == 1
+    assert len(result.rows) == 1
+    assert result.rows[0].disposition is ExactConsolidationDisposition.ACKED
+    assert result.rows[0].mutation_state is (ExactConsolidationMutationState.COMMITTED)
+    assert finalized == ["session-durable"]
+    assert compensated == []
+    assert entry.id not in store.entries
+
+
+@pytest.mark.asyncio
+async def test_exact_post_commit_authority_loss_without_graph_reports_durable_ack(
+    monkeypatch,
+) -> None:
+    current_authority = ["token-a"]
+
+    class _PostCommitReplacementStore(_MemoryConsolidationStore):
+        async def commit(self, context) -> None:
+            await super().commit(context)
+            if self.commit_count == 2:
+                current_authority[0] = "token-b"
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-post-commit")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="5" * 64,
+    )
+    store = _PostCommitReplacementStore((entry,))
+    store.current_reservation_source = source
+
+    async def _success(_db, _entry, **_kwargs):
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: current_authority[0] == "token-a",
+        )
+
+    assert result.new_attempt_count == 1
+    assert result.acked_count == 1
+    assert len(result.rows) == 1
+    assert result.rows[0].mutation_state is (ExactConsolidationMutationState.COMMITTED)
+    assert entry.id not in store.entries
+
+
+@pytest.mark.asyncio
+async def test_exact_double_post_commit_finalize_failure_raises_typed_blocker(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-finalize-blocker")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="a" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    finalize_calls: list[str] = []
+    compensated: list[str] = []
+
+    async def _success_with_deferred_graph(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-unfinalized")
+        return True
+
+    async def _fail_finalize(session_id, **_kwargs):
+        finalize_calls.append(session_id)
+        raise RuntimeError("simulated finalize failure")
+
+    async def _abort(session_id, **_kwargs):
+        compensated.append(session_id)
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success_with_deferred_graph,
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "finalize_deferred_consolidation",
+        _fail_finalize,
+    )
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with (
+        _registered(store),
+        pytest.raises(
+            consolidation.ExactConsolidationPostCommitError,
+            match="exact_consolidation_post_commit_finalization_failed",
+        ) as captured,
+    ):
+        await _process_exact(processor, scope)
+
+    assert captured.value.failed_queue_id == entry.id
+    assert captured.value.error_code == (
+        "exact_consolidation_post_commit_finalization_failed"
+    )
+    assert captured.value.batch_result.new_attempt_count == 1
+    assert captured.value.batch_result.acked_count == 1
+    assert captured.value.batch_result.rows[0].queue_id == entry.id
+    assert finalize_calls == ["session-unfinalized", "session-unfinalized"]
+    assert compensated == []
+    assert entry.id not in store.entries
