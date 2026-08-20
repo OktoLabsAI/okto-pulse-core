@@ -23,11 +23,12 @@ from okto_pulse.core.ports.consolidation import (
     ConsolidationClaimScope,
     ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
-    ExactConsolidationDisposition,
     ExactConsolidationAckReceipt,
+    ExactConsolidationAckIntegrityError,
     ExactConsolidationCompensationReceipt,
     ExactConsolidationCompensationError,
     ExactConsolidationCompensationResult,
+    ExactConsolidationDisposition,
     ExactConsolidationMutationState,
     ExactConsolidationResultOrigin,
     exact_consolidation_ack_receipts_sha256,
@@ -159,6 +160,7 @@ def test_exact_row_result_rejects_unemittable_public_state_combinations() -> Non
         membership_source_ref=source_ref,
         membership_source_version=source_version,
         membership_content_hash=content_hash,
+        audit_content_hash="f" * 64,
         consolidation_session_id="session-dto",
         outbox_event_id="outbox-dto",
         generation_event_id="generation-dto",
@@ -176,6 +178,9 @@ def test_exact_row_result_rejects_unemittable_public_state_combinations() -> Non
         mutation_state=ExactConsolidationMutationState.COMMITTED,
         ack_receipt=ack_receipt,
     )
+    assert ack_receipt.membership_content_hash != ack_receipt.audit_content_hash
+    assert ack_receipt.to_payload()["schema"] == "exact_consolidation_ack_receipt.v2"
+    assert ack_receipt.to_payload()["audit_content_hash"] == "f" * 64
 
     invalid_variants = (
         {"origin": ExactConsolidationResultOrigin.REPLAYED},
@@ -209,6 +214,79 @@ def test_exact_row_result_rejects_unemittable_public_state_combinations() -> Non
     for changes in invalid_variants:
         with pytest.raises((TypeError, ValueError)):
             replace(ack, **changes)
+
+
+def test_exact_ack_v2_binds_separate_membership_and_audit_hash_domains() -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-v2")
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=entry.source,
+        reservation_lineage_id="b" * 64,
+    )
+    source_ref, source_version, membership_hash = (
+        consolidation._exact_rebuild_membership(entry, scope)
+    )
+    receipt = ExactConsolidationAckReceipt.create(
+        queue_id=entry.id,
+        board_id=entry.board_id,
+        source=entry.source,
+        reservation_lineage_id="b" * 64,
+        work_kind=entry.work_kind,
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        generation=entry.generation,
+        membership_source_ref=source_ref,
+        membership_source_version=source_version,
+        membership_content_hash=membership_hash,
+        audit_content_hash="e" * 64,
+        consolidation_session_id="session-v2",
+        outbox_event_id="outbox-v2",
+        generation_event_id="generation-v2",
+        previous_materialization_generation="mg-before",
+        materialization_generation="mg-after",
+        node_ref_count=0,
+        node_refs_sha256="0" * 64,
+    )
+
+    payload = receipt.to_payload()
+    assert receipt.membership_content_hash != receipt.audit_content_hash
+    assert ExactConsolidationAckReceipt.from_payload(payload) == receipt
+    alternate_values = {
+        name: value
+        for name, value in payload.items()
+        if name not in {"schema", "receipt_sha256"}
+    }
+    alternate_values["audit_content_hash"] = "d" * 64
+    alternate = ExactConsolidationAckReceipt.create(**alternate_values)
+    assert exact_consolidation_ack_receipts_sha256((alternate,)) != (
+        exact_consolidation_ack_receipts_sha256((receipt,))
+    )
+    for field in ("membership_content_hash", "audit_content_hash"):
+        with pytest.raises(
+            ValueError, match="exact_consolidation_ack_receipt_digest_mismatch"
+        ):
+            replace(receipt, **{field: "d" * 64})
+
+    legacy_payload = dict(payload)
+    legacy_payload["schema"] = "exact_consolidation_ack_receipt.v1"
+    legacy_payload.pop("audit_content_hash")
+    with pytest.raises(
+        ValueError, match="exact_consolidation_ack_receipt_payload_invalid"
+    ):
+        ExactConsolidationAckReceipt.from_payload(legacy_payload)
+    with pytest.raises(ValueError, match="exact_consolidation_ack_receipt_invalid"):
+        replace(receipt, audit_content_hash="not-a-sha256")
+
+
+def test_exact_ack_integrity_error_has_closed_public_codes() -> None:
+    error = ExactConsolidationAckIntegrityError("exact_consolidation_ack_audit_invalid")
+    assert error.code == "exact_consolidation_ack_audit_invalid"
+    assert str(error) == error.code
+    assert "ExactConsolidationAckIntegrityError" in consolidation_ports.__all__
+    with pytest.raises(
+        ValueError, match="exact_consolidation_ack_integrity_code_invalid"
+    ):
+        ExactConsolidationAckIntegrityError("arbitrary_adapter_runtime_error")
 
 
 def test_exact_post_commit_error_is_part_of_public_port_contract() -> None:
@@ -501,6 +579,7 @@ class _MemoryConsolidationStore:
             membership_source_ref=identity["membership_source_ref"],
             membership_source_version=identity["membership_source_version"],
             membership_content_hash=identity["membership_content_hash"],
+            audit_content_hash="c" * 64,
             consolidation_session_id=identity["consolidation_session_id"],
             outbox_event_id=f"outbox-{entry.id}",
             generation_event_id=f"generation-{entry.id}",
@@ -1618,6 +1697,7 @@ async def test_exact_ack_journal_rejects_materialization_generation_cycle() -> N
             membership_source_ref=f"spec:{artifact_id}",
             membership_source_version="1",
             membership_content_hash="b" * 64,
+            audit_content_hash="c" * 64,
             consolidation_session_id=f"session-{queue_id}",
             outbox_event_id=f"outbox-{queue_id}",
             generation_event_id=f"event-{queue_id}",
@@ -1984,6 +2064,149 @@ async def test_exact_false_outcome_uses_terminal_marker_not_generic_failure_path
     assert entry.attempts == 1
     assert entry.claim_token is None
     assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_ack_integrity_failure_is_terminal_unchanged_after_abort(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-integrity")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    aborted: list[str] = []
+
+    async def _invalid_ack(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-ack-integrity")
+        raise ExactConsolidationAckIntegrityError(
+            "exact_consolidation_ack_audit_invalid"
+        )
+
+    async def _abort(session_id, **_kwargs):
+        aborted.append(session_id)
+
+    async def _generic_failure_forbidden(*_args, **_kwargs):
+        raise AssertionError("exact integrity failure entered generic debt/DLQ path")
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _invalid_ack,
+    )
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    monkeypatch.setattr(
+        ConsolidationProcessor,
+        "_mark_failed",
+        _generic_failure_forbidden,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert aborted == ["session-ack-integrity"]
+    assert len(result.terminal_failures) == 1
+    row = result.terminal_failures[0]
+    assert row.error_code == "exact_consolidation_ack_audit_invalid"
+    assert row.error_message == "exact_consolidation_ack_audit_invalid"
+    assert row.diagnostic_json == (
+        '{"integrity_code":"exact_consolidation_ack_audit_invalid"}'
+    )
+    assert row.mutation_state is ExactConsolidationMutationState.UNCHANGED
+    assert entry.status == "pending"
+    assert len(store.exact_disposition_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_ack_integrity_abort_failure_is_terminal_ambiguous(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-integrity-abort-failed")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _invalid_ack(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-ack-integrity-abort-failed")
+        raise ExactConsolidationAckIntegrityError(
+            "exact_consolidation_ack_generation_head_invalid"
+        )
+
+    async def _abort_failed(_session_id, **_kwargs):
+        raise RuntimeError("graph abort did not complete")
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _invalid_ack,
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "abort_deferred_consolidation",
+        _abort_failed,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert len(result.terminal_failures) == 1
+    row = result.terminal_failures[0]
+    assert row.error_code == "exact_consolidation_ack_generation_head_invalid"
+    assert row.mutation_state is ExactConsolidationMutationState.AMBIGUOUS
+    assert row.diagnostic_json == (
+        '{"integrity_code":"exact_consolidation_ack_generation_head_invalid"}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_exact_ack_integrity_secondary_cas_loss_preserves_primary_diagnostic(
+    monkeypatch,
+) -> None:
+    class _DispositionLossStore(_MemoryConsolidationStore):
+        async def save_exact_rebuild_disposition(self, _context, **identity):
+            self.exact_disposition_calls.append(identity)
+            return None
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-integrity-cas-loss")
+    source = entry.source
+    scope = ConsolidationClaimScope(board_id=entry.board_id, source=source)
+    store = _DispositionLossStore((entry,))
+    store.current_reservation_source = source
+    aborted: list[str] = []
+
+    async def _invalid_ack(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-integrity-cas-loss")
+        raise ExactConsolidationAckIntegrityError(
+            "exact_consolidation_ack_outbox_invalid"
+        )
+
+    async def _abort(session_id, **_kwargs):
+        aborted.append(session_id)
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _invalid_ack,
+    )
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert aborted == ["session-integrity-cas-loss"]
+    assert len(result.rows) == 1
+    row = result.rows[0]
+    assert row.disposition is ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    assert row.mutation_state is ExactConsolidationMutationState.UNCHANGED
+    assert row.error_code == "queue_claim_lost_or_fenced"
+    assert "primary=exact_consolidation_ack_outbox_invalid" in row.error_message
+    assert row.diagnostic_json == (
+        '{"integrity_code":"exact_consolidation_ack_outbox_invalid"}'
+    )
 
 
 @pytest.mark.asyncio

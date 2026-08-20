@@ -36,6 +36,7 @@ from typing import Any, Callable, Mapping
 from okto_pulse.core.ports.consolidation import (
     ConsolidationClaimScope,
     ConsolidationQueueRecord,
+    ExactConsolidationAckIntegrityError,
     ExactConsolidationAckReceipt,
     ExactConsolidationBatchResult,
     ExactConsolidationCompensationError,
@@ -261,6 +262,13 @@ def _exact_disposition_attempt(entry: ConsolidationQueueRecord) -> int:
 
 
 def _exact_failure_diagnostic(exc: BaseException) -> str | None:
+    if isinstance(exc, ExactConsolidationAckIntegrityError):
+        return json.dumps(
+            {"integrity_code": exc.code},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     if not isinstance(exc, KGPrimitiveError) or not isinstance(exc.details, dict):
         return None
     connectivity = exc.details.get("connectivity")
@@ -494,6 +502,17 @@ _GraphWriteEnter = Callable[[str], GuardedWriteLease]
 
 class _QueueClaimLostOrFenced(RuntimeError):
     """Neutral worker outcome: ownership or deletion generation changed."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        primary_error_code: str | None = None,
+        primary_diagnostic_json: str | None = None,
+    ) -> None:
+        self.primary_error_code = primary_error_code
+        self.primary_diagnostic_json = primary_diagnostic_json
+        super().__init__(message)
 
 
 class _ExactAuthorityLostAfterCommit(_QueueClaimLostOrFenced):
@@ -902,7 +921,9 @@ async def _persist_exact_disposition(
     )
     if stored is None:
         raise _QueueClaimLostOrFenced(
-            f"exact_rebuild_disposition_claim_lost entry_id={entry.id}"
+            f"exact_rebuild_disposition_claim_lost entry_id={entry.id}",
+            primary_error_code=error_code,
+            primary_diagnostic_json=diagnostic_json,
         )
     replay = _load_exact_disposition(stored, claim_scope)
     if replay is None:
@@ -4953,6 +4974,8 @@ class ConsolidationProcessor:
                                             origin=(ExactConsolidationResultOrigin.NEW),
                                             mutation_state=(
                                                 ExactConsolidationMutationState.AMBIGUOUS
+                                                if not precommit_compensation_confirmed
+                                                else ExactConsolidationMutationState.UNCHANGED
                                             ),
                                             error_code=(
                                                 "administrative_reservation_lost"
@@ -4960,13 +4983,31 @@ class ConsolidationProcessor:
                                             error_message=(
                                                 "Exact rebuild reservation was "
                                                 "lost while persisting failure."
+                                                + (
+                                                    f" primary={exc.code}"
+                                                    if isinstance(
+                                                        exc,
+                                                        ExactConsolidationAckIntegrityError,
+                                                    )
+                                                    else ""
+                                                )
+                                            ),
+                                            diagnostic_json=(
+                                                _exact_failure_diagnostic(exc)
                                             ),
                                         )
                                     )
                                 continue
                             error_text = (
                                 f"{exc.code}:{str(exc)[:480]}"
-                                if isinstance(exc, (GraphError, KGPrimitiveError))
+                                if isinstance(
+                                    exc,
+                                    (
+                                        GraphError,
+                                        KGPrimitiveError,
+                                        ExactConsolidationAckIntegrityError,
+                                    ),
+                                )
                                 else f"{type(exc).__name__}: {str(exc)[:480]}"
                             )
                             retry_after_s = graph_memory_pressure_retry_after_seconds(
@@ -4976,7 +5017,14 @@ class ConsolidationProcessor:
                                 assert claim_scope is not None
                                 error_code = (
                                     str(exc.code)
-                                    if isinstance(exc, (GraphError, KGPrimitiveError))
+                                    if isinstance(
+                                        exc,
+                                        (
+                                            GraphError,
+                                            KGPrimitiveError,
+                                            ExactConsolidationAckIntegrityError,
+                                        ),
+                                    )
                                     else type(exc).__name__
                                 )
                                 error_message = str(exc)[:480] or error_code
@@ -5021,12 +5069,27 @@ class ConsolidationProcessor:
                                     disposition = (
                                         ExactConsolidationDisposition.TERMINAL_FAILURE
                                     )
-                                    mutation_state = (
-                                        ExactConsolidationMutationState.UNCHANGED
-                                        if isinstance(exc, KGPrimitiveError)
+                                    if isinstance(
+                                        exc,
+                                        ExactConsolidationAckIntegrityError,
+                                    ):
+                                        mutation_state = (
+                                            ExactConsolidationMutationState.UNCHANGED
+                                            if not deferred_session_ids
+                                            or precommit_compensation_confirmed
+                                            else ExactConsolidationMutationState.AMBIGUOUS
+                                        )
+                                    elif (
+                                        isinstance(exc, KGPrimitiveError)
                                         and exc.code == CONNECTIVITY_ERROR_CODE
-                                        else ExactConsolidationMutationState.AMBIGUOUS
-                                    )
+                                    ):
+                                        mutation_state = (
+                                            ExactConsolidationMutationState.UNCHANGED
+                                        )
+                                    else:
+                                        mutation_state = (
+                                            ExactConsolidationMutationState.AMBIGUOUS
+                                        )
                                     next_retry_at = None
                                 persisted_exact_disposition = (
                                     await _persist_exact_disposition(
@@ -5093,7 +5156,16 @@ class ConsolidationProcessor:
                                 error_message=(
                                     "The exact queue identity was no longer "
                                     "owned while classifying a processing error."
+                                    + (
+                                        f" primary={exc.code}"
+                                        if isinstance(
+                                            exc,
+                                            ExactConsolidationAckIntegrityError,
+                                        )
+                                        else ""
+                                    )
                                 ),
+                                diagnostic_json=_exact_failure_diagnostic(exc),
                             )
                         await _commit_batch_transaction(
                             store,
@@ -5122,7 +5194,15 @@ class ConsolidationProcessor:
                                     else ExactConsolidationMutationState.UNCHANGED
                                 ),
                                 error_code="queue_claim_lost_or_fenced",
-                                error_message=str(disposition_loss)[:480],
+                                error_message=(
+                                    f"{str(disposition_loss)[:360]} primary="
+                                    f"{disposition_loss.primary_error_code[:96]}"
+                                    if disposition_loss.primary_error_code is not None
+                                    else str(disposition_loss)[:480]
+                                ),
+                                diagnostic_json=(
+                                    disposition_loss.primary_diagnostic_json
+                                ),
                             )
                         )
                 except _QueueClaimLostOrFenced as disposition_loss:
@@ -5143,7 +5223,15 @@ class ConsolidationProcessor:
                                     else ExactConsolidationMutationState.UNCHANGED
                                 ),
                                 error_code="queue_claim_lost_or_fenced",
-                                error_message=str(disposition_loss)[:480],
+                                error_message=(
+                                    f"{str(disposition_loss)[:360]} primary="
+                                    f"{disposition_loss.primary_error_code[:96]}"
+                                    if disposition_loss.primary_error_code is not None
+                                    else str(disposition_loss)[:480]
+                                ),
+                                diagnostic_json=(
+                                    disposition_loss.primary_diagnostic_json
+                                ),
                             )
                         )
                 except Exception:

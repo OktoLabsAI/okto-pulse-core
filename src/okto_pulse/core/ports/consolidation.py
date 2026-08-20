@@ -161,6 +161,7 @@ class ExactConsolidationAckReceipt:
     membership_source_ref: str
     membership_source_version: str
     membership_content_hash: str
+    audit_content_hash: str
     consolidation_session_id: str
     outbox_event_id: str
     generation_event_id: str
@@ -185,6 +186,7 @@ class ExactConsolidationAckReceipt:
         membership_source_ref: str,
         membership_source_version: str,
         membership_content_hash: str,
+        audit_content_hash: str,
         consolidation_session_id: str,
         outbox_event_id: str,
         generation_event_id: str,
@@ -196,6 +198,7 @@ class ExactConsolidationAckReceipt:
         values: dict[str, Any] = {
             "artifact_id": artifact_id,
             "artifact_type": artifact_type,
+            "audit_content_hash": audit_content_hash,
             "board_id": board_id,
             "consolidation_session_id": consolidation_session_id,
             "generation": generation,
@@ -212,7 +215,7 @@ class ExactConsolidationAckReceipt:
             ),
             "queue_id": queue_id,
             "reservation_lineage_id": reservation_lineage_id,
-            "schema": "exact_consolidation_ack_receipt.v1",
+            "schema": "exact_consolidation_ack_receipt.v2",
             "source": source,
             "work_kind": work_kind,
         }
@@ -228,6 +231,7 @@ class ExactConsolidationAckReceipt:
             membership_source_ref=membership_source_ref,
             membership_source_version=membership_source_version,
             membership_content_hash=membership_content_hash,
+            audit_content_hash=audit_content_hash,
             consolidation_session_id=consolidation_session_id,
             outbox_event_id=outbox_event_id,
             generation_event_id=generation_event_id,
@@ -250,6 +254,7 @@ class ExactConsolidationAckReceipt:
             self.membership_source_ref,
             self.membership_source_version,
             self.membership_content_hash,
+            self.audit_content_hash,
             self.consolidation_session_id,
             self.outbox_event_id,
             self.generation_event_id,
@@ -284,6 +289,8 @@ class ExactConsolidationAckReceipt:
                 value not in "0123456789abcdef"
                 for value in self.membership_content_hash
             )
+            or len(self.audit_content_hash) != 64
+            or any(value not in "0123456789abcdef" for value in self.audit_content_hash)
             or len(self.node_refs_sha256) != 64
             or any(value not in "0123456789abcdef" for value in self.node_refs_sha256)
             or len(self.receipt_sha256) != 64
@@ -296,6 +303,7 @@ class ExactConsolidationAckReceipt:
             {
                 "artifact_id": self.artifact_id,
                 "artifact_type": self.artifact_type,
+                "audit_content_hash": self.audit_content_hash,
                 "board_id": self.board_id,
                 "consolidation_session_id": self.consolidation_session_id,
                 "generation": self.generation,
@@ -312,7 +320,7 @@ class ExactConsolidationAckReceipt:
                 ),
                 "queue_id": self.queue_id,
                 "reservation_lineage_id": self.reservation_lineage_id,
-                "schema": "exact_consolidation_ack_receipt.v1",
+                "schema": "exact_consolidation_ack_receipt.v2",
                 "source": self.source,
                 "work_kind": self.work_kind,
             }
@@ -322,7 +330,7 @@ class ExactConsolidationAckReceipt:
 
     def to_payload(self) -> dict[str, object]:
         return {
-            "schema": "exact_consolidation_ack_receipt.v1",
+            "schema": "exact_consolidation_ack_receipt.v2",
             **{name: getattr(self, name) for name in self.__dataclass_fields__},
         }
 
@@ -332,7 +340,7 @@ class ExactConsolidationAckReceipt:
         if (
             type(value) is not dict
             or set(value) != {*field_names, "schema"}
-            or value.get("schema") != "exact_consolidation_ack_receipt.v1"
+            or value.get("schema") != "exact_consolidation_ack_receipt.v2"
         ):
             raise ValueError("exact_consolidation_ack_receipt_payload_invalid")
         try:
@@ -618,6 +626,43 @@ class ExactConsolidationCompensationError(RuntimeError):
         return self._committed_result
 
 
+_EXACT_CONSOLIDATION_ACK_INTEGRITY_CODES = frozenset(
+    {
+        "exact_consolidation_ack_after_compensation",
+        "exact_consolidation_ack_audit_invalid",
+        "exact_consolidation_ack_generation_event_invalid",
+        "exact_consolidation_ack_generation_event_published",
+        "exact_consolidation_ack_generation_head_invalid",
+        "exact_consolidation_ack_node_ref_counts_invalid",
+        "exact_consolidation_ack_node_refs_invalid",
+        "exact_consolidation_ack_outbox_invalid",
+        "exact_consolidation_ack_queue_reused",
+    }
+)
+
+
+class ExactConsolidationAckIntegrityError(RuntimeError):
+    """Typed, pre-commit failure of one exact ACK relational proof.
+
+    These codes mean the claimed queue row may still be owned, but its staged
+    relational audit/effects do not satisfy the exact rebuild contract. They
+    are deterministic blockers, never evidence of a neutral claim/fence loss.
+    """
+
+    def __init__(self, code: str) -> None:
+        if (
+            type(code) is not str
+            or code not in _EXACT_CONSOLIDATION_ACK_INTEGRITY_CODES
+        ):
+            raise ValueError("exact_consolidation_ack_integrity_code_invalid")
+        self._code = code
+        super().__init__(code)
+
+    @property
+    def code(self) -> str:
+        return self._code
+
+
 def exact_consolidation_ack_receipts_sha256(
     receipts: tuple[ExactConsolidationAckReceipt, ...],
 ) -> str:
@@ -634,7 +679,7 @@ def exact_consolidation_ack_receipts_sha256(
     return _canonical_sha256(
         {
             "receipt_sha256": [receipt.receipt_sha256 for receipt in receipts],
-            "schema": "exact_consolidation_ack_receipt_chain.v1",
+            "schema": "exact_consolidation_ack_receipt_chain.v2",
         }
     )
 
@@ -1390,9 +1435,13 @@ class ConsolidationPersistencePort(Protocol):
 
         The implementation must validate the transaction-staged audit, node
         references, outbox event, materialization-generation event and current
-        generation head. It then persists the immutable ACK receipt and deletes
-        the claimed queue row by the complete supplied identity in that same
-        transaction. ``None`` is a neutral claim or authority loss.
+        generation head. The returned v2 receipt must derive and bind the audit
+        row's own ``audit_content_hash`` separately from the supplied manifest
+        ``membership_content_hash``; the two hash domains must never be equated.
+        It then persists the immutable ACK receipt and deletes the claimed queue
+        row by the complete supplied identity in that same transaction. ``None``
+        is a neutral claim or authority loss. Deterministic staged-proof failures
+        raise :class:`ExactConsolidationAckIntegrityError` before commit.
         """
 
         ...
@@ -1552,6 +1601,7 @@ __all__ = [
     "CurrentSpecDependencyProjection",
     "ExactConsolidationBatchResult",
     "ExactConsolidationAckReceipt",
+    "ExactConsolidationAckIntegrityError",
     "ExactConsolidationCompensationReceipt",
     "ExactConsolidationCompensationResult",
     "ExactConsolidationCompensationError",
