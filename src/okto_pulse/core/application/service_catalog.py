@@ -109,6 +109,69 @@ class CoreAnalyticsOperations:
             cards=cards,
         )
 
+    async def canonical_flow_health(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.coverage_traceability_read_model import (
+            build_coverage_traceability_projection,
+        )
+        from okto_pulse.core.services.flow_health_read_model import (
+            build_flow_health_projection,
+        )
+
+        boards = await _analytics_list(
+            self.__relational_context,
+            "board",
+            filters=(_af("id", "eq", query.board_id),),
+            limit=2,
+        )
+        if len(boards) != 1:
+            raise ValueError("flow_health_board_authority_invalid")
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        cards = await _analytics_list(
+            self.__relational_context,
+            "card",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        events = await _analytics_list(
+            self.__relational_context,
+            "domain_event",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af(
+                    "event_type",
+                    "in",
+                    (
+                        "card.created",
+                        "card.moved",
+                        "card.completion_rejected",
+                        "spec.created",
+                        "spec.moved",
+                    ),
+                ),
+                _af("occurred_at", "lte", as_of),
+            ),
+            order_by="occurred_at",
+        )
+        coverage = build_coverage_traceability_projection(
+            query=query,
+            as_of=as_of,
+            specs=tuple(spec for spec in specs if not spec.archived),
+            cards=cards,
+        )
+        return build_flow_health_projection(
+            query=query,
+            as_of=as_of,
+            board=boards[0],
+            specs=specs,
+            cards=cards,
+            domain_events=events,
+            coverage=coverage,
+        )
+
     async def funnel(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_funnel
 

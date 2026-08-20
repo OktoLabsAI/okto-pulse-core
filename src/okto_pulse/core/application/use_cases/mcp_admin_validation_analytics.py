@@ -73,7 +73,11 @@ class McpGetAnalyticsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
-        if command.metric_type in {"board_kg", "canonical_coverage"}:
+        if command.metric_type in {
+            "board_kg",
+            "canonical_coverage",
+            "flow_health",
+        }:
             from okto_pulse.core.application.use_cases.board_kg_analytics import (
                 BoardKgAnalyticsCommand,
                 BoardKgAnalyticsUseCase,
@@ -97,7 +101,7 @@ class McpGetAnalyticsUseCase:
                     actor=actor,
                     uow=uow,
                 )
-            else:
+            elif command.metric_type == "canonical_coverage":
                 from okto_pulse.core.application.use_cases.coverage_traceability_analytics import (
                     CoverageTraceabilityAnalyticsCommand,
                     CoverageTraceabilityAnalyticsUseCase,
@@ -105,6 +109,21 @@ class McpGetAnalyticsUseCase:
 
                 result = await CoverageTraceabilityAnalyticsUseCase().execute(
                     CoverageTraceabilityAnalyticsCommand(
+                        board_id=command.board_id,
+                        window=AnalyticsUtcWindow(window_from, window_to),
+                        as_of=as_of,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            else:
+                from okto_pulse.core.application.use_cases.flow_health_analytics import (
+                    FlowHealthAnalyticsCommand,
+                    FlowHealthAnalyticsUseCase,
+                )
+
+                result = await FlowHealthAnalyticsUseCase().execute(
+                    FlowHealthAnalyticsCommand(
                         board_id=command.board_id,
                         window=AnalyticsUtcWindow(window_from, window_to),
                         as_of=as_of,

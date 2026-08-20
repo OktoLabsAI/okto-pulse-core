@@ -1108,6 +1108,11 @@ from okto_pulse.core.application.use_cases.coverage_traceability_analytics impor
     CoverageTraceabilityAnalyticsResult,
     CoverageTraceabilityAnalyticsUseCase,
 )
+from okto_pulse.core.application.use_cases.flow_health_analytics import (
+    FlowHealthAnalyticsCommand,
+    FlowHealthAnalyticsResult,
+    FlowHealthAnalyticsUseCase,
+)
 from okto_pulse.core.application.use_cases.entity_export import (
     ENTITY_EXPORT_ROOT_READ_PERMISSION,
     GetEntityExportBundleCommand,
@@ -1295,6 +1300,9 @@ __all__ = [
     "CoverageTraceabilityAnalyticsCommand",
     "CoverageTraceabilityAnalyticsResult",
     "CoverageTraceabilityAnalyticsUseCase",
+    "FlowHealthAnalyticsCommand",
+    "FlowHealthAnalyticsResult",
+    "FlowHealthAnalyticsUseCase",
     # cognitive_readiness (MCP-FU3 reads)
     "EvaluateBugCognitiveClosureCommand",
     "EvaluateBugCognitiveClosureResult",
