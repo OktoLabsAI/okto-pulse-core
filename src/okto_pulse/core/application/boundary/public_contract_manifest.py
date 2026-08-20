@@ -148,6 +148,7 @@ PUBLIC_CORE_CONTRACT_SURFACES: tuple[str, ...] = tuple(
             "okto_pulse.core.services.resource_gate",
             "okto_pulse.core.services.resource_gate_contracts",
             "okto_pulse.core.services.spec_entity_canonicalization",
+            "okto_pulse.core.services.spec_readiness",
             "okto_pulse.core.services.resource_lineage",
             "okto_pulse.core.services.ska_observability",
             "okto_pulse.core.services.spec_structured_entities",
