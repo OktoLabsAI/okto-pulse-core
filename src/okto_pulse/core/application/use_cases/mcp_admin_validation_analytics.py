@@ -73,7 +73,7 @@ class McpGetAnalyticsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
-        if command.metric_type == "board_kg":
+        if command.metric_type in {"board_kg", "canonical_coverage"}:
             from okto_pulse.core.application.use_cases.board_kg_analytics import (
                 BoardKgAnalyticsCommand,
                 BoardKgAnalyticsUseCase,
@@ -87,15 +87,31 @@ class McpGetAnalyticsUseCase:
             window_to = _parse_dt(
                 command.to_date, end_exclusive=True
             ) or as_of + timedelta(microseconds=1)
-            result = await BoardKgAnalyticsUseCase().execute(
-                BoardKgAnalyticsCommand(
-                    board_id=command.board_id,
-                    window=AnalyticsUtcWindow(window_from, window_to),
-                    as_of=as_of,
-                ),
-                actor=actor,
-                uow=uow,
-            )
+            if command.metric_type == "board_kg":
+                result = await BoardKgAnalyticsUseCase().execute(
+                    BoardKgAnalyticsCommand(
+                        board_id=command.board_id,
+                        window=AnalyticsUtcWindow(window_from, window_to),
+                        as_of=as_of,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            else:
+                from okto_pulse.core.application.use_cases.coverage_traceability_analytics import (
+                    CoverageTraceabilityAnalyticsCommand,
+                    CoverageTraceabilityAnalyticsUseCase,
+                )
+
+                result = await CoverageTraceabilityAnalyticsUseCase().execute(
+                    CoverageTraceabilityAnalyticsCommand(
+                        board_id=command.board_id,
+                        window=AnalyticsUtcWindow(window_from, window_to),
+                        as_of=as_of,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
             return _DataResult(result.data)
         return _DataResult(
             await uow.services.analytics.mcp_board_analytics(

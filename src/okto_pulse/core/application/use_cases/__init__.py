@@ -1103,6 +1103,11 @@ from okto_pulse.core.application.use_cases.board_kg_analytics import (
     BoardKgAnalyticsResult,
     BoardKgAnalyticsUseCase,
 )
+from okto_pulse.core.application.use_cases.coverage_traceability_analytics import (
+    CoverageTraceabilityAnalyticsCommand,
+    CoverageTraceabilityAnalyticsResult,
+    CoverageTraceabilityAnalyticsUseCase,
+)
 from okto_pulse.core.application.use_cases.entity_export import (
     ENTITY_EXPORT_ROOT_READ_PERMISSION,
     GetEntityExportBundleCommand,
@@ -1287,6 +1292,9 @@ __all__ = [
     "BoardKgAnalyticsCommand",
     "BoardKgAnalyticsResult",
     "BoardKgAnalyticsUseCase",
+    "CoverageTraceabilityAnalyticsCommand",
+    "CoverageTraceabilityAnalyticsResult",
+    "CoverageTraceabilityAnalyticsUseCase",
     # cognitive_readiness (MCP-FU3 reads)
     "EvaluateBugCognitiveClosureCommand",
     "EvaluateBugCognitiveClosureResult",

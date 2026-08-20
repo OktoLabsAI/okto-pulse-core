@@ -452,6 +452,13 @@ class AnalyticsOperations(Protocol):
         exclusions: object,
     ) -> object: ...
 
+    async def canonical_coverage(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+    ) -> object: ...
+
     async def funnel(
         self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
     ) -> object: ...

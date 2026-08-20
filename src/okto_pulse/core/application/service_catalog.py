@@ -83,6 +83,32 @@ class CoreAnalyticsOperations:
             exclusions=exclusions,
         )
 
+    async def canonical_coverage(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.coverage_traceability_read_model import (
+            build_coverage_traceability_projection,
+        )
+
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("archived", "is_false"),
+            ),
+        )
+        cards = await _analytics_list(
+            self.__relational_context,
+            "card",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        return build_coverage_traceability_projection(
+            query=query,
+            as_of=as_of,
+            specs=specs,
+            cards=cards,
+        )
+
     async def funnel(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_funnel
 
