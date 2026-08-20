@@ -115,6 +115,7 @@ PUBLIC_CORE_CONTRACT_SURFACES: tuple[str, ...] = tuple(
             "okto_pulse.core.services.analytics_service",
             "okto_pulse.core.services.analytics_workspace",
             "okto_pulse.core.services.coverage_traceability",
+            "okto_pulse.core.services.delivery_commitment",
             "okto_pulse.core.services.flow_health",
             "okto_pulse.core.services.policy_resource_readiness",
             "okto_pulse.core.services.application_agents",

@@ -19054,6 +19054,37 @@ class SprintService:
                         },
                     )
 
+            # Analytics 5: capture immutable commitment inside the same session
+            # that will persist the Active status and SprintMoved outbox event.
+            # The persistence port MUST flush only; the single commit below owns
+            # all three effects and rolls them back together on failure.
+            from okto_pulse.core.ports.sprint_activation_baseline import (
+                SprintActivationMember,
+            )
+            from okto_pulse.core.services.delivery_commitment import (
+                DeliveryCommitmentService,
+            )
+
+            activation_baseline = DeliveryCommitmentService.build_activation_baseline(
+                board_id=sprint.board_id,
+                sprint_id=sprint.id,
+                spec_id=sprint.spec_id,
+                sprint_version=sprint.version + 1,
+                activated_at=datetime.now(timezone.utc),
+                activated_by=user_id,
+                members=tuple(
+                    SprintActivationMember(
+                        card_id=card.id,
+                        card_type=getattr(card.card_type, "value", str(card.card_type)),
+                        card_version=int(getattr(card, "policy_version", 1)),
+                    )
+                    for card in assigned_cards
+                ),
+            )
+            await DeliveryCommitmentService.persist_activation_baseline(
+                self.db, activation_baseline
+            )
+
         # Gate: active → review requires scoped test coverage check
         if data.status == SprintStatus.REVIEW:
             skip_tc = sprint.skip_test_coverage or (

@@ -897,6 +897,37 @@ class TestSprintStateMachine:
 
         assert sprint.status == SprintStatus.ACTIVE
 
+    async def test_activation_baseline_failure_leaves_sprint_draft(self, db_factory):
+        sprint_id = await self._create_sprint(db_factory)
+        from okto_pulse.core.ports.sprint_activation_baseline import (
+            register_sprint_activation_baseline_store,
+        )
+        from okto_pulse.core.services.main import SprintService
+
+        class _FailingStore:
+            async def get(self, context, *, board_id, sprint_id):
+                return None
+
+            async def save_if_absent(self, context, baseline):
+                raise RuntimeError("injected_activation_baseline_failure")
+
+        register_sprint_activation_baseline_store(_FailingStore())
+        async with db_factory() as db:
+            service = SprintService(db)
+            await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
+            with pytest.raises(
+                RuntimeError, match="injected_activation_baseline_failure"
+            ):
+                await service.move_sprint(
+                    sprint_id, AGENT_ID, SprintMove(status=SprintStatus.ACTIVE)
+                )
+            await db.rollback()
+
+        async with db_factory() as db:
+            persisted = await db.get(Sprint, sprint_id)
+            assert persisted is not None
+            assert persisted.status == SprintStatus.DRAFT
+
     async def test_transition_active_to_review_no_coverage_fails(self, db_factory):
         """Test 10: active → review should fail without test coverage."""
         sprint_id = await self._create_sprint(
@@ -1802,16 +1833,20 @@ class TestSprintCardAssignment:
                 spec=spec,
                 cards=[],
             )
-            assert {
-                str(key[0]) for key in SprintScopeResolver._cache
-            } == {source_id, target_id}
+            assert {str(key[0]) for key in SprintScopeResolver._cache} == {
+                source_id,
+                target_id,
+            }
 
             # A duplicate ID in one request is still one assignment/mutation.
-            assert await service.assign_tasks(
-                target_id,
-                [card_id, card_id],
-                AGENT_ID,
-            ) == 1
+            assert (
+                await service.assign_tasks(
+                    target_id,
+                    [card_id, card_id],
+                    AGENT_ID,
+                )
+                == 1
+            )
             assert not {
                 key
                 for key in SprintScopeResolver._cache
@@ -1826,8 +1861,7 @@ class TestSprintCardAssignment:
             assert target.version == 2
             assert await service.list_assigned_cards(source_id) == []
             assert [
-                item.id
-                for item in await service.list_assigned_cards(target_id)
+                item.id for item in await service.list_assigned_cards(target_id)
             ] == [card_id]
 
             # The source relationship/cache previously contained the pending

@@ -633,9 +633,7 @@ class _CoreTestPermissionPresetGateway:
         preset = await self._session.get(PermissionPreset, preset_id)
         return _test_preset_view(preset) if preset is not None else None
 
-    async def create_preset(
-        self, *, user_id, name, description, flags, preset_id=None
-    ):
+    async def create_preset(self, *, user_id, name, description, flags, preset_id=None):
         preset = PermissionPreset(
             id=preset_id or str(uuid.uuid4()),
             owner_id=user_id,
@@ -948,9 +946,7 @@ class _CoreTestRelationalApplicationAdapter:
                 refinement_id,
                 refinement_version,
             ):
-                return snapshots.get(
-                    (board_id, refinement_id, refinement_version)
-                )
+                return snapshots.get((board_id, refinement_id, refinement_version))
 
             async def list_current_entries_with_heads(self, **_kwargs):
                 return ()
@@ -1219,9 +1215,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
             )
 
             predicates.append(
-                ConsolidationAudit.artifact_type.not_in(
-                    CODE_TRACEABILITY_KG_SUBTYPES
-                )
+                ConsolidationAudit.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES)
             )
         query = (
             select(ConsolidationAudit)
@@ -1268,9 +1262,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
             )
 
             query = query.where(
-                ConsolidationQueue.artifact_type.not_in(
-                    CODE_TRACEABILITY_KG_SUBTYPES
-                )
+                ConsolidationQueue.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES)
             )
         query = query.order_by(ConsolidationQueue.triggered_at.desc()).limit(100)
         rows = (await context.execute(query)).scalars().all()
@@ -1717,9 +1709,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
 
         query = select(ConsolidationDeadLetter).where(
             ConsolidationDeadLetter.board_id == board_id,
-            ConsolidationDeadLetter.artifact_type.not_in(
-                CODE_TRACEABILITY_KG_SUBTYPES
-            ),
+            ConsolidationDeadLetter.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES),
         )
         if dead_letter_ids:
             query = query.where(ConsolidationDeadLetter.id.in_(dead_letter_ids))
@@ -2319,6 +2309,30 @@ def _amendment_revision_test_store():
     register_amendment_revision_store(TestSqlAlchemyAmendmentRevisionStore())
     yield
     reset_amendment_revision_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _sprint_activation_baseline_test_store():
+    from okto_pulse.core.ports.sprint_activation_baseline import (
+        register_sprint_activation_baseline_store,
+        reset_sprint_activation_baseline_store_for_tests,
+    )
+
+    class _Store:
+        def __init__(self):
+            self.rows = {}
+
+        async def get(self, context, *, board_id, sprint_id):
+            return self.rows.get((board_id, sprint_id))
+
+        async def save_if_absent(self, context, baseline):
+            return self.rows.setdefault(
+                (baseline.board_id, baseline.sprint_id), baseline
+            )
+
+    register_sprint_activation_baseline_store(_Store())
+    yield
+    reset_sprint_activation_baseline_store_for_tests()
 
 
 @pytest.fixture(autouse=True)
