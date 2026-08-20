@@ -172,6 +172,70 @@ class CoreAnalyticsOperations:
             coverage=coverage,
         )
 
+    async def canonical_spec_readiness(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.spec_readiness_read_model import (
+            build_spec_readiness_projection,
+        )
+
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("archived", "is_false"),
+            ),
+        )
+        return build_spec_readiness_projection(query=query, as_of=as_of, specs=specs)
+
+    async def canonical_policy_resource_readiness(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.policy_resource_readiness_read_model import (
+            build_policy_resource_readiness_projection,
+        )
+
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("archived", "is_false"),
+            ),
+        )
+        spec_ids = tuple(str(spec.id) for spec in specs)
+        cards = await _analytics_list(
+            self.__relational_context,
+            "card",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        designs = await _analytics_list(
+            self.__relational_context,
+            "architecture_design",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        knowledge = await _analytics_list(
+            self.__relational_context,
+            "spec_knowledge_base",
+            filters=(_af("spec_id", "in", spec_ids),),
+        )
+        not_applicable = await _analytics_list(
+            self.__relational_context,
+            "resource_not_applicable",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("active", "is_true"),
+            ),
+        )
+        return build_policy_resource_readiness_projection(
+            query=query,
+            as_of=as_of,
+            specs=specs,
+            cards=cards,
+            architecture_designs=designs,
+            spec_knowledge_bases=knowledge,
+            not_applicable=not_applicable,
+        )
+
     async def funnel(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_funnel
 

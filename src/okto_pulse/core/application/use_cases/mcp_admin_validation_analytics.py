@@ -77,6 +77,8 @@ class McpGetAnalyticsUseCase:
             "board_kg",
             "canonical_coverage",
             "flow_health",
+            "spec_readiness",
+            "policy_resource_readiness",
         }:
             from okto_pulse.core.application.use_cases.board_kg_analytics import (
                 BoardKgAnalyticsCommand,
@@ -116,7 +118,7 @@ class McpGetAnalyticsUseCase:
                     actor=actor,
                     uow=uow,
                 )
-            else:
+            elif command.metric_type == "flow_health":
                 from okto_pulse.core.application.use_cases.flow_health_analytics import (
                     FlowHealthAnalyticsCommand,
                     FlowHealthAnalyticsUseCase,
@@ -124,6 +126,27 @@ class McpGetAnalyticsUseCase:
 
                 result = await FlowHealthAnalyticsUseCase().execute(
                     FlowHealthAnalyticsCommand(
+                        board_id=command.board_id,
+                        window=AnalyticsUtcWindow(window_from, window_to),
+                        as_of=as_of,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            else:
+                from okto_pulse.core.application.use_cases.readiness_analytics import (
+                    PolicyResourceReadinessAnalyticsUseCase,
+                    ReadinessAnalyticsCommand,
+                    SpecReadinessAnalyticsUseCase,
+                )
+
+                use_case = (
+                    SpecReadinessAnalyticsUseCase()
+                    if command.metric_type == "spec_readiness"
+                    else PolicyResourceReadinessAnalyticsUseCase()
+                )
+                result = await use_case.execute(
+                    ReadinessAnalyticsCommand(
                         board_id=command.board_id,
                         window=AnalyticsUtcWindow(window_from, window_to),
                         as_of=as_of,

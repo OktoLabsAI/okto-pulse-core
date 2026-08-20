@@ -466,6 +466,20 @@ class AnalyticsOperations(Protocol):
         as_of: datetime,
     ) -> object: ...
 
+    async def canonical_spec_readiness(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+    ) -> object: ...
+
+    async def canonical_policy_resource_readiness(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+    ) -> object: ...
+
     async def funnel(
         self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
     ) -> object: ...
