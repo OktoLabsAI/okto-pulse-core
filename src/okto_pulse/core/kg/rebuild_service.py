@@ -825,6 +825,11 @@ class RebuildStepInput:
     )
     rebaseline_evidence_id: str | None = None
     rebaseline_target_source_set_hash: str | None = None
+    # Canonical non-secret fingerprint of the confirmation that authorized
+    # this run. Keep new fields at the tail to preserve positional consumers.
+    # Exact queue reservation lineage includes it so a later run for the same
+    # board/manifest cannot adopt dispositions from another confirmation.
+    authorized_confirmation_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -3264,6 +3269,7 @@ class KGRebuildService:
                     actor_id=actor_id,
                     operation=operation,
                     owner_token=owner_token,
+                    authorized_confirmation_ref=authorized_confirmation_ref,
                     previous_kg_generation_id=previous_generation,
                     candidate_kg_generation_id=candidate_generation_id,
                     cancel_requested=cancel_requested,

@@ -36,12 +36,16 @@ from typing import Any, Callable, Mapping
 from okto_pulse.core.ports.consolidation import (
     ConsolidationClaimScope,
     ConsolidationQueueRecord,
+    ExactConsolidationAckReceipt,
     ExactConsolidationBatchResult,
+    ExactConsolidationCompensationError,
+    ExactConsolidationCompensationResult,
     ExactConsolidationDisposition,
     ExactConsolidationMutationState,
     ExactConsolidationPostCommitError,
     ExactConsolidationResultOrigin,
     ExactConsolidationRowResult,
+    exact_consolidation_ack_receipts_sha256,
     get_consolidation_persistence_port,
 )
 from okto_pulse.core.ports.delivery_ledger import (
@@ -293,6 +297,7 @@ def _exact_row_result(
     error_message: str | None = None,
     next_retry_at: datetime | None = None,
     diagnostic_json: str | None = None,
+    ack_receipt: ExactConsolidationAckReceipt | None = None,
 ) -> ExactConsolidationRowResult:
     lineage_id = claim_scope.reservation_lineage_id
     if lineage_id is None:
@@ -321,7 +326,102 @@ def _exact_row_result(
         error_message=error_message,
         next_retry_at=next_retry_at,
         diagnostic_json=diagnostic_json,
+        ack_receipt=ack_receipt,
     )
+
+
+def _verify_exact_ack_receipt_chain(
+    value: object,
+    claim_scope: ConsolidationClaimScope,
+) -> tuple[ExactConsolidationAckReceipt, ...]:
+    if type(value) is not tuple or any(
+        type(receipt) is not ExactConsolidationAckReceipt for receipt in value
+    ):
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_ack_journal_invalid"
+        )
+    receipts = value
+    lineage_id = claim_scope.reservation_lineage_id
+    if lineage_id is None:
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_reservation_lineage_id_required"
+        )
+    seen_queue_ids: set[str] = set()
+    seen_session_ids: set[str] = set()
+    seen_outbox_ids: set[str] = set()
+    seen_event_ids: set[str] = set()
+    seen_materialization_generations: set[str] = set()
+    previous: ExactConsolidationAckReceipt | None = None
+    for receipt in receipts:
+        if (
+            receipt.board_id != claim_scope.board_id
+            or receipt.source != claim_scope.source
+            or receipt.reservation_lineage_id != lineage_id
+            or receipt.work_kind != claim_scope.work_kind
+            or receipt.queue_id in seen_queue_ids
+            or receipt.consolidation_session_id in seen_session_ids
+            or receipt.outbox_event_id in seen_outbox_ids
+            or receipt.generation_event_id in seen_event_ids
+            or receipt.materialization_generation in seen_materialization_generations
+            or (
+                previous is not None
+                and receipt.previous_materialization_generation
+                != previous.materialization_generation
+            )
+        ):
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_ack_journal_invalid"
+            )
+        seen_queue_ids.add(receipt.queue_id)
+        seen_session_ids.add(receipt.consolidation_session_id)
+        seen_outbox_ids.add(receipt.outbox_event_id)
+        seen_event_ids.add(receipt.generation_event_id)
+        seen_materialization_generations.add(receipt.materialization_generation)
+        previous = receipt
+    if receipts and (
+        receipts[0].previous_materialization_generation
+        in seen_materialization_generations
+    ):
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_ack_journal_invalid"
+        )
+    return receipts
+
+
+def _verify_exact_compensation_result(
+    value: object,
+    receipts: tuple[ExactConsolidationAckReceipt, ...],
+    claim_scope: ConsolidationClaimScope,
+) -> ExactConsolidationCompensationResult:
+    if type(value) is not ExactConsolidationCompensationResult or not receipts:
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_compensation_result_invalid"
+        )
+    receipt = value.receipt
+    lineage_id = claim_scope.reservation_lineage_id
+    expected_session_ids = tuple(item.consolidation_session_id for item in receipts)
+    expected_outbox_ids = tuple(item.outbox_event_id for item in receipts)
+    expected_generation_event_ids = tuple(item.generation_event_id for item in receipts)
+    if (
+        receipt.board_id != claim_scope.board_id
+        or receipt.source != claim_scope.source
+        or receipt.reservation_lineage_id != lineage_id
+        or receipt.baseline_materialization_generation
+        != receipts[0].previous_materialization_generation
+        or receipt.terminal_materialization_generation
+        != receipts[-1].materialization_generation
+        or receipt.ack_count != len(receipts)
+        or receipt.node_ref_count != sum(item.node_ref_count for item in receipts)
+        or receipt.ack_receipts_sha256
+        != exact_consolidation_ack_receipts_sha256(receipts)
+        or receipt.audit_session_ids != expected_session_ids
+        or receipt.outbox_event_ids != expected_outbox_ids
+        or receipt.generation_event_ids != expected_generation_event_ids
+    ):
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_compensation_result_mismatch"
+        )
+    return value
 
 
 def _ensure_entry_admitted_by_reservation_under_writer(
@@ -3584,6 +3684,144 @@ class ConsolidationProcessor:
             raise RuntimeError("consolidation_batch_result_invalid")
         return result
 
+    async def list_exact_rebuild_ack_receipts(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        reservation_authority_probe: Callable[[], bool],
+    ) -> tuple[ExactConsolidationAckReceipt, ...]:
+        """Load and verify the complete ACK journal for one governed run."""
+
+        if (
+            type(claim_scope) is not ConsolidationClaimScope
+            or claim_scope.reservation_lineage_id is None
+        ):
+            raise TypeError("exact_consolidation_claim_scope_invalid")
+        if not callable(reservation_authority_probe):
+            raise TypeError("exact_consolidation_reservation_authority_required")
+
+        def _authority_valid() -> bool:
+            try:
+                result = reservation_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_reservation_authority_lost"
+            )
+        async with self.relational_scope_factory() as db:
+            store = get_consolidation_persistence_port()
+            loader = getattr(store, "list_exact_rebuild_ack_receipts", None)
+            if not callable(loader):
+                raise ExactConsolidationCompensationError(
+                    "exact_consolidation_ack_journal_unsupported"
+                )
+            receipts = await loader(
+                db,
+                board_id=claim_scope.board_id,
+                source=claim_scope.source,
+                reservation_lineage_id=claim_scope.reservation_lineage_id,
+            )
+            try:
+                await store.rollback(db)
+            except BaseException as exc:
+                raise ExactConsolidationCompensationError(
+                    "exact_consolidation_ack_journal_read_cleanup_failed"
+                ) from exc
+        verified = _verify_exact_ack_receipt_chain(receipts, claim_scope)
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_reservation_authority_lost"
+            )
+        return verified
+
+    async def compensate_exact_rebuild_commits(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        reservation_authority_probe: Callable[[], bool],
+    ) -> ExactConsolidationCompensationResult:
+        """Atomically reverse all relational commits from one exact run."""
+
+        if (
+            type(claim_scope) is not ConsolidationClaimScope
+            or claim_scope.reservation_lineage_id is None
+        ):
+            raise TypeError("exact_consolidation_claim_scope_invalid")
+        if not callable(reservation_authority_probe):
+            raise TypeError("exact_consolidation_reservation_authority_required")
+
+        def _authority_valid() -> bool:
+            try:
+                result = reservation_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_reservation_authority_lost"
+            )
+        async with self.relational_scope_factory() as db:
+            store = get_consolidation_persistence_port()
+            loader = getattr(store, "list_exact_rebuild_ack_receipts", None)
+            compensate = getattr(store, "compensate_exact_rebuild_commits", None)
+            if not callable(loader) or not callable(compensate):
+                raise ExactConsolidationCompensationError(
+                    "exact_consolidation_compensation_unsupported"
+                )
+            try:
+                receipts = _verify_exact_ack_receipt_chain(
+                    await loader(
+                        db,
+                        board_id=claim_scope.board_id,
+                        source=claim_scope.source,
+                        reservation_lineage_id=(claim_scope.reservation_lineage_id),
+                    ),
+                    claim_scope,
+                )
+                if not receipts:
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_ack_journal_empty"
+                    )
+                if not _authority_valid():
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_reservation_authority_lost"
+                    )
+                result = await compensate(
+                    db,
+                    board_id=claim_scope.board_id,
+                    source=claim_scope.source,
+                    reservation_lineage_id=claim_scope.reservation_lineage_id,
+                    expected_receipts=receipts,
+                    reservation_authority_probe=_authority_valid,
+                )
+                if result is None:
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_compensation_cas_or_authority_lost"
+                    )
+                _verify_exact_compensation_result(result, receipts, claim_scope)
+                if not _authority_valid():
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_reservation_authority_lost"
+                    )
+                await store.commit(db)
+            except BaseException:
+                try:
+                    await store.rollback(db)
+                except BaseException:
+                    logger.exception("consolidation.exact_compensation_rollback_failed")
+                raise
+        assert type(result) is ExactConsolidationCompensationResult
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_compensation_authority_lost_after_commit",
+                committed_result=result,
+            )
+        return result
+
     async def process_exact_batch(
         self,
         *,
@@ -3943,27 +4181,28 @@ class ConsolidationProcessor:
             deferred_session_ids: list[str] = []
             relational_commit_confirmed = False
             post_commit_cleanup_failed = False
+            precommit_compensation_confirmed = False
             pending_exact_disposition: ExactConsolidationRowResult | None = None
+            exact_ack_receipt: ExactConsolidationAckReceipt | None = None
+            pending_exact_ack_row: ExactConsolidationRowResult | None = None
             try:
                 acknowledged = False
                 delivery_transfer: tuple[DeliveryTransferReceipt, str] | None = None
                 stale_reconcile_telemetry: dict[str, object] = {}
                 graph_write_stack = ExitStack()
                 graph_write_lease: GuardedWriteLease | None = None
+                graph_write_entered = False
 
                 def _post_commit_blocker(
                     error_code: str,
                 ) -> ExactConsolidationPostCommitError:
                     assert claim_scope is not None
                     if acknowledged:
-                        durable_row = _exact_row_result(
-                            entry,
-                            claim_scope,
-                            attempt_ordinal=_exact_disposition_attempt(entry),
-                            disposition=ExactConsolidationDisposition.ACKED,
-                            origin=ExactConsolidationResultOrigin.NEW,
-                            mutation_state=ExactConsolidationMutationState.COMMITTED,
-                        )
+                        if pending_exact_ack_row is None:
+                            raise RuntimeError(
+                                "exact_consolidation_ack_receipt_missing"
+                            )
+                        durable_row = pending_exact_ack_row
                     elif pending_exact_disposition is not None:
                         durable_row = pending_exact_disposition
                     else:
@@ -3982,7 +4221,7 @@ class ConsolidationProcessor:
                 def _enter_graph_write(
                     mutation_ref: str,
                 ) -> GuardedWriteLease:
-                    nonlocal graph_write_lease
+                    nonlocal graph_write_entered, graph_write_lease
                     if graph_write_lease is not None:
                         raise RuntimeError(
                             "consolidation_graph_write_boundary_reentered"
@@ -3999,6 +4238,7 @@ class ConsolidationProcessor:
                             required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
                         )
                     )
+                    graph_write_entered = True
                     _ensure_entry_admitted_by_reservation_under_writer(entry)
                     if exact_protocol:
                         _require_exact_authority("under_graph_writer")
@@ -4160,24 +4400,124 @@ class ConsolidationProcessor:
                                             raise
                                         acknowledged = True
                                     else:
-                                        # Legacy consolidation retains its
-                                        # standalone exact compare-and-delete ACK.
                                         if exact_protocol:
                                             _require_exact_authority(
                                                 "before_queue_ack_cas"
                                             )
-                                        acknowledged = (
-                                            await store.ack_claimed_queue_entry(
+                                            exact_ack = getattr(
+                                                store,
+                                                "ack_exact_rebuild_commit",
+                                                None,
+                                            )
+                                            if not callable(exact_ack):
+                                                raise RuntimeError(
+                                                    "consolidation_exact_ack_"
+                                                    "journal_unsupported"
+                                                )
+                                            if len(deferred_session_ids) != 1:
+                                                raise RuntimeError(
+                                                    "consolidation_exact_ack_"
+                                                    "session_invalid"
+                                                )
+                                            (
+                                                membership_source_ref,
+                                                membership_source_version,
+                                                membership_content_hash,
+                                            ) = _exact_rebuild_membership(
+                                                entry,
+                                                claim_scope,
+                                            )
+                                            exact_ack_receipt = await exact_ack(
                                                 db,
                                                 entry_id=entry.id,
                                                 claim_token=token,
                                                 board_id=entry.board_id,
+                                                artifact_type=entry.artifact_type,
+                                                artifact_id=entry.artifact_id,
                                                 source=_queue_source(entry),
                                                 work_kind=_work_kind(entry),
                                                 generation=_generation(entry),
                                                 delete_event_id=_delete_event_id(entry),
+                                                reservation_lineage_id=(
+                                                    claim_scope.reservation_lineage_id
+                                                ),
+                                                membership_source_ref=(
+                                                    membership_source_ref
+                                                ),
+                                                membership_source_version=(
+                                                    membership_source_version
+                                                ),
+                                                membership_content_hash=(
+                                                    membership_content_hash
+                                                ),
+                                                consolidation_session_id=(
+                                                    deferred_session_ids[0]
+                                                ),
+                                                expected_attempts=entry.attempts,
+                                                expected_last_error=entry.last_error,
+                                                expected_next_retry_at=(
+                                                    entry.next_retry_at
+                                                ),
+                                                expected_payload=(
+                                                    deepcopy(entry.payload)
+                                                    if type(entry.payload) is dict
+                                                    else {}
+                                                ),
+                                                reservation_authority_probe=(
+                                                    _exact_authority_valid
+                                                ),
                                             )
-                                        )
+                                            if exact_ack_receipt is not None and (
+                                                type(exact_ack_receipt)
+                                                is not ExactConsolidationAckReceipt
+                                                or exact_ack_receipt.queue_id
+                                                != entry.id
+                                                or exact_ack_receipt.consolidation_session_id
+                                                != deferred_session_ids[0]
+                                            ):
+                                                await store.rollback(db)
+                                                raise RuntimeError(
+                                                    "consolidation_exact_ack_"
+                                                    "receipt_invalid"
+                                                )
+                                            acknowledged = exact_ack_receipt is not None
+                                            if acknowledged:
+                                                pending_exact_ack_row = _exact_row_result(
+                                                    entry,
+                                                    claim_scope,
+                                                    attempt_ordinal=(
+                                                        _exact_disposition_attempt(
+                                                            entry
+                                                        )
+                                                    ),
+                                                    disposition=(
+                                                        ExactConsolidationDisposition.ACKED
+                                                    ),
+                                                    origin=(
+                                                        ExactConsolidationResultOrigin.NEW
+                                                    ),
+                                                    mutation_state=(
+                                                        ExactConsolidationMutationState.COMMITTED
+                                                    ),
+                                                    ack_receipt=(exact_ack_receipt),
+                                                )
+                                        else:
+                                            # Ordinary consolidation retains its
+                                            # standalone compare-and-delete ACK.
+                                            acknowledged = (
+                                                await store.ack_claimed_queue_entry(
+                                                    db,
+                                                    entry_id=entry.id,
+                                                    claim_token=token,
+                                                    board_id=entry.board_id,
+                                                    source=_queue_source(entry),
+                                                    work_kind=_work_kind(entry),
+                                                    generation=_generation(entry),
+                                                    delete_event_id=(
+                                                        _delete_event_id(entry)
+                                                    ),
+                                                )
+                                            )
                                 if not acknowledged and (
                                     deferred_session_ids or exact_protocol
                                 ):
@@ -4337,6 +4677,8 @@ class ConsolidationProcessor:
                                     "core.kg.consolidation_worker_deferred_cleanup"
                                 ),
                             )
+                            if not relational_commit_confirmed:
+                                precommit_compensation_confirmed = True
                         except BaseException:
                             if relational_commit_confirmed:
                                 post_commit_cleanup_failed = True
@@ -4445,18 +4787,11 @@ class ConsolidationProcessor:
                     processed += 1
                     if exact_protocol:
                         assert claim_scope is not None
-                        exact_rows.append(
-                            _exact_row_result(
-                                entry,
-                                claim_scope,
-                                attempt_ordinal=_exact_disposition_attempt(entry),
-                                disposition=ExactConsolidationDisposition.ACKED,
-                                origin=ExactConsolidationResultOrigin.NEW,
-                                mutation_state=(
-                                    ExactConsolidationMutationState.COMMITTED
-                                ),
+                        if pending_exact_ack_row is None:
+                            raise RuntimeError(
+                                "exact_consolidation_ack_receipt_missing"
                             )
-                        )
+                        exact_rows.append(pending_exact_ack_row)
             except _QueueClaimLostOrFenced as exc:
                 logger.info(
                     "consolidation.claim_lost_or_fenced entry=%s reason=%s",
@@ -4474,18 +4809,11 @@ class ConsolidationProcessor:
                                 "exact_consolidation_post_commit_finalization_failed"
                             ) from exc
                         if acknowledged:
-                            exact_rows.append(
-                                _exact_row_result(
-                                    entry,
-                                    claim_scope,
-                                    attempt_ordinal=(_exact_disposition_attempt(entry)),
-                                    disposition=(ExactConsolidationDisposition.ACKED),
-                                    origin=ExactConsolidationResultOrigin.NEW,
-                                    mutation_state=(
-                                        ExactConsolidationMutationState.COMMITTED
-                                    ),
+                            if pending_exact_ack_row is None:
+                                raise RuntimeError(
+                                    "exact_consolidation_ack_receipt_missing"
                                 )
-                            )
+                            exact_rows.append(pending_exact_ack_row)
                         elif pending_exact_disposition is not None:
                             exact_rows.append(pending_exact_disposition)
                         else:
@@ -4524,6 +4852,7 @@ class ConsolidationProcessor:
                             mutation_state=(
                                 ExactConsolidationMutationState.AMBIGUOUS
                                 if deferred_session_ids
+                                and not precommit_compensation_confirmed
                                 else ExactConsolidationMutationState.UNCHANGED
                             ),
                             error_code="queue_claim_lost_or_fenced",
@@ -4551,18 +4880,11 @@ class ConsolidationProcessor:
                             "exact_consolidation_post_commit_finalization_failed"
                         ) from exc
                     if acknowledged:
-                        exact_rows.append(
-                            _exact_row_result(
-                                entry,
-                                claim_scope,
-                                attempt_ordinal=_exact_disposition_attempt(entry),
-                                disposition=ExactConsolidationDisposition.ACKED,
-                                origin=ExactConsolidationResultOrigin.NEW,
-                                mutation_state=(
-                                    ExactConsolidationMutationState.COMMITTED
-                                ),
+                        if pending_exact_ack_row is None:
+                            raise RuntimeError(
+                                "exact_consolidation_ack_receipt_missing"
                             )
-                        )
+                        exact_rows.append(pending_exact_ack_row)
                     elif pending_exact_disposition is not None:
                         exact_rows.append(pending_exact_disposition)
                     else:
@@ -4658,7 +4980,28 @@ class ConsolidationProcessor:
                                     else type(exc).__name__
                                 )
                                 error_message = str(exc)[:480] or error_code
-                                if (
+                                pre_acquire_contention = bool(
+                                    isinstance(exc, GuardedWriteError)
+                                    and exc.code == "lock_contention"
+                                    and exc.retryable
+                                    and not graph_write_entered
+                                    and graph_write_lease is None
+                                    and not relational_commit_confirmed
+                                    and (
+                                        not deferred_session_ids
+                                        or precommit_compensation_confirmed
+                                    )
+                                )
+                                if pre_acquire_contention:
+                                    disposition = (
+                                        ExactConsolidationDisposition.RETRY_SCHEDULED
+                                    )
+                                    mutation_state = (
+                                        ExactConsolidationMutationState.UNCHANGED
+                                    )
+                                    error_code = "guarded_write_lock_contention"
+                                    next_retry_at = self._now() + timedelta(seconds=1)
+                                elif (
                                     isinstance(exc, KGPrimitiveError)
                                     and exc.code
                                     == "relational_projection_endpoint_pending"
@@ -4739,6 +5082,8 @@ class ConsolidationProcessor:
                                 origin=ExactConsolidationResultOrigin.NEW,
                                 mutation_state=(
                                     ExactConsolidationMutationState.AMBIGUOUS
+                                    if not precommit_compensation_confirmed
+                                    else ExactConsolidationMutationState.UNCHANGED
                                 ),
                                 error_code=(
                                     "queue_row_missing_after_exception"
@@ -4773,6 +5118,8 @@ class ConsolidationProcessor:
                                 origin=ExactConsolidationResultOrigin.NEW,
                                 mutation_state=(
                                     ExactConsolidationMutationState.AMBIGUOUS
+                                    if not precommit_compensation_confirmed
+                                    else ExactConsolidationMutationState.UNCHANGED
                                 ),
                                 error_code="queue_claim_lost_or_fenced",
                                 error_message=str(disposition_loss)[:480],
@@ -4792,6 +5139,8 @@ class ConsolidationProcessor:
                                 origin=ExactConsolidationResultOrigin.NEW,
                                 mutation_state=(
                                     ExactConsolidationMutationState.AMBIGUOUS
+                                    if not precommit_compensation_confirmed
+                                    else ExactConsolidationMutationState.UNCHANGED
                                 ),
                                 error_code="queue_claim_lost_or_fenced",
                                 error_message=str(disposition_loss)[:480],

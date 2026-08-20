@@ -14,6 +14,10 @@ import json
 from types import MappingProxyType
 from typing import Protocol
 
+from okto_pulse.core.ports.consolidation import (
+    validate_exact_consolidation_compensation_binding,
+)
+
 
 class RebuildState(str, Enum):
     PLANNED = "planned"
@@ -53,6 +57,7 @@ class RebuildOutcomeCode(str, Enum):
 
 class CompensationAction(str, Enum):
     CANCEL_ENQUEUED_SOURCES = "cancel_enqueued_sources"
+    COMPENSATE_EXACT_RELATIONAL_COMMITS = "compensate_exact_relational_commits"
     DEMOTE_CANDIDATE_GENERATION = "demote_candidate_generation"
     DISCARD_CANDIDATE_GENERATION = "discard_candidate_generation"
     RESTORE_QUARANTINE = "restore_quarantine"
@@ -92,6 +97,8 @@ class RebuildCommand:
     candidate_generation_id: str | None = None
     owner_token: str | None = field(default=None, repr=False, compare=False)
     salvage_pending: bool = False
+    exact_relational_compensation: bool = False
+    reservation_lineage_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,6 +351,25 @@ class RebuildProcessor:
         self._legacy_blocked_intent_probe = legacy_blocked_intent_probe
 
     def execute(self, command: RebuildCommand) -> RebuildOutcome:
+        if (
+            type(command.exact_relational_compensation) is not bool
+            or (
+                command.exact_relational_compensation
+                and (
+                    type(command.reservation_lineage_id) is not str
+                    or len(command.reservation_lineage_id) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in command.reservation_lineage_id
+                    )
+                )
+            )
+            or (
+                not command.exact_relational_compensation
+                and command.reservation_lineage_id is not None
+            )
+        ):
+            raise ValueError("rebuild_exact_relational_compensation_binding_invalid")
         if command.salvage_pending:
             return self._finish(
                 command,
@@ -1364,7 +1390,7 @@ class RebuildProcessor:
         if fence_failure is not None:
             return fence_failure
         failed_state = checkpoint.state
-        actions = self._compensation_actions(failed_state)
+        actions = self._compensation_actions(checkpoint.command, failed_state)
         if not actions:
             return self._finish(
                 checkpoint.command,
@@ -1407,7 +1433,8 @@ class RebuildProcessor:
             checkpoint.compensation_failure_detail or "interrupted compensation resumed"
         )
         actions = checkpoint.compensation_actions or self._compensation_actions(
-            failed_state
+            checkpoint.command,
+            failed_state,
         )
         effect_key = f"{checkpoint.command.run_id}:compensate"
         command = CompensationCommand(
@@ -1457,6 +1484,52 @@ class RebuildProcessor:
                         }
                     ),
                 )
+        if (
+            CompensationAction.COMPENSATE_EXACT_RELATIONAL_COMMITS in actions
+            and receipt.ok
+        ):
+            try:
+                lineage_id = checkpoint.command.reservation_lineage_id
+                if lineage_id is None:
+                    raise ValueError
+                details = dict(receipt.details)
+                # Effect DTOs are frozen only shallowly.  Detach the nested
+                # cross-package proof before validating/persisting it so an
+                # adapter-held dictionary cannot rewrite the durable receipt
+                # after this boundary has accepted it.
+                exact_binding = json.loads(
+                    json.dumps(
+                        details.get("exact_relational_compensation"),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )
+                validate_exact_consolidation_compensation_binding(
+                    exact_binding,
+                    board_id=checkpoint.command.board_id,
+                    source=f"rebuild:{checkpoint.command.manifest_ref}",
+                    reservation_lineage_id=lineage_id,
+                )
+                details["exact_relational_compensation"] = exact_binding
+                receipt = replace(
+                    receipt,
+                    details=MappingProxyType(details),
+                )
+            except (TypeError, ValueError):
+                receipt = RebuildEffectReceipt(
+                    effect_key=effect_key,
+                    effect="compensate",
+                    ok=False,
+                    code="exact_relational_compensation_receipt_invalid",
+                    details=MappingProxyType(
+                        {
+                            "reservation_lineage_id": (
+                                checkpoint.command.reservation_lineage_id
+                            ),
+                        }
+                    ),
+                )
         receipts = dict(checkpoint.receipts)
         receipts[effect_key] = receipt
         terminal_state = (
@@ -1498,6 +1571,7 @@ class RebuildProcessor:
 
     @staticmethod
     def _compensation_actions(
+        command: RebuildCommand,
         state: RebuildState,
     ) -> tuple[CompensationAction, ...]:
         if state in {RebuildState.PLANNED, RebuildState.SNAPSHOTTED}:
@@ -1512,6 +1586,15 @@ class RebuildProcessor:
             RebuildState.COMPENSATING,
         }:
             actions.append(CompensationAction.CANCEL_ENQUEUED_SOURCES)
+        if command.exact_relational_compensation and state in {
+            RebuildState.ENQUEUED,
+            RebuildState.DRAINING,
+            RebuildState.RESTORED,
+            RebuildState.PROMOTED,
+            RebuildState.COMPLETED,
+            RebuildState.COMPENSATING,
+        }:
+            actions.append(CompensationAction.COMPENSATE_EXACT_RELATIONAL_COMMITS)
         if state in {RebuildState.PROMOTED, RebuildState.COMPLETED}:
             actions.append(CompensationAction.DEMOTE_CANDIDATE_GENERATION)
         actions.extend(

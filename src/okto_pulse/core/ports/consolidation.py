@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+import hashlib
 import json
 import re
 from typing import Any, Callable, Protocol, Sequence
@@ -128,6 +129,619 @@ class ExactConsolidationMutationState(str, Enum):
     AMBIGUOUS = "ambiguous"
 
 
+def _canonical_sha256(payload: dict[str, Any]) -> str:
+    rendered = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(rendered).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class ExactConsolidationAckReceipt:
+    """Durable relational effects owned by one exact rebuild queue ACK.
+
+    The receipt is staged in the same relational transaction as the audit,
+    node references, integration events and queue deletion.  It lets governed
+    rebuild compensation reverse only the relational commits whose candidate
+    graph was later discarded, including after a process crash erased the
+    in-memory batch result.
+    """
+
+    queue_id: str
+    board_id: str
+    source: str
+    reservation_lineage_id: str
+    work_kind: str
+    artifact_type: str
+    artifact_id: str
+    generation: int
+    membership_source_ref: str
+    membership_source_version: str
+    membership_content_hash: str
+    consolidation_session_id: str
+    outbox_event_id: str
+    generation_event_id: str
+    previous_materialization_generation: str
+    materialization_generation: str
+    node_ref_count: int
+    node_refs_sha256: str
+    receipt_sha256: str
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        queue_id: str,
+        board_id: str,
+        source: str,
+        reservation_lineage_id: str,
+        work_kind: str,
+        artifact_type: str,
+        artifact_id: str,
+        generation: int,
+        membership_source_ref: str,
+        membership_source_version: str,
+        membership_content_hash: str,
+        consolidation_session_id: str,
+        outbox_event_id: str,
+        generation_event_id: str,
+        previous_materialization_generation: str,
+        materialization_generation: str,
+        node_ref_count: int,
+        node_refs_sha256: str,
+    ) -> "ExactConsolidationAckReceipt":
+        values: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "artifact_type": artifact_type,
+            "board_id": board_id,
+            "consolidation_session_id": consolidation_session_id,
+            "generation": generation,
+            "generation_event_id": generation_event_id,
+            "materialization_generation": materialization_generation,
+            "membership_content_hash": membership_content_hash,
+            "membership_source_ref": membership_source_ref,
+            "membership_source_version": membership_source_version,
+            "node_ref_count": node_ref_count,
+            "node_refs_sha256": node_refs_sha256,
+            "outbox_event_id": outbox_event_id,
+            "previous_materialization_generation": (
+                previous_materialization_generation
+            ),
+            "queue_id": queue_id,
+            "reservation_lineage_id": reservation_lineage_id,
+            "schema": "exact_consolidation_ack_receipt.v1",
+            "source": source,
+            "work_kind": work_kind,
+        }
+        return cls(
+            queue_id=queue_id,
+            board_id=board_id,
+            source=source,
+            reservation_lineage_id=reservation_lineage_id,
+            work_kind=work_kind,
+            artifact_type=artifact_type,
+            artifact_id=artifact_id,
+            generation=generation,
+            membership_source_ref=membership_source_ref,
+            membership_source_version=membership_source_version,
+            membership_content_hash=membership_content_hash,
+            consolidation_session_id=consolidation_session_id,
+            outbox_event_id=outbox_event_id,
+            generation_event_id=generation_event_id,
+            previous_materialization_generation=(previous_materialization_generation),
+            materialization_generation=materialization_generation,
+            node_ref_count=node_ref_count,
+            node_refs_sha256=node_refs_sha256,
+            receipt_sha256=_canonical_sha256(values),
+        )
+
+    def __post_init__(self) -> None:
+        strings = (
+            self.queue_id,
+            self.board_id,
+            self.source,
+            self.reservation_lineage_id,
+            self.work_kind,
+            self.artifact_type,
+            self.artifact_id,
+            self.membership_source_ref,
+            self.membership_source_version,
+            self.membership_content_hash,
+            self.consolidation_session_id,
+            self.outbox_event_id,
+            self.generation_event_id,
+            self.previous_materialization_generation,
+            self.materialization_generation,
+            self.node_refs_sha256,
+            self.receipt_sha256,
+        )
+        source_type, separator, source_id = self.membership_source_ref.partition(":")
+        queue_type = (
+            "card" if source_type in {"task", "test", "bug", "card"} else source_type
+        )
+        if (
+            any(type(value) is not str or not value for value in strings)
+            or type(self.generation) is not int
+            or self.generation < 0
+            or type(self.node_ref_count) is not int
+            or self.node_ref_count < 0
+            or not self.source.startswith("rebuild:")
+            or self.work_kind != "consolidate"
+            or len(self.reservation_lineage_id) != 64
+            or any(
+                value not in "0123456789abcdef" for value in self.reservation_lineage_id
+            )
+            or separator != ":"
+            or ":" in source_id
+            or source_id != self.artifact_id
+            or source_type not in _EXACT_REBUILD_SOURCE_ARTIFACT_TYPES
+            or queue_type != self.artifact_type
+            or len(self.membership_content_hash) != 64
+            or any(
+                value not in "0123456789abcdef"
+                for value in self.membership_content_hash
+            )
+            or len(self.node_refs_sha256) != 64
+            or any(value not in "0123456789abcdef" for value in self.node_refs_sha256)
+            or len(self.receipt_sha256) != 64
+            or any(value not in "0123456789abcdef" for value in self.receipt_sha256)
+            or self.previous_materialization_generation
+            == self.materialization_generation
+        ):
+            raise ValueError("exact_consolidation_ack_receipt_invalid")
+        expected = _canonical_sha256(
+            {
+                "artifact_id": self.artifact_id,
+                "artifact_type": self.artifact_type,
+                "board_id": self.board_id,
+                "consolidation_session_id": self.consolidation_session_id,
+                "generation": self.generation,
+                "generation_event_id": self.generation_event_id,
+                "materialization_generation": self.materialization_generation,
+                "membership_content_hash": self.membership_content_hash,
+                "membership_source_ref": self.membership_source_ref,
+                "membership_source_version": self.membership_source_version,
+                "node_ref_count": self.node_ref_count,
+                "node_refs_sha256": self.node_refs_sha256,
+                "outbox_event_id": self.outbox_event_id,
+                "previous_materialization_generation": (
+                    self.previous_materialization_generation
+                ),
+                "queue_id": self.queue_id,
+                "reservation_lineage_id": self.reservation_lineage_id,
+                "schema": "exact_consolidation_ack_receipt.v1",
+                "source": self.source,
+                "work_kind": self.work_kind,
+            }
+        )
+        if self.receipt_sha256 != expected:
+            raise ValueError("exact_consolidation_ack_receipt_digest_mismatch")
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "schema": "exact_consolidation_ack_receipt.v1",
+            **{name: getattr(self, name) for name in self.__dataclass_fields__},
+        }
+
+    @classmethod
+    def from_payload(cls, value: object) -> "ExactConsolidationAckReceipt":
+        field_names = frozenset(cls.__dataclass_fields__)
+        if (
+            type(value) is not dict
+            or set(value) != {*field_names, "schema"}
+            or value.get("schema") != "exact_consolidation_ack_receipt.v1"
+        ):
+            raise ValueError("exact_consolidation_ack_receipt_payload_invalid")
+        try:
+            return cls(**{name: value[name] for name in field_names})
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("exact_consolidation_ack_receipt_payload_invalid") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class ExactConsolidationCompensationReceipt:
+    """Terminal, replayable proof that one exact ACK journal was reversed."""
+
+    board_id: str
+    source: str
+    reservation_lineage_id: str
+    baseline_materialization_generation: str
+    terminal_materialization_generation: str
+    ack_count: int
+    node_ref_count: int
+    ack_receipts_sha256: str
+    audit_session_ids: tuple[str, ...]
+    outbox_event_ids: tuple[str, ...]
+    generation_event_ids: tuple[str, ...]
+    compensation_id: str
+    compensated_at: datetime
+    receipt_sha256: str
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        board_id: str,
+        source: str,
+        reservation_lineage_id: str,
+        baseline_materialization_generation: str,
+        terminal_materialization_generation: str,
+        ack_count: int,
+        node_ref_count: int,
+        ack_receipts_sha256: str,
+        audit_session_ids: tuple[str, ...],
+        outbox_event_ids: tuple[str, ...],
+        generation_event_ids: tuple[str, ...],
+        compensation_id: str,
+        compensated_at: datetime,
+    ) -> "ExactConsolidationCompensationReceipt":
+        values: dict[str, Any] = {
+            "ack_count": ack_count,
+            "ack_receipts_sha256": ack_receipts_sha256,
+            "audit_session_ids": list(audit_session_ids),
+            "baseline_materialization_generation": (
+                baseline_materialization_generation
+            ),
+            "board_id": board_id,
+            "compensated_at": compensated_at.isoformat(),
+            "compensation_id": compensation_id,
+            "generation_event_ids": list(generation_event_ids),
+            "node_ref_count": node_ref_count,
+            "outbox_event_ids": list(outbox_event_ids),
+            "reservation_lineage_id": reservation_lineage_id,
+            "schema": "exact_consolidation_compensation_receipt.v1",
+            "source": source,
+            "terminal_materialization_generation": (
+                terminal_materialization_generation
+            ),
+        }
+        return cls(
+            board_id=board_id,
+            source=source,
+            reservation_lineage_id=reservation_lineage_id,
+            baseline_materialization_generation=(baseline_materialization_generation),
+            terminal_materialization_generation=(terminal_materialization_generation),
+            ack_count=ack_count,
+            node_ref_count=node_ref_count,
+            ack_receipts_sha256=ack_receipts_sha256,
+            audit_session_ids=audit_session_ids,
+            outbox_event_ids=outbox_event_ids,
+            generation_event_ids=generation_event_ids,
+            compensation_id=compensation_id,
+            compensated_at=compensated_at,
+            receipt_sha256=_canonical_sha256(values),
+        )
+
+    def __post_init__(self) -> None:
+        if (
+            any(
+                type(value) is not str or not value
+                for value in (
+                    self.board_id,
+                    self.source,
+                    self.reservation_lineage_id,
+                    self.baseline_materialization_generation,
+                    self.terminal_materialization_generation,
+                    self.ack_receipts_sha256,
+                    self.compensation_id,
+                    self.receipt_sha256,
+                )
+            )
+            or not self.source.startswith("rebuild:")
+            or len(self.reservation_lineage_id) != 64
+            or any(
+                value not in "0123456789abcdef" for value in self.reservation_lineage_id
+            )
+            or type(self.ack_count) is not int
+            or self.ack_count < 1
+            or type(self.node_ref_count) is not int
+            or self.node_ref_count < 0
+            or type(self.audit_session_ids) is not tuple
+            or type(self.outbox_event_ids) is not tuple
+            or type(self.generation_event_ids) is not tuple
+            or any(
+                type(value) is not str or not value
+                for values in (
+                    self.audit_session_ids,
+                    self.outbox_event_ids,
+                    self.generation_event_ids,
+                )
+                for value in values
+            )
+            or len(self.audit_session_ids) != self.ack_count
+            or len(self.outbox_event_ids) != self.ack_count
+            or len(self.generation_event_ids) != self.ack_count
+            or len(set(self.audit_session_ids)) != self.ack_count
+            or len(set(self.outbox_event_ids)) != self.ack_count
+            or len(set(self.generation_event_ids)) != self.ack_count
+            or len(self.ack_receipts_sha256) != 64
+            or any(
+                value not in "0123456789abcdef" for value in self.ack_receipts_sha256
+            )
+            or len(self.receipt_sha256) != 64
+            or any(value not in "0123456789abcdef" for value in self.receipt_sha256)
+            or type(self.compensated_at) is not datetime
+            or self.compensated_at.tzinfo is None
+            or self.compensated_at.utcoffset() is None
+            or self.baseline_materialization_generation
+            == self.terminal_materialization_generation
+        ):
+            raise ValueError("exact_consolidation_compensation_receipt_invalid")
+        expected = _canonical_sha256(
+            {
+                "ack_count": self.ack_count,
+                "ack_receipts_sha256": self.ack_receipts_sha256,
+                "audit_session_ids": list(self.audit_session_ids),
+                "baseline_materialization_generation": (
+                    self.baseline_materialization_generation
+                ),
+                "board_id": self.board_id,
+                "compensated_at": self.compensated_at.isoformat(),
+                "compensation_id": self.compensation_id,
+                "generation_event_ids": list(self.generation_event_ids),
+                "node_ref_count": self.node_ref_count,
+                "outbox_event_ids": list(self.outbox_event_ids),
+                "reservation_lineage_id": self.reservation_lineage_id,
+                "schema": "exact_consolidation_compensation_receipt.v1",
+                "source": self.source,
+                "terminal_materialization_generation": (
+                    self.terminal_materialization_generation
+                ),
+            }
+        )
+        if self.receipt_sha256 != expected:
+            raise ValueError("exact_consolidation_compensation_receipt_digest_mismatch")
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "ack_count": self.ack_count,
+            "ack_receipts_sha256": self.ack_receipts_sha256,
+            "audit_session_ids": list(self.audit_session_ids),
+            "baseline_materialization_generation": (
+                self.baseline_materialization_generation
+            ),
+            "board_id": self.board_id,
+            "compensated_at": self.compensated_at.isoformat(),
+            "compensation_id": self.compensation_id,
+            "generation_event_ids": list(self.generation_event_ids),
+            "node_ref_count": self.node_ref_count,
+            "outbox_event_ids": list(self.outbox_event_ids),
+            "receipt_sha256": self.receipt_sha256,
+            "reservation_lineage_id": self.reservation_lineage_id,
+            "schema": "exact_consolidation_compensation_receipt.v1",
+            "source": self.source,
+            "terminal_materialization_generation": (
+                self.terminal_materialization_generation
+            ),
+        }
+
+    @classmethod
+    def from_payload(
+        cls,
+        value: object,
+    ) -> "ExactConsolidationCompensationReceipt":
+        if (
+            type(value) is not dict
+            or set(value)
+            != {
+                "ack_count",
+                "ack_receipts_sha256",
+                "audit_session_ids",
+                "baseline_materialization_generation",
+                "board_id",
+                "compensated_at",
+                "compensation_id",
+                "generation_event_ids",
+                "node_ref_count",
+                "outbox_event_ids",
+                "receipt_sha256",
+                "reservation_lineage_id",
+                "schema",
+                "source",
+                "terminal_materialization_generation",
+            }
+            or value.get("schema") != "exact_consolidation_compensation_receipt.v1"
+        ):
+            raise ValueError("exact_consolidation_compensation_receipt_payload_invalid")
+        try:
+            compensated_at = value["compensated_at"]
+            if type(compensated_at) is not str:
+                raise TypeError
+            return cls(
+                board_id=value["board_id"],
+                source=value["source"],
+                reservation_lineage_id=value["reservation_lineage_id"],
+                baseline_materialization_generation=(
+                    value["baseline_materialization_generation"]
+                ),
+                terminal_materialization_generation=(
+                    value["terminal_materialization_generation"]
+                ),
+                ack_count=value["ack_count"],
+                node_ref_count=value["node_ref_count"],
+                ack_receipts_sha256=value["ack_receipts_sha256"],
+                audit_session_ids=tuple(value["audit_session_ids"]),
+                outbox_event_ids=tuple(value["outbox_event_ids"]),
+                generation_event_ids=tuple(value["generation_event_ids"]),
+                compensation_id=value["compensation_id"],
+                compensated_at=datetime.fromisoformat(compensated_at),
+                receipt_sha256=value["receipt_sha256"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "exact_consolidation_compensation_receipt_payload_invalid"
+            ) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class ExactConsolidationCompensationResult:
+    receipt: ExactConsolidationCompensationReceipt
+    replayed: bool
+
+    def __post_init__(self) -> None:
+        if type(self.receipt) is not ExactConsolidationCompensationReceipt:
+            raise TypeError("exact_consolidation_compensation_result_receipt_invalid")
+        if type(self.replayed) is not bool:
+            raise TypeError("exact_consolidation_compensation_result_origin_invalid")
+
+
+class ExactConsolidationCompensationError(RuntimeError):
+    """Typed failure at the exact relational compensation boundary."""
+
+    __slots__ = ("_code", "_committed_result")
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        committed_result: ExactConsolidationCompensationResult | None = None,
+    ) -> None:
+        if type(code) is not str or not code:
+            raise TypeError("exact_consolidation_compensation_error_code_invalid")
+        if committed_result is not None and (
+            type(committed_result) is not ExactConsolidationCompensationResult
+        ):
+            raise TypeError("exact_consolidation_compensation_error_result_invalid")
+        self._code = code
+        self._committed_result = committed_result
+        super().__init__(code)
+
+    @property
+    def code(self) -> str:
+        return self._code
+
+    @property
+    def committed_result(self) -> ExactConsolidationCompensationResult | None:
+        return self._committed_result
+
+
+def exact_consolidation_ack_receipts_sha256(
+    receipts: tuple[ExactConsolidationAckReceipt, ...],
+) -> str:
+    """Canonical digest for one complete, ordered exact ACK journal."""
+
+    if (
+        type(receipts) is not tuple
+        or not receipts
+        or any(
+            type(receipt) is not ExactConsolidationAckReceipt for receipt in receipts
+        )
+    ):
+        raise TypeError("exact_consolidation_ack_receipts_invalid")
+    return _canonical_sha256(
+        {
+            "receipt_sha256": [receipt.receipt_sha256 for receipt in receipts],
+            "schema": "exact_consolidation_ack_receipt_chain.v1",
+        }
+    )
+
+
+def build_exact_consolidation_compensation_binding(
+    *,
+    board_id: str,
+    source: str,
+    reservation_lineage_id: str,
+    result: ExactConsolidationCompensationResult | None,
+) -> dict[str, object]:
+    """JSON-safe binding embedded in the enclosing F06 compensation receipt."""
+
+    if result is not None and type(result) is not ExactConsolidationCompensationResult:
+        raise TypeError("exact_consolidation_compensation_binding_result_invalid")
+    receipt = result.receipt if result is not None else None
+    if receipt is not None and (
+        receipt.board_id != board_id
+        or receipt.source != source
+        or receipt.reservation_lineage_id != reservation_lineage_id
+    ):
+        raise ValueError("exact_consolidation_compensation_binding_mismatch")
+    return {
+        "ack_count": receipt.ack_count if receipt is not None else 0,
+        "board_id": board_id,
+        "receipt": receipt.to_payload() if receipt is not None else None,
+        "reservation_lineage_id": reservation_lineage_id,
+        "schema": "exact_consolidation_compensation_binding.v1",
+        "source": source,
+        "status": (
+            "replayed"
+            if result is not None and result.replayed
+            else "compensated"
+            if result is not None
+            else "not_required"
+        ),
+    }
+
+
+def validate_exact_consolidation_compensation_binding(
+    value: object,
+    *,
+    board_id: str,
+    source: str,
+    reservation_lineage_id: str,
+) -> ExactConsolidationCompensationReceipt | None:
+    """Validate the exact relational proof carried by an F06 receipt."""
+
+    if type(value) is not dict or set(value) != {
+        "ack_count",
+        "board_id",
+        "receipt",
+        "reservation_lineage_id",
+        "schema",
+        "source",
+        "status",
+    }:
+        raise ValueError("exact_consolidation_compensation_binding_invalid")
+    status = value.get("status")
+    ack_count = value.get("ack_count")
+    if (
+        value.get("schema") != "exact_consolidation_compensation_binding.v1"
+        or value.get("board_id") != board_id
+        or value.get("source") != source
+        or value.get("reservation_lineage_id") != reservation_lineage_id
+        or status not in {"not_required", "compensated", "replayed"}
+        or type(ack_count) is not int
+        or ack_count < 0
+    ):
+        raise ValueError("exact_consolidation_compensation_binding_invalid")
+    payload = value.get("receipt")
+    if status == "not_required":
+        if ack_count != 0 or payload is not None:
+            raise ValueError("exact_consolidation_compensation_binding_invalid")
+        return None
+    if type(payload) is not dict or set(payload) != {
+        "ack_count",
+        "ack_receipts_sha256",
+        "audit_session_ids",
+        "baseline_materialization_generation",
+        "board_id",
+        "compensated_at",
+        "compensation_id",
+        "generation_event_ids",
+        "node_ref_count",
+        "outbox_event_ids",
+        "receipt_sha256",
+        "reservation_lineage_id",
+        "schema",
+        "source",
+        "terminal_materialization_generation",
+    }:
+        raise ValueError("exact_consolidation_compensation_binding_invalid")
+    try:
+        receipt = ExactConsolidationCompensationReceipt.from_payload(payload)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("exact_consolidation_compensation_binding_invalid") from exc
+    if (
+        receipt.board_id != board_id
+        or receipt.source != source
+        or receipt.reservation_lineage_id != reservation_lineage_id
+        or receipt.ack_count != ack_count
+    ):
+        raise ValueError("exact_consolidation_compensation_binding_mismatch")
+    return receipt
+
+
 @dataclass(frozen=True, slots=True)
 class ExactConsolidationRowResult:
     queue_id: str
@@ -149,6 +763,7 @@ class ExactConsolidationRowResult:
     error_message: str | None = None
     next_retry_at: datetime | None = None
     diagnostic_json: str | None = None
+    ack_receipt: ExactConsolidationAckReceipt | None = None
 
     def __post_init__(self) -> None:
         string_fields = (
@@ -253,6 +868,21 @@ class ExactConsolidationRowResult:
                 and not has_error
                 and self.next_retry_at is None
                 and self.diagnostic_json is None
+                and type(self.ack_receipt) is ExactConsolidationAckReceipt
+                and self.ack_receipt.queue_id == self.queue_id
+                and self.ack_receipt.board_id == self.board_id
+                and self.ack_receipt.source == self.source
+                and self.ack_receipt.reservation_lineage_id
+                == self.reservation_lineage_id
+                and self.ack_receipt.work_kind == self.work_kind
+                and self.ack_receipt.artifact_type == self.artifact_type
+                and self.ack_receipt.artifact_id == self.artifact_id
+                and self.ack_receipt.generation == self.generation
+                and self.ack_receipt.membership_source_ref == self.membership_source_ref
+                and self.ack_receipt.membership_source_version
+                == self.membership_source_version
+                and self.ack_receipt.membership_content_hash
+                == self.membership_content_hash
             )
         elif self.disposition is ExactConsolidationDisposition.RETRY_SCHEDULED:
             valid_semantics = (
@@ -264,6 +894,7 @@ class ExactConsolidationRowResult:
                 and self.mutation_state is ExactConsolidationMutationState.UNCHANGED
                 and has_error
                 and self.next_retry_at is not None
+                and self.ack_receipt is None
             )
         elif self.disposition is ExactConsolidationDisposition.TERMINAL_FAILURE:
             valid_semantics = (
@@ -280,6 +911,7 @@ class ExactConsolidationRowResult:
                 }
                 and has_error
                 and self.next_retry_at is None
+                and self.ack_receipt is None
             )
         else:
             valid_semantics = (
@@ -292,6 +924,7 @@ class ExactConsolidationRowResult:
                 }
                 and has_error
                 and self.next_retry_at is None
+                and self.ack_receipt is None
             )
         if not valid_semantics:
             raise ValueError("exact_consolidation_row_semantics_invalid")
@@ -729,6 +1362,76 @@ class ConsolidationPersistencePort(Protocol):
         """
         ...
 
+    async def ack_exact_rebuild_commit(
+        self,
+        context: Any,
+        *,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        source: str,
+        work_kind: str,
+        generation: int,
+        delete_event_id: str | None,
+        reservation_lineage_id: str,
+        membership_source_ref: str,
+        membership_source_version: str,
+        membership_content_hash: str,
+        consolidation_session_id: str,
+        expected_attempts: int,
+        expected_last_error: str | None,
+        expected_next_retry_at: datetime | None,
+        expected_payload: dict[str, Any],
+        reservation_authority_probe: Callable[[], bool],
+    ) -> ExactConsolidationAckReceipt | None:
+        """Atomically journal relational effects and ACK one exact row.
+
+        The implementation must validate the transaction-staged audit, node
+        references, outbox event, materialization-generation event and current
+        generation head. It then persists the immutable ACK receipt and deletes
+        the claimed queue row by the complete supplied identity in that same
+        transaction. ``None`` is a neutral claim or authority loss.
+        """
+
+        ...
+
+    async def list_exact_rebuild_ack_receipts(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        source: str,
+        reservation_lineage_id: str,
+    ) -> tuple[ExactConsolidationAckReceipt, ...]:
+        """Load the complete durable ACK journal in generation-chain order."""
+
+        ...
+
+    async def compensate_exact_rebuild_commits(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        source: str,
+        reservation_lineage_id: str,
+        expected_receipts: tuple[ExactConsolidationAckReceipt, ...],
+        reservation_authority_probe: Callable[[], bool],
+    ) -> ExactConsolidationCompensationResult | None:
+        """Atomically reverse the complete exact ACK journal.
+
+        Implementations must revalidate the exact receipt chain, current
+        materialization head, active audits and node-reference digests, plus
+        prove every bound outbox/domain event is still unpublished and has no
+        handler execution. Only then may they mark audits undone, neutralize the
+        pending integration facts, restore the baseline materialization head and
+        persist a replayable compensation receipt. ``None`` is an authority or
+        CAS loss; partial mutation is forbidden.
+        """
+
+        ...
+
     async def repend_claimed_queue_entry(
         self,
         context: Any,
@@ -848,11 +1551,18 @@ __all__ = [
     "CurrentResearchDecisionSummary",
     "CurrentSpecDependencyProjection",
     "ExactConsolidationBatchResult",
+    "ExactConsolidationAckReceipt",
+    "ExactConsolidationCompensationReceipt",
+    "ExactConsolidationCompensationResult",
+    "ExactConsolidationCompensationError",
     "ExactConsolidationDisposition",
     "ExactConsolidationMutationState",
     "ExactConsolidationPostCommitError",
     "ExactConsolidationResultOrigin",
     "ExactConsolidationRowResult",
+    "exact_consolidation_ack_receipts_sha256",
+    "build_exact_consolidation_compensation_binding",
+    "validate_exact_consolidation_compensation_binding",
     "get_consolidation_persistence_port",
     "register_consolidation_persistence_port",
     "reset_consolidation_persistence_port_for_tests",

@@ -24,8 +24,13 @@ from okto_pulse.core.ports.consolidation import (
     ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
     ExactConsolidationDisposition,
+    ExactConsolidationAckReceipt,
+    ExactConsolidationCompensationReceipt,
+    ExactConsolidationCompensationError,
+    ExactConsolidationCompensationResult,
     ExactConsolidationMutationState,
     ExactConsolidationResultOrigin,
+    exact_consolidation_ack_receipts_sha256,
     get_consolidation_persistence_port,
     register_consolidation_persistence_port,
 )
@@ -139,6 +144,29 @@ def test_exact_row_result_rejects_unemittable_public_state_combinations() -> Non
         source=entry.source,
         reservation_lineage_id="b" * 64,
     )
+    source_ref, source_version, content_hash = consolidation._exact_rebuild_membership(
+        entry, scope
+    )
+    ack_receipt = ExactConsolidationAckReceipt.create(
+        queue_id=entry.id,
+        board_id=entry.board_id,
+        source=entry.source,
+        reservation_lineage_id="b" * 64,
+        work_kind=entry.work_kind,
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        generation=entry.generation,
+        membership_source_ref=source_ref,
+        membership_source_version=source_version,
+        membership_content_hash=content_hash,
+        consolidation_session_id="session-dto",
+        outbox_event_id="outbox-dto",
+        generation_event_id="generation-dto",
+        previous_materialization_generation="mg-before",
+        materialization_generation="mg-after",
+        node_ref_count=0,
+        node_refs_sha256="0" * 64,
+    )
     ack = consolidation._exact_row_result(
         entry,
         scope,
@@ -146,6 +174,7 @@ def test_exact_row_result_rejects_unemittable_public_state_combinations() -> Non
         disposition=ExactConsolidationDisposition.ACKED,
         origin=ExactConsolidationResultOrigin.NEW,
         mutation_state=ExactConsolidationMutationState.COMMITTED,
+        ack_receipt=ack_receipt,
     )
 
     invalid_variants = (
@@ -184,6 +213,11 @@ def test_exact_row_result_rejects_unemittable_public_state_combinations() -> Non
 
 def test_exact_post_commit_error_is_part_of_public_port_contract() -> None:
     assert "ExactConsolidationPostCommitError" in consolidation_ports.__all__
+    assert "ExactConsolidationAckReceipt" in consolidation_ports.__all__
+    assert "ExactConsolidationCompensationError" in consolidation_ports.__all__
+    assert (
+        "build_exact_consolidation_compensation_binding" in consolidation_ports.__all__
+    )
     assert consolidation_ports._EXACT_REBUILD_SOURCE_ARTIFACT_TYPES == (
         DETERMINISTIC_SOURCE_ARTIFACT_TYPES
     )
@@ -284,6 +318,11 @@ class _MemoryConsolidationStore:
         self.current_reservation_source: str | None = None
         self.repend_calls: list[dict[str, Any]] = []
         self.exact_disposition_calls: list[dict[str, Any]] = []
+        self.exact_ack_receipts: list[ExactConsolidationAckReceipt] = []
+        self.materialization_head = "mg-card4-baseline"
+        self.exact_compensation_receipt: (
+            ExactConsolidationCompensationReceipt | None
+        ) = None
 
     async def load_artifact(self, _context, *, artifact_type, artifact_id):
         self.load_calls.append((artifact_type, artifact_id))
@@ -425,6 +464,103 @@ class _MemoryConsolidationStore:
         if self.ack_result:
             self.entries.pop(str(identity["entry_id"]), None)
         return self.ack_result
+
+    async def ack_exact_rebuild_commit(self, _context, **identity):
+        self.ack_calls.append(identity)
+        entry = self.entries.get(str(identity["entry_id"]))
+        authority_probe = identity["reservation_authority_probe"]
+        if not (
+            self.ack_result
+            and entry is not None
+            and entry.status == "claimed"
+            and entry.claim_token == identity["claim_token"]
+            and entry.board_id == identity["board_id"]
+            and entry.artifact_type == identity["artifact_type"]
+            and entry.artifact_id == identity["artifact_id"]
+            and entry.source == identity["source"]
+            and entry.work_kind == identity["work_kind"]
+            and entry.generation == identity["generation"]
+            and entry.delete_event_id == identity["delete_event_id"]
+            and entry.attempts == identity["expected_attempts"]
+            and entry.last_error == identity["expected_last_error"]
+            and entry.next_retry_at == identity["expected_next_retry_at"]
+            and entry.payload == identity["expected_payload"]
+            and callable(authority_probe)
+            and authority_probe() is True
+        ):
+            return None
+        receipt = ExactConsolidationAckReceipt.create(
+            queue_id=entry.id,
+            board_id=entry.board_id,
+            source=entry.source,
+            reservation_lineage_id=identity["reservation_lineage_id"],
+            work_kind=entry.work_kind,
+            artifact_type=entry.artifact_type,
+            artifact_id=entry.artifact_id,
+            generation=entry.generation,
+            membership_source_ref=identity["membership_source_ref"],
+            membership_source_version=identity["membership_source_version"],
+            membership_content_hash=identity["membership_content_hash"],
+            consolidation_session_id=identity["consolidation_session_id"],
+            outbox_event_id=f"outbox-{entry.id}",
+            generation_event_id=f"generation-{entry.id}",
+            previous_materialization_generation=self.materialization_head,
+            materialization_generation=f"mg-{entry.id}",
+            node_ref_count=0,
+            node_refs_sha256="0" * 64,
+        )
+        self.materialization_head = receipt.materialization_generation
+        self.exact_ack_receipts.append(receipt)
+        self.entries.pop(entry.id, None)
+        return receipt
+
+    async def list_exact_rebuild_ack_receipts(self, _context, **identity):
+        return tuple(
+            receipt
+            for receipt in self.exact_ack_receipts
+            if receipt.board_id == identity["board_id"]
+            and receipt.source == identity["source"]
+            and receipt.reservation_lineage_id == identity["reservation_lineage_id"]
+        )
+
+    async def compensate_exact_rebuild_commits(self, _context, **identity):
+        receipts = identity["expected_receipts"]
+        authority_probe = identity["reservation_authority_probe"]
+        if not callable(authority_probe) or authority_probe() is not True:
+            return None
+        if self.exact_compensation_receipt is not None:
+            return ExactConsolidationCompensationResult(
+                receipt=self.exact_compensation_receipt,
+                replayed=True,
+            )
+        terminal = receipts[-1]
+        compensation_receipt = ExactConsolidationCompensationReceipt.create(
+            board_id=identity["board_id"],
+            source=identity["source"],
+            reservation_lineage_id=identity["reservation_lineage_id"],
+            baseline_materialization_generation=(
+                receipts[0].previous_materialization_generation
+            ),
+            terminal_materialization_generation=(terminal.materialization_generation),
+            ack_count=len(receipts),
+            node_ref_count=sum(receipt.node_ref_count for receipt in receipts),
+            ack_receipts_sha256=exact_consolidation_ack_receipts_sha256(receipts),
+            audit_session_ids=tuple(
+                receipt.consolidation_session_id for receipt in receipts
+            ),
+            outbox_event_ids=tuple(receipt.outbox_event_id for receipt in receipts),
+            generation_event_ids=tuple(
+                receipt.generation_event_id for receipt in receipts
+            ),
+            compensation_id="comp-card4",
+            compensated_at=datetime.now(timezone.utc),
+        )
+        self.exact_compensation_receipt = compensation_receipt
+        self.materialization_head = receipts[0].previous_materialization_generation
+        return ExactConsolidationCompensationResult(
+            receipt=compensation_receipt,
+            replayed=False,
+        )
 
     async def save_exact_rebuild_disposition(
         self,
@@ -1261,7 +1397,7 @@ async def test_exact_retry_marker_waits_without_reclaim_then_replaces_after_due(
     clock = SimpleNamespace(now=lambda: current[0])
     process_calls = 0
 
-    async def _retry_then_ack(_db, _entry, **_kwargs):
+    async def _retry_then_ack(_db, _entry, **kwargs):
         nonlocal process_calls
         process_calls += 1
         if process_calls == 1:
@@ -1269,6 +1405,7 @@ async def test_exact_retry_marker_waits_without_reclaim_then_replaces_after_due(
                 "relational_projection_endpoint_pending",
                 "The prerequisite projection is not materialized yet.",
             )
+        kwargs["deferred_session_ids"].append("session-retry-then-ack")
         return True
 
     monkeypatch.setattr(
@@ -1378,6 +1515,321 @@ async def test_exact_batch_skips_global_claim_and_post_commit_maintenance(
     assert result.acked_count == 1
     assert maintenance_calls == []
     assert claim_metric_calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_ack_returns_durable_relational_receipt_and_compensates(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-ack-journal")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="a" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+
+    async def _success(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-ack-journal")
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        batch = await _process_exact(processor, scope)
+        receipts = await processor.list_exact_rebuild_ack_receipts(
+            claim_scope=scope,
+            reservation_authority_probe=lambda: True,
+        )
+        compensated = await processor.compensate_exact_rebuild_commits(
+            claim_scope=scope,
+            reservation_authority_probe=lambda: True,
+        )
+        replayed = await processor.compensate_exact_rebuild_commits(
+            claim_scope=scope,
+            reservation_authority_probe=lambda: True,
+        )
+
+    assert batch.acked_count == 1
+    assert batch.rows[0].ack_receipt == receipts[0]
+    assert (
+        ExactConsolidationAckReceipt.from_payload(receipts[0].to_payload())
+        == receipts[0]
+    )
+    assert receipts[0].consolidation_session_id == "session-ack-journal"
+    assert compensated.receipt.ack_count == 1
+    assert compensated.receipt.audit_session_ids == ("session-ack-journal",)
+    assert compensated.replayed is False
+    assert replayed.replayed is True
+    assert replayed.receipt == compensated.receipt
+    assert (
+        ExactConsolidationCompensationReceipt.from_payload(
+            compensated.receipt.to_payload()
+        )
+        == compensated.receipt
+    )
+    with pytest.raises(
+        ValueError,
+        match="exact_consolidation_compensation_receipt_invalid",
+    ):
+        replace(
+            compensated.receipt,
+            terminal_materialization_generation=(
+                compensated.receipt.baseline_materialization_generation
+            ),
+        )
+    assert store.materialization_head == "mg-card4-baseline"
+
+
+@pytest.mark.asyncio
+async def test_exact_ack_journal_rejects_materialization_generation_cycle() -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-cycle-a")
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=entry.source,
+        reservation_lineage_id="a" * 64,
+    )
+    store = _MemoryConsolidationStore(())
+    store.current_reservation_source = entry.source
+
+    def _receipt(
+        *,
+        queue_id: str,
+        artifact_id: str,
+        previous_generation: str,
+        generation: str,
+    ) -> ExactConsolidationAckReceipt:
+        return ExactConsolidationAckReceipt.create(
+            queue_id=queue_id,
+            board_id=entry.board_id,
+            source=entry.source,
+            reservation_lineage_id="a" * 64,
+            work_kind="consolidate",
+            artifact_type="spec",
+            artifact_id=artifact_id,
+            generation=0,
+            membership_source_ref=f"spec:{artifact_id}",
+            membership_source_version="1",
+            membership_content_hash="b" * 64,
+            consolidation_session_id=f"session-{queue_id}",
+            outbox_event_id=f"outbox-{queue_id}",
+            generation_event_id=f"event-{queue_id}",
+            previous_materialization_generation=previous_generation,
+            materialization_generation=generation,
+            node_ref_count=0,
+            node_refs_sha256="0" * 64,
+        )
+
+    store.exact_ack_receipts = [
+        _receipt(
+            queue_id="cycle-a",
+            artifact_id="cycle-artifact-a",
+            previous_generation="generation-a",
+            generation="generation-b",
+        ),
+        _receipt(
+            queue_id="cycle-b",
+            artifact_id="cycle-artifact-b",
+            previous_generation="generation-b",
+            generation="generation-a",
+        ),
+    ]
+
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+    with _registered(store):
+        with pytest.raises(
+            ExactConsolidationCompensationError,
+            match="exact_consolidation_ack_journal_invalid",
+        ):
+            await processor.list_exact_rebuild_ack_receipts(
+                claim_scope=scope,
+                reservation_authority_probe=lambda: True,
+            )
+
+
+@pytest.mark.asyncio
+async def test_exact_compensation_reports_post_commit_authority_loss(
+    monkeypatch,
+) -> None:
+    authority = [True]
+
+    class PostCommitLossStore(_MemoryConsolidationStore):
+        lose_on_commit = False
+
+        async def commit(self, context) -> None:
+            await super().commit(context)
+            if self.lose_on_commit:
+                authority[0] = False
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-compensation-fence")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="a" * 64,
+    )
+    store = PostCommitLossStore((entry,))
+    store.current_reservation_source = source
+
+    async def _success(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-compensation-fence")
+        return True
+
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _success,
+    )
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: authority[0],
+        )
+        store.lose_on_commit = True
+        with pytest.raises(
+            ExactConsolidationCompensationError,
+            match="authority_lost_after_commit",
+        ) as raised:
+            await processor.compensate_exact_rebuild_commits(
+                claim_scope=scope,
+                reservation_authority_probe=lambda: authority[0],
+            )
+
+    assert raised.value.committed_result is not None
+    assert raised.value.committed_result.receipt.ack_count == 1
+    assert store.materialization_head == "mg-card4-baseline"
+
+
+@pytest.mark.asyncio
+async def test_exact_pre_acquire_lock_contention_is_retryable_and_unchanged(
+    monkeypatch,
+) -> None:
+    entry = _exact_rebuild_entry(entry_id="card4-exact-pre-acquire-contention")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="a" * 64,
+    )
+    store = _MemoryConsolidationStore((entry,))
+    store.current_reservation_source = source
+    aborted: list[str] = []
+
+    @contextmanager
+    def _contended(*_args, **_kwargs):
+        raise consolidation.GuardedWriteError(
+            "lock_contention",
+            "another writer currently owns the board graph",
+            retryable=True,
+        )
+        yield  # pragma: no cover
+
+    async def _attempt(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-pre-acquire")
+        kwargs["enter_graph_write"]("mutation-pre-acquire")
+        return True
+
+    async def _abort(session_id, **_kwargs):
+        aborted.append(session_id)
+
+    monkeypatch.setattr(consolidation, "guarded_board_write", _contended)
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _attempt,
+    )
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(processor, scope)
+
+    assert aborted == ["session-pre-acquire"]
+    assert result.new_attempt_count == 1
+    assert len(result.retry_scheduled) == 1
+    assert result.retry_scheduled[0].mutation_state is (
+        ExactConsolidationMutationState.UNCHANGED
+    )
+    assert result.retry_scheduled[0].error_code == "guarded_write_lock_contention"
+    assert entry.status == "pending"
+    assert entry.id in store.entries
+
+
+@pytest.mark.asyncio
+async def test_exact_pre_acquire_retry_authority_loss_is_neutral_unchanged(
+    monkeypatch,
+) -> None:
+    authority = [True]
+
+    class AuthorityLossStore(_MemoryConsolidationStore):
+        async def save_exact_rebuild_disposition(self, context, **identity):
+            authority[0] = False
+            return await super().save_exact_rebuild_disposition(
+                context,
+                **identity,
+            )
+
+    entry = _exact_rebuild_entry(entry_id="card4-exact-pre-acquire-fence")
+    source = entry.source
+    scope = ConsolidationClaimScope(
+        board_id=entry.board_id,
+        source=source,
+        reservation_lineage_id="a" * 64,
+    )
+    store = AuthorityLossStore((entry,))
+    store.current_reservation_source = source
+
+    @contextmanager
+    def _contended(*_args, **_kwargs):
+        raise consolidation.GuardedWriteError(
+            "lock_contention",
+            "another writer currently owns the board graph",
+            retryable=True,
+        )
+        yield  # pragma: no cover
+
+    async def _attempt(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-pre-acquire-fence")
+        kwargs["enter_graph_write"]("mutation-pre-acquire-fence")
+        return True
+
+    async def _abort(_session_id, **_kwargs):
+        return None
+
+    monkeypatch.setattr(consolidation, "guarded_board_write", _contended)
+    monkeypatch.setattr(
+        consolidation,
+        "_process_queue_entry_serialized",
+        _attempt,
+    )
+    monkeypatch.setattr(consolidation, "abort_deferred_consolidation", _abort)
+    processor = ConsolidationProcessor(_scope, batch_size=1)
+
+    with _registered(store):
+        result = await _process_exact(
+            processor,
+            scope,
+            reservation_authority_probe=lambda: authority[0],
+        )
+
+    assert len(result.rows) == 1
+    assert result.rows[0].disposition is (
+        ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+    )
+    assert result.rows[0].mutation_state is (ExactConsolidationMutationState.UNCHANGED)
+    assert entry.status == "claimed"
+    assert entry.payload is not None
+    assert "_exact_rebuild_disposition" not in entry.payload
 
 
 @pytest.mark.asyncio
@@ -1621,7 +2073,8 @@ async def test_exact_baseexception_leaves_claim_for_governed_recovery_then_acks(
         assert entry.status == "pending"
         assert entry.claim_token is None
 
-        async def _success(_db, _entry, **_kwargs):
+        async def _success(_db, _entry, **kwargs):
+            kwargs["deferred_session_ids"].append("session-recovered")
             return True
 
         monkeypatch.setattr(
@@ -1646,7 +2099,8 @@ async def test_exact_ack_cas_loss_returns_one_neutral_row_and_repends(
     store = _MemoryConsolidationStore((entry,), ack_result=False)
     store.current_reservation_source = source
 
-    async def _success(_db, _entry, **_kwargs):
+    async def _success(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-ack-loss")
         return True
 
     monkeypatch.setattr(
@@ -2026,7 +2480,8 @@ async def test_exact_post_commit_authority_loss_without_graph_reports_durable_ac
     store = _PostCommitReplacementStore((entry,))
     store.current_reservation_source = source
 
-    async def _success(_db, _entry, **_kwargs):
+    async def _success(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("session-post-commit")
         return True
 
     monkeypatch.setattr(

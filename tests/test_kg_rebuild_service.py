@@ -1732,6 +1732,7 @@ def test_authorized_resume_routes_manifest_failure_to_compensation_lane(
         else "manifest_load_exception"
     ) in request.recovery_failure_detail
     assert request.source_set_hash == receipt["source_set_hash"]
+    assert request.authorized_confirmation_ref == receipt["confirmation_ref"]
 
 
 def test_run_completes_when_confirmation_lock_lifecycle_all_succeed(tmp_path: Path):

@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from okto_pulse.core.ports.consolidation import (
+    build_exact_consolidation_compensation_binding,
+)
+
 from okto_pulse.core.application.rebuild_processor import (
     CompensationAction,
     QueueObservation,
@@ -141,7 +145,22 @@ class FakeEffects:
                     },
                 },
             )
-        return RebuildEffectReceipt(effect_key, "compensate", True)
+        details = {}
+        if CompensationAction.COMPENSATE_EXACT_RELATIONAL_COMMITS in command.actions:
+            details["exact_relational_compensation"] = (
+                build_exact_consolidation_compensation_binding(
+                    board_id=command.board_id,
+                    source="rebuild:manifest-1",
+                    reservation_lineage_id="a" * 64,
+                    result=None,
+                )
+            )
+        return RebuildEffectReceipt(
+            effect_key,
+            "compensate",
+            True,
+            details=details,
+        )
 
     def record_audit(self, outcome, *, effect_key):  # noqa: ANN001, ANN201
         self.calls.append(f"audit:{outcome.code.value}")
@@ -280,6 +299,127 @@ def test_f06_stalled_drain_compensates_without_promotion() -> None:
     assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
     assert effects.compensation_failed_state is RebuildState.DRAINING
     assert "promote" not in effects.calls
+
+
+def test_f06_exact_stalled_drain_requires_bound_relational_compensation() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [4, 4, 4, 4])
+    command = _command(
+        exact_relational_compensation=True,
+        reservation_lineage_id="a" * 64,
+    )
+
+    outcome = _processor(effects, clock).execute(command)
+
+    assert outcome.state is RebuildState.FAILED
+    assert (
+        CompensationAction.COMPENSATE_EXACT_RELATIONAL_COMMITS
+        in outcome.compensation_actions
+    )
+    compensation = next(
+        receipt for receipt in outcome.receipts if receipt.effect == "compensate"
+    )
+    assert compensation.ok is True
+    assert dict(compensation.details)["exact_relational_compensation"]["status"] == (
+        "not_required"
+    )
+
+
+def test_f06_exact_compensation_rejects_missing_relational_binding() -> None:
+    class MissingBindingEffects(FakeEffects):
+        def compensate(self, command, *, effect_key):  # noqa: ANN001, ANN201
+            self.compensation_actions = command.actions
+            return RebuildEffectReceipt(effect_key, "compensate", True)
+
+    clock = FakeClock()
+    effects = MissingBindingEffects(clock, [4, 4, 4, 4])
+    command = _command(
+        exact_relational_compensation=True,
+        reservation_lineage_id="a" * 64,
+    )
+
+    outcome = _processor(effects, clock).execute(command)
+
+    assert outcome.state is RebuildState.COMPENSATION_FAILED
+    compensation = next(
+        receipt for receipt in outcome.receipts if receipt.effect == "compensate"
+    )
+    assert compensation.ok is False
+    assert compensation.code == "exact_relational_compensation_receipt_invalid"
+
+
+def test_f06_exact_compensation_detaches_adapter_owned_nested_binding() -> None:
+    class MutableBindingEffects(FakeEffects):
+        binding: dict[str, object] | None = None
+
+        def compensate(self, command, *, effect_key):  # noqa: ANN001, ANN201
+            self.compensation_actions = command.actions
+            self.binding = build_exact_consolidation_compensation_binding(
+                board_id=command.board_id,
+                source="rebuild:manifest-1",
+                reservation_lineage_id="a" * 64,
+                result=None,
+            )
+            return RebuildEffectReceipt(
+                effect_key,
+                "compensate",
+                True,
+                details={"exact_relational_compensation": self.binding},
+            )
+
+    clock = FakeClock()
+    effects = MutableBindingEffects(clock, [4, 4, 4, 4])
+    outcome = _processor(effects, clock).execute(
+        _command(
+            exact_relational_compensation=True,
+            reservation_lineage_id="a" * 64,
+        )
+    )
+    assert effects.binding is not None
+    effects.binding["status"] = "tampered"
+
+    compensation = next(
+        receipt for receipt in outcome.receipts if receipt.effect == "compensate"
+    )
+    assert dict(compensation.details)["exact_relational_compensation"]["status"] == (
+        "not_required"
+    )
+
+
+def test_f06_exact_pre_enqueue_failure_does_not_require_relational_binding() -> None:
+    class QuarantineFailureEffects(FakeEffects):
+        def quarantine(self, command, *, effect_key):  # noqa: ANN001, ANN201
+            self.calls.append("quarantine")
+            return RebuildEffectReceipt(
+                effect_key,
+                "quarantine",
+                False,
+                code="quarantine_failed",
+            )
+
+        def compensate(self, command, *, effect_key):  # noqa: ANN001, ANN201
+            self.compensation_actions = command.actions
+            assert (
+                CompensationAction.COMPENSATE_EXACT_RELATIONAL_COMMITS
+                not in command.actions
+            )
+            return RebuildEffectReceipt(effect_key, "compensate", True)
+
+    clock = FakeClock()
+    effects = QuarantineFailureEffects(clock, [])
+    outcome = _processor(effects, clock).execute(
+        _command(
+            exact_relational_compensation=True,
+            reservation_lineage_id="a" * 64,
+        )
+    )
+
+    assert outcome.code is RebuildOutcomeCode.QUARANTINE_FAILED
+    assert outcome.state is RebuildState.FAILED
+    compensation = next(
+        receipt for receipt in outcome.receipts if receipt.effect == "compensate"
+    )
+    assert compensation.ok is True
 
 
 def test_f06_post_drain_manifest_drift_compensates_before_restore_or_promotion() -> (
