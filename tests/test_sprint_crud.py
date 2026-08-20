@@ -897,6 +897,19 @@ class TestSprintStateMachine:
 
         assert sprint.status == SprintStatus.ACTIVE
 
+        from okto_pulse.core.services.analytics_service import (
+            compute_sprints_analytics,
+        )
+
+        async with db_factory() as db:
+            analytics = await compute_sprints_analytics(db, BOARD_ID)
+        sprint_row = next(
+            row for row in analytics["sprints"] if row["sprint_id"] == sprint_id
+        )
+        assert sprint_row["commitment"]["state"] == "available"
+        assert sprint_row["commitment"]["original_member_count"] == 2
+        assert sprint_row["commitment"]["current_member_count"] == 2
+
     async def test_activation_baseline_failure_leaves_sprint_draft(self, db_factory):
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.ports.sprint_activation_baseline import (
@@ -2447,7 +2460,11 @@ class TestSprintAnalyticsLaneBreakdown:
                 origin_bug_id=HOTFIX_BUG_CARD_ID,
                 created_by=AGENT_ID,
             )
-            db.add_all([normal_one, normal_two, hotfix])
+            # Persist the self-referenced origin before its hotfix child so the
+            # SQLite FK does not depend on insert-many ordering.
+            db.add(normal_one)
+            await db.flush()
+            db.add_all([normal_two, hotfix])
             await db.flush()
             normal_card_one = await db.get(Card, CARD_1_ID)
             normal_card_one.sprint_id = normal_one.id
@@ -2493,6 +2510,12 @@ class TestSprintAnalyticsLaneBreakdown:
         assert by_id[hotfix.id]["origin_sprint_id"] == "closed-origin"
         assert by_id[hotfix.id]["origin_bug_id"] == HOTFIX_BUG_CARD_ID
         assert by_id[hotfix.id]["normal_sprint_created"] is False
+        assert by_id[normal_one.id]["commitment"] == {
+            "sprint_id": normal_one.id,
+            "state": "unavailable_legacy",
+            "baseline_ref": None,
+            "unavailable_reason": "activation_baseline_not_persisted",
+        }
 
 
 # ============================================================================

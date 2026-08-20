@@ -443,6 +443,15 @@ class AnalyticsOperations(Protocol):
         dt_to: datetime | None,
     ) -> object: ...
 
+    async def board_kg(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+        population_scope: object,
+        exclusions: object,
+    ) -> object: ...
+
     async def funnel(
         self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
     ) -> object: ...

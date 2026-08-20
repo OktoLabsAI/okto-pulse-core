@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from okto_pulse.core.application.scope import ActorScope
@@ -67,8 +67,36 @@ class McpGetAnalyticsUseCase:
     """Legacy MCP analytics surface over the MCP UnitOfWork."""
 
     async def execute(
-        self, command: McpGetAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetAnalyticsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
+        if command.metric_type == "board_kg":
+            from okto_pulse.core.application.use_cases.board_kg_analytics import (
+                BoardKgAnalyticsCommand,
+                BoardKgAnalyticsUseCase,
+            )
+            from okto_pulse.core.ports.analytics_foundation import AnalyticsUtcWindow
+
+            as_of = datetime.now(UTC)
+            window_from = _parse_dt(command.from_date) or datetime(
+                1970, 1, 1, tzinfo=UTC
+            )
+            window_to = _parse_dt(
+                command.to_date, end_exclusive=True
+            ) or as_of + timedelta(microseconds=1)
+            result = await BoardKgAnalyticsUseCase().execute(
+                BoardKgAnalyticsCommand(
+                    board_id=command.board_id,
+                    window=AnalyticsUtcWindow(window_from, window_to),
+                    as_of=as_of,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+            return _DataResult(result.data)
         return _DataResult(
             await uow.services.analytics.mcp_board_analytics(
                 command.board_id,
@@ -92,7 +120,11 @@ class McpListBlockersCommand:
 
 class McpListBlockersUseCase:
     async def execute(
-        self, command: McpListBlockersCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListBlockersCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         data = await uow.services.analytics.blockers(
             command.board_id,
@@ -205,7 +237,11 @@ class McpSetDefaultDesignSystemCommand:
 
 class McpSetDefaultDesignSystemUseCase:
     async def execute(
-        self, command: McpSetDefaultDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpSetDefaultDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
 
         await require_authorization(
@@ -275,7 +311,11 @@ async def _require_mcp_design_system_board(
 
 class McpListDesignSystemsUseCase:
     async def execute(
-        self, command: McpListDesignSystemsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListDesignSystemsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         from okto_pulse.core.services.design_system import DesignSystemError
 
@@ -326,7 +366,11 @@ class McpGetDesignSystemCommand:
 
 class McpGetDesignSystemUseCase:
     async def execute(
-        self, command: McpGetDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         from okto_pulse.core.services.design_system import (
             serialize_design_system_profile,
@@ -380,7 +424,11 @@ class McpCreateDesignSystemCommand:
 
 class McpCreateDesignSystemUseCase:
     async def execute(
-        self, command: McpCreateDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpCreateDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         from okto_pulse.core.services.design_system import (
             serialize_design_system,
@@ -433,7 +481,11 @@ class McpUpdateDesignSystemCommand:
 
 class McpUpdateDesignSystemUseCase:
     async def execute(
-        self, command: McpUpdateDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         from okto_pulse.core.services.design_system import (
             serialize_design_system,
@@ -492,7 +544,11 @@ class McpDeleteDesignSystemCommand:
 
 class McpDeleteDesignSystemUseCase:
     async def execute(
-        self, command: McpDeleteDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_mcp_design_system_board(
             uow,

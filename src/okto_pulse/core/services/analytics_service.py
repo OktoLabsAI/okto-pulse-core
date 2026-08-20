@@ -2936,6 +2936,13 @@ async def compute_sprints_analytics(
     specs = await _analytics_list(db, "spec", filters=filters)
     specs_by_id = {spec.id: spec for spec in specs}
     from okto_pulse.core.services.sprint_scope import SprintScopeResolver
+    from okto_pulse.core.ports.sprint_activation_baseline import (
+        SprintActivationMember,
+        get_sprint_activation_baseline_store,
+    )
+    from okto_pulse.core.services.delivery_commitment import (
+        DeliveryCommitmentService,
+    )
 
     per_sprint: list[dict] = []
     normal_sprints_total = 0
@@ -2973,6 +2980,30 @@ async def compute_sprints_analytics(
             SprintScopeResolver.resolve(sprint=sp, spec=spec, cards=sp_cards)
             if spec is not None
             else None
+        )
+        activation_baseline = await get_sprint_activation_baseline_store().get(
+            db,
+            board_id=board_id,
+            sprint_id=sp.id,
+        )
+        current_commitment_members = tuple(
+            sorted(
+                SprintActivationMember(
+                    card_id=card.id,
+                    card_type=getattr(
+                        card.card_type,
+                        "value",
+                        str(card.card_type),
+                    ),
+                    card_version=int(getattr(card, "policy_version", 1)),
+                )
+                for card in sp_cards
+            )
+        )
+        commitment = DeliveryCommitmentService.commitment_slice(
+            sprint_id=sp.id,
+            baseline=activation_baseline,
+            current_members=current_commitment_members,
         )
 
         # Self-reported quality from card.conclusions on this sprint's cards.
@@ -3034,6 +3065,7 @@ async def compute_sprints_analytics(
                     if scope is not None
                     else None
                 ),
+                "commitment": commitment.canonical_dict(),
             }
         )
     per_sprint.sort(key=lambda x: x["total_cards"], reverse=True)

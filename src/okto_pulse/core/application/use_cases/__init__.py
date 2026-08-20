@@ -1098,6 +1098,11 @@ from okto_pulse.core.application.use_cases.quality_assessment import (
     SubmitQualityAssessmentResult,
     SubmitQualityAssessmentUseCase,
 )
+from okto_pulse.core.application.use_cases.board_kg_analytics import (
+    BoardKgAnalyticsCommand,
+    BoardKgAnalyticsResult,
+    BoardKgAnalyticsUseCase,
+)
 from okto_pulse.core.application.use_cases.entity_export import (
     ENTITY_EXPORT_ROOT_READ_PERMISSION,
     GetEntityExportBundleCommand,
@@ -1279,6 +1284,9 @@ __all__ = [
     "BoardEntityDetailCommand",
     "BoardEntityDetailResult",
     "BoardEntityDetailUseCase",
+    "BoardKgAnalyticsCommand",
+    "BoardKgAnalyticsResult",
+    "BoardKgAnalyticsUseCase",
     # cognitive_readiness (MCP-FU3 reads)
     "EvaluateBugCognitiveClosureCommand",
     "EvaluateBugCognitiveClosureResult",

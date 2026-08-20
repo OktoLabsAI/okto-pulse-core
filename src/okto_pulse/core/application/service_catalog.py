@@ -63,6 +63,26 @@ class CoreAnalyticsOperations:
             dt_to=dt_to,
         )
 
+    async def board_kg(
+        self,
+        *,
+        query,
+        as_of,
+        population_scope,
+        exclusions,
+    ):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.board_kg_analytics import (
+            BoardKgAnalyticsService,
+        )
+
+        return await BoardKgAnalyticsService.project_from_public_services(
+            self.__relational_context,
+            query=query,
+            as_of=as_of,
+            population_scope=population_scope,
+            exclusions=exclusions,
+        )
+
     async def funnel(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_funnel
 
@@ -125,9 +145,7 @@ class CoreAnalyticsOperations:
             dt_to=dt_to,
         )
 
-    async def validations(
-        self, board_id: str, *, dt_from, dt_to
-    ):  # noqa: ANN001, ANN201
+    async def validations(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_validations
 
         return await compute_validations(
@@ -207,9 +225,7 @@ class CoreAnalyticsOperations:
             search,
         )
 
-    async def entity_detail(
-        self, entity_type: str, board_id: str, entity_id: str
-    ):  # noqa: ANN201
+    async def entity_detail(self, entity_type: str, board_id: str, entity_id: str):  # noqa: ANN201
         from okto_pulse.core.services.analytics_service import (
             _card_detail,
             _ideation_detail,
@@ -493,9 +509,8 @@ class CoreApplicationServiceCatalog:
             require_relational_application_adapter,
         )
 
-        return (
-            require_relational_application_adapter()
-            .quality_assessment_lifecycle(self.__relational_context)
+        return require_relational_application_adapter().quality_assessment_lifecycle(
+            self.__relational_context
         )
 
     @cached_property
@@ -613,9 +628,7 @@ class CoreApplicationServiceCatalog:
 
         return StructuredSpecEntityService(self.__relational_context)
 
-    async def resolve_user_permissions(
-        self, user_id: str, board_id: str
-    ):  # noqa: ANN201
+    async def resolve_user_permissions(self, user_id: str, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.main import resolve_user_permissions
 
         return await resolve_user_permissions(
@@ -1091,9 +1104,7 @@ class CoreApplicationServiceCatalog:
             template_id=template_id,
         )
 
-    async def resolve_active_default_board_template(
-        self, scope: str
-    ):  # noqa: ANN201
+    async def resolve_active_default_board_template(self, scope: str):  # noqa: ANN201
         from okto_pulse.core.ports.default_board_configuration import (
             get_default_board_configuration_store,
         )
