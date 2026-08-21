@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from .checklist import ChecklistPersistencePort
     from .code_investigation import CodeInvestigationStore
     from .code_traceability import CodeTraceabilityReadPort, CodeTraceabilityStore
+    from .board_kg_analytics import BoardKgAnalyticsEvidencePort
+    from .delivery_forecast import DeliveryForecastEvidencePort
     from .guideline_policy import (
         GuidelinePolicyPersistencePort,
         SemanticGuidelineAssessmentPersistencePort,
@@ -189,6 +191,16 @@ class RelationalApplicationAdapter(Protocol):
 
     def code_traceability_read(self, session: Any) -> "CodeTraceabilityReadPort":
         """Return bounded Code Traceability aggregate projections."""
+
+        ...
+
+    def delivery_forecast_read(self, session: Any) -> "DeliveryForecastEvidencePort":
+        """Return authorized Phase 1 evidence for governed forecasting."""
+
+        ...
+
+    def board_kg_analytics_read(self, session: Any) -> "BoardKgAnalyticsEvidencePort":
+        """Return board-only KG/effectiveness evidence with no mutation surface."""
 
         ...
 

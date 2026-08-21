@@ -13,6 +13,7 @@ from okto_pulse.core.ports.analytics_foundation import (
     AnalyticsPopulationScope,
     AnalyticsSourceAuthority,
 )
+from okto_pulse.core.models.schemas import BoardSettings, FlowHealthSettings
 from okto_pulse.core.ports.coverage_traceability import CoverageTraceabilityProjection
 from okto_pulse.core.ports.flow_health import (
     FlowAuthorityState,
@@ -72,45 +73,43 @@ def _payload(row: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
-def _policy(board: object) -> FlowHealthPolicy:
+def resolve_flow_health_policy(board: object) -> FlowHealthPolicy:
+    """Resolve the closed BoardSettings policy, retaining legacy read support."""
+
     settings = getattr(board, "settings", None)
-    root = settings if isinstance(settings, Mapping) else {}
-    analytics = root.get("analytics")
-    nested = analytics.get("flow_health") if isinstance(analytics, Mapping) else None
-    raw = nested if isinstance(nested, Mapping) else root.get("flow_health")
-    if raw is None:
-        return FlowHealthPolicy(
-            version=1,
-            authority_ref=f"board:{board.id}:flow-health:default-v1",
+    legacy = False
+    if isinstance(settings, BoardSettings):
+        policy = settings.analytics.flow_health
+    else:
+        root = settings if isinstance(settings, Mapping) else {}
+        analytics = root.get("analytics")
+        nested = (
+            analytics.get("flow_health") if isinstance(analytics, Mapping) else None
         )
-    if not isinstance(raw, Mapping):
-        raise ValueError("flow_health_board_policy_invalid")
-    allowed = {
-        "version",
-        "general_stale_hours",
-        "rejected_stale_hours",
-        "overrides",
-    }
-    if set(raw) - allowed:
-        raise ValueError("flow_health_board_policy_extra_fields")
-    version = raw.get("version", 1)
-    overrides_raw = raw.get("overrides", {})
-    if not isinstance(overrides_raw, Mapping):
-        raise ValueError("flow_health_board_policy_overrides_invalid")
+        raw = nested if nested is not None else root.get("flow_health")
+        if raw is None:
+            policy = BoardSettings.model_validate(root).analytics.flow_health
+        else:
+            legacy = nested is None
+            policy = FlowHealthSettings.model_validate(raw)
     overrides = tuple(
         sorted(
             (
                 FlowPolicyOverride(FlowLifecycleState(str(state)), hours)
-                for state, hours in overrides_raw.items()
+                for state, hours in policy.overrides.items()
             ),
             key=lambda item: item.state.value,
         )
     )
     return FlowHealthPolicy(
-        version=version,
-        authority_ref=f"board:{board.id}:flow-health:v{version}",
-        general_stale_hours=raw.get("general_stale_hours", 72),
-        rejected_stale_hours=raw.get("rejected_stale_hours", 96),
+        version=policy.version,
+        authority_ref=(
+            f"board:{board.id}:flow-health:legacy-v{policy.version}"
+            if legacy
+            else f"board:{board.id}:settings:analytics:flow-health:v{policy.version}"
+        ),
+        general_stale_hours=policy.general_stale_hours,
+        rejected_stale_hours=policy.rejected_stale_hours,
         overrides=overrides,
     )
 
@@ -331,7 +330,7 @@ def build_flow_health_projection(
     return FlowHealthService.projection(
         query=query,
         as_of=as_of,
-        policy=_policy(board),
+        policy=resolve_flow_health_policy(board),
         population_scope=AnalyticsPopulationScope(
             query.actor_scope_ref,
             accessible,
@@ -342,4 +341,4 @@ def build_flow_health_projection(
     )
 
 
-__all__ = ["build_flow_health_projection"]
+__all__ = ["build_flow_health_projection", "resolve_flow_health_policy"]

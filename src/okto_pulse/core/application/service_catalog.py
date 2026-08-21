@@ -11,8 +11,14 @@ from functools import cached_property
 
 
 class CoreAnalyticsOperations:
-    def __init__(self, relational_context: object) -> None:
+    def __init__(
+        self,
+        relational_context: object,
+        *,
+        code_traceability_read: object | None = None,
+    ) -> None:
         self.__relational_context = relational_context
+        self.__code_traceability_read = code_traceability_read
 
     async def board_is_owned_by(self, board_id: str, user_id: str) -> bool:
         from okto_pulse.core.services.analytics_service import board_is_owned_by
@@ -71,6 +77,24 @@ class CoreAnalyticsOperations:
         population_scope,
         exclusions,
     ):  # noqa: ANN001, ANN201
+        from okto_pulse.core.ports.board_kg_analytics import BoardKgAnalyticsQuery
+
+        if isinstance(query, BoardKgAnalyticsQuery):
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.board_kg_analytics import (
+                BoardKgEffectivenessService,
+            )
+
+            evidence = require_relational_application_adapter().board_kg_analytics_read(
+                self.__relational_context
+            )
+            return await BoardKgEffectivenessService.project(
+                self.__relational_context,
+                query=query,
+                evidence_port=evidence,
+            )
         from okto_pulse.core.services.board_kg_analytics import (
             BoardKgAnalyticsService,
         )
@@ -83,12 +107,44 @@ class CoreAnalyticsOperations:
             exclusions=exclusions,
         )
 
+    async def delivery_forecast(self, *, query):  # noqa: ANN001, ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.delivery_forecast import (
+            DeliveryForecastService,
+        )
+
+        evidence = require_relational_application_adapter().delivery_forecast_read(
+            self.__relational_context
+        )
+        return await DeliveryForecastService.project(
+            self.__relational_context,
+            query=query,
+            evidence_port=evidence,
+        )
+
     async def canonical_coverage(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.domain.code_traceability import (
+            CodeTraceabilityProjectionProfile,
+            CodeTraceabilitySubjectType,
+        )
+        from okto_pulse.core.ports.code_traceability import (
+            CodeTraceabilityProjectionQuery,
+        )
         from okto_pulse.core.services.analytics_service import _af, _analytics_list
         from okto_pulse.core.services.coverage_traceability_read_model import (
             build_coverage_traceability_projection,
         )
 
+        boards = await _analytics_list(
+            self.__relational_context,
+            "board",
+            filters=(_af("id", "eq", query.board_id),),
+            limit=2,
+        )
+        if len(boards) != 1:
+            raise ValueError("coverage_traceability_board_authority_invalid")
         specs = await _analytics_list(
             self.__relational_context,
             "spec",
@@ -102,11 +158,29 @@ class CoreAnalyticsOperations:
             "card",
             filters=(_af("board_id", "eq", query.board_id),),
         )
+        contexts = None
+        if self.__code_traceability_read is not None:
+            contexts = tuple(
+                [
+                    await self.__code_traceability_read.spec_context(
+                        CodeTraceabilityProjectionQuery(
+                            board_id=query.board_id,
+                            subject_type=CodeTraceabilitySubjectType.SPEC,
+                            subject_id=str(spec.id),
+                            subject_version=int(getattr(spec, "version", 1)),
+                            profile=CodeTraceabilityProjectionProfile.SUMMARY,
+                        )
+                    )
+                    for spec in specs
+                ]
+            )
         return build_coverage_traceability_projection(
             query=query,
             as_of=as_of,
+            board=boards[0],
             specs=specs,
             cards=cards,
+            code_traceability_contexts=contexts,
         )
 
     async def canonical_flow_health(self, *, query, as_of):  # noqa: ANN001, ANN201
@@ -159,6 +233,7 @@ class CoreAnalyticsOperations:
         coverage = build_coverage_traceability_projection(
             query=query,
             as_of=as_of,
+            board=boards[0],
             specs=tuple(spec for spec in specs if not spec.archived),
             cards=cards,
         )
@@ -468,7 +543,10 @@ class CoreApplicationServiceCatalog:
 
     @cached_property
     def analytics(self) -> CoreAnalyticsOperations:
-        return CoreAnalyticsOperations(self.__relational_context)
+        return CoreAnalyticsOperations(
+            self.__relational_context,
+            code_traceability_read=self.code_traceability_read,
+        )
 
     @cached_property
     def amendments(self):  # noqa: ANN201

@@ -2925,15 +2925,35 @@ async def compute_sprints_analytics(
 ) -> dict:
     """Board-level analytics reader (spec R01A REST-FU2d) — transport-free body of
     the legacy board_sprints_analytics endpoint."""
-    filters = _artifact_filters(
+    # Sprint membership is a lifecycle relationship, not a creation-time
+    # relationship.  Applying the requested window to cards/specs used to
+    # silently remove members of an otherwise selected Sprint (and applying it
+    # to Sprints hid an active Sprint created before the window altogether).
+    # Load the board-scoped population first, then use the window only to
+    # select historical Sprints; every active Sprint remains in scope.
+    board_filters = _artifact_filters(
         board_id,
         include_archived=False,
-        dt_from=dt_from,
-        dt_to=dt_to,
+        dt_from=None,
+        dt_to=None,
     )
-    sprints = await _analytics_list(db, "sprint", filters=filters)
-    all_cards = await _analytics_list(db, "card", filters=filters)
-    specs = await _analytics_list(db, "spec", filters=filters)
+    all_sprints = await _analytics_list(db, "sprint", filters=board_filters)
+
+    def _sprint_selected(sprint: Any) -> bool:
+        if sprint.status == SprintStatus.ACTIVE:
+            return True
+        created_at = getattr(sprint, "created_at", None)
+        if not isinstance(created_at, datetime):
+            return dt_from is None and dt_to is None
+        if dt_from is not None and created_at < dt_from:
+            return False
+        if dt_to is not None and created_at >= dt_to:
+            return False
+        return True
+
+    sprints = [sprint for sprint in all_sprints if _sprint_selected(sprint)]
+    all_cards = await _analytics_list(db, "card", filters=board_filters)
+    specs = await _analytics_list(db, "spec", filters=board_filters)
     specs_by_id = {spec.id: spec for spec in specs}
     from okto_pulse.core.services.sprint_scope import SprintScopeResolver
     from okto_pulse.core.ports.sprint_activation_baseline import (

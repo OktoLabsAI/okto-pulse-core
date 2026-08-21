@@ -4182,8 +4182,89 @@ class CodeTraceabilitySettings(BaseModel):
         return cls.model_validate(value)
 
 
+FlowHealthOverrideState: TypeAlias = Literal[
+    "backlog",
+    "pending",
+    "in_progress",
+    "rejected",
+    "done",
+]
+
+
+class FlowHealthSettings(BaseModel):
+    """Closed, revisioned board policy for Flow Health analytics.
+
+    ``version`` is the policy revision used by the governed settings write
+    contract.  It is deliberately distinct from the fixed Analytics settings
+    schema version.  Thresholds are whole hours and match the canonical Flow
+    Health defaults published by Core.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(default=1, ge=1, strict=True)
+    general_stale_hours: int = Field(default=72, ge=1, strict=True)
+    rejected_stale_hours: int = Field(default=96, ge=1, strict=True)
+    overrides: dict[FlowHealthOverrideState, int] = Field(default_factory=dict)
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _validate_overrides(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            raise ValueError("flow_health overrides must be an object")
+        for state, stale_hours in value.items():
+            if state not in {
+                "backlog",
+                "pending",
+                "in_progress",
+                "rejected",
+                "done",
+            }:
+                raise ValueError(f"unsupported flow_health override state: {state}")
+            if type(stale_hours) is not int or stale_hours < 1:
+                raise ValueError(
+                    "flow_health override thresholds must be positive whole hours"
+                )
+        return dict(value)
+
+
+class AnalyticsSettings(BaseModel):
+    """Closed board-level Analytics policy envelope (schema version 1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    flow_health: FlowHealthSettings = Field(default_factory=FlowHealthSettings)
+
+
+class FlowHealthSettingsUpdate(BaseModel):
+    """Closed full-replacement payload for a CAS-protected policy save."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1, strict=True)
+    general_stale_hours: int = Field(ge=1, strict=True)
+    rejected_stale_hours: int = Field(ge=1, strict=True)
+    overrides: dict[FlowHealthOverrideState, int] = Field(default_factory=dict)
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _validate_overrides(cls, value: object) -> object:
+        return FlowHealthSettings._validate_overrides(value)
+
+
+class FlowHealthSettingsRestore(BaseModel):
+    """Closed CAS payload for restoring Core defaults without losing history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1, strict=True)
+
+
 class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
+
+    analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
 
     max_scenarios_per_card: int = 3  # max test scenarios a single card can be linked to
     skip_test_coverage_global: bool = (

@@ -3023,6 +3023,78 @@ class BoardService:
         )
         return board
 
+    async def compare_and_swap_flow_health_settings(
+        self,
+        board_id: str,
+        user_id: str,
+        *,
+        expected_version: int,
+        update: Any | None,
+    ) -> Any | None:
+        """Atomically save or restore the revisioned Flow Health policy.
+
+        The application-persistence fence compares the complete authoritative
+        JSON document before the detached board record is dirtied. This keeps
+        unrelated board settings intact and serializes concurrent editors in
+        the caller-owned transaction. ``update=None`` restores Core defaults.
+        """
+
+        from okto_pulse.core.services.flow_health_settings import (
+            FlowHealthSettingsVersionConflict,
+            board_settings_with_next_flow_health_policy,
+        )
+
+        board = await self.get_board(board_id, user_id)
+        if board is None:
+            return None
+        persisted = dict(board.settings or {})
+        next_root, successor = board_settings_with_next_flow_health_policy(
+            persisted,
+            expected_version=expected_version,
+            update=update,
+        )
+        if not await _application_fence(
+            self.db,
+            "board",
+            board_id,
+            expected_values={"settings": persisted},
+        ):
+            latest = await _application_get(self.db, "board", board_id)
+            latest_version = expected_version
+            if latest is not None:
+                try:
+                    from okto_pulse.core.models.schemas import BoardSettings
+
+                    latest_version = BoardSettings.model_validate(
+                        getattr(latest, "settings", None) or {}
+                    ).analytics.flow_health.version
+                except (TypeError, ValueError):
+                    pass
+            raise FlowHealthSettingsVersionConflict(
+                expected_version=expected_version,
+                current_version=latest_version,
+            )
+
+        board.settings = next_root.model_dump(mode="json")
+        board.mark_dirty("settings")
+        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await self._log_activity(
+            board_id=board_id,
+            action=(
+                "flow_health_settings_restored"
+                if update is None
+                else "flow_health_settings_updated"
+            ),
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={
+                "expected_version": expected_version,
+                "policy": successor.model_dump(mode="json"),
+            },
+        )
+        return successor
+
     async def delete_board(self, board_id: str, user_id: str) -> bool:
         """Delete a board."""
         board = await self.get_board(board_id, user_id)

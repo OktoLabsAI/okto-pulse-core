@@ -1113,6 +1113,21 @@ from okto_pulse.core.application.use_cases.flow_health_analytics import (
     FlowHealthAnalyticsResult,
     FlowHealthAnalyticsUseCase,
 )
+from okto_pulse.core.application.use_cases.delivery_forecast import (
+    DeliveryForecastCommand,
+    DeliveryForecastResult,
+    DeliveryForecastUseCase,
+)
+from okto_pulse.core.application.use_cases.flow_health_settings import (
+    FlowHealthSettingsResult,
+    FlowHealthSettingsVersionConflict,
+    GetFlowHealthSettingsCommand,
+    GetFlowHealthSettingsUseCase,
+    RestoreFlowHealthSettingsCommand,
+    RestoreFlowHealthSettingsUseCase,
+    SaveFlowHealthSettingsCommand,
+    SaveFlowHealthSettingsUseCase,
+)
 from okto_pulse.core.application.use_cases.readiness_analytics import (
     PolicyResourceReadinessAnalyticsUseCase,
     ReadinessAnalyticsCommand,
@@ -1306,9 +1321,20 @@ __all__ = [
     "CoverageTraceabilityAnalyticsCommand",
     "CoverageTraceabilityAnalyticsResult",
     "CoverageTraceabilityAnalyticsUseCase",
+    "DeliveryForecastCommand",
+    "DeliveryForecastResult",
+    "DeliveryForecastUseCase",
     "FlowHealthAnalyticsCommand",
     "FlowHealthAnalyticsResult",
     "FlowHealthAnalyticsUseCase",
+    "FlowHealthSettingsResult",
+    "FlowHealthSettingsVersionConflict",
+    "GetFlowHealthSettingsCommand",
+    "GetFlowHealthSettingsUseCase",
+    "RestoreFlowHealthSettingsCommand",
+    "RestoreFlowHealthSettingsUseCase",
+    "SaveFlowHealthSettingsCommand",
+    "SaveFlowHealthSettingsUseCase",
     "PolicyResourceReadinessAnalyticsUseCase",
     "ReadinessAnalyticsCommand",
     "ReadinessAnalyticsResult",

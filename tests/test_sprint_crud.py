@@ -2517,6 +2517,74 @@ class TestSprintAnalyticsLaneBreakdown:
             "unavailable_reason": "activation_baseline_not_persisted",
         }
 
+    async def test_sprint_analytics_window_keeps_active_sprint_and_full_membership(
+        self, db_factory
+    ):
+        await _seed_board(db_factory)
+        await _clean_sprints(db_factory, BOARD_ID)
+        now = datetime.now(timezone.utc)
+        old = now - timedelta(days=60)
+        recent = now - timedelta(days=2)
+        async with db_factory() as db:
+            active_old = Sprint(
+                id="analytics-active-before-window",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Active before window",
+                status=SprintStatus.ACTIVE,
+                lane_type=SprintLaneType.NORMAL,
+                created_at=old,
+                created_by=AGENT_ID,
+            )
+            closed_old = Sprint(
+                id="analytics-closed-before-window",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Closed before window",
+                status=SprintStatus.CLOSED,
+                lane_type=SprintLaneType.NORMAL,
+                created_at=old,
+                created_by=AGENT_ID,
+            )
+            closed_recent = Sprint(
+                id="analytics-closed-in-window",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Closed in window",
+                status=SprintStatus.CLOSED,
+                lane_type=SprintLaneType.NORMAL,
+                created_at=recent,
+                created_by=AGENT_ID,
+            )
+            db.add_all([active_old, closed_old, closed_recent])
+            await db.flush()
+            old_member = await _put_card(
+                db,
+                card_id="analytics-old-active-member",
+                spec_id=SPEC_ID,
+                title="Member created before the window",
+                card_type=CardType.NORMAL,
+            )
+            old_member.created_at = old
+            old_member.sprint_id = active_old.id
+            await db.commit()
+
+            from okto_pulse.core.services.analytics_service import (
+                compute_sprints_analytics,
+            )
+
+            payload = await compute_sprints_analytics(
+                db,
+                BOARD_ID,
+                dt_from=now - timedelta(days=7),
+                dt_to=now + timedelta(days=1),
+            )
+
+        by_id = {row["sprint_id"]: row for row in payload["sprints"]}
+        assert set(by_id) == {active_old.id, closed_recent.id}
+        assert by_id[active_old.id]["total_cards"] == 1
+        assert closed_old.id not in by_id
+
 
 # ============================================================================
 # Sprint Deletion Tests
