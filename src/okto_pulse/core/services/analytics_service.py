@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from datetime import datetime as _dt
 from datetime import timedelta as _td
 from datetime import timezone as _tz
+from statistics import median
 from typing import Any
 
 from okto_pulse.core.domain.enums import (
@@ -2953,6 +2954,9 @@ async def compute_sprints_analytics(
 
     sprints = [sprint for sprint in all_sprints if _sprint_selected(sprint)]
     all_cards = await _analytics_list(db, "card", filters=board_filters)
+    board_done_card_ids = {
+        str(card.id) for card in all_cards if card.status == CardStatus.DONE
+    }
     specs = await _analytics_list(db, "spec", filters=board_filters)
     specs_by_id = {spec.id: spec for spec in specs}
     from okto_pulse.core.services.sprint_scope import SprintScopeResolver
@@ -3025,6 +3029,32 @@ async def compute_sprints_analytics(
             baseline=activation_baseline,
             current_members=current_commitment_members,
         )
+        baseline_member_ids = {
+            str(member.get("card_id"))
+            for member in (
+                getattr(activation_baseline, "members", ())
+                if activation_baseline is not None
+                else ()
+            )
+            if isinstance(member, dict) and member.get("card_id")
+        }
+        # The domain baseline object uses SprintActivationMember values while
+        # the Community persistence model stores canonical dictionaries.
+        if activation_baseline is not None and not baseline_member_ids:
+            baseline_member_ids = {
+                str(getattr(member, "card_id"))
+                for member in getattr(activation_baseline, "members", ())
+                if getattr(member, "card_id", None)
+            }
+        completed_committed_count = (
+            # Commitment is sealed at activation. A baseline member that was
+            # later removed from (or moved out of) this Sprint still counts as
+            # completed commitment when its board-scoped card reaches Done.
+            len(baseline_member_ids & board_done_card_ids)
+            if activation_baseline is not None
+            else None
+        )
+        sprint_velocity = _compute_velocity(done_cards, 4, all_cards=sp_cards)
 
         # Self-reported quality from card.conclusions on this sprint's cards.
         # Falls back to the validation gate's reviewer-reported avg_scores when
@@ -3086,6 +3116,25 @@ async def compute_sprints_analytics(
                     else None
                 ),
                 "commitment": commitment.canonical_dict(),
+                "completed_committed_count": completed_committed_count,
+                "committed_effort": {
+                    "state": "unavailable",
+                    "value": None,
+                    "unit": None,
+                    "reason": "effort_not_captured_at_activation",
+                },
+                "carryover": {
+                    "state": "unavailable",
+                    "count": None,
+                    "reason": "carryover_lineage_not_persisted",
+                },
+                "velocity": {
+                    "state": "available" if sprint_velocity else "empty",
+                    "period": "week",
+                    "sample_size": len(sprint_velocity),
+                    "series": sprint_velocity,
+                    "reason": None if sprint_velocity else "no_temporal_observations",
+                },
             }
         )
     per_sprint.sort(key=lambda x: x["total_cards"], reverse=True)
@@ -3244,6 +3293,577 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
         reverse=True,
     )
     return result
+
+
+async def compute_delivery_intelligence(
+    db: Any,
+    *,
+    query: Any,
+    actor_id: str,
+    operator_visibility: bool,
+    cursor_offset: int = 0,
+    limit: int = 50,
+    minimum_sample_size: int = 5,
+) -> dict[str, Any]:
+    """Build the canonical read-only Delivery Intelligence projection.
+
+    The projection deliberately reuses the immutable Sprint activation authority
+    and the shared Analytics temporal contract.  Missing evidence is represented
+    as an explicit state; it is never coerced to zero or reconstructed from the
+    mutable current Sprint membership.
+    """
+
+    from okto_pulse.core.ports.analytics_foundation import (
+        ANALYTICS_FOUNDATION_CONTRACT_VERSION,
+    )
+
+    def _utc_text(value: datetime) -> str:
+        normalized = (
+            value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        )
+        return (
+            normalized.astimezone(timezone.utc)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
+
+    def _metric(
+        *,
+        state: str,
+        value: float | int | None,
+        numerator: int | None = None,
+        denominator: int | None = None,
+        sample_size: int = 0,
+        reason: str | None = None,
+        unit: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "state": state,
+            "value": value,
+            "numerator": numerator,
+            "denominator": denominator,
+            "sample_size": sample_size,
+            "reason": reason,
+            "unit": unit,
+        }
+
+    def _filter_values(field: str) -> tuple[str, ...]:
+        values: list[str] = []
+        for clause in query.filters:
+            if clause.field != field:
+                continue
+            raw = clause.value
+            values.extend(str(item) for item in raw) if isinstance(
+                raw, tuple
+            ) else values.append(str(raw))
+        return tuple(values)
+
+    dt_from = query.window.from_inclusive
+    dt_to = query.window.to_exclusive
+    sprint_payload = await compute_sprints_analytics(
+        db,
+        query.board_id,
+        dt_from=dt_from,
+        dt_to=dt_to,
+    )
+    raw_sprints = list(sprint_payload["sprints"])
+    sprint_ids = set(_filter_values("sprint_id"))
+    lanes = set(_filter_values("lane"))
+    if sprint_ids:
+        raw_sprints = [item for item in raw_sprints if item["sprint_id"] in sprint_ids]
+    if lanes and "all" not in lanes:
+        raw_sprints = [item for item in raw_sprints if item["lane_type"] in lanes]
+    raw_sprints.sort(
+        key=lambda item: (str(item["title"]).casefold(), item["sprint_id"])
+    )
+
+    available_commitments = [
+        item for item in raw_sprints if item["commitment"]["state"] == "available"
+    ]
+    committed = sum(
+        int(item["commitment"].get("original_member_count") or 0)
+        for item in available_commitments
+    )
+    completed_committed = sum(
+        int(item.get("completed_committed_count") or 0)
+        for item in available_commitments
+    )
+    added = sum(
+        int(item["commitment"].get("added_count") or 0)
+        for item in available_commitments
+    )
+    removed = sum(
+        int(item["commitment"].get("removed_count") or 0)
+        for item in available_commitments
+    )
+    throughput = sum(int(item["done_cards"]) for item in raw_sprints)
+    hotfix_throughput = sum(
+        int(item["done_cards"])
+        for item in raw_sprints
+        if item["lane_type"] == SprintLaneType.HOTFIX.value
+    )
+    normal_throughput = throughput - hotfix_throughput
+    unavailable_commitments = len(raw_sprints) - len(available_commitments)
+
+    if committed:
+        reliability = _metric(
+            state="available" if unavailable_commitments == 0 else "partial",
+            value=round(completed_committed / committed * 100, 1),
+            numerator=completed_committed,
+            denominator=committed,
+            sample_size=len(available_commitments),
+            reason=(
+                None
+                if unavailable_commitments == 0
+                else "legacy_activation_baseline_unavailable"
+            ),
+            unit="percent",
+        )
+    else:
+        reliability = _metric(
+            state="unavailable" if raw_sprints else "empty",
+            value=None,
+            sample_size=0,
+            reason=(
+                "activation_baseline_not_available"
+                if raw_sprints
+                else "no_sprints_in_effective_window"
+            ),
+            unit="percent",
+        )
+
+    hotfix_share = (
+        _metric(
+            state="available",
+            value=round(hotfix_throughput / throughput * 100, 1),
+            numerator=hotfix_throughput,
+            denominator=throughput,
+            sample_size=throughput,
+            unit="percent",
+        )
+        if throughput
+        else _metric(
+            state="empty",
+            value=None,
+            sample_size=0,
+            reason="no_completed_cards_in_effective_window",
+            unit="percent",
+        )
+    )
+
+    all_cards = await _analytics_list(
+        db,
+        "card",
+        filters=_artifact_filters(
+            query.board_id,
+            include_archived=False,
+            dt_from=dt_from,
+            dt_to=dt_to,
+        ),
+    )
+    selected_sprint_ids = {item["sprint_id"] for item in raw_sprints}
+    scoped_cards = [
+        card
+        for card in all_cards
+        if getattr(card, "sprint_id", None) in selected_sprint_ids
+    ]
+
+    actor_facts: dict[str, dict[str, Any]] = {}
+    for card in scoped_cards:
+        implementer = str(getattr(card, "created_by", "") or "")
+        if implementer:
+            fact = actor_facts.setdefault(
+                implementer,
+                {
+                    "done": 0,
+                    "own_with_validation": 0,
+                    "own_first_pass": 0,
+                    "validation_total": 0,
+                    "validation_success": 0,
+                    "rework_introduced": 0,
+                    "rework_resolved": 0,
+                    "cycle_hours": [],
+                },
+            )
+            if card.status == CardStatus.DONE:
+                fact["done"] += 1
+                created_at = getattr(card, "created_at", None)
+                updated_at = getattr(card, "updated_at", None)
+                if isinstance(created_at, datetime) and isinstance(
+                    updated_at, datetime
+                ):
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
+                    fact["cycle_hours"].append(
+                        max(0.0, (updated_at - created_at).total_seconds() / 3600)
+                    )
+            validations = [
+                value
+                for value in (getattr(card, "validations", None) or [])
+                if isinstance(value, dict)
+            ]
+            if validations:
+                fact["own_with_validation"] += 1
+                first_outcome = validations[0].get("outcome") or validations[0].get(
+                    "verdict"
+                )
+                if first_outcome in {"success", "pass"}:
+                    fact["own_first_pass"] += 1
+                failed = sum(
+                    1
+                    for value in validations
+                    if (value.get("outcome") or value.get("verdict"))
+                    not in {"success", "pass"}
+                )
+                fact["rework_introduced"] += failed
+                if failed and any(
+                    (value.get("outcome") or value.get("verdict"))
+                    in {"success", "pass"}
+                    for value in validations[1:]
+                ):
+                    fact["rework_resolved"] += 1
+
+        for validation in getattr(card, "validations", None) or []:
+            if not isinstance(validation, dict):
+                continue
+            reviewer = validation.get("reviewer_id") or validation.get("evaluator_id")
+            if not reviewer:
+                continue
+            reviewer_fact = actor_facts.setdefault(
+                str(reviewer),
+                {
+                    "done": 0,
+                    "own_with_validation": 0,
+                    "own_first_pass": 0,
+                    "validation_total": 0,
+                    "validation_success": 0,
+                    "rework_introduced": 0,
+                    "rework_resolved": 0,
+                    "cycle_hours": [],
+                },
+            )
+            reviewer_fact["validation_total"] += 1
+            outcome = validation.get("outcome") or validation.get("verdict")
+            if outcome in {"success", "pass"}:
+                reviewer_fact["validation_success"] += 1
+
+    contribution_view = (
+        _filter_values("contribution_view") or ("self_and_aggregates",)
+    )[0]
+    role_filter = set(_filter_values("role"))
+
+    def _role(fact: dict[str, Any]) -> str:
+        if fact["done"] and fact["validation_total"]:
+            return "Implementation + validation"
+        if fact["validation_total"]:
+            return "Validation agent"
+        return "Implementation agent"
+
+    def _role_slug(fact: dict[str, Any]) -> str:
+        return _role(fact).casefold().replace(" ", "_")
+
+    def _role_allowed(fact: dict[str, Any]) -> bool:
+        return not role_filter or "all" in role_filter or _role_slug(fact) in role_filter
+
+    def _rate(
+        numerator: int, denominator: int, *, restricted: bool = False
+    ) -> dict[str, Any]:
+        if restricted:
+            return _metric(
+                state="restricted",
+                value=None,
+                sample_size=0,
+                reason="minimum_sample_not_met",
+                unit="percent",
+            )
+        if denominator == 0:
+            return _metric(
+                state="empty",
+                value=None,
+                sample_size=0,
+                reason="no_eligible_observations",
+                unit="percent",
+            )
+        return _metric(
+            state="available",
+            value=round(numerator / denominator * 100, 1),
+            numerator=numerator,
+            denominator=denominator,
+            sample_size=denominator,
+            unit="percent",
+        )
+
+    def _contribution_row(
+        *,
+        subject_id: str | None,
+        label: str,
+        visibility: str,
+        fact: dict[str, Any],
+        restricted: bool = False,
+        enforce_minimum_sample: bool = False,
+    ) -> dict[str, Any]:
+        cycles = list(fact["cycle_hours"])
+        role = _role(fact)
+
+        def _below_minimum(sample_size: int) -> bool:
+            return enforce_minimum_sample and sample_size < minimum_sample_size
+
+        done_restricted = restricted or _below_minimum(int(fact["done"]))
+        first_pass_restricted = restricted or _below_minimum(
+            int(fact["own_with_validation"])
+        )
+        validation_restricted = restricted or _below_minimum(
+            int(fact["validation_total"])
+        )
+        rework_restricted = first_pass_restricted
+        cycle_restricted = restricted or _below_minimum(len(cycles))
+        return {
+            "subject_id": subject_id,
+            "subject_label": label,
+            "visibility": "restricted" if restricted else visibility,
+            "role": role,
+            "done_count": None if done_restricted else int(fact["done"]),
+            "first_pass": _rate(
+                int(fact["own_first_pass"]),
+                int(fact["own_with_validation"]),
+                restricted=first_pass_restricted,
+            ),
+            "validation_success": _rate(
+                int(fact["validation_success"]),
+                int(fact["validation_total"]),
+                restricted=validation_restricted,
+            ),
+            "rework_introduced": (
+                None if rework_restricted else int(fact["rework_introduced"])
+            ),
+            "rework_resolved": (
+                None if rework_restricted else int(fact["rework_resolved"])
+            ),
+            "median_cycle_hours": _metric(
+                state=(
+                    "restricted"
+                    if cycle_restricted
+                    else ("available" if cycles else "empty")
+                ),
+                value=(
+                    None
+                    if cycle_restricted or not cycles
+                    else round(float(median(cycles)), 2)
+                ),
+                sample_size=(0 if cycle_restricted else len(cycles)),
+                reason=(
+                    "minimum_sample_not_met"
+                    if cycle_restricted
+                    else (None if cycles else "no_completed_cycle_observations")
+                ),
+                unit="hours",
+            ),
+            "sample_size": 0
+            if restricted
+            else max(
+                int(fact["done"]),
+                int(fact["own_with_validation"]),
+                int(fact["validation_total"]),
+            ),
+            "period": query.window.canonical_dict(),
+        }
+
+    contributions: list[dict[str, Any]] = []
+    self_fact = actor_facts.get(actor_id)
+    if (
+        contribution_view in {"self", "self_and_aggregates", "operator"}
+        and self_fact
+        and _role_allowed(self_fact)
+    ):
+        contributions.append(
+            _contribution_row(
+                subject_id=actor_id,
+                label="You",
+                visibility="self",
+                fact=self_fact,
+            )
+        )
+
+    others = [
+        (key, value)
+        for key, value in actor_facts.items()
+        if key != actor_id and _role_allowed(value)
+    ]
+    if contribution_view == "operator" and operator_visibility:
+        for other_id, fact in sorted(others, key=lambda item: item[0]):
+            contributions.append(
+                _contribution_row(
+                    subject_id=other_id,
+                    label=other_id,
+                    visibility="operator",
+                    fact=fact,
+                    restricted=max(
+                        int(fact["done"]),
+                        int(fact["validation_total"]),
+                    )
+                    < minimum_sample_size,
+                    enforce_minimum_sample=True,
+                )
+            )
+    elif (
+        contribution_view in {"aggregates", "self_and_aggregates", "operator"}
+        and others
+    ):
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for _, fact in others:
+            grouped.setdefault(_role(fact), []).append(fact)
+        for role, facts in sorted(grouped.items()):
+            aggregate = {
+                "done": sum(int(fact["done"]) for fact in facts),
+                "own_with_validation": sum(
+                    int(fact["own_with_validation"]) for fact in facts
+                ),
+                "own_first_pass": sum(
+                    int(fact["own_first_pass"]) for fact in facts
+                ),
+                "validation_total": sum(
+                    int(fact["validation_total"]) for fact in facts
+                ),
+                "validation_success": sum(
+                    int(fact["validation_success"]) for fact in facts
+                ),
+                "rework_introduced": sum(
+                    int(fact["rework_introduced"]) for fact in facts
+                ),
+                "rework_resolved": sum(
+                    int(fact["rework_resolved"]) for fact in facts
+                ),
+                "cycle_hours": [
+                    value for fact in facts for value in fact["cycle_hours"]
+                ],
+            }
+            aggregate_sample = max(
+                aggregate["done"],
+                aggregate["own_with_validation"],
+                aggregate["validation_total"],
+            )
+            contributions.append(
+                _contribution_row(
+                    subject_id=None,
+                    label=f"Other {role}s",
+                    visibility="aggregate",
+                    fact=aggregate,
+                    restricted=aggregate_sample < minimum_sample_size,
+                    enforce_minimum_sample=True,
+                )
+            )
+
+    def _has_restricted_metric(row: dict[str, Any]) -> bool:
+        return bool(
+            row["visibility"] == "restricted"
+            or row["done_count"] is None
+            or row["first_pass"]["state"] == "restricted"
+            or row["validation_success"]["state"] == "restricted"
+            or row["rework_introduced"] is None
+            or row["median_cycle_hours"]["state"] == "restricted"
+        )
+
+    restricted_count = sum(1 for row in contributions if _has_restricted_metric(row))
+
+    page = raw_sprints[cursor_offset : cursor_offset + limit]
+    next_offset = cursor_offset + len(page)
+    next_cursor = f"offset:{next_offset}" if next_offset < len(raw_sprints) else None
+    observed_at = query.as_of or datetime.now(timezone.utc)
+    result_state = (
+        "empty"
+        if not raw_sprints and not contributions
+        else (
+            "partial"
+            if unavailable_commitments or restricted_count
+            else "available"
+        )
+    )
+    return {
+        "contract_version": "1",
+        "foundation_version": ANALYTICS_FOUNDATION_CONTRACT_VERSION,
+        "query_fingerprint": query.fingerprint,
+        "filters": [item.canonical_dict() for item in query.filters],
+        "as_of": _utc_text(observed_at),
+        "board_id": query.board_id,
+        "result_state": result_state,
+        "provenance": {
+            "observed_at": _utc_text(observed_at),
+            "currentness": "current",
+            "reason": (
+                "legacy_activation_baseline_unavailable"
+                if unavailable_commitments
+                else None
+            ),
+            "sources": [
+                {
+                    "authority": "sprint_activation_baselines",
+                    "reference": f"board:{query.board_id}:delivery-intelligence:v1",
+                    "timestamp_field": "sprints.updated_at",
+                },
+                {
+                    "authority": "task_validation_ledger",
+                    "reference": f"board:{query.board_id}:card-validations",
+                    "timestamp_field": "cards.updated_at",
+                },
+            ],
+        },
+        "population_scope": {
+            "scope_ref": query.actor_scope_ref,
+            "accessible_count": len(raw_sprints),
+            "excluded_count": 0,
+        },
+        "exclusions": {
+            "restricted_count": restricted_count,
+            "excluded_count": restricted_count,
+            "reasons": (
+                [
+                    {
+                        "reason": "minimum_sample_not_met",
+                        "count": restricted_count,
+                    }
+                ]
+                if restricted_count
+                else []
+            ),
+        },
+        "minimum_sample_size": minimum_sample_size,
+        "summary": {
+            "commitment_reliability": reliability,
+            "throughput": {
+                "state": "available" if raw_sprints else "empty",
+                "total": throughput,
+                "normal": normal_throughput,
+                "hotfix": hotfix_throughput,
+                "sample_size": len(raw_sprints),
+                "reason": None if raw_sprints else "no_sprints_in_effective_window",
+            },
+            "carryover": _metric(
+                state="unavailable" if raw_sprints else "empty",
+                value=None,
+                sample_size=0,
+                reason=(
+                    "carryover_lineage_not_persisted"
+                    if raw_sprints
+                    else "no_sprints_in_effective_window"
+                ),
+            ),
+            "hotfix_share": hotfix_share,
+            "scope": {
+                "state": reliability["state"],
+                "committed_at_activation": committed if committed else None,
+                "completed_from_commitment": completed_committed if committed else None,
+                "added_after_activation": added if available_commitments else None,
+                "removed_after_activation": removed if available_commitments else None,
+                "sample_size": len(available_commitments),
+                "reason": reliability["reason"],
+            },
+        },
+        "sprints": page,
+        "contributions": contributions,
+        "next_cursor": next_cursor,
+    }
 
 
 # R01A REST-FU2e: entity-list readers moved verbatim from api/analytics.py.

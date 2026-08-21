@@ -124,6 +124,30 @@ class CoreAnalyticsOperations:
             evidence_port=evidence,
         )
 
+    async def delivery_intelligence(
+        self,
+        *,
+        query,
+        actor_id,
+        operator_visibility,
+        cursor_offset,
+        limit,
+        minimum_sample_size,
+    ):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import (
+            compute_delivery_intelligence,
+        )
+
+        return await compute_delivery_intelligence(
+            self.__relational_context,
+            query=query,
+            actor_id=actor_id,
+            operator_visibility=operator_visibility,
+            cursor_offset=cursor_offset,
+            limit=limit,
+            minimum_sample_size=minimum_sample_size,
+        )
+
     async def canonical_coverage(self, *, query, as_of):  # noqa: ANN001, ANN201
         from okto_pulse.core.domain.code_traceability import (
             CodeTraceabilityProjectionProfile,

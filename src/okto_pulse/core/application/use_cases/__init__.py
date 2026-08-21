@@ -1118,6 +1118,11 @@ from okto_pulse.core.application.use_cases.delivery_forecast import (
     DeliveryForecastResult,
     DeliveryForecastUseCase,
 )
+from okto_pulse.core.application.use_cases.delivery_intelligence import (
+    DeliveryIntelligenceCommand,
+    DeliveryIntelligenceResult,
+    DeliveryIntelligenceUseCase,
+)
 from okto_pulse.core.application.use_cases.flow_health_settings import (
     FlowHealthSettingsResult,
     FlowHealthSettingsVersionConflict,
@@ -1324,6 +1329,9 @@ __all__ = [
     "DeliveryForecastCommand",
     "DeliveryForecastResult",
     "DeliveryForecastUseCase",
+    "DeliveryIntelligenceCommand",
+    "DeliveryIntelligenceResult",
+    "DeliveryIntelligenceUseCase",
     "FlowHealthAnalyticsCommand",
     "FlowHealthAnalyticsResult",
     "FlowHealthAnalyticsUseCase",

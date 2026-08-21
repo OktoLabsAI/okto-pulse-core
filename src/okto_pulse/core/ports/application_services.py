@@ -454,6 +454,17 @@ class AnalyticsOperations(Protocol):
 
     async def delivery_forecast(self, *, query: object) -> object: ...
 
+    async def delivery_intelligence(
+        self,
+        *,
+        query: object,
+        actor_id: str,
+        operator_visibility: bool,
+        cursor_offset: int,
+        limit: int,
+        minimum_sample_size: int,
+    ) -> object: ...
+
     async def canonical_coverage(
         self,
         *,
