@@ -28,7 +28,10 @@ from okto_pulse.core.application.knowledge_workspace import (
 )
 from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
 from okto_pulse.core.ports.traceability import (
+    LineageGraphDependencyScope,
     LineageGraphView,
+    TraceabilityReadError,
+    validate_lineage_graph_dependency_scope,
     validate_lineage_graph_view,
 )
 from okto_pulse.core.ports.scheduler import SchedulerControl
@@ -498,6 +501,7 @@ class GetLineageGraphCommand:
     entity_id: str
     include_artifacts: bool
     view: LineageGraphView = "lineage"
+    dependency_scope: LineageGraphDependencyScope = "selected"
 
 
 class GetLineageGraphUseCase:
@@ -505,9 +509,23 @@ class GetLineageGraphUseCase:
         self, command: GetLineageGraphCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         view = validate_lineage_graph_view(command.view)
+        dependency_scope = validate_lineage_graph_dependency_scope(
+            command.dependency_scope
+        )
+        if view != "dependency" and dependency_scope != "selected":
+            raise TraceabilityReadError(
+                "dependency_scope_requires_dependency_view",
+                "Lineage dependency scope is available only for dependency view.",
+                status_code=400,
+            )
         if await load_accessible_board(uow, command.board_id, actor) is None:
             raise BoardNotFoundError(command.board_id)
         if view == "dependency":
+            dependency_kwargs = (
+                {"dependency_scope": dependency_scope}
+                if dependency_scope != "selected"
+                else {}
+            )
             return DataResult(
                 await uow.services.build_lineage_graph(
                     command.board_id,
@@ -515,6 +533,7 @@ class GetLineageGraphUseCase:
                     entity_id=command.entity_id,
                     include_artifacts=command.include_artifacts,
                     view=view,
+                    **dependency_kwargs,
                 )
             )
         return DataResult(

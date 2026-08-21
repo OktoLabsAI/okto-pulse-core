@@ -10,7 +10,10 @@ from __future__ import annotations
 from functools import cached_property
 
 from okto_pulse.core.ports.traceability import (
+    LineageGraphDependencyScope,
     LineageGraphView,
+    TraceabilityReadError,
+    validate_lineage_graph_dependency_scope,
     validate_lineage_graph_view,
 )
 
@@ -1209,11 +1212,26 @@ class CoreApplicationServiceCatalog:
         entity_id: str,
         include_artifacts: bool,
         view: LineageGraphView = "lineage",
+        dependency_scope: LineageGraphDependencyScope = "selected",
     ):  # noqa: ANN201
         from okto_pulse.core.services.traceability import build_lineage_graph
 
         normalized_view = validate_lineage_graph_view(view)
+        normalized_dependency_scope = validate_lineage_graph_dependency_scope(
+            dependency_scope
+        )
+        if normalized_view != "dependency" and normalized_dependency_scope != "selected":
+            raise TraceabilityReadError(
+                "dependency_scope_requires_dependency_view",
+                "Lineage dependency scope is available only for dependency view.",
+                status_code=400,
+            )
         if normalized_view == "dependency":
+            dependency_kwargs = (
+                {"dependency_scope": normalized_dependency_scope}
+                if normalized_dependency_scope != "selected"
+                else {}
+            )
             return await build_lineage_graph(
                 self.__relational_context,
                 board_id,
@@ -1221,6 +1239,7 @@ class CoreApplicationServiceCatalog:
                 entity_id=entity_id,
                 include_artifacts=include_artifacts,
                 view=normalized_view,
+                **dependency_kwargs,
             )
         return await build_lineage_graph(
             self.__relational_context,

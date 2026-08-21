@@ -6,6 +6,7 @@ from typing import Any, Literal, Protocol, TypedDict, cast
 
 
 LineageGraphView = Literal["lineage", "dependency"]
+LineageGraphDependencyScope = Literal["selected", "lineage"]
 
 
 class CodeTraceabilityReportSummary(TypedDict):
@@ -50,6 +51,20 @@ def validate_lineage_graph_view(view: object) -> LineageGraphView:
     return cast(LineageGraphView, view)
 
 
+def validate_lineage_graph_dependency_scope(
+    scope: object,
+) -> LineageGraphDependencyScope:
+    """Return one supported dependency scope before adapter dispatch."""
+
+    if scope not in ("selected", "lineage"):
+        raise TraceabilityReadError(
+            "invalid_lineage_graph_dependency_scope",
+            "Lineage graph dependency scope must be 'selected' or 'lineage'.",
+            status_code=400,
+        )
+    return cast(LineageGraphDependencyScope, scope)
+
+
 class TraceabilityReadPort(Protocol):
     async def build_traceability_report(
         self,
@@ -70,14 +85,17 @@ class TraceabilityReadPort(Protocol):
         entity_id: str,
         include_artifacts: bool = True,
         view: LineageGraphView = "lineage",
+        dependency_scope: LineageGraphDependencyScope = "selected",
     ) -> dict[str, Any]: ...
 
 
 __all__ = [
     "CodeTraceabilityReportSummary",
+    "LineageGraphDependencyScope",
     "LineageGraphView",
     "TraceabilityReadError",
     "TraceabilityReadPort",
     "TraceabilityReport",
+    "validate_lineage_graph_dependency_scope",
     "validate_lineage_graph_view",
 ]

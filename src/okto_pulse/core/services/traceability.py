@@ -19,8 +19,10 @@ from okto_pulse.core.domain.code_traceability import (
 from okto_pulse.core.ports.relational_services import resolve_traceability_adapter
 from okto_pulse.core.ports.traceability import (
     CodeTraceabilityReportSummary,
+    LineageGraphDependencyScope,
     LineageGraphView,
     TraceabilityReadError,
+    validate_lineage_graph_dependency_scope,
     validate_lineage_graph_view,
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
@@ -214,10 +216,25 @@ async def build_lineage_graph(
     entity_id: str,
     include_artifacts: bool = True,
     view: LineageGraphView = "lineage",
+    dependency_scope: LineageGraphDependencyScope = "selected",
 ) -> dict[str, Any]:
     normalized_view = validate_lineage_graph_view(view)
+    normalized_dependency_scope = validate_lineage_graph_dependency_scope(
+        dependency_scope
+    )
+    if normalized_view != "dependency" and normalized_dependency_scope != "selected":
+        raise TraceabilityReadError(
+            "dependency_scope_requires_dependency_view",
+            "Lineage dependency scope is available only for dependency view.",
+            status_code=400,
+        )
     adapter = resolve_traceability_adapter()
     if normalized_view == "dependency":
+        dependency_kwargs = (
+            {"dependency_scope": normalized_dependency_scope}
+            if normalized_dependency_scope != "selected"
+            else {}
+        )
         return await adapter.build_lineage_graph(
             context,
             board_id,
@@ -225,6 +242,7 @@ async def build_lineage_graph(
             entity_id=entity_id,
             include_artifacts=include_artifacts,
             view=normalized_view,
+            **dependency_kwargs,
         )
     return await adapter.build_lineage_graph(
         context,

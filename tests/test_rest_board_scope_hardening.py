@@ -272,6 +272,68 @@ async def test_lineage_dependency_view_reaches_graph_reader_unchanged() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lineage_dependency_scope_reaches_graph_reader_unchanged() -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    await GetLineageGraphUseCase().execute(
+        GetLineageGraphCommand(
+            "board-b",
+            "spec",
+            "spec-b",
+            False,
+            view="dependency",
+            dependency_scope="lineage",
+        ),
+        actor=ACTOR,
+        uow=uow,
+    )
+
+    assert uow.services.lineage_kwargs == {
+        "board_id": "board-b",
+        "entity_type": "spec",
+        "entity_id": "spec-b",
+        "include_artifacts": False,
+        "view": "dependency",
+        "dependency_scope": "lineage",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("view", "dependency_scope", "expected_code"),
+    [
+        ("dependency", "everything", "invalid_lineage_graph_dependency_scope"),
+        ("lineage", "lineage", "dependency_scope_requires_dependency_view"),
+    ],
+)
+async def test_lineage_invalid_dependency_scope_fails_before_board_or_reader(
+    view: str,
+    dependency_scope: str,
+    expected_code: str,
+) -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    with pytest.raises(TraceabilityReadError) as raised:
+        await GetLineageGraphUseCase().execute(
+            GetLineageGraphCommand(
+                "board-b",
+                "task",
+                "task-b",
+                False,
+                view=view,  # type: ignore[arg-type]
+                dependency_scope=dependency_scope,  # type: ignore[arg-type]
+            ),
+            actor=ACTOR,
+            uow=uow,
+        )
+
+    assert raised.value.code == expected_code
+    assert raised.value.status_code == 400
+    assert uow.events == []
+    assert uow.services.lineage_kwargs is None
+
+
+@pytest.mark.asyncio
 async def test_lineage_invalid_view_fails_before_board_or_graph_reader() -> None:
     uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
 

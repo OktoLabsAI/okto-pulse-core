@@ -64,10 +64,33 @@ class _LegacyTraceabilityAdapter:
         return call
 
 
+class _ScopeCapturingTraceabilityAdapter:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def build_lineage_graph(
+        self,
+        context: object,
+        board_id: str,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        call = {"context": context, "board_id": board_id, **kwargs}
+        self.calls.append(call)
+        return call
+
+
 def test_traceability_port_keeps_lineage_as_the_default_view() -> None:
     parameter = signature(TraceabilityReadPort.build_lineage_graph).parameters["view"]
 
     assert parameter.default == "lineage"
+
+
+def test_traceability_port_keeps_selected_as_the_default_dependency_scope() -> None:
+    parameter = signature(TraceabilityReadPort.build_lineage_graph).parameters[
+        "dependency_scope"
+    ]
+
+    assert parameter.default == "selected"
 
 
 @pytest.mark.asyncio
@@ -122,6 +145,75 @@ async def test_traceability_service_forwards_dependency_view(
     )
 
     assert [call["view"] for call in adapter.calls] == ["dependency"]
+
+
+@pytest.mark.asyncio
+async def test_traceability_service_forwards_lineage_dependency_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = _ScopeCapturingTraceabilityAdapter()
+    monkeypatch.setattr(
+        traceability_service,
+        "resolve_traceability_adapter",
+        lambda: adapter,
+    )
+
+    await traceability_service.build_lineage_graph(
+        object(),
+        "board-1",
+        entity_type="task",
+        entity_id="task-1",
+        include_artifacts=False,
+        view="dependency",
+        dependency_scope="lineage",
+    )
+
+    assert adapter.calls[0]["view"] == "dependency"
+    assert adapter.calls[0]["dependency_scope"] == "lineage"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("view", "dependency_scope", "expected_code"),
+    [
+        (
+            "dependency",
+            "everything",
+            "invalid_lineage_graph_dependency_scope",
+        ),
+        (
+            "lineage",
+            "lineage",
+            "dependency_scope_requires_dependency_view",
+        ),
+    ],
+)
+async def test_traceability_service_rejects_invalid_dependency_scope_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    view: str,
+    dependency_scope: str,
+    expected_code: str,
+) -> None:
+    adapter = _ScopeCapturingTraceabilityAdapter()
+    monkeypatch.setattr(
+        traceability_service,
+        "resolve_traceability_adapter",
+        lambda: adapter,
+    )
+
+    with pytest.raises(TraceabilityReadError) as raised:
+        await traceability_service.build_lineage_graph(
+            object(),
+            "board-1",
+            entity_type="task",
+            entity_id="task-1",
+            view=view,  # type: ignore[arg-type]
+            dependency_scope=dependency_scope,  # type: ignore[arg-type]
+        )
+
+    assert raised.value.code == expected_code
+    assert raised.value.status_code == 400
+    assert adapter.calls == []
 
 
 @pytest.mark.asyncio
@@ -196,6 +288,18 @@ async def test_application_service_catalog_forwards_the_view(
         "include_artifacts": False,
         "view": "dependency",
     }
+
+    captured.clear()
+    lineage_scope_result = await catalog.build_lineage_graph(
+        "board-1",
+        entity_type="spec",
+        entity_id="spec-1",
+        include_artifacts=False,
+        view="dependency",
+        dependency_scope="lineage",
+    )
+
+    assert lineage_scope_result["dependency_scope"] == "lineage"
 
 
 @pytest.mark.asyncio
