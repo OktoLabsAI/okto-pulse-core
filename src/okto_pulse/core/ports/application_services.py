@@ -13,6 +13,8 @@ from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
+from okto_pulse.core.ports.traceability import LineageGraphView
+
 from okto_pulse.core.domain.code_traceability_kg import (
     KGDeadLetterReprocessScope,
 )
@@ -363,6 +365,7 @@ class ApplicationServiceCatalog(Protocol):
         entity_type: str,
         entity_id: str,
         include_artifacts: bool,
+        view: LineageGraphView = "lineage",
     ) -> dict[str, object]: ...
 
     async def list_discovery_selector_options(

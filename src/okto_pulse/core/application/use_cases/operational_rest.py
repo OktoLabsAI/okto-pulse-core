@@ -27,6 +27,10 @@ from okto_pulse.core.application.knowledge_workspace import (
     KnowledgeWorkspaceProjector,
 )
 from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
+from okto_pulse.core.ports.traceability import (
+    LineageGraphView,
+    validate_lineage_graph_view,
+)
 from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
@@ -493,14 +497,26 @@ class GetLineageGraphCommand:
     entity_type: str
     entity_id: str
     include_artifacts: bool
+    view: LineageGraphView = "lineage"
 
 
 class GetLineageGraphUseCase:
     async def execute(
         self, command: GetLineageGraphCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        view = validate_lineage_graph_view(command.view)
         if await load_accessible_board(uow, command.board_id, actor) is None:
             raise BoardNotFoundError(command.board_id)
+        if view == "dependency":
+            return DataResult(
+                await uow.services.build_lineage_graph(
+                    command.board_id,
+                    entity_type=command.entity_type,
+                    entity_id=command.entity_id,
+                    include_artifacts=command.include_artifacts,
+                    view=view,
+                )
+            )
         return DataResult(
             await uow.services.build_lineage_graph(
                 command.board_id,

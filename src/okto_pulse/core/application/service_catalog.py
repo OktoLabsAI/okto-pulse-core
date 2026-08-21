@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from functools import cached_property
 
+from okto_pulse.core.ports.traceability import (
+    LineageGraphView,
+    validate_lineage_graph_view,
+)
+
 
 class CoreAnalyticsOperations:
     def __init__(
@@ -1203,9 +1208,20 @@ class CoreApplicationServiceCatalog:
         entity_type: str,
         entity_id: str,
         include_artifacts: bool,
+        view: LineageGraphView = "lineage",
     ):  # noqa: ANN201
         from okto_pulse.core.services.traceability import build_lineage_graph
 
+        normalized_view = validate_lineage_graph_view(view)
+        if normalized_view == "dependency":
+            return await build_lineage_graph(
+                self.__relational_context,
+                board_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                include_artifacts=include_artifacts,
+                view=normalized_view,
+            )
         return await build_lineage_graph(
             self.__relational_context,
             board_id,

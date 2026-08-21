@@ -59,6 +59,7 @@ from okto_pulse.core.application.use_cases.queue_health import (
     GetQueueHealthUseCase,
     QueueBoardNotFoundError,
 )
+from okto_pulse.core.ports.traceability import TraceabilityReadError
 
 
 class _Boards:
@@ -146,9 +147,11 @@ class _Services:
         self.discovery_catalog = _DiscoveryCatalog(intent, events)
         self.kg = _Kg(events)
         self._events = events
+        self.lineage_kwargs = None
 
     async def build_lineage_graph(self, board_id: str, **kwargs):
         self._events.append("lineage")
+        self.lineage_kwargs = {"board_id": board_id, **kwargs}
         return {"board_id": board_id}
 
     async def execute_discovery_intent(self, **kwargs):
@@ -234,6 +237,61 @@ async def test_lineage_owner_or_shared_member_can_reach_graph_reader(
 
     assert result.data == {"board_id": "board-b"}
     assert uow.events[-1] == "lineage"
+    assert uow.services.lineage_kwargs == {
+        "board_id": "board-b",
+        "entity_type": "spec",
+        "entity_id": "spec-b",
+        "include_artifacts": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_lineage_dependency_view_reaches_graph_reader_unchanged() -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    result = await GetLineageGraphUseCase().execute(
+        GetLineageGraphCommand(
+            "board-b",
+            "task",
+            "task-b",
+            False,
+            view="dependency",
+        ),
+        actor=ACTOR,
+        uow=uow,
+    )
+
+    assert result.data == {"board_id": "board-b"}
+    assert uow.services.lineage_kwargs == {
+        "board_id": "board-b",
+        "entity_type": "task",
+        "entity_id": "task-b",
+        "include_artifacts": False,
+        "view": "dependency",
+    }
+
+
+@pytest.mark.asyncio
+async def test_lineage_invalid_view_fails_before_board_or_graph_reader() -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    with pytest.raises(TraceabilityReadError) as raised:
+        await GetLineageGraphUseCase().execute(
+            GetLineageGraphCommand(
+                "board-b",
+                "task",
+                "task-b",
+                False,
+                view="sideways",  # type: ignore[arg-type]
+            ),
+            actor=ACTOR,
+            uow=uow,
+        )
+
+    assert raised.value.code == "invalid_lineage_graph_view"
+    assert raised.value.status_code == 400
+    assert uow.events == []
+    assert uow.services.lineage_kwargs is None
 
 
 @pytest.mark.asyncio

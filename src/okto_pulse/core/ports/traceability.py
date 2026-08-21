@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict, cast
+
+
+LineageGraphView = Literal["lineage", "dependency"]
 
 
 class CodeTraceabilityReportSummary(TypedDict):
@@ -35,6 +38,18 @@ class TraceabilityReadError(Exception):
         self.status_code = status_code
 
 
+def validate_lineage_graph_view(view: object) -> LineageGraphView:
+    """Return one supported view or fail before dispatching to an adapter."""
+
+    if view not in ("lineage", "dependency"):
+        raise TraceabilityReadError(
+            "invalid_lineage_graph_view",
+            "Lineage graph view must be 'lineage' or 'dependency'.",
+            status_code=400,
+        )
+    return cast(LineageGraphView, view)
+
+
 class TraceabilityReadPort(Protocol):
     async def build_traceability_report(
         self,
@@ -54,12 +69,15 @@ class TraceabilityReadPort(Protocol):
         entity_type: str,
         entity_id: str,
         include_artifacts: bool = True,
+        view: LineageGraphView = "lineage",
     ) -> dict[str, Any]: ...
 
 
 __all__ = [
     "CodeTraceabilityReportSummary",
+    "LineageGraphView",
     "TraceabilityReadError",
     "TraceabilityReadPort",
     "TraceabilityReport",
+    "validate_lineage_graph_view",
 ]

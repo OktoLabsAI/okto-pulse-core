@@ -19,7 +19,9 @@ from okto_pulse.core.domain.code_traceability import (
 from okto_pulse.core.ports.relational_services import resolve_traceability_adapter
 from okto_pulse.core.ports.traceability import (
     CodeTraceabilityReportSummary,
+    LineageGraphView,
     TraceabilityReadError,
+    validate_lineage_graph_view,
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 
@@ -211,8 +213,20 @@ async def build_lineage_graph(
     entity_type: str,
     entity_id: str,
     include_artifacts: bool = True,
+    view: LineageGraphView = "lineage",
 ) -> dict[str, Any]:
-    return await resolve_traceability_adapter().build_lineage_graph(
+    normalized_view = validate_lineage_graph_view(view)
+    adapter = resolve_traceability_adapter()
+    if normalized_view == "dependency":
+        return await adapter.build_lineage_graph(
+            context,
+            board_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            include_artifacts=include_artifacts,
+            view=normalized_view,
+        )
+    return await adapter.build_lineage_graph(
         context,
         board_id,
         entity_type=entity_type,
