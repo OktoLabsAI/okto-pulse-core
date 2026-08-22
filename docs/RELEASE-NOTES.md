@@ -5,19 +5,80 @@ Changeset per version, newest first.
 
 ### 0.3.2 — current
 
-This release introduces the transport-neutral semantic-guideline assessment v2
-contract. Assessments now seal actionable human-readable pinpoints, immutable
-anchor snapshots and metric evidence against exact subject and binding fences.
+Version 0.3.2 expands the edition-neutral contract from semantic evidence into
+governed implementation traceability, lifecycle readiness, exact recovery and
+canonical delivery intelligence.
 
-- Canonical subject projection ports keep Core independent of edition storage.
-- Domain and application contracts validate v2 metrics, anchors, digests,
-  idempotency and currentness before producing a receipt.
-- MCP resources and examples document the new writer and current-assessment
-  reader without exposing opaque identifiers as the primary user evidence.
-- Policy error envelopes and governance observability cover the v2 lifecycle.
-- Governed same-board Spec precedence now uses an authoritative relational DAG,
+#### Semantic guidelines and lifecycle validation
+
+- Semantic-guideline assessment v2 seals human-readable pinpoints, immutable
+  anchor snapshots, confidence, metric rationale and remediation against exact
+  subject, binding and policy fences.
+- Canonical subject-projection ports and stable policy error envelopes keep
+  currentness evaluation independent of edition storage and transport.
+- Human validation receipts are scoped to lifecycle editions. Semantic subject
+  mutations invalidate governed evidence, while ordinary workflow-column
+  transitions do not create false staleness.
+- Normal Tasks and Bugs use the governed Rejected rework lifecycle; Tests retain
+  their distinct rework edge and completion policy.
+
+#### Agent-mediated Code Traceability
+
+- Core defines closed contracts for investigation preflight receipts, Code
+  Evidence, evidence classification, coverage dispositions, Implementation
+  Targets, target resolution, overlap, execution receipts, enforcement and
+  waivers without accessing source code itself.
+- The evidence model distinguishes brownfield AS-IS, greenfield scaffold or
+  base-code observations and greenfield TO-BE references. Authenticated agents
+  may submit the classification directly; human review remains available but is
+  not the only valid decision path.
+- Advisory and blocking governance, attestor policy, freshness, trust and
+  observed-state requirements are deterministic board contracts.
+- MCP resources define the clean-context handoff so another agent can understand
+  what was observed, inferred or proposed without the original investigation.
+
+#### Specs, exports and lineage
+
+- Governed same-board Spec precedence uses an authoritative relational DAG,
   Done-only execution gates, edition-scoped start memory and a deterministic
-  `precedes` Knowledge Graph projection shared by REST and MCP.
+  `precedes` KG projection.
+- Canonical export contracts carry human-readable architecture, governed
+  evidence and sealed validation state without requiring transport-owned
+  formatting decisions.
+- Lineage contracts expose dependency scope for Specs and Tasks while preserving
+  the complete origin/derivation graph for edition UIs.
+
+#### Canonical analytics and Sprint commitment
+
+- Core owns canonical projections for Board KG, Canonical Coverage &
+  Traceability, Flow Health, Spec & Policy Readiness and resilient delivery
+  forecast/full-view composition.
+- Analytics facts are derived from governed lifecycle, policy, resource,
+  traceability and graph state so REST, MCP and UI consumers share one meaning.
+- Sprint activation records an immutable, atomic commitment used by readiness
+  and forecast projections.
+
+#### Exact KG recovery
+
+- Fenced offline recovery reconciles legacy rebuild queues through bounded
+  inventories and fingerprints, exact checkpoints, durable writer handoff and
+  current-invocation admission.
+- Recovery leases bind to the active data home; exact consolidation outcomes,
+  atomic compensation, source/audit hash separation and raw JSON queue CAS make
+  retries deterministic and preserve unrelated pending backoff.
+- The recovery surface reports exact drain blockers and never treats an online
+  diagnostic as authority to purge or rebuild graph state.
+
+#### Authorization and validation
+
+- `AuthorizeOperationUseCase`, canonical permission namespaces and the
+  fail-closed MCP registry keep REST and MCP authorization transport-neutral.
+- SDLC transition flags are generated from `SDLC_REGISTRY`, explicit denial wins
+  over fallback and every mutable action requires a canonical policy or declared
+  human-only exemption.
+- Contract, registry and focused regression suites cover policy currentness,
+  Code Traceability, rejected lifecycle, Spec dependencies, recovery, Analytics,
+  Sprint commitment and lineage projections.
 
 
 ### 0.3.1

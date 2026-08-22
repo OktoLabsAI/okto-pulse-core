@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [0.3.2] - 2026-08-09
+## [0.3.2] - 2026-08-22
 
 ### Added
 
@@ -25,6 +25,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   canonical policy or an explicit human-only exemption.
 - Governed same-board Spec dependency contracts, lifecycle readiness gates,
   edition-scoped start memory and a deterministic `precedes` KG projection.
+- Agent-mediated Code Traceability contracts for preflight investigation,
+  classified Code Evidence, coverage dispositions, Implementation Targets,
+  target resolution, overlap, execution receipts, enforcement and waivers.
+- Canonical Board KG, Coverage & Traceability, Flow Health, Spec & Policy
+  Readiness and resilient delivery forecast/full-view projections.
+- Immutable, atomic Sprint activation commitment and its readiness projection.
+- Dependency lineage scope for Specs and Tasks without narrowing the complete
+  origin/derivation graph.
+- Fenced offline KG recovery with bounded legacy-queue reconciliation, exact
+  checkpoints, ACK journals, compensation outcomes and blocker diagnostics.
+- Canonical human-readable export contracts for architecture, governed evidence
+  and sealed validation state.
 
 ### Changed
 
@@ -35,6 +47,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - SDLC transition permissions are generated directly from `SDLC_REGISTRY`.
 - Permission resolution now preserves explicit denial ahead of legacy fallback
   and role-based authorization.
+- Human validation receipts are lifecycle-edition scoped; only semantic subject
+  changes invalidate current evidence.
+- Code Evidence classification distinguishes brownfield AS-IS, greenfield
+  scaffold/base-code and greenfield TO-BE references, and accepts authenticated
+  agent classification without requiring a redundant human decision.
+- Recovery leases and admission are bound to the current data home and service
+  invocation; exact outcomes drive queue draining and compensation.
 
 ### Fixed
 
@@ -44,6 +63,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   Graph helpers.
 - Nullable unit-of-work session gates no longer reject valid authorization
   paths.
+- Policy receipts no longer become stale solely because a Card or Test changes
+  workflow status.
+- Rejected Task and Bug rework is explicit and Test-card lifecycle semantics
+  remain isolated from that lane.
+- Legacy rebuild queues preserve unrelated pending backoff and raw JSON while
+  exact source/audit hashes and writer handoff make recovery retry-safe.
+- Canonical analytics projections remain complete and fail closed when governed
+  policy, resource, traceability or graph facts are unavailable.
 
 ### Validation
 
@@ -51,6 +78,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   three explicit human-only exemptions.
 - Registry, Ruff and 182 focused authorization and policy regression tests pass
   after reconciliation with `develop`.
+- Focused contract and regression suites cover Code Traceability, lifecycle
+  currentness, Spec dependencies, exact recovery, Analytics, Sprint commitment
+  and lineage dependency scope.
 
 ## [0.3.1] - 2026-07-27
 
