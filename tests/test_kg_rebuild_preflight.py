@@ -353,6 +353,7 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
     for field in (
         "board_id",
         "outcome",
+        "preflight_outcome",
         "action_required",
         "base_state",
         "metric_status",
@@ -362,17 +363,26 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
         "preflight_hash",
         "generated_at",
         "rebuild_status",
+        "manifest_ref",
+        "source_set_hash",
+        "execution_mode",
     ):
         assert field in body, f"missing field {field}"
     # Stub probes return healthy + 0 sources for KG-02.1 placeholder.
     assert body["board_id"] == "b-test"
     assert body["base_state"] == "healthy"
-    assert body["outcome"] in {"ready", "confirmation_required", "blocked"}
+    assert body["outcome"] == "diagnostic_complete"
+    assert body["preflight_outcome"] in {
+        "ready",
+        "confirmation_required",
+        "blocked",
+    }
     assert len(body["preflight_hash"]) == 64  # sha256 hex
-    # val_d0da4a75 rework: preflight now ALSO returns manifest_ref +
-    # source_set_hash so the operator can pass them to /confirm.
-    assert body["manifest_ref"].startswith("rebuild_manifest_")
-    assert len(body["source_set_hash"]) == 64
+    # Online preflight is bounded diagnostics only. The offline executor mints
+    # fresh execution artifacts after independently repeating authorization.
+    assert body["manifest_ref"] is None
+    assert body["source_set_hash"] is None
+    assert body["execution_mode"] == "recovery_only_offline"
 
 
 # --- SPEC4 card 8d77d45d / scenario ts_f49b7d37 ------------------------------

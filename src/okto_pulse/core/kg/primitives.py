@@ -34,6 +34,12 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import TypeVar
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH,
+    CodeTraceabilityKGWriteViolation,
+    is_code_traceability_subtype,
+    require_code_traceability_candidate_writer,
+)
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -42,6 +48,13 @@ from okto_pulse.core.kg.node_identity import (
     derive_natural_key,
     mint_node_id,
     normalize_text,
+)
+from okto_pulse.core.kg.relational_projection import (
+    parse_relational_projection_ref,
+    relational_projection_alternative_relation_rule,
+    relational_projection_belongs_to_rule,
+    relational_projection_candidate_id,
+    relational_projection_edge_id,
 )
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
@@ -254,12 +267,14 @@ class KGPrimitiveError(Exception):
         message: str,
         session_id: str | None = None,
         details: dict | None = None,
+        retryable: bool = False,
     ):
         super().__init__(message)
         self.code = code
         self.message = message
         self.session_id = session_id
         self.details = details or {}
+        self.retryable = bool(retryable)
 
 
 KG_GRAPH_DEGRADED_ERROR_CODE = "kg_graph_degraded"
@@ -325,7 +340,41 @@ def _contextualize_graph_commit_error(exc: BaseException) -> tuple[str, dict]:
     """Preserve semantic adapter error context without interpreting a backend."""
 
     details = getattr(exc, "details", None)
-    return str(exc), dict(details) if isinstance(details, dict) else {}
+    context = dict(details) if isinstance(details, dict) else {}
+    if isinstance(exc, SpecLineageReconciliationError):
+        receipt = exc.receipt
+        cause = exc.__cause__
+        context.update(
+            {
+                "failure_type": type(exc).__name__,
+                "spec_lineage_error_code": exc.code,
+                "retryable": exc.retryable,
+                "compensation_applied": exc.compensation_applied,
+                "progress_preserved": exc.preserve_progress,
+                "cause_type": type(cause).__name__ if cause is not None else None,
+                "cause_code": getattr(cause, "code", None),
+            }
+        )
+        if receipt is not None:
+            context.update(
+                {
+                    "source_id": receipt.source_id,
+                    "target_id": receipt.target_id,
+                    "target_rule_id": receipt.target_rule_id,
+                    "new_edge_created": receipt.new_edge_created,
+                    "removed_edge_count": len(receipt.removed_edges),
+                    "ambiguous_legacy_edges": receipt.ambiguous_legacy_edges,
+                }
+            )
+    return str(exc), context
+
+
+def _graph_commit_failure_code(exc: BaseException) -> tuple[str, bool]:
+    """Project a stable semantic code without flattening typed graph errors."""
+
+    if isinstance(exc, SpecLineageReconciliationError):
+        return exc.code, exc.retryable
+    return "commit_failed", False
 
 
 def _not_found(session_id: str) -> KGPrimitiveError:
@@ -428,8 +477,7 @@ def _validate_spec_lineage_parent_intent(
     ):
         raise KGPrimitiveError(
             "spec_lineage_clear_intent_forbidden",
-            "Spec-lineage clear is an internal forced deterministic-worker "
-            "operation.",
+            "Spec-lineage clear is an internal forced deterministic-worker operation.",
             session_id=session_id,
             details={
                 "artifact_type": artifact_type,
@@ -500,6 +548,12 @@ async def begin_consolidation(
             )
         deterministic_candidates[candidate.candidate_id] = candidate
 
+    _require_code_traceability_candidate_ownership(
+        deterministic_candidates,
+        agent_id=agent_id,
+        session_id=session_id,
+    )
+
     try:
         lineage_intent = SpecLineageParentIntent(spec_lineage_parent_intent)
     except ValueError as exc:
@@ -519,8 +573,7 @@ async def begin_consolidation(
     )
 
     projection_candidate_ids = frozenset(
-        str(candidate_id)
-        for candidate_id in relational_projection_candidate_ids
+        str(candidate_id) for candidate_id in relational_projection_candidate_ids
     )
     projection_intent = relational_projection_active_set_intent
     if projection_intent is not None:
@@ -528,17 +581,20 @@ async def begin_consolidation(
         owner_id = str(getattr(projection_intent, "owner_id", ""))
         namespace = str(getattr(projection_intent, "namespace", ""))
         active_refs = tuple(getattr(projection_intent, "active_refs", ()))
+        active_edges = tuple(getattr(projection_intent, "active_edges", ()))
+        supported_scope = (req.artifact_type, owner_type, namespace) in {
+            ("refinement", "refinement", "rdl"),
+            ("spec", "spec", "dependencies"),
+        }
         if (
             not agent_id.startswith("system:")
-            or req.artifact_type != "refinement"
-            or owner_type != "refinement"
+            or not supported_scope
             or owner_id != req.artifact_id
-            or namespace != "rdl"
         ):
             raise KGPrimitiveError(
                 "relational_projection_scope_invalid",
                 "Relational projection ownership is restricted to the "
-                "server-side refinement/RDL consolidation path.",
+                "server-side refinement/RDL and Spec dependency paths.",
                 session_id=session_id,
             )
         active_candidate_ids = frozenset(
@@ -564,11 +620,10 @@ async def begin_consolidation(
                     "the deterministic candidate set.",
                     session_id=session_id,
                 )
-            if (
-                _enum_value(candidate.node_type)
-                != str(getattr(ref, "node_type", ""))
-                or str(candidate.source_artifact_ref or "")
-                != str(getattr(ref, "source_artifact_ref", ""))
+            if _enum_value(candidate.node_type) != str(
+                getattr(ref, "node_type", "")
+            ) or str(candidate.source_artifact_ref or "") != str(
+                getattr(ref, "source_artifact_ref", "")
             ):
                 raise KGPrimitiveError(
                     "relational_projection_candidate_identity_mismatch",
@@ -576,6 +631,68 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
+        if namespace == "rdl" and active_edges:
+            raise KGPrimitiveError(
+                "relational_projection_active_set_mismatch",
+                "The refinement/RDL projection cannot own operational edges.",
+                session_id=session_id,
+            )
+        if namespace == "dependencies":
+            if active_refs or projection_candidate_ids:
+                raise KGPrimitiveError(
+                    "relational_projection_active_set_mismatch",
+                    "The Spec dependency projection owns edges, not nodes.",
+                    session_id=session_id,
+                )
+            owner_candidates = {
+                candidate_id
+                for candidate_id, candidate in deterministic_candidates.items()
+                if _enum_value(candidate.node_type) == "Entity"
+                and str(candidate.source_artifact_ref or "") == f"spec:{owner_id}"
+            }
+            if len(owner_candidates) != 1:
+                raise KGPrimitiveError(
+                    "relational_projection_owner_unresolved",
+                    "The Spec dependency owner root must be present exactly once.",
+                    session_id=session_id,
+                )
+            owner_candidate_id = next(iter(owner_candidates))
+            edge_candidate_ids: set[str] = set()
+            for edge_ref in active_edges:
+                candidate_id = str(getattr(edge_ref, "candidate_id", ""))
+                from_candidate_id = str(getattr(edge_ref, "from_candidate_id", ""))
+                to_candidate_id = str(getattr(edge_ref, "to_candidate_id", ""))
+                rule_id = str(getattr(edge_ref, "rule_id", ""))
+                source_ref_endpoint = _parse_source_ref_endpoint(from_candidate_id)
+                prerequisite_reference_valid = bool(
+                    source_ref_endpoint is not None
+                    and source_ref_endpoint[0] == "Entity"
+                    and _is_spec_root_source_ref(source_ref_endpoint[1])
+                    and source_ref_endpoint[1] != f"spec:{owner_id}"
+                )
+                if (
+                    not candidate_id
+                    or candidate_id in edge_candidate_ids
+                    or str(getattr(edge_ref, "edge_type", "")) != "precedes"
+                    or to_candidate_id != owner_candidate_id
+                    or (
+                        not prerequisite_reference_valid
+                        and (
+                            from_candidate_id not in deterministic_candidates
+                            or _enum_value(
+                                deterministic_candidates[from_candidate_id].node_type
+                            )
+                            != "Entity"
+                        )
+                    )
+                    or not rule_id.startswith("precedes/spec_dependency/")
+                ):
+                    raise KGPrimitiveError(
+                        "relational_projection_edge_identity_mismatch",
+                        "A Spec dependency edge is outside its exact projection scope.",
+                        session_id=session_id,
+                    )
+                edge_candidate_ids.add(candidate_id)
     elif projection_candidate_ids:
         raise KGPrimitiveError(
             "relational_projection_intent_required",
@@ -690,6 +807,12 @@ async def add_node_candidate(
     store = get_kg_registry().require_session_store()
     cand = req.candidate
 
+    _require_code_traceability_candidate_ownership(
+        {cand.candidate_id: cand},
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
+
     # Cognitive canonical invariant (spec 007d1308 — FR1/FR3/FR4,
     # dec_0b3368fe/dec_26c5cc2d). The cognitive agent only ever produces
     # canonical knowledge; a working-layer node may originate solely from the
@@ -794,6 +917,8 @@ async def add_edge_candidate(
         for ep in (cand.from_candidate_id, cand.to_candidate_id):
             if ep.startswith("kg:"):
                 continue
+            if _parse_source_ref_endpoint(ep) is not None:
+                continue
             if ep in session.node_candidates:
                 continue
             # Cross-session deterministic refs (Layer 1 hierarchy backbone):
@@ -863,6 +988,11 @@ async def get_similar_nodes(
         )
 
     cand = session.node_candidates[req.candidate_id]
+    _require_code_traceability_candidate_ownership(
+        {cand.candidate_id: cand},
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
     embedder = get_kg_registry().require_embedding_provider()
     query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
 
@@ -887,6 +1017,7 @@ async def get_similar_nodes(
             similarity=r.similarity,
         )
         for r in raw
+        if not is_code_traceability_subtype(getattr(r, "kind_of", None))
     ]
     return GetSimilarNodesResponse(
         session_id=req.session_id,
@@ -929,6 +1060,11 @@ def _find_existing_graph_matches(
                 top_k=5,
                 min_similarity=0.3,
             )
+            matches = [
+                match
+                for match in matches
+                if not is_code_traceability_subtype(getattr(match, "kind_of", None))
+            ]
         except Exception as exc:
             logger.warning(
                 "kg.primitives.reconciliation_search_failed candidate=%s err=%s",
@@ -938,8 +1074,9 @@ def _find_existing_graph_matches(
 
         # Vector top-k is not an identity index. Decisions need the exact
         # active lineage independently so a low-similarity reversal cannot
-        # evade immutable history. Other node types retain the legacy
-        # similarity flow and reach the NC-8 source-ref merge at commit.
+        # evade immutable history. Source-backed Entities deliberately retain
+        # NC-8's automatic MERGE semantics at commit; the pre-write identity
+        # fence validates explicit UPDATE/SUPERSEDE targets independently.
         source_ref = str(cand.source_artifact_ref or "").strip()
         if node_type == "Decision" and source_ref and callable(exact_lookup):
             try:
@@ -1001,6 +1138,12 @@ async def propose_reconciliation(
     async with session.lock:
         _validate_session_state(session, allow_pending_commit=False)
         candidate_snapshot = dict(session.node_candidates)
+
+    _require_code_traceability_candidate_ownership(
+        candidate_snapshot,
+        agent_id=agent_id,
+        session_id=req.session_id,
+    )
 
     if not force_reprocess:
         latest = await _get_latest_audit(
@@ -1092,6 +1235,197 @@ def _connectivity_writer_path(agent_id: str) -> str:
     return "commit_consolidation"
 
 
+def _require_code_traceability_candidate_ownership(
+    node_candidates: dict,
+    *,
+    agent_id: str,
+    session_id: str,
+) -> None:
+    """Fail before staging/provider access when a generic writer forges CT."""
+
+    writer_path = _connectivity_writer_path(agent_id)
+    for candidate in node_candidates.values():
+        try:
+            require_code_traceability_candidate_writer(
+                candidate,
+                writer_path=writer_path,
+            )
+        except CodeTraceabilityKGWriteViolation as exc:
+            raise KGPrimitiveError(
+                "code_traceability_projection_reserved",
+                "Code Traceability KG projections are owned by the "
+                "deterministic worker",
+                session_id=session_id,
+                details={
+                    "reason": exc.reason,
+                    "candidate_id": exc.candidate_id,
+                    "reserved_fields": list(exc.reserved_fields),
+                    "required_writer_path": (
+                        CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH
+                    ),
+                },
+            ) from exc
+
+
+def _require_no_code_traceability_existing_targets(
+    graph_scope,
+    *,
+    node_candidates: dict,
+    effective_hints: dict,
+    agent_id: str,
+    session_id: str,
+) -> None:
+    """Prevent generic reconciliation/NC-8 from mutating deterministic CT."""
+
+    if (
+        _connectivity_writer_path(agent_id)
+        == CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH
+    ):
+        return
+
+    probes: list[tuple[str, str, str]] = []
+    for candidate_id, candidate in node_candidates.items():
+        node_type = _enum_value(candidate.node_type)
+        if node_type != "Entity":
+            continue
+        hint = effective_hints.get(candidate_id)
+        target_id = str(getattr(hint, "target_node_id", None) or "").strip()
+        if target_id:
+            probes.append((candidate_id, "id", target_id))
+        source_ref = str(candidate.source_artifact_ref or "").strip()
+        if source_ref:
+            probes.append((candidate_id, "source_artifact_ref", source_ref))
+
+    for candidate_id, lookup_kind, lookup_value in probes:
+        if lookup_kind == "id":
+            statement = "MATCH (n:Entity {id: $value}) RETURN n.kind_of LIMIT 1"
+        else:
+            statement = (
+                "MATCH (n:Entity {source_artifact_ref: $value}) "
+                "WHERE n.superseded_by IS NULL "
+                "RETURN n.kind_of LIMIT 1"
+            )
+        result = graph_scope.execute(statement, {"value": lookup_value})
+        if result.rows and is_code_traceability_subtype(result.rows[0][0]):
+            raise KGPrimitiveError(
+                "code_traceability_projection_reserved",
+                "Generic reconciliation cannot update, merge, or supersede "
+                "a deterministic Code Traceability projection",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "required_writer_path": (
+                        CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH
+                    ),
+                },
+            )
+
+
+def _require_entity_source_identity_matches(
+    graph_scope,
+    *,
+    node_candidates: dict,
+    effective_hints: dict,
+    session_id: str,
+) -> None:
+    """Reject cross-source Entity mutation hints before the first write.
+
+    Reconciliation hints and explicit overrides are untrusted planning input.
+    A source-backed Entity is the structural root for that exact relational
+    artifact identity; UPDATE/SUPERSEDE may reuse its own lineage, but must not
+    turn a semantically similar artifact root into its successor. This commit
+    boundary also protects stale sessions and forced overrides.
+    """
+
+    for candidate_id, candidate in node_candidates.items():
+        if _enum_value(candidate.node_type) != "Entity":
+            continue
+        candidate_ref = str(candidate.source_artifact_ref or "").strip()
+        if not candidate_ref:
+            continue
+        hint = effective_hints.get(candidate_id)
+        if hint is None or _resolve_op(hint, candidate.source_confidence) not in {
+            ReconciliationOperation.UPDATE,
+            ReconciliationOperation.SUPERSEDE,
+        }:
+            continue
+        target_node_id = str(getattr(hint, "target_node_id", None) or "").strip()
+        if not target_node_id:
+            raise KGPrimitiveError(
+                "entity_source_identity_unverifiable",
+                "A source-backed Entity mutation requires an existing target "
+                "with a verifiable source artifact identity.",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "candidate_source_artifact_ref": candidate_ref,
+                    "target_node_id": None,
+                    "reason": "target_node_id_missing",
+                },
+            )
+        try:
+            result = graph_scope.execute(
+                "MATCH (n:Entity) WHERE n.id = $id "
+                "RETURN n.id, n.source_artifact_ref LIMIT 1",
+                {"id": target_node_id},
+            )
+            rows = getattr(result, "rows", ())
+        except Exception as exc:
+            raise KGPrimitiveError(
+                "entity_source_identity_unverifiable",
+                "A source-backed Entity mutation was rejected because its "
+                "target identity could not be read.",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "candidate_source_artifact_ref": candidate_ref,
+                    "target_node_id": target_node_id,
+                    "reason": "target_lookup_failed",
+                    "failure_type": type(exc).__name__,
+                },
+            ) from exc
+        if not rows:
+            raise KGPrimitiveError(
+                "entity_source_identity_unverifiable",
+                "A source-backed Entity mutation requires an existing target "
+                "with a verifiable source artifact identity.",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "candidate_source_artifact_ref": candidate_ref,
+                    "target_node_id": target_node_id,
+                    "reason": "target_not_found",
+                },
+            )
+        target_ref = str(rows[0][1] or "").strip()
+        if not target_ref:
+            raise KGPrimitiveError(
+                "entity_source_identity_unverifiable",
+                "A source-backed Entity mutation requires an existing target "
+                "with a non-empty source artifact identity.",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "candidate_source_artifact_ref": candidate_ref,
+                    "target_node_id": target_node_id,
+                    "reason": "target_source_artifact_ref_missing",
+                },
+            )
+        if target_ref != candidate_ref:
+            raise KGPrimitiveError(
+                "entity_source_identity_mismatch",
+                "A source-backed Entity cannot update or supersede a different "
+                "source artifact identity.",
+                session_id=session_id,
+                details={
+                    "candidate_id": candidate_id,
+                    "candidate_source_artifact_ref": candidate_ref,
+                    "target_node_id": target_node_id,
+                    "target_source_artifact_ref": target_ref,
+                },
+            )
+
+
 def _validate_graph_connectivity_before_commit(
     *,
     graph_scope,
@@ -1103,6 +1437,7 @@ def _validate_graph_connectivity_before_commit(
     explicit_override_candidate_ids: frozenset[str],
     writer_path: str,
     kg_health_state: str,
+    deterministic_rdl_alternative_candidate_ids: frozenset[str] = frozenset(),
 ) -> dict:
     """Validate zero-orphan invariants before any graph backend mutation.
 
@@ -1222,6 +1557,9 @@ def _validate_graph_connectivity_before_commit(
         edges=guard_edges,
         existing_node_refs=existing_refs,
         generation_id="",
+        deterministic_rdl_alternative_candidate_ids=(
+            deterministic_rdl_alternative_candidate_ids
+        ),
     )
     response = result.to_response()
     response["checked_nodes"] = len(guard_nodes)
@@ -1259,6 +1597,223 @@ def _validate_graph_connectivity_before_commit(
         session_id=session_id,
         details=details,
     )
+
+
+def _validated_deterministic_rdl_alternative_grants(
+    *,
+    agent_id: str,
+    session_artifact_type: str,
+    session_artifact_id: str,
+    node_candidates: dict,
+    edge_candidates: dict,
+    relational_projection_candidate_ids: frozenset[str],
+    relational_projection_active_set_intent: object | None,
+) -> frozenset[str]:
+    """Prove the narrow server-owned RDL Alternative writer exception.
+
+    ``Alternative`` remains cognitive-owned in the generic registry.  The one
+    deterministic producer is the current relational RDL projection, already
+    admitted by ``begin_consolidation``.  Re-prove its closed identities and
+    provenance at the graph boundary so an arbitrary deterministic candidate,
+    prefix collision, or mutable intent cannot inherit that authority.
+    """
+
+    intent = relational_projection_active_set_intent
+    if (
+        type(node_candidates) is not dict
+        or type(edge_candidates) is not dict
+        or type(relational_projection_candidate_ids) is not frozenset
+        or any(
+            type(candidate_id) is not str or not candidate_id
+            for candidate_id in relational_projection_candidate_ids
+        )
+        or any(
+            type(candidate_id) is not str
+            or not candidate_id
+            or str(getattr(candidate, "candidate_id", "")) != candidate_id
+            for candidate_id, candidate in node_candidates.items()
+        )
+        or any(
+            type(candidate_id) is not str
+            or not candidate_id
+            or str(getattr(candidate, "candidate_id", "")) != candidate_id
+            for candidate_id, candidate in edge_candidates.items()
+        )
+        or agent_id != "system:historical_consolidation"
+        or session_artifact_type != "refinement"
+        or intent is None
+        or type(getattr(intent, "owner_type", None)) is not str
+        or type(getattr(intent, "owner_id", None)) is not str
+        or type(getattr(intent, "namespace", None)) is not str
+        or getattr(intent, "owner_type") != "refinement"
+        or getattr(intent, "owner_id") != session_artifact_id
+        or getattr(intent, "namespace") != "rdl"
+        or type(getattr(intent, "active_refs", None)) is not tuple
+        or type(getattr(intent, "active_edges", None)) is not tuple
+        or getattr(intent, "active_edges")
+    ):
+        return frozenset()
+
+    active_refs = getattr(intent, "active_refs")
+    refs_by_candidate: dict[str, object] = {}
+    parsed_by_candidate: dict[str, object] = {}
+    for ref in active_refs:
+        candidate_id = getattr(ref, "candidate_id", None)
+        node_type = getattr(ref, "node_type", None)
+        source_ref = getattr(ref, "source_artifact_ref", None)
+        if (
+            type(candidate_id) is not str
+            or not candidate_id
+            or candidate_id in refs_by_candidate
+            or type(node_type) is not str
+            or type(source_ref) is not str
+        ):
+            return frozenset()
+        parsed = parse_relational_projection_ref(source_ref)
+        candidate = node_candidates.get(candidate_id)
+        if (
+            parsed is None
+            or parsed.owner_id != session_artifact_id
+            or parsed.owner_type != "refinement"
+            or parsed.namespace != "rdl"
+            or parsed.node_type != node_type
+            or relational_projection_candidate_id(source_ref) != candidate_id
+            or candidate is None
+            or _enum_value(getattr(candidate, "node_type", "")) != node_type
+            or str(getattr(candidate, "source_artifact_ref", "") or "") != source_ref
+        ):
+            return frozenset()
+        refs_by_candidate[candidate_id] = ref
+        parsed_by_candidate[candidate_id] = parsed
+
+    if frozenset(refs_by_candidate) != relational_projection_candidate_ids:
+        return frozenset()
+
+    owner_candidates = [
+        candidate_id
+        for candidate_id, candidate in node_candidates.items()
+        if _enum_value(getattr(candidate, "node_type", "")) == "Entity"
+        and str(getattr(candidate, "source_artifact_ref", "") or "")
+        == f"refinement:{session_artifact_id}"
+    ]
+    if len(owner_candidates) != 1:
+        return frozenset()
+    owner_candidate_id = owner_candidates[0]
+
+    def _edges(*, edge_type: str, from_id: str, to_id: str) -> list[object]:
+        return [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == edge_type
+            and str(getattr(edge, "from_candidate_id", "")) == from_id
+            and str(getattr(edge, "to_candidate_id", "")) == to_id
+        ]
+
+    decision_ids = [
+        candidate_id
+        for candidate_id, parsed in parsed_by_candidate.items()
+        if getattr(parsed, "node_type") == "Decision"
+    ]
+    for decision_id in decision_ids:
+        decision_belongs = _edges(
+            edge_type="belongs_to",
+            from_id=decision_id,
+            to_id=owner_candidate_id,
+        )
+        all_outgoing_belongs = [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == "belongs_to"
+            and str(getattr(edge, "from_candidate_id", "")) == decision_id
+        ]
+        if len(decision_belongs) != 1 or len(all_outgoing_belongs) != 1:
+            return frozenset()
+        belongs = decision_belongs[0]
+        if (
+            str(getattr(belongs, "candidate_id", ""))
+            != relational_projection_edge_id(
+                "belongs_to",
+                decision_id,
+                owner_candidate_id,
+            )
+            or str(getattr(belongs, "rule_id", "") or "")
+            != relational_projection_belongs_to_rule("Decision")
+            or str(getattr(belongs, "layer", "") or "") != "deterministic"
+            or str(getattr(belongs, "created_by", "") or "") != "worker_layer1"
+        ):
+            return frozenset()
+
+    granted: set[str] = set()
+    for alternative_id, parsed in parsed_by_candidate.items():
+        if getattr(parsed, "node_type") != "Alternative":
+            continue
+        belongs_edges = _edges(
+            edge_type="belongs_to",
+            from_id=alternative_id,
+            to_id=owner_candidate_id,
+        )
+        all_outgoing_belongs = [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == "belongs_to"
+            and str(getattr(edge, "from_candidate_id", "")) == alternative_id
+        ]
+        if len(belongs_edges) != 1 or len(all_outgoing_belongs) != 1:
+            return frozenset()
+        belongs = belongs_edges[0]
+        if (
+            str(getattr(belongs, "candidate_id", ""))
+            != relational_projection_edge_id(
+                "belongs_to",
+                alternative_id,
+                owner_candidate_id,
+            )
+            or str(getattr(belongs, "rule_id", "") or "")
+            != relational_projection_belongs_to_rule("Alternative")
+            or str(getattr(belongs, "layer", "") or "") != "deterministic"
+            or str(getattr(belongs, "created_by", "") or "") != "worker_layer1"
+        ):
+            return frozenset()
+
+        ledger_id = getattr(parsed, "ledger_id")
+        decision_ids = [
+            candidate_id
+            for candidate_id, decision_parsed in parsed_by_candidate.items()
+            if getattr(decision_parsed, "node_type") == "Decision"
+            and getattr(decision_parsed, "ledger_id") == ledger_id
+        ]
+        if len(decision_ids) != 1:
+            return frozenset()
+        decision_id = decision_ids[0]
+        relation_edges = _edges(
+            edge_type="relates_to",
+            from_id=decision_id,
+            to_id=alternative_id,
+        )
+        all_incoming_relations = [
+            edge
+            for edge in edge_candidates.values()
+            if _enum_value(getattr(edge, "edge_type", "")) == "relates_to"
+            and str(getattr(edge, "to_candidate_id", "")) == alternative_id
+        ]
+        if len(relation_edges) != 1 or len(all_incoming_relations) != 1:
+            return frozenset()
+        relation = relation_edges[0]
+        if (
+            str(getattr(relation, "candidate_id", ""))
+            != relational_projection_edge_id(
+                "relates_to",
+                decision_id,
+                alternative_id,
+            )
+            or str(getattr(relation, "rule_id", "") or "")
+            != relational_projection_alternative_relation_rule()
+            or str(getattr(relation, "layer", "") or "") != "deterministic"
+            or str(getattr(relation, "created_by", "") or "") != "worker_layer1"
+        ):
+            return frozenset()
+        granted.add(alternative_id)
+    return frozenset(granted)
 
 
 def _infer_artifact_type_from_source_ref(source_ref: str | None) -> str | None:
@@ -1450,8 +2005,7 @@ def _inherit_supersede_provenance_edges(
                 target_node_id,
             )
             if (
-                successor_source_ref
-                and successor_source_ref != source_ref
+                successor_source_ref and successor_source_ref != source_ref
             ) or linked_successor not in (None, successor_id):
                 continue
 
@@ -1466,10 +2020,10 @@ def _inherit_supersede_provenance_edges(
         if match is None:
             continue
         parent_id, parent_type, direction, _parent_layer = match
-        if (
-            direction != "outgoing"
-            or (node_type, parent_type) not in _allowed_edge_pairs("belongs_to")
-        ):
+        if direction != "outgoing" or (
+            node_type,
+            parent_type,
+        ) not in _allowed_edge_pairs("belongs_to"):
             continue
 
         edge_id = f"{cand_id}__inherit_supersede_belongs_to"
@@ -2253,6 +2807,36 @@ def _preserve_decision_history_for_updates(
     return guarded
 
 
+_SEMANTIC_PROJECTION_NODE_ATTRS: tuple[str, ...] = (
+    "kind_of",
+    "investigation_receipt_id",
+    "source_ref",
+    "attestor_actor_id",
+    "declared_revision",
+    "workspace_state_id",
+    "code_path",
+    "symbol_qualified_name",
+    "symbol_kind",
+    "selector_kind",
+    "selector_fingerprint",
+    "resolution_state",
+)
+
+
+def _semantic_projection_attrs(candidate: object) -> dict[str, object | None]:
+    """Copy only schema-declared semantic projection metadata.
+
+    Code Traceability candidates originate in persisted Pulse rows.  Keeping
+    this allowlist beside the graph commit boundary prevents an arbitrary
+    adapter attribute (including snippets or transport secrets) from leaking
+    into node properties.
+    """
+
+    return {
+        name: getattr(candidate, name, None) for name in _SEMANTIC_PROJECTION_NODE_ATTRS
+    }
+
+
 def _do_graph_commit(
     board_id: str,
     session_id: str,
@@ -2363,6 +2947,13 @@ def _do_graph_commit(
         )
 
     try:
+        _require_no_code_traceability_existing_targets(
+            graph_scope,
+            node_candidates=node_candidates,
+            effective_hints=effective_hints,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
         effective_hints = _preserve_decision_history_for_updates(
             graph_scope=graph_scope,
             node_candidates=node_candidates,
@@ -2383,11 +2974,36 @@ def _do_graph_commit(
                 == ReconciliationOperation.SUPERSEDE
                 and getattr(projection_hint, "target_node_id", None)
             ):
-                effective_hints[projection_candidate_id] = (
-                    projection_hint.model_copy(
-                        update={"operation": ReconciliationOperation.UPDATE}
-                    )
+                effective_hints[projection_candidate_id] = projection_hint.model_copy(
+                    update={"operation": ReconciliationOperation.UPDATE}
                 )
+        _require_entity_source_identity_matches(
+            graph_scope,
+            node_candidates=node_candidates,
+            effective_hints=effective_hints,
+            session_id=session_id,
+        )
+        resolved_dependency_endpoints = _resolve_spec_dependency_endpoints(
+            projection_intent=relational_projection_active_set_intent,
+            edge_candidates=edge_candidates,
+            session_id=session_id,
+            graph_scope=graph_scope,
+        )
+        deterministic_rdl_alternative_grants = (
+            _validated_deterministic_rdl_alternative_grants(
+                agent_id=agent_id,
+                session_artifact_type=session_artifact_type,
+                session_artifact_id=session_artifact_id,
+                node_candidates=node_candidates,
+                edge_candidates=edge_candidates,
+                relational_projection_candidate_ids=(
+                    relational_projection_candidate_ids
+                ),
+                relational_projection_active_set_intent=(
+                    relational_projection_active_set_intent
+                ),
+            )
+        )
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
             board_id=board_id,
@@ -2398,14 +3014,18 @@ def _do_graph_commit(
             explicit_override_candidate_ids=explicit_override_candidate_ids,
             writer_path=writer_path,
             kg_health_state=kg_health_state,
+            deterministic_rdl_alternative_candidate_ids=(
+                deterministic_rdl_alternative_grants
+            ),
         )
+        for endpoint, (node_id, node_type) in resolved_dependency_endpoints.items():
+            candidate_to_graph_id[endpoint] = node_id
+            candidate_to_node_type[endpoint] = node_type
         for cand_id, cand in node_candidates.items():
             hint = effective_hints.get(cand_id)
             op = _resolve_op(hint, cand.source_confidence)
             node_type = _enum_value(cand.node_type)
-            is_relational_projection = (
-                cand_id in relational_projection_candidate_ids
-            )
+            is_relational_projection = cand_id in relational_projection_candidate_ids
 
             if op == ReconciliationOperation.NOOP:
                 # Spec eca49df9 (FR6): NOOP is a processed candidate too.
@@ -2511,7 +3131,7 @@ def _do_graph_commit(
                     ),
                     "source_confidence": cand.source_confidence,
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
-                    "kind_of": getattr(cand, "kind_of", None),
+                    **_semantic_projection_attrs(cand),
                     "human_curated": False,
                     # An explicit UPDATE is a new assertion just like the
                     # NC-8 reuse path below. Keep its provenance anchor in
@@ -2605,7 +3225,7 @@ def _do_graph_commit(
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
                     "human_curated": False,
                     "generation": successor_generation,
-                    "kind_of": getattr(cand, "kind_of", None),
+                    **_semantic_projection_attrs(cand),
                     # Spec MKG-B-S1 (FR2/FR3): successor is a fresh assertion.
                     **_session_provenance_attrs(
                         cand, session_content_hash, session_artifact_id
@@ -2822,11 +3442,15 @@ def _do_graph_commit(
                     # generic cognitive supersedence trail would duplicate RDL
                     # history in the KG and leave two owner edges for one
                     # source ref, making the exact active-set ambiguous.
-                    if not is_curated and not is_relational_projection and (
-                        decision_semantic_change
-                        or normalize_text(cand.title)
-                        != normalize_text(
-                            _node_title(graph_scope, node_type, existing_id)
+                    if (
+                        not is_curated
+                        and not is_relational_projection
+                        and (
+                            decision_semantic_change
+                            or normalize_text(cand.title)
+                            != normalize_text(
+                                _node_title(graph_scope, node_type, existing_id)
+                            )
                         )
                     ):
                         trail_generation = (
@@ -2862,7 +3486,7 @@ def _do_graph_commit(
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
                             "human_curated": False,
                             "generation": trail_generation,
-                            "kind_of": getattr(cand, "kind_of", None),
+                            **_semantic_projection_attrs(cand),
                             # Spec MKG-B-S1 (FR2/FR3): trail successor is a
                             # fresh assertion — count restarts at 1.
                             **_session_provenance_attrs(
@@ -2920,7 +3544,7 @@ def _do_graph_commit(
                             ),
                             "source_confidence": cand.source_confidence,
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
-                            "kind_of": getattr(cand, "kind_of", None),
+                            **_semantic_projection_attrs(cand),
                             # Spec MKG-B-S1 (FR3/D5): the rewrite is a NEW
                             # assertion — restamp the provenance anchor so
                             # drift clears after the re-consolidation remedy.
@@ -3050,7 +3674,7 @@ def _do_graph_commit(
                 # writes unless the agent passes an explicit override.
                 "human_curated": False,
                 "generation": 0,
-                "kind_of": getattr(cand, "kind_of", None),
+                **_semantic_projection_attrs(cand),
                 # Spec MKG-B-S1 (FR2/FR3): extraction provenance + first
                 # attestation recorded at birth.
                 **_session_provenance_attrs(
@@ -3196,6 +3820,22 @@ def _do_graph_commit(
                 graph_scope=graph_scope,
             )
             if from_id is None or to_id is None:
+                if str(getattr(edge, "rule_id", "") or "").startswith(
+                    (
+                        "supports/code_traceability_",
+                        "derives_from/code_traceability_",
+                        "belongs_to/code_traceability_",
+                        "overlaps/code_traceability_",
+                        "supersedes/code_traceability_",
+                    )
+                ):
+                    raise KGPrimitiveError(
+                        "code_traceability_kg_endpoint_unresolved",
+                        "A persisted Code Traceability relation endpoint is "
+                        "not materialized yet; retry the relational projection.",
+                        session_id=session_id,
+                        details={"edge_candidate_id": edge.candidate_id},
+                    )
                 continue
             edge_attrs: dict[str, object] = {"confidence": edge.confidence}
             if edge.layer:
@@ -3209,9 +3849,16 @@ def _do_graph_commit(
             from_cand = node_candidates.get(edge.from_candidate_id)
             to_cand = node_candidates.get(edge.to_candidate_id)
             from_hint = (
-                _enum_value(from_cand.node_type) if from_cand else from_xref_type
+                _enum_value(from_cand.node_type)
+                if from_cand
+                else from_xref_type
+                or candidate_to_node_type.get(edge.from_candidate_id)
             )
-            to_hint = _enum_value(to_cand.node_type) if to_cand else to_xref_type
+            to_hint = (
+                _enum_value(to_cand.node_type)
+                if to_cand
+                else to_xref_type or candidate_to_node_type.get(edge.to_candidate_id)
+            )
             orch.create_edge(
                 edge_type=_enum_value(edge.edge_type),
                 from_id=from_id,
@@ -3224,6 +3871,7 @@ def _do_graph_commit(
         if relational_projection_active_set_intent is not None:
             from okto_pulse.core.kg.interfaces.graph_transaction import (
                 ProjectionActiveSetIntent,
+                ProjectionEdgeRef,
                 ProjectionNodeRef,
             )
 
@@ -3238,9 +3886,7 @@ def _do_graph_commit(
             active_candidate_ids = frozenset(
                 str(getattr(ref, "candidate_id", "")) for ref in active_refs
             )
-            if active_candidate_ids != frozenset(
-                relational_projection_candidate_ids
-            ):
+            if active_candidate_ids != frozenset(relational_projection_candidate_ids):
                 raise KGPrimitiveError(
                     "relational_projection_active_set_mismatch",
                     "Projection ownership changed after session admission.",
@@ -3266,6 +3912,84 @@ def _do_graph_commit(
                         ),
                     )
                 )
+            active_edges: list[ProjectionEdgeRef] = []
+            active_edge_refs = tuple(
+                getattr(
+                    relational_projection_active_set_intent,
+                    "active_edges",
+                    (),
+                )
+            )
+            declared_edge_candidate_ids = {
+                str(getattr(ref, "candidate_id", "")) for ref in active_edge_refs
+            }
+            emitted_projection_edge_ids = {
+                candidate_id
+                for candidate_id, candidate in edge_candidates.items()
+                if str(getattr(candidate, "rule_id", "") or "").startswith(
+                    "precedes/spec_dependency/"
+                )
+            }
+            if (
+                "" in declared_edge_candidate_ids
+                or len(declared_edge_candidate_ids) != len(active_edge_refs)
+                or declared_edge_candidate_ids != emitted_projection_edge_ids
+            ):
+                raise KGPrimitiveError(
+                    "relational_projection_active_set_mismatch",
+                    "Projection edge candidates must exactly match the active set.",
+                    session_id=session_id,
+                )
+            for ref in active_edge_refs:
+                edge_candidate_id = str(getattr(ref, "candidate_id", ""))
+                candidate = edge_candidates.get(edge_candidate_id)
+                if candidate is None or (
+                    _enum_value(candidate.edge_type)
+                    != str(getattr(ref, "edge_type", ""))
+                    or candidate.from_candidate_id
+                    != str(getattr(ref, "from_candidate_id", ""))
+                    or candidate.to_candidate_id
+                    != str(getattr(ref, "to_candidate_id", ""))
+                    or str(candidate.rule_id or "") != str(getattr(ref, "rule_id", ""))
+                ):
+                    raise KGPrimitiveError(
+                        "relational_projection_edge_identity_mismatch",
+                        "An active relational edge changed after session admission.",
+                        session_id=session_id,
+                    )
+                from_id, from_type = _resolve_endpoint(
+                    candidate.from_candidate_id,
+                    candidate_to_graph_id,
+                    graph_scope=graph_scope,
+                )
+                to_id, to_type = _resolve_endpoint(
+                    candidate.to_candidate_id,
+                    candidate_to_graph_id,
+                    graph_scope=graph_scope,
+                )
+                from_type = from_type or candidate_to_node_type.get(
+                    candidate.from_candidate_id
+                )
+                to_type = to_type or candidate_to_node_type.get(
+                    candidate.to_candidate_id
+                )
+                if not from_id or not to_id or not from_type or not to_type:
+                    raise KGPrimitiveError(
+                        "relational_projection_edge_unresolved",
+                        "An active relational projection edge has an unresolved endpoint.",
+                        session_id=session_id,
+                        details={"edge_candidate_id": edge_candidate_id},
+                    )
+                active_edges.append(
+                    ProjectionEdgeRef(
+                        edge_type=_enum_value(candidate.edge_type),
+                        from_type=from_type,
+                        to_type=to_type,
+                        from_id=from_id,
+                        to_id=to_id,
+                        rule_id=str(candidate.rule_id or ""),
+                    )
+                )
             projection_owner_type = str(
                 getattr(
                     relational_projection_active_set_intent,
@@ -3280,15 +4004,12 @@ def _do_graph_commit(
                     "",
                 )
             )
-            owner_source_ref = (
-                f"{projection_owner_type}:{projection_owner_id}"
-            )
+            owner_source_ref = f"{projection_owner_type}:{projection_owner_id}"
             owner_candidate_ids = [
                 candidate_id
                 for candidate_id, candidate in node_candidates.items()
                 if _enum_value(candidate.node_type) == "Entity"
-                and str(candidate.source_artifact_ref or "")
-                == owner_source_ref
+                and str(candidate.source_artifact_ref or "") == owner_source_ref
             ]
             owner_node_id = None
             if owner_candidate_ids:
@@ -3299,9 +4020,7 @@ def _do_graph_commit(
                         "root candidates.",
                         session_id=session_id,
                     )
-                owner_node_id = candidate_to_graph_id.get(
-                    owner_candidate_ids[0]
-                )
+                owner_node_id = candidate_to_graph_id.get(owner_candidate_ids[0])
                 if owner_node_id is None:
                     raise KGPrimitiveError(
                         "relational_projection_owner_unresolved",
@@ -3322,6 +4041,7 @@ def _do_graph_commit(
                     ),
                     owner_node_id=owner_node_id,
                     active_nodes=tuple(active_nodes),
+                    active_edges=tuple(active_edges),
                 )
             )
 
@@ -3410,27 +4130,27 @@ def _do_graph_commit(
             run_async_blocking(graph_scope.rollback())
         except Exception as exc:
             rollback_error = exc
-        try:
-            _compensate_graph_writes(board_id, session_id, orch.records)
-        except Exception as compensation_error:
-            raise KGPrimitiveError(
-                "graph_compensation_failed",
-                "Graph mutation was rejected and its complete before-image "
-                "could not be restored; the session remains retryable and "
-                "must not be acknowledged.",
-                session_id=session_id,
-                details={
-                    "original_error_code": primitive_error.code,
-                    "rollback_failure_type": (
-                        type(rollback_error).__name__
-                        if rollback_error is not None
-                        else None
-                    ),
-                    "compensation_failure_type": type(
-                        compensation_error
-                    ).__name__,
-                },
-            ) from compensation_error
+        if orch.records:
+            try:
+                _compensate_graph_writes(board_id, session_id, orch.records)
+            except Exception as compensation_error:
+                raise KGPrimitiveError(
+                    "graph_compensation_failed",
+                    "Graph mutation was rejected and its complete before-image "
+                    "could not be restored; the session remains retryable and "
+                    "must not be acknowledged.",
+                    session_id=session_id,
+                    details={
+                        "original_error_code": primitive_error.code,
+                        "rollback_failure_type": (
+                            type(rollback_error).__name__
+                            if rollback_error is not None
+                            else None
+                        ),
+                        "compensation_failure_type": type(compensation_error).__name__,
+                    },
+                    retryable=True,
+                ) from compensation_error
         if rollback_error is not None:
             raise KGPrimitiveError(
                 "graph_scope_cleanup_failed",
@@ -3439,37 +4159,43 @@ def _do_graph_commit(
                 session_id=session_id,
                 details={
                     "original_error_code": primitive_error.code,
+                    "original_error_retryable": primitive_error.retryable,
                     "rollback_failure_type": type(rollback_error).__name__,
                 },
+                retryable=True,
             ) from rollback_error
         raise
     except Exception as exc:
+        message, failure_details = _contextualize_graph_commit_error(exc)
+        failure_code, failure_retryable = _graph_commit_failure_code(exc)
         rollback_error: Exception | None = None
         try:
             run_async_blocking(graph_scope.rollback())
         except Exception as cleanup_error:
             rollback_error = cleanup_error
-        try:
-            _compensate_graph_writes(board_id, session_id, orch.records)
-        except Exception as compensation_error:
-            raise KGPrimitiveError(
-                "graph_compensation_failed",
-                "Graph commit failed and its complete before-image could not "
-                "be restored; the session remains retryable and must not be "
-                "acknowledged.",
-                session_id=session_id,
-                details={
-                    "original_failure_type": type(exc).__name__,
-                    "rollback_failure_type": (
-                        type(rollback_error).__name__
-                        if rollback_error is not None
-                        else None
-                    ),
-                    "compensation_failure_type": type(
-                        compensation_error
-                    ).__name__,
-                },
-            ) from compensation_error
+        if orch.records:
+            try:
+                _compensate_graph_writes(board_id, session_id, orch.records)
+            except Exception as compensation_error:
+                raise KGPrimitiveError(
+                    "graph_compensation_failed",
+                    "Graph commit failed and its complete before-image could not "
+                    "be restored; the session remains retryable and must not be "
+                    "acknowledged.",
+                    session_id=session_id,
+                    details={
+                        "original_error_code": failure_code,
+                        "original_error_retryable": failure_retryable,
+                        "original_error_context": failure_details,
+                        "rollback_failure_type": (
+                            type(rollback_error).__name__
+                            if rollback_error is not None
+                            else None
+                        ),
+                        "compensation_failure_type": type(compensation_error).__name__,
+                    },
+                    retryable=True,
+                ) from compensation_error
         if rollback_error is not None:
             raise KGPrimitiveError(
                 "graph_scope_cleanup_failed",
@@ -3477,16 +4203,29 @@ def _do_graph_commit(
                 "could not be proven closed.",
                 session_id=session_id,
                 details={
-                    "original_failure_type": type(exc).__name__,
+                    "original_error_code": failure_code,
+                    "original_error_retryable": failure_retryable,
+                    "original_error_context": failure_details,
                     "rollback_failure_type": type(rollback_error).__name__,
                 },
+                retryable=True,
             ) from rollback_error
-        message, details = _contextualize_graph_commit_error(exc)
+        if isinstance(exc, SpecLineageReconciliationError) and exc.preserve_progress:
+            disposition = (
+                "graph reconciliation requires retry; bounded progress was preserved"
+                if exc.retryable
+                else "graph reconciliation halted; bounded state was preserved "
+                "for operator recovery"
+            )
+            failure_message = f"{disposition}: {message}"
+        else:
+            failure_message = f"commit failed and was compensated: {message}"
         raise KGPrimitiveError(
-            "commit_failed",
-            f"commit failed and was compensated: {message}",
+            failure_code,
+            failure_message,
             session_id=session_id,
-            details=details,
+            details=failure_details,
+            retryable=failure_retryable,
         ) from exc
 
 
@@ -3522,6 +4261,12 @@ async def commit_consolidation(
         req.session_id,
         agent_id,
         allow_pending_commit=True,
+    )
+
+    _require_code_traceability_candidate_ownership(
+        dict(session.node_candidates),
+        agent_id=agent_id,
+        session_id=req.session_id,
     )
 
     if defer_session_finalization and db is None:
@@ -3766,9 +4511,7 @@ async def commit_consolidation(
                     details={
                         "failure_stage": failure_stage,
                         "staging_failure_type": type(staging_error).__name__,
-                        "compensation_failure_type": type(
-                            compensation_error
-                        ).__name__,
+                        "compensation_failure_type": type(compensation_error).__name__,
                     },
                 ) from compensation_error
             raise
@@ -3823,6 +4566,11 @@ async def commit_consolidation(
         _validate_session_state(
             session,
             allow_pending_commit=True,
+        )
+        _require_code_traceability_candidate_ownership(
+            dict(session.node_candidates),
+            agent_id=agent_id,
+            session_id=req.session_id,
         )
         kg_health_state = await _resolve_commit_kg_health_state(
             session.board_id,
@@ -4170,7 +4918,9 @@ def _provenance_attrs(
         "source_span_quote": quote,
         "extraction_model_id": getattr(cand, "extraction_model_id", None),
         "extraction_prompt_hash": getattr(cand, "extraction_prompt_hash", None),
-        "source_content_hash": session_content_hash or None,
+        "source_content_hash": (
+            getattr(cand, "source_content_hash", None) or session_content_hash or None
+        ),
     }
     if seed_attestation:
         attrs["attestation_count"] = 1
@@ -4246,11 +4996,26 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
     if not pairs:
         return
 
+    from okto_pulse.core.kg.schema_contract import (
+        CODE_TRACEABILITY_ENTITY_SUBTYPES,
+    )
     from okto_pulse.core.ports.kg_subtype_registry import (
         SubtypeRegistryError,
         normalize_kind_of,
         require_node_subtype_registry,
     )
+
+    system_declared_keys = {
+        ("Entity", normalize_kind_of(kind_of))
+        for kind_of in CODE_TRACEABILITY_ENTITY_SUBTYPES
+    }
+    unresolved_pairs = {
+        (node_type, kind_of)
+        for node_type, kind_of in pairs
+        if (node_type, normalize_kind_of(kind_of)) not in system_declared_keys
+    }
+    if not unresolved_pairs:
+        return
 
     try:
         registry = require_node_subtype_registry()
@@ -4262,8 +5027,10 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
             details={"remediation": exc.remediation},
         ) from exc
 
-    declared_by_type: dict = {}
-    declared_keys: set = set()
+    declared_by_type: dict = {
+        "Entity": list(CODE_TRACEABILITY_ENTITY_SUBTYPES),
+    }
+    declared_keys: set = set(system_declared_keys)
     for declaration in declared:
         declared_by_type.setdefault(declaration.node_type, []).append(
             declaration.kind_of
@@ -4272,7 +5039,7 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
             (declaration.node_type, normalize_kind_of(declaration.kind_of))
         )
 
-    for node_type, kind_of in sorted(pairs):
+    for node_type, kind_of in sorted(unresolved_pairs):
         if (node_type, normalize_kind_of(kind_of)) not in declared_keys:
             raise KGPrimitiveError(
                 "kg_subtype_undeclared",
@@ -4914,6 +5681,141 @@ _CROSS_SESSION_PREFIXES: tuple[str, ...] = (
     "sprint_",
     "card_",
 )
+_SOURCE_REF_ENDPOINT_PREFIX = "kgref:"
+
+
+def _parse_source_ref_endpoint(endpoint: str) -> tuple[str, str] | None:
+    """Parse a closed physical-node/source-artifact cross-session reference."""
+
+    if not endpoint.startswith(_SOURCE_REF_ENDPOINT_PREFIX):
+        return None
+    remainder = endpoint[len(_SOURCE_REF_ENDPOINT_PREFIX) :]
+    node_type, separator, source_artifact_ref = remainder.partition(":")
+    if not separator or not source_artifact_ref or len(source_artifact_ref) > 4096:
+        return None
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
+
+    if node_type not in NODE_TYPES:
+        return None
+    return node_type, source_artifact_ref
+
+
+def _is_spec_root_source_ref(source_artifact_ref: str) -> bool:
+    """Return whether a source ref identifies a Spec root, not a child node."""
+
+    prefix, separator, artifact_id = str(source_artifact_ref or "").partition(":")
+    return bool(
+        prefix == "spec" and separator and artifact_id and ":" not in artifact_id
+    )
+
+
+def _resolve_spec_dependency_endpoints(
+    *,
+    projection_intent: object | None,
+    edge_candidates: dict[str, object],
+    session_id: str,
+    graph_scope: object,
+) -> dict[str, tuple[str, str]]:
+    """Resolve every active PRECEDES endpoint before the first graph write.
+
+    Queue order is only a convergence hint: a dependent job can be claimed
+    before a newly-created prerequisite. In that case reject this attempt as
+    pending while the graph scope is still read-only. The normal retry then
+    commits the exact active set once prerequisite consolidation materializes
+    the canonical root; no partial owner node or compensation cycle is created.
+    """
+
+    if (
+        projection_intent is None
+        or str(getattr(projection_intent, "namespace", "")) != "dependencies"
+    ):
+        return {}
+
+    active_edge_refs = tuple(getattr(projection_intent, "active_edges", ()))
+    declared_ids = {str(getattr(ref, "candidate_id", "")) for ref in active_edge_refs}
+    emitted_ids = {
+        candidate_id
+        for candidate_id, candidate in edge_candidates.items()
+        if str(getattr(candidate, "rule_id", "") or "").startswith(
+            "precedes/spec_dependency/"
+        )
+    }
+    if (
+        "" in declared_ids
+        or len(declared_ids) != len(active_edge_refs)
+        or declared_ids != emitted_ids
+    ):
+        raise KGPrimitiveError(
+            "relational_projection_active_set_mismatch",
+            "Projection edge candidates must exactly match the active set.",
+            session_id=session_id,
+        )
+
+    resolved: dict[str, tuple[str, str]] = {}
+    desired_endpoints: set[tuple[str, str, str]] = set()
+    for edge_ref in active_edge_refs:
+        edge_candidate_id = str(getattr(edge_ref, "candidate_id", ""))
+        candidate = edge_candidates.get(edge_candidate_id)
+        endpoint = str(getattr(edge_ref, "from_candidate_id", ""))
+        endpoint_identity = (
+            str(getattr(edge_ref, "edge_type", "")),
+            endpoint,
+            str(getattr(edge_ref, "to_candidate_id", "")),
+        )
+        parsed = _parse_source_ref_endpoint(endpoint)
+        if candidate is None or (
+            _enum_value(candidate.edge_type) != str(getattr(edge_ref, "edge_type", ""))
+            or candidate.from_candidate_id != endpoint
+            or candidate.to_candidate_id != endpoint_identity[2]
+            or str(candidate.rule_id or "") != str(getattr(edge_ref, "rule_id", ""))
+        ):
+            raise KGPrimitiveError(
+                "relational_projection_edge_identity_mismatch",
+                "An active relational edge changed after session admission.",
+                session_id=session_id,
+            )
+        if (
+            parsed is None
+            or parsed[0] != "Entity"
+            or not _is_spec_root_source_ref(parsed[1])
+            or endpoint_identity in desired_endpoints
+        ):
+            raise KGPrimitiveError(
+                "relational_projection_endpoint_invalid",
+                "A Spec dependency endpoint is outside its exact projection scope.",
+                session_id=session_id,
+                details={"edge_candidate_id": edge_candidate_id},
+            )
+        desired_endpoints.add(endpoint_identity)
+        try:
+            node_id, node_type = _resolve_endpoint(
+                endpoint,
+                {},
+                graph_scope=graph_scope,
+            )
+        except Exception as exc:
+            raise KGPrimitiveError(
+                "relational_projection_endpoint_lookup_failed",
+                "A Spec dependency endpoint could not be resolved safely.",
+                session_id=session_id,
+                details={
+                    "edge_candidate_id": edge_candidate_id,
+                    "failure_type": type(exc).__name__,
+                },
+            ) from exc
+        if node_id is None:
+            raise KGPrimitiveError(
+                "relational_projection_endpoint_pending",
+                "A prerequisite Spec root is not materialized yet; retry the "
+                "dependent relational projection after prerequisite consolidation.",
+                session_id=session_id,
+                details={
+                    "edge_candidate_id": edge_candidate_id,
+                    "source_artifact_ref": parsed[1],
+                },
+            )
+        resolved[endpoint] = (node_id, node_type or parsed[0])
+    return resolved
 
 
 def _is_cross_session_entity_ref(endpoint: str) -> bool:
@@ -4947,7 +5849,9 @@ def _resolve_endpoint(
     Resolution order:
         1. ``kg:<id>`` literal — strip prefix and trust the caller.
         2. Local session candidate — match by candidate_id in the supplied map.
-        3. Cross-session by deterministic id pattern (`spec_<short>_entity` /
+        3. ``kgref:<PhysicalType>:<source_artifact_ref>`` — exact,
+           allowlisted physical-type lookup used by relational projections.
+        4. Cross-session by deterministic id pattern (`spec_<short>_entity` /
            `sprint_<short>_entity`) — derive ``source_artifact_ref`` and
            probe graph backend for an Entity with that ref. Used by Layer 1 to wire
            Sprint→Spec / Card→Sprint hierarchy edges across sessions.
@@ -4962,6 +5866,22 @@ def _resolve_endpoint(
         return local, None
     if graph_scope is None:
         return None, None
+    source_ref_endpoint = _parse_source_ref_endpoint(endpoint)
+    if source_ref_endpoint is not None:
+        node_type, source_artifact_ref = source_ref_endpoint
+        result = graph_scope.execute(
+            f"MATCH (n:{node_type}) "
+            "WHERE n.source_artifact_ref = $ref "
+            "AND n.superseded_by IS NULL "
+            "RETURN n.id LIMIT 2",
+            {"ref": source_artifact_ref},
+        )
+        rows = tuple(getattr(result, "rows", ()) or ())
+        if len(rows) > 1:
+            raise ValueError("source_ref_endpoint_ambiguous")
+        if rows:
+            return str(rows[0][0]), node_type
+        return None, node_type
     # Cross-session deterministic-id fallback. We only handle the worker's
     # own naming convention here (`<artifact>_<id8>_entity`) to avoid
     # surprises; new patterns must be opt-in.
@@ -5025,6 +5945,20 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset(
         "source_content_hash",
         # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
         "kind_of",
+        # Code Traceability is a deterministic relational projection.  Its
+        # optional metadata follows the immutable source row on a refresh;
+        # no external repository is consulted at this boundary.
+        "investigation_receipt_id",
+        "source_ref",
+        "attestor_actor_id",
+        "declared_revision",
+        "workspace_state_id",
+        "code_path",
+        "symbol_qualified_name",
+        "symbol_kind",
+        "selector_kind",
+        "selector_fingerprint",
+        "resolution_state",
     }
 )
 

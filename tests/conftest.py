@@ -37,9 +37,9 @@ _CORE_SRC = (Path(__file__).parent / ".." / "src").resolve()
 _WORKSPACE_ROOT = _CORE_SRC.parent.parent
 
 # Bootstrap the current Core tree before importing the shared checkout resolver.
-# The resolver then owns paired-edition precedence and removes stale okto_labs
-# roots from both sys.path and PYTHONPATH, so multiprocessing spawn children
-# inherit the same authoritative source trees.
+# The resolver then owns anchor-family paired-edition precedence and removes
+# non-selected sibling roots from both sys.path and PYTHONPATH, so
+# multiprocessing spawn children inherit the same authoritative source trees.
 _core_source_text = str(_CORE_SRC)
 while _core_source_text in sys.path:
     sys.path.remove(_core_source_text)
@@ -633,9 +633,7 @@ class _CoreTestPermissionPresetGateway:
         preset = await self._session.get(PermissionPreset, preset_id)
         return _test_preset_view(preset) if preset is not None else None
 
-    async def create_preset(
-        self, *, user_id, name, description, flags, preset_id=None
-    ):
+    async def create_preset(self, *, user_id, name, description, flags, preset_id=None):
         preset = PermissionPreset(
             id=preset_id or str(uuid.uuid4()),
             owner_id=user_id,
@@ -885,6 +883,9 @@ class _CoreTestAmendmentRevisionApiBackend:
 class _CoreTestRelationalApplicationAdapter:
     """Explicit test-only relational adapter bundle for Core use cases."""
 
+    def __init__(self) -> None:
+        self._research_decision_snapshots = {}
+
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
 
@@ -935,21 +936,67 @@ class _CoreTestRelationalApplicationAdapter:
         """Empty RDL port for Core scenarios that do not seed ledger entries."""
 
         _ = session
+        snapshots = self._research_decision_snapshots
 
         class _ResearchDecisionLedgerStub:
-            async def get_snapshot_for_version(self, **_kwargs):
-                return None
+            async def get_snapshot_for_version(
+                self,
+                *,
+                board_id,
+                refinement_id,
+                refinement_version,
+            ):
+                return snapshots.get((board_id, refinement_id, refinement_version))
 
             async def list_current_entries_with_heads(self, **_kwargs):
                 return ()
 
             async def save_snapshot(self, snapshot):
+                snapshots[
+                    (
+                        snapshot.board_id,
+                        snapshot.refinement_id,
+                        snapshot.refinement_version,
+                    )
+                ] = snapshot
                 return snapshot
 
             async def save_derivation(self, derivation):
                 return derivation
 
         return _ResearchDecisionLedgerStub()
+
+    def spec_dependencies(self, session):
+        """Use the real Community SK-M relational authority in integration tests."""
+
+        from okto_pulse.community.adapters.sqlalchemy_spec_dependency import (
+            CommunitySqlAlchemySpecDependency,
+        )
+
+        return CommunitySqlAlchemySpecDependency(session)
+
+    def code_traceability_read(self, session):
+        """Use the real bounded Code Traceability projection in integration tests."""
+
+        from okto_pulse.community.adapters.sqlalchemy_code_traceability import (
+            CommunitySqlAlchemyCodeTraceabilityStore,
+        )
+
+        return CommunitySqlAlchemyCodeTraceabilityStore(session)
+
+    def code_investigations(self, session):
+        from okto_pulse.community.adapters.sqlalchemy_code_traceability import (
+            CommunitySqlAlchemyCodeInvestigationStore,
+        )
+
+        return CommunitySqlAlchemyCodeInvestigationStore(session)
+
+    def code_traceability(self, session):
+        from okto_pulse.community.adapters.sqlalchemy_code_traceability import (
+            CommunitySqlAlchemyCodeTraceabilityStore,
+        )
+
+        return CommunitySqlAlchemyCodeTraceabilityStore(session)
 
     def checklists(self, session):
         class _CreateBoardChecklistStub:
@@ -1170,13 +1217,23 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         *,
         board_id: str,
         limit: int,
+        include_code_traceability: bool = True,
     ) -> list[dict]:
+        predicates = [
+            ConsolidationAudit.board_id == board_id,
+            ConsolidationAudit.committed_at.is_not(None),
+        ]
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            predicates.append(
+                ConsolidationAudit.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES)
+            )
         query = (
             select(ConsolidationAudit)
-            .where(
-                ConsolidationAudit.board_id == board_id,
-                ConsolidationAudit.committed_at.is_not(None),
-            )
+            .where(*predicates)
             .order_by(ConsolidationAudit.committed_at.desc())
             .limit(limit)
         )
@@ -1203,13 +1260,25 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         result = await context.execute(select(Board).limit(limit))
         return [b.id for b in result.scalars().all()]
 
-    async def list_pending_entries(self, context, *, board_id: str) -> list[dict]:
-        query = (
-            select(ConsolidationQueue)
-            .where(ConsolidationQueue.board_id == board_id)
-            .order_by(ConsolidationQueue.triggered_at.desc())
-            .limit(100)
+    async def list_pending_entries(
+        self,
+        context,
+        *,
+        board_id: str,
+        include_code_traceability: bool = True,
+    ) -> list[dict]:
+        query = select(ConsolidationQueue).where(
+            ConsolidationQueue.board_id == board_id
         )
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            query = query.where(
+                ConsolidationQueue.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES)
+            )
+        query = query.order_by(ConsolidationQueue.triggered_at.desc()).limit(100)
         rows = (await context.execute(query)).scalars().all()
         return [
             {
@@ -1576,10 +1645,22 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         *,
         board_id: str,
         limit: int = 100,
+        include_code_traceability: bool = True,
     ):
+        predicates = [ConsolidationDeadLetter.board_id == board_id]
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            predicates.append(
+                ConsolidationDeadLetter.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         result = await context.execute(
             select(ConsolidationDeadLetter)
-            .where(ConsolidationDeadLetter.board_id == board_id)
+            .where(*predicates)
             .order_by(ConsolidationDeadLetter.dead_lettered_at.desc())
             .limit(limit)
         )
@@ -1592,12 +1673,24 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         board_id: str,
         limit: int,
         offset: int,
+        include_code_traceability: bool = True,
     ):
+        predicates = [ConsolidationDeadLetter.board_id == board_id]
+        if not include_code_traceability:
+            from okto_pulse.core.domain.code_traceability_kg import (
+                CODE_TRACEABILITY_KG_SUBTYPES,
+            )
+
+            predicates.append(
+                ConsolidationDeadLetter.artifact_type.not_in(
+                    CODE_TRACEABILITY_KG_SUBTYPES
+                )
+            )
         total = int(
             await context.scalar(
                 select(func.count())
                 .select_from(ConsolidationDeadLetter)
-                .where(ConsolidationDeadLetter.board_id == board_id)
+                .where(*predicates)
             )
             or 0
         )
@@ -1605,7 +1698,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             (
                 await context.execute(
                     select(ConsolidationDeadLetter)
-                    .where(ConsolidationDeadLetter.board_id == board_id)
+                    .where(*predicates)
                     .order_by(ConsolidationDeadLetter.id)
                     .limit(limit)
                     .offset(offset)
@@ -1624,8 +1717,13 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         dead_letter_ids,
         limit: int,
     ):
+        from okto_pulse.core.domain.code_traceability_kg import (
+            CODE_TRACEABILITY_KG_SUBTYPES,
+        )
+
         query = select(ConsolidationDeadLetter).where(
-            ConsolidationDeadLetter.board_id == board_id
+            ConsolidationDeadLetter.board_id == board_id,
+            ConsolidationDeadLetter.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES),
         )
         if dead_letter_ids:
             query = query.where(ConsolidationDeadLetter.id.in_(dead_letter_ids))
@@ -1705,6 +1803,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         board_id: str,
         queue_entry_id: str,
         recursive: bool = False,
+        include_code_traceability: bool = True,
     ):
         from okto_pulse.community.adapters.kg_operational import (
             CommunitySqlAlchemyKGWorkerQueue,
@@ -1715,6 +1814,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             board_id=board_id,
             queue_entry_id=queue_entry_id,
             recursive=recursive,
+            include_code_traceability=include_code_traceability,
         )
 
 
@@ -2223,6 +2323,30 @@ def _amendment_revision_test_store():
     register_amendment_revision_store(TestSqlAlchemyAmendmentRevisionStore())
     yield
     reset_amendment_revision_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _sprint_activation_baseline_test_store():
+    from okto_pulse.core.ports.sprint_activation_baseline import (
+        register_sprint_activation_baseline_store,
+        reset_sprint_activation_baseline_store_for_tests,
+    )
+
+    class _Store:
+        def __init__(self):
+            self.rows = {}
+
+        async def get(self, context, *, board_id, sprint_id):
+            return self.rows.get((board_id, sprint_id))
+
+        async def save_if_absent(self, context, baseline):
+            return self.rows.setdefault(
+                (baseline.board_id, baseline.sprint_id), baseline
+            )
+
+    register_sprint_activation_baseline_store(_Store())
+    yield
+    reset_sprint_activation_baseline_store_for_tests()
 
 
 @pytest.fixture(autouse=True)

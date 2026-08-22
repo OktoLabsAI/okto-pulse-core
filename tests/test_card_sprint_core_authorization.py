@@ -106,10 +106,13 @@ def test_sprint_validation_configuration_uses_coverage_permission(field: str):
 
 
 def test_sprint_optimistic_lock_metadata_does_not_add_a_permission():
-    assert sprint_update_permission_requirements(
-        {"expected_version": 4},
-        state="active",
-    ) == ()
+    assert (
+        sprint_update_permission_requirements(
+            {"expected_version": 4},
+            state="active",
+        )
+        == ()
+    )
 
 
 class _Boards:
@@ -225,9 +228,7 @@ async def test_mcp_card_update_granular_false_denies_before_writer():
     cards = _Cards()
     uow = _Uow(
         _Services(
-            _permission_set(
-                "card", ("card", "entity", "edit_fields"), allowed=False
-            ),
+            _permission_set("card", ("card", "entity", "edit_fields"), allowed=False),
             cards=cards,
         )
     )
@@ -281,9 +282,7 @@ async def test_sprint_writes_deny_before_writer(operation: str):
     )
     permissions = _permission_set("sprint", permission, allowed=False)
     uow = _Uow(_Services(permissions, sprints=sprints))
-    actor = ActorContext(
-        "actor-1", "mcp", board_id=BOARD_ID, permissions=permissions
-    )
+    actor = ActorContext("actor-1", "mcp", board_id=BOARD_ID, permissions=permissions)
 
     with pytest.raises(PermissionDeniedError):
         if operation == "assign":
@@ -319,9 +318,7 @@ async def test_copy_permission_denies_before_card_writer():
 
     specs.get_spec = get_spec
     uow = _Uow(_Services(permissions, cards=cards, specs=specs))
-    actor = ActorContext(
-        "actor-1", "mcp", board_id=BOARD_ID, permissions=permissions
-    )
+    actor = ActorContext("actor-1", "mcp", board_id=BOARD_ID, permissions=permissions)
 
     with pytest.raises(PermissionDeniedError):
         await McpCopyMockupsToCardUseCase().execute(
@@ -351,17 +348,21 @@ async def test_spec_validation_permission_denies_before_writer():
         "spec", ("spec", "validation", "submit"), allowed=False
     )
     uow = _Uow(_Services(permissions, specs=specs))
-    actor = ActorContext(
-        "actor-1", "mcp", board_id=BOARD_ID, permissions=permissions
-    )
+    actor = ActorContext("actor-1", "mcp", board_id=BOARD_ID, permissions=permissions)
     data = {
-        "completeness": 90,
-        "completeness_justification": "complete enough",
+        "expected_validation_edition": 1,
+        "expected_spec_version": 1,
+        "expected_head_revision": 0,
+        "confidence": 90,
+        "confidence_justification": "assessment evidence is comprehensive",
+        "clarity": 90,
+        "clarity_justification": "problem and solution are explicit",
         "assertiveness": 90,
         "assertiveness_justification": "assertive enough",
+        "decidability": 90,
+        "decidability_justification": "requirements direct concrete choices",
         "ambiguity": 10,
         "ambiguity_justification": "ambiguity is low",
-        "general_justification": "the complete validation justification",
         "recommendation": "approve",
     }
 

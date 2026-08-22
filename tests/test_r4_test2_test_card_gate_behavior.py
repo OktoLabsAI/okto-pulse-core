@@ -51,6 +51,7 @@ class _Ctx:
         self.agent_name = "r4 test2"
         self.permissions = [
             "card.validation.submit",
+            "card.validation.read",
             "card.move.in_progress_to_done",
             "card.interact_in.in_progress",
             "cards:move",
@@ -61,9 +62,11 @@ async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
     register_mcp_test_runtime(get_session_factory())
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
-         patch.object(mcp_server, "check_permission", return_value=None), \
-         patch.object(mcp_server, "_mcp_check_permission", return_value=None):
+    with (
+        patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(mcp_server, "_mcp_check_permission", return_value=None),
+    ):
         tool = await mcp_server.mcp.get_tool(name)
         raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -75,12 +78,32 @@ async def _seed_test_card(db_factory, *, scenarios, card_status=CardStatus.IN_PR
     card_id = _id("card")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4 test2", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=SpecStatus.IN_PROGRESS,
-                    created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
-                    test_scenarios=scenarios, business_rules=[], api_contracts=[]))
-        db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="test card",
-                    status=card_status, card_type=CardType.TEST, created_by=USER_ID,
-                    test_scenario_ids=[s["id"] for s in scenarios]))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="spec",
+                status=SpecStatus.IN_PROGRESS,
+                created_by=USER_ID,
+                functional_requirements=[],
+                acceptance_criteria=[],
+                test_scenarios=scenarios,
+                business_rules=[],
+                api_contracts=[],
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="test card",
+                status=card_status,
+                card_type=CardType.TEST,
+                created_by=USER_ID,
+                test_scenario_ids=[s["id"] for s in scenarios],
+            )
+        )
         await db.commit()
     return board_id, spec_id, card_id
 
@@ -91,17 +114,35 @@ async def _seed_test_card(db_factory, *, scenarios, card_status=CardStatus.IN_PR
 
 
 @pytest.mark.asyncio
-async def test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_update(db_factory):
+async def test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_update(
+    db_factory,
+):
     # Both a draft AND a ready scenario must block (the gate keys on draft/ready).
-    board_id, spec_id, card_id = await _seed_test_card(db_factory, scenarios=[
-        {"id": "ts_draft", "title": "Draft scenario", "given": "g", "when": "w",
-         "then": "t", "status": "draft"},
-        {"id": "ts_ready", "title": "Ready scenario", "given": "g", "when": "w",
-         "then": "t", "status": "ready"},
-    ])
+    board_id, spec_id, card_id = await _seed_test_card(
+        db_factory,
+        scenarios=[
+            {
+                "id": "ts_draft",
+                "title": "Draft scenario",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "status": "draft",
+            },
+            {
+                "id": "ts_ready",
+                "title": "Ready scenario",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "status": "ready",
+            },
+        ],
+    )
 
-    result = await _call("okto_pulse_move_card", board_id=board_id, card_id=card_id,
-                         status="done")
+    result = await _call(
+        "okto_pulse_move_card", board_id=board_id, card_id=card_id, status="done"
+    )
 
     # Returned envelope (MCP wrapper serialized the GateContractError).
     assert result.get("code") == "test_card_completion_blocked", result
@@ -119,11 +160,18 @@ async def test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_up
     # faithful to the real singular tool signature (no card_id / no plural ids).
     na = d["next_action"]
     assert na["tool"] == "okto_pulse_update_test_scenario_status"
-    assert "card_id" not in na["params_template"] and "scenario_ids" not in na["params_template"]
+    assert (
+        "card_id" not in na["params_template"]
+        and "scenario_ids" not in na["params_template"]
+    )
     assert na["params_template"]["spec_id"] == spec_id
     assert set(na["scenario_ids"]) == {"ts_draft", "ts_ready"}
     assert na["follow_up"]["tool"] == "okto_pulse_move_card"
-    assert na["follow_up"]["params"] == {"board_id": board_id, "card_id": card_id, "status": "done"}
+    assert na["follow_up"]["params"] == {
+        "board_id": board_id,
+        "card_id": card_id,
+        "status": "done",
+    }
 
     # TEETH: no auto-promotion — the test card is STILL in_progress.
     async with db_factory() as db:
@@ -135,15 +183,31 @@ async def test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_up
 async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
     # Same card; the gate keys on linked scenario status. After the documented
     # remediation (scenarios -> passed) the test_card_completion gate RELEASES.
-    board_id, spec_id, card_id = await _seed_test_card(db_factory, scenarios=[
-        {"id": "ts_draft", "title": "Draft scenario", "given": "g", "when": "w",
-         "then": "t", "status": "draft"},
-        {"id": "ts_ready", "title": "Ready scenario", "given": "g", "when": "w",
-         "then": "t", "status": "ready"},
-    ])
+    board_id, spec_id, card_id = await _seed_test_card(
+        db_factory,
+        scenarios=[
+            {
+                "id": "ts_draft",
+                "title": "Draft scenario",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "status": "draft",
+            },
+            {
+                "id": "ts_ready",
+                "title": "Ready scenario",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "status": "ready",
+            },
+        ],
+    )
 
-    blocked = await _call("okto_pulse_move_card", board_id=board_id, card_id=card_id,
-                          status="done")
+    blocked = await _call(
+        "okto_pulse_move_card", board_id=board_id, card_id=card_id, status="done"
+    )
     assert blocked.get("code") == "test_card_completion_blocked"
 
     # Remediate: mark both linked scenarios passed with persisted run evidence
@@ -164,10 +228,17 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
         ]
         await db.commit()
 
-    released = await _call("okto_pulse_move_card", board_id=board_id, card_id=card_id,
-                           status="done", conclusion="scenarios passed",
-                           completeness=100, completeness_justification="all passed",
-                           drift=0, drift_justification="none")
+    released = await _call(
+        "okto_pulse_move_card",
+        board_id=board_id,
+        card_id=card_id,
+        status="done",
+        conclusion="scenarios passed",
+        completeness=100,
+        completeness_justification="all passed",
+        drift=0,
+        drift_justification="none",
+    )
     # TEETH: the test_card_completion gate RELEASED — it no longer fires once the
     # linked scenarios are passed. Any subsequent block is a DIFFERENT, independent
     # completion gate (e.g. the resource N/A gate), which proves the SUT gate cleared
@@ -182,22 +253,40 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_ts_ab364e51_submit_task_validation_on_test_card_redirects_not_normal_gate(db_factory):
+async def test_ts_ab364e51_submit_task_validation_on_test_card_redirects_not_normal_gate(
+    db_factory,
+):
     # submit_task_validation requires the card in 'validation' status before the
     # test-card redirect fires.
     board_id, spec_id, card_id = await _seed_test_card(
         db_factory,
-        scenarios=[{"id": "ts_x", "title": "S", "given": "g", "when": "w", "then": "t",
-                    "status": "draft"}],
+        scenarios=[
+            {
+                "id": "ts_x",
+                "title": "S",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "status": "draft",
+            }
+        ],
         card_status=CardStatus.VALIDATION,
     )
 
     result = await _call(
-        "okto_pulse_submit_task_validation", board_id=board_id, card_id=card_id,
-        confidence=90, confidence_justification="x",
-        estimated_completeness=90, completeness_justification="x",
-        estimated_drift=5, drift_justification="x",
-        general_justification="x", recommendation="approve",
+        "okto_pulse_submit_task_validation",
+        board_id=board_id,
+        card_id=card_id,
+        expected_subject_version=1,
+        idempotency_key="r4-test-card-validation",
+        confidence=90,
+        confidence_justification="Test card confidence is sufficient.",
+        estimated_completeness=90,
+        completeness_justification="Test card completeness is sufficient.",
+        estimated_drift=5,
+        drift_justification="Test card drift is within its threshold.",
+        general_justification="Test cards must use scenario completion instead.",
+        recommendation="approve",
     )
 
     assert result.get("code") == "test_card_not_subject_to_task_validation", result

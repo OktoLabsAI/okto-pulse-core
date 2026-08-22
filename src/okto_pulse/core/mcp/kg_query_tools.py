@@ -351,6 +351,28 @@ okto-pulse://reference/tool-docs/kg."""
         )
         if auth_error is not None:
             return auth_error
+        board_agent, access_failure = await _resolve_board_permissions(
+            agent,
+            board_id,
+            "kg.query.related_context",
+        )
+        if access_failure is not None or board_agent is None:
+            return _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+            EvaluateCodeTraceabilityKGReadAccessUseCase,
+        )
+        from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=MCPAdapterContract.actor(board_agent, board_id=board_id),
+            board_id=board_id,
+        )
+        ct_visibility_kwargs = (
+            {} if ct_access.allowed else {"include_code_traceability": False}
+        )
         logger.debug("[KG] kg_get_related_context called: board_id=%s artifact_id=%s", board_id, artifact_id)
         svc = get_kg_service()
         try:
@@ -377,6 +399,7 @@ okto-pulse://reference/tool-docs/kg."""
                 min_confidence=min_confidence, max_rows=max_rows,
                 rel_types=parsed_types, direction=direction, max_depth=max_depth,
                 graph_layer=applied_layer,
+                **ct_visibility_kwargs,
             )
             logger.debug("[KG] kg_get_related_context thread returned: count=%d", len(rows))
             resp = RelatedContextResponse(

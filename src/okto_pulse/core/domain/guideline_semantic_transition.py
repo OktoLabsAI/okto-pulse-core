@@ -193,6 +193,11 @@ def _current_snapshot_payload(
             "entity_type": snapshot.subject.entity_type.value,
             "subject_id": snapshot.subject.subject_id,
             "subject_version": snapshot.subject.subject_version,
+            **(
+                {"subject_edition": snapshot.subject.subject_edition}
+                if snapshot.subject.subject_edition is not None
+                else {}
+            ),
         },
         "subject_content_digest": snapshot.subject_content_digest,
         "guideline_id": snapshot.guideline_id,

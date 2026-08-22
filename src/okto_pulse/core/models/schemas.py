@@ -1,6 +1,7 @@
 """Pydantic schemas for API request/response models."""
 
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Any, Generic, Literal, TypeAlias, TypeVar
@@ -20,6 +21,17 @@ from pydantic import (
 from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
+)
+from okto_pulse.core.domain.code_traceability import (
+    CodeTraceabilityEnforcement,
+    DirectSpecDeliveryContextProvenance,
+    DeliveryContext,
+    SpecDeliveryContextProvenance,
+)
+from okto_pulse.core.domain.card_completion import (
+    REJECTION_CODE_MAX_LENGTH,
+    REJECTION_ID_MAX_LENGTH,
+    REJECTION_SUMMARY_MAX_LENGTH,
 )
 from okto_pulse.core.domain.enums import (
     BugSeverity,
@@ -710,15 +722,32 @@ class QualityScaleSummary(BaseSchema):
     direction: ScoreDirection
 
 
-class QualityAssessmentSummary(BaseSchema):
-    """Permission-gated current assessment projected on an entity row."""
+class QualityAssessmentCurrentResultSummary(BaseSchema):
+    """The one human-current quality result for the subject edition."""
 
-    receipt_id: str
-    subject_version: int
-    currentness: Literal["current", "stale"]
     score: float
     scale: QualityScaleSummary
-    head_revision: int
+
+
+class QualityAssessmentSummary(BaseSchema):
+    """Summary-first projection used by entity lists and workspace badges.
+
+    Technical receipt/version/head fields deliberately do not belong to this
+    projection.  They remain available from the lazy Technical audit surface.
+    """
+
+    edition: int = Field(..., ge=1)
+    state: Literal["not_started", "current"]
+    previous_count: int = Field(default=0, ge=0)
+    current_result: QualityAssessmentCurrentResultSummary | None = None
+
+    @model_validator(mode="after")
+    def _current_result_matches_state(self) -> "QualityAssessmentSummary":
+        if self.state == "current" and self.current_result is None:
+            raise ValueError("quality_summary_current_result_required")
+        if self.state == "not_started" and self.current_result is not None:
+            raise ValueError("quality_summary_current_result_forbidden")
+        return self
 
 
 QualitySummaryMap: TypeAlias = dict[AssessmentKind, QualityAssessmentSummary]
@@ -727,9 +756,9 @@ QualitySummaryMap: TypeAlias = dict[AssessmentKind, QualityAssessmentSummary]
 class IdeationPageItem(BaseSchema):
     """Lean Ideation projection for paginated lists (FR4).
 
-    Row-derivable fields only — relationship collections
-    (``architecture_designs``) and join-derived badge counts stay off the
-    paginated projection; ``scope_assessment`` rides the ORM column.
+    Relationship collections such as ``architecture_designs`` stay off the
+    paginated projection. Bounded SQL-derived badge counts are projected
+    explicitly; ``scope_assessment`` rides the ORM column.
     """
 
     id: str
@@ -739,6 +768,7 @@ class IdeationPageItem(BaseSchema):
     problem_statement: str | None = None
     complexity: IdeationComplexity | None = None
     status: IdeationStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None = None
     created_by: str
@@ -746,6 +776,11 @@ class IdeationPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     scope_assessment: dict | None = None
     quality_summaries: QualitySummaryMap | None = Field(
         default=None,
@@ -762,6 +797,7 @@ class RefinementPageItem(BaseSchema):
     title: str
     description: str | None = None
     status: RefinementStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None = None
     created_by: str
@@ -769,6 +805,11 @@ class RefinementPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     quality_summaries: QualitySummaryMap | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -806,6 +847,11 @@ class SpecPageItem(BaseSchema):
     updated_at: datetime
     labels: list[str] | None = None
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     quality_summaries: QualitySummaryMap | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -827,6 +873,11 @@ class SprintPageItem(BaseSchema):
     created_at: datetime
     updated_at: datetime
     archived: bool = False
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class StorySummary(BaseSchema):
@@ -1427,6 +1478,17 @@ class IdeationAmbiguityGateSkipUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     skip_ambiguity_gate: bool
+    reason: str = Field(..., min_length=1, max_length=2000)
+    expected_ideation_version: int = Field(..., ge=1)
+    expected_ideation_edition: int = Field(..., ge=1)
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("reason must not be blank")
+        return normalized
 
 
 class IdeationSummary(BaseSchema):
@@ -1437,7 +1499,11 @@ class IdeationSummary(BaseSchema):
     # from_attributes off the ORM column (no service change needed).
     scope_assessment: dict | None = None
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     # Count of non-archived, non-cancelled child refinements — drives the
     # "No refinement" derivation-pending badge.
     active_refinement_count: int = 0
@@ -1451,6 +1517,7 @@ class IdeationSummary(BaseSchema):
     problem_statement: str | None
     complexity: IdeationComplexity | None
     status: IdeationStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None
     created_by: str
@@ -1462,6 +1529,7 @@ class IdeationSummary(BaseSchema):
     pre_archive_status: str | None = None
     # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
 
 
 # ============================================================================
@@ -1725,6 +1793,14 @@ class RefinementCreate(BaseModel):
     decisions: list[str] | None = Field(
         None, description="Decisoes registradas durante o refinamento."
     )
+    delivery_context: DeliveryContext = Field(
+        ...,
+        description=(
+            "Contexto de entrega explicitamente classificado: brownfield, "
+            "greenfield ou hybrid. A leitura de registros legados permanece "
+            "nullable, mas toda nova autoria deve classificar o contexto."
+        ),
+    )
     assignee_id: str | None = Field(
         None, description="ID do responsavel pelo refinement."
     )
@@ -1794,6 +1870,13 @@ class RefinementUpdate(BaseModel):
     decisions: list[str] | None = Field(
         None, description="Novas decisoes do refinamento (opcional)."
     )
+    delivery_context: DeliveryContext | None = Field(
+        None,
+        description=(
+            "Novo contexto de entrega. Omitido preserva o valor atual; null "
+            "explicito nao remove um contexto ja classificado."
+        ),
+    )
     assignee_id: str | None = Field(
         None, description="Novo ID do responsavel pelo refinement (opcional)."
     )
@@ -1832,6 +1915,7 @@ class RefinementAmbiguityGateSkipUpdate(BaseModel):
     skip_ambiguity_gate: bool
     reason: str = Field(..., min_length=1, max_length=2000)
     expected_refinement_version: int = Field(..., ge=1)
+    expected_refinement_edition: int = Field(..., ge=1)
 
     @field_validator("reason")
     @classmethod
@@ -1846,13 +1930,18 @@ class RefinementAmbiguityGateSkipResponse(BaseModel):
     skipped: bool
     activity_id: str
     version: int
+    edition: int = Field(..., ge=1)
 
 
 class RefinementSummary(BaseSchema):
     """Schema for refinement summary."""
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     # Count of non-archived, non-cancelled child specs — drives the
     # "Sem spec" derivation-pending badge.
     active_spec_count: int = 0
@@ -1862,7 +1951,9 @@ class RefinementSummary(BaseSchema):
     title: str
     description: str | None
     status: RefinementStatus
+    edition: int = Field(1, ge=1)
     version: int
+    delivery_context: DeliveryContext | None = None
     assignee_id: str | None
     created_by: str
     created_at: datetime
@@ -1871,6 +1962,7 @@ class RefinementSummary(BaseSchema):
     archived: bool = False
     pre_archive_status: str | None = None
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
 
 
 # ============================================================================
@@ -1959,6 +2051,7 @@ class RefinementSnapshotResponse(BaseSchema):
     id: str
     refinement_id: str
     version: int
+    delivery_context: DeliveryContext | None = None
     title: str
     description: str | None
     in_scope: list[str] | None
@@ -1967,6 +2060,12 @@ class RefinementSnapshotResponse(BaseSchema):
     decisions: list[str] | None
     labels: list[str] | None
     qa_snapshot: list[dict] | None
+    code_evidence_manifest: list[dict[str, Any]] | None = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     created_by: str
     created_at: datetime
 
@@ -1976,6 +2075,7 @@ class RefinementSnapshotSummary(BaseSchema):
 
     id: str
     version: int
+    delivery_context: DeliveryContext | None = None
     title: str
     created_by: str
     created_at: datetime
@@ -2145,6 +2245,22 @@ class SpecCreate(BaseModel):
     refinement_id: str | None = Field(
         None, description="ID do refinement de origem desta spec."
     )
+    delivery_context: DeliveryContext | None = Field(
+        None,
+        description=(
+            "Contexto de entrega explicitamente classificado. Omitido somente "
+            "quando um Refinement contextual fornece o valor herdado."
+        ),
+    )
+    delivery_context_override_reason: str | None = Field(
+        None,
+        min_length=1,
+        max_length=2000,
+        description=(
+            "Justificativa obrigatoria quando o contexto da Spec divergir do "
+            "snapshot do Refinement."
+        ),
+    )
 
 
 class SpecUpdate(BaseModel):
@@ -2220,6 +2336,12 @@ class SpecUpdate(BaseModel):
     skip_decisions_coverage: bool | None = Field(
         None, description="Se True, o gate de cobertura de decisions e ignorado."
     )
+    skip_code_evidence_coverage: bool | None = Field(
+        None,
+        description=(
+            "Se True, o gate de cobertura da Code Evidence Matrix e ignorado."
+        ),
+    )
     require_task_validation: bool | None = Field(
         None,
         description="Override da spec para exigir Task Validation; None herda do board.",
@@ -2254,6 +2376,22 @@ class SpecUpdate(BaseModel):
     refinement_id: str | None = Field(
         None, description="Novo ID do refinement de origem desta spec."
     )
+    delivery_context: DeliveryContext | None = Field(
+        None,
+        description=(
+            "Valor efetivo do contexto da Spec. Quando divergir do valor "
+            "herdado do snapshot, delivery_context_override_reason e obrigatorio."
+        ),
+    )
+    delivery_context_override_reason: str | None = Field(
+        None,
+        min_length=1,
+        max_length=2000,
+        description=(
+            "Justificativa humana para um contexto efetivo diferente do "
+            "snapshot herdado. Envie null ao reconciliar com o valor herdado."
+        ),
+    )
 
 
 class SpecMove(BaseModel):
@@ -2266,11 +2404,74 @@ class SpecMove(BaseModel):
     )
 
 
+class SpecDependencyAdd(BaseModel):
+    """Create an operational dependency from one Spec to another."""
+
+    target_spec_id: str = Field(..., min_length=1)
+    expected_spec_version: int = Field(..., ge=1)
+    expected_spec_edition: int = Field(..., ge=1)
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
+
+
+class SpecDependencyRemove(BaseModel):
+    """Tombstone a dependency while preserving its audit lifecycle."""
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+    expected_spec_version: int = Field(..., ge=1)
+    expected_spec_edition: int = Field(..., ge=1)
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("removal reason must not be blank")
+        return normalized
+
+
+class SpecDependencyBlockerResponse(BaseSchema):
+    """Blocking prerequisite projected in Spec lifecycle readiness."""
+
+    dependency_id: str
+    dependent_spec_id: str
+    prerequisite_spec_id: str
+    target_title: str
+    target_status: SpecStatus
+    target_edition: int = Field(..., ge=1)
+    target_version: int = Field(..., ge=1)
+    target_archived: bool = False
+
+
+class SpecDependencyReadinessResponse(BaseSchema):
+    """Current, dynamically evaluated prerequisite readiness for a Spec."""
+
+    spec_id: str
+    board_id: str
+    can_start: bool
+    ready: bool
+    reason_code: Literal["spec_dependencies_incomplete"] | None = None
+    current_edition: int = Field(..., ge=1)
+    last_started_edition: int | None = Field(default=None, ge=1)
+    active_dependency_count: int = Field(..., ge=0)
+    unmet_count: int = Field(..., ge=0)
+    blocking_count: int = Field(..., ge=0)
+    archived_blocking_count: int = Field(..., ge=0)
+    unfinished_blocking_count: int = Field(..., ge=0)
+    blockers_truncated: bool
+    current_edition_started: bool
+    blockers: list[SpecDependencyBlockerResponse] = Field(default_factory=list)
+
+
 class SpecSummary(BaseSchema):
     """Schema for spec summary (without nested cards)."""
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     id: str
     board_id: str
     title: str
@@ -2280,6 +2481,11 @@ class SpecSummary(BaseSchema):
         1,
         ge=1,
         description="Human-facing Spec edition; advances only when re-entering draft.",
+    )
+    last_started_edition: int | None = Field(
+        None,
+        ge=1,
+        description="Most recent human lifecycle edition that began execution.",
     )
     version: int = Field(
         ...,
@@ -2292,6 +2498,19 @@ class SpecSummary(BaseSchema):
     labels: list[str] | None
     ideation_id: str | None = None
     refinement_id: str | None = None
+    source_refinement_snapshot_id: str | None = None
+    source_refinement_version: int | None = Field(default=None, ge=1)
+    delivery_context: DeliveryContext | None = None
+    delivery_context_provenance: (
+        SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ) = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
@@ -2310,6 +2529,7 @@ class IdeationResponse(BaseSchema):
     complexity: IdeationComplexity | None
     screen_mockups: list[ScreenMockup] | None = None
     status: IdeationStatus
+    edition: int = Field(1, ge=1)
     version: int
     assignee_id: str | None
     created_by: str
@@ -2320,6 +2540,7 @@ class IdeationResponse(BaseSchema):
     pre_archive_status: str | None = None
     # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
@@ -2346,7 +2567,9 @@ class RefinementResponse(BaseSchema):
     decisions: list[str] | None
     screen_mockups: list[ScreenMockup] | None = None
     status: RefinementStatus
+    edition: int = Field(1, ge=1)
     version: int
+    delivery_context: DeliveryContext | None = None
     assignee_id: str | None
     created_by: str
     created_at: datetime
@@ -2355,6 +2578,7 @@ class RefinementResponse(BaseSchema):
     archived: bool = False
     pre_archive_status: str | None = None
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = Field(default=None, ge=1)
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
@@ -2590,6 +2814,7 @@ class SpecResponse(BaseSchema):
     skip_contract_coverage: bool = False
     skip_ir_coverage: bool = False
     skip_or_coverage: bool = False
+    skip_code_evidence_coverage: bool = False
     require_task_validation: bool | None = None
     validation_min_confidence: int | None = None
     validation_min_completeness: int | None = None
@@ -2606,6 +2831,12 @@ class SpecResponse(BaseSchema):
         ge=1,
         description="Human-facing Spec edition; advances only when re-entering draft.",
     )
+    last_started_edition: int | None = Field(
+        None,
+        ge=1,
+        description="Most recent human lifecycle edition that began execution.",
+    )
+    dependency_readiness: SpecDependencyReadinessResponse | None = None
     version: int = Field(
         ...,
         description="Technical revision used for concurrency and currentness.",
@@ -2617,6 +2848,19 @@ class SpecResponse(BaseSchema):
     labels: list[str] | None
     ideation_id: str | None = None
     refinement_id: str | None = None
+    source_refinement_snapshot_id: str | None = None
+    source_refinement_version: int | None = Field(default=None, ge=1)
+    delivery_context: DeliveryContext | None = None
+    delivery_context_provenance: (
+        SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ) = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     cards: list[CardSummaryForSpec] = []
     knowledge_bases: list[SpecKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
@@ -2631,6 +2875,12 @@ DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationRespon
 # ============================================================================
 # Card Schemas
 # ============================================================================
+
+
+CardInitialStatus: TypeAlias = Literal[
+    CardStatus.NOT_STARTED,
+    CardStatus.STARTED,
+]
 
 
 class CardCreate(BaseModel):
@@ -2648,7 +2898,7 @@ class CardCreate(BaseModel):
     details: str | None = Field(
         None, description="Descricao tecnica detalhada, markdown suportado."
     )
-    status: CardStatus = Field(
+    status: CardInitialStatus = Field(
         CardStatus.NOT_STARTED,
         description=(
             "Status inicial do card no board: somente not_started ou started. "
@@ -2835,9 +3085,7 @@ class _ImpactEvidenceInput(BaseModel):
     normalizes to ``None``) — never here.
     """
 
-    model_config = ConfigDict(
-        extra="forbid", json_schema_extra=_slim_impact_schema
-    )
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_slim_impact_schema)
 
 
 _IMPACT_DRIVE_RE = re.compile(r"^[A-Za-z]:")
@@ -2853,8 +3101,7 @@ def _validate_impact_repo_path(path: str) -> str:
         )
     if path.startswith("/"):
         raise ValueError(
-            "impact_evidence_path_invalid: leading slash - paths are "
-            "repo-root-relative"
+            "impact_evidence_path_invalid: leading slash - paths are repo-root-relative"
         )
     if _IMPACT_DRIVE_RE.match(path):
         raise ValueError(
@@ -2862,9 +3109,7 @@ def _validate_impact_repo_path(path: str) -> str:
             "paths are repo-root-relative"
         )
     if any(segment == ".." for segment in path.split("/")):
-        raise ValueError(
-            "impact_evidence_path_invalid: '..' segments are not allowed"
-        )
+        raise ValueError("impact_evidence_path_invalid: '..' segments are not allowed")
     return path
 
 
@@ -2948,18 +3193,10 @@ class ImpactEvidence(_ImpactEvidenceInput):
     """
 
     schema_version: Literal[1] = 1
-    files: list[ImpactEvidenceFile] = Field(
-        default_factory=list, max_length=200
-    )
-    symbols: list[ImpactEvidenceSymbol] = Field(
-        default_factory=list, max_length=200
-    )
-    surfaces: list[ImpactEvidenceSurface] = Field(
-        default_factory=list, max_length=50
-    )
-    tests: list[ImpactEvidenceTest] = Field(
-        default_factory=list, max_length=100
-    )
+    files: list[ImpactEvidenceFile] = Field(default_factory=list, max_length=200)
+    symbols: list[ImpactEvidenceSymbol] = Field(default_factory=list, max_length=200)
+    surfaces: list[ImpactEvidenceSurface] = Field(default_factory=list, max_length=50)
+    tests: list[ImpactEvidenceTest] = Field(default_factory=list, max_length=100)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
 
     @field_validator("evidence_refs")
@@ -3074,6 +3311,18 @@ class ConclusionEntry(ConclusionEntrySummary):
         return data
 
 
+CardMoveTargetStatus: TypeAlias = Literal[
+    CardStatus.NOT_STARTED,
+    CardStatus.STARTED,
+    CardStatus.IN_PROGRESS,
+    CardStatus.VALIDATION,
+    CardStatus.ON_HOLD,
+    CardStatus.DONE,
+    CardStatus.CANCELLED,
+    CardStatus.REJECTED,
+]
+
+
 class CardMove(BaseModel):
     """Schema for moving a card between columns.
 
@@ -3158,9 +3407,9 @@ class CardMove(BaseModel):
         }
     )
 
-    status: CardStatus = Field(
+    status: CardMoveTargetStatus = Field(
         ...,
-        description="Novo status do card: not_started, started, in_progress, validation, on_hold, done, cancelled.",
+        description="Novo status público do card: not_started, started, in_progress, validation, on_hold, done ou cancelled. rejected é aceito somente quando o card já está rejected, para reordenar dentro da mesma coluna; nenhuma transição pode ter rejected como destino manual.",
     )
     position: int | None = Field(
         None,
@@ -3275,6 +3524,15 @@ class CardMove(BaseModel):
     )
 
 
+class CardRejectionCauseResponse(BaseModel):
+    """Bounded human-facing cause for a card currently awaiting rework."""
+
+    kind: str
+    id: str = Field(..., min_length=1, max_length=REJECTION_ID_MAX_LENGTH)
+    code: str = Field(..., min_length=1, max_length=REJECTION_CODE_MAX_LENGTH)
+    summary: str = Field(..., min_length=1, max_length=REJECTION_SUMMARY_MAX_LENGTH)
+
+
 class CardResponse(BaseSchema):
     """Schema for card response."""
 
@@ -3322,12 +3580,37 @@ class CardResponse(BaseSchema):
     linked_test_task_ids: list[str] | None = None
     skip_task_requirement_link_gate: bool = False
     validations: list[dict] | None = None
+    rejection_records: list[dict] = Field(default_factory=list)
+    current_rejection_kind: str | None = None
+    current_rejection_id: str | None = Field(
+        default=None, max_length=REJECTION_ID_MAX_LENGTH
+    )
+    current_rejection_code: str | None = Field(
+        default=None, max_length=REJECTION_CODE_MAX_LENGTH
+    )
+    current_rejection_summary: str | None = Field(
+        default=None, max_length=REJECTION_SUMMARY_MAX_LENGTH
+    )
     archived: bool = False
     pre_archive_status: str | None = None
     # Cancellation justification (ITEM 17) — set only while status == cancelled.
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
+
+    @field_validator("rejection_records", mode="before")
+    @classmethod
+    def normalize_rejection_records(cls, value: list[dict] | None) -> list[dict]:
+        return list(value or [])
+
+    @field_validator("validations", mode="before")
+    @classmethod
+    def project_public_task_validations(
+        cls, value: list[dict] | None
+    ) -> list[dict] | None:
+        if value is None:
+            return None
+        return [project_task_validation_public(item) for item in value]
 
     @field_validator("knowledge_bases", mode="before")
     @classmethod
@@ -3353,10 +3636,9 @@ CardCreateResponse: TypeAlias = CardResponse | CardCreateKnowledgeMutationRespon
 class CardSummary(BaseSchema):
     """Canonical lean card projection used by all three columns shapes.
 
-    Every field is required at the transport boundary, including nullable
-    fields.  That keeps the opt-in projection explicit and prevents response
-    serialization from silently manufacturing defaults that were not read
-    from persistence.
+    Persisted fields are explicit at the transport boundary. Sensitive
+    projections such as ``open_qa_count`` are omitted when the actor lacks
+    their dedicated read capability.
     """
 
     id: str
@@ -3382,15 +3664,30 @@ class CardSummary(BaseSchema):
     linked_test_task_ids: list[str] | None
     archived: bool
     # Count of unanswered Q&A (answered_at IS NULL) — drives the badge.
-    open_qa_count: int = Field(..., ge=0)
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+    current_rejection_kind: str | None = None
+    current_rejection_id: str | None = Field(
+        default=None, max_length=REJECTION_ID_MAX_LENGTH
+    )
+    current_rejection_code: str | None = Field(
+        default=None, max_length=REJECTION_CODE_MAX_LENGTH
+    )
+    current_rejection_summary: str | None = Field(
+        default=None, max_length=REJECTION_SUMMARY_MAX_LENGTH
+    )
 
 
 class CardPageItem(BaseSchema):
     """Authoritative lightweight DTO for the paginated board card list.
 
-    All fields are required in the projection, while nullable ORM columns and
-    metrics that do not exist until a validation/conclusion occurs remain
-    explicitly nullable.
+    Persisted fields are required in the projection, while nullable ORM
+    columns and metrics that do not exist until a validation/conclusion occurs
+    remain explicitly nullable. Sensitive derived fields are omitted when the
+    actor lacks their dedicated read capability.
     """
 
     id: str
@@ -3422,7 +3719,21 @@ class CardPageItem(BaseSchema):
     last_conclusion_drift: int | None = Field(..., ge=0, le=100)
     created_at: datetime
     updated_at: datetime
-    open_qa_count: int = Field(..., ge=0)
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+    current_rejection_kind: str | None = None
+    current_rejection_id: str | None = Field(
+        default=None, max_length=REJECTION_ID_MAX_LENGTH
+    )
+    current_rejection_code: str | None = Field(
+        default=None, max_length=REJECTION_CODE_MAX_LENGTH
+    )
+    current_rejection_summary: str | None = Field(
+        default=None, max_length=REJECTION_SUMMARY_MAX_LENGTH
+    )
 
 
 # ============================================================================
@@ -3433,6 +3744,15 @@ class CardPageItem(BaseSchema):
 class TaskValidationSubmit(BaseModel):
     """Request body for submitting a task validation."""
 
+    expected_subject_version: int = Field(
+        ...,
+        ge=1,
+        validation_alias=AliasChoices(
+            "expected_subject_version", "expected_card_version"
+        ),
+        description="Optimistic card subject-version fence.",
+    )
+    idempotency_key: str = Field(..., min_length=1, max_length=255)
     confidence: int = Field(
         ..., ge=0, le=100, description="Confianca do validador na avaliacao (0-100)."
     )
@@ -3478,23 +3798,178 @@ class TaskValidationSubmit(BaseModel):
 class TaskValidationResponse(BaseModel):
     """Response for a task validation."""
 
+    model_config = ConfigDict(extra="ignore")
+
     id: str
     card_id: str
     board_id: str
-    reviewer_id: str
-    confidence: int
-    confidence_justification: str
-    estimated_completeness: int
-    completeness_justification: str
-    estimated_drift: int
-    drift_justification: str
-    general_justification: str
-    recommendation: str
-    outcome: str
-    threshold_violations: list[str]
-    created_at: str
+    # Historical rows predating the governed validation contract can be sparse.
+    # The submit input remains strict; public history reads are deliberately
+    # tolerant while still stripping all internal ledger fields.
+    reviewer_id: str | None = None
+    reviewer_name: str | None = Field(default=None, max_length=255)
+    evaluator_id: str | None = None
+    evaluator_name: str | None = Field(default=None, max_length=255)
+    confidence: int | None = None
+    confidence_justification: str | None = None
+    estimated_completeness: int | None = None
+    completeness: int | None = None
+    completeness_justification: str | None = None
+    estimated_drift: int | None = None
+    drift: int | None = None
+    drift_justification: str | None = None
+    general_justification: str | None = None
+    summary: str | None = None
+    recommendation: str | None = None
+    outcome: str | None = None
+    verdict: str | None = None
+    validation_outcome: str | None = None
+    completion_outcome: str | None = None
+    threshold_violations: list[str] = Field(default_factory=list)
+    created_at: str | None = None
     card_status: str | None = None
     resolved_thresholds: dict | None = None
+    reviewer_separation: dict | None = None
+    expected_subject_version: int | None = None
+    completion_gate_failures: list[dict] = Field(default_factory=list)
+    rejection_cause: CardRejectionCauseResponse | None = None
+    subject_version: int | None = None
+    replayed: bool = False
+
+
+class TaskValidationListResponse(BaseModel):
+    """Public reverse-chronological Task Validation history envelope."""
+
+    card_id: str
+    total: int = Field(..., ge=0)
+    validations: list[TaskValidationResponse] = Field(default_factory=list)
+
+
+_CARD_VALIDATION_REDACTION = {
+    "validations": None,
+    "rejection_records": [],
+    "current_rejection_kind": None,
+    "current_rejection_id": None,
+    "current_rejection_code": None,
+    "current_rejection_summary": None,
+    "validations_count": 0,
+    "validations_fail_count": 0,
+    "validations_has_pass": False,
+    "first_pass_confidence": None,
+    "first_pass_completeness": None,
+    "first_pass_drift": None,
+}
+
+
+def redact_card_validation_projection(value: Any) -> Any:
+    """Remove validation bodies, causal summaries and aggregate score signals.
+
+    The helper is shared by full-card and paginated/column boundaries.  It
+    preserves lifecycle status (including ``rejected``) while making the
+    dedicated ``card.validation.read`` permission authoritative for every
+    human or agent-facing validation signal.
+    """
+
+    if isinstance(value, BaseModel):
+        fields = value.__class__.model_fields
+        updates = {
+            key: item
+            for key, item in _CARD_VALIDATION_REDACTION.items()
+            if key in fields
+        }
+        return value.model_copy(update=updates)
+    if isinstance(value, Mapping):
+        projected = dict(value)
+        for key, item in _CARD_VALIDATION_REDACTION.items():
+            if key in projected:
+                projected[key] = list(item) if isinstance(item, list) else item
+        return projected
+    return value
+
+
+_TASK_VALIDATION_PRIVATE_FIELDS = frozenset(
+    {"response", "request_digest", "idempotency_key"}
+)
+
+
+def project_task_validation_public(
+    value: Mapping[str, Any] | BaseModel,
+    *,
+    card_id: str | None = None,
+    board_id: str | None = None,
+    replayed: bool | None = None,
+) -> dict[str, Any]:
+    """Project one persisted Task Validation into its public, replay-stable DTO.
+
+    New entries validate through :class:`TaskValidationResponse`. Historical
+    rows are intentionally read-tolerant: known clean aliases are normalized,
+    context-known card/board identities are filled, and whatever canonical
+    fields are actually present are returned. Ledger plumbing is removed on
+    every path, including legacy nested ``response`` snapshots.
+    """
+
+    if isinstance(value, BaseModel):
+        raw = value.model_dump(mode="python")
+    elif isinstance(value, Mapping):
+        raw = dict(value)
+    else:
+        return {}
+
+    nested = raw.get("response")
+    merged = {
+        key: item
+        for key, item in raw.items()
+        if key not in _TASK_VALIDATION_PRIVATE_FIELDS
+    }
+    if isinstance(nested, Mapping):
+        merged.update(
+            {
+                key: item
+                for key, item in nested.items()
+                if key not in _TASK_VALIDATION_PRIVATE_FIELDS
+            }
+        )
+    if card_id and not merged.get("card_id"):
+        merged["card_id"] = card_id
+    if board_id and not merged.get("board_id"):
+        merged["board_id"] = board_id
+
+    alias_pairs = (
+        ("reviewer_id", "evaluator_id"),
+        ("reviewer_name", "evaluator_name"),
+        ("estimated_completeness", "completeness"),
+        ("estimated_drift", "drift"),
+        ("general_justification", "summary"),
+    )
+    for canonical, alias in alias_pairs:
+        if merged.get(canonical) is None and merged.get(alias) is not None:
+            merged[canonical] = merged[alias]
+        if merged.get(alias) is None and merged.get(canonical) is not None:
+            merged[alias] = merged[canonical]
+    if merged.get("outcome") is None and merged.get("verdict") in {"pass", "fail"}:
+        merged["outcome"] = "success" if merged["verdict"] == "pass" else "failed"
+    if merged.get("verdict") is None and merged.get("outcome") in {
+        "success",
+        "failed",
+    }:
+        merged["verdict"] = "pass" if merged["outcome"] == "success" else "fail"
+    merged.setdefault("threshold_violations", [])
+    merged.setdefault("completion_gate_failures", [])
+    if replayed is not None:
+        merged["replayed"] = replayed
+    else:
+        merged["replayed"] = bool(merged.get("replayed", False))
+
+    try:
+        return TaskValidationResponse.model_validate(merged).model_dump(
+            mode="json",
+            exclude_none=False,
+        )
+    except (TypeError, ValueError):
+        # Legacy task validations can predate required identity/score fields.
+        # Preserve only reviewed public keys; never fall back to the raw dict.
+        allowed = set(TaskValidationResponse.model_fields)
+        return {key: item for key, item in merged.items() if key in allowed}
 
 
 # ============================================================================
@@ -3502,45 +3977,145 @@ class TaskValidationResponse(BaseModel):
 # ============================================================================
 
 
+class SpecValidationPinpoint(BaseModel):
+    """Closed evaluator-supplied location tagged with one quality metric."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: Literal[
+        "confidence",
+        "clarity",
+        "assertiveness",
+        "decidability",
+        "ambiguity",
+    ]
+    anchor_type: Literal["whole_artifact", "field", "structured_child", "qa"]
+    anchor_ref: str | None = Field(default=None, min_length=1, max_length=4096)
+    detail: str = Field(..., min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_anchor(self) -> "SpecValidationPinpoint":
+        self.detail = self.detail.strip()
+        if not self.detail:
+            raise ValueError("spec_validation_pinpoint_detail_invalid")
+        if self.anchor_type == "whole_artifact":
+            if self.anchor_ref is not None:
+                raise ValueError("spec_validation_pinpoint_anchor_ref_forbidden")
+            return self
+        if self.anchor_ref is None or not self.anchor_ref.strip():
+            raise ValueError("spec_validation_pinpoint_anchor_ref_required")
+        self.anchor_ref = self.anchor_ref.strip()
+        return self
+
+
+class SpecValidationAnchorSnapshotResponse(BaseModel):
+    """Immutable human-readable anchor content stored with a validation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["spec-validation-pinpoint-snapshot/v1"] = (
+        "spec-validation-pinpoint-snapshot/v1"
+    )
+    availability_at_seal: Literal["available", "legacy_unavailable"]
+    label: str | None = None
+    text: str | None = None
+    excerpt: str | None = None
+    source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_version: str | None = None
+
+
+class SpecValidationPinpointResponse(SpecValidationPinpoint):
+    """Read projection; old rows state that no sealed snapshot exists."""
+
+    anchor_snapshot: SpecValidationAnchorSnapshotResponse = Field(
+        default_factory=lambda: SpecValidationAnchorSnapshotResponse(
+            availability_at_seal="legacy_unavailable"
+        )
+    )
+
+
 class SpecValidationSubmit(BaseModel):
-    """Request body for submitting a spec validation.
+    """Canonical five-dimensional Spec Validation submission."""
 
-    Mirrors TaskValidationSubmit but with the 3 spec-specific dimensions:
-    completeness, assertiveness, ambiguity (lower is better for ambiguity).
-    """
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    completeness: int = Field(..., ge=0, le=100)
-    completeness_justification: str = Field(..., min_length=10)
+    expected_validation_edition: int = Field(
+        ...,
+        ge=1,
+        validation_alias=AliasChoices(
+            "expected_validation_edition",
+            "expected_spec_edition",
+        ),
+    )
+    expected_spec_version: int = Field(..., ge=1)
+    expected_head_revision: int = Field(..., ge=0)
+    confidence: int = Field(..., ge=0, le=100)
+    confidence_justification: str = Field(..., min_length=10)
+    clarity: int = Field(..., ge=0, le=100)
+    clarity_justification: str = Field(..., min_length=10)
     assertiveness: int = Field(..., ge=0, le=100)
     assertiveness_justification: str = Field(..., min_length=10)
+    decidability: int = Field(..., ge=0, le=100)
+    decidability_justification: str = Field(..., min_length=10)
     ambiguity: int = Field(..., ge=0, le=100)
     ambiguity_justification: str = Field(..., min_length=10)
-    general_justification: str = Field(..., min_length=20)
-    recommendation: str = Field(..., pattern="^(approve|reject)$")
+    recommendation: Literal["approve", "reject"]
+    pinpoints: list[SpecValidationPinpoint] | None = None
 
 
 class SpecValidationResponse(BaseModel):
-    """Response for a spec validation."""
+    """History record; legacy evidence may predate lifecycle editions."""
 
-    id: str
-    spec_id: str
-    board_id: str
-    reviewer_id: str
+    id: str | None = None
+    validation_id: str | None = None
+    validation_edition: int | None = Field(default=None, ge=1)
+    is_current: bool = False
+    spec_id: str | None = None
+    board_id: str | None = None
+    reviewer_id: str | None = None
     reviewer_name: str | None = None
-    completeness: int
-    completeness_justification: str
-    assertiveness: int
-    assertiveness_justification: str
-    ambiguity: int
-    ambiguity_justification: str
-    general_justification: str
-    recommendation: str
-    outcome: str
-    threshold_violations: list[str]
+    score: float | None = None
+    summary: str | None = None
+    confidence: int | None = None
+    confidence_justification: str | None = None
+    clarity: int | None = None
+    clarity_justification: str | None = None
+    decidability: int | None = None
+    decidability_justification: str | None = None
+    completeness: int | None = None
+    completeness_justification: str | None = None
+    assertiveness: int | None = None
+    assertiveness_justification: str | None = None
+    ambiguity: int | None = None
+    ambiguity_justification: str | None = None
+    general_justification: str | None = None
+    recommendation: str | None = None
+    pinpoints: list[SpecValidationPinpointResponse] | None = None
+    outcome: str | None = None
+    receipt_id: str | None = None
+    subject_version: int | None = Field(default=None, ge=1)
+    head_revision: int | None = Field(default=None, ge=1)
+    digests: dict[str, str] | None = None
+    threshold_violations: list[str] | None = None
     resolved_thresholds: dict | None = None
-    created_at: str
+    created_at: str | None = None
     spec_status: str | None = None
     active: bool | None = None
+    edition: int | None = Field(default=None, ge=1)
+    lifecycle_state: Literal["current", "previous", "history_only"] | None = None
+
+    @model_validator(mode="after")
+    def require_compatible_identity(self) -> "SpecValidationResponse":
+        if not self.id and not self.validation_id:
+            raise ValueError("spec_validation_identity_required")
+        if self.lifecycle_state == "current" and self.validation_edition is None:
+            raise ValueError("spec_validation_current_edition_required")
+        if (
+            self.lifecycle_state == "history_only"
+            and self.validation_edition is not None
+        ):
+            raise ValueError("spec_validation_history_only_edition_forbidden")
+        return self
 
 
 # ============================================================================
@@ -3634,8 +4209,144 @@ class SpecResourceType(str, PyEnum):
     MOCKUP = "mockup"
 
 
+class CodeTraceabilitySettings(BaseModel):
+    """Board policy for agent-attested code traceability.
+
+    This policy never grants Pulse permission to inspect a repository.  It
+    only governs bounded attestations submitted by an authenticated external
+    agent and the projections derived from accepted receipts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: CodeTraceabilityEnforcement = CodeTraceabilityEnforcement.ADVISORY
+    evidence_attestation: Literal["none", "preferred", "required"] = "preferred"
+    target_resolution: Literal[
+        "advisory",
+        "required",
+        "required_current_receipt",
+    ] = "advisory"
+    accepted_attestor_policy: Literal[
+        "granular_permission",
+        "granular_permission_and_board_allowlist",
+    ] = "granular_permission"
+    minimum_trust: Literal["single_attestation", "corroborated"] = "single_attestation"
+    # Closed server-owned range.  The configured value controls accepted
+    # receipt currentness; it is never derived from agent-supplied observed_at.
+    preflight_freshness_seconds: int = Field(default=1800, ge=60, le=86_400)
+    overlap_policy: Literal["off", "warn", "block_parallel"] = "warn"
+    observed_state_policy: Literal[
+        "allow_dirty_attestation",
+        "require_committed_attestation",
+    ] = "allow_dirty_attestation"
+    receipt_content: Literal["metadata_only", "safe_excerpt"] = "safe_excerpt"
+
+    @classmethod
+    def from_persisted(cls, value: object) -> "CodeTraceabilitySettings":
+        """Read one historical policy without reopening the write contract.
+
+        ``off`` and an explicit legacy ``null`` were valid before enforcement
+        became mandatory.  They now resolve to Advisory so existing databases
+        remain readable and agent-mediated checks still run.  Native model
+        validation remains strict, so Board create/update and default-template
+        writes cannot author either compatibility value.
+        """
+
+        if isinstance(value, cls):
+            return value
+        if value is None:
+            return cls()
+        if isinstance(value, Mapping) and value.get("mode") == "off":
+            value = {
+                **value,
+                "mode": CodeTraceabilityEnforcement.ADVISORY.value,
+            }
+        return cls.model_validate(value)
+
+
+FlowHealthOverrideState: TypeAlias = Literal[
+    "backlog",
+    "pending",
+    "in_progress",
+    "rejected",
+    "done",
+]
+
+
+class FlowHealthSettings(BaseModel):
+    """Closed, revisioned board policy for Flow Health analytics.
+
+    ``version`` is the policy revision used by the governed settings write
+    contract.  It is deliberately distinct from the fixed Analytics settings
+    schema version.  Thresholds are whole hours and match the canonical Flow
+    Health defaults published by Core.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(default=1, ge=1, strict=True)
+    general_stale_hours: int = Field(default=72, ge=1, strict=True)
+    rejected_stale_hours: int = Field(default=96, ge=1, strict=True)
+    overrides: dict[FlowHealthOverrideState, int] = Field(default_factory=dict)
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _validate_overrides(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            raise ValueError("flow_health overrides must be an object")
+        for state, stale_hours in value.items():
+            if state not in {
+                "backlog",
+                "pending",
+                "in_progress",
+                "rejected",
+                "done",
+            }:
+                raise ValueError(f"unsupported flow_health override state: {state}")
+            if type(stale_hours) is not int or stale_hours < 1:
+                raise ValueError(
+                    "flow_health override thresholds must be positive whole hours"
+                )
+        return dict(value)
+
+
+class AnalyticsSettings(BaseModel):
+    """Closed board-level Analytics policy envelope (schema version 1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    flow_health: FlowHealthSettings = Field(default_factory=FlowHealthSettings)
+
+
+class FlowHealthSettingsUpdate(BaseModel):
+    """Closed full-replacement payload for a CAS-protected policy save."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1, strict=True)
+    general_stale_hours: int = Field(ge=1, strict=True)
+    rejected_stale_hours: int = Field(ge=1, strict=True)
+    overrides: dict[FlowHealthOverrideState, int] = Field(default_factory=dict)
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _validate_overrides(cls, value: object) -> object:
+        return FlowHealthSettings._validate_overrides(value)
+
+
+class FlowHealthSettingsRestore(BaseModel):
+    """Closed CAS payload for restoring Core defaults without losing history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1, strict=True)
+
+
 class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
+
+    analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
 
     max_scenarios_per_card: int = 3  # max test scenarios a single card can be linked to
     skip_test_coverage_global: bool = (
@@ -3646,6 +4357,9 @@ class BoardSettings(BaseModel):
     )
     skip_trs_coverage_global: bool = (
         False  # if True, all specs bypass TR→Task coverage checks
+    )
+    skip_code_evidence_coverage_global: bool = (
+        False  # if True, all specs bypass Code Evidence Matrix coverage checks
     )
     skip_contract_coverage_global: bool = (
         False  # if True, all specs bypass API contract coverage checks
@@ -3680,9 +4394,9 @@ class BoardSettings(BaseModel):
     # evaluated as a deterministic UNION of lexicons. Empty (the legacy
     # default) keeps the neutral-only profile: no language guessing, only
     # numbers/comparators/units/technical terms count as signals.
-    lint_languages: list[
-        Literal["pt-BR", "en-US", "es-ES", "de-DE", "fr-FR"]
-    ] = Field(default_factory=list)
+    lint_languages: list[Literal["pt-BR", "en-US", "es-ES", "de-DE", "fr-FR"]] = Field(
+        default_factory=list
+    )
     # Impact-evidence enforcement on execution reports (SK-B2-S1, FR-5).
     # off = no effect; advisory = gated moves succeed but a missing block is
     # recorded in the activity log; require = gated moves reject a conclusion
@@ -3696,6 +4410,13 @@ class BoardSettings(BaseModel):
     # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
     # boards with no field validate as 'off' (TR4 — never breaks an existing board).
     design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
+    # Agent-mediated Code Traceability is always evaluated. Historical absent,
+    # null, or ``off`` policies resolve to Advisory on tolerant READ paths and
+    # are converged by Community's startup migration. Native writes are closed
+    # to Advisory or Blocking.
+    code_traceability: CodeTraceabilitySettings = Field(
+        default_factory=CodeTraceabilitySettings
+    )
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = (
         True  # if True, cards must pass validation before moving to done
@@ -3707,9 +4428,14 @@ class BoardSettings(BaseModel):
     require_spec_validation: bool = (
         True  # if True, approved→validated requires Spec Validation Gate submission
     )
-    min_spec_completeness: int = 80  # min spec completeness score
-    min_spec_assertiveness: int = 80  # min spec assertiveness score
-    max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    min_spec_confidence: int = Field(default=70, ge=0, le=100)
+    min_spec_clarity: int = Field(default=80, ge=0, le=100)
+    min_spec_assertiveness: int = Field(default=80, ge=0, le=100)
+    min_spec_decidability: int = Field(default=80, ge=0, le=100)
+    max_spec_ambiguity: int = Field(default=30, ge=0, le=100)
+    # Compatibility-only setting for historical three-dimensional records.
+    # It is not part of the canonical five-metric gate.
+    min_spec_completeness: int = Field(default=80, ge=0, le=100)
     # Max ambiguity gate for ideation completion — opt-in (spec 2485780b).
     # When enabled, blocks ONLY the evaluating→done transition if the ideation
     # has no ambiguity score or scope_assessment.ambiguity exceeds the
@@ -4206,7 +4932,11 @@ class SprintSummary(BaseSchema):
     """Schema for sprint summary (used in lists and spec responses)."""
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    open_qa_count: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     id: str
     spec_id: str
     board_id: str

@@ -71,6 +71,8 @@ _BASELINE_CORE_SETTING_NAMES: tuple[str, ...] = (
     "kg_queue_stuck_age_seconds",
     "kg_queue_recovery_scan_interval_s",
     "cognitive_readiness_blocking_enabled",
+    "semantic_assessment_v2_readers_ready",
+    "semantic_assessment_v2_writer_enabled",
     "guideline_policy_cursor_signing_key",
     "kg_queue_dlq_auto_drain_backoff_s",
     "kg_queue_dlq_auto_drain_max_requeue_attempts",
@@ -177,6 +179,14 @@ _CORE_CONTRACT_OWNERS: dict[str, tuple[str, str]] = {
     "cognitive_readiness_blocking_enabled": (
         "okto-pulse-core/cognitive-readiness",
         "global enforcement rollout flag",
+    ),
+    "semantic_assessment_v2_readers_ready": (
+        "okto-pulse-core/semantic-assessment",
+        "readers-first rollout readiness declaration",
+    ),
+    "semantic_assessment_v2_writer_enabled": (
+        "okto-pulse-core/semantic-assessment",
+        "operator request for guarded v2 writer activation",
     ),
     "guideline_policy_cursor_signing_key": (
         "okto-pulse-core/inbound-policy",

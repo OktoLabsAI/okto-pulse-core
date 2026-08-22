@@ -402,6 +402,11 @@ def _waiver_manifest(waiver: SemanticMetricWaiver) -> dict[str, object]:
         "subject_type": anchor.subject.entity_type.value,
         "subject_id": anchor.subject.subject_id,
         "subject_version": anchor.subject.subject_version,
+        **(
+            {"subject_edition": anchor.subject.subject_edition}
+            if anchor.subject.subject_edition is not None
+            else {}
+        ),
         "subject_content_digest": anchor.subject_content_digest,
         "expires_at": (
             waiver.expires_at.isoformat()
@@ -1013,6 +1018,11 @@ def plan_guideline_impact_preview(
                 "subject_type": subject.entity_type.value,
                 "subject_id": subject.subject_id,
                 "subject_version": subject.subject_version,
+                **(
+                    {"subject_edition": subject.subject_edition}
+                    if subject.subject_edition is not None
+                    else {}
+                ),
                 "policy_set_digest_before": policy_set_before,
                 "policy_set_digest_after": policy_set_after,
             },

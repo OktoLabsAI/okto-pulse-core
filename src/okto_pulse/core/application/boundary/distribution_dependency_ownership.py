@@ -248,6 +248,19 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             removal_criterion="Replace the Community MCP runtime implementation.",
         ),
         _entry(
+            "authlib", community, "community", ("authlib",), "dynamic",
+            ("src/okto_pulse/community/adapters/mcp_host.py",),
+            rationale=(
+                "FastMCP 2.x imports Authlib's JWT compatibility namespace; "
+                "Community pins the supported 1.6 line until the host migrates "
+                "to FastMCP 3 and joserfc."
+            ),
+            removal_criterion=(
+                "Remove the compatibility pin after the concrete Community MCP "
+                "host no longer loads authlib.jose."
+            ),
+        ),
+        _entry(
             "mcp", community, "community", ("mcp",), "direct",
             ("src/okto_pulse/community/adapters/mcp_host.py",),
             rationale="Community owns the concrete MCP protocol response adapter.",

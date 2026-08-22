@@ -41,7 +41,15 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": "architecture-mcp-agent",
             "board_id": board_id,
-            "permissions": ["board:read", "cards:update", "specs:update"],
+            "permissions": [
+                "board:read",
+                "cards:update",
+                "specs:update",
+                "code_traceability.investigation.read",
+                "code_traceability.evidence.read",
+                "code_traceability.target.read",
+                "code_traceability.overlap.read",
+            ],
         },
     )()
 
@@ -184,7 +192,7 @@ async def _seed_spec_card():
                 id=spec_id,
                 board_id=board_id,
                 title="Architecture MCP Spec",
-                status=SpecStatus.APPROVED,
+                status=SpecStatus.DRAFT,
                 created_by=USER_ID,
                 functional_requirements=["FR"],
                 acceptance_criteria=["AC"],

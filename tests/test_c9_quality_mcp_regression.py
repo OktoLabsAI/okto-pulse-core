@@ -84,6 +84,8 @@ NOW = datetime(2026, 7, 28, 9, 0, tzinfo=timezone.utc)
 QUALITY_TOOLS = frozenset(
     {
         "okto_pulse_record_ambiguity_assessment",
+        "okto_pulse_record_requirement_lint",
+        "okto_pulse_get_requirement_lint_preflight",
         "okto_pulse_get_current_quality_assessment",
         "okto_pulse_get_quality_assessment_receipt",
         "okto_pulse_list_quality_assessments",
@@ -171,14 +173,14 @@ def _current_view() -> CurrentAssessmentView:
 
 
 @pytest.mark.asyncio
-async def test_quality_mcp_inventory_remains_five_tools_at_312() -> None:
+async def test_quality_mcp_inventory_remains_seven_tools() -> None:
     tools = await server.mcp.get_tools()
 
     # Semantic guideline v2 replaces the evaluation command with evidence
     # recording and retains four bounded read surfaces (list, get, current and
     # findings).  Those reads are part of the public projection/pagination
-    # contract, so the installed inventory intentionally remains at 312.
-    assert len(tools) == 312
+    # contract; Code Traceability adds 20 reviewed, typed commands.
+    assert len(tools) == 338
     assert {
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_semantic_guideline_assessment",
@@ -186,7 +188,7 @@ async def test_quality_mcp_inventory_remains_five_tools_at_312() -> None:
         "okto_pulse_list_semantic_guideline_findings",
     } <= tools.keys()
     assert QUALITY_TOOLS <= tools.keys()
-    assert len(QUALITY_TOOLS) == 5
+    assert len(QUALITY_TOOLS) == 7
 
     record = tools["okto_pulse_record_ambiguity_assessment"].parameters
     assert record["properties"]["subject_type"]["enum"] == [
@@ -199,8 +201,10 @@ async def test_quality_mcp_inventory_remains_five_tools_at_312() -> None:
         "subject_id",
         "idempotency_key",
         "expected_subject_version",
+        "expected_subject_edition",
         "expected_head_revision",
         "score",
+        "summary",
     }
     finding = record["properties"]["findings"]["$defs"]["QualityFindingInput"]
     assert finding["additionalProperties"] is False
@@ -241,12 +245,16 @@ def test_shared_current_and_receipt_projectors_are_flat_closed_envelopes() -> No
     current = project_current_quality_assessment(view)
     assert set(current) == {
         "receipt",
+        "edition",
+        "lifecycle_state",
         "head_revision",
         "currentness",
         "stale_reasons",
         "gate_preview",
     }
     assert current["currentness"] == "current"
+    assert current["lifecycle_state"] == "current"
+    assert current["edition"] == view.receipt.subject.subject_edition
     assert current["stale_reasons"] == []
     assert not isinstance(current["currentness"], dict)
     assert current["head_revision"] == 4
@@ -267,7 +275,7 @@ def test_shared_current_and_receipt_projectors_are_flat_closed_envelopes() -> No
     receipt = project_quality_receipt_currentness(view.receipt, stale)
     assert set(receipt) == {"receipt", "currentness", "stale_reasons"}
     assert receipt["receipt"]["id"] == "qar-1"
-    assert receipt["currentness"] == "stale"
+    assert receipt["currentness"] == "previous"
     assert receipt["stale_reasons"] == ["content_changed"]
 
 
@@ -544,19 +552,31 @@ def test_checked_in_ska_resource_manifest_is_current_and_drift_fails(
         ),
         (
             QualityAssessmentConflictError("assessment_subject_version_conflict"),
-            "version_conflict",
+            "assessment_subject_version_conflict",
             "conflict",
             True,
         ),
         (
             AssessmentHeadRevisionConflict(),
-            "version_conflict",
+            "assessment_head_revision_conflict",
+            "conflict",
+            True,
+        ),
+        (
+            QualityAssessmentConflictError("assessment_subject_status_conflict"),
+            "assessment_subject_status_conflict",
+            "conflict",
+            True,
+        ),
+        (
+            QualityAssessmentConflictError("requirement_lint_required"),
+            "requirement_lint_required",
             "conflict",
             True,
         ),
     ),
 )
-def test_quality_public_error_codes_are_generic_and_identical_in_mcp(
+def test_quality_public_error_codes_are_exact_and_identical_in_mcp(
     error: Exception,
     public_code: str,
     category: str,
@@ -570,7 +590,7 @@ def test_quality_public_error_codes_are_generic_and_identical_in_mcp(
     assert projected["error_code"] == public_code
     assert projected["category"] == category
     assert projected["retryable"] is retryable
-    assert projected["details"]["reason_code"] != public_code
+    assert projected["details"]["reason_code"] == str(getattr(error, "code"))
     assert json.loads(server._quality_mcp_error(error)) == projected
 
 
@@ -592,15 +612,47 @@ def test_quality_declared_specific_error_codes_stay_top_level(
     assert json.loads(server._quality_mcp_error(error)) == projected
 
 
-def test_ska_generic_contract_error_preserves_raw_reason_code() -> None:
-    projected = project_ska_contract_error(
-        QualityAssessmentConflictError(
-            "checklist_execution_revision_conflict"
+@pytest.mark.parametrize(
+    ("raw_code", "public_code", "next_action"),
+    (
+        (
+            "checklist_execution_revision_conflict",
+            "checklist_execution_conflict",
+            "refresh_checklist_execution",
         ),
+        (
+            "checklist_spec_lifecycle_conflict",
+            "checklist_spec_status_conflict",
+            "refresh_spec_validation_cycle",
+        ),
+        (
+            "checklist_spec_version_conflict",
+            "checklist_spec_status_conflict",
+            "refresh_spec_validation_cycle",
+        ),
+        (
+            "checklist_spec_edition_conflict",
+            "checklist_spec_edition_conflict",
+            "refresh_spec_validation_cycle",
+        ),
+        (
+            "checklist_binding_conflict",
+            "checklist_binding_conflict",
+            "refresh_checklist_binding",
+        ),
+    ),
+)
+def test_ska_checklist_conflicts_use_the_frozen_public_vocabulary(
+    raw_code: str,
+    public_code: str,
+    next_action: str,
+) -> None:
+    projected = project_ska_contract_error(
+        QualityAssessmentConflictError(raw_code),
         family="checklist",
     )
 
-    assert projected["error_code"] == "version_conflict"
-    assert projected["details"]["reason_code"] == (
-        "checklist_execution_revision_conflict"
-    )
+    assert projected["error_code"] == public_code
+    assert projected["details"]["reason_code"] == raw_code
+    assert projected["next_action"] == next_action
+    assert projected["retryable"] is True

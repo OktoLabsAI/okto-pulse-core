@@ -15,6 +15,9 @@ from okto_pulse.core.ports.global_outbox import (
     GlobalOutboxDeadLetterCursor,
     GlobalOutboxEventRecord,
 )
+from okto_pulse.core.domain.code_traceability_kg import (
+    is_code_traceability_artifact_type,
+)
 
 
 NOW = datetime(2026, 7, 16, 17, 30, tzinfo=timezone.utc)
@@ -53,6 +56,7 @@ class MemoryGlobalOutboxStore:
         *,
         limit: int,
         after: GlobalOutboxDeadLetterCursor | None = None,
+        include_code_traceability: bool = True,
     ) -> tuple[GlobalOutboxEventRecord, ...]:
         del context
         rows = sorted(self.rows.values(), key=lambda row: (row.created_at, row.id))
@@ -62,16 +66,36 @@ class MemoryGlobalOutboxStore:
             if row.processed_at is None
             and (row.retry_count == -1 or row.retry_count >= 5)
             and (
+                include_code_traceability
+                or not is_code_traceability_artifact_type(
+                    row.payload.get("artifact_type")
+                )
+            )
+            and (
                 after is None or (row.created_at, row.id) > (after.created_at, after.id)
             )
         ]
         return tuple(rows[:limit])
 
     async def get_events_by_ids(
-        self, context, *, ids: tuple[str, ...]
+        self,
+        context,
+        *,
+        ids: tuple[str, ...],
+        include_code_traceability: bool = True,
     ) -> tuple[GlobalOutboxEventRecord, ...]:
         del context
-        return tuple(self.rows[row_id] for row_id in ids if row_id in self.rows)
+        return tuple(
+            self.rows[row_id]
+            for row_id in ids
+            if row_id in self.rows
+            and (
+                include_code_traceability
+                or not is_code_traceability_artifact_type(
+                    self.rows[row_id].payload.get("artifact_type")
+                )
+            )
+        )
 
     async def save_events(self, context, events) -> None:
         del context

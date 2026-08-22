@@ -58,7 +58,10 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r4 test3"
-        self.permissions = set()
+        # These tests exercise readiness projections, not authorization. The
+        # explicit MCP wildcard also admits independent full-context blocks
+        # such as Code Traceability without weakening their production checks.
+        self.permissions = ("*",)
 
 
 @pytest.fixture(autouse=True)

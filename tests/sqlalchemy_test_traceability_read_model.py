@@ -20,6 +20,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.reference_resolution import resolve_task_context_references
+from okto_pulse.core.ports.traceability import LineageGraphView
 from okto_pulse.core.services.traceability import TraceabilityReadError
 
 
@@ -617,6 +618,7 @@ async def build_lineage_graph(
     entity_type: str,
     entity_id: str,
     include_artifacts: bool = True,
+    view: LineageGraphView = "lineage",
 ) -> dict[str, Any]:
     """Build the UI lineage graph.
 

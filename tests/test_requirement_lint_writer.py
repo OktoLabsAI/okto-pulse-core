@@ -24,13 +24,7 @@ from okto_pulse.core.services.requirement_lint_writer import (
     spec_requirement_lint_payload,
     stage_spec_requirement_lint,
 )
-from sqlalchemy_test_models import (
-    ActivityLog,
-    Board,
-    DomainEventRow,
-    Spec,
-    SpecHistory,
-)
+from sqlalchemy_test_models import Board, Spec
 
 
 def _canonical_requirement(child_id: str, text: str) -> dict[str, str]:
@@ -298,7 +292,7 @@ def test_payload_canonicalizes_legacy_requirements_without_mutating_source() -> 
     assert payload["business_rules"] == [{"linked_requirements": ["0"]}]
 
 
-async def test_existing_spec_service_changes_roll_back_when_lint_staging_fails(
+async def test_spec_creation_does_not_invoke_or_roll_back_for_legacy_lint_hook_failure(
     db_factory,
 ) -> None:
     board_id = f"board-lint-rollback-{uuid4().hex[:10]}"
@@ -314,54 +308,33 @@ async def test_existing_spec_service_changes_roll_back_when_lint_staging_fails(
     register_requirement_lint_writer_hook(hook)
 
     async with db_factory() as db:
-        with pytest.raises(RequirementLintExecutionFailed) as raised:
-            await SpecService(db).create_spec(
-                board_id,
-                actor_id,
-                SpecCreate(
-                    title="Must roll back",
-                    functional_requirements=["The API must return a receipt."],
-                ),
-            )
-        assert raised.value.code == "requirement_lint_execution_failed"
-        assert len(hook.calls) == 1
-        staged_spec_id = hook.calls[0][1].spec_id
-        await db.rollback()
+        created = await SpecService(db).create_spec(
+            board_id,
+            actor_id,
+            SpecCreate(
+                title="External lint is independent",
+                delivery_context="brownfield",
+                functional_requirements=["The API must return a result."],
+            ),
+        )
+        assert created is not None
+        created_spec_id = created.id
+        assert hook.calls == []
+        await db.commit()
 
     async with db_factory() as db:
         assert (
             await db.scalar(
                 select(func.count()).select_from(Spec).where(Spec.board_id == board_id)
             )
-            == 0
+            == 1
         )
-        assert (
-            await db.scalar(
-                select(func.count())
-                .select_from(SpecHistory)
-                .where(SpecHistory.spec_id == staged_spec_id)
-            )
-            == 0
-        )
-        assert (
-            await db.scalar(
-                select(func.count())
-                .select_from(ActivityLog)
-                .where(ActivityLog.board_id == board_id)
-            )
-            == 0
-        )
-        assert (
-            await db.scalar(
-                select(func.count())
-                .select_from(DomainEventRow)
-                .where(DomainEventRow.board_id == board_id)
-            )
-            == 0
-        )
+        persisted = await db.get(Spec, created_spec_id)
+        assert persisted is not None
+        assert persisted.title == "External lint is independent"
 
 
-async def test_create_spec_uses_explicit_route_writer_not_parent_payload_inference(
+async def test_create_spec_has_no_requirement_lint_writer_route_coupling(
     db_factory,
 ) -> None:
     board_id = f"board-lint-route-{uuid4().hex[:10]}"
@@ -373,13 +346,15 @@ async def test_create_spec_uses_explicit_route_writer_not_parent_payload_inferen
     hook = _RecordingHook()
     register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
-        await SpecService(db).create_spec(
+        created = await SpecService(db).create_spec(
             board_id,
             actor_id,
-            SpecCreate(title="Explicit derivation writer"),
-            requirement_lint_writer=RequirementLintWriter.DERIVE_REFINEMENT,
+            SpecCreate(
+                title="External agent owns requirement lint",
+                delivery_context="brownfield",
+            ),
         )
+        assert created is not None
+        await db.commit()
 
-    assert len(hook.calls) == 1
-    assert hook.calls[0][1].writer is RequirementLintWriter.DERIVE_REFINEMENT
-    assert hook.calls[0][1].changed_fields == ("title",)
+    assert hook.calls == []

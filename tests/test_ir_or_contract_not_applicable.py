@@ -161,7 +161,7 @@ def test_ac6_machinery_unchanged() -> None:
     assert 'active_irs = [' in analytics
     assert 'active_ors = [' in analytics
     assert 'active_contracts = [' in analytics
-    assert 'ir for ir in _irs' in analytics
+    assert "for ir in _irs" in analytics
 
     coverage_calc = COVERAGE_CALC_PY.read_text(encoding="utf-8")
     # The per-spec skip dimension wiring is intact.

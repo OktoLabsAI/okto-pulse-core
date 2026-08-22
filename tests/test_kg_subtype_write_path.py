@@ -129,7 +129,12 @@ async def test_s3_undeclared_kind_of_rejects_commit_graph_intact(
     assert excinfo.value.code == "kg_subtype_undeclared"
     details = excinfo.value.details or {}
     assert details.get("kind_of") == "compliance_req"
-    assert details.get("declared_subtypes") == ["security_control"]
+    assert set(details.get("declared_subtypes") or []) == {
+        "code_evidence",
+        "code_investigation_receipt",
+        "implementation_target",
+        "security_control",
+    }
     # Graph intact — the node never landed.
     assert await _kind_of_of_async(board_id, artifact_ref) == "__absent__"
 

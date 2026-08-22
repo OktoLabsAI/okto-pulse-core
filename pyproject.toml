@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.3.1"
+version = "0.3.2"
 description = "Okto Pulse Core - transport-neutral domain and application engine"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -69,6 +69,8 @@ packages = ["src/okto_pulse"]
 "src/okto_pulse/core/mcp/resources/reference/card_types.md" = "okto_pulse/core/mcp/resources/reference/card_types.md"
 "src/okto_pulse/core/mcp/resources/reference/spec_gates.md" = "okto_pulse/core/mcp/resources/reference/spec_gates.md"
 "src/okto_pulse/core/mcp/resources/reference/policy-compliance.md" = "okto_pulse/core/mcp/resources/reference/policy-compliance.md"
+"src/okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v1.json" = "okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v1.json"
+"src/okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v2.json" = "okto_pulse/core/mcp/resources/reference/examples/semantic-guideline-assessment-v2.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

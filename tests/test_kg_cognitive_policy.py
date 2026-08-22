@@ -17,7 +17,8 @@ from okto_pulse.core.kg.cognitive_policy import (
 def test_deterministic_edges_catalog_matches_spec():
     assert DETERMINISTIC_EDGE_TYPES == frozenset({
         "tests", "implements", "violates", "derives_from", "mentions",
-        "originates_from", "covered_by", "belongs_to",
+        "originates_from", "covered_by", "precedes", "supports", "overlaps",
+        "belongs_to",
     })
 
 
@@ -68,6 +69,7 @@ def test_active_prompt_loads_and_mentions_forbidden_set():
     assert "tests, implements, violates" in text
     assert "originates_from" in text
     assert "covered_by" in text
+    assert "precedes" in text
     assert "contradicts" in text
     assert "supersedes" in text
     assert "Cognitive Fallback Confidence Cap" in text

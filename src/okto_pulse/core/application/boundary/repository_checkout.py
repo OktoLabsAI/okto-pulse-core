@@ -1,12 +1,13 @@
 """Deterministic paired-repository checkout resolution for release gates.
 
 Release and cross-edition audits must never silently select a stale sibling
-checkout merely because it uses an older repository name.  Resolution is:
+checkout merely because it uses another supported repository name. Resolution
+is:
 
 1. the edition-specific environment override;
 2. an optional workspace-root environment override;
-3. current repository names in inferred workspace roots;
-4. legacy repository names in those same roots.
+3. the repository-name family of the anchor in inferred workspace roots;
+4. the other supported repository-name family in those same roots.
 
 An explicitly configured but invalid path fails closed.  Callers that can also
 operate against an installed distribution may request ``required=False`` and
@@ -89,6 +90,36 @@ def _inferred_workspace_roots(anchor_repo: Path) -> tuple[Path, ...]:
     return tuple(dict.fromkeys(roots))
 
 
+def _anchor_uses_legacy_names(anchor_repo: Path) -> bool:
+    """Return whether ``anchor_repo`` belongs to the ``okto_labs_*`` family.
+
+    Both checkout-name families remain valid.  The anchor is the only safe
+    deterministic signal that two co-located repositories belong together;
+    global current-before-legacy ordering can otherwise pair an
+    ``okto_labs_*`` checkout with a stale hyphenated sibling.
+    """
+
+    anchor = anchor_repo.resolve()
+    return _path_edition(anchor, _LEGACY_NAMES) is not None
+
+
+def _name_precedence(
+    anchor_repo: Path,
+) -> tuple[
+    tuple[Mapping[RepositoryEdition, str], str],
+    tuple[Mapping[RepositoryEdition, str], str],
+]:
+    if _anchor_uses_legacy_names(anchor_repo):
+        return (
+            (_LEGACY_NAMES, "legacy"),
+            (_CURRENT_NAMES, "current"),
+        )
+    return (
+        (_CURRENT_NAMES, "current"),
+        (_LEGACY_NAMES, "legacy"),
+    )
+
+
 def resolve_repository_checkout(
     edition: RepositoryEdition,
     *,
@@ -96,12 +127,14 @@ def resolve_repository_checkout(
     environ: Mapping[str, str] | None = None,
     required: bool = True,
 ) -> RepositoryCheckout | None:
-    """Resolve one checkout with env-first/current-before-legacy precedence."""
+    """Resolve one checkout with env-first/anchor-family precedence."""
 
     if edition not in _CURRENT_NAMES:
         raise ValueError(f"unsupported repository edition: {edition!r}")
 
     env = os.environ if environ is None else environ
+    anchor = _resolved(anchor_repo)
+    name_precedence = _name_precedence(anchor)
     checked: list[str] = []
     repo_env = _REPO_ENV[edition]
     configured_repo = str(env.get(repo_env, "")).strip()
@@ -122,7 +155,8 @@ def resolve_repository_checkout(
     configured_workspace = str(env.get(WORKSPACE_ROOT_ENV, "")).strip()
     if configured_workspace:
         workspace = _resolved(configured_workspace)
-        for name in (_CURRENT_NAMES[edition], _LEGACY_NAMES[edition]):
+        for names, _family in name_precedence:
+            name = names[edition]
             candidate = workspace / name
             checked.append(str(candidate))
             if _is_checkout(candidate, edition):
@@ -137,33 +171,20 @@ def resolve_repository_checkout(
             f"checked: {checked}"
         )
 
-    workspace_roots = _inferred_workspace_roots(_resolved(anchor_repo))
-    candidates = (
-        (
-            root / _CURRENT_NAMES[edition],
-            f"inferred-current:{root}",
-        )
-        for root in workspace_roots
-    )
-    legacy_candidates = (
-        (
-            root / _LEGACY_NAMES[edition],
-            f"inferred-legacy:{root}",
-        )
-        for root in workspace_roots
-    )
-    for candidate, selected_by in (*candidates, *legacy_candidates):
-        resolved = candidate.resolve()
-        if str(resolved) in checked:
-            continue
-        checked.append(str(resolved))
-        if _is_checkout(resolved, edition):
-            return RepositoryCheckout(
-                edition=edition,
-                repo_root=resolved,
-                selected_by=selected_by,
-                checked=tuple(checked),
-            )
+    workspace_roots = _inferred_workspace_roots(anchor)
+    for names, family in name_precedence:
+        for root in workspace_roots:
+            candidate = (root / names[edition]).resolve()
+            if str(candidate) in checked:
+                continue
+            checked.append(str(candidate))
+            if _is_checkout(candidate, edition):
+                return RepositoryCheckout(
+                    edition=edition,
+                    repo_root=candidate,
+                    selected_by=f"inferred-{family}:{root}",
+                    checked=tuple(checked),
+                )
 
     if not required:
         return None
@@ -203,11 +224,10 @@ def activate_repository_checkout_paths(
     inherited verbatim by ``multiprocessing`` spawn children.  Subprocesses can
     inherit the same stale source through ``PYTHONPATH``.
 
-    This activation resolves every requested edition with the same
-    current-before-legacy policy as :func:`resolve_repository_checkout`, removes
-    legacy roots for editions backed by a current worktree, prepends the selected
-    sources, and mirrors the result into ``PYTHONPATH``.  An explicitly selected
-    legacy checkout remains supported when no current worktree is available.
+    This activation resolves every requested edition with the same anchor-family
+    policy as :func:`resolve_repository_checkout`, removes non-selected roots for
+    those editions, prepends the selected sources, and mirrors the result into
+    ``PYTHONPATH``. Both repository-name families remain supported.
     """
 
     env = os.environ if environ is None else environ
@@ -229,20 +249,17 @@ def activate_repository_checkout_paths(
             checkouts.append(checkout)
 
     selected_by_edition = {checkout.edition: checkout for checkout in checkouts}
-    current_editions = {
-        edition
-        for edition, checkout in selected_by_edition.items()
-        if checkout.repo_root.name.casefold() == _CURRENT_NAMES[edition].casefold()
-    }
-
     removed: list[str] = []
 
     def _keep(raw: str) -> bool:
         resolved = _normalise_import_entry(raw)
         if resolved is None:
             return True
-        legacy_edition = _path_edition(resolved, _LEGACY_NAMES)
-        if legacy_edition in current_editions:
+        path_edition = _path_edition(resolved, _CURRENT_NAMES)
+        if path_edition is None:
+            path_edition = _path_edition(resolved, _LEGACY_NAMES)
+        selected = selected_by_edition.get(path_edition) if path_edition else None
+        if selected is not None and not resolved.is_relative_to(selected.repo_root):
             removed.append(raw)
             return False
         return True

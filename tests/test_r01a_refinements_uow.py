@@ -130,7 +130,11 @@ async def _seed_refinement(ideation_id: str) -> str:
         refinement = await RefinementService(db).create_refinement(
             ideation_id,
             USER,
-            RefinementCreate(ideation_id=ideation_id, title=f"refinement-{uuid.uuid4().hex[:6]}"),
+            RefinementCreate(
+                ideation_id=ideation_id,
+                title=f"refinement-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         return refinement.id
@@ -177,7 +181,11 @@ async def test_create_refinement_201_persists(client) -> None:
     _, ideation_id = await _seed_ideation(status="done")
     resp = client.post(
         f"{PREFIX}/ideations/{ideation_id}/refinements",
-        json={"ideation_id": ideation_id, "title": "Refinement A"},
+        json={
+            "ideation_id": ideation_id,
+            "title": "Refinement A",
+            "delivery_context": "brownfield",
+        },
     )
     assert resp.status_code == 201, resp.text
     rid = resp.json()["id"]
@@ -189,7 +197,11 @@ async def test_create_refinement_400_when_ideation_not_done(client) -> None:
     _, ideation_id = await _seed_ideation(status="draft")
     resp = client.post(
         f"{PREFIX}/ideations/{ideation_id}/refinements",
-        json={"ideation_id": ideation_id, "title": "x"},
+        json={
+            "ideation_id": ideation_id,
+            "title": "x",
+            "delivery_context": "brownfield",
+        },
     )
     assert resp.status_code == 400, resp.text
 
@@ -199,7 +211,11 @@ async def test_create_refinement_404_missing_ideation(client) -> None:
     ideation_id = _missing()
     resp = client.post(
         f"{PREFIX}/ideations/{ideation_id}/refinements",
-        json={"ideation_id": ideation_id, "title": "x"},
+        json={
+            "ideation_id": ideation_id,
+            "title": "x",
+            "delivery_context": "brownfield",
+        },
     )
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Ideation not found or board not owned by user"

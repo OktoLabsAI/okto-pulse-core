@@ -28,6 +28,7 @@ class SimilarNodeRaw:
     content: str | None = None
     context: str | None = None
     justification: str | None = None
+    kind_of: str | None = None
 
     @property
     def similarity(self) -> float:
@@ -69,6 +70,7 @@ def find_similar_nodes_by_type(
                 content=row.get("content"),
                 context=row.get("context"),
                 justification=row.get("justification"),
+                kind_of=row.get("kind_of"),
                 distance=1.0 - float(row["similarity"]),
             )
             for row in rows[:top_k]
@@ -112,6 +114,7 @@ def find_similar_for_candidate(
             content=r.content,
             context=r.context,
             justification=r.justification,
+            kind_of=r.kind_of,
             similarity=r.similarity,
         )
         for r in raw

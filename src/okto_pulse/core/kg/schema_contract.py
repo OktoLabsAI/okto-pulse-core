@@ -8,13 +8,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_SUBTYPES,
+    CODE_TRACEABILITY_KG_WRITE_FIELDS,
+)
 from okto_pulse.core.domain.kg_ontology import NODE_TYPES
 from okto_pulse.core.kg.cognitive_policy import (
     COGNITIVE_PROVENANCE_NODE_TYPES,
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.3.12"
+SCHEMA_VERSION = "0.5.0"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -48,7 +52,7 @@ VECTOR_INDEX_TYPES: tuple[str, ...] = (
     "Learning",
 )
 
-# 10 rel types. supersedes and contradicts are the two core semantic relations
+# 11 base rel types. supersedes and contradicts are the two core semantic relations
 # the primary tier walks variable-length paths on; the rest encode provenance,
 # context, co-reference, and quality feedback.
 REL_TYPES: tuple[tuple[str, str, str], ...] = (
@@ -62,6 +66,9 @@ REL_TYPES: tuple[tuple[str, str, str], ...] = (
     ("implements", "APIContract", "Requirement"),
     ("tests", "TestScenario", "Criterion"),
     ("validates", "Learning", "Bug"),
+    # Operational Spec precedence. This is intentionally distinct from the
+    # cognitive Decision -> Decision ``depends_on`` relation.
+    ("precedes", "Entity", "Entity"),
 )
 
 
@@ -87,6 +94,20 @@ def _supersedes_endpoint_pairs() -> tuple[tuple[str, str], ...]:
 
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("implements", (("APIContract", "Constraint"),)),
+    (
+        "supports",
+        (
+            ("Entity", "Requirement"),
+            ("Entity", "Constraint"),
+            ("Entity", "Criterion"),
+            ("Entity", "APIContract"),
+            ("Entity", "Decision"),
+            ("Entity", "TestScenario"),
+            ("Entity", "Entity"),
+        ),
+    ),
+    ("derives_from", (("Entity", "Entity"),)),
+    ("overlaps", (("Entity", "Entity"),)),
     ("supersedes", _supersedes_endpoint_pairs()),
     (
         "relates_to",
@@ -230,6 +251,17 @@ STABLE_NODE_PROPERTIES: tuple[str, ...] = (
     "attestation_count",
     "kind_of",
     "last_attested_at",
+    "investigation_receipt_id",
+    "source_ref",
+    "attestor_actor_id",
+    "declared_revision",
+    "workspace_state_id",
+    "code_path",
+    "symbol_qualified_name",
+    "symbol_kind",
+    "selector_kind",
+    "selector_fingerprint",
+    "resolution_state",
 )
 
 RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -291,6 +323,27 @@ ATTESTATION_COLUMNS: tuple[tuple[str, str], ...] = (
 # HNSW) stays untouched.
 SUBTYPE_COLUMNS: tuple[tuple[str, str], ...] = (("kind_of", "STRING"),)
 
+# Code Traceability adds metadata to the existing physical node vocabulary;
+# it never adds a graph label/table.  All fields are optional so existing
+# boards migrate additively and historical nodes remain valid with NULLs.
+CODE_TRACEABILITY_COLUMNS: tuple[tuple[str, str], ...] = tuple(
+    (name, "STRING") for name in CODE_TRACEABILITY_KG_WRITE_FIELDS
+)
+
+# Stable read-side projection shared by KG query templates and KGService.
+# ``kind_of`` identifies the logical subtype; the remaining attributes are
+# already-sanitized metadata copied from persisted Pulse records.  Keeping this
+# tuple here prevents list/detail projections from drifting as the additive
+# schema evolves and deliberately excludes source content/snippets.
+CODE_TRACEABILITY_READ_PROPERTIES: tuple[str, ...] = (
+    "kind_of",
+    *(name for name, _column_type in CODE_TRACEABILITY_COLUMNS),
+)
+
+# System-owned semantic subtypes needed by the deterministic relational
+# projection.  They are declarations beneath Entity, not dynamic labels.
+CODE_TRACEABILITY_ENTITY_SUBTYPES = CODE_TRACEABILITY_KG_SUBTYPES
+
 LEGACY_NODE_COLUMNS: tuple[str, ...] = (
     "validation_status",
     "corroboration_count",
@@ -304,6 +357,9 @@ def vector_index_name(node_type: str) -> str:
 
 __all__ = [
     "CANCELLATION_COLUMNS",
+    "CODE_TRACEABILITY_COLUMNS",
+    "CODE_TRACEABILITY_ENTITY_SUBTYPES",
+    "CODE_TRACEABILITY_READ_PROPERTIES",
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
     "ATTESTATION_COLUMNS",

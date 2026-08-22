@@ -21,15 +21,32 @@ Fallback Confidence Cap`).
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import re
 import sys
 import uuid
+from copy import deepcopy
 from contextlib import ExitStack
+from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
+from threading import Event, Thread
 from typing import Any, Callable, Mapping
 
 from okto_pulse.core.ports.consolidation import (
+    ConsolidationClaimScope,
     ConsolidationQueueRecord,
+    ExactConsolidationAckIntegrityError,
+    ExactConsolidationAckReceipt,
+    ExactConsolidationBatchResult,
+    ExactConsolidationCompensationError,
+    ExactConsolidationCompensationResult,
+    ExactConsolidationDisposition,
+    ExactConsolidationMutationState,
+    ExactConsolidationPostCommitError,
+    ExactConsolidationResultOrigin,
+    ExactConsolidationRowResult,
+    exact_consolidation_ack_receipts_sha256,
     get_consolidation_persistence_port,
 )
 from okto_pulse.core.ports.delivery_ledger import (
@@ -60,6 +77,7 @@ from okto_pulse.core.kg.schemas import (
     ProposeReconciliationRequest,
 )
 from okto_pulse.core.kg.primitives import (
+    KGPrimitiveError,
     add_edge_candidate,
     abort_deferred_consolidation,
     abort_consolidation,
@@ -71,6 +89,7 @@ from okto_pulse.core.kg.primitives import (
 )
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
+from okto_pulse.core.kg.connectivity_guard import CONNECTIVITY_ERROR_CODE
 from okto_pulse.core.kg.interfaces.graph_errors import (
     GraphError,
     graph_memory_pressure_retry_after_seconds,
@@ -93,7 +112,14 @@ from okto_pulse.core.kg.guarded_write import (
     GuardedWriteLease,
     guarded_board_write,
 )
+from okto_pulse.core.kg.single_writer_lock import (
+    KGAdministrativeOperationReservation,
+)
 from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.board_rebuild_adapter import (
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES,
+    queue_artifact_type,
+)
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_NONE,
@@ -121,11 +147,352 @@ from okto_pulse.core.ports.runtime_workers import (
     BlockingExecutionPort,
     WorkerClockPort,
 )
+from okto_pulse.core.ports.relational_effects import (
+    parse_spec_dependency_projection_queue_metadata,
+)
 
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
+_REBUILD_RESERVATION_OPERATION_PREFIX = "kg02_rebuild_reservation:"
+_EXACT_REBUILD_DISPOSITION_KEY = "_exact_rebuild_disposition"
+_EXACT_REBUILD_DISPOSITION_SCHEMA_VERSION = 1
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _exact_rebuild_membership(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+) -> tuple[str, str, str]:
+    payload = entry.payload
+    membership = payload.get("_rebuild_membership") if type(payload) is dict else None
+    if type(membership) is not dict or set(membership) != {
+        "content_hash",
+        "run_id",
+        "source_ref",
+        "source_version",
+    }:
+        raise RuntimeError("exact_rebuild_membership_invalid")
+    run_id = membership.get("run_id")
+    source_ref = membership.get("source_ref")
+    source_version = membership.get("source_version")
+    content_hash = membership.get("content_hash")
+    source_artifact_type, separator, source_artifact_id = (
+        source_ref.partition(":") if type(source_ref) is str else ("", "", "")
+    )
+    if (
+        type(run_id) is not str
+        or run_id != claim_scope.source.removeprefix("rebuild:")
+        or type(source_ref) is not str
+        or separator != ":"
+        or ":" in source_artifact_id
+        or source_artifact_id != entry.artifact_id
+        or source_artifact_type not in DETERMINISTIC_SOURCE_ARTIFACT_TYPES
+        or queue_artifact_type(source_artifact_type) != entry.artifact_type
+        or type(source_version) is not str
+        or not source_version.strip()
+        or type(content_hash) is not str
+        or _SHA256_RE.fullmatch(content_hash) is None
+    ):
+        raise RuntimeError("exact_rebuild_membership_invalid")
+    return source_ref, source_version, content_hash
+
+
+def _snapshot_exact_queue_record(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+) -> ConsolidationQueueRecord:
+    """Detach and type-check an exact row before crossing an await boundary."""
+
+    if type(entry) is not ConsolidationQueueRecord:
+        raise RuntimeError("exact_rebuild_queue_record_type_invalid")
+    snapshot = deepcopy(entry)
+    required_strings = (
+        snapshot.id,
+        snapshot.board_id,
+        snapshot.artifact_type,
+        snapshot.artifact_id,
+        snapshot.status,
+        snapshot.priority,
+        snapshot.work_kind,
+        snapshot.source,
+    )
+    optional_strings = (
+        snapshot.last_error,
+        snapshot.worker_id,
+        snapshot.claimed_by_session_id,
+        snapshot.delete_event_id,
+        snapshot.claim_token,
+        snapshot.triggered_by_event,
+    )
+    timestamps = (
+        snapshot.next_retry_at,
+        snapshot.claimed_at,
+        snapshot.claim_timeout_at,
+        snapshot.triggered_at,
+    )
+    if (
+        any(type(value) is not str or not value for value in required_strings)
+        or any(
+            value is not None and type(value) is not str for value in optional_strings
+        )
+        or any(
+            value is not None and type(value) is not datetime for value in timestamps
+        )
+        or type(snapshot.attempts) is not int
+        or snapshot.attempts < 0
+        or type(snapshot.generation) is not int
+        or snapshot.generation < 0
+        or type(snapshot.payload) is not dict
+        or not claim_scope.admits(snapshot)
+    ):
+        raise RuntimeError("exact_rebuild_queue_record_invalid")
+    _exact_rebuild_membership(snapshot, claim_scope)
+    return snapshot
+
+
+def _exact_disposition_attempt(entry: ConsolidationQueueRecord) -> int:
+    payload = entry.payload if isinstance(entry.payload, dict) else {}
+    marker = payload.get(_EXACT_REBUILD_DISPOSITION_KEY)
+    if isinstance(marker, dict):
+        previous = marker.get("attempt_ordinal")
+        if type(previous) is int and previous >= 1:
+            return previous + 1
+    attempts = entry.attempts
+    return (attempts if type(attempts) is int and attempts >= 0 else 0) + 1
+
+
+def _exact_failure_diagnostic(exc: BaseException) -> str | None:
+    if isinstance(exc, ExactConsolidationAckIntegrityError):
+        return json.dumps(
+            {"integrity_code": exc.code},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    if not isinstance(exc, KGPrimitiveError) or not isinstance(exc.details, dict):
+        return None
+    connectivity = exc.details.get("connectivity")
+    if not isinstance(connectivity, dict):
+        return None
+    violations = connectivity.get("violations")
+    first = violations[0] if type(violations) is list and violations else None
+    value = {
+        "violation_count": len(violations) if type(violations) is list else 0,
+        "first_violation": first if type(first) is dict else None,
+    }
+    rendered = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    if len(rendered) <= 16384:
+        return rendered
+    return json.dumps(
+        {"first_violation": None, "violation_count": value["violation_count"]},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _exact_row_result(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+    *,
+    attempt_ordinal: int,
+    disposition: ExactConsolidationDisposition,
+    origin: ExactConsolidationResultOrigin,
+    mutation_state: ExactConsolidationMutationState,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    next_retry_at: datetime | None = None,
+    diagnostic_json: str | None = None,
+    ack_receipt: ExactConsolidationAckReceipt | None = None,
+) -> ExactConsolidationRowResult:
+    lineage_id = claim_scope.reservation_lineage_id
+    if lineage_id is None:
+        raise RuntimeError("exact_rebuild_reservation_lineage_id_required")
+    source_ref, source_version, content_hash = _exact_rebuild_membership(
+        entry,
+        claim_scope,
+    )
+    return ExactConsolidationRowResult(
+        queue_id=entry.id,
+        board_id=entry.board_id,
+        source=_queue_source(entry),
+        reservation_lineage_id=lineage_id,
+        work_kind=_work_kind(entry),
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        generation=_generation(entry),
+        membership_source_ref=source_ref,
+        membership_source_version=source_version,
+        membership_content_hash=content_hash,
+        attempt_ordinal=attempt_ordinal,
+        disposition=disposition,
+        origin=origin,
+        mutation_state=mutation_state,
+        error_code=error_code,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
+        diagnostic_json=diagnostic_json,
+        ack_receipt=ack_receipt,
+    )
+
+
+def _verify_exact_ack_receipt_chain(
+    value: object,
+    claim_scope: ConsolidationClaimScope,
+) -> tuple[ExactConsolidationAckReceipt, ...]:
+    if type(value) is not tuple or any(
+        type(receipt) is not ExactConsolidationAckReceipt for receipt in value
+    ):
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_ack_journal_invalid"
+        )
+    receipts = value
+    lineage_id = claim_scope.reservation_lineage_id
+    if lineage_id is None:
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_reservation_lineage_id_required"
+        )
+    seen_queue_ids: set[str] = set()
+    seen_session_ids: set[str] = set()
+    seen_outbox_ids: set[str] = set()
+    seen_event_ids: set[str] = set()
+    seen_materialization_generations: set[str] = set()
+    previous: ExactConsolidationAckReceipt | None = None
+    for receipt in receipts:
+        if (
+            receipt.board_id != claim_scope.board_id
+            or receipt.source != claim_scope.source
+            or receipt.reservation_lineage_id != lineage_id
+            or receipt.work_kind != claim_scope.work_kind
+            or receipt.queue_id in seen_queue_ids
+            or receipt.consolidation_session_id in seen_session_ids
+            or receipt.outbox_event_id in seen_outbox_ids
+            or receipt.generation_event_id in seen_event_ids
+            or receipt.materialization_generation in seen_materialization_generations
+            or (
+                previous is not None
+                and receipt.previous_materialization_generation
+                != previous.materialization_generation
+            )
+        ):
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_ack_journal_invalid"
+            )
+        seen_queue_ids.add(receipt.queue_id)
+        seen_session_ids.add(receipt.consolidation_session_id)
+        seen_outbox_ids.add(receipt.outbox_event_id)
+        seen_event_ids.add(receipt.generation_event_id)
+        seen_materialization_generations.add(receipt.materialization_generation)
+        previous = receipt
+    if receipts and (
+        receipts[0].previous_materialization_generation
+        in seen_materialization_generations
+    ):
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_ack_journal_invalid"
+        )
+    return receipts
+
+
+def _verify_exact_compensation_result(
+    value: object,
+    receipts: tuple[ExactConsolidationAckReceipt, ...],
+    claim_scope: ConsolidationClaimScope,
+) -> ExactConsolidationCompensationResult:
+    if type(value) is not ExactConsolidationCompensationResult or not receipts:
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_compensation_result_invalid"
+        )
+    receipt = value.receipt
+    lineage_id = claim_scope.reservation_lineage_id
+    expected_session_ids = tuple(item.consolidation_session_id for item in receipts)
+    expected_outbox_ids = tuple(item.outbox_event_id for item in receipts)
+    expected_generation_event_ids = tuple(item.generation_event_id for item in receipts)
+    if (
+        receipt.board_id != claim_scope.board_id
+        or receipt.source != claim_scope.source
+        or receipt.reservation_lineage_id != lineage_id
+        or receipt.baseline_materialization_generation
+        != receipts[0].previous_materialization_generation
+        or receipt.terminal_materialization_generation
+        != receipts[-1].materialization_generation
+        or receipt.ack_count != len(receipts)
+        or receipt.node_ref_count != sum(item.node_ref_count for item in receipts)
+        or receipt.ack_receipts_sha256
+        != exact_consolidation_ack_receipts_sha256(receipts)
+        or receipt.audit_session_ids != expected_session_ids
+        or receipt.outbox_event_ids != expected_outbox_ids
+        or receipt.generation_event_ids != expected_generation_event_ids
+    ):
+        raise ExactConsolidationCompensationError(
+            "exact_consolidation_compensation_result_mismatch"
+        )
+    return value
+
+
+def _ensure_entry_admitted_by_reservation_under_writer(
+    entry: ConsolidationQueueRecord,
+) -> None:
+    """Revalidate administrative admission after obtaining the graph writer.
+
+    Claim-time filtering is not a sufficient fence: an ordinary row may have
+    been claimed before a rebuild reserved the board and then wait for the
+    rebuild to delegate writer A.  This synchronous probe runs from the exact
+    graph-write callback after the worker owns the writer and before that
+    callback returns to the first graph mutation.
+    """
+
+    try:
+        reservation = KGAdministrativeOperationReservation()
+        reservation.bind_write_lock_port()
+        manifest = reservation.inspect(board_id=entry.board_id)
+    except Exception as exc:
+        raise _QueueClaimLostOrFenced(
+            "administrative_reservation_probe_failed "
+            f"entry_id={entry.id} failure={type(exc).__name__}"
+        ) from exc
+
+    if (
+        manifest is not None
+        and manifest.expires_at_epoch <= datetime.now(timezone.utc).timestamp()
+    ):
+        manifest = None
+
+    source = _queue_source(entry)
+    if manifest is None:
+        # Recovery membership is never authorized without its exact active
+        # reservation, even if a stale claim survived from an earlier run.
+        if source.startswith("rebuild:"):
+            raise _QueueClaimLostOrFenced(
+                "rebuild_reservation_missing_under_writer "
+                f"entry_id={entry.id} source={source}"
+            )
+        return
+
+    operation = manifest.operation
+    if operation.startswith(_REBUILD_RESERVATION_OPERATION_PREFIX):
+        expected_source = "rebuild:" + operation.removeprefix(
+            _REBUILD_RESERVATION_OPERATION_PREFIX
+        )
+        if _work_kind(entry) == "consolidate" and source == expected_source:
+            return
+        raise _QueueClaimLostOrFenced(
+            "rebuild_reservation_scope_mismatch_under_writer "
+            f"entry_id={entry.id} source={source} expected={expected_source}"
+        )
+
+    # Erasure and unknown administrative operations fence every worker row.
+    raise _QueueClaimLostOrFenced(
+        "administrative_reservation_blocks_writer "
+        f"entry_id={entry.id} operation={operation}"
+    )
+
+
 AGENT_ID = "system:historical_consolidation"
 CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
+_DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS = 1
 _CLAIMABLE_WORK_KINDS = frozenset({"consolidate", "stale_reconcile", "stale_sweep"})
 _GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
     {"card", "ideation", "refinement", "spec", "sprint"}
@@ -136,9 +503,147 @@ _GraphWriteEnter = Callable[[str], GuardedWriteLease]
 class _QueueClaimLostOrFenced(RuntimeError):
     """Neutral worker outcome: ownership or deletion generation changed."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        primary_error_code: str | None = None,
+        primary_diagnostic_json: str | None = None,
+    ) -> None:
+        self.primary_error_code = primary_error_code
+        self.primary_diagnostic_json = primary_diagnostic_json
+        super().__init__(message)
+
+
+class _ExactAuthorityLostAfterCommit(_QueueClaimLostOrFenced):
+    """The exact transaction committed, then its ephemeral authority changed."""
+
+
+_DLQ_WRITER_TTL_SECONDS = 30
+
+
+class _ConsolidationWriterHeartbeat:
+    """Keep a short DLQ writer lease live across asynchronous DB work."""
+
+    def __init__(self, writer_lock: Any, *, board_id: str, owner_token: str) -> None:
+        self._writer_lock = writer_lock
+        self._board_id = board_id
+        self._owner_token = owner_token
+        self._stop = Event()
+        self._lost = Event()
+        self._thread: Thread | None = None
+
+    def _renew(self) -> bool:
+        if self._lost.is_set():
+            return False
+        try:
+            renewed = bool(
+                self._writer_lock.renew(
+                    board_id=self._board_id,
+                    owner_token=self._owner_token,
+                    ttl_seconds=_DLQ_WRITER_TTL_SECONDS,
+                )
+            )
+        except BaseException:
+            renewed = False
+        if not renewed:
+            self._lost.set()
+        return renewed
+
+    def start(self) -> None:
+        interval = max(1.0, _DLQ_WRITER_TTL_SECONDS / 3)
+
+        def _run() -> None:
+            while not self._stop.wait(interval):
+                if not self._renew():
+                    return
+
+        context = copy_context()
+        self._thread = Thread(
+            target=context.run,
+            args=(_run,),
+            name=f"kg-dlq-writer-heartbeat-{self._board_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def ensure_owned(self) -> None:
+        if not self._renew():
+            raise _QueueClaimLostOrFenced(
+                f"dlq_auto_drain_writer_lease_lost board={self._board_id}"
+            )
+
+    def stop(self) -> None:
+        self._stop.set()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                self._lost.set()
+                raise RuntimeError("dlq_auto_drain_writer_heartbeat_stop_timeout")
+        self._thread = None
+
 
 def _work_kind(entry: ConsolidationQueueRecord) -> str:
     return str(getattr(entry, "work_kind", None) or "consolidate")
+
+
+def _queue_source(entry: ConsolidationQueueRecord) -> str:
+    return str(getattr(entry, "source", None) or "state_transition")
+
+
+def _reservation_source_admits(
+    entry: ConsolidationQueueRecord,
+    reserved_source: str | None,
+) -> bool:
+    source = _queue_source(entry)
+    if reserved_source is None:
+        return not source.startswith("rebuild:")
+    return bool(
+        reserved_source
+        and _work_kind(entry) == "consolidate"
+        and source == reserved_source
+    )
+
+
+async def _claim_admitted_by_current_reservation(
+    store: Any,
+    db: Any,
+    entry: ConsolidationQueueRecord,
+) -> bool:
+    checker = getattr(store, "board_administrative_rebuild_source", None)
+    if not callable(checker):
+        # Older persistence adapters can continue ordinary work, but may
+        # never process recovery membership without a reservation authority.
+        return not _queue_source(entry).startswith("rebuild:")
+    try:
+        reserved_source = await checker(db, board_id=entry.board_id)
+    except Exception:
+        return False
+    return _reservation_source_admits(entry, reserved_source)
+
+
+async def _repend_exact_claim(
+    store: Any,
+    db: Any,
+    entry: ConsolidationQueueRecord,
+) -> bool:
+    claim_token = _claim_token(entry)
+    repend = getattr(store, "repend_claimed_queue_entry", None)
+    if claim_token is None or not callable(repend):
+        return False
+    return bool(
+        await repend(
+            db,
+            entry_id=entry.id,
+            claim_token=claim_token,
+            board_id=entry.board_id,
+            source=_queue_source(entry),
+            work_kind=_work_kind(entry),
+            generation=_generation(entry),
+            delete_event_id=_delete_event_id(entry),
+        )
+    )
 
 
 def _generation(entry: ConsolidationQueueRecord) -> int:
@@ -155,6 +660,306 @@ def _claim_token(entry: ConsolidationQueueRecord) -> str | None:
     return str(value) if value else None
 
 
+def _same_instant(left: datetime | None, right: datetime | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    if left.tzinfo is None:
+        left = left.replace(tzinfo=timezone.utc)
+    if right.tzinfo is None:
+        right = right.replace(tzinfo=timezone.utc)
+    return left.astimezone(timezone.utc) == right.astimezone(timezone.utc)
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _load_exact_disposition(
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+) -> ExactConsolidationRowResult | None:
+    payload = entry.payload
+    marker = (
+        payload.get(_EXACT_REBUILD_DISPOSITION_KEY)
+        if isinstance(payload, dict)
+        else None
+    )
+    if marker is None:
+        return None
+    expected_keys = {
+        "artifact_id",
+        "artifact_type",
+        "attempt_ordinal",
+        "board_id",
+        "diagnostic_json",
+        "disposition",
+        "error_code",
+        "error_message",
+        "generation",
+        "membership_content_hash",
+        "membership_source_ref",
+        "membership_source_version",
+        "mutation_state",
+        "next_retry_at",
+        "queue_attempts",
+        "queue_id",
+        "reservation_lineage_id",
+        "retryable",
+        "schema_version",
+        "source",
+        "work_kind",
+    }
+    if type(marker) is not dict or set(marker) != expected_keys:
+        raise RuntimeError("exact_rebuild_disposition_invalid")
+    source_ref, source_version, content_hash = _exact_rebuild_membership(
+        entry,
+        claim_scope,
+    )
+    exact_values = {
+        "schema_version": _EXACT_REBUILD_DISPOSITION_SCHEMA_VERSION,
+        "queue_id": entry.id,
+        "board_id": entry.board_id,
+        "source": _queue_source(entry),
+        "reservation_lineage_id": claim_scope.reservation_lineage_id,
+        "work_kind": _work_kind(entry),
+        "artifact_type": entry.artifact_type,
+        "artifact_id": entry.artifact_id,
+        "generation": _generation(entry),
+        "membership_source_ref": source_ref,
+        "membership_source_version": source_version,
+        "membership_content_hash": content_hash,
+    }
+    if any(
+        type(marker.get(key)) is not type(value) or marker.get(key) != value
+        for key, value in exact_values.items()
+    ):
+        raise RuntimeError("exact_rebuild_disposition_binding_invalid")
+    attempt_ordinal = marker.get("attempt_ordinal")
+    if type(attempt_ordinal) is not int or attempt_ordinal < 1:
+        raise RuntimeError("exact_rebuild_disposition_attempt_invalid")
+    try:
+        disposition = ExactConsolidationDisposition(marker.get("disposition"))
+        mutation_state = ExactConsolidationMutationState(marker.get("mutation_state"))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("exact_rebuild_disposition_kind_invalid") from exc
+    if disposition not in {
+        ExactConsolidationDisposition.RETRY_SCHEDULED,
+        ExactConsolidationDisposition.TERMINAL_FAILURE,
+    }:
+        raise RuntimeError("exact_rebuild_disposition_kind_invalid")
+    retryable = marker.get("retryable")
+    if type(retryable) is not bool or retryable is not (
+        disposition is ExactConsolidationDisposition.RETRY_SCHEDULED
+    ):
+        raise RuntimeError("exact_rebuild_disposition_retryable_invalid")
+    error_code = marker.get("error_code")
+    error_message = marker.get("error_message")
+    diagnostic_json = marker.get("diagnostic_json")
+    if (
+        type(error_code) is not str
+        or not error_code
+        or len(error_code) > 128
+        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,127}", error_code) is None
+        or type(error_message) is not str
+        or not error_message
+        or len(error_message) > 480
+        or (diagnostic_json is not None and type(diagnostic_json) is not str)
+        or (diagnostic_json is not None and len(diagnostic_json) > 16384)
+    ):
+        raise RuntimeError("exact_rebuild_disposition_error_invalid")
+    if diagnostic_json is not None:
+        try:
+            diagnostic = json.loads(diagnostic_json)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("exact_rebuild_disposition_error_invalid") from exc
+        if (
+            type(diagnostic) is not dict
+            or json.dumps(
+                diagnostic,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            != diagnostic_json
+        ):
+            raise RuntimeError("exact_rebuild_disposition_error_invalid")
+    queue_attempts = marker.get("queue_attempts")
+    if (
+        type(queue_attempts) is not int
+        or queue_attempts < 0
+        or type(entry.attempts) is not int
+        or entry.attempts != queue_attempts
+        or attempt_ordinal != queue_attempts
+        or entry.status != "pending"
+        or entry.claim_token is not None
+        or entry.claimed_at is not None
+        or entry.claim_timeout_at is not None
+        or entry.worker_id is not None
+        or entry.claimed_by_session_id is not None
+        or entry.last_error != f"{error_code}:{error_message[:480]}"
+    ):
+        raise RuntimeError("exact_rebuild_disposition_queue_state_invalid")
+    retry_value = marker.get("next_retry_at")
+    next_retry_at: datetime | None
+    if retry_value is None:
+        next_retry_at = None
+    elif type(retry_value) is str:
+        try:
+            next_retry_at = datetime.fromisoformat(retry_value)
+        except ValueError as exc:
+            raise RuntimeError("exact_rebuild_disposition_retry_at_invalid") from exc
+    else:
+        raise RuntimeError("exact_rebuild_disposition_retry_at_invalid")
+    if next_retry_at is not None and (
+        next_retry_at.tzinfo is None or next_retry_at.utcoffset() is None
+    ):
+        raise RuntimeError("exact_rebuild_disposition_retry_at_invalid")
+    if disposition is ExactConsolidationDisposition.RETRY_SCHEDULED:
+        retry_shape_valid = next_retry_at is not None
+    else:
+        retry_shape_valid = next_retry_at is None
+    if not retry_shape_valid or not _same_instant(next_retry_at, entry.next_retry_at):
+        raise RuntimeError("exact_rebuild_disposition_retry_at_invalid")
+    return _exact_row_result(
+        entry,
+        claim_scope,
+        attempt_ordinal=attempt_ordinal,
+        disposition=disposition,
+        origin=ExactConsolidationResultOrigin.REPLAYED,
+        mutation_state=mutation_state,
+        error_code=error_code,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
+        diagnostic_json=diagnostic_json,
+    )
+
+
+async def _persist_exact_disposition(
+    store: Any,
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    claim_scope: ConsolidationClaimScope,
+    *,
+    disposition: ExactConsolidationDisposition,
+    mutation_state: ExactConsolidationMutationState,
+    error_code: str,
+    error_message: str,
+    next_retry_at: datetime | None,
+    diagnostic_json: str | None,
+    reservation_authority_probe: Callable[[], bool],
+) -> ExactConsolidationRowResult:
+    if next_retry_at is not None:
+        next_retry_at = _aware_utc(next_retry_at)
+    claim_token = _claim_token(entry)
+    writer = getattr(store, "save_exact_rebuild_disposition", None)
+    if claim_token is None or not callable(writer):
+        raise RuntimeError("exact_rebuild_disposition_cas_unsupported")
+    attempt_ordinal = _exact_disposition_attempt(entry)
+    result = _exact_row_result(
+        entry,
+        claim_scope,
+        attempt_ordinal=attempt_ordinal,
+        disposition=disposition,
+        origin=ExactConsolidationResultOrigin.NEW,
+        mutation_state=mutation_state,
+        error_code=error_code,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
+        diagnostic_json=diagnostic_json,
+    )
+    if type(entry.attempts) is not int or entry.attempts < 0:
+        raise RuntimeError("exact_rebuild_queue_attempts_invalid")
+    attempts = result.attempt_ordinal
+    marker = {
+        "schema_version": _EXACT_REBUILD_DISPOSITION_SCHEMA_VERSION,
+        "queue_id": result.queue_id,
+        "board_id": result.board_id,
+        "source": result.source,
+        "reservation_lineage_id": result.reservation_lineage_id,
+        "work_kind": result.work_kind,
+        "artifact_type": result.artifact_type,
+        "artifact_id": result.artifact_id,
+        "generation": result.generation,
+        "membership_source_ref": result.membership_source_ref,
+        "membership_source_version": result.membership_source_version,
+        "membership_content_hash": result.membership_content_hash,
+        "attempt_ordinal": result.attempt_ordinal,
+        "queue_attempts": attempts,
+        "disposition": result.disposition.value,
+        "retryable": disposition is ExactConsolidationDisposition.RETRY_SCHEDULED,
+        "mutation_state": result.mutation_state.value,
+        "error_code": error_code,
+        "error_message": error_message,
+        "next_retry_at": next_retry_at.isoformat() if next_retry_at else None,
+        "diagnostic_json": diagnostic_json,
+    }
+    expected_payload = deepcopy(entry.payload or {})
+    payload = deepcopy(expected_payload)
+    payload[_EXACT_REBUILD_DISPOSITION_KEY] = marker
+    stored = await writer(
+        db,
+        entry_id=entry.id,
+        claim_token=claim_token,
+        board_id=entry.board_id,
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        source=_queue_source(entry),
+        work_kind=_work_kind(entry),
+        generation=_generation(entry),
+        delete_event_id=_delete_event_id(entry),
+        expected_attempts=entry.attempts,
+        expected_last_error=entry.last_error,
+        expected_next_retry_at=entry.next_retry_at,
+        expected_payload=expected_payload,
+        reservation_authority_probe=reservation_authority_probe,
+        payload=payload,
+        attempts=attempts,
+        last_error=f"{error_code}:{error_message[:480]}",
+        next_retry_at=next_retry_at,
+    )
+    if stored is None:
+        raise _QueueClaimLostOrFenced(
+            f"exact_rebuild_disposition_claim_lost entry_id={entry.id}",
+            primary_error_code=error_code,
+            primary_diagnostic_json=diagnostic_json,
+        )
+    replay = _load_exact_disposition(stored, claim_scope)
+    if replay is None:
+        raise RuntimeError("exact_rebuild_disposition_not_persisted")
+    return result
+
+
+def _observe_spec_dependency_projection_lag_after_ack(
+    entry: ConsolidationQueueRecord,
+    *,
+    projected_at: datetime,
+) -> bool:
+    """Emit only for the durable dependent/edge-owner fan-out target."""
+
+    metadata = parse_spec_dependency_projection_queue_metadata(entry.payload)
+    if (
+        metadata is None
+        or _work_kind(entry) != "consolidate"
+        or entry.artifact_type != "spec"
+        or metadata.target_role != "projection_owner"
+        or metadata.projection_owner_spec_id != entry.artifact_id
+        or metadata.mutation_event_type != entry.triggered_by_event
+    ):
+        return False
+    from okto_pulse.core.services.spec_dependency_observability import (
+        observe_spec_dependency_projection_lag,
+    )
+
+    observe_spec_dependency_projection_lag(
+        event_type=metadata.mutation_event_type,
+        triggered_at=entry.triggered_at,
+        projected_at=projected_at,
+    )
+    return True
+
+
 def _same_claim(
     expected: ConsolidationQueueRecord,
     current: ConsolidationQueueRecord,
@@ -169,6 +974,7 @@ def _same_claim(
         and current.artifact_type == expected.artifact_type
         and current.artifact_id == expected.artifact_id
         and _work_kind(current) == _work_kind(expected)
+        and _queue_source(current) == _queue_source(expected)
         and _generation(current) == _generation(expected)
         and _delete_event_id(current) == _delete_event_id(expected)
     )
@@ -197,6 +1003,7 @@ async def _queue_claim_is_current_and_unfenced(
             artifact_type=entry.artifact_type,
             artifact_id=entry.artifact_id,
             work_kind=kind,
+            source=_queue_source(entry),
             generation=_generation(entry),
             delete_event_id=_delete_event_id(entry),
         )
@@ -486,12 +1293,9 @@ def _stale_reconcile_is_complete(
         return False
     if target_values["target_preserved_canonical_count"] != 0:
         return False
-    if (
-        target_values["target_found_count"] == 0
-        and str(previous_error or "").startswith(
-            _STALE_RECONCILE_GRAPH_PARTIAL_PREFIX
-        )
-    ):
+    if target_values["target_found_count"] == 0 and str(
+        previous_error or ""
+    ).startswith(_STALE_RECONCILE_GRAPH_PARTIAL_PREFIX):
         # A prior per-type failure may have auto-committed a partial mutation
         # before the embedded adapter raised.  An empty retry cannot prove
         # convergence: require a restored/found projection (or operator repair)
@@ -511,9 +1315,7 @@ def _stale_reconcile_failure_error(
 ) -> str:
     """Persist whether a failed run may have auto-committed graph effects."""
 
-    if str(existing_error or "").startswith(
-        _STALE_RECONCILE_GRAPH_PARTIAL_PREFIX
-    ):
+    if str(existing_error or "").startswith(_STALE_RECONCILE_GRAPH_PARTIAL_PREFIX):
         return str(existing_error)
     failed_types = reconcile_details.get("failed_types") or ()
     if isinstance(failed_types, (list, tuple)) and failed_types:
@@ -758,19 +1560,22 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     """
 
     mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
-    if _claim_token(
-        entry
-    ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry):
-        # The deterministic session is process-local and has not committed to
-        # the graph yet. Drop it explicitly so a delete that won after claim
-        # cannot leave an orphaned session behind.
-        await _abort_open_consolidation_after_fence(
-            entry=entry,
-            session_id=session_id,
-        )
-        raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
 
     async def _commit_with_lease(write_lease: GuardedWriteLease):
+        # The storage CAS deliberately runs *after* graph-writer acquisition.
+        # This keeps the global order graph-writer -> relational writer in
+        # lockstep with rebuild (writer A -> BEGIN IMMEDIATE) and avoids the
+        # DB-writer -> graph-writer inversion that can deadlock recovery.
+        if _claim_token(
+            entry
+        ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry):
+            await _abort_open_consolidation_after_fence(
+                entry=entry,
+                session_id=session_id,
+            )
+            raise _QueueClaimLostOrFenced(
+                f"queue_claim_lost_or_fenced entry_id={entry.id}"
+            )
         try:
             commit_resp = await commit_consolidation(
                 CommitConsolidationRequest(
@@ -782,10 +1587,14 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 blocking_execution=blocking_execution,
                 defer_session_finalization=defer_session_finalization,
             )
-        finally:
-            # The primitive may auto-commit and compensate before raising.
-            # Drain either path under this same live lease; the outer worker
-            # cannot infer possible graph effects from a missing response.
+        except KGPrimitiveError as exc:
+            # The dependency endpoint barrier is deliberately read-only.  It
+            # rolls back its graph scope before returning and therefore must
+            # not run checkpoint/flush/fsync against a graph it did not
+            # mutate.  The queue retry will enter a fresh guarded scope after
+            # the prerequisite's canonical root has been consolidated.
+            if exc.code == "relational_projection_endpoint_pending":
+                raise
             await _ensure_board_graph_durable(
                 board_id=entry.board_id,
                 mutation_ref=mutation_ref,
@@ -793,6 +1602,27 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 blocking_execution=blocking_execution,
                 failure_timestamp=now,
             )
+            raise
+        except BaseException:
+            # Any other failure can follow an auto-commit plus compensation;
+            # drain that path before releasing the live writer lease.
+            await _ensure_board_graph_durable(
+                board_id=entry.board_id,
+                mutation_ref=mutation_ref,
+                write_lease=write_lease,
+                blocking_execution=blocking_execution,
+                failure_timestamp=now,
+            )
+            raise
+        # The primitive may auto-commit before returning.  Prove durability
+        # under this same live lease before the caller can acknowledge it.
+        await _ensure_board_graph_durable(
+            board_id=entry.board_id,
+            mutation_ref=mutation_ref,
+            write_lease=write_lease,
+            blocking_execution=blocking_execution,
+            failure_timestamp=now,
+        )
         return commit_resp
 
     if enter_graph_write is not None:
@@ -801,13 +1631,11 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     with guarded_board_write(
         entry.board_id,
         operation=CONSOLIDATION_COMMIT_OPERATION,
-        owner_id=(
-            f"{AGENT_ID}:{entry.id}:"
-            f"{_claim_token(entry) or 'direct'}"
-        ),
+        owner_id=(f"{AGENT_ID}:{entry.id}:{_claim_token(entry) or 'direct'}"),
         mutation_ref=mutation_ref,
         required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
     ) as write_lease:
+        _ensure_entry_admitted_by_reservation_under_writer(entry)
         return await _commit_with_lease(write_lease)
 
 
@@ -1044,6 +1872,21 @@ def _worker_node_to_candidate(node: EmittedNode) -> NodeCandidate:
         maturity_status=node.maturity_status,
         source_confidence=node.source_confidence,
         priority_boost=node.priority_boost,
+        kind_of=node.kind_of,
+        investigation_receipt_id=node.investigation_receipt_id,
+        source_ref=node.source_ref,
+        attestor_actor_id=node.attestor_actor_id,
+        declared_revision=node.declared_revision,
+        workspace_state_id=node.workspace_state_id,
+        code_path=node.code_path,
+        symbol_qualified_name=node.symbol_qualified_name,
+        symbol_kind=node.symbol_kind,
+        selector_kind=node.selector_kind,
+        selector_fingerprint=node.selector_fingerprint,
+        resolution_state=node.resolution_state,
+        source_span_start=node.source_span_start,
+        source_span_end=node.source_span_end,
+        source_content_hash=node.source_content_hash,
     )
 
 
@@ -1120,6 +1963,10 @@ def _run_deterministic_worker(
         item.to_worker_dict()
         for item in getattr(projection_inputs, "research_decisions", ())
     ]
+    spec_dependencies = [
+        item.to_worker_dict()
+        for item in getattr(projection_inputs, "spec_dependencies", ())
+    ]
     if entry.artifact_type == "story":
         return worker.process_story(_story_to_dict(artifact))
     if entry.artifact_type == "ideation":
@@ -1134,6 +1981,7 @@ def _run_deterministic_worker(
     if entry.artifact_type == "spec":
         payload = _spec_to_dict(artifact)
         payload["quality_assessments"] = quality_assessments
+        payload["spec_dependencies"] = spec_dependencies
         return worker.process_spec(payload)
     if entry.artifact_type == "sprint":
         return worker.process_sprint(_sprint_to_dict(artifact))
@@ -1141,6 +1989,14 @@ def _run_deterministic_worker(
         return worker.process_card(_card_to_dict(artifact))
     if entry.artifact_type == "amendment_hotfix_revision":
         return worker.process_amendment(_amendment_to_dict(artifact))
+    if entry.artifact_type in {
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
+    }:
+        if not isinstance(artifact, Mapping):
+            raise ValueError("code_traceability_relational_projection_invalid")
+        return worker.process_artifact(entry.artifact_type, dict(artifact))
     raise ValueError(f"unknown artifact_type: {entry.artifact_type}")
 
 
@@ -1170,7 +2026,25 @@ def _append_card_entity_node(result: WorkerResult, card: Any) -> str:
                 candidate_id=cid,
                 node_type="Bug" if card_type == "bug" else "Entity",
                 title=card.title or f"Card {card.id}",
-                content=card.description or "",
+                content="\n\n".join(
+                    part
+                    for part in (
+                        card.description or "",
+                        (
+                            "Lifecycle: Rejected — rework required."
+                            if str(
+                                getattr(
+                                    getattr(card, "status", None),
+                                    "value",
+                                    getattr(card, "status", ""),
+                                )
+                            ).lower()
+                            == "rejected"
+                            else ""
+                        ),
+                    )
+                    if part
+                ),
                 source_artifact_ref=f"card:{card.id}",
                 graph_layer=graph_layer,
                 maturity_status=maturity_status,
@@ -1487,6 +2361,90 @@ async def _materialize_lineage_endpoint_nodes(
                 )
         return result
 
+    return result
+
+
+async def _materialize_authoritative_overlap_endpoint_nodes(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    artifact: Any,
+    result: WorkerResult,
+) -> WorkerResult:
+    """Stage complete authoritative target roots before overlap relations.
+
+    ``overlaps`` is symmetric: each target projection can reference its peer,
+    so no topological order can guarantee that one endpoint already exists in
+    an empty graph.  The first phase loads every declared peer through the
+    authoritative relational SourceReader and runs the same deterministic
+    target projector used by the peer's own live-event queue entry.  Its root
+    and non-overlap provenance edges are staged first (the connectivity guard
+    requires every operational Entity to retain a ``belongs_to`` backbone);
+    symmetric overlap relations remain the second phase.  This never fabricates
+    a node from an ID and fails before ``begin_consolidation`` when closure is
+    missing or corrupt.
+    """
+
+    if entry.artifact_type != "implementation_target":
+        return result
+    if not isinstance(artifact, Mapping):
+        raise ValueError("code_traceability_relational_projection_invalid")
+
+    overlap_target_ids = artifact.get("overlap_target_ids") or ()
+    if not isinstance(overlap_target_ids, (list, tuple)):
+        raise ValueError("code_traceability_overlap_target_ids_invalid")
+    if not overlap_target_ids:
+        return result
+
+    persistence = get_consolidation_persistence_port()
+    existing_refs = {node.source_artifact_ref for node in result.nodes}
+    for raw_peer_id in overlap_target_ids:
+        peer_id = str(raw_peer_id or "").strip()
+        if not peer_id or peer_id == entry.artifact_id:
+            raise ValueError("code_traceability_overlap_peer_invalid")
+        source_ref = f"implementation_target:{peer_id}"
+        if source_ref in existing_refs:
+            continue
+
+        peer = await persistence.load_artifact(
+            db,
+            artifact_type="implementation_target",
+            artifact_id=peer_id,
+        )
+        if not isinstance(peer, Mapping):
+            raise ValueError("code_traceability_overlap_peer_unresolved")
+        if str(peer.get("id") or "") != peer_id:
+            raise ValueError("code_traceability_overlap_peer_identity_mismatch")
+        if str(peer.get("board_id") or "") != entry.board_id:
+            raise ValueError("code_traceability_overlap_peer_scope_mismatch")
+
+        peer_status = peer.get("lifecycle_status") or peer.get("status")
+        peer_classification = classify_source_for_kg(
+            artifact_type="implementation_target",
+            artifact_status=peer_status,
+            content_hash="overlap-endpoint-admission",
+        )
+        if peer_classification.graph_layer != GRAPH_LAYER_CANONICAL:
+            raise ValueError("code_traceability_overlap_peer_not_materializable")
+
+        # The deterministic projector validates every bounded target field and
+        # supplies the exact canonical root used when the peer is processed by
+        # its own event/rebuild row.  Stage the peer's authoritative provenance
+        # edges, but never its symmetric overlaps: the current row owns the
+        # second-phase overlap edge and both endpoints are now present.
+        peer_result = _run_deterministic_worker(entry, dict(peer), None)
+        peer_roots = [
+            node
+            for node in peer_result.nodes
+            if node.source_artifact_ref == source_ref
+            and node.kind_of == "implementation_target"
+        ]
+        if len(peer_roots) != 1:
+            raise ValueError("code_traceability_overlap_peer_projection_invalid")
+        result.nodes.append(peer_roots[0])
+        result.edges.extend(
+            edge for edge in peer_result.edges if edge.edge_type != "overlaps"
+        )
+        existing_refs.add(source_ref)
     return result
 
 
@@ -1949,12 +2907,6 @@ async def _process_stale_reconcile_entry(
         )
         return False
 
-    # This is the final storage read before the graph write. It jointly checks
-    # ownership and the exact tombstone generation/event while the board's
-    # process-local writer mutex is held by the serialized caller.
-    if not await _queue_claim_is_current_and_unfenced(db, entry):
-        raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
-
     from okto_pulse.core.kg.canonical_stale_reconciler import (
         reconcile_stale_canonical,
     )
@@ -1965,20 +2917,23 @@ async def _process_stale_reconcile_entry(
         f"g{_generation(entry)}:{delete_event_id}"
     )
 
-    async def _reconcile_with_enter(
-        enter_write: _GraphWriteEnter,
-    ):
-        write_lease: GuardedWriteLease | None = None
+    async def _reconcile_with_lease(write_lease: GuardedWriteLease):
+        # Match rebuild's graph-writer -> relational-writer order.  The exact
+        # tombstone/claim CAS is intentionally performed only after the graph
+        # writer is held, otherwise rebuild enqueue can deadlock against this
+        # transaction while holding writer A.
+        if not await _queue_claim_is_current_and_unfenced(db, entry):
+            raise _QueueClaimLostOrFenced(
+                f"queue_claim_lost_or_fenced entry_id={entry.id}"
+            )
         callback_invoked = False
 
         def _before_graph_write() -> None:
-            nonlocal callback_invoked, write_lease
+            nonlocal callback_invoked
             if callback_invoked:
-                raise RuntimeError(
-                    "stale_reconcile_graph_write_callback_repeated"
-                )
+                raise RuntimeError("stale_reconcile_graph_write_callback_repeated")
             callback_invoked = True
-            write_lease = enter_write(mutation_ref)
+            write_lease.ensure_owned(failure_phase="before_stale_reconcile_graph_write")
 
         try:
             result = await reconcile_stale_canonical(
@@ -1990,16 +2945,14 @@ async def _process_stale_reconcile_entry(
                 blocking_execution=blocking_execution,
             )
         except BaseException:
-            if write_lease is not None:
+            if callback_invoked:
                 try:
                     await _ensure_board_graph_durable(
                         board_id=entry.board_id,
                         mutation_ref=f"{mutation_ref}:exception",
                         write_lease=write_lease,
                         blocking_execution=blocking_execution,
-                        failure_timestamp=(
-                            clock.now() if clock is not None else None
-                        ),
+                        failure_timestamp=(clock.now() if clock is not None else None),
                     )
                 except BaseException as durability_exc:
                     logger.error(
@@ -2013,20 +2966,17 @@ async def _process_stale_reconcile_entry(
                         exc_info=True,
                         extra={
                             "event": (
-                                "kg.stale_reconcile."
-                                "exception_durability_ambiguous"
+                                "kg.stale_reconcile.exception_durability_ambiguous"
                             ),
                             "board_id": entry.board_id,
                             "entry_id": entry.id,
-                            "durability_applied": (
-                                write_lease.durability_applied
-                            ),
+                            "durability_applied": (write_lease.durability_applied),
                             "write_may_be_applied": True,
                         },
                     )
             raise
 
-        if write_lease is not None:
+        if callback_invoked:
             await _ensure_board_graph_durable(
                 board_id=entry.board_id,
                 mutation_ref=mutation_ref,
@@ -2037,25 +2987,17 @@ async def _process_stale_reconcile_entry(
         return result
 
     if enter_graph_write is not None:
-        result = await _reconcile_with_enter(enter_graph_write)
+        result = await _reconcile_with_lease(enter_graph_write(mutation_ref))
     else:
-        with ExitStack() as local_write_stack:
-
-            def _enter_local_write(local_mutation_ref: str):
-                return local_write_stack.enter_context(
-                    guarded_board_write(
-                        entry.board_id,
-                        operation=CONSOLIDATION_COMMIT_OPERATION,
-                        owner_id=(
-                            f"{AGENT_ID}:{entry.id}:"
-                            f"{_claim_token(entry) or 'direct'}"
-                        ),
-                        mutation_ref=local_mutation_ref,
-                        required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
-                    )
-                )
-
-            result = await _reconcile_with_enter(_enter_local_write)
+        with guarded_board_write(
+            entry.board_id,
+            operation=CONSOLIDATION_COMMIT_OPERATION,
+            owner_id=(f"{AGENT_ID}:{entry.id}:{_claim_token(entry) or 'direct'}"),
+            mutation_ref=mutation_ref,
+            required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+        ) as write_lease:
+            _ensure_entry_admitted_by_reservation_under_writer(entry)
+            result = await _reconcile_with_lease(write_lease)
 
     run_details = _stale_reconcile_telemetry_details(result, entry)
     if telemetry_details is not None:
@@ -2145,6 +3087,9 @@ async def _process_queue_entry(
         "sprint",
         "card",
         "amendment_hotfix_revision",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     }:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
         return False
@@ -2167,9 +3112,17 @@ async def _process_queue_entry(
         # clear the connectivity class (stale legacy entries included).
         return False
 
-    artifact_status = getattr(artifact, "status", None)
+    artifact_status = (
+        artifact.get("status") or artifact.get("lifecycle_status")
+        if isinstance(artifact, Mapping)
+        else getattr(artifact, "status", None)
+    )
     artifact_status = getattr(artifact_status, "value", artifact_status)
-    if bool(getattr(artifact, "archived", False)):
+    if bool(
+        artifact.get("archived", False)
+        if isinstance(artifact, Mapping)
+        else getattr(artifact, "archived", False)
+    ):
         artifact_status = "archived"
     maturity_artifact_type = entry.artifact_type
     if entry.artifact_type == "card":
@@ -2247,6 +3200,12 @@ async def _process_queue_entry(
             artifact,
             worker_result,
         )
+        worker_result = await _materialize_authoritative_overlap_endpoint_nodes(
+            db,
+            entry,
+            artifact,
+            worker_result,
+        )
         worker_result = await _resolve_missing_link_candidates(
             db,
             entry.board_id,
@@ -2318,18 +3277,6 @@ async def _process_queue_entry(
         force_reprocess=True,
     )
 
-    # A governed delete may commit while extraction/proposal is paused. Check
-    # at the final publication boundary, aborting the uncommitted session
-    # before the commit/lifecycle wrapper is entered.
-    if _claim_token(
-        entry
-    ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry):
-        await _abort_open_consolidation_after_fence(
-            entry=entry,
-            session_id=session_id,
-        )
-        raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
-
     # 4. commit + safe lifecycle. The queue row is only acknowledged after
     # board graph survives close/reopen from disk.
     commit_resp = await _commit_consolidation_with_board_graph_lifecycle(
@@ -2338,7 +3285,7 @@ async def _process_queue_entry(
         summary_text=(
             "Historical consolidation of "
             f"{entry.artifact_type} "
-            f"'{getattr(artifact, 'title', entry.artifact_id)}'"
+            f"'{artifact.get('title', entry.artifact_id) if isinstance(artifact, Mapping) else getattr(artifact, 'title', entry.artifact_id)}'"
         ),
         db=db,
         blocking_execution=blocking_execution,
@@ -2402,6 +3349,9 @@ async def _classify_queue_entry_source_for_debt(
         "refinement",
         "spec",
         "sprint",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     }:
         return None
     artifact = await get_consolidation_persistence_port().load_artifact(
@@ -2411,13 +3361,18 @@ async def _classify_queue_entry_source_for_debt(
     )
     if artifact is None:
         return None
-    return classify_source_for_kg(
-        artifact_type=entry.artifact_type,
-        artifact_status=getattr(
+    artifact_status = (
+        artifact.get("status") or artifact.get("lifecycle_status")
+        if isinstance(artifact, Mapping)
+        else getattr(
             getattr(artifact, "status", None),
             "value",
             getattr(artifact, "status", None),
-        ),
+        )
+    )
+    return classify_source_for_kg(
+        artifact_type=entry.artifact_type,
+        artifact_status=artifact_status,
         content_hash="consolidation-failure",
     )
 
@@ -2427,6 +3382,7 @@ def _select_board_aware_entries(
     *,
     claimed_board_ids: frozenset[str],
     limit: int,
+    now: datetime | None = None,
 ) -> list[ConsolidationQueueRecord]:
     """Select at most one ready entry for each board without stealing claims.
 
@@ -2451,10 +3407,60 @@ def _select_board_aware_entries(
             continue
         if entry.board_id in unavailable_boards:
             continue
-        selected.append(entry)
         unavailable_boards.add(entry.board_id)
+        retry_at = getattr(entry, "next_retry_at", None)
+        comparable_now = now
+        if (
+            retry_at is not None
+            and comparable_now is not None
+            and retry_at.tzinfo is None
+            and comparable_now.tzinfo is not None
+        ):
+            comparable_now = comparable_now.replace(tzinfo=None)
+        if (
+            comparable_now is not None
+            and retry_at is not None
+            and retry_at > comparable_now
+        ):
+            # The first active row is a dependency/order barrier for this
+            # board. Do not skip it and claim a later child while it backs off.
+            continue
+        selected.append(entry)
         if len(selected) >= limit:
             break
+    return selected
+
+
+async def _filter_administratively_reserved_entries(
+    store: Any,
+    db: Any,
+    entries: list[ConsolidationQueueRecord],
+) -> list[ConsolidationQueueRecord]:
+    """During an admin rebuild, admit only that rebuild's fenced membership.
+
+    The orchestration reservation intentionally stays held while the graph
+    writer is delegated. Queue rows outside exact rebuild membership remain
+    durable/pending until writer B is reacquired and the reservation releases.
+    This filter is queue defense in depth, not a board-wide transactional
+    source-write barrier; this release supports rebuild only in the governed
+    recovery-only/offline mode with SDLC writers stopped.
+    """
+
+    checker = getattr(store, "board_administrative_rebuild_source", None)
+    if not callable(checker):
+        return entries
+    reservation_source_by_board: dict[str, str | None] = {}
+    selected: list[ConsolidationQueueRecord] = []
+    for entry in entries:
+        if entry.board_id not in reservation_source_by_board:
+            reservation_source_by_board[entry.board_id] = await checker(
+                db,
+                board_id=entry.board_id,
+            )
+        reserved_source = reservation_source_by_board[entry.board_id]
+        if not _reservation_source_admits(entry, reserved_source):
+            continue
+        selected.append(entry)
     return selected
 
 
@@ -2567,7 +3573,311 @@ class ConsolidationProcessor:
         )
         return len(stale)
 
-    async def process_batch(self) -> int:
+    async def recover_exact_claims(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        recovery_authority_probe: Callable[[], bool],
+    ) -> int:
+        """Neutrally repend only claims owned by one offline rebuild run.
+
+        This is deliberately separate from global stale recovery. The caller
+        must continuously prove its opaque recovery authority, while the
+        persistence adapter must prove the exact administrative reservation
+        and compare every claim token/generation in the repend CAS. It is safe
+        to invoke immediately after a process restart; no timeout or unrelated
+        board scan is involved.
+        """
+
+        if (
+            type(claim_scope) is not ConsolidationClaimScope
+            or claim_scope.reservation_lineage_id is None
+        ):
+            raise TypeError("consolidation_exact_recovery_lineage_required")
+        if not callable(recovery_authority_probe):
+            raise TypeError("consolidation_exact_recovery_authority_required")
+
+        def _authority_valid() -> bool:
+            try:
+                result = recovery_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        if not _authority_valid():
+            raise RuntimeError("consolidation_exact_recovery_authority_required")
+
+        async with self.relational_scope_factory() as db:
+            store = get_consolidation_persistence_port()
+            reservation_reader = getattr(
+                store,
+                "board_administrative_rebuild_source",
+                None,
+            )
+            claimed_reader = getattr(store, "list_claimed_exact", None)
+            repend = getattr(store, "repend_claimed_queue_entry", None)
+            if not all(
+                callable(value)
+                for value in (reservation_reader, claimed_reader, repend)
+            ):
+                raise RuntimeError("consolidation_exact_recovery_unsupported")
+
+            async def _reservation_matches() -> bool:
+                return (
+                    await reservation_reader(db, board_id=claim_scope.board_id)
+                    == claim_scope.source
+                )
+
+            if not await _reservation_matches():
+                raise RuntimeError("consolidation_exact_recovery_reservation_mismatch")
+            claimed = tuple(
+                await claimed_reader(
+                    db,
+                    board_id=claim_scope.board_id,
+                    source=claim_scope.source,
+                    work_kind=claim_scope.work_kind,
+                )
+            )
+            if any(
+                entry.status != "claimed"
+                or not claim_scope.admits(entry)
+                or not entry.claim_token
+                for entry in claimed
+            ):
+                raise RuntimeError("consolidation_exact_recovery_claim_mismatch")
+
+            recovered = 0
+            try:
+                for entry in claimed:
+                    if not _authority_valid() or not await _reservation_matches():
+                        raise RuntimeError("consolidation_exact_recovery_fence_lost")
+                    matched = await repend(
+                        db,
+                        entry_id=entry.id,
+                        claim_token=str(entry.claim_token),
+                        board_id=entry.board_id,
+                        source=_queue_source(entry),
+                        work_kind=entry.work_kind,
+                        generation=_generation(entry),
+                        delete_event_id=_delete_event_id(entry),
+                    )
+                    if not matched:
+                        raise RuntimeError("consolidation_exact_recovery_cas_lost")
+                    recovered += 1
+                if not _authority_valid() or not await _reservation_matches():
+                    raise RuntimeError("consolidation_exact_recovery_fence_lost")
+                await store.commit(db)
+            except BaseException:
+                try:
+                    await store.rollback(db)
+                except BaseException:
+                    logger.exception("consolidation.exact_recovery_rollback_failed")
+                raise
+
+        if recovered:
+            logger.info(
+                "kg.consolidation_worker.exact_recovered board=%s source=%s count=%d",
+                claim_scope.board_id,
+                claim_scope.source,
+                recovered,
+                extra={
+                    "event": "kg.queue.exact_recovered",
+                    "board_id": claim_scope.board_id,
+                    "source": claim_scope.source,
+                    "count": recovered,
+                },
+            )
+        return recovered
+
+    async def process_batch(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope | None = None,
+    ) -> int:
+        """Process one ordinary/backward-compatible consolidation batch."""
+
+        result = await self._process_batch(
+            claim_scope=claim_scope,
+            exact_protocol=False,
+            reservation_authority_probe=None,
+        )
+        if type(result) is not int:
+            raise RuntimeError("consolidation_batch_result_invalid")
+        return result
+
+    async def list_exact_rebuild_ack_receipts(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        reservation_authority_probe: Callable[[], bool],
+    ) -> tuple[ExactConsolidationAckReceipt, ...]:
+        """Load and verify the complete ACK journal for one governed run."""
+
+        if (
+            type(claim_scope) is not ConsolidationClaimScope
+            or claim_scope.reservation_lineage_id is None
+        ):
+            raise TypeError("exact_consolidation_claim_scope_invalid")
+        if not callable(reservation_authority_probe):
+            raise TypeError("exact_consolidation_reservation_authority_required")
+
+        def _authority_valid() -> bool:
+            try:
+                result = reservation_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_reservation_authority_lost"
+            )
+        async with self.relational_scope_factory() as db:
+            store = get_consolidation_persistence_port()
+            loader = getattr(store, "list_exact_rebuild_ack_receipts", None)
+            if not callable(loader):
+                raise ExactConsolidationCompensationError(
+                    "exact_consolidation_ack_journal_unsupported"
+                )
+            receipts = await loader(
+                db,
+                board_id=claim_scope.board_id,
+                source=claim_scope.source,
+                reservation_lineage_id=claim_scope.reservation_lineage_id,
+            )
+            try:
+                await store.rollback(db)
+            except BaseException as exc:
+                raise ExactConsolidationCompensationError(
+                    "exact_consolidation_ack_journal_read_cleanup_failed"
+                ) from exc
+        verified = _verify_exact_ack_receipt_chain(receipts, claim_scope)
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_reservation_authority_lost"
+            )
+        return verified
+
+    async def compensate_exact_rebuild_commits(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        reservation_authority_probe: Callable[[], bool],
+    ) -> ExactConsolidationCompensationResult:
+        """Atomically reverse all relational commits from one exact run."""
+
+        if (
+            type(claim_scope) is not ConsolidationClaimScope
+            or claim_scope.reservation_lineage_id is None
+        ):
+            raise TypeError("exact_consolidation_claim_scope_invalid")
+        if not callable(reservation_authority_probe):
+            raise TypeError("exact_consolidation_reservation_authority_required")
+
+        def _authority_valid() -> bool:
+            try:
+                result = reservation_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_reservation_authority_lost"
+            )
+        async with self.relational_scope_factory() as db:
+            store = get_consolidation_persistence_port()
+            loader = getattr(store, "list_exact_rebuild_ack_receipts", None)
+            compensate = getattr(store, "compensate_exact_rebuild_commits", None)
+            if not callable(loader) or not callable(compensate):
+                raise ExactConsolidationCompensationError(
+                    "exact_consolidation_compensation_unsupported"
+                )
+            try:
+                receipts = _verify_exact_ack_receipt_chain(
+                    await loader(
+                        db,
+                        board_id=claim_scope.board_id,
+                        source=claim_scope.source,
+                        reservation_lineage_id=(claim_scope.reservation_lineage_id),
+                    ),
+                    claim_scope,
+                )
+                if not receipts:
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_ack_journal_empty"
+                    )
+                if not _authority_valid():
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_reservation_authority_lost"
+                    )
+                result = await compensate(
+                    db,
+                    board_id=claim_scope.board_id,
+                    source=claim_scope.source,
+                    reservation_lineage_id=claim_scope.reservation_lineage_id,
+                    expected_receipts=receipts,
+                    reservation_authority_probe=_authority_valid,
+                )
+                if result is None:
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_compensation_cas_or_authority_lost"
+                    )
+                _verify_exact_compensation_result(result, receipts, claim_scope)
+                if not _authority_valid():
+                    raise ExactConsolidationCompensationError(
+                        "exact_consolidation_reservation_authority_lost"
+                    )
+                await store.commit(db)
+            except BaseException:
+                try:
+                    await store.rollback(db)
+                except BaseException:
+                    logger.exception("consolidation.exact_compensation_rollback_failed")
+                raise
+        assert type(result) is ExactConsolidationCompensationResult
+        if not _authority_valid():
+            raise ExactConsolidationCompensationError(
+                "exact_consolidation_compensation_authority_lost_after_commit",
+                committed_result=result,
+            )
+        return result
+
+    async def process_exact_batch(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope,
+        reservation_authority_probe: Callable[[], bool],
+    ) -> ExactConsolidationBatchResult:
+        """Process one offline-rebuild batch with durable typed dispositions.
+
+        ``claim_scope.reservation_lineage_id`` is stable for the governed run;
+        ``reservation_authority_probe`` proves the currently held ephemeral
+        reservation token/epoch and must not degrade to a source-only check.
+        """
+
+        if type(claim_scope) is not ConsolidationClaimScope:
+            raise TypeError("exact_consolidation_claim_scope_invalid")
+        if claim_scope.reservation_lineage_id is None:
+            raise TypeError("exact_consolidation_reservation_lineage_id_required")
+        if not callable(reservation_authority_probe):
+            raise TypeError("exact_consolidation_reservation_authority_required")
+        result = await self._process_batch(
+            claim_scope=claim_scope,
+            exact_protocol=True,
+            reservation_authority_probe=reservation_authority_probe,
+        )
+        if type(result) is not ExactConsolidationBatchResult:
+            raise RuntimeError("exact_consolidation_batch_result_invalid")
+        return result
+
+    async def _process_batch(
+        self,
+        *,
+        claim_scope: ConsolidationClaimScope | None,
+        exact_protocol: bool,
+        reservation_authority_probe: Callable[[], bool] | None,
+    ) -> int | ExactConsolidationBatchResult:
         """Process up to batch_size pending entries. Returns count processed.
 
         Spec bdcda842 (Sprint 2):
@@ -2592,7 +3902,55 @@ class ConsolidationProcessor:
         """
         from okto_pulse.core.infra.config import get_settings
 
+        if exact_protocol and (
+            claim_scope is None
+            or claim_scope.reservation_lineage_id is None
+            or not callable(reservation_authority_probe)
+        ):
+            raise TypeError("exact_consolidation_claim_scope_required")
+
+        def _exact_authority_valid() -> bool:
+            if not exact_protocol:
+                return True
+            assert reservation_authority_probe is not None
+            try:
+                result = reservation_authority_probe()
+            except BaseException:
+                return False
+            return type(result) is bool and result
+
+        def _require_exact_authority(phase: str) -> None:
+            if not _exact_authority_valid():
+                raise _QueueClaimLostOrFenced(
+                    f"exact_rebuild_reservation_authority_lost phase={phase}"
+                )
+
+        async def _commit_batch_transaction(
+            store: Any,
+            db: Any,
+            *,
+            phase: str,
+            committed_callback: Callable[[], None] | None = None,
+        ) -> None:
+            if exact_protocol and not _exact_authority_valid():
+                await store.rollback(db)
+                raise _QueueClaimLostOrFenced(
+                    "exact_rebuild_reservation_authority_lost "
+                    f"phase=before_{phase}_commit"
+                )
+            await store.commit(db)
+            if committed_callback is not None:
+                committed_callback()
+            if exact_protocol and not _exact_authority_valid():
+                raise _ExactAuthorityLostAfterCommit(
+                    "exact_rebuild_reservation_authority_lost "
+                    f"phase=after_{phase}_commit"
+                )
+
+        if exact_protocol:
+            _require_exact_authority("before_batch_read")
         processed = 0
+        exact_rows: list[ExactConsolidationRowResult] = []
         self._last_attempted_count = 0
         settings = get_settings()
         claim_timeout_s = settings.kg_queue_claim_timeout_s
@@ -2600,6 +3958,82 @@ class ConsolidationProcessor:
         # Step 1: Claim entries (fast DB update, single session).
         async with self.relational_scope_factory() as db:
             store = get_consolidation_persistence_port()
+            if exact_protocol:
+                assert claim_scope is not None
+                reservation_reader = getattr(
+                    store,
+                    "board_administrative_rebuild_source",
+                    None,
+                )
+                pending_lister = getattr(store, "list_pending_exact", None)
+                claimed_lister = getattr(store, "list_claimed_exact", None)
+                if (
+                    not callable(reservation_reader)
+                    or not callable(pending_lister)
+                    or not callable(claimed_lister)
+                ):
+                    raise RuntimeError("consolidation_exact_disposition_unsupported")
+                reserved_source = await reservation_reader(
+                    db,
+                    board_id=claim_scope.board_id,
+                )
+                if reserved_source != claim_scope.source:
+                    raise RuntimeError("consolidation_exact_claim_reservation_mismatch")
+                pending_exact = tuple(
+                    _snapshot_exact_queue_record(entry, claim_scope)
+                    for entry in await pending_lister(
+                        db,
+                        board_id=claim_scope.board_id,
+                        source=claim_scope.source,
+                        work_kind=claim_scope.work_kind,
+                    )
+                )
+                if len({entry.id for entry in pending_exact}) != len(
+                    pending_exact
+                ) or any(
+                    not claim_scope.admits(entry) or entry.status != "pending"
+                    for entry in pending_exact
+                ):
+                    raise RuntimeError("consolidation_exact_pending_scope_mismatch")
+                claimed_exact = tuple(
+                    _snapshot_exact_queue_record(entry, claim_scope)
+                    for entry in await claimed_lister(
+                        db,
+                        board_id=claim_scope.board_id,
+                        source=claim_scope.source,
+                        work_kind=claim_scope.work_kind,
+                    )
+                )
+                if claimed_exact:
+                    raise RuntimeError(
+                        "consolidation_exact_claimed_rows_require_recovery"
+                    )
+                discovered_dispositions: list[ExactConsolidationRowResult] = []
+                replayed: list[ExactConsolidationRowResult] = []
+                replay_now = _aware_utc(self._now())
+                for pending_entry in pending_exact:
+                    _exact_rebuild_membership(pending_entry, claim_scope)
+                    replay = _load_exact_disposition(pending_entry, claim_scope)
+                    if replay is None:
+                        continue
+                    discovered_dispositions.append(replay)
+                    if (
+                        replay.disposition
+                        is ExactConsolidationDisposition.RETRY_SCHEDULED
+                        and replay.next_retry_at is not None
+                        and _aware_utc(replay.next_retry_at) > replay_now
+                    ):
+                        replayed.append(replay)
+                if any(
+                    row.disposition is ExactConsolidationDisposition.TERMINAL_FAILURE
+                    for row in discovered_dispositions
+                ):
+                    self._last_attempted_count = 0
+                    return ExactConsolidationBatchResult(
+                        claim_scope=claim_scope,
+                        rows=tuple(discovered_dispositions),
+                    )
+                exact_rows.extend(replayed)
             pending_depth = await store.count_pending(db)
 
             if pending_depth > 200:
@@ -2621,33 +4055,140 @@ class ConsolidationProcessor:
             now = self._now()
 
             claimed_boards = await store.list_claimed_board_ids(db)
-            ready_entries = await store.list_ready_pending(db, now=now)
+            if claim_scope is None:
+                ready_entries = await store.list_ready_pending(db, now=now)
+            else:
+                reservation_reader = getattr(
+                    store,
+                    "board_administrative_rebuild_source",
+                    None,
+                )
+                if not callable(reservation_reader):
+                    raise RuntimeError(
+                        "consolidation_exact_claim_reservation_unsupported"
+                    )
+                reserved_source = await reservation_reader(
+                    db,
+                    board_id=claim_scope.board_id,
+                )
+                if reserved_source != claim_scope.source:
+                    raise RuntimeError("consolidation_exact_claim_reservation_mismatch")
+                exact_listing = getattr(store, "list_ready_pending_exact", None)
+                if not callable(exact_listing):
+                    raise RuntimeError("consolidation_exact_claim_scope_unsupported")
+                ready_entries = await exact_listing(
+                    db,
+                    now=now,
+                    board_id=claim_scope.board_id,
+                    source=claim_scope.source,
+                    work_kind=claim_scope.work_kind,
+                )
+                if any(not claim_scope.admits(entry) for entry in ready_entries):
+                    raise RuntimeError("consolidation_exact_claim_scope_mismatch")
+            if not exact_protocol and any(
+                _queue_source(entry).startswith("rebuild:")
+                and isinstance(entry.payload, dict)
+                and _EXACT_REBUILD_DISPOSITION_KEY in entry.payload
+                for entry in ready_entries
+            ):
+                raise RuntimeError(
+                    "exact_rebuild_disposition_requires_process_exact_batch"
+                )
+            ready_entries = tuple(
+                await _filter_administratively_reserved_entries(
+                    store,
+                    db,
+                    list(ready_entries),
+                )
+            )
             entries = _select_board_aware_entries(
                 list(ready_entries),
                 claimed_board_ids=claimed_boards,
                 limit=effective_batch,
+                now=now,
             )
 
             claim_timeout_at = now + timedelta(seconds=claim_timeout_s)
+            claimed_entries: list[ConsolidationQueueRecord] = []
+            blind_claim_entries: list[ConsolidationQueueRecord] = []
             for entry in entries:
+                worker_id = f"worker_{uuid.uuid4().hex[:8]}"
+                claim_token = uuid.uuid4().hex
+                entry_claim_scope = claim_scope
+                if entry_claim_scope is None and _queue_source(entry).startswith(
+                    "rebuild:"
+                ):
+                    reservation_reader = getattr(
+                        store,
+                        "board_administrative_rebuild_source",
+                        None,
+                    )
+                    reserved_source = (
+                        await reservation_reader(db, board_id=entry.board_id)
+                        if callable(reservation_reader)
+                        else None
+                    )
+                    if reserved_source != _queue_source(entry):
+                        # A rebuild row is never downgraded to the ordinary
+                        # blind claim path when its exact reservation vanished.
+                        continue
+                    entry_claim_scope = ConsolidationClaimScope(
+                        board_id=entry.board_id,
+                        source=reserved_source,
+                    )
+                if entry_claim_scope is not None:
+                    if exact_protocol:
+                        _require_exact_authority("before_queue_claim_cas")
+                    exact_claim = getattr(
+                        store,
+                        "claim_ready_pending_exact",
+                        None,
+                    )
+                    if not callable(exact_claim):
+                        raise RuntimeError("consolidation_exact_claim_cas_unsupported")
+                    claimed = await exact_claim(
+                        db,
+                        entry_id=entry.id,
+                        board_id=entry_claim_scope.board_id,
+                        source=entry_claim_scope.source,
+                        work_kind=entry_claim_scope.work_kind,
+                        generation=_generation(entry),
+                        now=now,
+                        claim_timeout_at=claim_timeout_at,
+                        worker_id=worker_id,
+                        claim_token=claim_token,
+                    )
+                    if claimed is not None:
+                        claimed_entries.append(
+                            _snapshot_exact_queue_record(
+                                claimed,
+                                entry_claim_scope,
+                            )
+                            if exact_protocol
+                            else claimed
+                        )
+                    continue
                 entry.status = "claimed"
                 entry.claimed_at = now
                 entry.claim_timeout_at = claim_timeout_at
-                worker_id = f"worker_{uuid.uuid4().hex[:8]}"
                 entry.worker_id = worker_id
                 # A token is never reused, including after recovery/reclaim.
-                entry.claim_token = uuid.uuid4().hex
+                entry.claim_token = claim_token
                 # Keep claimed_by_session_id populated for backward-compat
                 # with cognitive-session inspectors that still read it.
                 entry.claimed_by_session_id = worker_id
-            await store.save_queue_entries(db, entries)
-            await store.commit(db)
+                claimed_entries.append(entry)
+                blind_claim_entries.append(entry)
+            entries = claimed_entries
+            if blind_claim_entries:
+                await store.save_queue_entries(db, blind_claim_entries)
+            await _commit_batch_transaction(store, db, phase="queue_claim")
             self._last_attempted_count = len(entries)
 
             # Spec bdcda842 (TR13): claims_per_min sliding window for
             # /api/v1/kg/queue/health. Recorded after a successful claim
             # commit so retries don't double-count.
-            if entries:
+            if entries and not exact_protocol:
                 from okto_pulse.core.services.queue_health_service import (
                     record_claim,
                 )
@@ -2660,17 +4201,48 @@ class ConsolidationProcessor:
         for entry in entries:
             deferred_session_ids: list[str] = []
             relational_commit_confirmed = False
+            post_commit_cleanup_failed = False
+            precommit_compensation_confirmed = False
+            pending_exact_disposition: ExactConsolidationRowResult | None = None
+            exact_ack_receipt: ExactConsolidationAckReceipt | None = None
+            pending_exact_ack_row: ExactConsolidationRowResult | None = None
             try:
                 acknowledged = False
                 delivery_transfer: tuple[DeliveryTransferReceipt, str] | None = None
                 stale_reconcile_telemetry: dict[str, object] = {}
                 graph_write_stack = ExitStack()
                 graph_write_lease: GuardedWriteLease | None = None
+                graph_write_entered = False
+
+                def _post_commit_blocker(
+                    error_code: str,
+                ) -> ExactConsolidationPostCommitError:
+                    assert claim_scope is not None
+                    if acknowledged:
+                        if pending_exact_ack_row is None:
+                            raise RuntimeError(
+                                "exact_consolidation_ack_receipt_missing"
+                            )
+                        durable_row = pending_exact_ack_row
+                    elif pending_exact_disposition is not None:
+                        durable_row = pending_exact_disposition
+                    else:
+                        raise RuntimeError(
+                            "exact_consolidation_post_commit_outcome_missing"
+                        )
+                    return ExactConsolidationPostCommitError(
+                        batch_result=ExactConsolidationBatchResult(
+                            claim_scope=claim_scope,
+                            rows=(*exact_rows, durable_row),
+                        ),
+                        failed_queue_id=entry.id,
+                        error_code=error_code,
+                    )
 
                 def _enter_graph_write(
                     mutation_ref: str,
                 ) -> GuardedWriteLease:
-                    nonlocal graph_write_lease
+                    nonlocal graph_write_entered, graph_write_lease
                     if graph_write_lease is not None:
                         raise RuntimeError(
                             "consolidation_graph_write_boundary_reentered"
@@ -2687,11 +4259,53 @@ class ConsolidationProcessor:
                             required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
                         )
                     )
+                    graph_write_entered = True
+                    _ensure_entry_admitted_by_reservation_under_writer(entry)
+                    if exact_protocol:
+                        _require_exact_authority("under_graph_writer")
                     return graph_write_lease
 
                 try:
                     async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
+                        if not await _claim_admitted_by_current_reservation(
+                            store,
+                            db,
+                            entry,
+                        ):
+                            if not exact_protocol or _exact_authority_valid():
+                                await _repend_exact_claim(store, db, entry)
+                                await _commit_batch_transaction(
+                                    store,
+                                    db,
+                                    phase="reservation_loss_repend",
+                                )
+                            else:
+                                await store.rollback(db)
+                            if exact_protocol:
+                                assert claim_scope is not None
+                                exact_rows.append(
+                                    _exact_row_result(
+                                        entry,
+                                        claim_scope,
+                                        attempt_ordinal=(
+                                            _exact_disposition_attempt(entry)
+                                        ),
+                                        disposition=(
+                                            ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                        ),
+                                        origin=ExactConsolidationResultOrigin.NEW,
+                                        mutation_state=(
+                                            ExactConsolidationMutationState.UNCHANGED
+                                        ),
+                                        error_code="administrative_reservation_lost",
+                                        error_message=(
+                                            "Exact rebuild reservation no longer "
+                                            "admits the claimed row."
+                                        ),
+                                    )
+                                )
+                            continue
                         outcome = await _process_queue_entry_serialized(
                             db,
                             entry,
@@ -2722,6 +4336,12 @@ class ConsolidationProcessor:
                         else:
                             success = outcome is True
                             fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                            if exact_protocol and fresh is not None:
+                                assert claim_scope is not None
+                                fresh = _snapshot_exact_queue_record(
+                                    fresh,
+                                    claim_scope,
+                                )
                             if fresh is None:
                                 # Once a graph commit has been deferred, a missing
                                 # queue row is an ownership loss.  Roll back the
@@ -2741,7 +4361,36 @@ class ConsolidationProcessor:
                                 if _work_kind(entry) == "stale_reconcile":
                                     await store.rollback(db)
                                 else:
-                                    await store.commit(db)
+                                    await _commit_batch_transaction(
+                                        store,
+                                        db,
+                                        phase="missing_queue_row",
+                                    )
+                                if exact_protocol:
+                                    assert claim_scope is not None
+                                    exact_rows.append(
+                                        _exact_row_result(
+                                            entry,
+                                            claim_scope,
+                                            attempt_ordinal=(
+                                                _exact_disposition_attempt(entry)
+                                            ),
+                                            disposition=(
+                                                ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                            ),
+                                            origin=(ExactConsolidationResultOrigin.NEW),
+                                            mutation_state=(
+                                                ExactConsolidationMutationState.AMBIGUOUS
+                                                if deferred_session_ids
+                                                else ExactConsolidationMutationState.UNCHANGED
+                                            ),
+                                            error_code="queue_claim_missing",
+                                            error_message=(
+                                                "The exact queue row disappeared "
+                                                "before acknowledgement."
+                                            ),
+                                        )
+                                    )
                                 continue
 
                             if success:
@@ -2772,18 +4421,127 @@ class ConsolidationProcessor:
                                             raise
                                         acknowledged = True
                                     else:
-                                        # Legacy consolidation retains its
-                                        # standalone exact compare-and-delete ACK.
-                                        acknowledged = (
-                                            await store.ack_claimed_queue_entry(
+                                        if exact_protocol:
+                                            _require_exact_authority(
+                                                "before_queue_ack_cas"
+                                            )
+                                            exact_ack = getattr(
+                                                store,
+                                                "ack_exact_rebuild_commit",
+                                                None,
+                                            )
+                                            if not callable(exact_ack):
+                                                raise RuntimeError(
+                                                    "consolidation_exact_ack_"
+                                                    "journal_unsupported"
+                                                )
+                                            if len(deferred_session_ids) != 1:
+                                                raise RuntimeError(
+                                                    "consolidation_exact_ack_"
+                                                    "session_invalid"
+                                                )
+                                            (
+                                                membership_source_ref,
+                                                membership_source_version,
+                                                membership_content_hash,
+                                            ) = _exact_rebuild_membership(
+                                                entry,
+                                                claim_scope,
+                                            )
+                                            exact_ack_receipt = await exact_ack(
                                                 db,
                                                 entry_id=entry.id,
                                                 claim_token=token,
+                                                board_id=entry.board_id,
+                                                artifact_type=entry.artifact_type,
+                                                artifact_id=entry.artifact_id,
+                                                source=_queue_source(entry),
+                                                work_kind=_work_kind(entry),
                                                 generation=_generation(entry),
                                                 delete_event_id=_delete_event_id(entry),
+                                                reservation_lineage_id=(
+                                                    claim_scope.reservation_lineage_id
+                                                ),
+                                                membership_source_ref=(
+                                                    membership_source_ref
+                                                ),
+                                                membership_source_version=(
+                                                    membership_source_version
+                                                ),
+                                                membership_content_hash=(
+                                                    membership_content_hash
+                                                ),
+                                                consolidation_session_id=(
+                                                    deferred_session_ids[0]
+                                                ),
+                                                expected_attempts=entry.attempts,
+                                                expected_last_error=entry.last_error,
+                                                expected_next_retry_at=(
+                                                    entry.next_retry_at
+                                                ),
+                                                expected_payload=(
+                                                    deepcopy(entry.payload)
+                                                    if type(entry.payload) is dict
+                                                    else {}
+                                                ),
+                                                reservation_authority_probe=(
+                                                    _exact_authority_valid
+                                                ),
                                             )
-                                        )
-                                if deferred_session_ids and not acknowledged:
+                                            if exact_ack_receipt is not None and (
+                                                type(exact_ack_receipt)
+                                                is not ExactConsolidationAckReceipt
+                                                or exact_ack_receipt.queue_id
+                                                != entry.id
+                                                or exact_ack_receipt.consolidation_session_id
+                                                != deferred_session_ids[0]
+                                            ):
+                                                await store.rollback(db)
+                                                raise RuntimeError(
+                                                    "consolidation_exact_ack_"
+                                                    "receipt_invalid"
+                                                )
+                                            acknowledged = exact_ack_receipt is not None
+                                            if acknowledged:
+                                                pending_exact_ack_row = _exact_row_result(
+                                                    entry,
+                                                    claim_scope,
+                                                    attempt_ordinal=(
+                                                        _exact_disposition_attempt(
+                                                            entry
+                                                        )
+                                                    ),
+                                                    disposition=(
+                                                        ExactConsolidationDisposition.ACKED
+                                                    ),
+                                                    origin=(
+                                                        ExactConsolidationResultOrigin.NEW
+                                                    ),
+                                                    mutation_state=(
+                                                        ExactConsolidationMutationState.COMMITTED
+                                                    ),
+                                                    ack_receipt=(exact_ack_receipt),
+                                                )
+                                        else:
+                                            # Ordinary consolidation retains its
+                                            # standalone compare-and-delete ACK.
+                                            acknowledged = (
+                                                await store.ack_claimed_queue_entry(
+                                                    db,
+                                                    entry_id=entry.id,
+                                                    claim_token=token,
+                                                    board_id=entry.board_id,
+                                                    source=_queue_source(entry),
+                                                    work_kind=_work_kind(entry),
+                                                    generation=_generation(entry),
+                                                    delete_event_id=(
+                                                        _delete_event_id(entry)
+                                                    ),
+                                                )
+                                            )
+                                if not acknowledged and (
+                                    deferred_session_ids or exact_protocol
+                                ):
                                     await store.rollback(db)
                                     raise _QueueClaimLostOrFenced(
                                         "queue_ack_lost_after_graph_commit "
@@ -2799,33 +4557,60 @@ class ConsolidationProcessor:
                                 artifact_type=entry.artifact_type,
                                 artifact_id=entry.artifact_id,
                                 work_kind=_work_kind(entry),
+                                source=_queue_source(entry),
                                 generation=_generation(entry),
                                 delete_event_id=_delete_event_id(entry),
                             ):
-                                await self._mark_failed(
-                                    db,
-                                    fresh,
-                                    error_text=_stale_reconcile_failure_error(
-                                        existing_error=fresh.last_error,
-                                        reconcile_details=(
-                                            stale_reconcile_telemetry
-                                        ),
-                                    ),
-                                    max_attempts=max_attempts,
+                                error_text = _stale_reconcile_failure_error(
+                                    existing_error=fresh.last_error,
+                                    reconcile_details=(stale_reconcile_telemetry),
                                 )
+                                if exact_protocol:
+                                    assert claim_scope is not None
+                                    pending_exact_disposition = await _persist_exact_disposition(
+                                        store,
+                                        db,
+                                        fresh,
+                                        claim_scope,
+                                        disposition=(
+                                            ExactConsolidationDisposition.TERMINAL_FAILURE
+                                        ),
+                                        mutation_state=(
+                                            ExactConsolidationMutationState.AMBIGUOUS
+                                        ),
+                                        error_code="consolidation_returned_false",
+                                        error_message=error_text,
+                                        next_retry_at=None,
+                                        diagnostic_json=None,
+                                        reservation_authority_probe=(
+                                            _exact_authority_valid
+                                        ),
+                                    )
+                                else:
+                                    await self._mark_failed(
+                                        db,
+                                        fresh,
+                                        error_text=error_text,
+                                        max_attempts=max_attempts,
+                                    )
 
                         if deferred_session_ids:
 
-                            async def _commit_and_finalize() -> None:
+                            def _record_relational_commit() -> None:
                                 nonlocal relational_commit_confirmed
+                                relational_commit_confirmed = True
+
+                            async def _commit_and_finalize() -> None:
                                 if graph_write_lease is not None:
                                     graph_write_lease.ensure_owned(
-                                        failure_phase=(
-                                            "before_relational_ack"
-                                        ),
+                                        failure_phase=("before_relational_ack"),
                                     )
-                                await store.commit(db)
-                                relational_commit_confirmed = True
+                                await _commit_batch_transaction(
+                                    store,
+                                    db,
+                                    phase="relational_ack",
+                                    committed_callback=_record_relational_commit,
+                                )
                                 for deferred_session_id in deferred_session_ids:
                                     await finalize_deferred_consolidation(
                                         deferred_session_id,
@@ -2833,9 +4618,7 @@ class ConsolidationProcessor:
                                     )
                                 if graph_write_lease is not None:
                                     graph_write_lease.ensure_owned(
-                                        failure_phase=(
-                                            "after_relational_ack"
-                                        ),
+                                        failure_phase=("after_relational_ack"),
                                     )
 
                             await run_cancellation_atomic(
@@ -2845,16 +4628,31 @@ class ConsolidationProcessor:
                                 ),
                             )
                         else:
+
+                            def _record_relational_commit() -> None:
+                                nonlocal relational_commit_confirmed
+                                relational_commit_confirmed = True
+
                             if graph_write_lease is not None:
                                 graph_write_lease.ensure_owned(
                                     failure_phase="before_relational_ack",
                                 )
-                            await store.commit(db)
+                            await _commit_batch_transaction(
+                                store,
+                                db,
+                                phase="relational_ack",
+                                committed_callback=_record_relational_commit,
+                            )
                             if graph_write_lease is not None:
                                 graph_write_lease.ensure_owned(
                                     failure_phase="after_relational_ack",
                                 )
                 except BaseException as processing_exc:
+                    endpoint_pending = bool(
+                        isinstance(processing_exc, KGPrimitiveError)
+                        and processing_exc.code
+                        == "relational_projection_endpoint_pending"
+                    )
                     if deferred_session_ids:
 
                         async def _settle_deferred_sessions() -> None:
@@ -2900,7 +4698,11 @@ class ConsolidationProcessor:
                                     "core.kg.consolidation_worker_deferred_cleanup"
                                 ),
                             )
+                            if not relational_commit_confirmed:
+                                precommit_compensation_confirmed = True
                         except BaseException:
+                            if relational_commit_confirmed:
+                                post_commit_cleanup_failed = True
                             logger.exception(
                                 "consolidation.deferred_cleanup_failed entry=%s "
                                 "relational_commit_confirmed=%s sessions=%s",
@@ -2912,6 +4714,7 @@ class ConsolidationProcessor:
                             if (
                                 not relational_commit_confirmed
                                 and graph_write_lease is not None
+                                and not endpoint_pending
                             ):
                                 try:
                                     await _ensure_board_graph_durable(
@@ -2922,9 +4725,7 @@ class ConsolidationProcessor:
                                             f"{','.join(deferred_session_ids)}"
                                         ),
                                         write_lease=graph_write_lease,
-                                        blocking_execution=(
-                                            self._blocking_execution
-                                        ),
+                                        blocking_execution=(self._blocking_execution),
                                         failure_timestamp=self._now(),
                                     )
                                 except BaseException as durability_exc:
@@ -2956,12 +4757,9 @@ class ConsolidationProcessor:
                                                 durability_exc
                                             ).__name__,
                                             "prior_durability_applied": (
-                                                graph_write_lease
-                                                .durability_applied
+                                                graph_write_lease.durability_applied
                                             ),
-                                            "compensation_durability_applied": (
-                                                False
-                                            ),
+                                            "compensation_durability_applied": (False),
                                             "write_may_be_applied": True,
                                         },
                                     )
@@ -2969,7 +4767,10 @@ class ConsolidationProcessor:
                 finally:
                     graph_write_stack.__exit__(*sys.exc_info())
 
-                if acknowledged and deferred_session_ids:
+                if pending_exact_disposition is not None:
+                    exact_rows.append(pending_exact_disposition)
+
+                if acknowledged and deferred_session_ids and not exact_protocol:
                     # Maintenance is best-effort and uses rollback internally.
                     # Isolate it from the already-durable cognitive ledger,
                     # consolidation audit/outbox and queue ACK.
@@ -2992,7 +4793,12 @@ class ConsolidationProcessor:
                             entry.artifact_id,
                         )
                 if acknowledged:
-                    if delivery_transfer is not None:
+                    if not exact_protocol:
+                        _observe_spec_dependency_projection_lag_after_ack(
+                            entry,
+                            projected_at=self._now(),
+                        )
+                    if delivery_transfer is not None and not exact_protocol:
                         receipt, circuit_reason = delivery_transfer
                         _log_stale_reconcile_delivery_transfer(
                             entry,
@@ -3000,12 +4806,80 @@ class ConsolidationProcessor:
                             circuit_reason=circuit_reason,
                         )
                     processed += 1
+                    if exact_protocol:
+                        assert claim_scope is not None
+                        if pending_exact_ack_row is None:
+                            raise RuntimeError(
+                                "exact_consolidation_ack_receipt_missing"
+                            )
+                        exact_rows.append(pending_exact_ack_row)
             except _QueueClaimLostOrFenced as exc:
                 logger.info(
                     "consolidation.claim_lost_or_fenced entry=%s reason=%s",
                     entry.id,
                     exc,
                 )
+                if exact_protocol:
+                    assert claim_scope is not None
+                    if (
+                        isinstance(exc, _ExactAuthorityLostAfterCommit)
+                        and relational_commit_confirmed
+                    ):
+                        if post_commit_cleanup_failed:
+                            raise _post_commit_blocker(
+                                "exact_consolidation_post_commit_finalization_failed"
+                            ) from exc
+                        if acknowledged:
+                            if pending_exact_ack_row is None:
+                                raise RuntimeError(
+                                    "exact_consolidation_ack_receipt_missing"
+                                )
+                            exact_rows.append(pending_exact_ack_row)
+                        elif pending_exact_disposition is not None:
+                            exact_rows.append(pending_exact_disposition)
+                        else:
+                            raise RuntimeError(
+                                "exact_consolidation_committed_outcome_missing"
+                            ) from exc
+                        continue
+                try:
+                    async with self.relational_scope_factory() as db:
+                        store = get_consolidation_persistence_port()
+                        if not exact_protocol or _exact_authority_valid():
+                            await _repend_exact_claim(store, db, entry)
+                            await _commit_batch_transaction(
+                                store,
+                                db,
+                                phase="claim_loss_repend",
+                            )
+                        else:
+                            await store.rollback(db)
+                except Exception:
+                    logger.exception(
+                        "consolidation.claim_repend_failed entry=%s",
+                        entry.id,
+                    )
+                if exact_protocol:
+                    assert claim_scope is not None
+                    exact_rows.append(
+                        _exact_row_result(
+                            entry,
+                            claim_scope,
+                            attempt_ordinal=_exact_disposition_attempt(entry),
+                            disposition=(
+                                ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                            ),
+                            origin=ExactConsolidationResultOrigin.NEW,
+                            mutation_state=(
+                                ExactConsolidationMutationState.AMBIGUOUS
+                                if deferred_session_ids
+                                and not precommit_compensation_confirmed
+                                else ExactConsolidationMutationState.UNCHANGED
+                            ),
+                            error_code="queue_claim_lost_or_fenced",
+                            error_message=str(exc)[:480],
+                        )
+                    )
             except StaleSweepClaimConflict as exc:
                 logger.info(
                     "consolidation.stale_sweep_claim_lost entry=%s reason=%s",
@@ -3020,10 +4894,35 @@ class ConsolidationProcessor:
                     exc,
                     exc_info=True,
                 )
+                if exact_protocol and relational_commit_confirmed:
+                    assert claim_scope is not None
+                    if post_commit_cleanup_failed:
+                        raise _post_commit_blocker(
+                            "exact_consolidation_post_commit_finalization_failed"
+                        ) from exc
+                    if acknowledged:
+                        if pending_exact_ack_row is None:
+                            raise RuntimeError(
+                                "exact_consolidation_ack_receipt_missing"
+                            )
+                        exact_rows.append(pending_exact_ack_row)
+                    elif pending_exact_disposition is not None:
+                        exact_rows.append(pending_exact_disposition)
+                    else:
+                        raise _post_commit_blocker(
+                            "exact_consolidation_post_commit_outcome_missing"
+                        ) from exc
+                    continue
                 try:
                     async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
                         fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                        if exact_protocol and fresh is not None:
+                            assert claim_scope is not None
+                            fresh = _snapshot_exact_queue_record(
+                                fresh,
+                                claim_scope,
+                            )
                         token = _claim_token(entry)
                         claim_is_current = bool(
                             fresh is not None
@@ -3037,20 +4936,190 @@ class ConsolidationProcessor:
                                 artifact_type=entry.artifact_type,
                                 artifact_id=entry.artifact_id,
                                 work_kind=_work_kind(entry),
+                                source=_queue_source(entry),
                                 generation=_generation(entry),
                                 delete_event_id=_delete_event_id(entry),
                             )
                         )
+                        persisted_exact_disposition: (
+                            ExactConsolidationRowResult | None
+                        ) = None
                         if claim_is_current and fresh is not None:
+                            if not await _claim_admitted_by_current_reservation(
+                                store,
+                                db,
+                                entry,
+                            ):
+                                if not exact_protocol or _exact_authority_valid():
+                                    await _repend_exact_claim(store, db, entry)
+                                    await _commit_batch_transaction(
+                                        store,
+                                        db,
+                                        phase="failure_reservation_loss_repend",
+                                    )
+                                else:
+                                    await store.rollback(db)
+                                if exact_protocol:
+                                    assert claim_scope is not None
+                                    exact_rows.append(
+                                        _exact_row_result(
+                                            entry,
+                                            claim_scope,
+                                            attempt_ordinal=(
+                                                _exact_disposition_attempt(entry)
+                                            ),
+                                            disposition=(
+                                                ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                            ),
+                                            origin=(ExactConsolidationResultOrigin.NEW),
+                                            mutation_state=(
+                                                ExactConsolidationMutationState.AMBIGUOUS
+                                                if not precommit_compensation_confirmed
+                                                else ExactConsolidationMutationState.UNCHANGED
+                                            ),
+                                            error_code=(
+                                                "administrative_reservation_lost"
+                                            ),
+                                            error_message=(
+                                                "Exact rebuild reservation was "
+                                                "lost while persisting failure."
+                                                + (
+                                                    f" primary={exc.code}"
+                                                    if isinstance(
+                                                        exc,
+                                                        ExactConsolidationAckIntegrityError,
+                                                    )
+                                                    else ""
+                                                )
+                                            ),
+                                            diagnostic_json=(
+                                                _exact_failure_diagnostic(exc)
+                                            ),
+                                        )
+                                    )
+                                continue
                             error_text = (
                                 f"{exc.code}:{str(exc)[:480]}"
-                                if isinstance(exc, GraphError)
+                                if isinstance(
+                                    exc,
+                                    (
+                                        GraphError,
+                                        KGPrimitiveError,
+                                        ExactConsolidationAckIntegrityError,
+                                    ),
+                                )
                                 else f"{type(exc).__name__}: {str(exc)[:480]}"
                             )
                             retry_after_s = graph_memory_pressure_retry_after_seconds(
                                 exc
                             )
-                            if retry_after_s is not None:
+                            if exact_protocol:
+                                assert claim_scope is not None
+                                error_code = (
+                                    str(exc.code)
+                                    if isinstance(
+                                        exc,
+                                        (
+                                            GraphError,
+                                            KGPrimitiveError,
+                                            ExactConsolidationAckIntegrityError,
+                                        ),
+                                    )
+                                    else type(exc).__name__
+                                )
+                                error_message = str(exc)[:480] or error_code
+                                pre_acquire_contention = bool(
+                                    isinstance(exc, GuardedWriteError)
+                                    and exc.code == "lock_contention"
+                                    and exc.retryable
+                                    and not graph_write_entered
+                                    and graph_write_lease is None
+                                    and not relational_commit_confirmed
+                                    and (
+                                        not deferred_session_ids
+                                        or precommit_compensation_confirmed
+                                    )
+                                )
+                                if pre_acquire_contention:
+                                    disposition = (
+                                        ExactConsolidationDisposition.RETRY_SCHEDULED
+                                    )
+                                    mutation_state = (
+                                        ExactConsolidationMutationState.UNCHANGED
+                                    )
+                                    error_code = "guarded_write_lock_contention"
+                                    next_retry_at = self._now() + timedelta(seconds=1)
+                                elif (
+                                    isinstance(exc, KGPrimitiveError)
+                                    and exc.code
+                                    == "relational_projection_endpoint_pending"
+                                ):
+                                    disposition = (
+                                        ExactConsolidationDisposition.RETRY_SCHEDULED
+                                    )
+                                    mutation_state = (
+                                        ExactConsolidationMutationState.UNCHANGED
+                                    )
+                                    next_retry_at = self._now() + timedelta(
+                                        seconds=(
+                                            _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS
+                                        )
+                                    )
+                                else:
+                                    disposition = (
+                                        ExactConsolidationDisposition.TERMINAL_FAILURE
+                                    )
+                                    if isinstance(
+                                        exc,
+                                        ExactConsolidationAckIntegrityError,
+                                    ):
+                                        mutation_state = (
+                                            ExactConsolidationMutationState.UNCHANGED
+                                            if not deferred_session_ids
+                                            or precommit_compensation_confirmed
+                                            else ExactConsolidationMutationState.AMBIGUOUS
+                                        )
+                                    elif (
+                                        isinstance(exc, KGPrimitiveError)
+                                        and exc.code == CONNECTIVITY_ERROR_CODE
+                                    ):
+                                        mutation_state = (
+                                            ExactConsolidationMutationState.UNCHANGED
+                                        )
+                                    else:
+                                        mutation_state = (
+                                            ExactConsolidationMutationState.AMBIGUOUS
+                                        )
+                                    next_retry_at = None
+                                persisted_exact_disposition = (
+                                    await _persist_exact_disposition(
+                                        store,
+                                        db,
+                                        fresh,
+                                        claim_scope,
+                                        disposition=disposition,
+                                        mutation_state=mutation_state,
+                                        error_code=error_code,
+                                        error_message=error_message,
+                                        next_retry_at=next_retry_at,
+                                        diagnostic_json=(
+                                            _exact_failure_diagnostic(exc)
+                                        ),
+                                        reservation_authority_probe=(
+                                            _exact_authority_valid
+                                        ),
+                                    )
+                                )
+                            elif (
+                                isinstance(exc, KGPrimitiveError)
+                                and exc.code == "relational_projection_endpoint_pending"
+                            ):
+                                await self._defer_relational_projection_endpoint(
+                                    db,
+                                    fresh,
+                                    error_text=error_text,
+                                )
+                            elif retry_after_s is not None:
                                 await self._defer_graph_memory_pressure(
                                     db,
                                     fresh,
@@ -3064,11 +5133,167 @@ class ConsolidationProcessor:
                                     error_text=error_text,
                                     max_attempts=max_attempts,
                                 )
-                        await store.commit(db)
+                        elif exact_protocol:
+                            assert claim_scope is not None
+                            persisted_exact_disposition = _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                disposition=(
+                                    ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                ),
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.AMBIGUOUS
+                                    if not precommit_compensation_confirmed
+                                    else ExactConsolidationMutationState.UNCHANGED
+                                ),
+                                error_code=(
+                                    "queue_row_missing_after_exception"
+                                    if fresh is None
+                                    else "queue_claim_changed_after_exception"
+                                ),
+                                error_message=(
+                                    "The exact queue identity was no longer "
+                                    "owned while classifying a processing error."
+                                    + (
+                                        f" primary={exc.code}"
+                                        if isinstance(
+                                            exc,
+                                            ExactConsolidationAckIntegrityError,
+                                        )
+                                        else ""
+                                    )
+                                ),
+                                diagnostic_json=_exact_failure_diagnostic(exc),
+                            )
+                        await _commit_batch_transaction(
+                            store,
+                            db,
+                            phase="failure_disposition",
+                        )
+                        if persisted_exact_disposition is not None:
+                            exact_rows.append(persisted_exact_disposition)
+                except _ExactAuthorityLostAfterCommit as disposition_loss:
+                    if exact_protocol and persisted_exact_disposition is not None:
+                        exact_rows.append(persisted_exact_disposition)
+                    elif exact_protocol:
+                        assert claim_scope is not None
+                        exact_rows.append(
+                            _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                disposition=(
+                                    ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                ),
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.AMBIGUOUS
+                                    if not precommit_compensation_confirmed
+                                    else ExactConsolidationMutationState.UNCHANGED
+                                ),
+                                error_code="queue_claim_lost_or_fenced",
+                                error_message=(
+                                    f"{str(disposition_loss)[:360]} primary="
+                                    f"{disposition_loss.primary_error_code[:96]}"
+                                    if disposition_loss.primary_error_code is not None
+                                    else str(disposition_loss)[:480]
+                                ),
+                                diagnostic_json=(
+                                    disposition_loss.primary_diagnostic_json
+                                ),
+                            )
+                        )
+                except _QueueClaimLostOrFenced as disposition_loss:
+                    if exact_protocol:
+                        assert claim_scope is not None
+                        exact_rows.append(
+                            _exact_row_result(
+                                entry,
+                                claim_scope,
+                                attempt_ordinal=(_exact_disposition_attempt(entry)),
+                                disposition=(
+                                    ExactConsolidationDisposition.NEUTRAL_FENCE_LOSS
+                                ),
+                                origin=ExactConsolidationResultOrigin.NEW,
+                                mutation_state=(
+                                    ExactConsolidationMutationState.AMBIGUOUS
+                                    if not precommit_compensation_confirmed
+                                    else ExactConsolidationMutationState.UNCHANGED
+                                ),
+                                error_code="queue_claim_lost_or_fenced",
+                                error_message=(
+                                    f"{str(disposition_loss)[:360]} primary="
+                                    f"{disposition_loss.primary_error_code[:96]}"
+                                    if disposition_loss.primary_error_code is not None
+                                    else str(disposition_loss)[:480]
+                                ),
+                                diagnostic_json=(
+                                    disposition_loss.primary_diagnostic_json
+                                ),
+                            )
+                        )
                 except Exception:
-                    pass
+                    if exact_protocol:
+                        raise
 
+        if exact_protocol:
+            assert claim_scope is not None
+            result = ExactConsolidationBatchResult(
+                claim_scope=claim_scope,
+                rows=tuple(exact_rows),
+            )
+            if result.new_attempt_count != self._last_attempted_count:
+                raise RuntimeError("exact_consolidation_batch_totality_invalid")
+            return result
         return processed
+
+    async def _defer_relational_projection_endpoint(
+        self,
+        db: Any,
+        entry: ConsolidationQueueRecord,
+        *,
+        error_text: str,
+    ) -> None:
+        """Yield a target-first projection without spending retry budget.
+
+        A short readiness delay lets another pending row for the same board
+        materialize the prerequisite root on the next worker pass.  This is a
+        convergence wait, not a failed delivery and therefore cannot enter
+        the dead-letter queue.
+        """
+
+        entry.last_error = error_text
+        entry.status = "pending"
+        entry.next_retry_at = self._now() + timedelta(
+            seconds=_DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS
+        )
+        entry.claim_timeout_at = None
+        entry.worker_id = None
+        entry.claimed_at = None
+        entry.claimed_by_session_id = None
+        entry.claim_token = None
+        await get_consolidation_persistence_port().save_queue_entries(
+            db,
+            (entry,),
+        )
+        logger.info(
+            "consolidation.dependency_endpoint_deferred "
+            "artifact=%s:%s attempts=%d retry_after_s=%d",
+            entry.artifact_type,
+            entry.artifact_id,
+            int(entry.attempts or 0),
+            _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS,
+            extra={
+                "event": "consolidation.dependency_endpoint_deferred",
+                "board_id": entry.board_id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "attempts": int(entry.attempts or 0),
+                "retry_after_s": _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS,
+            },
+        )
 
     async def _defer_graph_memory_pressure(
         self,
@@ -3365,6 +5590,17 @@ class ConsolidationProcessor:
         now = self._now()
 
         try:
+            from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+
+            dlq_writer_lock = KGSingleWriterLock()
+            bind_write_lock_port = getattr(
+                dlq_writer_lock,
+                "bind_write_lock_port",
+                None,
+            )
+            if callable(bind_write_lock_port):
+                bind_write_lock_port()
+
             async with self.relational_scope_factory() as db:
                 enabled_board_ids = await get_consolidation_persistence_port().list_dlq_auto_drain_board_ids(
                     db
@@ -3378,74 +5614,151 @@ class ConsolidationProcessor:
                     if elapsed < backoff_s:
                         continue  # AC11: still within backoff window
 
-                # Check if the board actually has DLQ rows
-                async with self.relational_scope_factory() as db:
-                    dlq_count = (
-                        await get_consolidation_persistence_port().count_dead_letters(
+                acquisition = dlq_writer_lock.acquire(
+                    board_id=board_id,
+                    operation="kg_dlq_auto_drain",
+                    owner_id=f"{AGENT_ID}:dlq_auto_drain",
+                    ttl_seconds=_DLQ_WRITER_TTL_SECONDS,
+                )
+                if not acquisition.acquired or not acquisition.owner_token:
+                    continue
+                heartbeat: _ConsolidationWriterHeartbeat | None = None
+                try:
+                    heartbeat = _ConsolidationWriterHeartbeat(
+                        dlq_writer_lock,
+                        board_id=board_id,
+                        owner_token=acquisition.owner_token,
+                    )
+                    heartbeat.start()
+                    heartbeat.ensure_owned()
+                    # Linearize admission with rebuild's reservation→writer
+                    # order. A rebuild that reserves after this recheck waits
+                    # for the complete DLQ transaction; one that reserved
+                    # before it makes this worker skip without mutation.
+                    async with self.relational_scope_factory() as db:
+                        store = get_consolidation_persistence_port()
+                        reservation_reader = getattr(
+                            store,
+                            "board_administrative_rebuild_source",
+                            None,
+                        )
+                        if not callable(reservation_reader):
+                            logger.warning(
+                                "kg.dlq.auto_drain.reservation_reader_missing "
+                                "board_id=%s",
+                                board_id,
+                            )
+                            continue
+                        try:
+                            reserved_source = await reservation_reader(
+                                db,
+                                board_id=board_id,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "kg.dlq.auto_drain.reservation_probe_failed "
+                                "board_id=%s",
+                                board_id,
+                            )
+                            continue
+                        if reserved_source is not None:
+                            continue
+                        dlq_count = await store.count_dead_letters(
                             db,
                             board_id=board_id,
                         )
-                    )
 
-                if dlq_count == 0:
-                    continue
+                    if dlq_count == 0:
+                        continue
 
-                # Poison-pill exclusion: remove rows at or beyond max attempts
-                # before passing them to the requeue path (so they don't just
-                # cycle back to DLQ again immediately).
-                skipped_poison: list[str] = []
-                async with self.relational_scope_factory() as db:
-                    store = get_consolidation_persistence_port()
-                    poison_rows = await store.delete_poison_dead_letters(
-                        db,
-                        board_id=board_id,
-                        max_attempts=max_attempts,
-                    )
-                    for row in poison_rows:
-                        skipped_poison.append(row.id)
-                        logger.warning(
-                            "kg.dlq.auto_drain.poison_pill_excluded "
-                            "board_id=%s dlq_id=%s attempts=%d max=%d",
-                            board_id,
-                            row.id,
-                            row.attempts,
-                            max_attempts,
-                            extra={
-                                "event": "kg.dlq.auto_drain.poison_pill_excluded",
-                                "board_id": board_id,
-                                "dlq_id": row.id,
-                                "attempts": row.attempts,
-                                "max_requeue_attempts": max_attempts,
-                            },
+                    # Poison-pill exclusion: remove rows at or beyond max
+                    # attempts before passing them to the requeue path.
+                    skipped_poison: list[str] = []
+                    async with self.relational_scope_factory() as db:
+                        store = get_consolidation_persistence_port()
+                        heartbeat.ensure_owned()
+                        poison_rows = await store.delete_poison_dead_letters(
+                            db,
+                            board_id=board_id,
+                            max_attempts=max_attempts,
                         )
-                    if poison_rows:
-                        await store.commit(db)
+                        for row in poison_rows:
+                            skipped_poison.append(row.id)
+                            logger.warning(
+                                "kg.dlq.auto_drain.poison_pill_excluded "
+                                "board_id=%s dlq_id=%s attempts=%d max=%d",
+                                board_id,
+                                row.id,
+                                row.attempts,
+                                max_attempts,
+                                extra={
+                                    "event": ("kg.dlq.auto_drain.poison_pill_excluded"),
+                                    "board_id": board_id,
+                                    "dlq_id": row.id,
+                                    "attempts": row.attempts,
+                                    "max_requeue_attempts": max_attempts,
+                                },
+                            )
+                        if poison_rows:
+                            heartbeat.ensure_owned()
+                            await store.commit(db)
 
-                # Reprocess the remaining (non-poison) rows
-                async with self.relational_scope_factory() as db:
-                    result = await reprocess_dead_letter_rows(db, board_id, limit=50)
-                    await get_consolidation_persistence_port().commit(db)
+                    # Reprocess the remaining (non-poison) rows while the same
+                    # writer fence remains held.
+                    async with self.relational_scope_factory() as db:
+                        heartbeat.ensure_owned()
+                        result = await reprocess_dead_letter_rows(
+                            db,
+                            board_id,
+                            limit=50,
+                        )
+                        heartbeat.ensure_owned()
+                        await get_consolidation_persistence_port().commit(db)
 
-                requeued_count: int = result.get("requeued_count", 0)
-                already_queued_count: int = result.get("already_queued_count", 0)
+                    requeued_count: int = result.get("requeued_count", 0)
+                    already_queued_count: int = result.get(
+                        "already_queued_count",
+                        0,
+                    )
 
-                self._dlq_drain_last_run[board_id] = now
-                self._dlq_drain_last_requeued[board_id] = requeued_count
+                    self._dlq_drain_last_run[board_id] = now
+                    self._dlq_drain_last_requeued[board_id] = requeued_count
 
-                logger.info(
-                    "kg.dlq.auto_drain board_id=%s requeued=%d already_queued=%d skipped=%d",
-                    board_id,
-                    requeued_count,
-                    already_queued_count,
-                    len(skipped_poison),
-                    extra={
-                        "event": "kg.dlq.auto_drain",
-                        "board_id": board_id,
-                        "requeued": requeued_count,
-                        "already_queued": already_queued_count,
-                        "skipped": len(skipped_poison),
-                    },
-                )
+                    logger.info(
+                        "kg.dlq.auto_drain board_id=%s requeued=%d "
+                        "already_queued=%d skipped=%d",
+                        board_id,
+                        requeued_count,
+                        already_queued_count,
+                        len(skipped_poison),
+                        extra={
+                            "event": "kg.dlq.auto_drain",
+                            "board_id": board_id,
+                            "requeued": requeued_count,
+                            "already_queued": already_queued_count,
+                            "skipped": len(skipped_poison),
+                        },
+                    )
+                finally:
+                    if heartbeat is not None:
+                        try:
+                            heartbeat.stop()
+                        except BaseException:
+                            logger.exception(
+                                "kg.dlq.auto_drain.writer_heartbeat_stop_failed "
+                                "board=%s",
+                                board_id,
+                            )
+                    try:
+                        dlq_writer_lock.release(
+                            board_id=board_id,
+                            owner_token=acquisition.owner_token,
+                        )
+                    except BaseException:
+                        logger.exception(
+                            "kg.dlq.auto_drain.writer_release_failed board=%s",
+                            board_id,
+                        )
 
         except Exception as exc:
             logger.warning(

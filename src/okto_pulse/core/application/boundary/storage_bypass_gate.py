@@ -104,6 +104,33 @@ STORAGE_BYPASS_OCCURRENCE_ALLOWLIST: dict[str, dict[str, str]] = {
             "Move checked-in tool-manifest verification to an external build command."
         ),
     },
+    "b847ee5b71a22a04e560a3dbbb36ef2f035f66285c5461d82b85f26cd226714e": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time policy-resource writer; not runtime content ingestion."
+        ),
+        "removal_criteria": (
+            "Move semantic-assessment resource regeneration to an external build command."
+        ),
+    },
+    "df200393adac8936ad0f0ffd07d6920b0016c2819ab0b86868ab8f8c492f14dd": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time semantic-assessment example writer; not runtime content ingestion."
+        ),
+        "removal_criteria": (
+            "Move semantic-assessment example regeneration to an external build command."
+        ),
+    },
+    "4e495b4f757781df7be2c0184a30e1b141ea0f081277d0765304f3d3f317a2e5": {
+        "owner": "core-mcp-tooling",
+        "reason": (
+            "Build-time policy-resource reader; not runtime content ingestion."
+        ),
+        "removal_criteria": (
+            "Move semantic-assessment resource regeneration to an external build command."
+        ),
+    },
 }
 
 

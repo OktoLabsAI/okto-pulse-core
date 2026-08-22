@@ -15,7 +15,7 @@ version: "1.0"
 - `card_type="normal"` → spec must be in `approved`, `in_progress`, or `done`
 - Goes through the standard validation gate when `validation_config.required == true`
 - Requires conclusion, completeness, and drift when moving to `validation` or `done`
-- Transition: `not_started` → `started` → `in_progress` → `validation` → `done`
+- Transition: `not_started` → `started` → `in_progress` → `validation` → `done`; an admitted failed completion internally enters `rejected`, whose sole exit is `in_progress`
 
 ## Test Card Rules
 

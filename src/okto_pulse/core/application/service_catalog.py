@@ -9,10 +9,24 @@ from __future__ import annotations
 
 from functools import cached_property
 
+from okto_pulse.core.ports.traceability import (
+    LineageGraphDependencyScope,
+    LineageGraphView,
+    TraceabilityReadError,
+    validate_lineage_graph_dependency_scope,
+    validate_lineage_graph_view,
+)
+
 
 class CoreAnalyticsOperations:
-    def __init__(self, relational_context: object) -> None:
+    def __init__(
+        self,
+        relational_context: object,
+        *,
+        code_traceability_read: object | None = None,
+    ) -> None:
         self.__relational_context = relational_context
+        self.__code_traceability_read = code_traceability_read
 
     async def board_is_owned_by(self, board_id: str, user_id: str) -> bool:
         from okto_pulse.core.services.analytics_service import board_is_owned_by
@@ -27,12 +41,20 @@ class CoreAnalyticsOperations:
         filter_type: str | None = None,
     ):  # noqa: ANN201
         from okto_pulse.core.services.analytics_service import compute_blockers
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
 
         return await compute_blockers(
             self.__relational_context,
             board_id,
             stale_hours=stale_hours,
             filter_type=filter_type,
+            spec_dependency_persistence=(
+                require_relational_application_adapter().spec_dependencies(
+                    self.__relational_context
+                )
+            ),
         )
 
     async def mcp_board_analytics(
@@ -53,6 +75,272 @@ class CoreAnalyticsOperations:
             metric_type=metric_type,
             dt_from=dt_from,
             dt_to=dt_to,
+        )
+
+    async def board_kg(
+        self,
+        *,
+        query,
+        as_of,
+        population_scope,
+        exclusions,
+    ):  # noqa: ANN001, ANN201
+        from okto_pulse.core.ports.board_kg_analytics import BoardKgAnalyticsQuery
+
+        if isinstance(query, BoardKgAnalyticsQuery):
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.board_kg_analytics import (
+                BoardKgEffectivenessService,
+            )
+
+            evidence = require_relational_application_adapter().board_kg_analytics_read(
+                self.__relational_context
+            )
+            return await BoardKgEffectivenessService.project(
+                self.__relational_context,
+                query=query,
+                evidence_port=evidence,
+            )
+        from okto_pulse.core.services.board_kg_analytics import (
+            BoardKgAnalyticsService,
+        )
+
+        return await BoardKgAnalyticsService.project_from_public_services(
+            self.__relational_context,
+            query=query,
+            as_of=as_of,
+            population_scope=population_scope,
+            exclusions=exclusions,
+        )
+
+    async def delivery_forecast(self, *, query):  # noqa: ANN001, ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.delivery_forecast import (
+            DeliveryForecastService,
+        )
+
+        evidence = require_relational_application_adapter().delivery_forecast_read(
+            self.__relational_context
+        )
+        return await DeliveryForecastService.project(
+            self.__relational_context,
+            query=query,
+            evidence_port=evidence,
+        )
+
+    async def delivery_intelligence(
+        self,
+        *,
+        query,
+        actor_id,
+        operator_visibility,
+        cursor_offset,
+        limit,
+        minimum_sample_size,
+    ):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import (
+            compute_delivery_intelligence,
+        )
+
+        return await compute_delivery_intelligence(
+            self.__relational_context,
+            query=query,
+            actor_id=actor_id,
+            operator_visibility=operator_visibility,
+            cursor_offset=cursor_offset,
+            limit=limit,
+            minimum_sample_size=minimum_sample_size,
+        )
+
+    async def canonical_coverage(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.domain.code_traceability import (
+            CodeTraceabilityProjectionProfile,
+            CodeTraceabilitySubjectType,
+        )
+        from okto_pulse.core.ports.code_traceability import (
+            CodeTraceabilityProjectionQuery,
+        )
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.coverage_traceability_read_model import (
+            build_coverage_traceability_projection,
+        )
+
+        boards = await _analytics_list(
+            self.__relational_context,
+            "board",
+            filters=(_af("id", "eq", query.board_id),),
+            limit=2,
+        )
+        if len(boards) != 1:
+            raise ValueError("coverage_traceability_board_authority_invalid")
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("archived", "is_false"),
+            ),
+        )
+        cards = await _analytics_list(
+            self.__relational_context,
+            "card",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        contexts = None
+        if self.__code_traceability_read is not None:
+            contexts = tuple(
+                [
+                    await self.__code_traceability_read.spec_context(
+                        CodeTraceabilityProjectionQuery(
+                            board_id=query.board_id,
+                            subject_type=CodeTraceabilitySubjectType.SPEC,
+                            subject_id=str(spec.id),
+                            subject_version=int(getattr(spec, "version", 1)),
+                            profile=CodeTraceabilityProjectionProfile.SUMMARY,
+                        )
+                    )
+                    for spec in specs
+                ]
+            )
+        return build_coverage_traceability_projection(
+            query=query,
+            as_of=as_of,
+            board=boards[0],
+            specs=specs,
+            cards=cards,
+            code_traceability_contexts=contexts,
+        )
+
+    async def canonical_flow_health(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.coverage_traceability_read_model import (
+            build_coverage_traceability_projection,
+        )
+        from okto_pulse.core.services.flow_health_read_model import (
+            build_flow_health_projection,
+        )
+
+        boards = await _analytics_list(
+            self.__relational_context,
+            "board",
+            filters=(_af("id", "eq", query.board_id),),
+            limit=2,
+        )
+        if len(boards) != 1:
+            raise ValueError("flow_health_board_authority_invalid")
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        cards = await _analytics_list(
+            self.__relational_context,
+            "card",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        events = await _analytics_list(
+            self.__relational_context,
+            "domain_event",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af(
+                    "event_type",
+                    "in",
+                    (
+                        "card.created",
+                        "card.moved",
+                        "card.completion_rejected",
+                        "spec.created",
+                        "spec.moved",
+                    ),
+                ),
+                _af("occurred_at", "lte", as_of),
+            ),
+            order_by="occurred_at",
+        )
+        coverage = build_coverage_traceability_projection(
+            query=query,
+            as_of=as_of,
+            board=boards[0],
+            specs=tuple(spec for spec in specs if not spec.archived),
+            cards=cards,
+        )
+        return build_flow_health_projection(
+            query=query,
+            as_of=as_of,
+            board=boards[0],
+            specs=specs,
+            cards=cards,
+            domain_events=events,
+            coverage=coverage,
+        )
+
+    async def canonical_spec_readiness(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.spec_readiness_read_model import (
+            build_spec_readiness_projection,
+        )
+
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("archived", "is_false"),
+            ),
+        )
+        return build_spec_readiness_projection(query=query, as_of=as_of, specs=specs)
+
+    async def canonical_policy_resource_readiness(self, *, query, as_of):  # noqa: ANN001, ANN201
+        from okto_pulse.core.services.analytics_service import _af, _analytics_list
+        from okto_pulse.core.services.policy_resource_readiness_read_model import (
+            build_policy_resource_readiness_projection,
+        )
+
+        specs = await _analytics_list(
+            self.__relational_context,
+            "spec",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("archived", "is_false"),
+            ),
+        )
+        spec_ids = tuple(str(spec.id) for spec in specs)
+        cards = await _analytics_list(
+            self.__relational_context,
+            "card",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        designs = await _analytics_list(
+            self.__relational_context,
+            "architecture_design",
+            filters=(_af("board_id", "eq", query.board_id),),
+        )
+        knowledge = await _analytics_list(
+            self.__relational_context,
+            "spec_knowledge_base",
+            filters=(_af("spec_id", "in", spec_ids),),
+        )
+        not_applicable = await _analytics_list(
+            self.__relational_context,
+            "resource_not_applicable",
+            filters=(
+                _af("board_id", "eq", query.board_id),
+                _af("active", "is_true"),
+            ),
+        )
+        return build_policy_resource_readiness_projection(
+            query=query,
+            as_of=as_of,
+            specs=specs,
+            cards=cards,
+            architecture_designs=designs,
+            spec_knowledge_bases=knowledge,
+            not_applicable=not_applicable,
         )
 
     async def funnel(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
@@ -117,9 +405,7 @@ class CoreAnalyticsOperations:
             dt_to=dt_to,
         )
 
-    async def validations(
-        self, board_id: str, *, dt_from, dt_to
-    ):  # noqa: ANN001, ANN201
+    async def validations(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_validations
 
         return await compute_validations(
@@ -199,9 +485,7 @@ class CoreAnalyticsOperations:
             search,
         )
 
-    async def entity_detail(
-        self, entity_type: str, board_id: str, entity_id: str
-    ):  # noqa: ANN201
+    async def entity_detail(self, entity_type: str, board_id: str, entity_id: str):  # noqa: ANN201
         from okto_pulse.core.services.analytics_service import (
             _card_detail,
             _ideation_detail,
@@ -291,7 +575,10 @@ class CoreApplicationServiceCatalog:
 
     @cached_property
     def analytics(self) -> CoreAnalyticsOperations:
-        return CoreAnalyticsOperations(self.__relational_context)
+        return CoreAnalyticsOperations(
+            self.__relational_context,
+            code_traceability_read=self.code_traceability_read,
+        )
 
     @cached_property
     def amendments(self):  # noqa: ANN201
@@ -356,6 +643,36 @@ class CoreApplicationServiceCatalog:
         from okto_pulse.core.services.main import CommentService
 
         return CommentService(self.__relational_context)
+
+    @cached_property
+    def code_investigations(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().code_investigations(
+            self.__relational_context
+        )
+
+    @cached_property
+    def code_traceability(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().code_traceability(
+            self.__relational_context
+        )
+
+    @cached_property
+    def code_traceability_read(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        return require_relational_application_adapter().code_traceability_read(
+            self.__relational_context
+        )
 
     @cached_property
     def entity_pages(self):  # noqa: ANN201
@@ -455,9 +772,8 @@ class CoreApplicationServiceCatalog:
             require_relational_application_adapter,
         )
 
-        return (
-            require_relational_application_adapter()
-            .quality_assessment_lifecycle(self.__relational_context)
+        return require_relational_application_adapter().quality_assessment_lifecycle(
+            self.__relational_context
         )
 
     @cached_property
@@ -468,6 +784,21 @@ class CoreApplicationServiceCatalog:
 
         return require_relational_application_adapter().checklists(
             self.__relational_context
+        )
+
+    @cached_property
+    def spec_dependencies(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+        from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+        persistence = require_relational_application_adapter().spec_dependencies(
+            self.__relational_context,
+        )
+        return SpecDependencyService(
+            persistence,
+            self.__relational_context,
         )
 
     @cached_property
@@ -560,9 +891,7 @@ class CoreApplicationServiceCatalog:
 
         return StructuredSpecEntityService(self.__relational_context)
 
-    async def resolve_user_permissions(
-        self, user_id: str, board_id: str
-    ):  # noqa: ANN201
+    async def resolve_user_permissions(self, user_id: str, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.main import resolve_user_permissions
 
         return await resolve_user_permissions(
@@ -882,9 +1211,36 @@ class CoreApplicationServiceCatalog:
         entity_type: str,
         entity_id: str,
         include_artifacts: bool,
+        view: LineageGraphView = "lineage",
+        dependency_scope: LineageGraphDependencyScope = "selected",
     ):  # noqa: ANN201
         from okto_pulse.core.services.traceability import build_lineage_graph
 
+        normalized_view = validate_lineage_graph_view(view)
+        normalized_dependency_scope = validate_lineage_graph_dependency_scope(
+            dependency_scope
+        )
+        if normalized_view != "dependency" and normalized_dependency_scope != "selected":
+            raise TraceabilityReadError(
+                "dependency_scope_requires_dependency_view",
+                "Lineage dependency scope is available only for dependency view.",
+                status_code=400,
+            )
+        if normalized_view == "dependency":
+            dependency_kwargs = (
+                {"dependency_scope": normalized_dependency_scope}
+                if normalized_dependency_scope != "selected"
+                else {}
+            )
+            return await build_lineage_graph(
+                self.__relational_context,
+                board_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                include_artifacts=include_artifacts,
+                view=normalized_view,
+                **dependency_kwargs,
+            )
         return await build_lineage_graph(
             self.__relational_context,
             board_id,
@@ -1038,9 +1394,7 @@ class CoreApplicationServiceCatalog:
             template_id=template_id,
         )
 
-    async def resolve_active_default_board_template(
-        self, scope: str
-    ):  # noqa: ANN201
+    async def resolve_active_default_board_template(self, scope: str):  # noqa: ANN201
         from okto_pulse.core.ports.default_board_configuration import (
             get_default_board_configuration_store,
         )

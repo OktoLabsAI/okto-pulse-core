@@ -27,6 +27,9 @@ import logging
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.cypher_templates import (
+    code_traceability_visibility_clause,
+)
 from okto_pulse.core.kg.schema_contract import (
     MULTI_REL_TYPES,
     NODE_TYPES,
@@ -72,18 +75,23 @@ def _all_rel_pairs() -> list[tuple[str, str, str]]:
     return sorted(out)
 
 
-def _fetch_nodes(board_id: str) -> list[dict[str, Any]]:
+def _fetch_nodes(
+    board_id: str,
+    *,
+    include_code_traceability: bool,
+) -> list[dict[str, Any]]:
     executor = _executor()
     nodes: list[dict[str, Any]] = []
     for node_type in sorted(NODE_TYPES):
         result = executor.execute_read_only(
             board_id,
             f"MATCH (n:{node_type}) "
+            f"WHERE {code_traceability_visibility_clause('n')} "
             f"RETURN n.id, n.title, n.content, n.created_at, "
             f"n.source_artifact_ref, n.source_session_id, "
             f"n.created_by_agent, n.superseded_by, n.kind_of "
             f"ORDER BY n.id",
-            {},
+            {"include_code_traceability": include_code_traceability},
             max_rows=_NODE_FETCH_MAX_ROWS,
         )
         for row in result.get("rows", []):
@@ -104,7 +112,12 @@ def _fetch_nodes(board_id: str) -> list[dict[str, Any]]:
     return nodes
 
 
-def _fetch_edges(board_id: str, node_ids: set[str] | None) -> list[dict[str, Any]]:
+def _fetch_edges(
+    board_id: str,
+    node_ids: set[str] | None,
+    *,
+    include_code_traceability: bool,
+) -> list[dict[str, Any]]:
     executor = _executor()
     edges: list[dict[str, Any]] = []
     seen: set[tuple] = set()
@@ -112,8 +125,10 @@ def _fetch_edges(board_id: str, node_ids: set[str] | None) -> list[dict[str, Any
         result = executor.execute_read_only(
             board_id,
             f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
+            f"WHERE {code_traceability_visibility_clause('a')} "
+            f"AND {code_traceability_visibility_clause('b')} "
             f"RETURN a.id, b.id, r.confidence ORDER BY a.id, b.id",
-            {},
+            {"include_code_traceability": include_code_traceability},
             max_rows=_EDGE_FETCH_MAX_ROWS,
         )
         for row in result.get("rows", []):
@@ -184,6 +199,7 @@ def export_board_jsonld(
     *,
     cursor: str | None = None,
     page_size: int | None = None,
+    include_code_traceability: bool = True,
 ) -> dict[str, Any]:
     """Serialize a board graph to JSON-LD (read-only, deterministic).
 
@@ -196,7 +212,10 @@ def export_board_jsonld(
     """
 
     try:
-        all_nodes = _fetch_nodes(board_id)
+        all_nodes = _fetch_nodes(
+            board_id,
+            include_code_traceability=include_code_traceability,
+        )
         all_nodes.sort(key=lambda n: (n["node_type"], n["node_id"]))
 
         page_nodes = all_nodes
@@ -220,7 +239,11 @@ def export_board_jsonld(
             if page_size is None
             else {n["node_id"] for n in page_nodes}
         )
-        edges = _fetch_edges(board_id, node_ids)
+        edges = _fetch_edges(
+            board_id,
+            node_ids,
+            include_code_traceability=include_code_traceability,
+        )
 
         # prov:wasRevisionOf lives on the SUCCESSOR — invert superseded_by.
         revision_of: dict[str, str] = {}

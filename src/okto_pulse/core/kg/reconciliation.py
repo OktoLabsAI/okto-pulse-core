@@ -4,7 +4,8 @@ Decides ADD / UPDATE / SUPERSEDE / NOOP for each node candidate based on:
 
 1. Content hash of the full artifact → NOOP short-circuit for the whole session
 2. exact source ref → same lineage; changed Decisions → SUPERSEDE
-3. semantic similarity threshold → SUPERSEDE hint (agent confirms via override)
+3. semantic similarity threshold → SUPERSEDE hint for cognitive assertions;
+   source-backed Entity roots require exact source identity
 4. otherwise → ADD
 
 This is the server-side "free" baseline the agent receives from
@@ -41,6 +42,7 @@ class ExistingNodeSummary:
     content: str | None = None
     context: str | None = None
     justification: str | None = None
+    kind_of: str | None = None
     similarity: float = 0.0  # 0.0–1.0 against the candidate
 
 
@@ -69,11 +71,7 @@ def _evidence_confidence(
 ) -> float:
     """Use observed similarity when available, otherwise extraction confidence."""
 
-    return (
-        match.similarity
-        if match.similarity > 0.0
-        else candidate.source_confidence
-    )
+    return match.similarity if match.similarity > 0.0 else candidate.source_confidence
 
 
 def reconcile_candidate(
@@ -104,14 +102,12 @@ def reconcile_candidate(
     # immutable assertions: any semantic delta must create a new generation.
     if candidate.source_artifact_ref:
         for match in existing_matches:
-            if (
-                match.stable_id == candidate.source_artifact_ref
-                and _same_node_type(candidate.node_type, match.node_type)
+            if match.stable_id == candidate.source_artifact_ref and _same_node_type(
+                candidate.node_type, match.node_type
             ):
-                semantic_change = (
-                    _is_decision(candidate.node_type)
-                    and decision_semantics_differ(candidate, match)
-                )
+                semantic_change = _is_decision(
+                    candidate.node_type
+                ) and decision_semantics_differ(candidate, match)
                 return ReconciliationHint(
                     candidate_id=candidate.candidate_id,
                     operation=(
@@ -133,14 +129,34 @@ def reconcile_candidate(
                     ),
                 )
 
+    # A source-backed Entity is a structural identity, not a free-form
+    # cognitive assertion. Similar prose in two different artifacts (for
+    # example an Ideation and the Spec derived from it) must never collapse
+    # their roots into one UPDATE/SUPERSEDE lineage. Exact source-ref reuse
+    # above remains valid; without it, materialize the distinct Entity and let
+    # explicit graph relationships express semantic affinity.
+    if (
+        _same_node_type(candidate.node_type, "Entity")
+        and str(candidate.source_artifact_ref or "").strip()
+    ):
+        return ReconciliationHint(
+            candidate_id=candidate.candidate_id,
+            operation=ReconciliationOperation.ADD,
+            target_node_id=None,
+            confidence=candidate.source_confidence,
+            reason=(
+                "source-backed Entity has no exact source-ref match; "
+                "semantic similarity cannot redefine structural identity"
+            ),
+        )
+
     # Similarity-driven hints: highest-ranked match decides.
     if existing_matches:
         top = existing_matches[0]
         if top.similarity >= SIMILARITY_UPDATE_THRESHOLD:
-            semantic_change = (
-                _is_decision(candidate.node_type)
-                and decision_semantics_differ(candidate, top)
-            )
+            semantic_change = _is_decision(
+                candidate.node_type
+            ) and decision_semantics_differ(candidate, top)
             return ReconciliationHint(
                 candidate_id=candidate.candidate_id,
                 operation=(
@@ -195,7 +211,9 @@ def reconcile_session(
     for cid, cand in candidates.items():
         matches = existing_matches_by_candidate.get(cid, [])
         hints[cid] = reconcile_candidate(
-            cand, nothing_changed=nothing_changed, existing_matches=matches,
+            cand,
+            nothing_changed=nothing_changed,
+            existing_matches=matches,
         )
     return hints
 

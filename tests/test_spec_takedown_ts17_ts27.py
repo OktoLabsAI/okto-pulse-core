@@ -116,7 +116,9 @@ async def test_ts18_controlled_normal_and_sweep_recovery_slo_use_delivered_parit
         generation=1,
         states=(
             _transition(TakedownState.INTENT_CREATED, occurred_at=T0),
-            _transition(TakedownState.GRAPH_DEMOTED, occurred_at=T0 + timedelta(seconds=30)),
+            _transition(
+                TakedownState.GRAPH_DEMOTED, occurred_at=T0 + timedelta(seconds=30)
+            ),
             _transition(
                 TakedownState.OUTBOX_PERSISTED,
                 occurred_at=T0 + timedelta(seconds=30),
@@ -209,12 +211,10 @@ async def test_ts18_controlled_normal_and_sweep_recovery_slo_use_delivered_parit
     operations = CoreKnowledgeGraphOperations(object(), clock=lambda: observed_at)
 
     normal_payload = await operations.query_takedown_telemetry(
-        board_id=BOARD_ID,
-        delete_event_id=DELETE_EVENT_ID
+        board_id=BOARD_ID, delete_event_id=DELETE_EVENT_ID
     )
     recovery_payload = await operations.query_takedown_telemetry(
-        board_id=BOARD_ID,
-        delete_event_id=recovery_event
+        board_id=BOARD_ID, delete_event_id=recovery_event
     )
 
     assert (normal_delivered_at - T0).total_seconds() <= TAKEDOWN_NORMAL_SLO_SECONDS
@@ -386,11 +386,35 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
     async def _passthrough(_db, _entry, _artifact_or_board, result):
         return result
 
-    monkeypatch.setattr(consolidation, "_materialize_lineage_endpoint_nodes", _passthrough)
-    monkeypatch.setattr(consolidation, "_resolve_missing_link_candidates", lambda *_args, **_kwargs: asyncio.sleep(0, result=_args[-1]))
-    monkeypatch.setattr(consolidation, "_worker_node_to_candidate", lambda _node: {"candidate_id": "n", "node_type": "Requirement", "title": "stale"})
-    monkeypatch.setattr(consolidation, "begin_consolidation", lambda *_args, **_kwargs: asyncio.sleep(0, result=SimpleNamespace(session_id="race-session")))
-    monkeypatch.setattr(consolidation, "propose_reconciliation", lambda *_args, **_kwargs: asyncio.sleep(0, result=SimpleNamespace()))
+    monkeypatch.setattr(
+        consolidation, "_materialize_lineage_endpoint_nodes", _passthrough
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_resolve_missing_link_candidates",
+        lambda *_args, **_kwargs: asyncio.sleep(0, result=_args[-1]),
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_worker_node_to_candidate",
+        lambda _node: {
+            "candidate_id": "n",
+            "node_type": "Requirement",
+            "title": "stale",
+        },
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "begin_consolidation",
+        lambda *_args, **_kwargs: asyncio.sleep(
+            0, result=SimpleNamespace(session_id="race-session")
+        ),
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "propose_reconciliation",
+        lambda *_args, **_kwargs: asyncio.sleep(0, result=SimpleNamespace()),
+    )
 
     async def _commit(*_args, **_kwargs):
         commit_entered.set()
@@ -410,8 +434,16 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
             )
         ),
     )
-    monkeypatch.setattr(consolidation, "_apply_board_graph_lifecycle_after_commit", lambda **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(consolidation, "_run_post_commit_maintenance", lambda *_args, **_kwargs: asyncio.sleep(0))
+    monkeypatch.setattr(
+        consolidation,
+        "_apply_board_graph_lifecycle_after_commit",
+        lambda **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_run_post_commit_maintenance",
+        lambda *_args, **_kwargs: asyncio.sleep(0),
+    )
 
     async def _reconcile(*_args, **_kwargs):
         _kwargs["before_graph_write"]()
@@ -436,7 +468,9 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
 
     from okto_pulse.core.kg import canonical_stale_reconciler
 
-    monkeypatch.setattr(canonical_stale_reconciler, "reconcile_stale_canonical", _reconcile)
+    monkeypatch.setattr(
+        canonical_stale_reconciler, "reconcile_stale_canonical", _reconcile
+    )
 
     previous_store = get_consolidation_persistence_port()
     try:
@@ -451,19 +485,25 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
             consolidation._process_queue_entry(object(), legacy)
         )
         await asyncio.wait_for(commit_entered.wait(), timeout=2)
-        # This is the exact residual window: the wrapper's final check already
-        # returned, but its graph write has not started yet.
-        assert len(store.fence_checks) == 2
+        # The authoritative claim CAS now runs once, after graph-writer
+        # acquisition. Production holds that relational writer through graph
+        # commit/ACK; this synthetic post-check publication still proves the
+        # stale-reconcile convergence defense without asserting the old
+        # DB-writer -> graph-writer order.
+        assert len(store.fence_checks) == 1
         timeline.append(("intent_created", T0 + timedelta(seconds=1)))
         allow_commit.set()
         assert await legacy_task is True
         assert publication == {"graph": "canonical", "digest": "canonical"}
 
-        assert await consolidation._process_queue_entry(
-            object(),
-            reconcile,
-            clock=SimpleNamespace(now=lambda: T0 + timedelta(seconds=90)),
-        ) is True
+        assert (
+            await consolidation._process_queue_entry(
+                object(),
+                reconcile,
+                clock=SimpleNamespace(now=lambda: T0 + timedelta(seconds=90)),
+            )
+            is True
+        )
         receipt, _reason = await consolidation._transfer_stale_reconcile_ownership(
             object(),
             reconcile,

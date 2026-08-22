@@ -494,7 +494,12 @@ async def test_read_only_mcp_paths_do_not_invoke_critical_context_guard(
         USER_ID,
         "BG Wiring Agent",
         board_id,
-        permissions=[],
+        permissions=[
+            "code_traceability.investigation.read",
+            "code_traceability.evidence.read",
+            "code_traceability.target.read",
+            "code_traceability.overlap.read",
+        ],
     )
 
     with patch.object(
@@ -523,7 +528,7 @@ async def test_read_only_mcp_paths_do_not_invoke_critical_context_guard(
         )
 
     assert guard_calls == []
-    assert spec_context["id"] == spec_id
+    assert spec_context.get("id") == spec_id, spec_context
     assert spec_context["projection"]["profile"] == "summary"
     assert listed["entity_type"] == "spec"
     assert any(item["id"] == spec_id for item in listed["items"])

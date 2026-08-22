@@ -217,12 +217,14 @@ class InMemorySingleWriterPort:
         )
 
     def is_locked(self, board_id: str, artifact_id: str) -> bool:
-        return self.inspect_single_writer_sync(
-            board_id=board_id, artifact_id=artifact_id
-        ) is not None
+        return (
+            self.inspect_single_writer_sync(board_id=board_id, artifact_id=artifact_id)
+            is not None
+        )
 
     def reset_for_tests(self) -> None:
         self._locks.clear()
+
 
 @pytest.fixture
 def lock(lock_root: Path) -> KGSingleWriterLock:
@@ -247,14 +249,10 @@ def test_acquire_returns_owner_token_and_expires_at(lock: KGSingleWriterLock):
 
 
 def test_second_acquire_returns_contention(lock: KGSingleWriterLock):
-    first = lock.acquire(
-        board_id="b1", operation="op", owner_id="w1", ttl_seconds=60
-    )
+    first = lock.acquire(board_id="b1", operation="op", owner_id="w1", ttl_seconds=60)
     assert first.acquired is True
 
-    second = lock.acquire(
-        board_id="b1", operation="op", owner_id="w2", ttl_seconds=60
-    )
+    second = lock.acquire(board_id="b1", operation="op", owner_id="w2", ttl_seconds=60)
     assert second.acquired is False
     assert second.owner_token is None
     assert second.current_owner == "w1"
@@ -262,29 +260,57 @@ def test_second_acquire_returns_contention(lock: KGSingleWriterLock):
 
 
 def test_release_with_correct_token_frees_lock(lock: KGSingleWriterLock):
-    first = lock.acquire(
-        board_id="b1", operation="op", owner_id="w1", ttl_seconds=60
-    )
+    first = lock.acquire(board_id="b1", operation="op", owner_id="w1", ttl_seconds=60)
     assert lock.release(board_id="b1", owner_token=first.owner_token) is True
 
     # Now another worker can acquire.
-    second = lock.acquire(
-        board_id="b1", operation="op", owner_id="w2", ttl_seconds=60
-    )
+    second = lock.acquire(board_id="b1", operation="op", owner_id="w2", ttl_seconds=60)
     assert second.acquired is True
     assert second.owner_token != first.owner_token
 
 
-def test_release_with_wrong_token_keeps_lock(lock: KGSingleWriterLock):
-    lock.acquire(
-        board_id="b1", operation="op", owner_id="w1", ttl_seconds=60
+def test_release_still_executes_when_telemetry_inspection_fails() -> None:
+    class InspectionCrash(BaseException):
+        pass
+
+    class InspectFailurePort(InMemorySingleWriterPort):
+        fail_inspect = False
+        release_calls = 0
+
+        def inspect_single_writer_sync(self, **kwargs):  # noqa: ANN003, ANN201
+            if self.fail_inspect:
+                raise InspectionCrash("inspection unavailable")
+            return super().inspect_single_writer_sync(**kwargs)
+
+        def release_single_writer_sync(self, **kwargs):  # noqa: ANN003, ANN201
+            self.release_calls += 1
+            return super().release_single_writer_sync(**kwargs)
+
+    port = InspectFailurePort()
+    scoped_lock = KGSingleWriterLock(write_lock_port=port)
+    acquisition = scoped_lock.acquire(
+        board_id="b-inspect-failure",
+        operation="rebuild",
+        owner_id="operator",
+        ttl_seconds=60,
     )
+    assert acquisition.owner_token is not None
+    port.fail_inspect = True
+
+    assert scoped_lock.release(
+        board_id="b-inspect-failure",
+        owner_token=acquisition.owner_token,
+    )
+    assert port.release_calls == 1
+    assert port._locks == {}  # noqa: SLF001
+
+
+def test_release_with_wrong_token_keeps_lock(lock: KGSingleWriterLock):
+    lock.acquire(board_id="b1", operation="op", owner_id="w1", ttl_seconds=60)
     assert lock.release(board_id="b1", owner_token="forged") is False
 
     # Contention still present.
-    second = lock.acquire(
-        board_id="b1", operation="op", owner_id="w2", ttl_seconds=60
-    )
+    second = lock.acquire(board_id="b1", operation="op", owner_id="w2", ttl_seconds=60)
     assert second.acquired is False
     assert second.current_owner == "w1"
 
@@ -351,10 +377,10 @@ def test_acquire_validates_ttl_bounds(lock: KGSingleWriterLock):
         "WriteLockPort adapter parity suite"
     )
 )
-def test_manifest_file_is_human_readable_json(lock_root: Path, lock: KGSingleWriterLock):
-    lock.acquire(
-        board_id="b1", operation="op", owner_id="w1", ttl_seconds=60
-    )
+def test_manifest_file_is_human_readable_json(
+    lock_root: Path, lock: KGSingleWriterLock
+):
+    lock.acquire(board_id="b1", operation="op", owner_id="w1", ttl_seconds=60)
     manifest_path = lock_root / "b1" / LOCK_FILENAME
     raw = manifest_path.read_text(encoding="utf-8")
     decoded = json.loads(raw)
@@ -376,9 +402,7 @@ def test_inspect_returns_none_when_no_lock(lock: KGSingleWriterLock):
 
 
 def test_inspect_returns_manifest_when_locked(lock: KGSingleWriterLock):
-    lock.acquire(
-        board_id="b1", operation="bulk", owner_id="w1", ttl_seconds=60
-    )
+    lock.acquire(board_id="b1", operation="bulk", owner_id="w1", ttl_seconds=60)
     manifest = lock.inspect(board_id="b1")
     assert manifest is not None
     assert manifest.owner_id == "w1"
@@ -448,7 +472,10 @@ def test_apply_runs_default_steps_in_canonical_order():
     assert response.applied_steps == CANONICAL_STEP_ORDER
     assert response.failed_step is None
     assert response.health_state_after in {
-        "healthy", "at_risk", "backpressure", "recovery_needed",
+        "healthy",
+        "at_risk",
+        "backpressure",
+        "recovery_needed",
     }
     assert response.correlation_id
 
@@ -597,7 +624,10 @@ def test_apply_never_returns_quarantined_health_state():
     )
     assert response.health_state_after != "quarantined"
     assert response.health_state_after in {
-        "healthy", "at_risk", "backpressure", "recovery_needed",
+        "healthy",
+        "at_risk",
+        "backpressure",
+        "recovery_needed",
     }
 
 
@@ -621,7 +651,10 @@ def test_apply_handles_global_discovery_graph_type():
 def test_canonical_constants_match_contract():
     assert CANONICAL_GRAPH_TYPES == frozenset({"board_graph", "global_discovery"})
     assert CANONICAL_STEP_ORDER == (
-        STEP_CHECKPOINT, STEP_FLUSH, STEP_FSYNC, STEP_CLOSE_REOPEN_PROBE,
+        STEP_CHECKPOINT,
+        STEP_FLUSH,
+        STEP_FSYNC,
+        STEP_CLOSE_REOPEN_PROBE,
     )
     assert DEFAULT_REQUIRED_STEPS == CANONICAL_STEP_ORDER
 
@@ -674,7 +707,9 @@ def test_lock_token_can_drive_lifecycle(lock: KGSingleWriterLock):
     )
 )
 def test_stale_recovery_does_not_delete_fresh_lock_placed_by_other_recoverer(
-    lock_root: Path, lock: KGSingleWriterLock, monkeypatch: pytest.MonkeyPatch,
+    lock_root: Path,
+    lock: KGSingleWriterLock,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """val_75dee856 bloqueio 2: race entre (read stale) e (unlink stale)
     permitia apagar o lock fresco de outro recoverer. O fix faz CAS: re-le
@@ -747,12 +782,8 @@ def test_stale_recovery_does_not_delete_fresh_lock_placed_by_other_recoverer(
     assert unlink_called_on_primary["n"] == 0
     # Counter records the aborted recovery as contention, not as a
     # successful stale recovery.
-    assert (
-        get_lock_counter("b1", "contention") >= 1
-    )
-    assert (
-        get_lock_counter("b1", "acquired", stale_recovered=True) == 0
-    )
+    assert get_lock_counter("b1", "contention") >= 1
+    assert get_lock_counter("b1", "acquired", stale_recovered=True) == 0
 
 
 # --- OR or_a6018284 counter shape --------------------------------------------
@@ -763,16 +794,23 @@ def test_kg_single_writer_lock_total_carries_required_or_labels(
 ):
     """OR or_a6018284: labels (board_id, operation, outcome, stale_recovered)."""
     assert get_lock_counter_labels() == (
-        "board_id", "operation", "outcome", "stale_recovered",
+        "board_id",
+        "operation",
+        "outcome",
+        "stale_recovered",
     )
 
-    a = lock.acquire(board_id="b1", operation="consolidate", owner_id="w", ttl_seconds=60)
+    a = lock.acquire(
+        board_id="b1", operation="consolidate", owner_id="w", ttl_seconds=60
+    )
     # contention
     lock.acquire(board_id="b1", operation="consolidate", owner_id="w2", ttl_seconds=60)
     # release happy path
     lock.release(board_id="b1", owner_token=a.owner_token)
     # release token mismatch
-    fresh = lock.acquire(board_id="b1", operation="consolidate", owner_id="w3", ttl_seconds=60)
+    fresh = lock.acquire(
+        board_id="b1", operation="consolidate", owner_id="w3", ttl_seconds=60
+    )
     lock.release(board_id="b1", owner_token="forged")
     lock.release(board_id="b1", owner_token=fresh.owner_token)
 
@@ -806,7 +844,11 @@ def test_kg_single_writer_lock_total_marks_stale_recovered_true(
 
 def test_kg_safe_write_lifecycle_total_carries_required_or_labels():
     assert get_lifecycle_counter_labels() == (
-        "board_id", "operation", "graph_type", "outcome", "failed_step_bucket",
+        "board_id",
+        "operation",
+        "graph_type",
+        "outcome",
+        "failed_step_bucket",
     )
 
     wrapper = KGSafeWriteLifecycle(
@@ -958,7 +1000,8 @@ def test_unguarded_write_outside_lifecycle_is_blocked_in_strict_mode():
     )
 )
 def test_stale_recovery_lock_serialises_recoverers(
-    lock_root: Path, monkeypatch: pytest.MonkeyPatch,
+    lock_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """val_3f8803ab regression: even after CAS, a window existed between
     revalidation and unlink. The fix is an auxiliary recovery-lock
@@ -1065,9 +1108,7 @@ def test_stale_recovery_lock_blocks_with_explicit_error_no_auto_reclaim(
 
     lock = KGSingleWriterLock(base_dir=lock_root)
     with pytest.raises(SingleWriterLockError) as excinfo:
-        lock.acquire(
-            board_id="b1", operation="op", owner_id="rescuer", ttl_seconds=60
-        )
+        lock.acquire(board_id="b1", operation="op", owner_id="rescuer", ttl_seconds=60)
     assert "recovery_lock_stale_manual_intervention_required" in excinfo.value.reason
     assert "dead-recoverer" in excinfo.value.reason
     # Primary and recovery sentinels are still both there — operator
@@ -1101,7 +1142,9 @@ def test_concurrent_recoverers_with_stale_recovery_lock_never_corrupt_primary(
 
     fast = KGSingleWriterLock(base_dir=lock_root)
     primary_acq = fast.acquire(
-        board_id="b1", operation="op", owner_id="dead-primary-owner",
+        board_id="b1",
+        operation="op",
+        owner_id="dead-primary-owner",
         ttl_seconds=1,
     )
     assert primary_acq.acquired is True

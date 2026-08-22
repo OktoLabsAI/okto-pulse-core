@@ -318,7 +318,8 @@ Returns:
 
 ## `okto_pulse_submit_task_validation`
 
-Submit a task validation for a card in 'validation' status.
+Submit a fenced, idempotent task validation for a Normal or Bug card in
+`validation`.
 
 Evaluates the implementation quality of a completed task against three
 dimensions: confidence, completeness, and drift. The system applies
@@ -328,14 +329,33 @@ executor conflicts. `enforce` returns the action-required code
 `reviewer_separation_required` with remediation
 `request_independent_task_validator` before any mutation. `warn` and `off`
 continue and persist/return `reviewer_separation`; a legacy board with the
-setting absent is explicitly `off` with `source=legacy_absent_compat`. It then
-automatically routes the card: success → done; failed remains in
-validation so the validator feedback stays visible and the executor can
-decide whether to move the card back for rework.
+setting absent is explicitly `off` with `source=legacy_absent_compat`.
+
+The result separates two decisions:
+
+- `validation_outcome` says whether the submitted assessment itself passed.
+- `completion_outcome` says whether the card actually completed after all
+  governed completion gates were evaluated.
+
+An admitted successful assessment with no completion blocker routes the card
+to `done`. A failed assessment, or a successful assessment blocked by another
+governed completion gate, routes it to `rejected` with a bounded
+`rejection_cause`. `rejected` is a rework handoff, not a waiting-for-review
+state. The executor must read the Current cause, move the card
+`rejected → in_progress`, perform new work, and later submit a new validation.
+Previous validation and rejection records are append-only history.
+
+Exact retries use `idempotency_key` and replay before checking the card's
+current status. Reusing a key with different content fails. A new attempt must
+send the card's current `policy_version` as `expected_subject_version`; a stale
+version fails before any validation, cause, status, event, or activity mutation.
+Technical/infrastructure failures are not recorded as domain rejections.
 
 Args:
     board_id: Board ID
     card_id: Card ID (must be in 'validation' status)
+    expected_subject_version: Current card policy_version used as the optimistic concurrency fence
+    idempotency_key: Stable unique key for this exact assessment attempt
     confidence: Score 0-100 — how confident is the reviewer that the task was implemented correctly?
     confidence_justification: Why this confidence score
     estimated_completeness: Score 0-100 — how complete is the implementation relative to the spec?
@@ -346,9 +366,11 @@ Args:
     recommendation: One of: approve, reject
 
 Returns:
-    JSON with validation result, outcome, threshold violations,
-    `reviewer_separation`, and card routing. Under `enforce`, a conflict returns
-    `outcome=action_required` in MCP Outcome V2 with code,
+    JSON with the legacy `outcome`, explicit `validation_outcome` and
+    `completion_outcome`, threshold violations, completion-gate failures,
+    Current rejection cause when applicable, subject version, replay marker,
+    `reviewer_separation`, and card routing. Under `enforce`, a reviewer
+    conflict returns `outcome=action_required` in MCP Outcome V2 with code,
     conflicts/source facts, and remediation; no validation is persisted.
 
 ## `okto_pulse_list_design_systems`
@@ -444,3 +466,17 @@ Args:
 
 Returns:
     JSON with the EFFECTIVE template and its design_system_default_ref.
+
+## Code Traceability investigation receipts
+
+`okto_pulse_start_code_investigation` creates a bounded, version-fenced request
+with a single-use challenge. It does not contact a provider or schedule local
+work. The authenticated external agent checks real access/capabilities and
+investigates in its own environment, then submits `accessible`, `partial`, or
+`unavailable` with `okto_pulse_submit_code_investigation_receipt`.
+`okto_pulse_get_code_investigation_receipt` reads the immutable receipt and its
+computed currentness.
+
+Pulse Core governs the contract; Community only persists and projects accepted
+records. Neither surface accesses a repository. Canonical protocol:
+`okto-pulse://reference/code-traceability`.

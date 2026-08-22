@@ -29,6 +29,11 @@ from okto_pulse.core.domain.quality_assessment import (
     QualityPageCursor,
     UnboundQualityFindingDraft,
 )
+from okto_pulse.core.domain.validation_cycle import RequirementLintPreflight
+from okto_pulse.core.domain.requirement_lint import (
+    external_requirement_lint_rule_capacity_v1,
+    external_requirement_lint_scale_v1,
+)
 from okto_pulse.core.ports.quality_assessment import (
     AssessmentListQuery,
     AssessmentReadAccessDenied,
@@ -43,6 +48,7 @@ from okto_pulse.core.services.quality_assessment import (
     QualityAssessmentPortContractError,
     QualityAssessmentService,
     QualityAssessmentForbiddenError,
+    QualityAssessmentConflictError,
     QualityAssessmentNotFoundError,
     CurrentAssessmentView,
 )
@@ -59,6 +65,7 @@ class SubmitQualityAssessmentResult:
     head_revision: int
     qa_id_map: tuple[tuple[str, str], ...]
     replayed: bool
+    subject_edition: int | None = None
 
     @classmethod
     def from_commit(
@@ -70,6 +77,7 @@ class SubmitQualityAssessmentResult:
             head_revision=result.head_revision,
             qa_id_map=result.qa_id_map,
             replayed=result.replayed,
+            subject_edition=result.subject_edition,
         )
 
 
@@ -155,10 +163,17 @@ class RecordAmbiguityAssessmentCommand:
     subject_id: str
     idempotency_key: str
     expected_subject_version: int
+    expected_subject_edition: int
     expected_head_revision: int
     score: float
+    summary: str = "Ambiguity assessment recorded."
     findings: tuple[UnboundQualityFindingDraft, ...] = ()
     proposed_questions: tuple[ProposedQuestionDraft, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.summary, str) or not self.summary.strip():
+            raise ValueError("ambiguity_assessment_summary_required")
+        object.__setattr__(self, "summary", self.summary.strip())
 
 
 class RecordAmbiguityAssessmentUseCase:
@@ -191,6 +206,7 @@ class RecordAmbiguityAssessmentUseCase:
             subject_id=command.subject_id,
             assessment_kind=AssessmentKind.AMBIGUITY,
             expected_subject_version=command.expected_subject_version,
+            expected_subject_edition=command.expected_subject_edition,
             expected_head_revision=command.expected_head_revision,
             channel=_quality_channel(actor),
         )
@@ -222,9 +238,10 @@ class RecordAmbiguityAssessmentUseCase:
             assessment_kind=AssessmentKind.AMBIGUITY,
             idempotency_key=command.idempotency_key,
             expected_subject_version=command.expected_subject_version,
+            expected_subject_edition=command.expected_subject_edition,
             expected_head_revision=command.expected_head_revision,
             score=command.score,
-            justification="Ambiguity assessment recorded.",
+            justification=command.summary,
             scale=preflight.expected_scale,
             findings=tuple(
                 _bind_finding(finding, preflight=preflight)
@@ -269,6 +286,264 @@ class RecordAmbiguityAssessmentUseCase:
             )
             await uow.commit()
         return SubmitQualityAssessmentResult.from_commit(committed)
+
+
+@dataclass(frozen=True, slots=True)
+class RecordRequirementLintCommand:
+    board_id: str
+    spec_id: str
+    idempotency_key: str
+    expected_subject_version: int
+    expected_subject_edition: int
+    expected_head_revision: int
+    ruleset_digest: str
+    score: float
+    summary: str
+    findings: tuple[UnboundQualityFindingDraft, ...] = ()
+    # Legacy compatibility only. Canonical clients derive this fence from the
+    # pinned ruleset plus requirement anchors returned by preflight.
+    evaluated_rule_count: int | None = None
+
+    def __post_init__(self) -> None:
+        for field_name in ("board_id", "spec_id", "idempotency_key", "summary"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"requirement_lint_{field_name}_required")
+            object.__setattr__(self, field_name, value.strip())
+        for field_name in ("expected_subject_version", "expected_subject_edition"):
+            value = getattr(self, field_name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ValueError(f"requirement_lint_{field_name}_invalid")
+        if (
+            not isinstance(self.expected_head_revision, int)
+            or isinstance(self.expected_head_revision, bool)
+            or self.expected_head_revision < 0
+        ):
+            raise ValueError("requirement_lint_expected_head_revision_invalid")
+        if self.evaluated_rule_count is not None and (
+            not isinstance(self.evaluated_rule_count, int)
+            or isinstance(self.evaluated_rule_count, bool)
+            or self.evaluated_rule_count < 1
+        ):
+            raise ValueError("requirement_lint_evaluated_rule_count_invalid")
+        if (
+            not isinstance(self.score, (int, float))
+            or isinstance(self.score, bool)
+            or float(self.score) < 0
+        ):
+            raise ValueError("requirement_lint_score_invalid")
+        normalized_digest = self.ruleset_digest.strip().lower() if isinstance(
+            self.ruleset_digest, str
+        ) else ""
+        if len(normalized_digest) != 64:
+            raise ValueError("requirement_lint_ruleset_digest_invalid")
+        try:
+            int(normalized_digest, 16)
+        except ValueError as exc:
+            raise ValueError("requirement_lint_ruleset_digest_invalid") from exc
+        object.__setattr__(self, "ruleset_digest", normalized_digest)
+        findings = tuple(self.findings)
+        if any(not isinstance(item, UnboundQualityFindingDraft) for item in findings):
+            raise ValueError("requirement_lint_findings_invalid")
+        object.__setattr__(self, "findings", findings)
+        if float(self.score) != float(len(findings)):
+            raise ValueError("requirement_lint_score_findings_mismatch")
+
+
+class RecordRequirementLintUseCase:
+    """Record externally-produced lint evidence for one approved Spec edition."""
+
+    def __init__(
+        self,
+        *,
+        preflight_reader: QualityAssessmentPreflightReadPort,
+        uow_factory: UnitOfWorkFactory,
+        service: QualityAssessmentService | None = None,
+    ) -> None:
+        self._preflight_reader = preflight_reader
+        self._uow_factory = uow_factory
+        self._service = service or QualityAssessmentService()
+
+    async def execute(
+        self,
+        command: RecordRequirementLintCommand,
+        *,
+        actor: ActorContext,
+    ) -> SubmitQualityAssessmentResult:
+        if actor.board_id != command.board_id:
+            raise QualityAssessmentForbiddenError(
+                "assessment_board_scope_mismatch"
+            )
+        realm_scope = actor.require_realm_scope()
+        lint_preflight = (
+            await self._preflight_reader.resolve_requirement_lint_preflight(
+                spec_id=command.spec_id,
+                actor_id=actor.actor_id,
+                realm_scope=realm_scope,
+            )
+        )
+        fence = lint_preflight.submission_fence
+        if (
+            lint_preflight.subject_edition != command.expected_subject_edition
+            or fence.expected_subject_version
+            != command.expected_subject_version
+        ):
+            raise QualityAssessmentConflictError(
+                "requirement_lint_submission_fence_conflict"
+            )
+        if lint_preflight.ruleset_digest != command.ruleset_digest:
+            raise QualityAssessmentConflictError(
+                "requirement_lint_ruleset_conflict"
+            )
+        derived_rule_count = external_requirement_lint_rule_capacity_v1(
+            len(lint_preflight.requirement_anchors)
+        )
+        evaluated_rule_count = (
+            derived_rule_count
+            if command.evaluated_rule_count is None
+            else command.evaluated_rule_count
+        )
+        request = AssessmentPreflightRequest(
+            board_id=command.board_id,
+            subject_type=AssessmentSubjectType.SPEC,
+            subject_id=command.spec_id,
+            assessment_kind=AssessmentKind.REQUIREMENT_LINT,
+            expected_subject_version=command.expected_subject_version,
+            expected_subject_edition=command.expected_subject_edition,
+            # Resolve current authority/digests with the live mutable head. The
+            # immutable submission below retains the caller's original head so
+            # an exact idempotent retry can be authenticated by fingerprint
+            # before the changed head is treated as a new-write conflict.
+            expected_head_revision=fence.expected_head_revision,
+            channel=_quality_channel(actor),
+            evaluated_rule_count=evaluated_rule_count,
+        )
+        try:
+            preflight = (
+                await self._preflight_reader.resolve_assessment_preflight_request(
+                    request,
+                    actor_id=actor.actor_id,
+                    realm_scope=realm_scope,
+                )
+            )
+        except AssessmentSubjectNotFound as exc:
+            raise QualityAssessmentNotFoundError(
+                "assessment_subject_not_found"
+            ) from exc
+        except AssessmentReadAccessDenied as exc:
+            raise QualityAssessmentForbiddenError(
+                "assessment_permission_denied"
+            ) from exc
+        if not isinstance(preflight, AssessmentPreflight):
+            raise QualityAssessmentPortContractError(
+                "assessment_preflight_result_invalid"
+            )
+        if preflight.expected_scale != external_requirement_lint_scale_v1(
+            evaluated_rule_count
+        ):
+            raise QualityAssessmentPortContractError(
+                "requirement_lint_preflight_scale_invalid"
+            )
+        if preflight.digests.ruleset_digest != command.ruleset_digest:
+            raise QualityAssessmentConflictError(
+                "requirement_lint_ruleset_conflict"
+            )
+        submission = AssessmentSubmission(
+            board_id=command.board_id,
+            subject_type=AssessmentSubjectType.SPEC,
+            subject_id=command.spec_id,
+            assessment_kind=AssessmentKind.REQUIREMENT_LINT,
+            idempotency_key=command.idempotency_key,
+            expected_subject_version=command.expected_subject_version,
+            expected_subject_edition=command.expected_subject_edition,
+            expected_head_revision=command.expected_head_revision,
+            score=float(command.score),
+            justification=command.summary,
+            scale=preflight.expected_scale,
+            findings=tuple(
+                _bind_finding(finding, preflight=preflight)
+                for finding in command.findings
+            ),
+        )
+        self._service.validate_submission_envelope(
+            submission,
+            actor_id=actor.actor_id,
+        )
+        self._service.validate_replay_authority(
+            submission,
+            preflight=preflight,
+        )
+        replay = await self._preflight_reader.lookup_assessment_replay(
+            board_id=command.board_id,
+            idempotency_key=command.idempotency_key,
+            actor_id=actor.actor_id,
+            realm_scope=realm_scope,
+        )
+        if replay is not None:
+            return SubmitQualityAssessmentResult.from_commit(
+                self._service.resolve_replay(
+                    submission,
+                    actor_id=actor.actor_id,
+                    result=replay,
+                )
+            )
+        if fence.expected_head_revision != command.expected_head_revision:
+            raise QualityAssessmentConflictError(
+                "requirement_lint_submission_fence_conflict"
+            )
+        bundle = self._service.prepare_submission(
+            submission,
+            actor_id=actor.actor_id,
+            preflight=preflight,
+        )
+        async with self._uow_factory(
+            realm_scope=realm_scope,
+            actor=actor,
+        ) as uow:
+            committed = await self._service.commit_prepared(
+                bundle,
+                persistence=uow.services.quality_assessments,
+            )
+            await uow.commit()
+        return SubmitQualityAssessmentResult.from_commit(committed)
+
+
+@dataclass(frozen=True, slots=True)
+class GetRequirementLintPreflightCommand:
+    spec_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.spec_id, str) or not self.spec_id.strip():
+            raise ValueError("requirement_lint_spec_id_required")
+        object.__setattr__(self, "spec_id", self.spec_id.strip())
+
+
+class GetRequirementLintPreflightUseCase:
+    """Expose the minimal read-only fence required by REST/UI/MCP clients."""
+
+    def __init__(
+        self,
+        *,
+        preflight_reader: QualityAssessmentPreflightReadPort,
+    ) -> None:
+        self._preflight_reader = preflight_reader
+
+    async def execute(
+        self,
+        command: GetRequirementLintPreflightCommand,
+        *,
+        actor: ActorContext,
+    ) -> RequirementLintPreflight:
+        result = await self._preflight_reader.resolve_requirement_lint_preflight(
+            spec_id=command.spec_id,
+            actor_id=actor.actor_id,
+            realm_scope=actor.require_realm_scope(),
+        )
+        if not isinstance(result, RequirementLintPreflight):
+            raise QualityAssessmentPortContractError(
+                "requirement_lint_preflight_result_invalid"
+            )
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,6 +694,7 @@ class QualityAssessmentReadUseCases:
             assessment_kind=command.assessment_kind,
             state=command.state,
             current_subject_version=context.subject.subject_version,
+            current_subject_edition=context.subject.subject_edition,
             currentness_inputs=context.currentness_inputs,
             cursor=command.cursor,
         )
@@ -617,6 +893,8 @@ def _quality_page_offset(
 
 
 __all__ = [
+    "GetRequirementLintPreflightCommand",
+    "GetRequirementLintPreflightUseCase",
     "GetCurrentQualityAssessmentCommand",
     "GetQualityAssessmentReceiptCommand",
     "GetQualityAssessmentReceiptResult",
@@ -626,6 +904,8 @@ __all__ = [
     "QualityAssessmentReadUseCases",
     "RecordAmbiguityAssessmentCommand",
     "RecordAmbiguityAssessmentUseCase",
+    "RecordRequirementLintCommand",
+    "RecordRequirementLintUseCase",
     "SubmitQualityAssessmentCommand",
     "SubmitQualityAssessmentResult",
     "SubmitQualityAssessmentUseCase",

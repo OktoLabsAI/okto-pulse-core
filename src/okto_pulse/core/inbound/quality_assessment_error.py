@@ -16,10 +16,12 @@ from okto_pulse.core.ports.quality_assessment import (
     AssessmentReadAccessDenied,
     AssessmentReceiptNotFound,
     AssessmentSubjectLifecycleConflict,
+    AssessmentSubjectEditionConflict,
     AssessmentSubjectNotFound,
     AssessmentSubjectStatusConflict,
     AssessmentSubjectVersionConflict,
     QualityAssessmentPersistenceError,
+    RequirementLintSubjectNotApproved,
 )
 from okto_pulse.core.services.quality_assessment import (
     QualityAssessmentError,
@@ -46,6 +48,12 @@ _PUBLIC_REASON_CODES = frozenset(
     {
         "invalid_pagination",
         "question_budget_exceeded",
+        "assessment_subject_edition_conflict",
+        "assessment_subject_version_conflict",
+        "assessment_head_revision_conflict",
+        "assessment_subject_status_conflict",
+        "requirement_lint_required",
+        "requirement_lint_subject_not_approved",
     }
 )
 
@@ -122,18 +130,26 @@ def _quality_error_fields(
         (
             AssessmentHeadRevisionConflict,
             AssessmentSubjectVersionConflict,
+            AssessmentSubjectEditionConflict,
             AssessmentIdempotencyConflict,
             AssessmentInputDigestConflict,
             AssessmentSubjectStatusConflict,
             AssessmentSubjectLifecycleConflict,
+            RequirementLintSubjectNotApproved,
         ),
     ):
+        raw_details = getattr(error, "details", {})
+        details = (
+            dict(raw_details)
+            if isinstance(raw_details, Mapping)
+            else {}
+        )
         return (
             error.code,
             str(error),
             QualityAssessmentErrorCategory.CONFLICT.value,
             True,
-            {},
+            details,
         )
     if isinstance(error, QualityAssessmentPersistenceError):
         raw_details = getattr(error, "details", {})

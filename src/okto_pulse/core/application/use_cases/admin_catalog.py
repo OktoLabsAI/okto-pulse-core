@@ -33,6 +33,7 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 from okto_pulse.core.services.default_board_configuration import (
     guideline_ref_diff_has_changes,
 )
@@ -1118,6 +1119,8 @@ async def _require_mockup_entity_write_access(
         write=True,
     ):
         raise _screen_entity_not_found(entity_type, entity_id)
+    if entity_type in {"ideation", "refinement", "spec"}:
+        require_draft_mutation(entity, subject_type=entity_type)
 
 
 @dataclass(frozen=True)

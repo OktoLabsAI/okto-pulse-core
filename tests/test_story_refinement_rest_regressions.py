@@ -180,8 +180,9 @@ def test_rich_refinement_create_endpoint_serializes_complete_payload(_client_and
                     "order": 0,
                 }
             ],
-            "architecture_propagation_mode": "none",
-        },
+                "architecture_propagation_mode": "none",
+                "delivery_context": "brownfield",
+            },
     )
 
     assert response.status_code == 201, response.text

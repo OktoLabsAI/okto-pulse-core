@@ -9,6 +9,8 @@ queryable (FR2/BR2) — and idempotent on replay (AC1). This is the
 
 from __future__ import annotations
 
+import asyncio
+import threading
 import uuid
 
 import pytest
@@ -173,6 +175,87 @@ async def test_real_pipeline_persists_alternative_and_is_queryable(
     assert res2.skipped_existing_refs  # recognised as already persisted
     assert await _count_nodes_by_source_ref(
         board_id, "Alternative", alt_ref
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_new_candidate_graph_probes_run_off_event_loop(
+    board_id, agent_id, db_factory, board_handle, monkeypatch
+):
+    """Precheck, canonical edge resolution and post-commit proof are off-loop."""
+
+    spec_id = f"spec-{uuid.uuid4()}"
+    spec_ref = f"spec:{spec_id}"
+    decision_ref = f"{spec_ref}:decision:selected"
+    await _seed_entity_root(board_id, spec_ref)
+    await _seed_node(board_id, "Decision", decision_ref)
+
+    event_loop_thread_id = threading.get_ident()
+    count_observations: list[tuple[int, int]] = []
+    resolution_observations: list[tuple[int, str]] = []
+    original_count = ccp._count_nodes_by_source_ref
+    original_resolve = ccp._resolve_existing_node_id
+
+    def _assert_off_loop() -> None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        raise AssertionError("synchronous graph probe ran on the event loop")
+
+    def _observed_count(
+        observed_board_id: str,
+        node_type: str,
+        source_artifact_ref: str,
+    ) -> int:
+        _assert_off_loop()
+        count = original_count(
+            observed_board_id,
+            node_type,
+            source_artifact_ref,
+        )
+        count_observations.append((threading.get_ident(), count))
+        return count
+
+    def _observed_resolve(
+        observed_board_id: str,
+        label: str,
+        ref: str,
+    ) -> str:
+        _assert_off_loop()
+        resolution_observations.append((threading.get_ident(), ref))
+        return original_resolve(observed_board_id, label, ref)
+
+    monkeypatch.setattr(ccp, "_count_nodes_by_source_ref", _observed_count)
+    monkeypatch.setattr(ccp, "_resolve_existing_node_id", _observed_resolve)
+
+    persister = ccp.ConsolidationPipelinePersister(
+        db_factory,
+        agent_id=agent_id,
+    )
+    result = await ccp.run_cognitive_closeout(
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=spec_ref,
+        spec_context=ANALYSIS,
+        decision_ref=decision_ref,
+        persister=persister,
+    )
+
+    assert result.outcome == "persisted", result.detail
+    assert result.persisted_refs
+    assert not result.skipped_existing_refs
+    assert count_observations[0][1] == 0  # new-candidate precheck
+    assert any(count == 1 for _, count in count_observations[1:])  # post-commit proof
+    assert len(resolution_observations) == 1
+    assert resolution_observations[0][1] == decision_ref
+    assert all(
+        thread_id != event_loop_thread_id
+        for thread_id, _ in count_observations + resolution_observations
+    )
+    assert await _count_relates_to_alternative(
+        board_id,
+        result.persisted_refs[0],
     ) == 1
 
 

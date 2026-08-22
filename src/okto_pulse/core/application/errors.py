@@ -24,6 +24,7 @@ from okto_pulse.core.services.main import (
     TopicOperationError,
 )
 from okto_pulse.core.services.resource_gate import ResourceGateError
+from okto_pulse.core.domain.spec_dependency import SpecDependencyOperationError
 from okto_pulse.core.services.qa_selection import QASelectionError
 
 __all__ = [
@@ -42,6 +43,7 @@ __all__ = [
     "ResourceGateError",
     "ResourceLineageResolutionError",
     "SpecLineagePreflightError",
+    "SpecDependencyOperationError",
     "SprintOperationError",
     "TopicNameConflictError",
     "TopicNotEmptyError",

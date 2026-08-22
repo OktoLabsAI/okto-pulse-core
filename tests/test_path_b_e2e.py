@@ -452,7 +452,13 @@ async def _seed_content_locked_no_direct_link(db):
     spec.status = SpecStatus.IN_PROGRESS
     vid = f"val_{uuid.uuid4().hex[:8]}"
     spec.current_validation_id = vid
-    spec.validations = [{"id": vid, "outcome": "success"}]
+    spec.validations = [
+        {
+            "id": vid,
+            "outcome": "success",
+            "edition": int(spec.edition),
+        }
+    ]
     flag_modified(spec, "validations")
     bug = await db.get(Card, ids["bug"])
     bug.linked_test_task_ids = []

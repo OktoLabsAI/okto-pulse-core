@@ -165,7 +165,7 @@ class TestBootstrapSchema:
         assert len(NODE_TYPES) == 11
 
     def test_rel_types_count(self):
-        assert len(REL_TYPES) == 10
+        assert len(REL_TYPES) == 11
 
     def test_vector_index_types(self):
         assert set(VECTOR_INDEX_TYPES) == {
@@ -195,6 +195,8 @@ class TestBootstrapSchema:
             "0.3.10",
             "0.3.11",
             "0.3.12",
+            "0.4.0",
+            "0.5.0",
         }
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):
@@ -557,6 +559,61 @@ class TestReconciliationRules:
         h = reconcile_candidate(cand, nothing_changed=False, existing_matches=[match])
         assert h.operation == ReconciliationOperation.UPDATE
         assert h.target_node_id == "kg:d1"
+
+    @pytest.mark.parametrize("similarity", [0.88, 0.97])
+    def test_source_backed_entity_never_reconciles_foreign_identity_by_similarity(
+        self,
+        similarity,
+    ):
+        cand = NodeCandidate(
+            candidate_id="spec-root",
+            node_type=KGNodeType.ENTITY,
+            title="Shared lifecycle title",
+            source_artifact_ref="spec:spec-1",
+            source_confidence=1.0,
+        )
+        match = ExistingNodeSummary(
+            graph_node_id="ideation-root",
+            node_type="Entity",
+            stable_id="ideation:ideation-1",
+            title="Shared lifecycle title",
+            similarity=similarity,
+        )
+
+        hint = reconcile_candidate(
+            cand,
+            nothing_changed=False,
+            existing_matches=[match],
+        )
+
+        assert hint.operation == ReconciliationOperation.ADD
+        assert hint.target_node_id is None
+        assert "structural identity" in hint.reason
+
+    def test_source_backed_entity_exact_identity_still_updates(self):
+        cand = NodeCandidate(
+            candidate_id="spec-root",
+            node_type=KGNodeType.ENTITY,
+            title="Spec root",
+            source_artifact_ref="spec:spec-1",
+            source_confidence=1.0,
+        )
+        match = ExistingNodeSummary(
+            graph_node_id="existing-spec-root",
+            node_type="Entity",
+            stable_id="spec:spec-1",
+            title="Prior title",
+            similarity=0.1,
+        )
+
+        hint = reconcile_candidate(
+            cand,
+            nothing_changed=False,
+            existing_matches=[match],
+        )
+
+        assert hint.operation == ReconciliationOperation.UPDATE
+        assert hint.target_node_id == "existing-spec-root"
 
     def test_supersede_by_mid_similarity(self):
         cand = NodeCandidate(

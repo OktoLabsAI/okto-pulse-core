@@ -283,7 +283,7 @@ class TestCardCreation:
             spec = (
                 await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))
             ).scalars().first()
-            data = CardCreate(
+            data = CardCreate.model_construct(
                 title=f"Invalid initial {card_type} card",
                 status=CardStatus.DONE,
                 card_type=card_type,
@@ -996,7 +996,7 @@ class TestCardUpdates:
 @pytest.mark.asyncio
 class TestTaskValidationDeletion:
     async def test_completed_card_retains_last_required_success(self, db_factory):
-        """A done card must retain the validation evidence required to finish it."""
+        """Admitted validation attempts remain append-only causal history."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             card = (
@@ -1019,24 +1019,22 @@ class TestTaskValidationDeletion:
             ]
 
             service = CardService(db)
-            assert await service.delete_task_validation(
-                card.id,
-                "validation-failed",
-                USER_ID,
-            )
-            await db.commit()
-
-            with pytest.raises(CardOperationError) as exc_info:
-                await service.delete_task_validation(
-                    card.id,
-                    "validation-success",
-                    USER_ID,
+            for validation_id in ("validation-failed", "validation-success"):
+                with pytest.raises(CardOperationError) as exc_info:
+                    await service.delete_task_validation(
+                        card.id,
+                        validation_id,
+                        USER_ID,
+                    )
+                assert (
+                    exc_info.value.code
+                    == "task_validation_history_append_only"
                 )
 
-            assert exc_info.value.code == "task_validation_history_required"
             persisted = await service.get_card(card.id)
             assert [item["id"] for item in persisted.validations] == [
-                "validation-success"
+                "validation-success",
+                "validation-failed",
             ]
 
 
@@ -1795,7 +1793,7 @@ class TestBugCardCreation:
             await db.commit()
 
             # Bug card with in_progress status should be rejected
-            data = CardCreate(
+            data = CardCreate.model_construct(
                 title="Bad Bug Status",
                 card_type="bug",
                 origin_task_id=origin_card.id,
@@ -1914,7 +1912,7 @@ class TestMultipleStatusCards:
                     await svc.create_card(
                         BOARD_ID,
                         USER_ID,
-                        CardCreate(
+                        CardCreate.model_construct(
                             title=f"Rejected {status.value}",
                             status=status,
                             spec_id=spec_id,

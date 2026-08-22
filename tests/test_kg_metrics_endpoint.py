@@ -10,15 +10,34 @@ from __future__ import annotations
 
 import gc
 import os
+from types import SimpleNamespace
 
 import pytest
 
+from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
 from kg_schema_testing import (
     bootstrap_board_graph,
     close_all_connections,
     open_board_connection,
 )
+
+
+def _get_metrics(board_id: str):
+    from okto_pulse.community.api.kg_routes import get_kg_metrics
+    import asyncio
+
+    return asyncio.run(
+        get_kg_metrics(
+            board_id,
+            actor=ActorContext(
+                "kg-metrics-test",
+                "system",
+                board_id=board_id,
+            ),
+            uow=SimpleNamespace(),
+        )
+    )
 
 
 @pytest.fixture
@@ -79,9 +98,7 @@ def _seed_mixed_graph(board_id: str) -> None:
 
 
 def test_metrics_empty_board(board):
-    from okto_pulse.community.api.kg_routes import get_kg_metrics
-    import asyncio
-    result = asyncio.run(get_kg_metrics(board))
+    result = _get_metrics(board)
     assert result["kg_bootstrapped"] is True
     assert result["edges_total"] == 0
     assert result["deterministic_edge_ratio"] == 0.0
@@ -89,18 +106,14 @@ def test_metrics_empty_board(board):
 
 
 def test_metrics_missing_board_returns_noop():
-    from okto_pulse.community.api.kg_routes import get_kg_metrics
-    import asyncio
-    result = asyncio.run(get_kg_metrics("nonexistent-xxx"))
+    result = _get_metrics("nonexistent-xxx")
     assert result["kg_bootstrapped"] is False
     assert result["edges_total"] == 0
 
 
 def test_metrics_mixed_layers(board):
-    from okto_pulse.community.api.kg_routes import get_kg_metrics
-    import asyncio
     _seed_mixed_graph(board)
-    result = asyncio.run(get_kg_metrics(board))
+    result = _get_metrics(board)
     assert result["edges_total"] == 5
     assert result["edge_count_by_layer"]["deterministic"] == 3
     assert result["edge_count_by_layer"]["cognitive"] == 1
@@ -113,19 +126,15 @@ def test_metrics_mixed_layers(board):
 
 
 def test_metrics_node_counts(board):
-    from okto_pulse.community.api.kg_routes import get_kg_metrics
-    import asyncio
     _seed_mixed_graph(board)
-    result = asyncio.run(get_kg_metrics(board))
+    result = _get_metrics(board)
     assert result["node_count_by_type"]["Decision"] == 2
     assert result["node_count_by_type"]["Requirement"] == 3
     assert result["node_count_by_type"]["Entity"] == 1
 
 
 def test_metrics_includes_health_targets(board):
-    from okto_pulse.community.api.kg_routes import get_kg_metrics
-    import asyncio
-    result = asyncio.run(get_kg_metrics(board))
+    result = _get_metrics(board)
     ht = result["health_targets"]
     assert ht["deterministic_edge_ratio_min"] == 0.70
     assert ht["fallback_edge_ratio_max"] == 0.15

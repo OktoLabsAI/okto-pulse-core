@@ -246,7 +246,12 @@ class KGSingleWriterLock:
         return acquisition
 
     def release(self, *, board_id: str, owner_token: str) -> bool:
-        current = self.inspect(board_id=board_id)
+        # Inspection is telemetry only.  A corrupt/unavailable inspection
+        # surface must never prevent the actual token-CAS release attempt.
+        try:
+            current = self.inspect(board_id=board_id)
+        except BaseException:
+            current = None
         port = self._port()
         if hasattr(port, "release_single_writer_sync"):
             released = bool(
@@ -333,6 +338,22 @@ class KGSingleWriterLock:
             and manifest.expires_at_epoch > datetime.now(timezone.utc).timestamp()
         )
 
+    def bind_write_lock_port(self) -> WriteLockPort:
+        """Bind this facade to the active runtime before crossing threads.
+
+        ``ContextVar`` bindings do not flow into a raw ``threading.Thread``.
+        Long-running writers therefore resolve the edition-owned port in their
+        owning runtime and keep that exact adapter on this lock instance before
+        starting a heartbeat. The binding remains instance-local: no provider
+        is copied into another runtime and no process-global fallback is used.
+        """
+
+        port = self._write_lock_port
+        if port is None:
+            port = get_write_lock_port()
+            self._write_lock_port = port
+        return port
+
     def _port(self) -> WriteLockPort:
         return self._write_lock_port or get_write_lock_port()
 
@@ -370,8 +391,37 @@ class KGSingleWriterLock:
         raise TypeError(f"unsupported write-lock manifest result: {type(result)!r}")
 
 
+class KGAdministrativeOperationReservation(KGSingleWriterLock):
+    """Board-scoped reservation for long administrative orchestration.
+
+    The ordinary graph writer lease must be delegated while a rebuild queue is
+    draining.  This independent artifact keeps rebuild/erasure orchestration
+    exclusive across that window without preventing consolidation workers from
+    acquiring :class:`KGSingleWriterLock`.
+    """
+
+    artifact_id = "kg_administrative_operation_reservation_v1"
+
+    def __init__(
+        self,
+        base_dir: object | None = None,
+        *,
+        board_dir_resolver: Any | None = None,
+        write_lock_port: WriteLockPort | None = None,
+    ) -> None:
+        # This logical reservation must compose across independently-created
+        # rebuild and erasure services.  A caller-specific filesystem hint
+        # would split one board reservation into separate coordination keys
+        # (for example ``rebuild_base`` versus the runtime default).  The
+        # edition-owned port remains the storage authority; deliberately use
+        # its canonical/default scope for every administrative caller.
+        del base_dir, board_dir_resolver
+        super().__init__(write_lock_port=write_lock_port)
+
+
 __all__ = [
     "DEFAULT_TTL_SECONDS",
+    "KGAdministrativeOperationReservation",
     "KGSingleWriterLock",
     "LOCK_FILENAME",
     "LockAcquisition",

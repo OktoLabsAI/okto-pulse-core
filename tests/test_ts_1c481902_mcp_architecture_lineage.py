@@ -9,10 +9,17 @@ asserts that the failure leaves no partial spec, card, or Architecture row.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import select
 
-from r3_scenario_helpers import USER_ID, call_tool, sid
+from r3_scenario_helpers import (
+    USER_ID,
+    call_tool,
+    freeze_refinement_completion_fixture,
+    sid,
+)
 from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
@@ -27,6 +34,12 @@ from sqlalchemy_test_models import (
 
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.resource_lineage import ResolvedResourceLineageService
+from okto_pulse.core.domain.research_decision_ledger import (
+    ResearchDecisionLedgerSnapshot,
+)
+from okto_pulse.core.ports.relational_application import (
+    require_relational_application_adapter,
+)
 
 
 async def _seed_done_ideation_with_architecture(db_factory) -> dict[str, str]:
@@ -105,6 +118,7 @@ async def test_ts_1c481902_mcp_multihop_and_atomic_mixed_selection(
         ideation_id=seed["ideation_id"],
         title="Refinement with governed Architecture",
         in_scope=["Preserve Architecture lineage"],
+        delivery_context="brownfield",
         architecture_design_ids=[root_design_id],
         architecture_propagation_mode="copy",
     )
@@ -127,6 +141,19 @@ async def test_ts_1c481902_mcp_multihop_and_atomic_mixed_selection(
         refinement = await db.get(Refinement, refinement_id)
         assert refinement is not None
         refinement.status = RefinementStatus.DONE
+        await freeze_refinement_completion_fixture(db, refinement)
+        await require_relational_application_adapter().research_decisions(
+            db
+        ).save_snapshot(
+            ResearchDecisionLedgerSnapshot(
+                id=sid("rdl-snapshot-ts-1c481902"),
+                board_id=board_id,
+                refinement_id=refinement.id,
+                refinement_version=refinement.version,
+                heads=(),
+                created_at=datetime.now(timezone.utc),
+            )
+        )
         await db.commit()
 
     foreign_design_id = sid("arch-foreign-ts-1c481902")

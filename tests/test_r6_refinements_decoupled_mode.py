@@ -1,4 +1,4 @@
-"""R6 — refinements.md guidance is decoupled-mode aware (spec ba865e27, FR1-FR6).
+"""R6 — refinements.md keeps repository inspection agent-owned.
 
 Doc-tests backing TEST-A..D:
 - AC1 ts_50a44e08, AC2 ts_88b69e42  (TEST-A)
@@ -7,10 +7,10 @@ Doc-tests backing TEST-A..D:
 - AC7 ts_3295461a                    (TEST-D, guard)
 
 Each test reads the CANONICAL refinements.md and asserts the scenario's ``then``
-— the new decoupled-mode clause is present AND the old unconditional form is gone
-(not a vacuous substring check). AC7 additionally guards that NO board-mode signal
-(BoardSettings field / db column) was introduced — doc-only, owner path A
-(dec_fa1e84e0).
+The original board-level ``decoupled_mode`` proposal was superseded by the
+agent-mediated Code Traceability contract: Pulse/Community never inspect a
+working directory. These guards keep access preflight, immutable evidence and
+the explicit unavailable/waiver path visible without introducing board state.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ def _row(md: str, label: str) -> str:
 
 
 def _analysis_valve(md: str) -> str:
-    """The single line of the `analysis` deliverable that carries the N/A valve."""
-    idx = md.index("If a source did not apply, state that explicitly")
+    """The `analysis` deliverable carrying the unavailable-access valve."""
+    idx = md.index("1. **`analysis`**")
     return md[idx : md.index("\n", idx)]
 
 
@@ -56,12 +56,11 @@ def _analysis_valve(md: str) -> str:
 def test_ac1_when_it_applies_is_conditional_not_bare_always(md: str):
     pf = _row(md, "Project files")
     sc = _row(md, "Source code")
-    # New conditional form present on both code-source rows.
-    assert "Always when a codebase is accessible" in pf
-    assert "Always when a codebase is accessible" in sc
-    # Old unconditional "Always — ..." form is gone (proves it was actually changed).
-    assert "Always — the refinement must reflect the real shape" not in md
-    assert "Always — anything the refinement claims about behaviour must be verifiable" not in md
+    assert "external agent" in pf
+    assert "Pulse never opens the working directory" in pf
+    assert "accepted baseline" in sc
+    assert "`current_implementation`" in sc
+    assert "Planned TO-BE paths" in sc
 
 
 # ---------------------------------------------------------------------------
@@ -72,11 +71,10 @@ def test_ac1_when_it_applies_is_conditional_not_bare_always(md: str):
 def test_ac2_source_table_declares_na_eligible_for_decoupled(md: str):
     pf = _row(md, "Project files")
     sc = _row(md, "Source code")
-    for row in (pf, sc):
-        assert "decoupled mode" in row
-        assert "N/A with an explicit justification" in row
-    # Explicitly mirrors the established Mockups/Architecture N/A pattern.
-    assert "same pattern" in pf
+    assert "`partial` or `unavailable`" in pf
+    assert "explicit scoped waiver" in pf
+    assert "never Code Evidence" in sc
+    assert "`no_relevant_existing_implementation`" in _analysis_valve(md)
 
 
 # ---------------------------------------------------------------------------
@@ -86,10 +84,11 @@ def test_ac2_source_table_declares_na_eligible_for_decoupled(md: str):
 
 def test_ac3_analysis_valve_names_code_sources(md: str):
     valve = _analysis_valve(md)
-    assert "Project files" in valve
-    assert "Source code" in valve
-    assert "N/A-with-justification" in valve
-    assert "decoupled mode" in valve
+    assert "`evidence:<id>`" in valve
+    assert "agent receipt" in valve
+    assert "A bare `path:line` is not source truth" in valve
+    assert "`partial|unavailable`" in valve
+    assert "explicit waiver/N/A decision" in valve
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +100,9 @@ def test_ac4_stop_condition_recognises_decoupled_mode(md: str):
     idx = md.index("Stop condition — the refinement is genuinely ready when")
     # The first bullet right after the heading carries the decoupled-mode clause.
     first_bullet = md[idx:].split("\n", 2)[1]
-    assert "decoupled mode" in first_bullet
-    assert "justified N/A of Project files / Source code satisfies this condition" in first_bullet
+    assert "immutable Code Evidence" in first_bullet
+    assert "explicit unavailable receipt/waiver" in first_bullet
+    assert "without requiring Pulse to open a repository" in first_bullet
 
 
 # ---------------------------------------------------------------------------
@@ -111,14 +111,12 @@ def test_ac4_stop_condition_recognises_decoupled_mode(md: str):
 
 
 def test_ac5_antipattern_never_fabricate_pathline(md: str):
-    idx = md.index("Open the modules in scope; cite `path:line`")
+    idx = md.index("Writing the refinement from ideation text alone")
     cell = md[idx : md.index("\n", idx)]
-    # Rigor scoped to code-behaviour claims when a codebase exists...
-    assert "when a codebase is accessible" in cell
-    # ...and decoupled boards anchor to applicable sources, never fabricating.
-    assert "decoupled board" in cell
+    assert "external agent preflight" in cell
+    assert "`evidence:<id>`" in cell
+    assert "explicit waiver path" in cell
     assert "never fabricate" in cell
-    assert "KG node_id" in cell
 
 
 # ---------------------------------------------------------------------------
@@ -127,12 +125,9 @@ def test_ac5_antipattern_never_fabricate_pathline(md: str):
 
 
 def test_ac6_na_requires_justification_no_silent(md: str):
-    pf = _row(md, "Project files")
-    sc = _row(md, "Source code")
-    assert "N/A with an explicit justification" in pf
-    assert "N/A with an explicit justification" in sc
-    # The analysis valve forbids a silent omission outright.
-    assert "a silent omission is never acceptable" in md
+    valve = _analysis_valve(md)
+    assert "explicit waiver/N/A decision" in valve
+    assert "silent omission is never acceptable" in valve.casefold()
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +136,9 @@ def test_ac6_na_requires_justification_no_silent(md: str):
 
 
 def test_ac7_rigor_preserved_and_no_board_mode_signal(md: str):
-    # (a) With a codebase present, opening modules + path:line stays mandatory.
-    assert (
-        "cite `path:line` for every claim about code behaviour when a codebase is accessible"
-        in md
-    )
-    assert "Always when a codebase is accessible — the refinement must reflect" in md
+    assert "check access and capabilities in the authenticated agent's environment" in md
+    assert "Pulse and Community never inspect source code" in md
+    assert "There is no `decoupled_mode`" in md
     # (b) Doc-only (owner path A): no board-mode field/flag leaked into the Core
     # contract schema or the Community-owned relational mappings.
     schemas = SCHEMAS_PY.read_text(encoding="utf-8")

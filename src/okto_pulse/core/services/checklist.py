@@ -31,6 +31,7 @@ from okto_pulse.core.domain.checklist import (
     ChecklistPreflight,
     ChecklistReceipt,
     ChecklistReceiptSource,
+    ChecklistReceiptState,
     ChecklistReceiptView,
     ChecklistSpecSnapshot,
     ChecklistSubmission,
@@ -56,6 +57,7 @@ from okto_pulse.core.ports.checklist import (
     ChecklistListQuery,
     ChecklistPersistencePort,
     ChecklistSpecLifecycleConflict,
+    ChecklistSpecEditionConflict,
     ChecklistSpecVersionConflict,
     ChecklistTemplateConflict,
 )
@@ -124,12 +126,14 @@ class ChecklistConflictError(ChecklistError):
         message: str | None = None,
         *,
         retryable: bool = True,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             code,
             message,
             category=ChecklistErrorCategory.CONFLICT,
             retryable=retryable,
+            details=details,
         )
 
 
@@ -368,6 +372,7 @@ class ChecklistService:
             template_digest=SPECIFY_CHECKLIST_TEMPLATE_DIGEST,
             binding_digest=binding.digest or "",
             actor_id=actor,
+            spec_edition=subject.spec_edition,
         )
         try:
             return ChecklistExecution(
@@ -386,6 +391,7 @@ class ChecklistService:
                 idempotency_key=key,
                 created_by=actor,
                 created_at=now,
+                spec_edition=subject.spec_edition,
             )
         except ChecklistContractError as exc:
             raise ChecklistValidationError(exc.code, exc.message) from exc
@@ -412,6 +418,11 @@ class ChecklistService:
             ) from exc
         except ChecklistSpecVersionConflict as exc:
             raise ChecklistConflictError("checklist_spec_version_conflict") from exc
+        except ChecklistSpecEditionConflict as exc:
+            raise ChecklistConflictError(
+                "checklist_spec_edition_conflict",
+                details=dict(getattr(exc, "details", {}) or {}),
+            ) from exc
         except ChecklistContentDigestConflict as exc:
             raise ChecklistConflictError("checklist_content_digest_conflict") from exc
         except ChecklistInputDigestConflict as exc:
@@ -527,6 +538,14 @@ class ChecklistService:
             raise ChecklistValidationError("checklist_subject_mismatch")
         if submission.spec_version != subject.spec_version:
             raise ChecklistConflictError("checklist_spec_version_conflict")
+        if submission.spec_edition != subject.spec_edition:
+            raise ChecklistConflictError(
+                "checklist_spec_edition_conflict",
+                details={
+                    "expected": submission.spec_edition,
+                    "current": subject.spec_edition,
+                },
+            )
         if submission.content_digest != subject.content_digest:
             raise ChecklistConflictError("checklist_content_digest_conflict")
         if submission.input_digest != subject.input_digest:
@@ -609,6 +628,7 @@ class ChecklistService:
                 idempotency_key=submission.idempotency_key,
                 manual_checklist_ref=submission.manual_checklist_ref,
                 predecessor_receipt_id=preflight.current_head_receipt_id,
+                spec_edition=preflight.subject.spec_edition,
             )
             next_head = ChecklistExecutionHead(
                 board_id=receipt.board_id,
@@ -634,6 +654,7 @@ class ChecklistService:
                 expected_spec_archived=preflight.subject.archived,
                 receipt=receipt,
                 next_head=next_head,
+                expected_spec_edition=preflight.subject.spec_edition,
             )
         except ChecklistError:
             raise
@@ -690,6 +711,11 @@ class ChecklistService:
             raise ChecklistConflictError("checklist_head_revision_conflict") from exc
         except ChecklistSpecVersionConflict as exc:
             raise ChecklistConflictError("checklist_spec_version_conflict") from exc
+        except ChecklistSpecEditionConflict as exc:
+            raise ChecklistConflictError(
+                "checklist_spec_edition_conflict",
+                details=dict(getattr(exc, "details", {}) or {}),
+            ) from exc
         except ChecklistContentDigestConflict as exc:
             raise ChecklistConflictError("checklist_content_digest_conflict") from exc
         except ChecklistInputDigestConflict as exc:
@@ -748,6 +774,7 @@ class ChecklistService:
             submission.board_id != execution.board_id
             or submission.spec_id != execution.spec_id
             or submission.spec_version != execution.spec_version
+            or submission.spec_edition != execution.spec_edition
             or submission.content_digest != execution.content_digest
             or submission.input_digest != execution.input_digest
             or submission.template_version != execution.template_version
@@ -788,6 +815,11 @@ class ChecklistService:
             raise ChecklistConflictError("checklist_head_revision_conflict") from exc
         except ChecklistSpecVersionConflict as exc:
             raise ChecklistConflictError("checklist_spec_version_conflict") from exc
+        except ChecklistSpecEditionConflict as exc:
+            raise ChecklistConflictError(
+                "checklist_spec_edition_conflict",
+                details=dict(getattr(exc, "details", {}) or {}),
+            ) from exc
         except ChecklistContentDigestConflict as exc:
             raise ChecklistConflictError("checklist_content_digest_conflict") from exc
         except ChecklistInputDigestConflict as exc:
@@ -840,12 +872,22 @@ class ChecklistService:
         # effective OFF, with no retroactive row materialization.
         if binding is None:
             binding = ChecklistBinding.synthetic_off(board_id=board_id)
-        current = await persistence.get_current(
-            board_id=board_id,
-            spec_id=spec_id,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-        )
+        try:
+            current = await persistence.get_current(
+                board_id=board_id,
+                spec_id=spec_id,
+                phase=ChecklistPhase.SPEC_VALIDATION,
+                spec_edition=snapshot.spec_edition,
+            )
+        except TypeError:
+            current = await persistence.get_current(
+                board_id=board_id,
+                spec_id=spec_id,
+                phase=ChecklistPhase.SPEC_VALIDATION,
+            )
         receipt = None if current is None else current[0]
+        if receipt is not None and receipt.spec_edition != snapshot.spec_edition:
+            receipt = None
         try:
             return evaluate_checklist_gate(
                 binding=binding,
@@ -881,6 +923,9 @@ class ChecklistService:
         expected_spec_version = (
             receipt.spec_version if receipt is not None else submission.spec_version
         )
+        expected_spec_edition = (
+            receipt.spec_edition if receipt is not None else submission.spec_edition
+        )
         expected_head_revision = (
             bundle.expected_head_revision + 1
             if bundle is not None
@@ -890,6 +935,7 @@ class ChecklistService:
             result.board_id != expected_board_id
             or result.spec_id != expected_spec_id
             or result.spec_version != expected_spec_version
+            or result.spec_edition != expected_spec_edition
             or result.head_revision != expected_head_revision
         ):
             raise ChecklistPortContractError("checklist_commit_identity_mismatch")
@@ -926,11 +972,19 @@ class ChecklistService:
         current_binding: ChecklistBinding,
         persistence: ChecklistPersistencePort,
     ) -> CurrentChecklistView:
-        resolved = await persistence.get_current(
-            board_id=board_id,
-            spec_id=spec_id,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-        )
+        try:
+            resolved = await persistence.get_current(
+                board_id=board_id,
+                spec_id=spec_id,
+                phase=ChecklistPhase.SPEC_VALIDATION,
+                spec_edition=current_subject.spec_edition,
+            )
+        except TypeError:
+            resolved = await persistence.get_current(
+                board_id=board_id,
+                spec_id=spec_id,
+                phase=ChecklistPhase.SPEC_VALIDATION,
+            )
         if resolved is None:
             raise ChecklistNotFoundError("checklist_current_not_found")
         if (
@@ -941,6 +995,8 @@ class ChecklistService:
         ):
             raise ChecklistPortContractError("checklist_current_port_invalid")
         receipt, head = resolved
+        if receipt.spec_edition != current_subject.spec_edition:
+            raise ChecklistNotFoundError("checklist_current_not_found")
         if (
             receipt.id != head.receipt_id
             or receipt.board_id != board_id
@@ -1056,6 +1112,16 @@ class ChecklistService:
                         is_head=receipt.id == head_receipt_id,
                         currentness=currentness,
                         gate=gate,
+                        state=(
+                            ChecklistReceiptState.HISTORY_ONLY
+                            if receipt.spec_edition is None
+                            else (
+                                ChecklistReceiptState.CURRENT
+                                if receipt.id == head_receipt_id
+                                and currentness.current
+                                else ChecklistReceiptState.PREVIOUS
+                            )
+                        ),
                     )
                 )
             except ChecklistContractError as exc:

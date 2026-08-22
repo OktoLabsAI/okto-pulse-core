@@ -21,6 +21,21 @@ if TYPE_CHECKING:
     # Type-only import to keep the persistence port free of a runtime dependency
     # on the application layer (which depends on persistence) — avoids a cycle.
     from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.ports.semantic_subject_projection import (
+        SemanticAssessmentV2PersistencePort,
+        SemanticAssessmentV2ReadPort,
+        SemanticAssessmentV2CapabilityPort,
+        SemanticSubjectProjectionPort,
+    )
+    from okto_pulse.core.ports.entity_export import EntityExportReadPort
+
+
+class ConsistentReadContractError(RuntimeError):
+    """A UoW cannot establish the requested transaction-wide read snapshot."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
 
 
 @runtime_checkable
@@ -34,6 +49,11 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
 
     services: ApplicationServiceCatalog
     realm_scope: RealmScope
+    semantic_subject_projection: "SemanticSubjectProjectionPort"
+    semantic_assessment_v2: "SemanticAssessmentV2PersistencePort"
+    semantic_assessment_v2_reader: "SemanticAssessmentV2ReadPort"
+    semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
+    entity_exports: "EntityExportReadPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 
@@ -44,6 +64,22 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     async def commit(self) -> None: ...
 
     async def rollback(self) -> None: ...
+
+    async def begin_consistent_read(self) -> None:
+        """Start (or reuse) one transaction-wide consistent read snapshot.
+
+        Composite read use cases call this before their first repository or
+        authorization lookup.  The adapter must configure the strongest
+        transport-neutral equivalent of a repeatable snapshot *before* the
+        first physical statement and fail closed when an already-active
+        transaction cannot provide that guarantee.
+
+        Calling this method again in the same active snapshot is idempotent.
+        Core deliberately does not prescribe a database, dialect, SQL command
+        or isolation-level spelling here.
+        """
+
+        ...
 
     async def synchronize(
         self,

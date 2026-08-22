@@ -781,6 +781,7 @@ class ListSemanticGuidelineAssessmentsUseCase:
                 board_id=query.board_id,
                 entity_type=query.entity_type,
                 subject_id=query.subject_id,
+                subject_edition=query.subject_edition,
                 guideline_id=query.guideline_id,
                 binding_id=query.binding_id,
                 outcome=query.outcome,
@@ -880,11 +881,20 @@ class GetCurrentSemanticGuidelineAssessmentUseCase:
         _require_capability(actor, ASSESSMENTS_READ)
         await _require_board(uow, command.board_id, actor, write=False)
         port = await _semantic_port(uow)
+        subject = await port.resolve_policy_subject_snapshot(
+            board_id=command.board_id,
+            entity_type=command.entity_type,
+            subject_id=command.subject_id,
+            lock=False,
+        )
+        if subject is None:
+            raise EntityNotFoundError("policy_subject", command.subject_id)
         receipt = await port.get_current_semantic_assessment_receipt(
             board_id=command.board_id,
             entity_type=command.entity_type,
             subject_id=command.subject_id,
             binding_id=command.binding_id,
+            subject_edition=subject.subject.subject_edition,
         )
         if receipt is None:
             raise EntityNotFoundError(
@@ -919,6 +929,7 @@ class ListSemanticGuidelineFindingsUseCase:
             board_id=query.board_id,
             entity_type=query.entity_type,
             subject_id=query.subject_id,
+            subject_edition=query.subject_edition,
             receipt_id=query.receipt_id,
             guideline_id=query.guideline_id,
             binding_id=query.binding_id,
@@ -996,6 +1007,7 @@ class ListSemanticMetricWaiversUseCase:
                 metric_id=query.metric_id,
                 entity_type=query.entity_type,
                 subject_id=query.subject_id,
+                subject_edition=query.subject_edition,
                 # Lifecycle status cannot implement the authoritative as-of
                 # filter: an unmutated approved head may be effectively
                 # expired at query.evaluated_at.
@@ -1831,6 +1843,7 @@ class ListSemanticPolicySkipsUseCase:
                 board_id=query.board_id,
                 entity_type=query.entity_type,
                 subject_id=query.subject_id,
+                subject_edition=query.subject_edition,
                 binding_id=query.binding_id,
                 status=query.status,
                 after=after,

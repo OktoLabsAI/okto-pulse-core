@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 # Pre-Flight Checklist (READ FIRST)
@@ -124,3 +124,58 @@ add evidence) and retry.
 - **off**, or a board with **no effective Design System**: the gate never blocks.
 
 > Caveat: `mandate=true` can still fail at the gate with `design_system_not_found` if the board's configured Design System is **dangling** (e.g. a board link to a deleted Design System — the resolver still reports it but `exists=false`). Read a `design_system_not_found` under `mandate=true` as "the board's Design System config is broken", not as your ref being wrong.
+
+### Code Traceability pre-flight — agent mediated
+
+Before a governed Refinement, Spec, or Card transition, follow this chain:
+
+```text
+explicit delivery_context + full subject context
+→ external agent capability/access preflight
+→ contextual V2 receipt
+→ AS-IS evidence or target coverage
+→ accepted-receipt freshness against subject/version and source head
+→ overlap decision
+→ allowed transition
+```
+
+A Refinement and a direct Spec require an explicit
+`delivery_context=brownfield|greenfield|hybrid`; a derived Spec inherits the
+value and provenance frozen in its Refinement snapshot. Never infer delivery
+context from source access, repository contents, or an empty Evidence list.
+
+The authenticated external agent performs the capability/access check and any
+deterministic source investigation in its own environment. Pulse Core validates
+and governs the bounded attestation. Pulse Community only persists and projects
+the resulting opaque records. Neither Pulse surface clones, opens, searches,
+resolves, or otherwise establishes truth from a repository, filesystem, code
+provider, or language runtime.
+
+For new work, submit `contract_version=2` with
+`evidence_applicable`, `no_relevant_existing_implementation`, `partial`, or
+`unavailable`. The no-existing outcome is complete Greenfield evidence and
+requires full identity/workspace/capabilities with no omissions; it is not an
+alias for unavailable access. Existing scaffold/base, constraints, and
+references may still be recorded as AS-IS Evidence under
+`existing_scaffold`, `existing_constraint`, or `reference_pattern`.
+Scaffold/reference items require `interpretation_limit`.
+
+Never submit TO-BE files or structures as Evidence. Put them in the Spec,
+Architecture Design, mockup, or Implementation Target. V1 remains readable but
+contextually unclassified and cannot be inferred into V2 authority. If the
+live inbound surface exposes only V1, stop and report the missing V2
+capability.
+
+If `source_context_items` reports `unclassified_legacy`, surface the IDs. Only
+an authorized human may append a classification through UI/REST; there is no
+MCP classification mutation, and the original Evidence remains immutable.
+Read the effective `source_context` summary even when item collections are
+bounded. Treat a derived Spec's source-context manifest as frozen until an
+explicit, preview-fenced rebase.
+
+Treat `partial` and `unavailable` as explicit outcomes. Follow the typed
+blocker or human-waiver path advertised by policy; never invent
+`decoupled_mode`, infer access from a previous run, or silently downgrade a
+blocking gate.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

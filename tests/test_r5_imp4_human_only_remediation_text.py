@@ -124,6 +124,7 @@ def _receipt_for(ideation: Ideation, *, score: int) -> AssessmentReceipt:
         subject_type=AssessmentSubjectType.IDEATION,
         subject_id=ideation.id,
         subject_version=ideation.version,
+        subject_edition=int(ideation.edition),
     )
     return AssessmentReceipt(
         id=_id("receipt"),

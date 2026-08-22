@@ -7,6 +7,9 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    KGDeadLetterReprocessScope,
+)
 from okto_pulse.core.kg.curation_policy import CurationPolicyError
 from okto_pulse.core.kg.graph_export import GraphExportError
 
@@ -403,13 +406,20 @@ class CoreKnowledgeGraphOperations:
             scheduler_control=scheduler_control,
         )
 
-    async def list_consolidation_audit(self, board_id: str, *, limit: int):  # noqa: ANN201
+    async def list_consolidation_audit(
+        self,
+        board_id: str,
+        *,
+        limit: int,
+        include_code_traceability: bool = True,
+    ):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import list_consolidation_audit
 
         return await list_consolidation_audit(
             self.__relational_context,
             board_id,
             limit=limit,
+            include_code_traceability=include_code_traceability,
         )
 
     async def start_historical_consolidation(self, board_id: str):  # noqa: ANN201
@@ -499,10 +509,21 @@ class CoreKnowledgeGraphOperations:
             purge_relational=purge_relational,
         )
 
-    async def list_pending_entries(self, board_id: str):  # noqa: ANN201
+    async def list_pending_entries(
+        self,
+        board_id: str,
+        *,
+        include_code_traceability: bool = True,
+    ):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import list_pending_entries
 
-        return await list_pending_entries(self.__relational_context, board_id)
+        if include_code_traceability:
+            return await list_pending_entries(self.__relational_context, board_id)
+        return await list_pending_entries(
+            self.__relational_context,
+            board_id,
+            include_code_traceability=False,
+        )
 
     async def build_pending_tree(self, board_id: str, *, depth: int):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import build_pending_tree
@@ -514,15 +535,23 @@ class CoreKnowledgeGraphOperations:
         )
 
     async def retry_pending_entry(
-        self, board_id: str, queue_entry_id: str, *, recursive: bool
+        self,
+        board_id: str,
+        queue_entry_id: str,
+        *,
+        recursive: bool,
+        include_code_traceability: bool = True,
     ):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import retry_pending_entry
 
+        kwargs = {"recursive": recursive}
+        if not include_code_traceability:
+            kwargs["include_code_traceability"] = False
         return await retry_pending_entry(
             self.__relational_context,
             board_id,
             queue_entry_id,
-            recursive=recursive,
+            **kwargs,
         )
 
     async def boost_node(self, board_id: str, node_id: str, *, actor_id: str):  # noqa: ANN201
@@ -565,6 +594,7 @@ class CoreKnowledgeGraphOperations:
         *,
         dead_letter_ids: list[str] | None,
         limit: int,
+        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
     ) -> dict[str, object]:
         from okto_pulse.core.services.dead_letter_inspector_service import (
             reprocess_dead_letter_rows,
@@ -575,6 +605,7 @@ class CoreKnowledgeGraphOperations:
             board_id,
             dead_letter_ids=dead_letter_ids,
             limit=limit,
+            scope=scope,
         )
 
     async def diagnose_connectivity_guard_dlq(self, board_id: str) -> dict[str, object]:
@@ -613,7 +644,14 @@ class CoreKnowledgeGraphOperations:
             artifact_refs=artifact_refs,
         )
 
-    async def list_cognitive_dlq_rows(self, board_id: str, *, limit: int, offset: int):  # noqa: ANN201
+    async def list_cognitive_dlq_rows(
+        self,
+        board_id: str,
+        *,
+        limit: int,
+        offset: int,
+        include_code_traceability: bool = False,
+    ):  # noqa: ANN201
         from okto_pulse.core.services.dead_letter_inspector_service import (
             list_cognitive_dlq_rows,
         )
@@ -623,10 +661,16 @@ class CoreKnowledgeGraphOperations:
             board_id,
             limit=limit,
             offset=offset,
+            include_code_traceability=include_code_traceability,
         )
 
     async def list_dead_letter_rows(
-        self, board_id: str, *, limit: int, offset: int
+        self,
+        board_id: str,
+        *,
+        limit: int,
+        offset: int,
+        include_code_traceability: bool = True,
     ) -> dict[str, object]:
         from okto_pulse.core.services.dead_letter_inspector_service import (
             list_dead_letter_rows,
@@ -637,6 +681,7 @@ class CoreKnowledgeGraphOperations:
             board_id,
             limit=limit,
             offset=offset,
+            include_code_traceability=include_code_traceability,
         )
 
     async def list_stale_canonical_parity(
@@ -726,6 +771,7 @@ class CoreKnowledgeGraphOperations:
         state: str | None,
         limit: int,
         offset: int,
+        include_code_traceability: bool = True,
     ):  # noqa: ANN201
         from okto_pulse.core.services.canonical_debt_service import list_canonical_debt
 
@@ -736,6 +782,7 @@ class CoreKnowledgeGraphOperations:
             state=state,
             limit=limit,
             offset=offset,
+            include_code_traceability=include_code_traceability,
         )
 
     async def schedule_canonical_debt_retry(
@@ -856,6 +903,7 @@ class CoreKnowledgeGraphOperations:
         limit: int,
         cursor: str | None,
         classification: str | None,
+        include_code_traceability: bool = True,
     ) -> dict[str, object]:
         from okto_pulse.core.application.global_outbox_dead_letter import (
             GlobalOutboxDeadLetterOperations,
@@ -869,6 +917,7 @@ class CoreKnowledgeGraphOperations:
             limit=limit,
             cursor=cursor,
             classification=classification,
+            include_code_traceability=include_code_traceability,
         )
 
     async def reprocess_global_outbox_dead_letters(
@@ -940,6 +989,7 @@ class CoreKnowledgeGraphOperations:
                     limit=page_limit,
                     error_markers=GLOBAL_OPEN_ERROR_CODES,
                     after=cursor,
+                    include_code_traceability=False,
                 )
             )
             if not rows:
@@ -989,12 +1039,21 @@ class CoreKnowledgeGraphOperations:
 
         return await get_queue_health(self.__relational_context)
 
-    async def queue_drilldown(self, board_id: str | None) -> dict[str, object]:
+    async def queue_drilldown(
+        self,
+        board_id: str | None,
+        *,
+        include_code_traceability: bool = True,
+    ) -> dict[str, object]:
         from okto_pulse.core.services.queue_health_service import (
             get_active_queue_drilldown,
         )
 
-        return await get_active_queue_drilldown(self.__relational_context, board_id)
+        return await get_active_queue_drilldown(
+            self.__relational_context,
+            board_id,
+            include_code_traceability=include_code_traceability,
+        )
 
     async def invoke_rebuild_admission(
         self,

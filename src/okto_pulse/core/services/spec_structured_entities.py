@@ -38,10 +38,7 @@ from okto_pulse.core.ports.structured_spec import (
     StructuredSpecRecord,
     get_structured_spec_store,
 )
-from okto_pulse.core.ports.requirement_lint import RequirementLintWriter
-from okto_pulse.core.services.requirement_lint_writer import (
-    stage_spec_requirement_lint,
-)
+from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 from okto_pulse.core.services.main import (
     SpecLockedError,
     SpecService,
@@ -328,6 +325,7 @@ class StructuredSpecEntityErrorCode:
     LINK_TARGET_INVALID = "link_target_invalid"
     SPEC_LOCKED = "spec_locked"
     SPEC_NOT_FOUND = "spec_not_found"
+    SUBJECT_EDIT_REQUIRES_DRAFT = "subject_edit_requires_draft"
 
 
 @dataclass(slots=True)
@@ -447,6 +445,7 @@ class StructuredSpecEntityCommand:
     board_id: str | None = None
     entity_id: str | None = None
     expected_spec_version: int | None = None
+    expected_spec_edition: int | None = None
     position: int | None = None
     task_id: str | None = None
     ack_token: str | None = None
@@ -530,6 +529,7 @@ class StructuredSpecEntityService:
                 StructuredSpecEntityErrorCode.VALIDATION_FAILED,
                 "This spec is archived. Restore it first before making changes.",
             )
+        require_draft_mutation(spec, subject_type="spec")
 
         permission = self._required_permission(command)
         if command.permission_set is not None:
@@ -555,6 +555,16 @@ class StructuredSpecEntityService:
                 command,
                 StructuredSpecEntityErrorCode.VERSION_CONFLICT,
                 f"Expected spec version {command.expected_spec_version}, found {spec.version}.",
+            )
+        if (
+            command.expected_spec_edition is not None
+            and command.expected_spec_edition != getattr(spec, "edition", None)
+        ):
+            return self._failure(
+                command,
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                f"Expected spec edition {command.expected_spec_edition}, "
+                f"found {getattr(spec, 'edition', None)}.",
             )
 
         try:
@@ -802,14 +812,6 @@ class StructuredSpecEntityService:
             spec,
             changed_fields=changed_fields,
         )
-        await stage_spec_requirement_lint(
-            self.db,
-            spec,
-            actor_id=command.actor_id,
-            writer=RequirementLintWriter.STRUCTURED_CRUD,
-            changed_fields=tuple(changed_fields),
-        )
-
         result = StructuredSpecEntityResult(
             success=True,
             entity_type=command.entity_type,

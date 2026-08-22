@@ -45,7 +45,13 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": ["board:read"],
+            "permissions": [
+                "board:read",
+                "code_traceability.investigation.read",
+                "code_traceability.evidence.read",
+                "code_traceability.target.read",
+                "code_traceability.overlap.read",
+            ],
         },
     )()
 

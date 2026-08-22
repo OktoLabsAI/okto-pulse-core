@@ -24,6 +24,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Navigate spec validation/evaluation gates | `okto-pulse://reference/spec_gates` |
 | Record/read Quality assessments or pinpoint findings | `okto-pulse://reference/quality-assessments` |
 | Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
+| Record Technical Evidence, Technical Anchors/Implementation Targets, Spec evidence links, or task target resolutions | `okto-pulse://reference/code-traceability` |
 | Move a card / sprint / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |
@@ -49,7 +50,7 @@ Cache the resource within the session; re-fetch when you switch domains — reso
 
 ## Card Status Transitions
 
-Every status change has pre-requisites (e.g. `validation` → `done` requires `okto_pulse_submit_task_validation`; `approved` → `validated` requires all coverage gates passing). Before any move, fetch `okto-pulse://reference/transitions` for the full matrix (normal/test cards, sprints, specs). Ideation/refinement status flows live in their workflow files (`okto-pulse://workflows/{ideations,refinements}`).
+Every status change has pre-requisites. For a normal Task or Bug in `validation`, call `okto_pulse_submit_task_validation`: an admitted successful assessment with every governed completion gate satisfied completes the card, while a failed assessment or completion gate moves it to `rejected`. `rejected` is an explicit rework queue, not a request to resubmit the same evidence; inspect its Current rejection cause, correct the work, and use the sole public exit `rejected` → `in_progress` before a new validation cycle. Test Cards retain their separate `validation` → `in_progress` rework edge and never enter `rejected`. Spec `approved` → `validated` still requires all coverage gates passing. Before any move, fetch `okto-pulse://reference/transitions` for the full matrix (normal/test cards, sprints, specs). Ideation/refinement status flows live in their workflow files (`okto-pulse://workflows/{ideations,refinements}`).
 
 ---
 
@@ -71,6 +72,7 @@ Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalo
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 - **Quality evidence**: read `okto-pulse://reference/quality-assessments` before recording ambiguity or using a receipt/currentness result in a gate decision.
+- **Code Traceability**: record material source findings and implementation intent via `okto-pulse://reference/code-traceability`. Confirm the explicit `delivery_context` first. New Evidence is contextual V2 and AS-IS only: an existing Greenfield scaffold/base/reference must carry its truthful role and `interpretation_limit`; planned TO-BE structure belongs in the Spec/Architecture/Target. V1 stays unclassified and fails closed for new governed work. Legacy classification is append-only human UI/REST governance with no MCP mutation. Read effective `source_context`; a derived Spec remains frozen until an explicit preview-fenced rebase. In `advisory`, omissions do not block, but Pulse cannot reconstruct them; later drift may force a full reinvestigation.
 
 ### Response projection profiles — summary-first reads
 High-volume reads can be returned under a projection profile — see `okto-pulse://reference/projection-profiles`. Use `summary` (the default/slim profile) for cheap exploration; `detail` plus follow-ups for bounded body reads; `full` for complete single-item reads; and `legacy` for compatibility. **Summary-first is for exploration ONLY.** It never replaces the mandatory full gate read required before any status-changing move (moving a card/spec/sprint, submitting a gate). For cards use `okto_pulse_get_task_context(profile="full", context_scope="gate")`; other entity-context tools use `profile="full"`. Profiles apply to `get_*_context`/`copy_*` reads — NOT to the `list_*` tools: `okto_pulse_list_by_board(entity_type="spec")` returns full descriptions (payloads of tens of KB) — filter by status/labels and read bodies via `okto_pulse_get_spec`; `entity_type="refinement"` requires `filters.ideation_id`.
@@ -79,7 +81,7 @@ High-volume reads can be returned under a projection profile — see `okto-pulse
 
 ## KG health and operational signals (stop-rule)
 
-Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**. **Stop-rule:** `overall_state == quarantined` → STOP and surface; do not write. For `recovery_needed`, branch on the component; generic `overall_state` never selects a repair. Board `graph_state=recovery_needed` uses `okto_pulse_kg_rebuild_preflight` → `okto_pulse_kg_rebuild_confirm` → `okto_pulse_kg_rebuild_run`. If `graph_state=healthy`, `discovery_state=recovery_needed`, and `discovery_recovery_required=true`, use `okto_pulse_kg_global_discovery_recovery_preflight` → `okto_pulse_kg_global_discovery_recovery_confirm` → `okto_pulse_kg_global_discovery_recovery_run`; board rebuild refuses this scope. `metric_status=unavailable` ≠ healthy — treat as `at_risk`. Full contract: **`okto-pulse://reference/kg-health`**.
+Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**. **Stop-rule:** `overall_state == quarantined` → STOP and surface; do not write. For `recovery_needed`, branch on the component; generic `overall_state` never selects a repair. Board `graph_state=recovery_needed`: `okto_pulse_kg_rebuild_preflight` is diagnostic only; online `okto_pulse_kg_rebuild_confirm` and `okto_pulse_kg_rebuild_run` return `recovery_execution_required`. STOP Pulse and surface the governed local one-shot offline recovery command documented in `okto-pulse://reference/kg-health`; rehearse on a data-home copy before executing with the reviewed installation fingerprint. Never retry the online tools, reuse their refs, or fabricate a capability. If `graph_state=healthy`, `discovery_state=recovery_needed`, and `discovery_recovery_required=true`, use `okto_pulse_kg_global_discovery_recovery_preflight` → `okto_pulse_kg_global_discovery_recovery_confirm` → `okto_pulse_kg_global_discovery_recovery_run`; board rebuild refuses this scope. `metric_status=unavailable` ≠ healthy — treat as `at_risk`. Full contract: **`okto-pulse://reference/kg-health`**.
 
 ---
 

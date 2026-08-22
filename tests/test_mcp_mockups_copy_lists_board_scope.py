@@ -807,8 +807,8 @@ async def test_same_board_copy_mockup_crud_and_lists_remain_functional(
     )
     assert copied == {
         "success": True,
-        "copied": 1,
-        "total_on_card": 1,
+        "copied": 3,
+        "total_on_card": 3,
         "fallback": False,
     }
     copied_card_mockups = await _call(
@@ -819,9 +819,12 @@ async def test_same_board_copy_mockup_crud_and_lists_remain_functional(
         entity_id=ids["card_a"],
         include_content=True,
     )
-    assert copied_card_mockups["screens"][0]["html_content"] == (
-        "<main>Local spec screen</main>"
-    )
+    assert copied_card_mockups["total"] == 3
+    assert next(
+        screen
+        for screen in copied_card_mockups["screens"]
+        if screen["id"] == ids["screen_spec_a"]
+    )["html_content"] == "<main>Local spec screen</main>"
 
     copied_qa = await _call(
         db_factory,
@@ -952,9 +955,11 @@ async def test_same_board_copy_mockup_crud_and_lists_remain_functional(
         assert [screen["id"] for screen in story.screen_mockups] == [
             ids["screen_story_a"]
         ]
-        assert [screen["id"] for screen in card.screen_mockups] == [
-            ids["screen_spec_a"]
-        ]
+        assert {screen["id"] for screen in card.screen_mockups} == {
+            ids["screen_spec_a"],
+            ids["screen_refine_a"],
+            ids["screen_idea_a"],
+        }
         assert comments == 1
 
 

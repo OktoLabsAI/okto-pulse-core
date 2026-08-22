@@ -89,13 +89,25 @@ async def test_ambiguity_human_apply_and_remove_are_audited(db_factory):
     # APPLY (False -> True) via the human service path.
     async with db_factory() as db:
         await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="rest",
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
         )
         await db.commit()
     # REMOVE (True -> False) — the un-skip must also be audited.
     async with db_factory() as db:
         result = await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, False, source="rest",
+            ideation_id,
+            USER_ID,
+            False,
+            reason="Skip is no longer needed in this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
         )
         await db.commit()
         assert result.skip_ambiguity_gate is False
@@ -151,8 +163,15 @@ async def test_ambiguity_rest_endpoint_is_human_authorized(db_factory):
     app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     client = TestClient(app)
 
-    resp = client.patch(f"/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
-                        json={"skip_ambiguity_gate": True})
+    resp = client.patch(
+        f"/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
+        json={
+            "skip_ambiguity_gate": True,
+            "reason": "Accepted for this validation edition.",
+            "expected_ideation_version": 1,
+            "expected_ideation_edition": 1,
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["skip_ambiguity_gate"] is True
 

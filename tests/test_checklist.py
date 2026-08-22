@@ -749,9 +749,10 @@ async def test_allowed_transition_preview_uses_the_same_blocking_predicate() -> 
                 "check_ir_coverage",
                 "check_or_coverage",
                 "check_task_requirement_links_for_spec",
-                "check_decision_presence",
-                "check_decisions_coverage",
-            )
+                    "check_decision_presence",
+                    "check_decisions_coverage",
+                    "check_code_evidence_coverage",
+                )
         }
     )
     persistence = FakeChecklistPersistence(

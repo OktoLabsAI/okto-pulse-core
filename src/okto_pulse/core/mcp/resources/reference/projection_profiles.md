@@ -140,3 +140,23 @@ other entity-context tools it remains `profile="full"`. Summary-first discovery
 never replaces that mandatory full gate read before a mutation. Fetch
 `detail`/follow-up content separately when implementation or review requires the
 artifact bodies.
+
+## Code Traceability projections
+
+Code Traceability uses the same response envelope and profile rules; it does
+not introduce a parallel context mechanism.
+
+| Profile/scope | Projected traceability data |
+|---|---|
+| `compact` | Counts, mode, aggregate readiness, and bounded blocker codes. |
+| `summary` | Receipt and lifecycle metadata, currentness, coverage, Target states, and overlap summaries; no excerpts. |
+| `detail` | Summary plus bounded rationale, selectors, links, dispositions, and resolution metadata; safe excerpt previews may be omitted. |
+| `full`, `context_scope=all` | Complete bounded Evidence, links, disposition history, Target history, and candidates within hard caps. |
+| `full`, `context_scope=gate` | Fingerprints, current accepted agent receipt, receipt currentness, Target resolution states, blockers, overlaps, and omission manifest; no excerpts. |
+
+Paths and symbols are attested payload fields, never instructions for Pulse to
+open source. Gate projections intentionally exclude excerpts and secrets.
+Community projects only records already persisted through Core use cases; it
+does not enrich a projection by reading a repository or provider.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

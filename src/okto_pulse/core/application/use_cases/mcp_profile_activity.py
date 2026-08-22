@@ -20,9 +20,12 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
+    decide_authorization,
     require_authorization,
+    resolve_actor_permissions,
 )
 from okto_pulse.core.services.analytics_contract import encode_activity_cursor
+from okto_pulse.core.services.activity_log import redact_task_validation_activity
 
 
 class McpUpdateMyProfileCommand:
@@ -287,6 +290,18 @@ class McpGetActivityLogUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpGetActivityLogResult:
+        await require_authorization(
+            actor,
+            PermissionRequirement("board.activity_read"),
+            uow=uow,
+            board_id=command.board_id,
+        )
+        permissions = await resolve_actor_permissions(actor, uow, command.board_id)
+        can_read_validations = decide_authorization(
+            actor,
+            PermissionRequirement("card.validation.read"),
+            permissions,
+        ).allowed
         rows, next_cursor_pair = await uow.services.get_activity_log_rows(
             board_id=command.board_id,
             limit=command.limit,
@@ -296,6 +311,8 @@ class McpGetActivityLogUseCase:
             card_id=command.card_id,
             include_details=command.include_details,
         )
+        if not can_read_validations:
+            rows = [redact_task_validation_activity(row) for row in rows]
         await commit(uow)
 
         next_cursor: str | None = None

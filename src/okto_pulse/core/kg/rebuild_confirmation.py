@@ -295,6 +295,78 @@ class RebuildConfirmationStore:
         )
         return token
 
+    def revoke_unconsumed(
+        self,
+        *,
+        confirmation_id: str,
+        expected_board_id: str,
+        expected_actor_id: str,
+        expected_operation: str,
+        expected_preflight_hash: str,
+        expected_manifest_ref: str,
+    ) -> bool:
+        """Atomically revoke one exact unconsumed recovery confirmation.
+
+        The offline executor calls this in failure cleanup between ``issue``
+        and ``run``.  Revocation is scope-bound and leaves only a deterministic
+        non-secret receipt, so a process crash cannot strand the raw token and
+        a retry can prove that cleanup already completed.
+        """
+
+        from okto_pulse.core.kg.rebuild_audit import confirmation_fingerprint
+
+        confirmation_ref = confirmation_fingerprint(confirmation_id)
+        revocation_key = RebuildAuditKey(
+            namespace="confirmation_audit",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+            artifact_id=f"revoked_{confirmation_ref.removeprefix('conf_fp_')}",
+        )
+        expected_binding = {
+            "schema_version": "kg_rebuild_confirmation_revocation.v1",
+            "state": "revoked_unconsumed",
+            "confirmation_ref": confirmation_ref,
+            "board_id": expected_board_id,
+            "actor_id": expected_actor_id,
+            "operation": expected_operation,
+            "preflight_hash": expected_preflight_hash,
+            "manifest_ref": expected_manifest_ref,
+        }
+        existing_revocation = self.artifact_store.read_json(revocation_key)
+        if existing_revocation is not None:
+            if existing_revocation != expected_binding:
+                raise RuntimeError("rebuild_confirmation_revocation_binding_conflict")
+            # Complete the receipt-before-unlink crash cut if the source still
+            # exists; the atomic adapter recognizes the exact receipt.
+
+        data = self._read(confirmation_id)
+        if data is None:
+            return existing_revocation == expected_binding
+        scope_fields = (
+            ("confirmation_id", data.get("confirmation_id"), confirmation_id),
+            ("board_id", data.get("board_id"), expected_board_id),
+            ("actor_id", data.get("actor_id"), expected_actor_id),
+            ("operation", data.get("operation"), expected_operation),
+            ("preflight_hash", data.get("preflight_hash"), expected_preflight_hash),
+            ("manifest_ref", data.get("manifest_ref"), expected_manifest_ref),
+        )
+        mismatch = next(
+            (name for name, actual, expected in scope_fields if actual != expected),
+            None,
+        )
+        if mismatch is not None:
+            raise RuntimeError(
+                f"rebuild_confirmation_revocation_scope_mismatch:{mismatch}"
+            )
+        outcome = self.artifact_store.consume_json_with_receipt(
+            source_key=self._key(confirmation_id),
+            expected_source=data,
+            receipt_key=revocation_key,
+            receipt_payload=expected_binding,
+        )
+        if outcome in {"consumed", "receipt_exists"}:
+            return True
+        raise RuntimeError(f"rebuild_confirmation_revocation_failed:{outcome}")
+
     def _record_consumption_audit(
         self,
         *,
@@ -359,16 +431,17 @@ class RebuildConfirmationStore:
         expected_manifest_ref: str,
         consumption_receipt_key: RebuildAuditKey | None = None,
         consumption_receipt_payload: Mapping[str, Any] | None = None,
+        expected_terminal_receipt: Mapping[str, Any] | None = None,
     ) -> ConfirmationResult:
         """Atomically consume a token if it matches every expected
         scope field. Returns ``ConfirmationResult`` — caller MUST
         refuse to mutate unless ``outcome == 'consumed'``."""
-        if (consumption_receipt_key is None) != (
-            consumption_receipt_payload is None
-        ):
+        if (consumption_receipt_key is None) != (consumption_receipt_payload is None):
             raise ValueError(
                 "consumption receipt key and payload must be supplied together"
             )
+        if expected_terminal_receipt is not None and consumption_receipt_key is None:
+            raise ValueError("terminal receipt replacement requires receipt key")
         actor_type = _classify_actor(expected_actor_id)
         # Read first to evaluate scope. Then attempt atomic unlink.
         try:
@@ -509,12 +582,23 @@ class RebuildConfirmationStore:
         # unlink-only behavior.  Both operations are edition-serialized.
         atomic_outcome = "consumed"
         if consumption_receipt_key is not None:
-            atomic_outcome = self.artifact_store.consume_json_with_receipt(
-                source_key=self._key(confirmation_id),
-                expected_source=data,
-                receipt_key=consumption_receipt_key,
-                receipt_payload=consumption_receipt_payload or {},
-            )
+            if expected_terminal_receipt is not None:
+                atomic_outcome = (
+                    self.artifact_store.consume_json_replacing_terminal_receipt(
+                        source_key=self._key(confirmation_id),
+                        expected_source=data,
+                        receipt_key=consumption_receipt_key,
+                        expected_terminal_receipt=expected_terminal_receipt,
+                        receipt_payload=consumption_receipt_payload or {},
+                    )
+                )
+            else:
+                atomic_outcome = self.artifact_store.consume_json_with_receipt(
+                    source_key=self._key(confirmation_id),
+                    expected_source=data,
+                    receipt_key=consumption_receipt_key,
+                    receipt_payload=consumption_receipt_payload or {},
+                )
         elif not self._delete(confirmation_id):
             atomic_outcome = "source_missing"
         if atomic_outcome != "consumed":

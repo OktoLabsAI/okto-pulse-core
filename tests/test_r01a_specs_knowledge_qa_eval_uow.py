@@ -77,7 +77,12 @@ async def _seed_spec(owner: str = USER) -> str:
         await db.commit()
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            bid, owner, SpecCreate(title=f"fu3ds4-{uuid.uuid4().hex[:6]}")
+            bid,
+            owner,
+            SpecCreate(
+                title=f"fu3ds4-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         return spec.id
@@ -347,7 +352,10 @@ async def test_spec_qa_wrong_parent_same_board_fails_closed_without_audit(
         other_spec = await SpecService(db).create_spec(
             requested_spec.board_id,
             USER,
-            SpecCreate(title=f"qa-other-parent-{uuid.uuid4().hex[:6]}"),
+            SpecCreate(
+                title=f"qa-other-parent-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         board_id = requested_spec.board_id

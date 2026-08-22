@@ -51,13 +51,15 @@ _ENDPOINTS = (
 )
 
 _VALID_VALIDATION = {
+    "expected_subject_version": 1,
+    "idempotency_key": "task-validation-fu4s2",
     "confidence": 90,
-    "confidence_justification": "high",
+    "confidence_justification": "The reviewer inspected the delivered behavior.",
     "estimated_completeness": 100,
-    "completeness_justification": "all done",
+    "completeness_justification": "All acceptance criteria are implemented.",
     "estimated_drift": 0,
-    "drift_justification": "none",
-    "general_justification": "ok",
+    "drift_justification": "No implementation drift was identified.",
+    "general_justification": "The implementation satisfies the reviewed task contract.",
     "recommendation": "approve",
 }
 
@@ -221,6 +223,54 @@ async def test_move_card_valid_selector_variants_reorder_and_return_card_respons
 
 
 @pytest.mark.asyncio
+async def test_move_card_reorders_within_rejected_but_refuses_inbound_transition(
+    client,
+) -> None:
+    from sqlalchemy_test_models import Card, CardStatus
+
+    board_id, spec_id = await _seed_board_spec()
+    rejected_a = await _seed_card(
+        board_id=board_id,
+        spec_id=spec_id,
+        title="rejected-a",
+        status=CardStatus.REJECTED,
+        position=0,
+    )
+    rejected_b = await _seed_card(
+        board_id=board_id,
+        spec_id=spec_id,
+        title="rejected-b",
+        status=CardStatus.REJECTED,
+        position=1,
+    )
+    validation = await _seed_card(
+        board_id=board_id,
+        spec_id=spec_id,
+        title="validation",
+        status=CardStatus.VALIDATION,
+        position=0,
+    )
+
+    reorder = client.post(
+        f"{PREFIX}/{rejected_b}/move",
+        json={"status": "rejected", "before_id": rejected_a},
+    )
+    assert reorder.status_code == 200, reorder.text
+    assert reorder.json()["status"] == "rejected"
+    assert reorder.json()["position"] == 0
+
+    inbound = client.post(
+        f"{PREFIX}/{validation}/move",
+        json={"status": "rejected"},
+    )
+    assert inbound.status_code == 409, inbound.text
+    async with get_session_factory()() as db:
+        persisted = await db.get(Card, validation)
+    assert persisted is not None
+    assert persisted.status is CardStatus.VALIDATION
+
+
+@pytest.mark.asyncio
 async def test_move_card_route_maps_missing_cancellation_reason_to_typed_400(
     client,
 ) -> None:
@@ -322,20 +372,21 @@ async def test_remove_dependency_204_then_404(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_submit_validation_400_missing_fields(client) -> None:
+async def test_submit_validation_422_missing_fields(client) -> None:
     card_id = await _seed_card()
     resp = client.post(f"{PREFIX}/{card_id}/validate", json={})
-    assert resp.status_code == 400, resp.text
-    assert resp.json()["detail"].startswith("Missing required fields:")
+    assert resp.status_code == 422, resp.text
+    missing = {item["loc"][-1] for item in resp.json()["detail"]}
+    assert {"expected_subject_version", "idempotency_key", "confidence"} <= missing
 
 
 @pytest.mark.asyncio
-async def test_submit_validation_400_bad_recommendation(client) -> None:
+async def test_submit_validation_422_bad_recommendation(client) -> None:
     card_id = await _seed_card()
     payload = dict(_VALID_VALIDATION, recommendation="maybe")
     resp = client.post(f"{PREFIX}/{card_id}/validate", json=payload)
-    assert resp.status_code == 400, resp.text
-    assert resp.json()["detail"] == "recommendation must be 'approve' or 'reject'"
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"][0]["loc"][-1] == "recommendation"
 
 
 @pytest.mark.asyncio
@@ -353,6 +404,97 @@ async def test_submit_validation_404_missing_card(client) -> None:
     resp = client.post(f"{PREFIX}/{_missing()}/validate", json=dict(_VALID_VALIDATION))
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Card not found"
+
+
+@pytest.mark.asyncio
+async def test_submit_validation_exact_retry_replays_after_rejected(client) -> None:
+    from sqlalchemy_test_models import Card, CardStatus
+
+    card_id = await _seed_card()
+    async with get_session_factory()() as db:
+        card = await db.get(Card, card_id)
+        card.status = CardStatus.VALIDATION
+        await db.commit()
+        await db.refresh(card)
+        version = card.policy_version
+
+    payload = {
+        **_VALID_VALIDATION,
+        "expected_subject_version": version,
+        "idempotency_key": f"reject-{card_id}",
+        "recommendation": "reject",
+    }
+    first = client.post(f"{PREFIX}/{card_id}/validate", json=payload)
+    assert first.status_code == 201, first.text
+    assert first.json()["card_status"] == "rejected"
+    assert first.json()["replayed"] is False
+    assert {"response", "request_digest", "idempotency_key"}.isdisjoint(first.json())
+
+    replay = client.post(f"{PREFIX}/{card_id}/validate", json=payload)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+    assert replay.json()["replayed"] is True
+    assert {"response", "request_digest", "idempotency_key"}.isdisjoint(replay.json())
+
+    listed = client.get(f"{PREFIX}/{card_id}/validations")
+    fetched = client.get(
+        f"{PREFIX}/{card_id}/validations/{first.json()['id']}"
+    )
+    assert listed.status_code == 200, listed.text
+    assert fetched.status_code == 200, fetched.text
+    for public_validation in (*listed.json()["validations"], fetched.json()):
+        assert {"response", "request_digest", "idempotency_key"}.isdisjoint(
+            public_validation
+        )
+
+    conflict = client.post(
+        f"{PREFIX}/{card_id}/validate",
+        json={**payload, "general_justification": "A different assessment payload."},
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert (
+        conflict.json()["detail"]["code"]
+        == "task_validation_idempotency_conflict"
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_validation_exact_retry_replays_after_done(
+    client, monkeypatch
+) -> None:
+    from sqlalchemy_test_models import Card, CardStatus
+
+    from okto_pulse.core.services.main import CardService
+
+    async def _no_completion_blockers(self, *, card, board):
+        return ()
+
+    monkeypatch.setattr(
+        CardService,
+        "_task_completion_gate_failures",
+        _no_completion_blockers,
+    )
+    card_id = await _seed_card()
+    async with get_session_factory()() as db:
+        card = await db.get(Card, card_id)
+        card.status = CardStatus.VALIDATION
+        await db.commit()
+        await db.refresh(card)
+        version = card.policy_version
+
+    payload = {
+        **_VALID_VALIDATION,
+        "expected_subject_version": version,
+        "idempotency_key": f"approve-{card_id}",
+    }
+    first = client.post(f"{PREFIX}/{card_id}/validate", json=payload)
+    assert first.status_code == 201, first.text
+    assert first.json()["card_status"] == "done"
+
+    replay = client.post(f"{PREFIX}/{card_id}/validate", json=payload)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+    assert replay.json()["replayed"] is True
 
 
 # --- list / get / delete validations ----------------------------------------
@@ -398,16 +540,17 @@ async def test_get_validation_404_missing_card(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_validation_204_then_404(client) -> None:
+async def test_delete_validation_is_rejected_as_append_only_history(client) -> None:
     vid = f"val-{uuid.uuid4().hex[:8]}"
     card_id = await _seed_card(validations=[{"id": vid, "recommendation": "approve"}])
 
     removed = client.delete(f"{PREFIX}/{card_id}/validations/{vid}")
-    assert removed.status_code == 204, removed.text
-    # Gone now — a second delete is a 404 ("Validation not found").
-    gone = client.delete(f"{PREFIX}/{card_id}/validations/{vid}")
-    assert gone.status_code == 404
-    assert gone.json()["detail"] == "Validation not found"
+    assert removed.status_code == 409, removed.text
+    assert removed.json()["detail"]["code"] == "task_validation_history_append_only"
+
+    persisted = client.get(f"{PREFIX}/{card_id}/validations/{vid}")
+    assert persisted.status_code == 200
+    assert persisted.json()["id"] == vid
 
 
 @pytest.mark.asyncio

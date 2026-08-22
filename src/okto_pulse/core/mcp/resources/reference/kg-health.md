@@ -17,7 +17,10 @@ the full contract.
    `overall_state == quarantined` you MUST stop and surface the state to the
    user — do not write. `recovery_needed` also stops ordinary mutation. Choose
    an exception only from the component state: board
-   `graph_state=recovery_needed` uses board rebuild; healthy board graph plus
+   `graph_state=recovery_needed` requires the governed local one-shot board
+   rebuild with Pulse and SDLC source writers offline. Online board-rebuild
+   preflight is diagnostic; confirm/run return `recovery_execution_required`
+   without issuing/consuming a token. Healthy board graph plus
    `discovery_state=recovery_needed` and
    `discovery_recovery_required=true` uses the separate global discovery
    preflight → confirm → run trio. Generic `overall_state=recovery_needed` is
@@ -38,6 +41,47 @@ uses your session context automatically:
 - **MCP**: `okto_pulse_kg_health(board_id=...)` — same payload, no auth dance.
 - **REST**: `GET /api/v1/kg/health?board_id=...` exists for the dashboard SPA and
   ad-hoc curl. Use it only when MCP is unavailable.
+
+## Governed board-graph recovery command
+
+Online board rebuild preflight is diagnostic only and returns
+`outcome=diagnostic_complete`, with the underlying classification in
+`preflight_outcome`; `manifest_ref` and `source_set_hash` are null. Online
+confirm/run return `recovery_execution_required` and never issue or consume a
+token.
+
+Stop Pulse/API/MCP and every SDLC source writer, then keep them offline through
+all three stages. First inspect the installed executor against the live home:
+
+```powershell
+okto-pulse-kg-recovery-only --data-home <ABS_LIVE_HOME> --board-id <UUID> --inspect-install
+```
+
+Review the reported SHA-256 installation fingerprint. Make a physical,
+isolated copy of the stopped live home and run the full rehearsal against that
+copy, writing a new receipt path:
+
+```powershell
+okto-pulse-kg-recovery-only --data-home <ABS_COPY_HOME> --board-id <UUID> --rehearsal-copy-of <ABS_LIVE_HOME> --rehearsal-receipt-out <NEW_ABS_RECEIPT.json> --expected-install-fingerprint <SHA256>
+```
+
+If the rehearsal succeeds, execute against the exact live home before the
+receipt expires:
+
+```powershell
+okto-pulse-kg-recovery-only --data-home <ABS_LIVE_HOME> --board-id <UUID> --execute --rehearsal-receipt <ABS_RECEIPT.json> --expected-install-fingerprint <SHA256>
+```
+
+The rehearsal receipt is valid for 2 hours (7200 seconds), single-use, and
+bound to its exact receipt path, board, installation fingerprint, live
+data-home path/storage hashes, and terminal rehearsal evidence. The isolated
+physical-copy relationship is verified during rehearsal; the copy path itself
+is not a persisted receipt binding. The live run consumes the receipt; do not
+copy, rename, reuse, or regenerate it around a failed gate. The one-shot either creates its
+own fresh preflight/manifest/confirmation or resumes and reconciles the one
+verified active receipt before a governed fresh run. It never accepts online
+`preflight_hash`, `manifest_ref`, or `confirmation_id` values. Never loop the
+online confirm/run tools.
 
 ## Reading the payload
 
@@ -78,6 +122,9 @@ Contract fields you must understand (`api_3ed9037f`):
   backpressure to drain / sensors to recover → only then consider rebuild via
   KG-02 paths.
 - Never claim a board rebuild repairs generic `overall_state=recovery_needed`.
+- Never loop online board rebuild confirm/run. On
+  `recovery_execution_required`, stop and surface the local recovery-only
+  executor procedure; request data cannot carry the opaque capability.
   If only Global Discovery failed, board rebuild returns
   `board_rebuild_wrong_recovery_scope`; use the global recovery trio.
 - Never override `metric_status=unavailable` with your own interpretation. The

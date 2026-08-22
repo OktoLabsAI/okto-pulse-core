@@ -35,6 +35,7 @@ AGGREGATE_OWNERSHIP: dict[str, AggregateOwnership] = {
     "refinement_qa_item": "tenant",
     "refinement_snapshot": "tenant",
     "spec": "tenant",
+    "spec_dependency": "tenant",
     "spec_history": "tenant",
     "spec_knowledge_base": "tenant",
     "spec_qa_item": "tenant",

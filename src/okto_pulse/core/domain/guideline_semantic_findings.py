@@ -68,6 +68,11 @@ def _pinpoint_payload(item: SemanticAssessmentPinpoint) -> dict[str, object]:
             "subject_type": item.subject.entity_type.value,
             "subject_id": item.subject.subject_id,
             "subject_version": item.subject.subject_version,
+            **(
+                {"subject_edition": item.subject.subject_edition}
+                if item.subject.subject_edition is not None
+                else {}
+            ),
         },
         "input_digest": item.input_digest,
         "anchor_type": item.anchor_type.value,
@@ -95,6 +100,11 @@ def semantic_metric_result_digest_v1(
                 "subject_type": result.subject.entity_type.value,
                 "subject_id": result.subject.subject_id,
                 "subject_version": result.subject.subject_version,
+                **(
+                    {"subject_edition": result.subject.subject_edition}
+                    if result.subject.subject_edition is not None
+                    else {}
+                ),
             },
             "binding_id": result.binding_id,
             "guideline_id": result.guideline_id,
@@ -259,6 +269,11 @@ def semantic_metric_finding_digest_v1(
                 "subject_type": finding.subject.entity_type.value,
                 "subject_id": finding.subject.subject_id,
                 "subject_version": finding.subject.subject_version,
+                **(
+                    {"subject_edition": finding.subject.subject_edition}
+                    if finding.subject.subject_edition is not None
+                    else {}
+                ),
                 "content_digest": finding.subject_content_digest,
             },
             "guideline": {

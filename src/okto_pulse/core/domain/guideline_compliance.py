@@ -250,6 +250,7 @@ class PolicyCurrentnessReason(str, Enum):
     """Stable, independently testable reasons why a receipt is stale."""
 
     CURRENT_SNAPSHOT_MISSING = "current_snapshot_missing"
+    SUBJECT_EDITION_CHANGED = "subject_edition_changed"
     SUBJECT_VERSION_CHANGED = "subject_version_changed"
     SUBJECT_CONTENT_CHANGED = "subject_content_changed"
     INPUT_DIGEST_CHANGED = "input_digest_changed"
@@ -261,6 +262,7 @@ class PolicyCurrentnessReason(str, Enum):
 
 _CURRENTNESS_REASON_ORDER: tuple[PolicyCurrentnessReason, ...] = (
     PolicyCurrentnessReason.CURRENT_SNAPSHOT_MISSING,
+    PolicyCurrentnessReason.SUBJECT_EDITION_CHANGED,
     PolicyCurrentnessReason.SUBJECT_VERSION_CHANGED,
     PolicyCurrentnessReason.SUBJECT_CONTENT_CHANGED,
     PolicyCurrentnessReason.INPUT_DIGEST_CHANGED,
@@ -390,6 +392,21 @@ def assess_policy_compliance_fences(
         raise GuidelinePolicyContractError("policy_current_snapshot_invalid")
     if current.identity != recorded.identity:
         raise GuidelinePolicyContractError("policy_current_snapshot_scope_mismatch")
+
+    if current.subject.subject_edition is not None:
+        reasons = (
+            ()
+            if recorded.subject.subject_edition == current.subject.subject_edition
+            else (PolicyCurrentnessReason.SUBJECT_EDITION_CHANGED,)
+        )
+        return PolicyCurrentnessAssessment(
+            currentness=(
+                PolicyCurrentness.CURRENT
+                if not reasons
+                else PolicyCurrentness.STALE
+            ),
+            reasons=reasons,
+        )
 
     reasons: list[PolicyCurrentnessReason] = []
     subject_version_changed = (

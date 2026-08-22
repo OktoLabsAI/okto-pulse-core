@@ -81,6 +81,14 @@ class SemanticGuidelineProjection(str, Enum):
     FULL = "full"
 
 
+class SemanticAssessmentLifecycleState(str, Enum):
+    """Human lifecycle state, intentionally separate from technical drift."""
+
+    CURRENT = "current"
+    PREVIOUS = "previous"
+    HISTORY_ONLY = "history_only"
+
+
 def _exact_projection(
     value: object,
     expected: SemanticGuidelineProjection,
@@ -170,6 +178,8 @@ class SemanticAssessmentSummary:
     entity_type: PolicyEntityType
     subject_id: str
     subject_version: int
+    subject_edition: int | None
+    lifecycle_state: SemanticAssessmentLifecycleState
     binding_id: str
     guideline_id: str
     guideline_revision_id: str
@@ -258,6 +268,8 @@ class SemanticFindingSummary:
     entity_type: PolicyEntityType
     subject_id: str
     subject_version: int
+    subject_edition: int | None
+    lifecycle_state: SemanticAssessmentLifecycleState
     guideline_id: str
     guideline_revision_id: str
     binding_id: str
@@ -321,6 +333,8 @@ class SemanticWaiverSummary:
     entity_type: PolicyEntityType
     subject_id: str
     subject_version: int
+    subject_edition: int | None
+    lifecycle_state: SemanticAssessmentLifecycleState
     finding_id: str
     receipt_id: str
     guideline_id: str
@@ -415,6 +429,8 @@ class SemanticSkipSummary:
     entity_type: PolicyEntityType
     subject_id: str
     subject_version: int
+    subject_edition: int | None
+    lifecycle_state: SemanticAssessmentLifecycleState
     guideline_id: str
     guideline_revision_id: str
     binding_id: str
@@ -545,6 +561,18 @@ def _currentness(
     return resolved
 
 
+def _lifecycle_state(
+    *,
+    subject_edition: int | None,
+    currentness: PolicyCurrentness,
+) -> SemanticAssessmentLifecycleState:
+    if subject_edition is None:
+        return SemanticAssessmentLifecycleState.HISTORY_ONLY
+    if currentness is PolicyCurrentness.CURRENT:
+        return SemanticAssessmentLifecycleState.CURRENT
+    return SemanticAssessmentLifecycleState.PREVIOUS
+
+
 def project_semantic_assessment(
     receipt: SemanticGuidelineAssessmentReceipt,
     *,
@@ -565,6 +593,11 @@ def project_semantic_assessment(
         "entity_type": receipt.subject.entity_type,
         "subject_id": receipt.subject.subject_id,
         "subject_version": receipt.subject.subject_version,
+        "subject_edition": receipt.subject.subject_edition,
+        "lifecycle_state": _lifecycle_state(
+            subject_edition=receipt.subject.subject_edition,
+            currentness=state.currentness,
+        ),
         "binding_id": receipt.binding_id,
         "guideline_id": receipt.guideline_id,
         "guideline_revision_id": receipt.guideline_revision_id,
@@ -637,6 +670,11 @@ def project_semantic_finding(
         "entity_type": finding.subject.entity_type,
         "subject_id": finding.subject.subject_id,
         "subject_version": finding.subject.subject_version,
+        "subject_edition": finding.subject.subject_edition,
+        "lifecycle_state": _lifecycle_state(
+            subject_edition=finding.subject.subject_edition,
+            currentness=currentness.currentness,
+        ),
         "guideline_id": finding.guideline_id,
         "guideline_revision_id": finding.guideline_revision_id,
         "binding_id": finding.binding_id,
@@ -711,6 +749,11 @@ def project_semantic_waiver(
         "entity_type": anchor.subject.entity_type,
         "subject_id": anchor.subject.subject_id,
         "subject_version": anchor.subject.subject_version,
+        "subject_edition": anchor.subject.subject_edition,
+        "lifecycle_state": _lifecycle_state(
+            subject_edition=anchor.subject.subject_edition,
+            currentness=currentness.currentness,
+        ),
         "finding_id": anchor.finding_id,
         "receipt_id": anchor.receipt_id,
         "guideline_id": anchor.guideline_id,
@@ -796,6 +839,20 @@ def _skip_currentness(
     ):
         raise GuidelinePolicyContractError("semantic_skip_currentness_scope_mismatch")
     reasons: set[SemanticAssessmentCurrentnessReason] = set()
+    if current.subject.subject_edition is not None:
+        if scope.subject.subject_edition != current.subject.subject_edition:
+            reasons.add(
+                SemanticAssessmentCurrentnessReason.SUBJECT_EDITION_CHANGED
+            )
+        ordered = tuple(
+            reason
+            for reason in SemanticAssessmentCurrentnessReason
+            if reason in reasons
+        )
+        return (
+            PolicyCurrentness.STALE if ordered else PolicyCurrentness.CURRENT,
+            ordered,
+        )
     if scope.subject.subject_version != current.subject.subject_version:
         reasons.add(SemanticAssessmentCurrentnessReason.SUBJECT_VERSION_CHANGED)
     if scope.subject_content_digest != current.subject_content_digest:
@@ -838,6 +895,11 @@ def project_semantic_skip(
         "entity_type": scope.subject.entity_type,
         "subject_id": scope.subject.subject_id,
         "subject_version": scope.subject.subject_version,
+        "subject_edition": scope.subject.subject_edition,
+        "lifecycle_state": _lifecycle_state(
+            subject_edition=scope.subject.subject_edition,
+            currentness=currentness,
+        ),
         "guideline_id": scope.guideline_id,
         "guideline_revision_id": scope.guideline_revision_id,
         "binding_id": scope.binding_id,
@@ -1123,6 +1185,7 @@ __all__ = [
     "SEMANTIC_WAIVER_ORDERING",
     "SemanticAssessmentDetail",
     "SemanticAssessmentFull",
+    "SemanticAssessmentLifecycleState",
     "SemanticAssessmentPage",
     "SemanticAssessmentPageCursor",
     "SemanticAssessmentProjection",

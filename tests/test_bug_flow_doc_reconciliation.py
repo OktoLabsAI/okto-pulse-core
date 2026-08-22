@@ -219,7 +219,7 @@ def test_ac6_edited_files_valid_registered_resources() -> None:
         "okto-pulse://workflows/cards": (
             CARDS_MD,
             "workflows/cards.md",
-            "1.1",
+            "1.2",
         ),
         "okto-pulse://reference/card_types": (
             CARD_TYPES_MD,

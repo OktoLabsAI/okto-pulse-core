@@ -351,6 +351,33 @@ class RebuildAuditKGGenerationRepository:
                     history_ref=None,
                     detail=f"current_read_exception={type(exc).__name__}",
                 )
+            if stored_previous == kg_generation_id:
+                history = self.load_history(board_id, kg_generation_id)
+                replay_matches = bool(
+                    history is not None
+                    and history.get("board_id") == board_id
+                    and history.get("kg_generation_id") == kg_generation_id
+                    and history.get("previous_kg_generation_id")
+                    == previous_kg_generation_id
+                    and history.get("report_ref") == report_ref
+                    and history.get("status") == status
+                    and history.get("structural_hash") == structural_hash
+                    and history.get("source_hash") == source_hash
+                    and history.get("promoted_by") == promoted_by
+                    and history.get("run_id") == run_id
+                    and history.get("operator_override_ref") == operator_override_ref
+                )
+                if replay_matches:
+                    return PromotionResult(
+                        outcome=PromotionOutcome.PROMOTED.value,
+                        board_id=board_id,
+                        previous_kg_generation_id=previous_kg_generation_id,
+                        current_kg_generation_id=kg_generation_id,
+                        report_ref=report_ref,
+                        promoted_at=str(history.get("promoted_at") or "") or None,
+                        history_ref=self.get_history_ref(board_id, kg_generation_id),
+                        detail="already_promoted",
+                    )
             if stored_previous != previous_kg_generation_id:
                 _bump_promotion(
                     board_id=board_id,

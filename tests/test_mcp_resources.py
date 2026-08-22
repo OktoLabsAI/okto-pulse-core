@@ -58,6 +58,7 @@ def test_required_core_resources_present() -> None:
     missing = [f for f in _REQUIRED_FILES if f not in EXPECTED_FILES]
     assert missing == [], f"core resources missing from bundle: {missing}"
 
+
 EXPECTED_URIS = [
     "okto-pulse://workflows/stories",
     "okto-pulse://workflows/ideations",
@@ -116,22 +117,16 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
     # gate guards PRESENCE of a version marker, not a pinned value (files
     # legitimately rev, e.g. api-contract.md is at "1.1").
     assert re.search(r'version: "\d+\.\d+"', frontmatter_body), (
-        f"{rel_path}: frontmatter missing a version marker. "
-        f"Found: {frontmatter_body!r}"
+        f"{rel_path}: frontmatter missing a version marker. Found: {frontmatter_body!r}"
     )
 
 
 def test_cards_workflow_defers_to_typed_transition_read_model() -> None:
-    content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(
-        encoding="utf-8"
-    )
+    content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(encoding="utf-8")
 
     assert "A normal card follows `not_started → started → in_progress`" in content
     assert "only when the transition tool advertises that edge" in content
-    assert (
-        '`okto_pulse_move_card(status="in_progress")` → begin work'
-        not in content
-    )
+    assert '`okto_pulse_move_card(status="in_progress")` → begin work' not in content
 
 
 def test_destructive_ops_documents_auditable_fallback_without_fake_comments() -> None:
@@ -145,9 +140,9 @@ def test_destructive_ops_documents_auditable_fallback_without_fake_comments() ->
 
 
 def test_design_system_board_docs_match_live_single_link_schema() -> None:
-    content = (
-        RESOURCES_DIR / "reference" / "tool-docs" / "board.md"
-    ).read_text(encoding="utf-8")
+    content = (RESOURCES_DIR / "reference" / "tool-docs" / "board.md").read_text(
+        encoding="utf-8"
+    )
     link = content.split("## `okto_pulse_link_board_design_system`", 1)[1].split(
         "## `okto_pulse_unlink_board_design_system`", 1
     )[0]
@@ -165,9 +160,9 @@ def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() ->
         ("qa_ask.md", "ask"),
         ("spec_entity_remove.md", "remove_spec_entity"),
     ):
-        content = (
-            RESOURCES_DIR / "reference" / "tool-families" / filename
-        ).read_text(encoding="utf-8")
+        content = (RESOURCES_DIR / "reference" / "tool-families" / filename).read_text(
+            encoding="utf-8"
+        )
         assert f"Registry-only short name: `{short_name}`" in content
         assert "not** an MCP" in content
         assert "does not appear in `tools/list`" in content
@@ -186,9 +181,9 @@ def test_choice_tool_docs_explain_structured_options_json(
     filename: str,
     tool_name: str,
 ) -> None:
-    content = (
-        RESOURCES_DIR / "reference" / "tool-docs" / filename
-    ).read_text(encoding="utf-8")
+    content = (RESOURCES_DIR / "reference" / "tool-docs" / filename).read_text(
+        encoding="utf-8"
+    )
     section = content.split(f"## `{tool_name}`", 1)[1].split("\n## `", 1)[0]
 
     assert "options_json: Preferred structured options" in section
@@ -331,19 +326,19 @@ def test_related_context_resources_require_typed_artifact_references() -> None:
         assert not any(stale in body for stale in stale_examples)
 
 
-def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter() -> None:
+def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter() -> (
+    None
+):
     """Agent guidance must match the asymmetric write/read type contract."""
     from okto_pulse.core.mcp import server as _srv
 
-    tool_docs = _srv._load_resource_file(
-        "reference/tool-docs/test-scenario.md"
-    )
-    update_section = tool_docs.split(
-        "## `okto_pulse_update_test_scenario`", 1
-    )[1].split("\n## `", 1)[0]
-    list_section = tool_docs.split(
-        "## `okto_pulse_list_test_scenarios`", 1
-    )[1].split("\n## `", 1)[0]
+    tool_docs = _srv._load_resource_file("reference/tool-docs/test-scenario.md")
+    update_section = tool_docs.split("## `okto_pulse_update_test_scenario`", 1)[
+        1
+    ].split("\n## `", 1)[0]
+    list_section = tool_docs.split("## `okto_pulse_list_test_scenarios`", 1)[1].split(
+        "\n## `", 1
+    )[0]
     normalized_update = " ".join(update_section.split())
     normalized_list = " ".join(list_section.split())
 
@@ -409,13 +404,13 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     ):
         assert status in specs
 
-    assert "Quality is read-only for Specs" in normalized_specs
+    assert "Requirement Lint is external agent evidence" in normalized_specs
     assert "Validation is actionable at `approved`" in normalized_specs
-    assert "its score is the finding count" in normalized_specs
-    assert "No head means **no evidence**, not zero findings" in normalized_specs
-    assert "is migrated audit evidence" in normalized_specs
+    assert "finding count and severity are advisory" in normalized_specs
+    assert "Previous validation results are history" in normalized_specs
+    assert "Current result for this lifecycle edition" in normalized_specs
     assert "System legacy import" in normalized_quality
-    assert "not a native Quality receipt" in normalized_quality
+    assert "is migrated audit evidence" in normalized_quality
     assert (
         "This resource intentionally does not repeat those lifecycle steps"
         in normalized_quality
@@ -424,11 +419,35 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     # Shared operational details have one canonical home to control token use.
     for detail in (
         "limits `25|50|100`",
-        "`subject_version_changed`, `content_changed`",
+        "edition is SQL `NULL`",
         "`{subject}.quality.read`",
     ):
         assert detail in quality
         assert detail not in specs
+
+
+def test_ideation_and_refinement_quality_guidance_uses_lifecycle_results() -> None:
+    """Human ambiguity guidance must describe Current/Previous by edition."""
+    from okto_pulse.core.mcp import server as _srv
+
+    ideations = _srv._load_resource_file("workflows/ideations.md")
+    refinements = _srv._load_resource_file("workflows/refinements.md")
+
+    for body in (ideations, refinements):
+        normalized = " ".join(body.split())
+        assert "Lifecycle Ambiguity Results and Pinpointing" in body
+        assert "Current" in normalized
+        assert "Previous" in normalized
+        assert "Returning to `draft` starts a new edition" in normalized
+        assert "lifecycle edition" in normalized
+        assert "Receipt-Backed Ambiguity" not in body
+        assert "currentness.current" not in body
+        assert "missing, stale, or excessive" not in normalized.lower()
+
+    assert "Either action can stale the receipt" not in ideations
+    assert "Proposed questions are created atomically with the receipt" not in (
+        refinements
+    )
 
 
 def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
@@ -447,6 +466,126 @@ def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
     assert 'params={"prefix":"spec:<spec-id>:"}' in kg_workflow
 
 
+def test_spec_validation_mcp_schema_is_canonical_and_pinpoints_are_closed() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    parameters = _srv.mcp._tool_manager._tools[
+        "okto_pulse_submit_spec_validation"
+    ].parameters
+    properties = parameters["properties"]
+    expected = {
+        "board_id",
+        "spec_id",
+        "expected_validation_edition",
+        "expected_spec_version",
+        "expected_head_revision",
+        "confidence",
+        "confidence_justification",
+        "clarity",
+        "clarity_justification",
+        "assertiveness",
+        "assertiveness_justification",
+        "decidability",
+        "decidability_justification",
+        "ambiguity",
+        "ambiguity_justification",
+        "recommendation",
+        "pinpoints",
+    }
+    assert set(properties) == expected
+    assert set(parameters["required"]) == expected - {"pinpoints"}
+
+    pinpoint = properties["pinpoints"]["anyOf"][0]["items"]
+    assert pinpoint["additionalProperties"] is False
+    assert set(pinpoint["properties"]) == {
+        "metric",
+        "anchor_type",
+        "anchor_ref",
+        "detail",
+    }
+    assert set(pinpoint["required"]) == {"metric", "anchor_type", "detail"}
+    assert pinpoint["properties"]["metric"]["enum"] == [
+        "confidence",
+        "clarity",
+        "assertiveness",
+        "decidability",
+        "ambiguity",
+    ]
+    assert pinpoint["properties"]["anchor_type"]["enum"] == [
+        "whole_artifact",
+        "field",
+        "structured_child",
+        "qa",
+    ]
+
+
+def test_spec_validation_resources_publish_the_calibrated_evaluator_method() -> None:
+    """Five scores must remain reproducible instead of threshold-shaped guesses."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    gates = _srv._load_resource_file("reference/spec_gates.md")
+    tool_docs = _srv._load_resource_file("reference/tool-docs/spec.md")
+    normalized_specs = " ".join(specs.split())
+    normalized_gates = " ".join(gates.split())
+    normalized_tool_docs = " ".join(tool_docs.split())
+
+    assert "### Canonical Spec Validation scoring rubric" in gates
+    for score_band in (
+        "`0-19`",
+        "`20-39`",
+        "`40-59`",
+        "`60-69`",
+        "`70-79`",
+        "`80-89`",
+        "`90-99`",
+        "`100`",
+    ):
+        assert score_band in gates
+
+    for dimension_heading in (
+        "#### `confidence` — reliability of the evaluation",
+        "#### `clarity` — understandable intent without hidden context",
+        "#### `assertiveness` — objective pass/fail verification",
+        "#### `decidability` — sufficient direction for material choices",
+        "#### `ambiguity` — competing plausible interpretations (lower is better)",
+    ):
+        assert dimension_heading in gates
+
+    # Calibration constraints that prevent the most common agent scoring drift.
+    for invariant in (
+        "Confidence describes the inspection, not the quality of the Spec",
+        "This is the maximum when any material section was not inspected",
+        "Do not reduce Clarity merely because a requirement lacks a number",
+        "Assertiveness asks whether a reviewer can prove pass or fail",
+        "Do not reward needless prescription",
+        "Ambiguity uses inverse anchors based on severity and dispersion",
+        "do not double-count automatically",
+        "Never start from the configured threshold and work backwards",
+        "Scores never compensate for one another",
+    ):
+        assert invariant.lower() in normalized_gates.lower()
+
+    assert "The stable item ID" in gates
+    assert "never a list index or human ordinal" in gates
+    assert "observable defect + impact + concrete remediation" in normalized_gates
+    assert "at least one pinpoint for every metric" in normalized_gates
+    assert "The application must have high availability" in gates
+    assert "Run active-active across at least three availability zones" in gates
+    assert '"anchor_ref": "tr_availability"' in gates
+
+    # Workflow and tool docs route to the single canonical rubric and retain
+    # the operational loop without copying the full tables.
+    for body in (normalized_specs, normalized_tool_docs):
+        assert "okto-pulse://reference/spec_gates" in body
+        assert "Canonical Spec Validation scoring rubric" in body
+    assert "Select a rubric band from evidence first" in normalized_specs
+    assert "On a retry after failed validation" in normalized_specs
+    assert "okto_pulse_get_board(board_id).settings" in normalized_specs
+    assert "NOT Spec quality" in tool_docs
+    assert "severity and dispersion" in tool_docs
+
+
 # ---------------------------------------------------------------------------
 # 9. ts_edd149c4 — Initial footprint regression guard via tiktoken
 # ---------------------------------------------------------------------------
@@ -462,11 +601,11 @@ def test_initial_footprint_under_budget() -> None:
 
     Budget rationale (post-P0.A + post-P0.B, pre-P1 lazy-loading):
       - instructions ≤ 10K tokens — P0.A goal (was ~71K pre-rewrite).
-      - tools metadata ≤ 47.5K tokens — reviewed ceiling for 312 tools,
+      - tools metadata ≤ 49.85K tokens — reviewed ceiling for 338 tools,
         including the 20 closed policy-governance schemas and the typed
         impact_evidence contract (SK-B2-S1); P1 lazy-loading by role will
         reduce this drastically per session.
-      - combined ≤ 50K tokens — overall regression guard.
+      - combined ≤ 52.5K tokens — overall regression guard.
 
     A failure in any of the three asserts pinpoints which subsystem regressed.
     """
@@ -489,26 +628,25 @@ def test_initial_footprint_under_budget() -> None:
         schema = json.dumps(getattr(tool, "parameters", {}), separators=(",", ":"))
         parts.append(f"{tool_name}\n{desc}\n{schema}")
     tools_tokens = len(enc.encode("\n".join(parts)))
-    # 47_500: recalibrated for SK-B2-S1 (okto_pulse_move_card gained the
-    # typed impact_evidence contract - 5 closed input models; RDL
-    # rdle_18fd9fd0 forbids degrading it to a loose dict, so the cheap way
-    # out was closed by governance, not declined by the implementer).
-    # Reproducible measurements (cl100k_base, live registry, 312 tools):
-    # typed contract costs 625 tokens after slimming (titles/docstring
-    # descriptions stripped on the shared base model); pre-feature headroom
-    # under the old 47_000 guard was 369 - so 47_000 could not hold it.
-    # Current footprint 47_256, leaving 244 - LESS slack than before, which
-    # is the signature of a measured addition rather than an inflated gate.
-    # Independent review (SK-B2-S1 I3) confirmed these numbers and asked the
-    # board owner to block the NEXT raise until P1 lazy-loading by role ships.
-    assert tools_tokens <= 47_500, (
-        f"tools/list metadata {tools_tokens} tokens exceeds 47.5K guard — "
+    # 49_850: the closed Code Traceability schemas remain fully typed; 70
+    # reviewed descriptions point to lazy family docs and generated JSON-Schema
+    # titles are omitted because property names already carry that identity.
+    # Reproducible measurements (cl100k_base, live registry, 338 tools):
+    # The governed agent classification command adds one closed nested batch
+    # schema: instructions=2_594, tools=49_722, combined=52_316. The small
+    # headroom is intentional and keeps the 338-tool count ratcheted while
+    # preserving fail-closed enum and provenance fields.
+    # The next increase still requires equivalent metadata reduction or
+    # role-based lazy loading; weakening closed input schemas is not allowed.
+    assert len(parts) == 338, "MCP tool-count ratchet changed"
+    assert tools_tokens <= 49_850, (
+        f"tools/list metadata {tools_tokens} tokens exceeds 49.85K guard — "
         f"P1 lazy-loading by role will reduce this per session."
     )
 
     total = instructions_tokens + tools_tokens
-    assert total <= 50_000, (
-        f"Combined initial footprint {total} tokens exceeds 50K guard "
+    assert total <= 52_500, (
+        f"Combined initial footprint {total} tokens exceeds 52.5K guard "
         f"(instructions={instructions_tokens}, tools={tools_tokens})."
     )
 

@@ -75,6 +75,7 @@ from okto_pulse.core.kg.rebuild_deterministic import (
     reset_structural_hash_mismatch_counter,
 )
 from okto_pulse.core.kg.rebuild_generation import (
+    KGGenerationPromotionGuard,
     KGGenerationRepository,
     generate_kg_generation_id,
     is_valid_kg_generation_id,
@@ -101,6 +102,9 @@ from okto_pulse.core.kg.rebuild_service import (
     RebuildStepResult,
     SUPPORTED_REBUILD_OPERATIONS,
     reset_rebuild_run_counter,
+)
+from okto_pulse.core.kg.recovery_execution import (
+    issue_recovery_execution_capability,
 )
 from okto_pulse.core.kg.rebuild_sources import (
     KGRebuildSourceManifest,
@@ -239,9 +243,10 @@ class _InMemorySingleWriterPort:
         )
 
     def is_locked(self, board_id: str, artifact_id: str) -> bool:
-        return self.inspect_single_writer_sync(
-            board_id=board_id, artifact_id=artifact_id
-        ) is not None
+        return (
+            self.inspect_single_writer_sync(board_id=board_id, artifact_id=artifact_id)
+            is not None
+        )
 
     def reset_for_tests(self) -> None:
         self._locks.clear()
@@ -300,8 +305,12 @@ def _reset_counters() -> None:
     reset_coordination_providers_for_tests()
 
 
-def _row(id_: str = "s1", artifact_type: str = "spec",
-         content_hash: str = "h1", source_version: str = "v1") -> dict:
+def _row(
+    id_: str = "s1",
+    artifact_type: str = "spec",
+    content_hash: str = "h1",
+    source_version: str = "v1",
+) -> dict:
     return {
         "artifact_type": artifact_type,
         "id": id_,
@@ -339,9 +348,7 @@ def _build_full_service(
     safe_lifecycle = KGSafeWriteLifecycle(
         step_adapter=lambda b, g, s: LifecycleStepResult(ok=True),
         owner_probe=LockOwnerProbe(is_active_owner=_owner_probe),
-        health_probe=HealthProbe(
-            classify=lambda b, g, status, step: "at_risk"
-        ),
+        health_probe=HealthProbe(classify=lambda b, g, status, step: "at_risk"),
     )
 
     def _default_step(req):
@@ -353,7 +360,19 @@ def _build_full_service(
             counts={"nodes": len(rows), "edges": 0},
         )
 
-    service = KGRebuildService(
+    class _RecoveryEnabledKGRebuildService(KGRebuildService):
+        def run(self, *, board_id: str, **kwargs):
+            with issue_recovery_execution_capability(
+                board_id=board_id,
+                lifetime_probe=lambda: True,
+            ) as capability:
+                return super().run(
+                    board_id=board_id,
+                    recovery_capability=capability,
+                    **kwargs,
+                )
+
+    service = _RecoveryEnabledKGRebuildService(
         base_dir=base_dir,
         single_writer_lock=lock,
         safe_write_lifecycle=safe_lifecycle,
@@ -364,7 +383,7 @@ def _build_full_service(
         source_enumerator=enumerator,
         lock_ttl_seconds=60,
         generation_repository=KGGenerationRepository(base_dir=base_dir),
-        promotion_guard=None,
+        promotion_guard=KGGenerationPromotionGuard,
         report_store=RebuildReportStore(base_dir=base_dir),
         terminal_state_guard=RebuildReportTerminalStateGuard,
     )
@@ -473,13 +492,16 @@ def test_ts_4712e6d7_reset_requires_confirmation(base_dir: Path) -> None:
     val_dfdff0b8 fail-closed), so even a valid confirmation token for
     'reset' is rejected before the lock is taken."""
 
-    service, manifest_store, confirmation_store, lock, enumerator = (
-        _build_full_service(base_dir)
+    service, manifest_store, confirmation_store, lock, enumerator = _build_full_service(
+        base_dir
     )
     # An agent issuing reset MUST be denied at the gate.
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
-        confirmation_store, manifest_store, enumerator,
-        actor_id="agent-1", operation="reset",
+        confirmation_store,
+        manifest_store,
+        enumerator,
+        actor_id="agent-1",
+        operation="reset",
     )
     result = service.run(
         confirmation_id=confirmation_id,
@@ -534,9 +556,7 @@ def test_ts_969dfdc7_confirmation_single_use_ttl_audit(base_dir: Path) -> None:
     """ts_969dfdc7 — Confirmation token is single-use with TTL and audit."""
 
     recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
-    store = RebuildConfirmationStore(
-        base_dir=base_dir, audit_recorder=recorder
-    )
+    store = RebuildConfirmationStore(base_dir=base_dir, audit_recorder=recorder)
     token = store.issue(
         board_id=BOARD,
         actor_id="user-1",
@@ -652,13 +672,15 @@ def test_ts_dff04b2e_structural_hash_excludes_run_state() -> None:
     sources = [_row()]
     b = build_structural_inputs(
         sources=sources,
-        nodes=[{
-            "type": "Spec",
-            "id": "S1",
-            "kg_generation_id": generate_kg_generation_id(),
-            "run_id": "run_xyz",
-            "started_at": "2099-01-01T00:00:00Z",
-        }],
+        nodes=[
+            {
+                "type": "Spec",
+                "id": "S1",
+                "kg_generation_id": generate_kg_generation_id(),
+                "run_id": "run_xyz",
+                "started_at": "2099-01-01T00:00:00Z",
+            }
+        ],
     )
     a_with_nodes = build_structural_inputs(
         sources=sources, nodes=[{"type": "Spec", "id": "S1"}]
@@ -710,9 +732,7 @@ def test_ts_7949efc6_rebuild_obtains_kg01_lock(base_dir: Path) -> None:
 
     assert result.outcome == RebuildOutcome.COMPLETED.value
     # Lock acquired with admin_lane=True.
-    assert any(
-        kwargs.get("admin_lane") is True for kwargs in captured_calls
-    )
+    assert any(kwargs.get("admin_lane") is True for kwargs in captured_calls)
     # Released after completion.
     assert lock.inspect(board_id=BOARD) is None
     # Reset (which would trigger quarantine in KG-02.4+) remains
@@ -727,8 +747,8 @@ def test_ts_2c262b64_rebuild_persists_generation_event(base_dir: Path) -> None:
     """ts_2c262b64 — Rebuild persists UUID generation and emits
     kg.rebuilt with the canonical payload."""
 
-    service, manifest_store, confirmation_store, lock, enumerator = (
-        _build_full_service(base_dir)
+    service, manifest_store, confirmation_store, lock, enumerator = _build_full_service(
+        base_dir
     )
 
     captured_events: list[dict] = []
@@ -745,9 +765,7 @@ def test_ts_2c262b64_rebuild_persists_generation_event(base_dir: Path) -> None:
     )
 
     service = dc_replace(service, event_emitter=handler)
-    cid, mref, ph = _issue_confirmation(
-        confirmation_store, manifest_store, enumerator
-    )
+    cid, mref, ph = _issue_confirmation(confirmation_store, manifest_store, enumerator)
     result = service.run(
         confirmation_id=cid,
         board_id=BOARD,
@@ -773,8 +791,8 @@ def test_ts_3c9e856c_cognitive_pending_and_audit_trail(base_dir: Path) -> None:
     for destructive recovery outcomes."""
 
     audit_recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
-    service, manifest_store, confirmation_store, lock, enumerator = (
-        _build_full_service(base_dir, audit_recorder=audit_recorder)
+    service, manifest_store, confirmation_store, lock, enumerator = _build_full_service(
+        base_dir, audit_recorder=audit_recorder
     )
 
     publisher = KGRebuiltEventPublisher(base_dir=base_dir)
@@ -789,9 +807,7 @@ def test_ts_3c9e856c_cognitive_pending_and_audit_trail(base_dir: Path) -> None:
         ],
     )
     service = dc_replace(service, event_emitter=handler)
-    cid, mref, ph = _issue_confirmation(
-        confirmation_store, manifest_store, enumerator
-    )
+    cid, mref, ph = _issue_confirmation(confirmation_store, manifest_store, enumerator)
     raw = cid
     result = service.run(
         confirmation_id=cid,
@@ -806,13 +822,7 @@ def test_ts_3c9e856c_cognitive_pending_and_audit_trail(base_dir: Path) -> None:
 
     # Cognitive pending recorded for the new generation; only spec +
     # refinement count (comment excluded by CONSOLIDABLE_ARTIFACT_TYPES).
-    pending_dir = (
-        base_dir
-        / "rebuild"
-        / "audit"
-        / "cognitive_pending"
-        / BOARD
-    )
+    pending_dir = base_dir / "rebuild" / "audit" / "cognitive_pending" / BOARD
     pending_files = list(pending_dir.glob("*.json"))
     assert pending_files, "cognitive pending record missing"
     record = json.loads(pending_files[0].read_text(encoding="utf-8"))
@@ -820,9 +830,7 @@ def test_ts_3c9e856c_cognitive_pending_and_audit_trail(base_dir: Path) -> None:
     assert record["pending_count"] == 2
 
     # Confirmation audit trail: consumed row + raw token NEVER leaks.
-    audit_dir = (
-        base_dir / "rebuild" / "audit" / "confirmation" / BOARD
-    )
+    audit_dir = base_dir / "rebuild" / "audit" / "confirmation" / BOARD
     audit_files = list(audit_dir.glob("*.json"))
     assert audit_files
     for path in audit_files:
@@ -835,7 +843,10 @@ def test_ts_9cb41200_report_persists_before_terminal(base_dir: Path) -> None:
     """ts_9cb41200 — Report persists before completed or failed terminal
     state. Block promotion when persistence fails."""
 
-    from okto_pulse.core.kg.rebuild_report import ReportPersistOutcome, ReportPersistResult
+    from okto_pulse.core.kg.rebuild_report import (
+        ReportPersistOutcome,
+        ReportPersistResult,
+    )
 
     class _BrokenStore(RebuildReportStore):
         def persist(self, *, payload):  # type: ignore[override]
@@ -849,13 +860,11 @@ def test_ts_9cb41200_report_persists_before_terminal(base_dir: Path) -> None:
                 detail="forced",
             )
 
-    service, manifest_store, confirmation_store, lock, enumerator = (
-        _build_full_service(base_dir)
+    service, manifest_store, confirmation_store, lock, enumerator = _build_full_service(
+        base_dir
     )
     service = dc_replace(service, report_store=_BrokenStore(base_dir=base_dir))
-    cid, mref, ph = _issue_confirmation(
-        confirmation_store, manifest_store, enumerator
-    )
+    cid, mref, ph = _issue_confirmation(confirmation_store, manifest_store, enumerator)
     result = service.run(
         confirmation_id=cid,
         board_id=BOARD,

@@ -99,7 +99,7 @@ async def _client_and_entities():
         db.add(Spec(
             id=spec_id, board_id=board_id, ideation_id=ideation_id,
             title="KG-03A.5 Spec",
-            status=SpecStatus.APPROVED, created_by=USER_ID,
+            status=SpecStatus.DRAFT, created_by=USER_ID,
             functional_requirements=["FR"], acceptance_criteria=["AC"],
             decisions=[
                 {

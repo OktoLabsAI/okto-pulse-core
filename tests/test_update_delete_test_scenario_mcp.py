@@ -54,7 +54,7 @@ def _ctx(board_id: str):
     })()
 
 
-async def _seed(*, status=SpecStatus.IN_PROGRESS, scenarios=None, locked=False,
+async def _seed(*, status=SpecStatus.DRAFT, scenarios=None, locked=False,
                 card_scenarios=None):
     board_id = _id("udts-board")
     spec_id = _id("udts-spec")
@@ -141,12 +141,13 @@ async def test_update_tool_cosmetic_edit_preserves_evidence(db_factory):
     assert sc["status"] == "passed" and sc["evidence"]["last_run_at"] == _EV["last_run_at"]
 
 
-async def test_update_tool_respects_content_lock(db_factory):
+async def test_update_tool_allows_draft_reopen_after_previous_validation(db_factory):
     _b, spec, _c = await _seed(locked=True, scenarios=[{"id": "ts_a", "title": "S",
         "given": "g", "when": "w", "then": "t", "status": "draft"}])
     out = await _call("okto_pulse_update_test_scenario", _b, spec_id=spec,
                       scenario_id="ts_a", title="nope")
-    assert out.get("error") == "spec_locked", out
+    assert out.get("success") is True, out
+    assert (await _scenarios(spec))[0]["title"] == "nope"
 
 
 async def test_update_tool_scenario_not_found(db_factory):
@@ -163,7 +164,7 @@ async def test_update_tool_scenario_not_found(db_factory):
 
 async def test_delete_tool_cascade(db_factory):
     _b, spec, card = await _seed(
-        status=SpecStatus.APPROVED,
+        status=SpecStatus.DRAFT,
         scenarios=[{"id": "ts_a", "title": "A", "given": "g", "when": "w", "then": "t",
                     "status": "draft"},
                    {"id": "ts_b", "title": "B", "given": "g", "when": "w", "then": "t",
@@ -180,13 +181,14 @@ async def test_delete_tool_cascade(db_factory):
 
 
 async def test_delete_tool_not_found(db_factory):
-    _b, spec, _c = await _seed(status=SpecStatus.APPROVED, scenarios=[])
+    _b, spec, _c = await _seed(status=SpecStatus.DRAFT, scenarios=[])
     out = await _call("okto_pulse_delete_test_scenario", _b, spec_id=spec, scenario_id="ts_ghost")
     assert out.get("error") == "scenario_not_found", out
 
 
-async def test_delete_tool_respects_content_lock(db_factory):
+async def test_delete_tool_allows_draft_reopen_after_previous_validation(db_factory):
     _b, spec, _c = await _seed(locked=True, scenarios=[{"id": "ts_a", "title": "S",
         "given": "g", "when": "w", "then": "t", "status": "draft"}])
     out = await _call("okto_pulse_delete_test_scenario", _b, spec_id=spec, scenario_id="ts_a")
-    assert out.get("error") == "spec_locked", out
+    assert out.get("success") is True, out
+    assert await _scenarios(spec) == []

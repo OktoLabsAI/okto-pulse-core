@@ -96,6 +96,9 @@ def _rebuild_req(board_id):
         source_set_hash="a" * 64, actor_id="user-r2t2", operation="rebuild",
         owner_token="owner-token", previous_kg_generation_id=None,
         candidate_kg_generation_id=str(uuid.uuid4()),
+        # This test invokes the edition adapter directly, so it must supply the
+        # same confirmed-run lineage that RebuildService adds in production.
+        authorized_confirmation_ref=f"conf_fp_{uuid.uuid4().hex * 2}",
     )
 
 

@@ -15,6 +15,7 @@ evidence, or skips the maintenance hook).
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -73,6 +74,9 @@ from okto_pulse.core.services.canonical_debt_service import (
     list_canonical_debt,
     schedule_canonical_debt_retry,
     upsert_canonical_debt,
+)
+from okto_pulse.core.kg.single_writer_lock import (
+    KGAdministrativeOperationReservation,
 )
 
 USER_ID = "user-r7-imp3"
@@ -222,6 +226,33 @@ def _rebuild_entry(board_id: str) -> SimpleNamespace:
     )
 
 
+@contextmanager
+def _admitted_rebuild_entry(
+    board_id: str,
+    entry: SimpleNamespace | ConsolidationQueue | None = None,
+):
+    """Mirror the exact reservation held by the production rebuild drain."""
+
+    entry = entry or _rebuild_entry(board_id)
+    manifest_ref = entry.source.removeprefix("rebuild:")
+    reservation = KGAdministrativeOperationReservation()
+    reservation.bind_write_lock_port()
+    acquisition = reservation.acquire(
+        board_id=board_id,
+        operation=f"kg02_rebuild_reservation:{manifest_ref}",
+        owner_id="test:r7-imp3-rebuild",
+        admin_lane=True,
+    )
+    assert acquisition.acquired and acquisition.owner_token
+    try:
+        yield entry
+    finally:
+        assert reservation.release(
+            board_id=board_id,
+            owner_token=acquisition.owner_token,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Parity — rebuild commit wrapper applies the SAME IMP1 guard
 # ---------------------------------------------------------------------------
@@ -255,13 +286,14 @@ async def test_rebuild_wrapper_holds_working_only_like_normal_commit(
         source_ref=src_rebuild, candidate_id="r7i3_rebuild", validates_bug_ids=[working_bug],
     )
     with pytest.raises(KGPrimitiveError) as exc_r:
-        async with db_factory() as db:
-            await _commit_consolidation_with_board_graph_lifecycle(
-                entry=_rebuild_entry(board_id),
-                session_id=begin_r.session_id,
-                summary_text="rebuild parity",
-                db=db,
-            )
+        with _admitted_rebuild_entry(board_id) as entry:
+            async with db_factory() as db:
+                await _commit_consolidation_with_board_graph_lifecycle(
+                    entry=entry,
+                    session_id=begin_r.session_id,
+                    summary_text="rebuild parity",
+                    db=db,
+                )
 
     n_reason = exc_n.value.details["r7_cognitive_hold_candidate"]["reason_code"]
     r_reason = exc_r.value.details["r7_cognitive_hold_candidate"]["reason_code"]
@@ -282,13 +314,14 @@ async def test_rebuild_wrapper_accepts_mixed_like_normal_commit(
         source_ref=src, candidate_id="r7i3_mixed",
         validates_bug_ids=[canon_bug, work_bug],
     )
-    async with db_factory() as db:
-        commit = await _commit_consolidation_with_board_graph_lifecycle(
-            entry=_rebuild_entry(board_id),
-            session_id=begin_r.session_id,
-            summary_text="rebuild mixed",
-            db=db,
-        )
+    with _admitted_rebuild_entry(board_id) as entry:
+        async with db_factory() as db:
+            commit = await _commit_consolidation_with_board_graph_lifecycle(
+                entry=entry,
+                session_id=begin_r.session_id,
+                summary_text="rebuild mixed",
+                db=db,
+            )
     # Same verdict as normal commit (IMP1 TS2): accepted, working edge deferred.
     assert commit.connectivity["passed"] is True
     advisories = commit.connectivity.get("advisories", [])
@@ -374,10 +407,11 @@ async def test_rebuild_entry_triggers_canonical_partition_maintenance(
         _spy,
     )
 
-    async with db_factory() as db:
-        db.add_all([bug, entry])
-        await db.flush()
-        ok = await _process_queue_entry(db, entry)
+    with _admitted_rebuild_entry(board_id, entry):
+        async with db_factory() as db:
+            db.add_all([bug, entry])
+            await db.flush()
+            ok = await _process_queue_entry(db, entry)
         await db.commit()
     # Production invokes best-effort maintenance in a separate transaction
     # after ledger/audit/ACK durability. Reproduce that boundary explicitly;

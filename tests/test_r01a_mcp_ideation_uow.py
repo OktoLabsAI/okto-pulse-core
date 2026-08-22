@@ -367,10 +367,12 @@ async def test_create_get_update_delete_roundtrip(_seed):
         problem_statement="we need X",
     )
     assert created["success"] is True
+    assert created["ideation"]["edition"] == 1
     iid = created["ideation"]["id"]
 
     got = await _call("okto_pulse_get_ideation", board_id=BOARD_ID, ideation_id=iid)
     assert got["id"] == iid
+    assert got["edition"] == 1
     assert "refinements" in got and "qa_items" in got
 
     updated = await _call(
@@ -385,6 +387,49 @@ async def test_create_get_update_delete_roundtrip(_seed):
     assert deleted["success"] is True
     assert deleted["takedown"]["artifact_type"] == "ideation"
     assert deleted["takedown"]["artifact_id"] == iid
+
+
+@pytest.mark.asyncio
+async def test_move_to_draft_projects_new_edition_in_get_and_full_context(_seed):
+    created = await _call(
+        "okto_pulse_create_ideation",
+        board_id=BOARD_ID,
+        title="Edition projection",
+    )
+    iid = created["ideation"]["id"]
+
+    moved_to_review = await _call(
+        "okto_pulse_move_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        status="review",
+    )
+    assert moved_to_review["edition"] == 1
+
+    returned_to_draft = await _call(
+        "okto_pulse_move_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        status="draft",
+    )
+    assert returned_to_draft["edition"] == 2
+
+    got = await _call(
+        "okto_pulse_get_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+    )
+    context = await _call(
+        "okto_pulse_get_ideation_context",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        include_knowledge=False,
+        include_mockups=False,
+        include_qa=False,
+        include_architecture=False,
+        profile="full",
+    )
+    assert got["edition"] == context["edition"] == 2
 
 
 @pytest.mark.asyncio

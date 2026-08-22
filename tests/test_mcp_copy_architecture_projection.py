@@ -213,7 +213,7 @@ async def test_copy_architecture_handler_summary_full_and_unsupported():
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
-                status=SpecStatus.IN_PROGRESS,
+                status=SpecStatus.DRAFT,
                 created_by=USER_ID,
             )
         )

@@ -460,6 +460,32 @@ def test_presets_roundtrip_clean_tenant_and_duplicates():
     assert match[0]["owner_id"] == user_a
 
 
+def test_presets_import_rejects_id_owned_by_another_catalog():
+    owner_id = _uid("impexp-preset-owner")
+    owner = _client(owner_id)
+    created = owner.post(
+        f"{PREFIX}/presets",
+        json={
+            "name": _uid("Preset Owned"),
+            "description": "owned preset",
+            "flags": {"board": {"read": True}},
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    exported = owner.get(f"{PREFIX}/presets/{created.json()['id']}/export")
+    assert exported.status_code == 200, exported.text
+
+    foreign = _client(_uid("impexp-preset-foreign")).post(
+        f"{PREFIX}/presets/import",
+        json=exported.json(),
+    )
+    assert foreign.status_code == 400, foreign.text
+    assert foreign.json()["detail"]["errors"][0]["detail"]["code"] == (
+        "preset_id_conflict"
+    )
+
+
 def test_presets_import_dry_run_and_invalid_item():
     user = _uid("impexp-preset-dry")
     client = _client(user)

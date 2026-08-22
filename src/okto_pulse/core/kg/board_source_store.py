@@ -53,6 +53,7 @@ QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS: tuple[str, ...] = (
     "subject_type",
     "subject_id",
     "subject_version",
+    "subject_edition",
     "assessment_kind",
     "receipt_id",
     "head_revision",

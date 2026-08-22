@@ -341,7 +341,9 @@ class _RunbookStore:
         _context,
         *,
         ids: tuple[str, ...],
+        include_code_traceability: bool = False,
     ) -> tuple[GlobalOutboxEventRecord, ...]:
+        assert include_code_traceability is False
         return tuple(self.rows[row_id] for row_id in ids if row_id in self.rows)
 
     async def requeue_terminal_events(self, _context, events) -> None:

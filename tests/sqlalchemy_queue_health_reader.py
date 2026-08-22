@@ -17,6 +17,9 @@ from okto_pulse.core.ports.queue_health import (
     GlobalOutboxDeadLetterStorageSnapshot,
     QueueHealthStorageSnapshot,
 )
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_SUBTYPES,
+)
 
 
 class TestSqlAlchemyQueueHealthReader:
@@ -63,11 +66,18 @@ class TestSqlAlchemyQueueHealthReader:
         now: datetime,
         stuck_before: datetime,
         item_limit: int,
+        include_code_traceability: bool = True,
     ):  # noqa: ANN001, ANN201
         def queue_filters(*extra):  # noqa: ANN002, ANN202
             filters = list(extra)
             if board_id is not None:
                 filters.append(ConsolidationQueue.board_id == board_id)
+            if not include_code_traceability:
+                filters.append(
+                    ConsolidationQueue.artifact_type.not_in(
+                        CODE_TRACEABILITY_KG_SUBTYPES
+                    )
+                )
             return filters
 
         by_status = {}
@@ -199,6 +209,18 @@ class TestSqlAlchemyQueueHealthReader:
         ]
         if board_id is not None:
             outbox_filters.append(GlobalUpdateOutbox.board_id == board_id)
+        if not include_code_traceability:
+            outbox_filters.append(
+                func.lower(
+                    func.coalesce(
+                        func.json_extract(
+                            GlobalUpdateOutbox.payload,
+                            "$.artifact_type",
+                        ),
+                        "",
+                    )
+                ).not_in(CODE_TRACEABILITY_KG_SUBTYPES)
+            )
         outbox_depth = await context.scalar(
             select(func.count()).where(*outbox_filters)
         )

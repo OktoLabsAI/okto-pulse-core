@@ -177,12 +177,16 @@ def test_spec_writer_has_all_structured_spec_entity_permissions(presets_by_name)
 
 
 @pytest.mark.parametrize("preset_name", ["Executor", "QA", "Validator", "Reporter"])
-def test_non_spec_presets_do_not_mutate_structured_spec_entities(presets_by_name, preset_name):
+def test_non_spec_presets_do_not_mutate_structured_spec_entities(
+    presets_by_name, preset_name
+):
     flags = presets_by_name[preset_name]["flags"]
     for entity_type in STRUCTURED_SPEC_ENTITY_TYPES:
         for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS:
             flag = f"spec.structured_entity.{entity_type}.{operation}"
-            assert _get_nested(flags, flag) is False, f"{preset_name} must not own {flag}"
+            assert _get_nested(flags, flag) is False, (
+                f"{preset_name} must not own {flag}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +387,10 @@ def test_reporter_preset_exists(presets_by_name):
     """Reporter must appear in get_builtin_presets()."""
     assert "Reporter" in presets_by_name
     reporter = presets_by_name["Reporter"]
-    assert "Observador" in reporter["description"] or "observador" in reporter["description"].lower()
+    assert (
+        "Observador" in reporter["description"]
+        or "observador" in reporter["description"].lower()
+    )
 
 
 def test_builtin_presets_includes_reporter():
@@ -456,12 +463,14 @@ def test_reporter_kg_matrix(presets_by_name):
 
 
 def test_reporter_interact_in_coverage(presets_by_name):
-    """Reporter sees everything — interact_in.* True on main states."""
+    """Reporter keeps read interaction in registered, non-retired states."""
     flags = presets_by_name["Reporter"]["flags"]
-    for state in ("draft", "evaluating", "refined"):
+    for state in ("draft", "evaluating"):
         assert _get_nested(flags, f"ideation.interact_in.{state}") is True
-    for state in ("draft", "in_progress", "review", "approved"):
+    assert _get_nested(flags, "ideation.interact_in.refined") is None
+    for state in ("draft", "review", "approved"):
         assert _get_nested(flags, f"refinement.interact_in.{state}") is True
+    assert _get_nested(flags, "refinement.interact_in.in_progress") is None
     for state in ("draft", "review", "approved", "validated", "in_progress", "done"):
         assert _get_nested(flags, f"spec.interact_in.{state}") is True
     for state in ("draft", "active", "review", "closed"):
@@ -473,16 +482,32 @@ def test_reporter_addition_does_not_break_other_presets(presets_by_name):
     """Regression — adding Reporter left the other 5 presets unchanged
     on their critical flags."""
     # Validator keeps gate ownership
-    assert _get_nested(presets_by_name["Validator"]["flags"], "spec.validation.submit") is True
-    assert _get_nested(presets_by_name["Validator"]["flags"], "card.validation.submit") is True
+    assert (
+        _get_nested(presets_by_name["Validator"]["flags"], "spec.validation.submit")
+        is True
+    )
+    assert (
+        _get_nested(presets_by_name["Validator"]["flags"], "card.validation.submit")
+        is True
+    )
     # Executor still owns card lifecycle
-    assert _get_nested(presets_by_name["Executor"]["flags"], "card.entity.edit_fields") is True
-    assert _get_nested(presets_by_name["Executor"]["flags"], "card.move.in_progress_to_validation") is True
+    assert (
+        _get_nested(presets_by_name["Executor"]["flags"], "card.entity.edit_fields")
+        is True
+    )
+    assert (
+        _get_nested(
+            presets_by_name["Executor"]["flags"], "card.move.in_progress_to_validation"
+        )
+        is True
+    )
     # QA still owns test scenarios
     assert _get_nested(presets_by_name["QA"]["flags"], "spec.tests.create") is True
     # Spec still owns ideation/refinement/spec derivation
     assert _get_nested(presets_by_name["Spec"]["flags"], "spec.cards_derive") is True
-    assert _get_nested(presets_by_name["Spec"]["flags"], "ideation.specs_derive") is True
+    assert (
+        _get_nested(presets_by_name["Spec"]["flags"], "ideation.specs_derive") is True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -605,8 +630,13 @@ def test_builtin_presets_count_is_seven():
     assert len(presets) == 7
     names = {p["name"] for p in presets}
     assert names == {
-        "Full Control", "Executor", "Validator", "QA",
-        "Reporter", "Sprint Manager", "Spec",
+        "Full Control",
+        "Executor",
+        "Validator",
+        "QA",
+        "Reporter",
+        "Sprint Manager",
+        "Spec",
     }
 
 
@@ -655,7 +685,9 @@ def test_sprint_manager_kg_baseline(presets_by_name):
     assert _get_nested(flags, "kg.power.schema_info") is True
     assert _get_nested(flags, "kg.power.cypher") is False
     for flag in KG_SESSION_FLAGS:
-        assert _get_nested(flags, flag) is False, f"Sprint Manager has unexpected {flag}"
+        assert _get_nested(flags, flag) is False, (
+            f"Sprint Manager has unexpected {flag}"
+        )
     assert _get_nested(flags, "kg.admin.settings_write") is False
     assert _get_nested(flags, "kg.admin.historical_consolidation") is False
 
@@ -735,8 +767,12 @@ def test_spec_preset_owns_architecture_authoring_and_copy(presets_by_name):
     assert _get_nested(flags, "card.copy_from_spec.architecture") is True
 
 
-@pytest.mark.parametrize("preset_name", ["Executor", "QA", "Validator", "Reporter", "Sprint Manager"])
-def test_operational_presets_read_architecture_without_editing(presets_by_name, preset_name):
+@pytest.mark.parametrize(
+    "preset_name", ["Executor", "QA", "Validator", "Reporter", "Sprint Manager"]
+)
+def test_operational_presets_read_architecture_without_editing(
+    presets_by_name, preset_name
+):
     flags = presets_by_name[preset_name]["flags"]
     for parent in ARCHITECTURE_PARENTS:
         assert _get_nested(flags, f"{parent}.architecture.read") is True
@@ -754,7 +790,10 @@ def test_legacy_permission_map_includes_architecture_flags():
     spec_update_flags = map_legacy_permissions(["specs:update"])
     for parent in ("ideation", "refinement", "spec"):
         for action in ("create", "edit", "delete", "import", "render"):
-            assert _get_nested(spec_update_flags, f"{parent}.architecture.{action}") is True
+            assert (
+                _get_nested(spec_update_flags, f"{parent}.architecture.{action}")
+                is True
+            )
 
     card_update_flags = map_legacy_permissions(["cards:update"])
     for action in ("create", "edit", "delete", "import", "render"):
@@ -820,7 +859,9 @@ def test_executor_can_read_and_link_ir_or_without_authoring(presets_by_name):
         assert _get_nested(flags, flag) is False
 
 
-@pytest.mark.parametrize("preset_name", ["QA", "Validator", "Reporter", "Sprint Manager"])
+@pytest.mark.parametrize(
+    "preset_name", ["QA", "Validator", "Reporter", "Sprint Manager"]
+)
 def test_non_authoring_presets_read_ir_or_without_editing(presets_by_name, preset_name):
     flags = presets_by_name[preset_name]["flags"]
 
@@ -928,8 +969,12 @@ def test_spec_preset_owns_story_topic_authoring(presets_by_name):
         assert _get_nested(flags, flag) is True, f"Spec missing {flag}"
 
 
-@pytest.mark.parametrize("preset_name", ["Executor", "QA", "Validator", "Reporter", "Sprint Manager"])
-def test_operational_presets_read_stories_topics_without_editing(presets_by_name, preset_name):
+@pytest.mark.parametrize(
+    "preset_name", ["Executor", "QA", "Validator", "Reporter", "Sprint Manager"]
+)
+def test_operational_presets_read_stories_topics_without_editing(
+    presets_by_name, preset_name
+):
     flags = presets_by_name[preset_name]["flags"]
 
     assert _get_nested(flags, "story.entity.read") is True

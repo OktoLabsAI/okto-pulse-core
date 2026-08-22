@@ -31,11 +31,17 @@ from okto_pulse.core.services.ambiguity_assessment import (
 NOW = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
 
 
+def test_zero_is_a_valid_no_ambiguity_score() -> None:
+    assert AMBIGUITY_SCALE.minimum == 0
+    assert AMBIGUITY_SCALE.validate_score(0) == 0
+
+
 def _refinement() -> SimpleNamespace:
     return SimpleNamespace(
         id="ref_1",
         board_id="board_1",
         version=4,
+        edition=1,
         title="Bounded checkout",
         description="Decide the payment retry behavior.",
         in_scope=["payment authorization"],
@@ -94,6 +100,7 @@ def _receipt(
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id=resolved_subject.id,
         subject_version=resolved_subject.version,
+        subject_edition=resolved_subject.edition,
     )
     return AssessmentReceipt(
         id="qar_1",
@@ -239,7 +246,7 @@ async def test_gate_accepts_only_current_receipt_at_or_below_threshold() -> None
 
 
 @pytest.mark.asyncio
-async def test_gate_reason_codes_distinguish_missing_stale_and_over_threshold() -> None:
+async def test_gate_reason_codes_distinguish_missing_and_over_threshold() -> None:
     subject = _refinement()
     settings = {
         "require_refinement_ambiguity_gate": True,
@@ -255,20 +262,20 @@ async def test_gate_reason_codes_distinguish_missing_stale_and_over_threshold() 
         )
     assert missing.value.code == AmbiguityGateReason.ASSESSMENT_MISSING.value
 
-    stale_receipt = _receipt(subject=subject)
+    current_receipt = _receipt(subject=subject)
     changed = SimpleNamespace(**{**vars(subject), "analysis": "A different analysis"})
-    with pytest.raises(AmbiguityGateError) as stale:
-        await AmbiguityGateService(  # type: ignore[arg-type]
-            _Persistence(stale_receipt)
-        ).evaluate(
-            board_id=subject.board_id,
-            subject_type="refinement",
-            subject=changed,
-            board_settings=settings,
-            qa_items=_qa(),
-        )
-    assert stale.value.code == AmbiguityGateReason.ASSESSMENT_STALE.value
-    assert "content_changed" in stale.value.details["stale_reasons"]
+    content_changed = await AmbiguityGateService(  # type: ignore[arg-type]
+        _Persistence(current_receipt)
+    ).evaluate(
+        board_id=subject.board_id,
+        subject_type="refinement",
+        subject=changed,
+        board_settings=settings,
+        qa_items=_qa(),
+    )
+    assert content_changed.reason_code is AmbiguityGateReason.READY
+    assert content_changed.currentness is not None
+    assert content_changed.currentness.current is True
 
     high_receipt = _receipt(score=4, subject=subject)
     with pytest.raises(AmbiguityGateError) as high:
@@ -285,23 +292,23 @@ async def test_gate_reason_codes_distinguish_missing_stale_and_over_threshold() 
 
 
 @pytest.mark.asyncio
-async def test_answer_changes_stale_but_gate_settings_apply_at_gate_time() -> None:
+async def test_answer_changes_stay_current_and_gate_settings_apply_at_gate_time() -> None:
     subject = _refinement()
     receipt = _receipt(subject=subject)
     service = AmbiguityGateService(_Persistence(receipt))  # type: ignore[arg-type]
 
-    with pytest.raises(AmbiguityGateError) as clarified:
-        await service.evaluate(
-            board_id=subject.board_id,
-            subject_type="refinement",
-            subject=subject,
-            board_settings={
-                "require_refinement_ambiguity_gate": True,
-                "max_refinement_ambiguity": 3,
-            },
-            qa_items=_qa(answer="Three retries"),
-        )
-    assert "clarification_changed" in clarified.value.details["stale_reasons"]
+    clarified = await service.evaluate(
+        board_id=subject.board_id,
+        subject_type="refinement",
+        subject=subject,
+        board_settings={
+            "require_refinement_ambiguity_gate": True,
+            "max_refinement_ambiguity": 3,
+        },
+        qa_items=_qa(answer="Three retries"),
+    )
+    assert clarified.reason_code is AmbiguityGateReason.READY
+    assert clarified.currentness is not None and clarified.currentness.current
 
     with pytest.raises(AmbiguityGateError) as stricter_threshold:
         await service.evaluate(

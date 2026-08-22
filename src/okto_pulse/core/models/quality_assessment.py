@@ -161,7 +161,8 @@ def decode_quality_cursor(value: str) -> QualityPageCursor:
 def project_quality_currentness(value: AssessmentCurrentness) -> dict[str, Any]:
     return {
         "current": value.current,
-        "state": "current" if value.current else "stale",
+        "state": "current" if value.current else "previous",
+        # Compatibility/audit field. Product surfaces use only ``state``.
         "stale_reasons": [reason.value for reason in value.stale_reasons],
     }
 
@@ -186,6 +187,8 @@ def project_current_quality_assessment(
     currentness = project_quality_currentness(view.currentness)
     return {
         "receipt": project_quality_receipt(view.receipt),
+        "edition": view.receipt.subject.subject_edition,
+        "lifecycle_state": currentness["state"],
         "head_revision": view.head.revision,
         "currentness": currentness["state"],
         "stale_reasons": currentness["stale_reasons"],
@@ -212,6 +215,7 @@ def project_quality_receipt(receipt: AssessmentReceipt) -> dict[str, Any]:
         "subject_type": receipt.subject.subject_type.value,
         "subject_id": receipt.subject.subject_id,
         "subject_version": receipt.subject.subject_version,
+        "subject_edition": receipt.subject.subject_edition,
         "assessment_kind": receipt.assessment_kind.value,
         "origin": receipt.origin.value,
         "source": receipt.source.value,

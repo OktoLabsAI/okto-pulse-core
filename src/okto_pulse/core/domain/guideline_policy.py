@@ -2034,6 +2034,7 @@ class PolicySubjectRef:
     entity_type: PolicyEntityType
     subject_id: str
     subject_version: int
+    subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _enum(
@@ -2067,6 +2068,15 @@ class PolicySubjectRef:
                 "policy_subject_version_invalid",
             ),
         )
+        if self.subject_edition is not None:
+            object.__setattr__(
+                self,
+                "subject_edition",
+                _strict_positive_int(
+                    self.subject_edition,
+                    "policy_subject_edition_invalid",
+                ),
+            )
 
 
 @dataclass(frozen=True, slots=True)

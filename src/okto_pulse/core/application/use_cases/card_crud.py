@@ -11,6 +11,8 @@ card with its relationships loaded — exactly as the legacy endpoint did.
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
@@ -27,8 +29,10 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
+    decide_authorization,
     require_all,
     require_authorization,
+    resolve_actor_permissions,
 )
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     card_requirement,
@@ -36,9 +40,41 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
     entity_state,
     transition_permission_requirement,
 )
+from okto_pulse.core.models.schemas import (
+    CardResponse,
+    TaskValidationSubmit,
+    redact_card_validation_projection,
+)
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
+from okto_pulse.core.services.activity_log import redact_task_validation_activity
 
 
 _CARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
+
+
+async def project_card_validation_visibility(
+    card: Any,
+    *,
+    actor: ActorContext,
+    uow: PulseUnitOfWork,
+) -> Any:
+    """Hide Task Validation history unless the actor owns its dedicated leaf."""
+
+    permissions = await resolve_actor_permissions(
+        actor,
+        uow,
+        getattr(card, "board_id", None),
+    )
+    decision = decide_authorization(
+        actor,
+        PermissionRequirement("card.validation.read"),
+        permissions,
+    )
+    if decision.allowed:
+        return card
+    return redact_card_validation_projection(CardResponse.model_validate(card))
 
 
 async def _load_card_for_actor(
@@ -137,11 +173,16 @@ class GetCardUseCase:
         self, command: GetCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardResult:
         card = await _get_card_for_actor(uow, command.card_id, actor)
+        projected = await project_effective_knowledge(
+            uow.services,
+            card,
+            target_type="card",
+        )
         return GetCardResult(
-            await project_effective_knowledge(
-                uow.services,
-                card,
-                target_type="card",
+            await project_card_validation_visibility(
+                projected,
+                actor=actor,
+                uow=uow,
             )
         )
 
@@ -202,7 +243,13 @@ class UpdateCardUseCase:
             refreshed,
             target_type="card",
         )
-        return UpdateCardResult(projected)
+        return UpdateCardResult(
+            await project_card_validation_visibility(
+                projected,
+                actor=actor,
+                uow=uow,
+            )
+        )
 
 
 # --- delete -----------------------------------------------------------------
@@ -341,7 +388,13 @@ class MoveCardUseCase:
             refreshed,
             target_type="card",
         )
-        return MoveCardResult(projected)
+        return MoveCardResult(
+            await project_card_validation_visibility(
+                projected,
+                actor=actor,
+                uow=uow,
+            )
+        )
 
 
 # --- dependencies (read) ----------------------------------------------------
@@ -570,10 +623,14 @@ class SubmitTaskValidationUseCase:
     reviewer-separation action-required contract), ``GateContractError`` and
     ``ResourceGateError`` propagate for the adapter to map; a missing card is
     ``EntityNotFoundError`` (→ 404). The canonical ``card.validation.submit``
-    permission is required without a legacy-token fallback. Commits only after
-    the service mutation, exactly as the legacy endpoint did."""
+    and ``card.validation.read`` permissions are required without a
+    legacy-token fallback because the response contains the newly appended
+    validation and its completion decision. Commits only after the service
+    mutation, exactly as the legacy endpoint did."""
 
     _REQUIRED = (
+        "expected_subject_version",
+        "idempotency_key",
         "confidence",
         "confidence_justification",
         "estimated_completeness",
@@ -607,15 +664,25 @@ class SubmitTaskValidationUseCase:
             )
         if data.get("recommendation") not in ("approve", "reject"):
             raise CommandValidationError("recommendation must be 'approve' or 'reject'")
+        try:
+            data = TaskValidationSubmit.model_validate(data).model_dump()
+        except ValidationError as exc:
+            raise CommandValidationError(str(exc)) from exc
 
         state = entity_state(card)
-        await require_authorization(
+        await require_all(
             actor,
             PermissionRequirement(
                 "card.validation.submit",
-                entity="card" if state is not None else None,
-                state=state,
+                # Exact retries are admitted after the original attempt has
+                # already moved the card to Done or Rejected.  Only a new
+                # write can reach the service mutation path, and that path is
+                # still status-guarded to Validation.  Preserve the state
+                # permission for the only status in which a new write exists.
+                entity="card" if state == "validation" else None,
+                state=state if state == "validation" else None,
             ),
+            PermissionRequirement("card.validation.read"),
             uow=uow,
             board_id=card.board_id,
         )
@@ -669,11 +736,18 @@ class ListTaskValidationsUseCase:
         uow: PulseUnitOfWork,
     ) -> ListTaskValidationsResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        card = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             missing_as_value_error=True,
+        )
+        await require_all(
+            actor,
+            PermissionRequirement("card.entity.read"),
+            PermissionRequirement("card.validation.read"),
+            uow=uow,
+            board_id=card.board_id,
         )
         validations = await service.list_task_validations(command.card_id)
         return ListTaskValidationsResult(validations)
@@ -709,11 +783,18 @@ class GetTaskValidationUseCase:
         uow: PulseUnitOfWork,
     ) -> GetTaskValidationResult:
         service = uow.services.cards
-        await _get_card_for_actor(
+        card = await _get_card_for_actor(
             uow,
             command.card_id,
             actor,
             missing_as_value_error=True,
+        )
+        await require_all(
+            actor,
+            PermissionRequirement("card.entity.read"),
+            PermissionRequirement("card.validation.read"),
+            uow=uow,
+            board_id=card.board_id,
         )
         validation = await service.get_task_validation(
             command.card_id, command.validation_id
@@ -759,15 +840,11 @@ class DeleteTaskValidationUseCase:
             missing_as_value_error=True,
             allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
         )
-        validation = await service.get_task_validation(
-            command.card_id,
-            command.validation_id,
-        )
-        if not validation:
-            raise EntityNotFoundError("task_validation", command.validation_id)
         state = entity_state(card)
-        await require_authorization(
+        await require_all(
             actor,
+            PermissionRequirement("card.entity.read"),
+            PermissionRequirement("card.validation.read"),
             PermissionRequirement(
                 "card.validation.delete",
                 entity="card" if state is not None else None,
@@ -776,6 +853,12 @@ class DeleteTaskValidationUseCase:
             uow=uow,
             board_id=card.board_id,
         )
+        validation = await service.get_task_validation(
+            command.card_id,
+            command.validation_id,
+        )
+        if not validation:
+            raise EntityNotFoundError("task_validation", command.validation_id)
         deleted = await service.delete_task_validation(
             command.card_id, command.validation_id, actor.actor_id
         )
@@ -980,6 +1063,10 @@ class LinkTestTaskToBugUseCase:
             uow=uow,
             board_id=bug_card.board_id,
         )
+        require_card_operational_mutation_allowed(
+            bug_card,
+            operation="link_test_task_to_bug",
+        )
 
         # Add test task to linked_test_task_ids.
         linked = list(bug_card.linked_test_task_ids or [])
@@ -1052,6 +1139,10 @@ class UnlinkTestTaskFromBugUseCase:
             uow=uow,
             board_id=bug_card.board_id,
         )
+        require_card_operational_mutation_allowed(
+            bug_card,
+            operation="unlink_test_task_from_bug",
+        )
 
         linked = list(bug_card.linked_test_task_ids or [])
         if command.test_task_id in linked:
@@ -1108,11 +1199,25 @@ class GetCardActivityUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> GetCardActivityResult:
-        await _get_card_for_actor(uow, command.card_id, actor)
+        card = await _get_card_for_actor(uow, command.card_id, actor)
+        await require_all(
+            actor,
+            PermissionRequirement("card.activity_read"),
+            uow=uow,
+            board_id=card.board_id,
+        )
+        permissions = await resolve_actor_permissions(actor, uow, card.board_id)
+        can_read_validations = decide_authorization(
+            actor,
+            PermissionRequirement("card.validation.read"),
+            permissions,
+        ).allowed
         activity = await uow.services.compute_card_activity(
             command.card_id,
             limit=command.limit,
         )
+        if not can_read_validations:
+            activity = [redact_task_validation_activity(item) for item in activity]
         return GetCardActivityResult(activity)
 
 

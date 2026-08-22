@@ -18,6 +18,7 @@ from __future__ import annotations
 import shutil
 import uuid
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -101,6 +102,7 @@ async def seeded_refinement() -> tuple[str, str, str]:
                 status=RefinementStatus.APPROVED,
                 version=1,
                 created_by=USER_ID,
+                delivery_context="brownfield",
             )
         )
         await db.flush()
@@ -314,6 +316,25 @@ async def test_no_cognitive_item_allows_refinement_done(
     result, exc = await _move_to_done(refinement_id)
     if exc is not None:
         assert "cognitive_consolidation_pending" not in str(exc).lower()
+
+
+@pytest.mark.asyncio
+async def test_done_revalidates_traceability_after_relational_fence(
+    isolated_kg_dir: Path,
+    seeded_refinement,
+) -> None:
+    _, _, refinement_id = seeded_refinement
+
+    with patch(
+        "okto_pulse.core.services.main.evaluate_code_traceability_transition",
+        new_callable=AsyncMock,
+    ) as evaluate:
+        result, exc = await _move_to_done(refinement_id)
+
+    assert exc is None
+    assert result is not None
+    assert evaluate.await_count == 2
+    assert await _refinement_snapshot_count(refinement_id) == 1
 
 
 @pytest.mark.asyncio

@@ -220,7 +220,7 @@ def test_restore_keeps_already_correct_head_without_revision_bump() -> None:
     assert rebuild.stale_transition_required is False
 
 
-def test_reopen_preserves_valid_stale_head_with_replay_stable_transition() -> None:
+def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() -> None:
     transition = _transition(
         AssessmentLifecycleAction.REOPEN,
         before=_snapshot(version=4, status="done"),
@@ -234,27 +234,22 @@ def test_reopen_preserves_valid_stale_head_with_replay_stable_transition() -> No
     )
 
     first_rebuild = first.head_rebuilds[0]
-    assert first_rebuild.selected_receipt_id == "receipt-v4"
-    assert first_rebuild.selected_state.value == "stale"
-    assert first_rebuild.resulting_revision == 4
-    assert first_rebuild.stale_transition_required is True
-    assert first_rebuild.stale_transition_key is not None
+    assert first_rebuild.previous_receipt_id == "receipt-v4"
+    assert first_rebuild.selected_receipt_id is None
+    assert first_rebuild.selected_state is None
+    assert first_rebuild.resulting_revision == 5
+    assert first_rebuild.stale_transition_required is False
+    assert first_rebuild.stale_transition_key is None
 
-    # Replaying the same lifecycle operation yields the same transition key;
-    # the adapter's unique idempotency fence records "became stale" once.
+    # Replaying the same lifecycle operation deterministically yields the same
+    # clear-head plan. Immutable receipt history remains addressable as Previous.
     retry = service.prepare_transition(
         transition,
         heads=(_head("receipt-v4", revision=4),),
         receipts=(_receipt("receipt-v4", version=4),),
     )
     retry_rebuild = retry.head_rebuilds[0]
-    assert retry_rebuild.selected_receipt_id == "receipt-v4"
-    assert retry_rebuild.resulting_revision == 4
-    assert retry_rebuild.stale_transition_required is True
-    assert (
-        retry_rebuild.stale_transition_key
-        == first_rebuild.stale_transition_key
-    )
+    assert retry_rebuild == first_rebuild
 
     distinct_operation = service.prepare_transition(
         _transition(
@@ -266,10 +261,7 @@ def test_reopen_preserves_valid_stale_head_with_replay_stable_transition() -> No
         heads=(_head("receipt-v4", revision=4),),
         receipts=(_receipt("receipt-v4", version=4),),
     )
-    assert (
-        distinct_operation.head_rebuilds[0].stale_transition_key
-        != first_rebuild.stale_transition_key
-    )
+    assert distinct_operation.head_rebuilds[0] == first_rebuild
 
 
 def test_orphan_head_is_invalidated_but_not_misreported_as_stale() -> None:

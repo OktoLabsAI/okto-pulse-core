@@ -15,7 +15,85 @@ from okto_pulse.core.runtime_context import (
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, Sequence, runtime_checkable
+from typing import Any, Literal, Mapping, Protocol, Sequence, runtime_checkable
+
+
+SPEC_DEPENDENCY_PROJECTION_QUEUE_CONTRACT = "spec-dependency-projection/v1"
+SPEC_DEPENDENCY_PROJECTION_EVENT_TYPES = frozenset(
+    {"spec.dependency_added", "spec.dependency_removed"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SpecDependencyProjectionQueueMetadata:
+    """Durable ownership marker for one dependency projection fan-out."""
+
+    mutation_event_id: str
+    mutation_event_type: str
+    dependency_id: str
+    projection_owner_spec_id: str
+    target_role: Literal["endpoint_bootstrap", "projection_owner"]
+
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "contract": SPEC_DEPENDENCY_PROJECTION_QUEUE_CONTRACT,
+            "mutation_event_id": self.mutation_event_id,
+            "mutation_event_type": self.mutation_event_type,
+            "dependency_id": self.dependency_id,
+            "projection_owner_spec_id": self.projection_owner_spec_id,
+            "target_role": self.target_role,
+        }
+
+
+_SPEC_DEPENDENCY_PROJECTION_QUEUE_KEYS = frozenset(
+    {
+        "contract",
+        "mutation_event_id",
+        "mutation_event_type",
+        "dependency_id",
+        "projection_owner_spec_id",
+        "target_role",
+    }
+)
+
+
+def parse_spec_dependency_projection_queue_metadata(
+    payload: object,
+) -> SpecDependencyProjectionQueueMetadata | None:
+    """Parse only the exact v1 ownership contract; drift is non-observable."""
+
+    if not isinstance(payload, Mapping):
+        return None
+    if set(payload) != _SPEC_DEPENDENCY_PROJECTION_QUEUE_KEYS:
+        return None
+    if payload.get("contract") != SPEC_DEPENDENCY_PROJECTION_QUEUE_CONTRACT:
+        return None
+    values = {
+        key: payload.get(key)
+        for key in (
+            "mutation_event_id",
+            "mutation_event_type",
+            "dependency_id",
+            "projection_owner_spec_id",
+            "target_role",
+        )
+    }
+    if any(not isinstance(value, str) or not value for value in values.values()):
+        return None
+    event_type = str(values["mutation_event_type"])
+    role = str(values["target_role"])
+    if event_type not in SPEC_DEPENDENCY_PROJECTION_EVENT_TYPES or role not in {
+        "endpoint_bootstrap",
+        "projection_owner",
+    }:
+        return None
+    return SpecDependencyProjectionQueueMetadata(
+        mutation_event_id=str(values["mutation_event_id"]),
+        mutation_event_type=event_type,
+        dependency_id=str(values["dependency_id"]),
+        projection_owner_spec_id=str(values["projection_owner_spec_id"]),
+        target_role=role,
+    )
 
 
 class RelationalEffectsProviderMissing(RuntimeError):
@@ -37,6 +115,7 @@ class ConsolidationQueueUpsert:
     priority: str
     source: str
     triggered_by_event: str
+    payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +210,11 @@ __all__ = [
     "KGTickRunUpsert",
     "RelationalEffectsPort",
     "RelationalEffectsProviderMissing",
+    "SPEC_DEPENDENCY_PROJECTION_EVENT_TYPES",
+    "SPEC_DEPENDENCY_PROJECTION_QUEUE_CONTRACT",
+    "SpecDependencyProjectionQueueMetadata",
     "get_relational_effects_port",
+    "parse_spec_dependency_projection_queue_metadata",
     "register_relational_effects_port",
     "reset_relational_effects_port_for_tests",
 ]

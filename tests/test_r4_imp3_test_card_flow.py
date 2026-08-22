@@ -42,7 +42,15 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r4 tester"
-        self.permissions = set()  # iterable; granular checks patched to allow
+        # Task context now embeds the governed Code Traceability projection.
+        # Keep this integration actor explicit instead of relying only on the
+        # older patched board-level permission checks.
+        self.permissions = (
+            "code_traceability.investigation.read",
+            "code_traceability.evidence.read",
+            "code_traceability.target.read",
+            "code_traceability.overlap.read",
+        )
 
 
 async def _call(name: str, **kwargs) -> dict:

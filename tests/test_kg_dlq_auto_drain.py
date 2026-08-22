@@ -37,6 +37,7 @@ _USER_ID_DRAIN = "user-dlq-drain-test"
 # Fake board / DLQ row helpers
 # ---------------------------------------------------------------------------
 
+
 def _fake_board(board_id: str, *, dlq_auto_drain_enabled: bool) -> SimpleNamespace:
     return SimpleNamespace(
         id=board_id,
@@ -61,6 +62,7 @@ def _fake_dlq_row(board_id: str, *, attempts: int = 0) -> SimpleNamespace:
 # ---------------------------------------------------------------------------
 # Helpers to build per-session fake DBs using a queue of session responses
 # ---------------------------------------------------------------------------
+
 
 class _ScalarsProxy:
     def __init__(self, items):
@@ -148,6 +150,7 @@ def _make_worker(relational_scope_factory) -> ConsolidationProcessor:
 # Patch helper for reprocess_dead_letter_rows
 # ---------------------------------------------------------------------------
 
+
 class _ReprocessPatcher:
     """Context manager that patches reprocess_dead_letter_rows at the
     dead_letter_inspector_service module level.
@@ -164,6 +167,7 @@ class _ReprocessPatcher:
 
     def __enter__(self):
         import okto_pulse.core.services.dead_letter_inspector_service as svc
+
         self._module = svc
         self._orig = svc.reprocess_dead_letter_rows
 
@@ -185,13 +189,16 @@ class _ReprocessPatcher:
 # AC9: dlq_auto_drain_enabled=False -> reprocess NOT called
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_auto_drain_disabled_skips_reprocess():
     """AC9: when board.settings.dlq_auto_drain_enabled is False, the
     reprocess_dead_letter_rows function must NOT be called.
     """
     board_id = "board-ac9"
-    boards_db = _SessionDB(board_rows=[_fake_board(board_id, dlq_auto_drain_enabled=False)])
+    boards_db = _SessionDB(
+        board_rows=[_fake_board(board_id, dlq_auto_drain_enabled=False)]
+    )
     factory = _make_session_sequence([boards_db])
     worker = _make_worker(factory)
 
@@ -207,6 +214,7 @@ async def test_auto_drain_disabled_skips_reprocess():
 # ---------------------------------------------------------------------------
 # AC10: enabled=True + dlq>0 + no backoff -> reprocess called 1x + INFO log
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_auto_drain_enabled_calls_reprocess(caplog):
@@ -248,9 +256,155 @@ async def test_auto_drain_enabled_calls_reprocess(caplog):
     assert isinstance(stats["requeued_count"], int)
 
 
+@pytest.mark.parametrize(
+    "reserved_source",
+    ("rebuild:manifest-1", ""),
+    ids=("rebuild", "erasure_or_invalid_admin"),
+)
+@pytest.mark.asyncio
+async def test_auto_drain_skips_every_administratively_reserved_board(
+    monkeypatch,
+    reserved_source: str,
+) -> None:
+    """A reservation preserves the DLQ delta for governed observation."""
+
+    from okto_pulse.core.application.processors import consolidation
+
+    board_id = "board-reserved-dlq"
+
+    class ReservationStore:
+        async def list_dlq_auto_drain_board_ids(self, _db):
+            return (board_id,)
+
+        async def board_administrative_rebuild_source(
+            self,
+            _db,
+            *,
+            board_id: str,
+        ) -> str:
+            assert board_id == "board-reserved-dlq"
+            return reserved_source
+
+        async def count_dead_letters(self, *_args, **_kwargs):
+            pytest.fail("reserved board must not inspect or mutate its DLQ")
+
+    monkeypatch.setattr(
+        consolidation,
+        "get_consolidation_persistence_port",
+        lambda: ReservationStore(),
+    )
+    worker = _make_worker(_make_session_sequence([_SessionDB()]))
+    calls: list[str] = []
+    with _ReprocessPatcher(calls):
+        await worker.run_dlq_auto_drain()
+
+    assert calls == []
+    assert worker.get_dlq_drain_stats(board_id) == {
+        "last_run_at": None,
+        "requeued_count": 0,
+    }
+
+
+@pytest.mark.parametrize("reader_mode", ("missing", "raises"))
+@pytest.mark.asyncio
+async def test_auto_drain_fails_closed_without_reliable_reservation_reader(
+    monkeypatch,
+    reader_mode: str,
+) -> None:
+    """Optional/legacy stores cannot bypass the administrative reservation."""
+
+    from okto_pulse.core.application.processors import consolidation
+
+    board_id = "board-unprovable-reservation"
+
+    class _Store:
+        async def list_dlq_auto_drain_board_ids(self, _db):
+            return (board_id,)
+
+        async def count_dead_letters(self, *_args, **_kwargs):
+            pytest.fail("unprovable reservation must block every DLQ read/mutation")
+
+    store = _Store()
+    if reader_mode == "raises":
+
+        async def _raise(_db, *, board_id: str):
+            assert board_id == "board-unprovable-reservation"
+            raise RuntimeError("reservation backend unavailable")
+
+        store.board_administrative_rebuild_source = _raise  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(
+        consolidation,
+        "get_consolidation_persistence_port",
+        lambda: store,
+    )
+    worker = _make_worker(_make_session_sequence([_SessionDB()]))
+    calls: list[str] = []
+    with _ReprocessPatcher(calls):
+        await worker.run_dlq_auto_drain()
+
+    assert calls == []
+    assert worker.get_dlq_drain_stats(board_id) == {
+        "last_run_at": None,
+        "requeued_count": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_auto_drain_lease_loss_before_requeue_commit_fails_closed(
+    monkeypatch,
+) -> None:
+    from okto_pulse.core.application.processors import consolidation
+
+    board_id = "board-dlq-lease-loss"
+    dlq_row = _fake_dlq_row(board_id, attempts=0)
+    sessions = [
+        _SessionDB(board_rows=[_fake_board(board_id, dlq_auto_drain_enabled=True)]),
+        _SessionDB(scalar_value=1),
+        _SessionDB(dlq_rows=[dlq_row]),
+        _SessionDB(),
+    ]
+
+    class _ExpiringHeartbeat:
+        def __init__(self, *_args, **_kwargs):
+            self.probes = 0
+
+        def start(self):
+            return None
+
+        def ensure_owned(self):
+            self.probes += 1
+            # Start, poison precheck/commit and reprocess precheck succeed;
+            # the proof immediately before the requeue commit fails.
+            if self.probes == 5:
+                raise RuntimeError("writer lease expired")
+
+        def stop(self):
+            return None
+
+    monkeypatch.setattr(
+        consolidation,
+        "_ConsolidationWriterHeartbeat",
+        _ExpiringHeartbeat,
+    )
+    worker = _make_worker(_make_session_sequence(sessions))
+    calls: list[str] = []
+
+    with _ReprocessPatcher(calls):
+        await worker.run_dlq_auto_drain()
+
+    assert calls == [board_id]
+    assert sessions[3].committed is False
+    assert worker.get_dlq_drain_stats(board_id) == {
+        "last_run_at": None,
+        "requeued_count": 0,
+    }
+
+
 # ---------------------------------------------------------------------------
 # AC11: within backoff window -> second call suppressed
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_auto_drain_backoff_suppresses_second_run():
@@ -288,17 +442,20 @@ async def test_auto_drain_backoff_suppresses_second_run():
 # AC12: health response has dlq_auto_drain_last_run_at + dlq_auto_drain_requeued_count
 # ---------------------------------------------------------------------------
 
+
 @pytest_asyncio.fixture
 async def drain_health_board(db_factory):
     """Idempotent Board row for drain-health-fields test."""
     async with db_factory() as session:
         existing = await session.get(Board, _BOARD_ID_DRAIN)
         if existing is None:
-            session.add(Board(
-                id=_BOARD_ID_DRAIN,
-                name="dlq-drain-test",
-                owner_id=_USER_ID_DRAIN,
-            ))
+            session.add(
+                Board(
+                    id=_BOARD_ID_DRAIN,
+                    name="dlq-drain-test",
+                    owner_id=_USER_ID_DRAIN,
+                )
+            )
             await session.commit()
     yield _BOARD_ID_DRAIN
 
@@ -335,6 +492,7 @@ async def test_health_has_drain_fields(db_factory, drain_health_board):
 # AC13: poison-pill (attempts >= max_requeue_attempts) -> deleted + WARN logged
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_poison_pill_excluded_and_warned(caplog):
     """AC13: DLQ rows whose attempts >= max_requeue_attempts are permanently
@@ -363,7 +521,9 @@ async def test_poison_pill_excluded_and_warned(caplog):
 
     calls: list[str] = []
     with _ReprocessPatcher(calls):
-        with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.consolidation_worker"):
+        with caplog.at_level(
+            logging.WARNING, logger="okto_pulse.kg.consolidation_worker"
+        ):
             with patch(
                 "okto_pulse.core.infra.config.get_settings",
                 return_value=_FakeSettings(),

@@ -476,6 +476,7 @@ async def test_create_spec_invalid_scenario_type_rejected(db_factory):
                 board_id, USER_ID,
                 SpecCreate.model_construct(
                     title="S",
+                    delivery_context="brownfield",
                     test_scenarios=[invalid],
                 ),
             )
@@ -489,6 +490,7 @@ async def test_create_spec_valid_scenario_type_ok(db_factory):
             board_id, USER_ID,
             SpecCreate(
                 title="S",
+                delivery_context="brownfield",
                 test_scenarios=[
                     ScenarioWrite(
                         id="ts_c",

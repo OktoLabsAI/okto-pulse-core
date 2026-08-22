@@ -28,6 +28,7 @@ from typing import Any
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
+    PermissionDeniedError,
     commit,
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
@@ -262,11 +263,28 @@ class UpdateIdeationUseCase:
 
 
 class SetIdeationAmbiguityGateSkipCommand:
-    __slots__ = ("ideation_id", "skip")
+    __slots__ = (
+        "ideation_id",
+        "skip",
+        "reason",
+        "expected_ideation_version",
+        "expected_ideation_edition",
+    )
 
-    def __init__(self, ideation_id: str, skip: bool) -> None:
+    def __init__(
+        self,
+        ideation_id: str,
+        skip: bool,
+        *,
+        reason: str,
+        expected_ideation_version: int,
+        expected_ideation_edition: int,
+    ) -> None:
         self.ideation_id = ideation_id
         self.skip = skip
+        self.reason = reason
+        self.expected_ideation_version = expected_ideation_version
+        self.expected_ideation_edition = expected_ideation_edition
 
 
 class SetIdeationAmbiguityGateSkipResult:
@@ -291,8 +309,16 @@ class SetIdeationAmbiguityGateSkipUseCase:
         await _require_accessible_ideation(
             uow, command.ideation_id, actor, write=True
         )
+        if actor.source != "rest":
+            raise PermissionDeniedError("human_actor_required")
         ideation = await service.set_ambiguity_gate_skip(
-            command.ideation_id, actor.actor_id, command.skip, source="rest"
+            command.ideation_id,
+            actor.actor_id,
+            command.skip,
+            reason=command.reason,
+            expected_ideation_version=command.expected_ideation_version,
+            expected_ideation_edition=command.expected_ideation_edition,
+            source="rest",
         )
         if not ideation:
             raise EntityNotFoundError("ideation", command.ideation_id)

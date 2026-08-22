@@ -38,6 +38,9 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
     resolve_actor_permissions,
 )
+from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+    EvaluateCodeTraceabilityKGReadAccessUseCase,
+)
 from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -142,8 +145,22 @@ class ListAuditUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        entries = await uow.services.kg.list_consolidation_audit(command.board_id, limit=command.limit
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
         )
+        if ct_access.allowed:
+            entries = await uow.services.kg.list_consolidation_audit(
+                command.board_id,
+                limit=command.limit,
+            )
+        else:
+            entries = await uow.services.kg.list_consolidation_audit(
+                command.board_id,
+                limit=command.limit,
+                include_code_traceability=False,
+            )
         return ListAuditResult(entries)
 
 
@@ -235,7 +252,11 @@ class StartHistoricalUseCase:
     verbatim."""
 
     async def execute(
-        self, command: StartHistoricalCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: StartHistoricalCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> StartHistoricalResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -248,8 +269,7 @@ class StartHistoricalUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        payload = await uow.services.kg.start_historical_consolidation(command.board_id
-        )
+        payload = await uow.services.kg.start_historical_consolidation(command.board_id)
         return StartHistoricalResult(payload)
 
 
@@ -276,7 +296,11 @@ class CancelHistoricalUseCase:
     payload verbatim."""
 
     async def execute(
-        self, command: CancelHistoricalCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: CancelHistoricalCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> CancelHistoricalResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -317,7 +341,11 @@ class GetHistoricalProgressUseCase:
     Delegates to ``governance.get_historical_progress`` verbatim."""
 
     async def execute(
-        self, command: GetHistoricalProgressCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: GetHistoricalProgressCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> GetHistoricalProgressResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -358,7 +386,11 @@ class DeleteBoardKgUseCase:
     regardless of the counts, exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: DeleteBoardKgCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: DeleteBoardKgCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> DeleteBoardKgResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -371,7 +403,20 @@ class DeleteBoardKgUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        counts = await uow.services.kg.right_to_erasure(command.board_id)
+        # The standalone KG erasure endpoint is an administrative operation,
+        # just like full Board deletion.  Hold the shared orchestration
+        # reservation and exact board/global writer fences for the complete
+        # physical purge so it cannot overlap a rebuild's writer-free drain.
+        async with uow.services.kg.board_erasure_scope(
+            command.board_id,
+            actor_id=actor.actor_id,
+        ) as erasure:
+            erasure.ensure_owned()
+            counts = await uow.services.kg.right_to_erasure(
+                command.board_id,
+                global_writer_guarded=True,
+            )
+            erasure.ensure_owned()
         return DeleteBoardKgResult(counts)
 
 
@@ -419,7 +464,19 @@ class ListPendingUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        entries = await uow.services.kg.list_pending_entries(command.board_id)
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
+        )
+        entries = (
+            await uow.services.kg.list_pending_entries(command.board_id)
+            if ct_access.allowed
+            else await uow.services.kg.list_pending_entries(
+                command.board_id,
+                include_code_traceability=False,
+            )
+        )
         return ListPendingResult(entries)
 
 
@@ -448,7 +505,11 @@ class ListPendingTreeUseCase:
     (``{board_id, depth, total_pending, levels, tree}``) for the adapter."""
 
     async def execute(
-        self, command: ListPendingTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: ListPendingTreeCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> ListPendingTreeResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -461,7 +522,8 @@ class ListPendingTreeUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        payload = await uow.services.kg.build_pending_tree(command.board_id, depth=command.depth
+        payload = await uow.services.kg.build_pending_tree(
+            command.board_id, depth=command.depth
         )
         return ListPendingTreeResult(payload)
 
@@ -496,7 +558,11 @@ class RetryPendingEntryUseCase:
     not found"); the use case issues NO second commit."""
 
     async def execute(
-        self, command: RetryPendingEntryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: RetryPendingEntryCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> RetryPendingEntryResult:
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -509,9 +575,24 @@ class RetryPendingEntryUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        payload = await uow.services.kg.retry_pending_entry(command.board_id,
-            command.queue_entry_id,
-            recursive=command.recursive,
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
+        )
+        payload = (
+            await uow.services.kg.retry_pending_entry(
+                command.board_id,
+                command.queue_entry_id,
+                recursive=command.recursive,
+            )
+            if ct_access.allowed
+            else await uow.services.kg.retry_pending_entry(
+                command.board_id,
+                command.queue_entry_id,
+                recursive=command.recursive,
+                include_code_traceability=False,
+            )
         )
         if payload is None:
             raise EntityNotFoundError("queue_entry", command.queue_entry_id)
@@ -599,9 +680,7 @@ def _close_boost_fence_sync(
     def _close() -> None:
         try:
             if error is None:
-                handle.lease.ensure_owned(
-                    failure_phase="after_boost_audit_finalize"
-                )
+                handle.lease.ensure_owned(failure_phase="after_boost_audit_finalize")
         except BaseException as ownership_error:
             try:
                 handle.manager.__exit__(
@@ -654,6 +733,9 @@ class BoostNodeUseCase:
     async def execute(
         self, command: BoostNodeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoostNodeResult:
+        from okto_pulse.core.domain.code_traceability_kg import (
+            CodeTraceabilityKGWriteViolation,
+        )
         from okto_pulse.core.kg.guarded_write import guarded_board_write
 
         await _require_board_access(uow.services, actor, command.board_id)
@@ -690,6 +772,12 @@ class BoostNodeUseCase:
                 # Historical API contract: the audit is best-effort after a
                 # durable graph boost. Keep the fence until rollback completes.
                 await uow.rollback()
+        except CodeTraceabilityKGWriteViolation as exc:
+            await _close_boost_fence(handle, exc)
+            raise PermissionDeniedError(
+                "Code Traceability KG projections are immutable through "
+                "generic node boost"
+            ) from exc
         except BaseException as exc:
             await _close_boost_fence(handle, exc)
             raise

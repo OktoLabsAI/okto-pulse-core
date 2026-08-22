@@ -177,6 +177,7 @@ async def test_get_related_context_raw_uuid_survives_real_fastmcp_transport(
 
     class Agent:
         id = "transport-agent"
+        agent_id = "transport-agent"
 
     async def authorized_user_boards(*_args, **_kwargs):
         return Agent(), [board_id]

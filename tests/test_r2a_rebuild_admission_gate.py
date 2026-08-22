@@ -35,6 +35,7 @@ from sqlalchemy_test_models import Board, BoardShare
 # Shared fake async session that records calls
 # ---------------------------------------------------------------------------
 
+
 class _FakeSession:
     def __init__(self) -> None:
         self.committed = False
@@ -147,9 +148,10 @@ def test_ts_95ec2b37_predicate_does_not_reference_hard_reject_set():
     module_source = inspect.getsource(kg_rebuild_mod)
     # Only the comment that documents this constraint may mention it.
     # The production logic must not import it.
-    assert "from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT" not in module_source, (
-        "kg_rebuild.py must not import _RISK_STATE_HARD_REJECT"
-    )
+    assert (
+        "from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT"
+        not in module_source
+    ), "kg_rebuild.py must not import _RISK_STATE_HARD_REJECT"
 
     # _REBUILD_REJECT_STATES must not contain recovery_needed.
     assert "recovery_needed" not in _REBUILD_REJECT_STATES, (
@@ -221,6 +223,7 @@ def _make_rebuild_client(user_id: str) -> tuple[TestClient, object]:
 
 
 # ---- /preflight ----
+
 
 def test_fr10_preflight_nonexistent_board_returns_404(_rebuild_scope_board):
     """FR10 BEHAVIORAL: preflight on a board that does not exist → HTTP 404."""
@@ -408,6 +411,7 @@ def test_fr9_health_probe_uses_get_kg_health_in_preflight():
     the stub that returned base_state='healthy' unconditionally must be gone,
     and _raw_health from the real get_kg_health call must be used."""
     import okto_pulse.community.api.kg_rebuild as m
+
     source = inspect.getsource(m.post_rebuild_preflight)
     # Real health call must be present.
     assert "get_kg_health" in source, (
@@ -429,6 +433,7 @@ def test_all_three_endpoints_accept_db_parameter():
     """FR10 (defence-in-depth): each REST endpoint must accept an async DB
     session dependency so the per-board scope check can query the Board table."""
     import okto_pulse.community.api.kg_rebuild as m
+
     for fn in (m.post_rebuild_preflight, m.post_rebuild_confirm, m.post_rebuild_run):
         sig = inspect.signature(fn)
         assert "db" in sig.parameters, (
@@ -444,6 +449,7 @@ def test_all_three_endpoints_accept_db_parameter():
 def test_mcp_twin_tools_registered_in_server():
     """IMPL-3: the three MCP rebuild tools must be registered in server.py."""
     import okto_pulse.core.mcp.server as srv_mod
+
     source = inspect.getsource(srv_mod)
     for tool_name in (
         "okto_pulse_kg_rebuild_preflight",
@@ -459,6 +465,7 @@ def test_mcp_twin_calls_rebuild_scoped_gate():
     """IMPL-3 + FR8: the MCP rebuild tools must import and call
     _refuse_rebuild_if_quarantined (the shared rebuild-scoped gate)."""
     import okto_pulse.core.mcp.server as srv_mod
+
     source = inspect.getsource(srv_mod)
     assert "_refuse_rebuild_if_quarantined" in source, (
         "MCP twin must call the shared rebuild-scoped gate"
@@ -468,11 +475,8 @@ def test_mcp_twin_calls_rebuild_scoped_gate():
     # The twin imports and calls _refuse_rebuild_if_quarantined from kg_rebuild
 
 
-def test_mcp_twin_does_not_reimplement_business_logic():
-    """IMPL-3 (delegation invariant): the MCP rebuild tools must delegate to
-    the shared service objects, not re-implement business logic.  Verified by
-    inspecting the full server module source (the tools are @mcp.tool()-wrapped
-    FunctionTool objects whose underlying source lives in the module file)."""
+def test_mcp_twin_preflight_delegates_but_confirm_run_are_pure_denials():
+    """The online MCP boundary cannot compose confirmation/run mutators."""
     import okto_pulse.core.mcp.server as srv_mod
 
     # The @mcp.tool() decorator wraps functions in FunctionTool objects.
@@ -484,15 +488,13 @@ def test_mcp_twin_does_not_reimplement_business_logic():
         "okto_pulse_kg_rebuild_preflight must use RebuildPreflightService"
     )
 
-    # confirm must delegate to RebuildConfirmationStore
-    assert "RebuildConfirmationStore" in source, (
-        "okto_pulse_kg_rebuild_confirm must use RebuildConfirmationStore"
-    )
-
-    # run must delegate to KGRebuildService
-    assert "KGRebuildService" in source, (
-        "okto_pulse_kg_rebuild_run must use KGRebuildService"
-    )
+    confirm_source = inspect.getsource(srv_mod.okto_pulse_kg_rebuild_confirm.fn)
+    run_source = inspect.getsource(srv_mod.okto_pulse_kg_rebuild_run.fn)
+    assert "RebuildConfirmationStore" not in confirm_source
+    assert "KGRebuildSourceManifest" not in confirm_source
+    assert "KGRebuildService" not in run_source
+    assert "consume" not in run_source
+    assert "recovery_execution_required" in source
 
 
 # ---------------------------------------------------------------------------
@@ -591,7 +593,21 @@ async def test_ts_30de5f98_twin_auth_none_returns_auth_error_no_side_effects(
 
 _AGENT_INSTRUCTIONS_MD = (
     Path(__file__).parent.parent
-    / "src" / "okto_pulse" / "core" / "mcp" / "agent_instructions.md"
+    / "src"
+    / "okto_pulse"
+    / "core"
+    / "mcp"
+    / "agent_instructions.md"
+)
+_KG_HEALTH_RESOURCE_MD = (
+    Path(__file__).parent.parent
+    / "src"
+    / "okto_pulse"
+    / "core"
+    / "mcp"
+    / "resources"
+    / "reference"
+    / "kg-health.md"
 )
 
 
@@ -603,10 +619,9 @@ def test_ts_95626a94_agent_instructions_documents_rebuild_tools():
     """ts_95626a94:
     agent_instructions.md MUST document all three MCP rebuild tools and
     the two critical agent-behaviour rules:
-      (a) cites okto_pulse_kg_rebuild_preflight + okto_pulse_kg_rebuild_confirm
-          + okto_pulse_kg_rebuild_run (tool names that the agent needs to call);
-      (b) documents the recovery_needed EXCEPTION — agent MUST run the rebuild
-          (not stop) when graph_state == recovery_needed;
+      (a) cites the diagnostic preflight and denied confirm/run surfaces;
+      (b) directs recovery_needed to the governed offline one-shot instead of
+          calling the online mutators;
       (c) PRESERVES the quarantined stop-rule (agent MUST stop on quarantined).
 
     Mirrors the pattern in test_r1_degraded_kg_fallback_gate.py
@@ -621,14 +636,16 @@ def test_ts_95626a94_agent_instructions_documents_rebuild_tools():
     ):
         assert tool_name in text, (
             f"agent_instructions.md must cite {tool_name} so the agent knows "
-            f"which tools to call for the rebuild flow"
+            "which online surfaces are diagnostic/denied"
         )
 
-    # (b) recovery_needed exception — the agent MUST proceed, not stop
+    # (b) recovery_needed selects the offline recovery process.
     assert "recovery_needed" in text, (
-        "agent_instructions.md must document the recovery_needed exception "
-        "so agents do not stop on that state"
+        "agent_instructions.md must document the recovery_needed branch"
     )
+    assert "recovery_execution_required" in text
+    assert "one-shot" in text.lower()
+    assert "never retry" in text.lower()
 
     # (c) quarantined stop-rule — the agent MUST stop
     assert "quarantined" in text, (
@@ -654,14 +671,13 @@ def test_ts_95626a94_agent_instructions_rebuild_section_is_load_bearing():
     # The section starts at '## KG health and operational signals'
     section_marker = "## KG health and operational signals"
     idx = real.find(section_marker)
-    assert idx != -1, (
-        f"agent_instructions.md must contain '{section_marker}' section"
-    )
+    assert idx != -1, f"agent_instructions.md must contain '{section_marker}' section"
     synthetic = real[:idx]
 
     # At least the three rebuild tool names must be absent in the truncated copy.
     missing_count = sum(
-        1 for name in (
+        1
+        for name in (
             "okto_pulse_kg_rebuild_preflight",
             "okto_pulse_kg_rebuild_confirm",
             "okto_pulse_kg_rebuild_run",
@@ -672,3 +688,22 @@ def test_ts_95626a94_agent_instructions_rebuild_section_is_load_bearing():
         "All three rebuild tool names must live ONLY in the KG health section — "
         f"{3 - missing_count} were found before the section marker (load-bearing guard failed)"
     )
+
+
+def test_offline_rebuild_resource_documents_installed_three_stage_cli() -> None:
+    text = _KG_HEALTH_RESOURCE_MD.read_text(encoding="utf-8")
+
+    for required in (
+        "okto-pulse-kg-recovery-only",
+        "--inspect-install",
+        "--rehearsal-copy-of <ABS_LIVE_HOME>",
+        "--rehearsal-receipt-out <NEW_ABS_RECEIPT.json>",
+        "--execute",
+        "--rehearsal-receipt <ABS_RECEIPT.json>",
+        "--expected-install-fingerprint <SHA256>",
+        "2 hours (7200 seconds)",
+        "single-use",
+    ):
+        assert required in text
+    assert ".artifacts" not in text
+    assert "pulse-kg-recovery-only.py" not in text

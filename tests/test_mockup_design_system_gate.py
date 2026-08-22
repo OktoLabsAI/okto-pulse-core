@@ -405,7 +405,7 @@ async def test_create_spec_gates_embedded_mockups_at_creation():
         with pytest.raises(DesignSystemError) as exc:
             await SpecService(db).create_spec(
                 board.id, USER_ID,
-                SpecCreate(title="S", screen_mockups=[ScreenMockup(
+                SpecCreate(title="S", delivery_context="brownfield", screen_mockups=[ScreenMockup(
                     id="sm_x", title="S", html_content="<div/>",
                     design_system_ref={"design_system_id": "fake", "version": 1},
                     design_system_evidence="e",
@@ -416,7 +416,7 @@ async def test_create_spec_gates_embedded_mockups_at_creation():
         # a valid embedded mockup is accepted at creation.
         spec = await SpecService(db).create_spec(
             board.id, USER_ID,
-            SpecCreate(title="S2", screen_mockups=[ScreenMockup(
+            SpecCreate(title="S2", delivery_context="brownfield", screen_mockups=[ScreenMockup(
                 id="sm_ok", title="S", html_content="<div/>",
                 design_system_ref={"design_system_id": ds.id, "version": ds.version},
                 design_system_evidence="figma://proof",

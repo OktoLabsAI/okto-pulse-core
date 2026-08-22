@@ -239,7 +239,12 @@ async def test_create_normalizes_metadata_before_persisting(
         assert record_id == parent_id
         return ApplicationRecord(
             entity=entity,
-            values={"id": record_id, "board_id": "board-1", "version": 5},
+            values={
+                "id": record_id,
+                "board_id": "board-1",
+                "status": "draft",
+                "version": 5,
+            },
         )
 
     async def _add(_db: object, record: ApplicationRecord) -> ApplicationRecord:
@@ -293,7 +298,7 @@ async def test_create_accepts_legacy_null_without_coercing_it_to_empty_object(
     ) -> ApplicationRecord:
         return ApplicationRecord(
             entity=entity,
-            values={"id": record_id, "board_id": "board-1"},
+            values={"id": record_id, "board_id": "board-1", "status": "draft"},
         )
 
     async def _add(_db: object, record: ApplicationRecord) -> ApplicationRecord:
@@ -354,6 +359,8 @@ def _knowledge_record(entity: str) -> ApplicationRecord:
         entity=entity,
         values={
             "id": "kb-1",
+            "ideation_id": "ideation-1",
+            "refinement_id": "refinement-1",
             "spec_id": "spec-1",
             "created_by": "agent-1",
             "title": "Existing",
@@ -385,10 +392,14 @@ async def test_update_normalizes_metadata_before_record_mutation(
     ) -> ApplicationRecord | None:
         if entity == knowledge_entity:
             return record
-        if entity == "spec":
+        if entity in {"ideation", "refinement", "spec"}:
             return ApplicationRecord(
-                entity="spec",
-                values={"id": record_id, "board_id": "board-1"},
+                entity=entity,
+                values={
+                    "id": record_id,
+                    "board_id": "board-1",
+                    "status": "draft",
+                },
             )
         return None
 
@@ -434,10 +445,14 @@ async def test_update_omission_preserves_metadata_and_explicit_null_clears_it(
     ) -> ApplicationRecord | None:
         if entity == knowledge_entity:
             return record
-        if entity == "spec":
+        if entity in {"ideation", "refinement", "spec"}:
             return ApplicationRecord(
-                entity="spec",
-                values={"id": record_id, "board_id": "board-1"},
+                entity=entity,
+                values={
+                    "id": record_id,
+                    "board_id": "board-1",
+                    "status": "draft",
+                },
             )
         return None
 

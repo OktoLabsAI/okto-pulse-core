@@ -27,7 +27,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
     require_rebuild_audit_artifact_store,
 )
-from sqlalchemy_test_models import Board, Ideation
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.services.main import IdeationService
 from okto_pulse.core.services.skip_overrides import (
     GATE_AMBIGUITY,
@@ -78,7 +78,15 @@ async def _board_ideation(db_factory) -> tuple[str, str]:
     ideation_id = f"idea-{uuid.uuid4().hex[:10]}"
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 imp2", owner_id=USER_ID))
-        db.add(Ideation(id=ideation_id, board_id=board_id, title="idea", created_by=USER_ID))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="idea",
+                created_by=USER_ID,
+                status=IdeationStatus.EVALUATING,
+            )
+        )
         await db.commit()
     return board_id, ideation_id
 
@@ -198,7 +206,13 @@ async def test_ideation_ambiguity_skip_override_via_real_service(db_factory):
     board_id, ideation_id = await _board_ideation(db_factory)
     async with db_factory() as db:
         await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="rest",
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
         )
         await db.commit()
 

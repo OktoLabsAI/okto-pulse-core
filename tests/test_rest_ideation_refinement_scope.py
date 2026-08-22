@@ -187,7 +187,13 @@ def _ideation_matrix():
         (UpdateIdeationUseCase(), UpdateIdeationCommand("ideation-b", data)),
         (
             SetIdeationAmbiguityGateSkipUseCase(),
-            SetIdeationAmbiguityGateSkipCommand("ideation-b", True),
+            SetIdeationAmbiguityGateSkipCommand(
+                "ideation-b",
+                True,
+                reason="scope contract test",
+                expected_ideation_version=1,
+                expected_ideation_edition=1,
+            ),
         ),
         (MoveIdeationUseCase(), MoveIdeationCommand("ideation-b", data)),
         (DeleteIdeationUseCase(), DeleteIdeationCommand("ideation-b")),
@@ -304,7 +310,13 @@ def _ideation_write_matrix():
         (UpdateIdeationUseCase(), UpdateIdeationCommand("ideation-b", data)),
         (
             SetIdeationAmbiguityGateSkipUseCase(),
-            SetIdeationAmbiguityGateSkipCommand("ideation-b", True),
+            SetIdeationAmbiguityGateSkipCommand(
+                "ideation-b",
+                True,
+                reason="scope contract test",
+                expected_ideation_version=1,
+                expected_ideation_edition=1,
+            ),
         ),
         (MoveIdeationUseCase(), MoveIdeationCommand("ideation-b", data)),
         (DeleteIdeationUseCase(), DeleteIdeationCommand("ideation-b")),

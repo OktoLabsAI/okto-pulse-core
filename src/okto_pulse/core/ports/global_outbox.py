@@ -61,6 +61,7 @@ class GlobalOutboxStore(Protocol):
         limit: int,
         error_markers: Sequence[str],
         after: GlobalOutboxDeadLetterCursor | None = None,
+        include_code_traceability: bool = True,
     ) -> tuple[GlobalOutboxEventRecord, ...]: ...
 
     async def list_terminal_events(
@@ -69,6 +70,7 @@ class GlobalOutboxStore(Protocol):
         *,
         limit: int,
         after: GlobalOutboxDeadLetterCursor | None = None,
+        include_code_traceability: bool = True,
     ) -> tuple[GlobalOutboxEventRecord, ...]: ...
 
     async def get_events_by_ids(
@@ -76,6 +78,7 @@ class GlobalOutboxStore(Protocol):
         context: Any,
         *,
         ids: tuple[str, ...],
+        include_code_traceability: bool = True,
     ) -> tuple[GlobalOutboxEventRecord, ...]: ...
 
     async def requeue_terminal_events(

@@ -16,6 +16,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, TypeAlias
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_READ_PERMISSIONS,
+)
 from okto_pulse.core.domain.mcp_permission_registry import (
     HUMAN_ONLY_MCP_TOOL_EXEMPTIONS,
     MAX_HUMAN_ONLY_TOOL_EXEMPTIONS,
@@ -64,6 +67,7 @@ class PermissionIntroductionManifest:
     preset_grants: tuple[tuple[str, tuple[str, ...]], ...]
     historical_authorities: tuple[tuple[str, str], ...]
     recover_all_false_materialization: bool = False
+    legacy_compatible: bool = False
 
     def __post_init__(self) -> None:
         if not self.version.strip():
@@ -405,6 +409,7 @@ _ADMIN_CATALOG_READ_GRANTS: tuple[str, ...] = (
 
 ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="ADMIN-CATALOG/v1",
+    legacy_compatible=True,
     leaves=_ADMIN_CATALOG_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _ADMIN_CATALOG_PERMISSION_LEAVES,
@@ -504,6 +509,7 @@ _OPERATIONAL_READ_GRANTS: tuple[str, ...] = (
 
 OPERATIONAL_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="OPERATIONAL/v1",
+    legacy_compatible=True,
     leaves=_OPERATIONAL_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _OPERATIONAL_PERMISSION_LEAVES,
@@ -569,13 +575,12 @@ _MCP_GAPS_PERMISSION_LEAVES: tuple[str, ...] = (
 
 MCP_GAPS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="MCP-GAPS/v1",
+    legacy_compatible=True,
     leaves=_MCP_GAPS_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _MCP_GAPS_PERMISSION_LEAVES,
         {
-            "Executor": (
-                "story.mockups.read",
-            ),
+            "Executor": ("story.mockups.read",),
             "Validator": (
                 "ideation.knowledge.read",
                 "story.mockups.read",
@@ -684,6 +689,7 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
 
 KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="KG-OPERATIONS/v1",
+    legacy_compatible=True,
     leaves=_KG_OPERATIONS_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(_KG_OPERATIONS_PERMISSION_LEAVES, {}),
     historical_authorities=(
@@ -784,9 +790,10 @@ _RETIRED_STATE_PERMISSION_LEAVES: tuple[str, ...] = (
     "ideation.interact_in.refined",
     "refinement.interact_in.in_progress",
 )
-if not _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES <= set(
-    transition_permission_flags()
-):
+if not (
+    _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES
+    - set(_RETIRED_TRANSITION_PERMISSION_LEAVES)
+) <= set(transition_permission_flags()):
     raise PermissionContractViolation(
         "historical transition fingerprint is not present in SDLC_REGISTRY"
     )
@@ -800,9 +807,78 @@ _NEW_SDLC_STATE_PERMISSION_LEAVES: tuple[str, ...] = (
     "ideation.interact_in.review",
     "ideation.interact_in.approved",
 )
+# Frozen fingerprint of SDLC-TRANSITIONS/v1.  Do not derive this manifest from
+# the live registry: adding or retiring a lifecycle edge must create a new
+# fail-closed introduction generation instead of rewriting historical policy.
 _SDLC_TRANSITION_PERMISSION_LEAVES: tuple[str, ...] = (
-    *_NEW_SDLC_TRANSITION_PERMISSION_LEAVES,
-    *_NEW_SDLC_STATE_PERMISSION_LEAVES,
+    "ideation.move.draft_to_review",
+    "ideation.move.draft_to_cancelled",
+    "ideation.move.review_to_draft",
+    "ideation.move.review_to_approved",
+    "ideation.move.review_to_cancelled",
+    "ideation.move.approved_to_review",
+    "ideation.move.approved_to_evaluating",
+    "ideation.move.approved_to_cancelled",
+    "ideation.move.evaluating_to_approved",
+    "ideation.move.evaluating_to_done",
+    "ideation.move.evaluating_to_cancelled",
+    "ideation.move.done_to_draft",
+    "ideation.move.cancelled_to_draft",
+    "refinement.move.draft_to_review",
+    "refinement.move.draft_to_cancelled",
+    "refinement.move.review_to_draft",
+    "refinement.move.review_to_cancelled",
+    "refinement.move.approved_to_review",
+    "refinement.move.approved_to_cancelled",
+    "refinement.move.done_to_draft",
+    "refinement.move.cancelled_to_draft",
+    "spec.move.draft_to_cancelled",
+    "spec.move.review_to_draft",
+    "spec.move.review_to_cancelled",
+    "spec.move.approved_to_review",
+    "spec.move.approved_to_cancelled",
+    "spec.move.validated_to_approved",
+    "spec.move.validated_to_cancelled",
+    "spec.move.in_progress_to_validated",
+    "spec.move.in_progress_to_draft",
+    "spec.move.in_progress_to_cancelled",
+    "spec.move.done_to_draft",
+    "spec.move.cancelled_to_draft",
+    "card.move.not_started_to_in_progress",
+    "card.move.not_started_to_cancelled",
+    "card.move.started_to_not_started",
+    "card.move.started_to_validation",
+    "card.move.started_to_on_hold",
+    "card.move.started_to_cancelled",
+    "card.move.in_progress_to_started",
+    "card.move.in_progress_to_cancelled",
+    "card.move.validation_to_in_progress",
+    "card.move.on_hold_to_started",
+    "card.move.on_hold_to_cancelled",
+    "card.move.done_to_in_progress",
+    "card.move.cancelled_to_not_started",
+    "sprint.move.draft_to_cancelled",
+    "sprint.move.active_to_draft",
+    "sprint.move.active_to_cancelled",
+    "sprint.move.review_to_active",
+    "sprint.move.review_to_cancelled",
+    "sprint.move.closed_to_draft",
+    "sprint.move.cancelled_to_draft",
+    "test_scenario.move.draft_to_ready",
+    "test_scenario.move.draft_to_automated",
+    "test_scenario.move.draft_to_passed",
+    "test_scenario.move.draft_to_failed",
+    "test_scenario.move.ready_to_draft",
+    "test_scenario.move.ready_to_automated",
+    "test_scenario.move.ready_to_passed",
+    "test_scenario.move.ready_to_failed",
+    "test_scenario.move.automated_to_ready",
+    "test_scenario.move.automated_to_passed",
+    "test_scenario.move.failed_to_ready",
+    "test_scenario.move.failed_to_passed",
+    "test_scenario.move.passed_to_ready",
+    "ideation.interact_in.review",
+    "ideation.interact_in.approved",
 )
 
 
@@ -837,6 +913,7 @@ _EXECUTOR_TRANSITION_GRANTS = (
         ("in_progress", "on_hold"),
         ("on_hold", "in_progress"),
         ("in_progress", "validation"),
+        ("rejected", "in_progress"),
     ),
     *_transitions_to("card", "cancelled"),
 )
@@ -912,8 +989,10 @@ def _introduced_sdlc_grants(*flags: str) -> tuple[str, ...]:
     introduced = set(_SDLC_TRANSITION_PERMISSION_LEAVES)
     return tuple(flag for flag in flags if flag in introduced)
 
+
 SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="SDLC-TRANSITIONS/v1",
+    legacy_compatible=True,
     leaves=_SDLC_TRANSITION_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _SDLC_TRANSITION_PERMISSION_LEAVES,
@@ -945,6 +1024,187 @@ SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
+_CODE_TRACEABILITY_PERMISSION_LEAVES: tuple[str, ...] = (
+    "code_traceability.investigation.start",
+    "code_traceability.investigation.read",
+    "code_traceability.investigation.receipt_submit",
+    "code_traceability.investigation.revoke",
+    "code_traceability.evidence.read",
+    "code_traceability.evidence.submit",
+    "code_traceability.evidence.supersede",
+    "code_traceability.evidence.revoke",
+    "code_traceability.spec_link.create",
+    "code_traceability.spec_link.delete",
+    "code_traceability.spec_link.set_disposition",
+    "code_traceability.spec_link.rebase",
+    "code_traceability.target.read",
+    "code_traceability.target.suggest",
+    "code_traceability.target.create",
+    "code_traceability.target.edit",
+    "code_traceability.target.resolution_submit",
+    "code_traceability.target.execution_submit",
+    "code_traceability.overlap.read",
+    "code_traceability.overlap.acknowledge",
+    "code_traceability.waiver.create",
+    "code_traceability.waiver.clear",
+)
+
+_CODE_TRACEABILITY_READ_GRANTS = CODE_TRACEABILITY_KG_READ_PERMISSIONS
+
+CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="CODE-TRACEABILITY/v1",
+    leaves=_CODE_TRACEABILITY_PERMISSION_LEAVES,
+    preset_grants=_explicit_preset_grants(
+        _CODE_TRACEABILITY_PERMISSION_LEAVES,
+        {
+            "Executor": (
+                *_CODE_TRACEABILITY_READ_GRANTS,
+                "code_traceability.investigation.start",
+                "code_traceability.investigation.receipt_submit",
+                "code_traceability.evidence.submit",
+                "code_traceability.evidence.supersede",
+                "code_traceability.target.suggest",
+                "code_traceability.target.create",
+                "code_traceability.target.edit",
+                "code_traceability.target.resolution_submit",
+                "code_traceability.target.execution_submit",
+            ),
+            "Validator": _CODE_TRACEABILITY_READ_GRANTS,
+            "QA": _CODE_TRACEABILITY_READ_GRANTS,
+            "Reporter": _CODE_TRACEABILITY_READ_GRANTS,
+            "Sprint Manager": (
+                *_CODE_TRACEABILITY_READ_GRANTS,
+                "code_traceability.overlap.acknowledge",
+                "code_traceability.waiver.create",
+                "code_traceability.waiver.clear",
+            ),
+            "Spec": (
+                *_CODE_TRACEABILITY_READ_GRANTS,
+                "code_traceability.investigation.revoke",
+                "code_traceability.evidence.revoke",
+                "code_traceability.spec_link.create",
+                "code_traceability.spec_link.delete",
+                "code_traceability.spec_link.set_disposition",
+                "code_traceability.spec_link.rebase",
+                "code_traceability.target.create",
+                "code_traceability.target.edit",
+                "code_traceability.overlap.acknowledge",
+                "code_traceability.waiver.create",
+                "code_traceability.waiver.clear",
+            ),
+        },
+    ),
+    historical_authorities=tuple(
+        (leaf, authority)
+        for authority, leaves in (
+            (
+                "board.read",
+                {
+                    "code_traceability.investigation.read",
+                    "code_traceability.evidence.read",
+                    "code_traceability.target.read",
+                    "code_traceability.overlap.read",
+                },
+            ),
+            (
+                "spec.entity.edit_fields",
+                {
+                    "code_traceability.investigation.revoke",
+                    "code_traceability.evidence.revoke",
+                    "code_traceability.spec_link.create",
+                    "code_traceability.spec_link.delete",
+                    "code_traceability.spec_link.set_disposition",
+                    "code_traceability.spec_link.rebase",
+                },
+            ),
+            (
+                "card.entity.edit_fields",
+                {
+                    "code_traceability.target.suggest",
+                    "code_traceability.target.create",
+                    "code_traceability.target.edit",
+                    "code_traceability.overlap.acknowledge",
+                    "code_traceability.waiver.create",
+                    "code_traceability.waiver.clear",
+                },
+            ),
+            (
+                "agent.entity.read",
+                {
+                    "code_traceability.investigation.start",
+                    "code_traceability.investigation.receipt_submit",
+                    "code_traceability.evidence.submit",
+                    "code_traceability.evidence.supersede",
+                    "code_traceability.target.resolution_submit",
+                    "code_traceability.target.execution_submit",
+                },
+            ),
+        )
+        for leaf in _CODE_TRACEABILITY_PERMISSION_LEAVES
+        if leaf in leaves
+    ),
+)
+
+
+CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1 = (
+    PermissionIntroductionManifest(
+        version="CODE-EVIDENCE-LEGACY-CLASSIFICATION/v1",
+        leaves=("code_traceability.evidence.classify_legacy",),
+        preset_grants=_explicit_preset_grants(
+            ("code_traceability.evidence.classify_legacy",),
+            {"Spec": ("code_traceability.evidence.classify_legacy",)},
+        ),
+        historical_authorities=(
+            (
+                "code_traceability.evidence.classify_legacy",
+                "spec.entity.edit_fields",
+            ),
+        ),
+    )
+)
+
+
+SKM_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="SK-M/v1",
+    leaves=("spec.entity.manage_dependencies",),
+    preset_grants=_explicit_preset_grants(
+        ("spec.entity.manage_dependencies",),
+        {"Spec": ("spec.entity.manage_dependencies",)},
+    ),
+    # Dependency mutation is a newly introduced governance boundary. The
+    # canonical grant and the existing Spec edit authority must both be
+    # explicit; a flat ``specs:update`` token cannot acquire it by fallback.
+    historical_authorities=(
+        ("spec.entity.manage_dependencies", "spec.entity.edit_fields"),
+    ),
+)
+
+
+TASK_REJECTED_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
+    version="TASK-REJECTED/v1",
+    leaves=(
+        "card.interact_in.rejected",
+        "card.move.rejected_to_in_progress",
+    ),
+    preset_grants=_explicit_preset_grants(
+        (
+            "card.interact_in.rejected",
+            "card.move.rejected_to_in_progress",
+        ),
+        {
+            "Executor": (
+                "card.interact_in.rejected",
+                "card.move.rejected_to_in_progress",
+            ),
+        },
+    ),
+    historical_authorities=(
+        ("card.interact_in.rejected", "card.entity.read"),
+        ("card.move.rejected_to_in_progress", "card.entity.edit_fields"),
+    ),
+)
+
+
 # Ordered oldest-to-newest.  Upgrade and normalization logic depends on this
 # order so that each introduction generation is classified independently.
 PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = (
@@ -955,6 +1215,10 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     MCP_GAPS_PERMISSION_INTRODUCTION_V1,
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
+    CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
+    CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1,
+    SKM_PERMISSION_INTRODUCTION_V1,
+    TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
 )
 
 
@@ -999,7 +1263,8 @@ _FAIL_CLOSED_INTRODUCED_FLAGS = frozenset(_INTRODUCED_PERMISSION_LEAVES)
 # permission documents are reconciled to the new canonical leaves.
 _LEGACY_COMPATIBLE_INTRODUCED_FLAGS = frozenset(
     leaf
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS[2:]
+    for manifest in PERMISSION_INTRODUCTION_MANIFESTS
+    if manifest.legacy_compatible
     for leaf in manifest.leaves
 )
 
@@ -1446,6 +1711,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "assign": True,
             "label": True,
             "link_card": True,
+            "manage_dependencies": True,
             "archive": True,
             "restore": True,
             "delete": True,
@@ -1600,6 +1866,46 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "tests": {"read": True, "link": True, "update_status": True},
         "conclusion": {"read": True, "write": True},
         "activity_read": True,
+    },
+    # ---- Agent-attested Code Traceability ----
+    # These leaves authorize ledger operations only.  They never authorize
+    # Pulse or Community to open, clone, probe, search, or resolve a source.
+    "code_traceability": {
+        "investigation": {
+            "start": True,
+            "read": True,
+            "receipt_submit": True,
+            "revoke": True,
+        },
+        "evidence": {
+            "read": True,
+            "submit": True,
+            "supersede": True,
+            "revoke": True,
+            "classify_legacy": True,
+        },
+        "spec_link": {
+            "create": True,
+            "delete": True,
+            "set_disposition": True,
+            "rebase": True,
+        },
+        "target": {
+            "read": True,
+            "suggest": True,
+            "create": True,
+            "edit": True,
+            "resolution_submit": True,
+            "execution_submit": True,
+        },
+        "overlap": {
+            "read": True,
+            "acknowledge": True,
+        },
+        "waiver": {
+            "create": True,
+            "clear": True,
+        },
     },
     # ---- Knowledge Graph ----
     "kg": {
@@ -1993,6 +2299,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.entity.assign",
         "spec.entity.label",
         "spec.entity.link_card",
+        "spec.entity.manage_dependencies",
         "spec.tests.create",
         "spec.tests.update_status",
         "spec.rules.create",
@@ -2097,9 +2404,7 @@ _CANONICAL_TO_LEGACY_TOKENS: dict[str, tuple[str, ...]] = {
         if canonical in mapped
     )
     for canonical in {
-        canonical
-        for mapped in LEGACY_PERMISSION_MAP.values()
-        for canonical in mapped
+        canonical for mapped in LEGACY_PERMISSION_MAP.values() for canonical in mapped
     }
 }
 
@@ -2587,9 +2892,7 @@ def normalize_agent_permission_overrides(
     legacy_cancel_all_entities = {
         entity_type
         for entity_type in ("ideation", "refinement", "spec", "card", "sprint")
-        if _permission_value_presence(
-            working, f"{entity_type}.move.any_to_cancelled"
-        )
+        if _permission_value_presence(working, f"{entity_type}.move.any_to_cancelled")
         == (True, True)
     }
     for flag_path in _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES:
@@ -2730,15 +3033,17 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     - Full Control: unrestricted
     - Spec:       defines WHAT to build — owns ideation/refinement/spec content,
                   plans sprints, drafts card breakdown. Never submits gates.
-    - Executor:   implements normal cards. Moves not_started→validation. Never
-                  submits gates, never crosses into validation→done.
+    - Executor:   implements normal cards. Moves not_started→validation and
+                  accepts a Rejected rework handoff via rejected→in_progress.
+                  Never submits gates or assigns Rejected directly.
     - QA:         owns test scenarios and test card lifecycle. Reads specs,
                   asks questions. Never submits any gate.
     - Validator:  exclusive gate-holder. Submits spec_validation, spec_evaluation,
                   sprint_evaluation, task_validation. Owns approved→validated,
                   validated→in_progress, in_progress→done (spec) and the backward
-                  unlock transitions. On cards, only touches validation status
-                  and only moves validation→done or validation→not_started.
+                  unlock transitions. On cards, submits task validation; the
+                  completion decision routes Validation→Done/Rejected
+                  internally. Never moves a Rejected card manually.
     """
     import copy
 
@@ -2857,6 +3162,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.entity.assign",
             "spec.entity.label",
             "spec.entity.link_card",
+            "spec.entity.manage_dependencies",
             "spec.entity.archive",
             "spec.entity.restore",
             "spec.entity.delete",
@@ -3221,8 +3527,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     # submit, task_validation submit, spec promotions (approved→validated,
     # validated→in_progress, in_progress→done), spec backward unlock
     # (approved→draft, validated→draft), sprint review→closed.
-    # Cards: ONLY interact_in validation. ONLY move validation→done or
-    # validation→not_started (user requirement — strict).
+    # Cards: ONLY interact_in validation and submit the completion decision.
+    # The service routes Validation→Done/Rejected internally; Validator never
+    # assigns or moves a Rejected card manually.
     # Cannot: create/edit anything, touch cards outside validation status,
     # move specs forward without the gate.
     validator = _build_preset_flags(
@@ -3317,8 +3624,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.activity_read",
             # interact_in ONLY validation — hard user requirement
             "card.interact_in.validation",
-            # moves ONLY validation → {done, not_started} — hard user requirement.
-            # submit_task_validation auto-routes via these flags.
+            # submit_task_validation owns the governed decision and routes the
+            # card internally. The compatibility validation→done edge remains
+            # available only when the board disables the task-validation gate.
             # KG — Validator investigates deeply and consolidates autonomously.
             # Cypher to trace supersedence/contradictions during spec validation;
             # full session to commit decisions emerged from the gate. Admin stays
@@ -3555,12 +3863,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         },
         {
             "name": "Executor",
-            "description": "Implement normal cards. Moves not_started→validation. Cannot submit gates or promote validation→done.",
+            "description": "Implement normal cards. Moves not_started→validation and accepts Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
             "flags": executor,
         },
         {
             "name": "Validator",
-            "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations. On cards, only touches validation status.",
+            "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations; Task Validation routes cards internally to Done or Rejected. Never moves Rejected cards manually.",
             "flags": validator,
         },
         {
@@ -3610,6 +3918,11 @@ def get_builtin_presets() -> list[dict[str, Any]]:
                 flag_path,
                 flag_path in allowed_transitions,
             )
+        for flag_path in (
+            *_RETIRED_TRANSITION_PERMISSION_LEAVES,
+            *_RETIRED_STATE_PERMISSION_LEAVES,
+        ):
+            _delete_permission_value(definition["flags"], flag_path)
     return definitions
 
 
@@ -3904,6 +4217,8 @@ class DefaultPermissionPolicy:
 __all__ = [
     "ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1",
     "ALL_FLAGS",
+    "CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1",
+    "CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1",
     "DefaultPermissionPolicy",
     "HUMAN_ONLY_MCP_TOOL_EXEMPTIONS",
     "GUIDELINE_ADOPTION_MANAGE",
@@ -3939,6 +4254,8 @@ __all__ = [
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
     "SKB3_PERMISSION_INTRODUCTION_V1",
+    "SKM_PERMISSION_INTRODUCTION_V1",
+    "TASK_REJECTED_PERMISSION_INTRODUCTION_V1",
     "SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1",
     "STRUCTURED_SPEC_ENTITY_OPERATIONS",
     "STRUCTURED_SPEC_ENTITY_TYPES",

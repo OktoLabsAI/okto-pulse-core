@@ -17,6 +17,7 @@ from okto_pulse.core.domain.permissions import (
     PERMISSION_REGISTRY,
     PermissionContext,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
+    TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
     PermissionSet,
     get_builtin_presets,
     normalize_agent_permission_overrides,
@@ -62,14 +63,14 @@ def test_registry_move_flags_are_exact_sdlc_projection() -> None:
     expected = set(transition_permission_flags())
     actual = {flag for flag in ALL_FLAGS if ".move." in flag}
 
-    assert len(expected) == 91
+    assert len(expected) == 93
     assert actual == expected
     introduced_moves = {
         leaf
         for leaf in SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves
         if ".move." in leaf
     }
-    assert len(introduced_moves) == 65
+    assert len(introduced_moves) == 66
     assert introduced_moves < expected
     assert set(SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves) - introduced_moves == {
         "ideation.interact_in.review",
@@ -92,9 +93,11 @@ def test_nested_move_branch_is_generated_from_each_lifecycle(entity: str) -> Non
 
 
 def test_transition_permission_flag_rejects_edges_absent_from_sdlc() -> None:
-    assert (
-        transition_permission_flag("card", "validation", "in_progress")
-        == "card.move.validation_to_in_progress"
+    assert transition_permission_flag("card", "validation", "in_progress") == (
+        "card.move.validation_to_in_progress"
+    )
+    assert transition_permission_flag("card", "rejected", "in_progress") == (
+        "card.move.rejected_to_in_progress"
     )
     with pytest.raises(ValueError, match="Unregistered transition"):
         transition_permission_flag("card", "validation", "not_started")
@@ -119,22 +122,22 @@ def test_card_type_restricted_edges_still_have_authorizable_flags(
 def test_transition_requirement_normalizes_enum_values_and_keeps_state_gate() -> None:
     requirement = transition_permission_requirement(
         "card",
-        CardStatus.VALIDATION,
+        CardStatus.REJECTED,
         CardStatus.IN_PROGRESS,
         legacy_operation="cards:move",
     )
 
-    assert requirement.operation == "card.move.validation_to_in_progress"
+    assert requirement.operation == "card.move.rejected_to_in_progress"
     assert requirement.legacy_operation == "cards:move"
     assert requirement.entity == "card"
-    assert requirement.state == "validation"
+    assert requirement.state == "rejected"
 
 
-def test_transition_introduction_accepts_only_the_explicit_legacy_move_token() -> None:
+def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> None:
     policy = DefaultPermissionPolicy()
     requirement = transition_permission_requirement(
         "card",
-        "validation",
+        "rejected",
         "in_progress",
         legacy_operation="cards:move",
     )
@@ -158,7 +161,7 @@ def test_transition_introduction_accepts_only_the_explicit_legacy_move_token() -
         )
     )
 
-    assert allowed.allowed is True
+    assert allowed.allowed is False
     assert denied.allowed is False
 
 
@@ -174,9 +177,9 @@ def test_transition_grants_are_fail_closed_and_explicit_per_preset() -> None:
         "Spec",
     }
 
-    sample = "card.move.validation_to_in_progress"
+    sample = "card.move.rejected_to_in_progress"
     assert PermissionSet({}).has(sample) is False
-    assert PermissionSet({"card": {"move": {"validation_to_in_progress": True}}}).has(
+    assert PermissionSet({"card": {"move": {"rejected_to_in_progress": True}}}).has(
         sample
     ) is False
 
@@ -188,6 +191,11 @@ def test_transition_grants_are_fail_closed_and_explicit_per_preset() -> None:
         expected = set(manifest.grants_for(preset["name"]))
         for leaf in manifest.leaves:
             assert permissions.has(leaf) is (leaf in expected)
+
+    assert TASK_REJECTED_PERMISSION_INTRODUCTION_V1.leaves == (
+        "card.interact_in.rejected",
+        "card.move.rejected_to_in_progress",
+    )
 
 
 def test_qa_preset_can_use_granted_test_scenario_edge_and_state_gate() -> None:

@@ -25,6 +25,15 @@ from okto_pulse.core.ports.application_persistence import (
     get_application_persistence_port,
 )
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.community.adapters.semantic_assessment_v2_capabilities import (
+    CommunitySemanticAssessmentV2Capabilities,
+)
+from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_v2 import (
+    CommunitySqlAlchemySemanticGuidelineAssessmentV2,
+)
+from okto_pulse.community.adapters.sqlalchemy_semantic_subject_projection import (
+    CommunitySqlAlchemySemanticSubjectProjection,
+)
 from sqlalchemy_test_repositories import (
     SQLAlchemyBoardRepository,
     SQLAlchemyIdeationRepository,
@@ -33,6 +42,12 @@ from sqlalchemy_test_repositories import (
 
 if TYPE_CHECKING:
     from okto_pulse.core.application.use_cases.base import ActorContext
+
+
+class _UnsupportedEntityExportReadPort:
+    async def build_bundle(self, **kwargs: object) -> None:
+        del kwargs
+        raise NotImplementedError("entity export reader is not configured")
 
 
 class SQLAlchemyUnitOfWork:
@@ -57,6 +72,21 @@ class SQLAlchemyUnitOfWork:
         self.ideations = SQLAlchemyIdeationRepository(session, self.realm_scope)
         self.specs = SQLAlchemySpecRepository(session, self.realm_scope)
         self.services = build_application_service_catalog(session)
+        # Keep the test UoW structurally aligned with the production Community
+        # adapter as the public PulseUnitOfWork protocol gains capabilities.
+        self.semantic_subject_projection = (
+            CommunitySqlAlchemySemanticSubjectProjection(session)
+        )
+        self.semantic_assessment_v2 = (
+            CommunitySqlAlchemySemanticGuidelineAssessmentV2(session)
+        )
+        self.semantic_assessment_v2_reader = self.semantic_assessment_v2
+        self.semantic_assessment_v2_capability = (
+            CommunitySemanticAssessmentV2Capabilities(session)
+        )
+        # Export adapters are edition-owned. This relational test UoW only
+        # exercises the public Core UoW shape, not export materialization.
+        self.entity_exports = _UnsupportedEntityExportReadPort()
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self
@@ -78,6 +108,25 @@ class SQLAlchemyUnitOfWork:
 
     async def rollback(self) -> None:
         await get_application_persistence_port().rollback(self._session)
+
+    async def begin_consistent_read(self) -> None:
+        """Test-adapter implementation of the explicit composite-read port."""
+
+        bind = self._session.get_bind()
+        if bind is None or bind.dialect.name != "sqlite":
+            raise RuntimeError("consistent_read_dialect_unsupported")
+        connection = await self._session.connection()
+
+        def physical_transaction_active(sync_connection: Any) -> bool:
+            driver_connection = getattr(
+                sync_connection.connection,
+                "driver_connection",
+                None,
+            )
+            return bool(getattr(driver_connection, "in_transaction", False))
+
+        if not await connection.run_sync(physical_transaction_active):
+            await connection.exec_driver_sql("BEGIN")
 
     async def synchronize(
         self,

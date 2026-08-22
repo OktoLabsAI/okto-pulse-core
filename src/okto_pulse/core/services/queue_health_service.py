@@ -402,7 +402,10 @@ async def get_global_outbox_dead_letter_drilldown(
 
 
 async def get_active_queue_drilldown(
-    db: object, board_id: str | None = None,
+    db: object,
+    board_id: str | None = None,
+    *,
+    include_code_traceability: bool = True,
 ) -> dict[str, Any]:
     """Drill-down of the ACTIVE operational queue depth, split by source.
 
@@ -427,16 +430,24 @@ async def get_active_queue_drilldown(
         for source, worker in _ACTIVE_SOURCE_WORKERS.items()
     }
 
-    storage = await get_queue_health_read_port().active_snapshot(
-        db,
-        board_id=board_id,
-        active_statuses=_ACTIVE_CQ_STATUSES,
-        max_outbox_retries=MAX_OUTBOX_RETRIES,
-        dead_letter_retry_sentinel=DEAD_LETTER_RETRY_SENTINEL,
-        now=now,
-        stuck_before=now - timedelta(seconds=stuck_age_s),
-        item_limit=100,
-    )
+    reader = get_queue_health_read_port()
+    snapshot_kwargs = {
+        "board_id": board_id,
+        "active_statuses": _ACTIVE_CQ_STATUSES,
+        "max_outbox_retries": MAX_OUTBOX_RETRIES,
+        "dead_letter_retry_sentinel": DEAD_LETTER_RETRY_SENTINEL,
+        "now": now,
+        "stuck_before": now - timedelta(seconds=stuck_age_s),
+        "item_limit": 100,
+    }
+    if include_code_traceability:
+        storage = await reader.active_snapshot(db, **snapshot_kwargs)
+    else:
+        storage = await reader.active_snapshot(
+            db,
+            **snapshot_kwargs,
+            include_code_traceability=False,
+        )
     _validate_active_queue_snapshot(storage)
 
     # --- Source 1: ConsolidationQueue (pending/claimed) ---

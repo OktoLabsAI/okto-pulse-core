@@ -248,7 +248,7 @@ def test_package_manifest_missing_required_wheel_resource_fails_closed(
     record = tmp_path / "RECORD"
     record.write_text(
         "okto_pulse/core/app.py,sha256=abc,12\n"
-        "okto_pulse_core-0.3.1.dist-info/METADATA,sha256=def,100\n",
+        "okto_pulse_core-0.3.2.dist-info/METADATA,sha256=def,100\n",
         encoding="utf-8",
     )
 

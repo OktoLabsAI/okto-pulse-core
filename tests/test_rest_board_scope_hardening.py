@@ -59,6 +59,7 @@ from okto_pulse.core.application.use_cases.queue_health import (
     GetQueueHealthUseCase,
     QueueBoardNotFoundError,
 )
+from okto_pulse.core.ports.traceability import TraceabilityReadError
 
 
 class _Boards:
@@ -125,9 +126,14 @@ class _Kg:
         self._events.append("queue-health")
         return {"queue_depth": 0}
 
-    async def queue_drilldown(self, board_id):
+    async def queue_drilldown(
+        self, board_id, *, include_code_traceability: bool = False
+    ):
         self._events.append(f"queue-drilldown:{board_id}")
-        return {"board_id": board_id}
+        return {
+            "board_id": board_id,
+            "include_code_traceability": include_code_traceability,
+        }
 
     async def list_dead_letter_rows(self, board_id, **kwargs):
         self._events.append(f"dead-letter:{board_id}")
@@ -141,9 +147,11 @@ class _Services:
         self.discovery_catalog = _DiscoveryCatalog(intent, events)
         self.kg = _Kg(events)
         self._events = events
+        self.lineage_kwargs = None
 
     async def build_lineage_graph(self, board_id: str, **kwargs):
         self._events.append("lineage")
+        self.lineage_kwargs = {"board_id": board_id, **kwargs}
         return {"board_id": board_id}
 
     async def execute_discovery_intent(self, **kwargs):
@@ -229,6 +237,123 @@ async def test_lineage_owner_or_shared_member_can_reach_graph_reader(
 
     assert result.data == {"board_id": "board-b"}
     assert uow.events[-1] == "lineage"
+    assert uow.services.lineage_kwargs == {
+        "board_id": "board-b",
+        "entity_type": "spec",
+        "entity_id": "spec-b",
+        "include_artifacts": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_lineage_dependency_view_reaches_graph_reader_unchanged() -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    result = await GetLineageGraphUseCase().execute(
+        GetLineageGraphCommand(
+            "board-b",
+            "task",
+            "task-b",
+            False,
+            view="dependency",
+        ),
+        actor=ACTOR,
+        uow=uow,
+    )
+
+    assert result.data == {"board_id": "board-b"}
+    assert uow.services.lineage_kwargs == {
+        "board_id": "board-b",
+        "entity_type": "task",
+        "entity_id": "task-b",
+        "include_artifacts": False,
+        "view": "dependency",
+    }
+
+
+@pytest.mark.asyncio
+async def test_lineage_dependency_scope_reaches_graph_reader_unchanged() -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    await GetLineageGraphUseCase().execute(
+        GetLineageGraphCommand(
+            "board-b",
+            "spec",
+            "spec-b",
+            False,
+            view="dependency",
+            dependency_scope="lineage",
+        ),
+        actor=ACTOR,
+        uow=uow,
+    )
+
+    assert uow.services.lineage_kwargs == {
+        "board_id": "board-b",
+        "entity_type": "spec",
+        "entity_id": "spec-b",
+        "include_artifacts": False,
+        "view": "dependency",
+        "dependency_scope": "lineage",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("view", "dependency_scope", "expected_code"),
+    [
+        ("dependency", "everything", "invalid_lineage_graph_dependency_scope"),
+        ("lineage", "lineage", "dependency_scope_requires_dependency_view"),
+    ],
+)
+async def test_lineage_invalid_dependency_scope_fails_before_board_or_reader(
+    view: str,
+    dependency_scope: str,
+    expected_code: str,
+) -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    with pytest.raises(TraceabilityReadError) as raised:
+        await GetLineageGraphUseCase().execute(
+            GetLineageGraphCommand(
+                "board-b",
+                "task",
+                "task-b",
+                False,
+                view=view,  # type: ignore[arg-type]
+                dependency_scope=dependency_scope,  # type: ignore[arg-type]
+            ),
+            actor=ACTOR,
+            uow=uow,
+        )
+
+    assert raised.value.code == expected_code
+    assert raised.value.status_code == 400
+    assert uow.events == []
+    assert uow.services.lineage_kwargs is None
+
+
+@pytest.mark.asyncio
+async def test_lineage_invalid_view_fails_before_board_or_graph_reader() -> None:
+    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
+
+    with pytest.raises(TraceabilityReadError) as raised:
+        await GetLineageGraphUseCase().execute(
+            GetLineageGraphCommand(
+                "board-b",
+                "task",
+                "task-b",
+                False,
+                view="sideways",  # type: ignore[arg-type]
+            ),
+            actor=ACTOR,
+            uow=uow,
+        )
+
+    assert raised.value.code == "invalid_lineage_graph_view"
+    assert raised.value.status_code == 400
+    assert uow.events == []
+    assert uow.services.lineage_kwargs is None
 
 
 @pytest.mark.asyncio
@@ -539,7 +664,10 @@ async def test_queue_drilldown_owner_reaches_reader() -> None:
         uow=uow,
     )
 
-    assert result.data == {"board_id": "board-b"}
+    assert result.data == {
+        "board_id": "board-b",
+        "include_code_traceability": False,
+    }
     assert uow.events == ["board:board-b", "queue-drilldown:board-b"]
 
 
@@ -596,7 +724,10 @@ async def test_global_queue_authorized_actor_reaches_readers(actor) -> None:
     )
 
     assert health.data == {"queue_depth": 0}
-    assert drilldown.data == {"board_id": None}
+    assert drilldown.data == {
+        "board_id": None,
+        "include_code_traceability": False,
+    }
     assert uow.events == ["queue-health", "queue-drilldown:None"]
 
 
@@ -628,5 +759,11 @@ async def test_dead_letter_owner_reaches_reader() -> None:
         uow=uow,
     )
 
-    assert result.data == {"rows": [], "total": 0, "limit": 20, "offset": 0}
+    assert result.data == {
+        "rows": [],
+        "total": 0,
+        "limit": 20,
+        "offset": 0,
+        "include_code_traceability": False,
+    }
     assert uow.events == ["board:board-b", "dead-letter:board-b"]

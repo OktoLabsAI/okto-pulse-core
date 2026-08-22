@@ -34,6 +34,15 @@ DETERMINISTIC_EDGE_TYPES: Final[frozenset[str]] = frozenset({
     "mentions",
     "originates_from",
     "covered_by",
+    # SK-M operational precedence is derived exclusively from the authoritative
+    # relational Spec dependency DAG.  It must never be proposed by the
+    # cognitive agent or confused with Decision -> Decision `depends_on`.
+    "precedes",
+    # Code Traceability relationships are derived exclusively from persisted
+    # Evidence/Target link and resolution records.  The cognitive agent never
+    # infers them and Pulse never inspects an external repository for them.
+    "supports",
+    "overlaps",
     # Hierarchy backbone — Spec ⇄ Sprint ⇄ Card and child artifacts (Req,
     # Constraint, Criterion, TestScenario, APIContract, Decision, Bug) →
     # parent Spec entity. Layer 1 owns this; cognitive agent must not emit.

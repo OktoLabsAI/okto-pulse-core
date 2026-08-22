@@ -30,8 +30,8 @@ from okto_pulse.core.services.architecture import CARD_ARCHITECTURE_READ_ONLY_ME
 USER = "r01a-fu5-s1a-user"
 PREFIX = "/api/v1"
 SPEC_LOCKED_DETAIL = (
-    "Spec is locked because validation passed. Move it back to draft or approved "
-    "to edit architecture."
+    "Spec is locked because validation passed. Move it to Draft to open a new "
+    "edition before editing architecture."
 )
 _ENDPOINTS = (
     "list_ideation_architecture",
@@ -297,6 +297,7 @@ async def test_list_architecture_use_case_raises_for_missing_parent() -> None:
         EntityNotFoundError,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):
@@ -319,6 +320,7 @@ async def test_create_architecture_use_case_raises_for_missing_parent() -> None:
         EntityNotFoundError,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

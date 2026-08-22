@@ -55,6 +55,7 @@ EXPECTED_TRANSITION_SUFFIXES = {
         "on_hold_to_in_progress",
         "on_hold_to_cancelled",
         "done_to_in_progress",
+        "rejected_to_in_progress",
         "cancelled_to_not_started",
     ),
     "story": (
@@ -106,6 +107,7 @@ EXPECTED_TRANSITION_SUFFIXES = {
         "validated_to_draft",
         "validated_to_cancelled",
         "in_progress_to_validated",
+        "in_progress_to_draft",
         "in_progress_to_done",
         "in_progress_to_cancelled",
         "done_to_draft",
@@ -176,6 +178,7 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
     ),
     "okto_pulse_get_task_context": (
         "card.entity.context_read",
+        "card.validation.read",
         "spec.integration_requirements.read",
         "spec.observability_requirements.read",
     ),
@@ -202,9 +205,7 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
         "spec.architecture.render",
         "card.architecture.render",
     ),
-    "okto_pulse_list_architecture_propagation_legacy": (
-        "spec.architecture.read",
-    ),
+    "okto_pulse_list_architecture_propagation_legacy": ("spec.architecture.read",),
     "okto_pulse_move_card": _reviewed_transition_flags("card"),
     "okto_pulse_move_ideation": _reviewed_transition_flags("ideation"),
     "okto_pulse_move_refinement": _reviewed_transition_flags("refinement"),
@@ -220,6 +221,10 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
         "ideation.entity.restore",
         "refinement.entity.restore",
         "spec.entity.restore",
+    ),
+    "okto_pulse_submit_task_validation": (
+        "card.validation.submit",
+        "card.validation.read",
     ),
     "okto_pulse_update_test_scenario_status": (
         "spec.tests.execute",
@@ -242,8 +247,8 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 312
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 309
+    assert len(report.live_tools) == 338
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 335
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

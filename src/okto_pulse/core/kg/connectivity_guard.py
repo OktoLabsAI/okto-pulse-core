@@ -59,9 +59,7 @@ SAFE_CONNECTIVITY_METRIC_LABELS: tuple[str, ...] = (
     "generation_id",
 )
 
-DEGRADED_KG_STATES: frozenset[str] = frozenset(
-    {"recovery_needed", "quarantined"}
-)
+DEGRADED_KG_STATES: frozenset[str] = frozenset({"recovery_needed", "quarantined"})
 
 
 class SourceResolutionStatus(str, Enum):
@@ -617,7 +615,9 @@ class KGConnectivityRuleRegistry:
         try:
             return self._rules[node_type]
         except KeyError as exc:
-            raise KeyError(f"unknown KG node_type for connectivity guard: {node_type}") from exc
+            raise KeyError(
+                f"unknown KG node_type for connectivity guard: {node_type}"
+            ) from exc
 
     def rule_node_types(self) -> tuple[str, ...]:
         """Return the canonical node types governed by this registry."""
@@ -661,6 +661,7 @@ class KGNodeConnectivityGuard:
         edges: Iterable[Any],
         existing_node_refs: Iterable[Any] = (),
         generation_id: str = "",
+        deterministic_rdl_alternative_candidate_ids: Iterable[str] = (),
     ) -> KGConnectivityValidationResult:
         node_snapshots = tuple(_snapshot_node(node) for node in nodes)
         edge_snapshots = tuple(_snapshot_edge(edge) for edge in edges)
@@ -694,6 +695,15 @@ class KGNodeConnectivityGuard:
         allowlisted_roots: list[str] = []
         advisories: list[dict[str, Any]] = []
         writer_class = classify_writer_path(writer_path)
+        raw_rdl_alternative_grants = tuple(deterministic_rdl_alternative_candidate_ids)
+        rdl_alternative_grants = (
+            frozenset(raw_rdl_alternative_grants)
+            if all(
+                type(candidate_id) is str and bool(candidate_id)
+                for candidate_id in raw_rdl_alternative_grants
+            )
+            else frozenset()
+        )
         # RKG-02: the shared resolver decides if a Learning is bug-derived; a
         # plain card:<uuid> only counts when the canonical Bug probe confirms it.
         bug_probe = _build_canonical_bug_probe(existing_refs, node_snapshots)
@@ -728,7 +738,15 @@ class KGNodeConnectivityGuard:
                 allowlisted_roots.append(node.candidate_id)
                 continue
 
-            if writer_class not in rule.allowed_new_node_writers:
+            rdl_alternative_granted = bool(
+                writer_class is WriterClass.DETERMINISTIC
+                and node.node_type == "Alternative"
+                and node.candidate_id in rdl_alternative_grants
+            )
+            if (
+                writer_class not in rule.allowed_new_node_writers
+                and not rdl_alternative_granted
+            ):
                 violations.append(
                     _violation(
                         node=node,
@@ -749,7 +767,9 @@ class KGNodeConnectivityGuard:
                 )
                 continue
 
-            if node.node_type == "Learning" and _learning_is_bug_derived(node.raw, bug_probe):
+            if node.node_type == "Learning" and _learning_is_bug_derived(
+                node.raw, bug_probe
+            ):
                 required_groups = [_learning_bug_group()]
             else:
                 required_groups = list(rule.required_edge_groups)
@@ -798,7 +818,8 @@ class KGNodeConnectivityGuard:
             outcome=(
                 KGConnectivityOutcome.ALLOWLISTED
                 if allowlisted_roots and len(allowlisted_roots) == len(node_snapshots)
-                else KGConnectivityOutcome.PASSED if not violations
+                else KGConnectivityOutcome.PASSED
+                if not violations
                 else KGConnectivityOutcome.REJECTED
             ),
         )
@@ -845,8 +866,7 @@ class KGNodeConnectivityGuard:
             # A self-loop (resolved endpoint is the candidate node itself) can
             # never provide semantic connectivity for a guarded node.
             is_self_loop = other_ref == node.candidate_id or (
-                bool(node.source_artifact_ref)
-                and other_ref == node.source_artifact_ref
+                bool(node.source_artifact_ref) and other_ref == node.source_artifact_ref
             )
 
             for req in group.alternatives:
@@ -1005,7 +1025,9 @@ def _snapshot_node(node: Any) -> _NodeSnapshot:
     return _NodeSnapshot(
         candidate_id=str(_get_field(node, "candidate_id", "")),
         node_type=_enum_value(_get_field(node, "node_type", "")),
-        source_artifact_ref=_optional_str(_get_field(node, "source_artifact_ref", None)),
+        source_artifact_ref=_optional_str(
+            _get_field(node, "source_artifact_ref", None)
+        ),
         raw=node,
         graph_layer=_layer_value(_get_field(node, "graph_layer", None)),
         maturity_status=_layer_value(_get_field(node, "maturity_status", None)),
@@ -1041,7 +1063,9 @@ def _snapshot_existing_ref(ref: Any) -> KGNodeRef:
     )
 
 
-def _existing_ref_index(existing_refs: tuple[KGNodeRef, ...]) -> dict[str, list[KGNodeRef]]:
+def _existing_ref_index(
+    existing_refs: tuple[KGNodeRef, ...],
+) -> dict[str, list[KGNodeRef]]:
     index: dict[str, list[KGNodeRef]] = {}
     for ref in existing_refs:
         keys = {ref.ref_id}
@@ -1134,7 +1158,8 @@ def _build_canonical_bug_probe(
         sref = _optional_str(source_ref)
         if sref:
             canonical_bug_keys.add(
-                normalize_cognitive_artifact_id(strip_concept_suffix(sref)))
+                normalize_cognitive_artifact_id(strip_concept_suffix(sref))
+            )
 
     for ref in existing_refs:
         if ref.node_type == "Bug":
@@ -1157,13 +1182,23 @@ def _learning_is_bug_derived(raw: Any, bug_probe: Any) -> bool:
     """Type-aware bug-derived detection for a Learning node (RKG-02). Explicit
     bug fields and bug:/card:bug: forms are always bug-derived; a plain
     card:<uuid> is bug-derived ONLY when the probe confirms a canonical Bug."""
-    for field_name in ("bug_id", "bug_ref", "known_bug_ref", "known_bug_source_ref", "target_bug_ref"):
+    for field_name in (
+        "bug_id",
+        "bug_ref",
+        "known_bug_ref",
+        "known_bug_source_ref",
+        "target_bug_ref",
+    ):
         if _get_field(raw, field_name, None):
             return True
-    from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+        resolve_cognitive_source_ref,
+    )
 
     source_ref = _optional_str(_get_field(raw, "source_artifact_ref", None)) or ""
-    return resolve_cognitive_source_ref(source_ref, canonical_bug_probe=bug_probe).is_bug_derived
+    return resolve_cognitive_source_ref(
+        source_ref, canonical_bug_probe=bug_probe
+    ).is_bug_derived
 
 
 def _get_field(obj: Any, name: str, default: Any = None) -> Any:

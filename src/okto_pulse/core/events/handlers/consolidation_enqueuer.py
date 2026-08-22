@@ -23,6 +23,7 @@ from okto_pulse.core.events.types import DomainEvent
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.ports.relational_effects import (
     ConsolidationQueueUpsert,
+    SpecDependencyProjectionQueueMetadata,
     get_relational_effects_port,
 )
 
@@ -47,6 +48,30 @@ _DERIVED_EVENTS = {
     "refinement.derived_to_spec",
 }
 _BUG_REGRESSION_DECISION_EVENT = "bug_regression_scenario_reuse_decision"
+_CODE_INVESTIGATION_RECEIPT_EVENTS = {
+    "code_investigation.receipt_submitted",
+    "code_investigation.receipt_revoked",
+}
+_SPEC_DEPENDENCY_EVENTS = {
+    "spec.dependency_added",
+    "spec.dependency_removed",
+}
+_CODE_EVIDENCE_EVENTS = {
+    "code_evidence.created",
+    "code_evidence.superseded",
+    "code_evidence.revoked",
+    "code_evidence.linked",
+    "code_evidence.unlinked",
+    "code_evidence.disposition_changed",
+    "code_evidence.legacy_classified",
+}
+_IMPLEMENTATION_TARGET_EVENTS = {
+    "implementation_target.created",
+    "implementation_target.updated",
+    "implementation_target.revoked",
+    "implementation_target.resolution_submitted",
+    "implementation_target.execution_receipt_submitted",
+}
 
 # Spec eaf78891 (Ideação #2): card.linked_to_spec / card.unlinked_from_spec
 # re-enqueue the SPEC, not the card. The card extractor in
@@ -59,7 +84,11 @@ _CARD_TO_SPEC_EVENTS = {"card.linked_to_spec", "card.unlinked_from_spec"}
 # BOTH the card itself (status/conclusion lives on the card node) AND the
 # parent spec (aggregated children-state on the spec node). Orphan cards
 # (spec_id is None) skip the spec-side enqueue gracefully.
-_CARD_DUAL_TARGET_EVENTS = {"card.moved", "card.conclusion_added"}
+_CARD_DUAL_TARGET_EVENTS = {
+    "card.moved",
+    "card.conclusion_added",
+    "card.completion_rejected",
+}
 
 _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
 
@@ -69,11 +98,14 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "card.created",
     "card.moved",
     "card.conclusion_added",
+    "card.completion_rejected",
     "card.cancelled",
     "card.restored",
     "card.linked_to_spec",
     "card.unlinked_from_spec",
     "spec.created",
+    "spec.dependency_added",
+    "spec.dependency_removed",
     "spec.moved",
     "spec.version_bumped",
     "spec.semantic_changed",
@@ -97,6 +129,24 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "story.moved",
     "story.linked_to_ideation",
     "bug_regression_scenario_reuse_decision",
+    "code_investigation.requested",
+    "code_investigation.receipt_submitted",
+    "code_investigation.receipt_revoked",
+    "code_evidence.created",
+    "code_evidence.superseded",
+    "code_evidence.revoked",
+    "code_evidence.linked",
+    "code_evidence.unlinked",
+    "code_evidence.disposition_changed",
+    "code_evidence.legacy_classified",
+    "implementation_target.created",
+    "implementation_target.updated",
+    "implementation_target.revoked",
+    "implementation_target.resolution_submitted",
+    "implementation_target.execution_receipt_submitted",
+    "implementation_overlap.acknowledged",
+    "code_traceability.waiver_created",
+    "code_traceability.waiver_cleared",
 )
 class ConsolidationEnqueuer:
     """Maps domain events to ConsolidationQueue rows with dedup + priority."""
@@ -111,7 +161,12 @@ class ConsolidationEnqueuer:
 
         for artifact_type, artifact_id in targets:
             await self._enqueue_one(
-                event, artifact_type, artifact_id, priority, session
+                event,
+                artifact_type,
+                artifact_id,
+                priority,
+                session,
+                payload=self._queue_payload(event, artifact_type, artifact_id),
             )
 
     async def _enqueue_one(
@@ -121,6 +176,8 @@ class ConsolidationEnqueuer:
         artifact_id: str,
         priority: str,
         session: object,
+        *,
+        payload: dict[str, object] | None = None,
     ) -> None:
         # Bug 4a430c6d (race fix): the relational port atomically merges
         # concurrent events for the same (board_id, artifact_type, artifact_id)
@@ -149,6 +206,7 @@ class ConsolidationEnqueuer:
                     priority=priority,
                     source=f"event:{event.event_type}",
                     triggered_by_event=event.event_type,
+                    payload=payload,
                 ),
             )
         )
@@ -241,6 +299,37 @@ class ConsolidationEnqueuer:
                 },
             )
 
+    @staticmethod
+    def _queue_payload(
+        event: DomainEvent,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> dict[str, str] | None:
+        """Bind dependency fan-out ownership to durable queue metadata."""
+
+        if event.event_type not in _SPEC_DEPENDENCY_EVENTS or artifact_type != "spec":
+            return None
+        owner_spec_id = getattr(event, "projection_owner_spec_id", None)
+        dependency_id = getattr(event, "dependency_id", None)
+        if (
+            not isinstance(owner_spec_id, str)
+            or not owner_spec_id
+            or not isinstance(dependency_id, str)
+            or not dependency_id
+        ):
+            return None
+        return SpecDependencyProjectionQueueMetadata(
+            mutation_event_id=event.event_id,
+            mutation_event_type=event.event_type,
+            dependency_id=dependency_id,
+            projection_owner_spec_id=owner_spec_id,
+            target_role=(
+                "projection_owner"
+                if artifact_id == owner_spec_id
+                else "endpoint_bootstrap"
+            ),
+        ).to_payload()
+
     def _map_targets(self, event: DomainEvent) -> list[tuple[str, str]]:
         """Return one or more (artifact_type, artifact_id) targets per event.
 
@@ -253,6 +342,41 @@ class ConsolidationEnqueuer:
         et = event.event_type
         targets: list[tuple[str, str]] = []
 
+        # Code Traceability events contain only bounded identifiers/states/
+        # digests/counts.  Queue targets are relational Pulse artifacts; this
+        # handler never receives, opens or resolves a code locator.
+        if et in _CODE_INVESTIGATION_RECEIPT_EVENTS:
+            receipt_id = getattr(event, "investigation_receipt_id", None)
+            if receipt_id:
+                targets.append(("code_investigation_receipt", receipt_id))
+            return targets
+        if et in _CODE_EVIDENCE_EVENTS:
+            for attr in ("evidence_id", "superseded_evidence_id", "superseding_evidence_id"):
+                evidence_id = getattr(event, attr, None)
+                target = ("code_evidence", evidence_id)
+                if evidence_id and target not in targets:
+                    targets.append(target)
+            return targets
+        if et in _IMPLEMENTATION_TARGET_EVENTS:
+            target_id = getattr(event, "target_id", None)
+            if target_id:
+                targets.append(("implementation_target", target_id))
+            return targets
+        if et == "implementation_overlap.acknowledged":
+            for attr in ("target_a_id", "target_b_id"):
+                target_id = getattr(event, attr, None)
+                if target_id:
+                    targets.append(("implementation_target", target_id))
+            return targets
+        if et in {
+            "code_investigation.requested",
+            "code_traceability.waiver_created",
+            "code_traceability.waiver_cleared",
+        }:
+            # Requests and waivers remain relational authorities by design;
+            # they do not materialize KG nodes.
+            return targets
+
         if et == "artifact.archive_changed":
             # Archive is handled synchronously by the reversible KG tombstone
             # handler. Restore re-enqueues the authoritative source so it also
@@ -263,6 +387,30 @@ class ConsolidationEnqueuer:
             artifact_id = getattr(event, "artifact_id", None)
             if artifact_type and artifact_id:
                 targets.append((artifact_type, artifact_id))
+            return targets
+
+        if et in _SPEC_DEPENDENCY_EVENTS:
+            # Re-read authority through the dependent projection. Enqueue the
+            # prerequisite as well so its endpoint root converges without any
+            # network or graph work inside the relational mutation lock.
+            # Materialize the prerequisite root before the dependent tries to
+            # resolve its reference-only ``precedes`` endpoint.
+            for attr in ("target_spec_id", "spec_id"):
+                spec_id = getattr(event, attr, None)
+                target = ("spec", spec_id)
+                if spec_id and target not in targets:
+                    targets.append(target)
+            return targets
+
+        if et == "spec.version_bumped" and set(
+            getattr(event, "changed_fields", ())
+        ) == {"dependencies"}:
+            # Dependency mutations publish both the generic version signal and
+            # a dependency-specific event in the same transaction.  The latter
+            # owns the prerequisite/dependent fan-out and its durable metric
+            # marker.  Admitting the generic signal first can coalesce the
+            # dependent row without that marker, so leave this projection to
+            # the mutation-specific event.
             return targets
 
         # Dual-target spec-only events (Ideação #2): spec re-enqueue, no card.

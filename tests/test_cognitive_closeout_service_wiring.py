@@ -10,6 +10,10 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.kg.rebuild_audit import CognitivePendingMarker
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
@@ -26,6 +30,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.models.schemas import CardMove, SpecMove
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
+from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import (
     CardService,
     SpecService,
@@ -40,6 +45,30 @@ USER_ID = "ccg-service-wiring-agent"
 
 def _id() -> str:
     return str(uuid.uuid4())
+
+
+def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=1,
+    )
+    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+        spec_id=spec_id,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        provenance=provenance,
+        subject_version=1,
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 @pytest.fixture
@@ -100,6 +129,7 @@ async def _seed_spec(
                 decisions=decisions or [],
                 acceptance_criteria=[],
                 test_scenarios=[],
+                **_direct_spec_context_fields(spec_id),
             )
         )
         await db.commit()
@@ -212,6 +242,7 @@ async def _seed_card(
                 created_by=USER_ID,
                 acceptance_criteria=[],
                 test_scenarios=[],
+                **_direct_spec_context_fields(spec_id),
             )
         )
         db.add(
@@ -251,7 +282,7 @@ async def _mark_card_resources_na(db, board_id: str, card_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_submit_task_validation_blocks_before_automatic_done() -> None:
+async def test_submit_task_validation_records_cognitive_rejection() -> None:
     _, _, card_id = await _seed_card(CardType.NORMAL, CardStatus.VALIDATION)
     gate = _BlockingGate()
     validation_data = {
@@ -269,18 +300,22 @@ async def test_submit_task_validation_blocks_before_automatic_done() -> None:
     async with db_factory() as db:
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: gate
-        with pytest.raises(ValueError, match="cognitive_consolidation_pending"):
-            await service.submit_task_validation(
-                card_id=card_id,
-                reviewer_id=USER_ID,
-                reviewer_name=USER_ID,
-                data=validation_data,
-            )
-        await db.rollback()
+        result = await service.submit_task_validation(
+            card_id=card_id,
+            reviewer_id=USER_ID,
+            reviewer_name=USER_ID,
+            data=validation_data,
+        )
+        await db.commit()
 
     card = await _card_row(card_id)
-    assert card.status == CardStatus.VALIDATION
-    assert card.validations in (None, [])
+    assert result["validation_outcome"] == "success"
+    assert result["completion_outcome"] == "rejected"
+    assert result["completion_gate_failures"][0]["code"] == (
+        "cognitive_consolidation_pending"
+    )
+    assert card.status == CardStatus.REJECTED
+    assert len(card.validations or []) == 1
     assert gate.calls[0]["entity_type"] == "task"
     assert gate.calls[0]["target_status"] == "done"
 
@@ -479,7 +514,7 @@ def test_blocking_active_needs_both_flag_and_policy(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_done_blocks_on_open_canonical_debt_without_active_item(
+async def test_done_records_rejection_on_open_canonical_debt_without_active_item(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     board_id, _, card_id = await _seed_card(
@@ -496,16 +531,21 @@ async def test_done_blocks_on_open_canonical_debt_without_active_item(
     async with db_factory() as db:
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
-        with pytest.raises(ValueError, match="canonical_debt_open"):
-            await service.submit_task_validation(
-                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
-                data=_APPROVE_VALIDATION,
-            )
-        await db.rollback()
+        result = await service.submit_task_validation(
+            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            data=_APPROVE_VALIDATION,
+        )
+        await db.commit()
 
     card = await _card_row(card_id)
-    assert card.status == CardStatus.VALIDATION  # blocked before status mutation
-    assert card.validations in (None, [])
+    assert result["validation_outcome"] == "success"
+    assert result["completion_outcome"] == "rejected"
+    assert any(
+        item["code"] == "canonical_debt_open"
+        for item in result["completion_gate_failures"]
+    )
+    assert card.status == CardStatus.REJECTED
+    assert len(card.validations or []) == 1
 
 
 @pytest.mark.asyncio

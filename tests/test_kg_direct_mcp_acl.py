@@ -433,7 +433,7 @@ REBUILD_CASES = (
         },
         "kg.operations.rebuild.run",
         "kg.admin.settings_write",
-        True,
+        False,
     ),
 )
 
