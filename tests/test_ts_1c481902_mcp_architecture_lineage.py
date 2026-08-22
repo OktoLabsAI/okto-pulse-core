@@ -14,7 +14,12 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
-from r3_scenario_helpers import USER_ID, call_tool, sid
+from r3_scenario_helpers import (
+    USER_ID,
+    call_tool,
+    freeze_refinement_completion_fixture,
+    sid,
+)
 from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
@@ -22,7 +27,6 @@ from sqlalchemy_test_models import (
     Ideation,
     IdeationStatus,
     Refinement,
-    RefinementSnapshot,
     RefinementStatus,
     Spec,
     SpecStatus,
@@ -114,6 +118,7 @@ async def test_ts_1c481902_mcp_multihop_and_atomic_mixed_selection(
         ideation_id=seed["ideation_id"],
         title="Refinement with governed Architecture",
         in_scope=["Preserve Architecture lineage"],
+        delivery_context="brownfield",
         architecture_design_ids=[root_design_id],
         architecture_propagation_mode="copy",
     )
@@ -136,21 +141,7 @@ async def test_ts_1c481902_mcp_multihop_and_atomic_mixed_selection(
         refinement = await db.get(Refinement, refinement_id)
         assert refinement is not None
         refinement.status = RefinementStatus.DONE
-        db.add(
-            RefinementSnapshot(
-                refinement_id=refinement.id,
-                version=refinement.version,
-                title=refinement.title,
-                description=refinement.description,
-                in_scope=refinement.in_scope,
-                out_of_scope=refinement.out_of_scope,
-                analysis=refinement.analysis,
-                decisions=refinement.decisions,
-                labels=refinement.labels,
-                qa_snapshot=[],
-                created_by=USER_ID,
-            )
-        )
+        await freeze_refinement_completion_fixture(db, refinement)
         await require_relational_application_adapter().research_decisions(
             db
         ).save_snapshot(

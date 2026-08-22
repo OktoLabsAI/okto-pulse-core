@@ -557,9 +557,15 @@ def test_manage_dependency_permission_is_a_fail_closed_introduction() -> None:
     ).allowed
     assert SKM_PERMISSION_INTRODUCTION_V1.legacy_compatible is False
     assert SKM_PERMISSION_INTRODUCTION_V1.leaves == ("spec.entity.manage_dependencies",)
-    assert PERMISSION_INTRODUCTION_MANIFESTS[-1] is SKM_PERMISSION_INTRODUCTION_V1
+    assert any(
+        manifest is SKM_PERMISSION_INTRODUCTION_V1
+        for manifest in PERMISSION_INTRODUCTION_MANIFESTS
+    )
     assert skm_permission_introduction_v1() is SKM_PERMISSION_INTRODUCTION_V1
-    assert permission_introduction_manifests()[-1] is SKM_PERMISSION_INTRODUCTION_V1
+    assert any(
+        manifest is SKM_PERMISSION_INTRODUCTION_V1
+        for manifest in permission_introduction_manifests()
+    )
 
 
 @pytest.mark.asyncio
@@ -2197,10 +2203,11 @@ async def test_allowed_transition_and_mutation_gate_share_exact_blocking_facts(
                 check_contract_coverage=noop,
                 check_ir_coverage=noop,
                 check_or_coverage=noop,
-                check_task_requirement_links_for_spec=noop,
-                check_decision_presence=noop,
-                check_decisions_coverage=noop,
-            ),
+                    check_task_requirement_links_for_spec=noop,
+                    check_decision_presence=noop,
+                    check_decisions_coverage=noop,
+                    check_code_evidence_coverage=noop,
+                ),
         ),
         SimpleNamespace(
             id="source",

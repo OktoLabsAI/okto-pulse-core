@@ -9,7 +9,8 @@ structured attestation to these commands.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import Any
 
 from okto_pulse.core.application.use_cases.authorization import (
@@ -19,9 +20,13 @@ from okto_pulse.core.application.use_cases.authorization import (
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
+    PermissionDeniedError,
     commit,
 )
 from okto_pulse.core.domain.code_traceability import (
+    CodeDeliveryContextRequired,
+    CodeEvidence,
+    CodeEvidenceLegacyClassificationHumanRequired,
     CodeEvidenceLinkInvalid,
     CodeInvestigationAttestorMismatch,
     CodeInvestigationRequestNotFound,
@@ -35,9 +40,12 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityProjectionProfile,
     CodeTraceabilitySubjectType,
     CodeTraceabilityWaiverEntityType,
+    DirectSpecDeliveryContextProvenance,
+    DeliveryContext,
     ImplementationTarget,
     ImplementationTargetInvalid,
     SpecEntityType,
+    SpecDeliveryContextProvenance,
     TargetOverlap,
     canonical_code_traceability_sha256,
 )
@@ -49,6 +57,7 @@ from okto_pulse.core.events.code_traceability import (
 )
 from okto_pulse.core.events.types import (
     CodeEvidenceCreated,
+    CodeEvidenceLegacyClassified,
     CodeEvidenceDispositionChanged,
     CodeEvidenceLinked,
     CodeEvidenceRevoked,
@@ -66,6 +75,7 @@ from okto_pulse.core.events.types import (
     ImplementationTargetResolutionSubmitted,
     ImplementationTargetRevoked,
     ImplementationTargetUpdated,
+    SpecVersionBumped,
 )
 from okto_pulse.core.models.code_traceability import (
     CodeEvidenceDispositionClearInput,
@@ -76,7 +86,10 @@ from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSubmission,
     CodeEvidenceSupersessionSubmission,
     CodeEvidenceView,
+    LegacyEvidenceClassificationBatchInput,
+    LegacyEvidenceClassificationBatchResult,
     CodeInvestigationReceiptSubmission,
+    CodeInvestigationReceiptSubmissionV2,
     CodeInvestigationReceiptView,
     CodeInvestigationRequestView,
     CodeTraceabilityWaiverClearInput,
@@ -107,6 +120,9 @@ from okto_pulse.core.services.code_evidence import (
     CodeEvidenceRevocationResult,
     CodeEvidenceService,
     CodeEvidenceUnlinkMutationResult,
+)
+from okto_pulse.core.services.legacy_code_evidence_classification import (
+    LegacyCodeEvidenceClassificationService,
 )
 from okto_pulse.core.services.code_evidence_rebase import (
     SpecCodeEvidenceRebasePlan,
@@ -239,6 +255,171 @@ def _record_version(record: object, *, entity_type: str) -> int:
     return version
 
 
+def _record_field(record: object, name: str) -> object:
+    if isinstance(record, Mapping):
+        return record.get(name)
+    return getattr(record, name, None)
+
+
+def _invalid_record_delivery_context(reason: str) -> CodeDeliveryContextRequired:
+    return CodeDeliveryContextRequired(details={"reason": reason})
+
+
+def _spec_delivery_context_provenance(
+    record: object,
+) -> SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance:
+    """Parse persisted Spec provenance without accepting a structural guess."""
+
+    raw = _record_field(record, "delivery_context_provenance")
+    if isinstance(
+        raw,
+        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance,
+    ):
+        return raw
+    if not isinstance(raw, Mapping):
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_provenance_required"
+        )
+
+    keys = set(raw)
+    direct_keys = {"source_spec_id", "source_spec_version"}
+    inherited_keys = {
+        "inherited_value",
+        "source_refinement_id",
+        "source_refinement_version",
+        "override_reason",
+    }
+    has_direct_shape = bool(keys & direct_keys)
+    has_inherited_shape = bool(keys & inherited_keys)
+    if has_direct_shape == has_inherited_shape:
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_provenance_invalid"
+        )
+
+    try:
+        if has_direct_shape:
+            if keys != {"value", *direct_keys}:
+                raise _invalid_record_delivery_context(
+                    "persisted_delivery_context_provenance_invalid"
+                )
+            return DirectSpecDeliveryContextProvenance(
+                value=raw.get("value"),
+                source_spec_id=raw.get("source_spec_id"),
+                source_spec_version=raw.get("source_spec_version"),
+            )
+        allowed_inherited_keys = {"value", *inherited_keys}
+        required_inherited_keys = allowed_inherited_keys - {"override_reason"}
+        if not required_inherited_keys.issubset(keys) or not keys.issubset(
+            allowed_inherited_keys
+        ):
+            raise _invalid_record_delivery_context(
+                "persisted_delivery_context_provenance_invalid"
+            )
+        return SpecDeliveryContextProvenance(
+            value=raw.get("value"),
+            inherited_value=raw.get("inherited_value"),
+            source_refinement_id=raw.get("source_refinement_id"),
+            source_refinement_version=raw.get("source_refinement_version"),
+            override_reason=raw.get("override_reason"),
+        )
+    except CodeDeliveryContextRequired:
+        raise
+    except (CodeTraceabilityContractError, TypeError, ValueError) as exc:
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_provenance_invalid"
+        ) from exc
+
+
+def _record_delivery_context(
+    record: object,
+    *,
+    subject_type: CodeTraceabilitySubjectType,
+) -> DeliveryContext:
+    """Validate explicit context and typed provenance; never infer legacy data."""
+
+    raw_value = _record_field(record, "delivery_context")
+    try:
+        delivery_context = DeliveryContext(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_required"
+        ) from exc
+
+    if subject_type is CodeTraceabilitySubjectType.REFINEMENT:
+        return delivery_context
+    if subject_type is not CodeTraceabilitySubjectType.SPEC:
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_subject_invalid"
+        )
+
+    provenance = _spec_delivery_context_provenance(record)
+    if provenance.value is not delivery_context:
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_provenance_mismatch"
+        )
+
+    record_id = _record_field(record, "id")
+    record_version = _record_field(record, "version")
+    refinement_id = _record_field(record, "refinement_id")
+    source_refinement_snapshot_id = _record_field(
+        record, "source_refinement_snapshot_id"
+    )
+    source_refinement_version = _record_field(record, "source_refinement_version")
+    if isinstance(provenance, DirectSpecDeliveryContextProvenance):
+        if (
+            not isinstance(record_id, str)
+            or provenance.source_spec_id != record_id
+            or type(record_version) is not int
+            or provenance.source_spec_version > record_version
+            or refinement_id is not None
+            or source_refinement_snapshot_id is not None
+            or source_refinement_version is not None
+        ):
+            raise _invalid_record_delivery_context(
+                "persisted_delivery_context_provenance_lineage_mismatch"
+            )
+        return delivery_context
+
+    if (
+        provenance.source_refinement_id != refinement_id
+        or provenance.source_refinement_version != source_refinement_version
+        or not isinstance(source_refinement_snapshot_id, str)
+        or not source_refinement_snapshot_id
+    ):
+        raise _invalid_record_delivery_context(
+            "persisted_delivery_context_provenance_lineage_mismatch"
+        )
+    return delivery_context
+
+
+async def _subject_delivery_context(
+    record: object,
+    *,
+    board_id: str,
+    subject_type: CodeTraceabilitySubjectType,
+    uow: PulseUnitOfWork,
+) -> DeliveryContext:
+    """Resolve Card context through its owning Spec; never infer from card data."""
+
+    if subject_type is not CodeTraceabilitySubjectType.CARD:
+        return _record_delivery_context(record, subject_type=subject_type)
+    spec_id = getattr(record, "spec_id", None)
+    if not isinstance(spec_id, str) or not spec_id:
+        raise CodeDeliveryContextRequired(
+            details={"reason": "card_spec_required"}
+        )
+    spec = await uow.services.specs.get_spec(spec_id)
+    if spec is None:
+        raise EntityNotFoundError("spec", spec_id)
+    _require_board_record(spec, board_id=board_id, entity_type="spec")
+    # Card context is the owning Spec's exact, validated context.  In
+    # particular, a legacy or inconsistent Spec is not inferred through Card.
+    return _record_delivery_context(
+        spec,
+        subject_type=CodeTraceabilitySubjectType.SPEC,
+    )
+
+
 def _require_board_record(record: object, *, board_id: str, entity_type: str) -> None:
     if getattr(record, "board_id", None) != board_id:
         raise EntityNotFoundError(entity_type, str(getattr(record, "id", "")))
@@ -302,6 +483,37 @@ async def _publish_mutation_event(
         **metadata,
     )
     await publish_code_traceability_mutation(uow, event, replayed=replayed)
+
+
+def _code_evidence_event_context(
+    evidence: CodeEvidence,
+) -> dict[str, str | int | None]:
+    """Project the bounded contextual fields shared by Evidence mutation events."""
+
+    baseline = evidence.baseline_provenance
+    if baseline is None:
+        return {
+            "context_contract_version": evidence.context_contract_version,
+            "source_role": None,
+            "baseline_presence": None,
+            "relevance_summary": None,
+            "scope_relation": None,
+            "source_origin": None,
+            "interpretation_limit": None,
+            "baseline_workspace_state_id": None,
+            "baseline_provenance_note": None,
+        }
+    return {
+        "context_contract_version": evidence.context_contract_version,
+        "source_role": evidence.source_role.value,
+        "baseline_presence": baseline.presence.value,
+        "relevance_summary": evidence.relevance_summary,
+        "scope_relation": evidence.scope_relation,
+        "source_origin": evidence.source_origin,
+        "interpretation_limit": evidence.interpretation_limit,
+        "baseline_workspace_state_id": baseline.workspace_state_id,
+        "baseline_provenance_note": baseline.provenance_note,
+    }
 
 
 def _observe_receipt_rejection(exc: CodeTraceabilityContractError) -> None:
@@ -730,7 +942,10 @@ class SubmitCodeInvestigationReceiptUseCase:
 
     async def execute(
         self,
-        command: CodeInvestigationReceiptSubmission,
+        command: (
+            CodeInvestigationReceiptSubmission
+            | CodeInvestigationReceiptSubmissionV2
+        ),
         *,
         actor: ActorContext,
         uow: PulseUnitOfWork,
@@ -766,6 +981,7 @@ class SubmitCodeInvestigationReceiptUseCase:
             request_id=request.id,
             idempotency_key=command.idempotency_key,
         )
+        delivery_context: DeliveryContext | None = None
         if replay is None:
             subject = await _load_subject(
                 board_id=command.board_id,
@@ -783,6 +999,23 @@ class SubmitCodeInvestigationReceiptUseCase:
                 exc = CodeInvestigationSubjectVersionConflict()
                 _observe_receipt_rejection(exc)
                 raise exc
+            if isinstance(command, CodeInvestigationReceiptSubmissionV2):
+                try:
+                    delivery_context = await _subject_delivery_context(
+                        subject,
+                        board_id=command.board_id,
+                        subject_type=request.subject_type,
+                        uow=uow,
+                    )
+                except CodeTraceabilityContractError as exc:
+                    _observe_receipt_rejection(exc)
+                    raise
+        elif isinstance(command, CodeInvestigationReceiptSubmissionV2):
+            delivery_context = replay.delivery_context
+            if delivery_context is None:
+                exc = CodeDeliveryContextRequired()
+                _observe_receipt_rejection(exc)
+                raise exc
         try:
             submitted = await self._investigation_service.submit_receipt(
                 command,
@@ -790,6 +1023,7 @@ class SubmitCodeInvestigationReceiptUseCase:
                 actor_kind=actor.actor_kind,
                 freshness_seconds=policy.settings.preflight_freshness_seconds,
                 store=uow.services.code_investigations,
+                delivery_context=delivery_context,
             )
         except CodeTraceabilityContractError as exc:
             # This sink is deliberately non-durable and contains one typed,
@@ -798,6 +1032,7 @@ class SubmitCodeInvestigationReceiptUseCase:
             _observe_receipt_rejection(exc)
             raise
         receipt = submitted.receipt
+        effective_outcome = receipt.effective_outcome.value
         await _publish_mutation_event(
             uow,
             CodeInvestigationReceiptSubmitted,
@@ -813,13 +1048,24 @@ class SubmitCodeInvestigationReceiptUseCase:
             omission_count=receipt.omission_count,
             observation_sha256=receipt.observation_sha256,
             payload_sha256=receipt.payload_sha256,
+            delivery_context=(
+                None
+                if receipt.delivery_context is None
+                else receipt.delivery_context.value
+            ),
+            contextual_outcome=(
+                None
+                if receipt.contextual_outcome is None
+                else receipt.contextual_outcome.value
+            ),
+            context_contract_version=receipt.context_contract_version,
         )
         if not submitted.replayed:
             await commit(uow)
             observe_code_traceability_metric(
                 METRIC_CODE_INVESTIGATION_RECEIPT_TOTAL,
                 labels={
-                    "outcome": receipt.outcome.value,
+                    "outcome": effective_outcome,
                     "trust_level": receipt.trust_level.value,
                 },
             )
@@ -829,7 +1075,7 @@ class SubmitCodeInvestigationReceiptUseCase:
                     0.0,
                     (receipt.received_at - receipt.observed_at).total_seconds(),
                 ),
-                labels={"outcome": receipt.outcome.value},
+                labels={"outcome": effective_outcome},
             )
         return SubmittedCodeInvestigationReceiptResult(
             receipt=CodeInvestigationReceiptView.from_domain(submitted.receipt),
@@ -920,6 +1166,75 @@ class GetCodeInvestigationReceiptUseCase:
         )
 
 
+class ClassifyLegacyCodeEvidenceUseCase:
+    """Authorized human-or-agent governance over ambiguous pre-V2 Evidence."""
+
+    def __init__(
+        self,
+        service: LegacyCodeEvidenceClassificationService | None = None,
+    ) -> None:
+        self._service = service or LegacyCodeEvidenceClassificationService()
+
+    async def execute(
+        self,
+        command: LegacyEvidenceClassificationBatchInput,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> LegacyEvidenceClassificationBatchResult:
+        # Identity class and transport are authenticated facts. Both the UI
+        # and the agent boundary may classify when the board grants the same
+        # granular permission. Unknown/system callers still fail before any
+        # board, Evidence, replay or permission read, preventing an existence
+        # oracle.
+        authorized_identity = (
+            actor.source == "rest"
+            and actor.actor_kind in {"agent", "human", "user"}
+        ) or (actor.source == "mcp" and actor.actor_kind == "agent")
+        if not authorized_identity:
+            raise CodeEvidenceLegacyClassificationHumanRequired()
+        await _authorize(
+            actor,
+            uow,
+            board_id=command.board_id,
+            operation="code_traceability.evidence.classify_legacy",
+        )
+        await _load_policy(board_id=command.board_id, uow=uow)
+        receipt = await self._service.classify(
+            command,
+            actor_id=actor.actor_id,
+            store=uow.services.code_traceability,
+        )
+        for item in receipt.classifications:
+            await _publish_mutation_event(
+                uow,
+                CodeEvidenceLegacyClassified,
+                actor=actor,
+                board_id=command.board_id,
+                replayed=receipt.replayed,
+                classification_id=item.id,
+                batch_id=item.batch_id,
+                evidence_id=item.evidence_id,
+                evidence_payload_sha256=item.evidence_payload_sha256,
+                classification_revision=item.revision,
+                predecessor_classification_id=(
+                    item.predecessor_classification_id
+                ),
+                classification_sha256=item.classification_sha256,
+                request_sha256=item.request_sha256,
+                justification_sha256=code_traceability_event_digest(
+                    item.justification
+                ),
+                source_role=item.source_role.value,
+                context_contract_version=item.context_contract_version,
+                batch_item_count=item.batch_item_count,
+                batch_item_index=item.batch_item_index,
+            )
+        if not receipt.replayed:
+            await commit(uow)
+        return LegacyEvidenceClassificationBatchResult.project(receipt)
+
+
 class SubmitCodeEvidenceUseCase:
     def __init__(
         self,
@@ -979,6 +1294,7 @@ class SubmitCodeEvidenceUseCase:
             lifecycle_status=evidence.lifecycle_status.value,
             attestation_state=evidence.attestation_state.value,
             payload_sha256=evidence.payload_sha256,
+            **_code_evidence_event_context(evidence),
         )
         if not result.replayed:
             await commit(uow)
@@ -1041,6 +1357,7 @@ class SupersedeCodeEvidenceUseCase:
             superseding_evidence_id=replacement.id,
             investigation_receipt_id=replacement.investigation_receipt_id,
             payload_sha256=replacement.payload_sha256,
+            **_code_evidence_event_context(replacement),
         )
         if not result.replayed:
             await commit(uow)
@@ -1478,10 +1795,62 @@ class ApplySpecCodeEvidenceRebaseUseCase:
             plan.target_refinement_snapshot_id,
         )
         setattr(spec, "source_refinement_version", plan.target_refinement_version)
+        resulting_provenance = plan.resulting_delivery_context_provenance
+        setattr(spec, "delivery_context", resulting_provenance.value.value)
+        setattr(
+            spec,
+            "delivery_context_provenance",
+            {
+                "value": resulting_provenance.value.value,
+                "inherited_value": resulting_provenance.inherited_value.value,
+                "source_refinement_id": resulting_provenance.source_refinement_id,
+                "source_refinement_version": (
+                    resulting_provenance.source_refinement_version
+                ),
+                "override_reason": resulting_provenance.override_reason,
+            },
+        )
+        setattr(
+            spec,
+            "source_context_manifest",
+            plan.target_source_context_manifest,
+        )
+        setattr(
+            spec,
+            "source_context_sha256",
+            plan.target_source_context_sha256,
+        )
         _advance_spec_version(
             spec,
             expected=command.expected_spec_version,
             next_version=result.spec_version,
+        )
+        changed_fields = [
+            "delivery_context_provenance",
+            "source_context_manifest",
+            "source_context_sha256",
+            "source_refinement_snapshot_id",
+            "source_refinement_version",
+        ]
+        if plan.delivery_context_delta.effective_value_changed:
+            changed_fields.append("delivery_context")
+        publish_domain_event = getattr(
+            uow.services,
+            "publish_domain_event",
+            None,
+        )
+        if not callable(publish_domain_event):
+            raise RuntimeError("domain_event_publisher_unavailable")
+        await publish_domain_event(
+            SpecVersionBumped(
+                board_id=command.board_id,
+                actor_id=actor.actor_id,
+                actor_type=_traceability_actor_type(actor),
+                spec_id=command.spec_id,
+                old_version=command.expected_spec_version,
+                new_version=result.spec_version,
+                changed_fields=sorted(changed_fields),
+            )
         )
         for link in stale_links:
             await _publish_mutation_event(
@@ -2187,6 +2556,16 @@ class GetCodeTraceabilityProjectionUseCase:
                 board_id=query.board_id,
                 operation=operation,
             )
+        can_classify_legacy_evidence = True
+        try:
+            await _authorize(
+                actor,
+                uow,
+                board_id=query.board_id,
+                operation="code_traceability.evidence.classify_legacy",
+            )
+        except PermissionDeniedError:
+            can_classify_legacy_evidence = False
         subject = await _load_subject(
             board_id=query.board_id,
             subject_type=query.subject_type,
@@ -2210,6 +2589,11 @@ class GetCodeTraceabilityProjectionUseCase:
             query,
             read_port=uow.services.code_traceability_read,
         )
+        if not can_classify_legacy_evidence:
+            context = replace(
+                context,
+                source_context_classification_inputs=(),
+            )
         card_type = "normal"
         dependency_card_ids: tuple[str, ...] = ()
         blocking_card_ids: tuple[str, ...] = ()
@@ -2288,6 +2672,7 @@ __all__ = [
     "ApplySpecCodeEvidenceRebaseUseCase",
     "ClearCodeEvidenceDispositionUseCase",
     "ClearCodeTraceabilityNotApplicableUseCase",
+    "ClassifyLegacyCodeEvidenceUseCase",
     "CreateImplementationTargetUseCase",
     "GetCodeEvidenceCommand",
     "GetCodeEvidenceUseCase",

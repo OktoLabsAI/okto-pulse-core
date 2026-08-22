@@ -291,6 +291,10 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "amendment.revision.associate",
     ),
     _policy(
+        "okto_pulse_classify_legacy_code_evidence",
+        "code_traceability.evidence.classify_legacy",
+    ),
+    _policy(
         "okto_pulse_clear_code_traceability_not_applicable",
         "code_traceability.waiver.clear",
     ),

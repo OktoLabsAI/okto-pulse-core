@@ -12,6 +12,10 @@ from okto_pulse.core.application.use_cases.quality_assessment import (
     RecordAmbiguityAssessmentCommand,
     RecordAmbiguityAssessmentUseCase,
 )
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
 from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
@@ -61,6 +65,34 @@ _ACTOR = "validation-cycle-owner"
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def _direct_spec_context_fields(
+    spec_id: str,
+    *,
+    version: int,
+) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=version,
+    )
+    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+        spec_id=spec_id,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        provenance=provenance,
+        subject_version=version,
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 @pytest.mark.asyncio
@@ -123,6 +155,7 @@ async def test_ac02_real_reopen_opens_exactly_one_edition(
                     status=initial_status,
                     edition=7,
                     version=11,
+                    delivery_context=DeliveryContext.BROWNFIELD.value,
                     created_by=_ACTOR,
                     skip_ambiguity_gate=True,
                     skip_ambiguity_gate_edition=7,
@@ -141,6 +174,7 @@ async def test_ac02_real_reopen_opens_exactly_one_edition(
                     created_by=_ACTOR,
                     validations=[{"id": "validation-old", "edition": 7}],
                     current_validation_id="validation-old",
+                    **_direct_spec_context_fields(subject_id, version=11),
                 )
             )
         await db.flush()

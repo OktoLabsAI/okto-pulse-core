@@ -19,6 +19,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    RefinementDeliveryContextProvenance,
+    RefinementSourceContextManifestV2,
+    build_source_context_summary_v2,
+)
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     ArchitectureDesign,
@@ -28,6 +34,7 @@ from sqlalchemy_test_models import (
     IdeationStatus,
     IdeationKnowledgeBase,
     Refinement,
+    RefinementSnapshot,
     RefinementStatus,
     RefinementKnowledgeBase,
     Spec,
@@ -41,6 +48,40 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def _completed_snapshot(
+    refinement_id: str,
+    title: str,
+) -> RefinementSnapshot:
+    """Persist the exact immutable proof required by direct Spec creation."""
+
+    provenance = RefinementDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_refinement_id=refinement_id,
+        source_refinement_version=1,
+    )
+    source_context = RefinementSourceContextManifestV2(
+        refinement_id=refinement_id,
+        refinement_version=1,
+        summary=build_source_context_summary_v2(
+            delivery_context=DeliveryContext.BROWNFIELD,
+            delivery_context_provenance=provenance,
+            current_investigation_outcomes=(),
+            evidence=(),
+        ),
+        current_receipts=(),
+    )
+    return RefinementSnapshot(
+        refinement_id=refinement_id,
+        version=1,
+        title=title,
+        delivery_context=DeliveryContext.BROWNFIELD.value,
+        code_evidence_manifest=[],
+        source_context_manifest=source_context.as_dict(),
+        source_context_sha256=source_context.payload_sha256,
+        created_by=USER_ID,
+    )
+
+
 class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
@@ -51,6 +92,8 @@ class _Ctx:
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
+    if name == "okto_pulse_create_spec":
+        kwargs.setdefault("delivery_context", DeliveryContext.BROWNFIELD.value)
     register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
@@ -80,10 +123,12 @@ async def _refinement_with_direct_resources(db_factory, board_id):
         db.add(Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="R3 refinement", status=RefinementStatus.DONE,
+            delivery_context=DeliveryContext.BROWNFIELD.value,
             created_by=USER_ID,
             screen_mockups=[{"id": mockup_id, "title": "Ref mockup",
                              "screen_type": "form", "html_content": "<div/>"}],
         ))
+        db.add(_completed_snapshot(refinement_id, "R3 refinement"))
         db.add(RefinementKnowledgeBase(
             id=kb_id, refinement_id=refinement_id, title="Ref KB",
             description="d", content="ref content", mime_type="text/markdown",
@@ -173,7 +218,9 @@ async def test_create_spec_effective_fallback_from_ideation(db_factory):
         # Refinement linked to the ideation but with NO direct KB of its own.
         db.add(Refinement(id=refinement_id, board_id=board_id, ideation_id=ideation_id,
                           title="Empty refinement", status=RefinementStatus.DONE,
+                          delivery_context=DeliveryContext.BROWNFIELD.value,
                           created_by=USER_ID))
+        db.add(_completed_snapshot(refinement_id, "Empty refinement"))
         await db.commit()
 
     result = await _call(
@@ -204,7 +251,9 @@ async def test_create_spec_without_resources_reports_without_required(db_factory
                         status=IdeationStatus.DONE, created_by=USER_ID))
         db.add(Refinement(id=refinement_id, board_id=board_id, ideation_id=ideation_id,
                           title="Bare refinement", status=RefinementStatus.DONE,
+                          delivery_context=DeliveryContext.BROWNFIELD.value,
                           created_by=USER_ID))
+        db.add(_completed_snapshot(refinement_id, "Bare refinement"))
         await db.commit()
 
     result = await _call(
@@ -331,8 +380,10 @@ async def test_create_spec_with_valid_ideation_and_refinement(db_factory):
             ideation_id=ideation_id,
             title="Shared refinement parent",
             status=RefinementStatus.DONE,
+            delivery_context=DeliveryContext.BROWNFIELD.value,
             created_by=USER_ID,
         ))
+        db.add(_completed_snapshot(refinement_id, "Shared refinement parent"))
         await db.commit()
 
     result = await _call(

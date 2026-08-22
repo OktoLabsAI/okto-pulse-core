@@ -74,7 +74,12 @@ async def _seed_spec(board_id: str, owner: str = USER) -> str:
 
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            board_id, owner, SpecCreate(title=f"fu3a-{uuid.uuid4().hex[:6]}")
+            board_id,
+            owner,
+            SpecCreate(
+                title=f"fu3a-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         return spec.id
@@ -117,12 +122,16 @@ async def _spec_guard_state(spec_id: str) -> dict:
 @pytest.mark.asyncio
 async def test_create_spec_201_persists_and_404_for_missing_board() -> None:
     board_id = await _seed_board()
-    resp = _client().post(f"{PREFIX}/boards/{board_id}/specs", json={"title": "fu3a-new"})
+    resp = _client().post(
+        f"{PREFIX}/boards/{board_id}/specs",
+        json={"title": "fu3a-new", "delivery_context": "brownfield"},
+    )
     assert resp.status_code == 201, resp.text
     assert await _spec_exists(resp.json()["id"])
 
     missing = _client().post(
-        f"{PREFIX}/boards/missing-{uuid.uuid4().hex[:6]}/specs", json={"title": "x"}
+        f"{PREFIX}/boards/missing-{uuid.uuid4().hex[:6]}/specs",
+        json={"title": "x", "delivery_context": "brownfield"},
     )
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Board not found or not owned by user"

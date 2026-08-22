@@ -50,7 +50,8 @@ _FROZEN_ENUM_VALUES = {
     "CardStatus": {
         "NOT_STARTED": "not_started", "STARTED": "started",
         "IN_PROGRESS": "in_progress", "VALIDATION": "validation",
-        "ON_HOLD": "on_hold", "DONE": "done", "CANCELLED": "cancelled",
+        "ON_HOLD": "on_hold", "REJECTED": "rejected", "DONE": "done",
+        "CANCELLED": "cancelled",
     },
     "CardPriority": {
         "CRITICAL": "critical", "VERY_HIGH": "very_high", "HIGH": "high",

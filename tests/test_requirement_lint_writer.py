@@ -313,6 +313,7 @@ async def test_spec_creation_does_not_invoke_or_roll_back_for_legacy_lint_hook_f
             actor_id,
             SpecCreate(
                 title="External lint is independent",
+                delivery_context="brownfield",
                 functional_requirements=["The API must return a result."],
             ),
         )
@@ -348,7 +349,10 @@ async def test_create_spec_has_no_requirement_lint_writer_route_coupling(
         created = await SpecService(db).create_spec(
             board_id,
             actor_id,
-            SpecCreate(title="External agent owns requirement lint"),
+            SpecCreate(
+                title="External agent owns requirement lint",
+                delivery_context="brownfield",
+            ),
         )
         assert created is not None
         await db.commit()

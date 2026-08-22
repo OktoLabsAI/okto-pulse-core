@@ -57,13 +57,28 @@ from okto_pulse.core.domain.enums import (
     StoryStatus,
 )
 from okto_pulse.core.domain.code_traceability import (
+    CodeDeliveryContextRequired,
+    CodeDeliveryContextOverrideReasonRequired,
     CodeInvestigationCurrentnessUnknown,
+    CodeInvestigationReceiptCurrentness,
     CodeTraceabilityContextScope,
     CodeTraceabilityContractError,
     CodeTraceabilityEnforcement,
     CodeTraceabilityLifecycleStatus,
     CodeTraceabilityProjectionProfile,
     CodeTraceabilitySubjectType,
+    DirectSpecDeliveryContextProvenance,
+    DeliveryContext,
+    RefinementDeliveryContextProvenance,
+    RefinementSourceContextManifestV2,
+    SourceContextCurrentReceiptV2,
+    SpecDeliveryContextProvenance,
+    build_source_context_summary_v2,
+    canonical_code_traceability_sha256,
+    code_investigation_receipt_currentness,
+    source_context_classification_fence_v2,
+    source_context_evidence_item_v2,
+    source_context_evidence_payload_v2,
 )
 from okto_pulse.core.domain.knowledge_governance import (
     normalize_knowledge_governance_metadata,
@@ -214,6 +229,9 @@ from okto_pulse.core.ports.code_traceability import (
     CodeEvidenceQuery,
     CodeTraceabilityAdapterMissing,
     CodeTraceabilityProjectionQuery,
+)
+from okto_pulse.core.ports.code_investigation import (
+    CodeInvestigationReceiptQuery,
 )
 from okto_pulse.core.services.code_traceability_gate import (
     CodeTraceabilityGateBlocker,
@@ -8579,6 +8597,261 @@ class SpecLineagePreflightError(ValueError):
         return {"error": self.code, **self.to_dict()}
 
 
+def _delivery_context_or_none(record: object) -> DeliveryContext | None:
+    """Read one explicitly persisted context without deriving a legacy value."""
+
+    raw = getattr(record, "delivery_context", None)
+    if raw is None and isinstance(record, Mapping):
+        raw = record.get("delivery_context")
+    if raw is None:
+        return None
+    try:
+        return DeliveryContext(raw)
+    except (TypeError, ValueError) as exc:
+        raise CodeDeliveryContextRequired(
+            details={"reason": "persisted_delivery_context_invalid"}
+        ) from exc
+
+
+def _spec_context_from_snapshot(
+    snapshot: object,
+    *,
+    refinement_id: str,
+) -> tuple[DeliveryContext | None, dict[str, object] | None]:
+    """Materialize Spec context exclusively from the immutable source snapshot."""
+
+    delivery_context = _delivery_context_or_none(snapshot)
+    if delivery_context is None:
+        # Legacy remains explicit.  Reading the live Refinement here would turn
+        # an immutable lineage fact into an unverifiable inference.
+        return None, None
+    snapshot_refinement_id = getattr(snapshot, "refinement_id", None)
+    snapshot_version = getattr(snapshot, "version", None)
+    if (
+        snapshot_refinement_id != refinement_id
+        or type(snapshot_version) is not int
+        or snapshot_version < 1
+    ):
+        raise SpecLineagePreflightError(
+            "spec_refinement_snapshot_context_invalid",
+            "The source snapshot delivery context has incoherent lineage.",
+            facts={
+                "refinement_id": refinement_id,
+                "snapshot_refinement_id": snapshot_refinement_id,
+                "snapshot_version": snapshot_version,
+            },
+        )
+    provenance = SpecDeliveryContextProvenance(
+        value=delivery_context,
+        inherited_value=delivery_context,
+        source_refinement_id=refinement_id,
+        source_refinement_version=snapshot_version,
+    )
+    return delivery_context, {
+        "value": provenance.value.value,
+        "inherited_value": provenance.inherited_value.value,
+        "source_refinement_id": provenance.source_refinement_id,
+        "source_refinement_version": provenance.source_refinement_version,
+        "override_reason": provenance.override_reason,
+    }
+
+
+def _spec_context_provenance_or_none(
+    record: object,
+) -> (
+    SpecDeliveryContextProvenance
+    | DirectSpecDeliveryContextProvenance
+    | None
+):
+    """Read persisted Spec provenance without deriving or live-backfilling it."""
+
+    raw = getattr(record, "delivery_context_provenance", None)
+    if raw is None and isinstance(record, Mapping):
+        raw = record.get("delivery_context_provenance")
+    if raw is None:
+        return None
+    if isinstance(
+        raw,
+        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance,
+    ):
+        return raw
+    if not isinstance(raw, Mapping):
+        raise CodeDeliveryContextRequired(
+            details={"reason": "persisted_delivery_context_provenance_invalid"}
+        )
+    try:
+        if raw.get("source_spec_id") is not None:
+            return DirectSpecDeliveryContextProvenance(
+                value=raw.get("value"),
+                source_spec_id=raw.get("source_spec_id"),
+                source_spec_version=raw.get("source_spec_version"),
+            )
+        return SpecDeliveryContextProvenance(
+            value=raw.get("value"),
+            inherited_value=raw.get("inherited_value"),
+            source_refinement_id=raw.get("source_refinement_id"),
+            source_refinement_version=raw.get("source_refinement_version"),
+            override_reason=raw.get("override_reason"),
+        )
+    except CodeTraceabilityContractError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise CodeDeliveryContextRequired(
+            details={"reason": "persisted_delivery_context_provenance_invalid"}
+        ) from exc
+
+
+def _spec_context_provenance_payload(
+    provenance: (
+        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance
+    ),
+) -> dict[str, object]:
+    if isinstance(provenance, DirectSpecDeliveryContextProvenance):
+        return {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        }
+    return {
+        "value": provenance.value.value,
+        "inherited_value": provenance.inherited_value.value,
+        "source_refinement_id": provenance.source_refinement_id,
+        "source_refinement_version": provenance.source_refinement_version,
+        "override_reason": provenance.override_reason,
+    }
+
+
+def _snapshot_source_context_manifest(
+    snapshot: object,
+) -> tuple[dict[str, object], str]:
+    """Read and verify the immutable contextual manifest from one snapshot."""
+
+    raw_manifest = getattr(snapshot, "source_context_manifest", None)
+    raw_sha256 = getattr(snapshot, "source_context_sha256", None)
+    if isinstance(snapshot, Mapping):
+        raw_manifest = snapshot.get("source_context_manifest", raw_manifest)
+        raw_sha256 = snapshot.get("source_context_sha256", raw_sha256)
+    if not isinstance(raw_manifest, Mapping) or not isinstance(raw_sha256, str):
+        raise CodeInvestigationCurrentnessUnknown(
+            details={"reason": "refinement_snapshot_source_context_required"}
+        )
+    manifest = dict(raw_manifest)
+    actual_sha256 = canonical_code_traceability_sha256(manifest)
+    if actual_sha256 != raw_sha256.casefold():
+        raise CodeInvestigationCurrentnessUnknown(
+            details={"reason": "refinement_snapshot_source_context_digest_mismatch"}
+        )
+    return manifest, actual_sha256
+
+
+def _direct_spec_source_context_manifest(
+    *,
+    spec_id: str,
+    delivery_context: DeliveryContext,
+    provenance: DirectSpecDeliveryContextProvenance,
+    subject_version: int = 1,
+) -> tuple[dict[str, object], str]:
+    summary = build_source_context_summary_v2(
+        delivery_context=delivery_context,
+        delivery_context_provenance=provenance,
+        current_investigation_outcomes=(),
+        evidence=(),
+    )
+    manifest: dict[str, object] = {
+        "contract_version": 2,
+        "subject_type": CodeTraceabilitySubjectType.SPEC.value,
+        "subject_id": spec_id,
+        "subject_version": subject_version,
+        "delivery_context": delivery_context.value,
+        "delivery_context_provenance": _spec_context_provenance_payload(
+            provenance
+        ),
+        "current_receipts": [],
+        "investigation_outcome": None,
+        "evidence_applicable": None,
+        "role_counts": {
+            "current_implementation_count": 0,
+            "existing_scaffold_count": 0,
+            "existing_constraint_count": 0,
+            "reference_pattern_count": 0,
+            "uncategorized_legacy_count": 0,
+        },
+        "classification_state": {
+            "classified_count": 0,
+            "uncategorized_legacy_count": 0,
+        },
+        "classification_fence": {
+            "revision": None,
+            "payload_sha256": None,
+        },
+        "interpretation_rule": summary.interpretation_rule,
+        "items_not_current_implementation_count": 0,
+        "technical_details_available": False,
+    }
+    return manifest, canonical_code_traceability_sha256(manifest)
+
+
+def _spec_source_context_manifest_matches(
+    record: object,
+    *,
+    delivery_context: DeliveryContext,
+    provenance: SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance,
+) -> bool:
+    """Validate the frozen Source Context pin used by Spec lifecycle moves."""
+
+    raw_manifest = getattr(record, "source_context_manifest", None)
+    raw_sha256 = getattr(record, "source_context_sha256", None)
+    if isinstance(record, Mapping):
+        raw_manifest = record.get("source_context_manifest", raw_manifest)
+        raw_sha256 = record.get("source_context_sha256", raw_sha256)
+    if not isinstance(raw_manifest, Mapping) or not isinstance(raw_sha256, str):
+        return False
+    manifest = dict(raw_manifest)
+    if canonical_code_traceability_sha256(manifest) != raw_sha256.casefold():
+        return False
+    if manifest.get("contract_version") != 2:
+        return False
+
+    if isinstance(provenance, DirectSpecDeliveryContextProvenance):
+        return bool(
+            manifest.get("subject_type")
+            == CodeTraceabilitySubjectType.SPEC.value
+            and manifest.get("subject_id") == getattr(record, "id", None)
+            and manifest.get("subject_version") == provenance.source_spec_version
+            and manifest.get("delivery_context") == delivery_context.value
+            and manifest.get("delivery_context_provenance")
+            == _spec_context_provenance_payload(provenance)
+            and getattr(record, "refinement_id", None) is None
+            and getattr(record, "source_refinement_snapshot_id", None) is None
+            and getattr(record, "source_refinement_version", None) is None
+        )
+
+    manifest_provenance = manifest.get("delivery_context_provenance")
+    return bool(
+        manifest.get("subject_type")
+        == CodeTraceabilitySubjectType.REFINEMENT.value
+        and manifest.get("subject_id") == provenance.source_refinement_id
+        and manifest.get("subject_version")
+        == provenance.source_refinement_version
+        and manifest.get("delivery_context") == provenance.inherited_value.value
+        and isinstance(manifest_provenance, Mapping)
+        and manifest_provenance.get("value") == provenance.inherited_value.value
+        and manifest_provenance.get("source_refinement_id")
+        == provenance.source_refinement_id
+        and manifest_provenance.get("source_refinement_version")
+        == provenance.source_refinement_version
+        and getattr(record, "refinement_id", None)
+        == provenance.source_refinement_id
+        and isinstance(
+            getattr(record, "source_refinement_snapshot_id", None),
+            str,
+        )
+        and bool(getattr(record, "source_refinement_snapshot_id", None))
+        and getattr(record, "source_refinement_version", None)
+        == provenance.source_refinement_version
+    )
+
+
 class SpecService:
     """Service for spec operations."""
 
@@ -8663,14 +8936,14 @@ class SpecService:
         *,
         ideation_id: str | None,
         refinement_id: str | None,
-    ) -> None:
+    ) -> tuple[ApplicationRecord | None, ApplicationRecord | None]:
         """Validate explicit parent lifecycle lineage before any Spec mutation.
 
         This is the single parent-lifecycle predicate used by direct create,
         relink, and both authoritative ``derive_spec`` workflows.
         """
         if not ideation_id and not refinement_id:
-            return
+            return None, None
 
         ideation = None
         refinement = None
@@ -8818,15 +9091,16 @@ class SpecService:
                     "ideation_complexity": complexity,
                 },
             )
+        return ideation, refinement
 
     async def _validate_create_lineage(
         self,
         board_id: str,
         data: SpecCreate,
-    ) -> None:
+    ) -> tuple[ApplicationRecord | None, ApplicationRecord | None]:
         """Validate explicit lineage supplied by a Spec create request."""
 
-        await self._validate_lineage(
+        return await self._validate_lineage(
             board_id,
             ideation_id=data.ideation_id,
             refinement_id=data.refinement_id,
@@ -8941,6 +9215,7 @@ class SpecService:
         query_scope: QueryScope | None = None,
         target_id: str | None = None,
         knowledge_propagation_v2: bool = False,
+        source_refinement_snapshot: object | None = None,
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
         if (target_id is None) != (not knowledge_propagation_v2):
@@ -8963,7 +9238,127 @@ class SpecService:
         if not await _application_run(self.db, board_query):
             return None
 
-        await self._validate_create_lineage(board_id, data)
+        _parent_ideation, parent_refinement = await self._validate_create_lineage(
+            board_id,
+            data,
+        )
+        spec_id = target_id or str(uuid.uuid4())
+        if data.refinement_id is None:
+            if source_refinement_snapshot is not None:
+                raise SpecLineagePreflightError(
+                    "spec_refinement_snapshot_scope_mismatch",
+                    "A source Refinement snapshot requires a Refinement parent.",
+                )
+            source_snapshot_id = None
+            source_snapshot_version = None
+            try:
+                delivery_context = DeliveryContext(data.delivery_context)
+            except (TypeError, ValueError) as exc:
+                raise CodeDeliveryContextRequired(
+                    details={"reason": "spec_create_delivery_context_required"}
+                ) from exc
+            if data.delivery_context_override_reason is not None:
+                raise CodeTraceabilityContractError(
+                    "code_delivery_context_override_reason_invalid",
+                    details={"reason": "direct_spec_has_no_inherited_value"},
+                )
+            direct_provenance = DirectSpecDeliveryContextProvenance(
+                value=delivery_context,
+                source_spec_id=spec_id,
+                source_spec_version=1,
+            )
+            delivery_context_provenance = _spec_context_provenance_payload(
+                direct_provenance
+            )
+            source_context_manifest, source_context_sha256 = (
+                _direct_spec_source_context_manifest(
+                    spec_id=spec_id,
+                    delivery_context=delivery_context,
+                    provenance=direct_provenance,
+                )
+            )
+        else:
+            if parent_refinement is None:  # pragma: no cover - lineage owns this.
+                raise SpecLineagePreflightError(
+                    "spec_refinement_not_found",
+                    "The requested parent refinement does not exist.",
+                )
+            resolved_snapshot = await RefinementService(
+                self.db
+            ).resolve_completed_snapshot(parent_refinement)
+            snapshot = source_refinement_snapshot or resolved_snapshot
+            if (
+                getattr(snapshot, "refinement_id", None) != data.refinement_id
+                or getattr(snapshot, "id", None)
+                != getattr(resolved_snapshot, "id", None)
+                or getattr(snapshot, "version", None)
+                != getattr(resolved_snapshot, "version", None)
+                or not isinstance(getattr(snapshot, "id", None), str)
+            ):
+                raise SpecLineagePreflightError(
+                    "spec_refinement_snapshot_scope_mismatch",
+                    "The source snapshot does not match the completed Refinement.",
+                    facts={
+                        "refinement_id": data.refinement_id,
+                        "refinement_version": parent_refinement.version,
+                        "snapshot_id": getattr(snapshot, "id", None),
+                        "snapshot_refinement_id": getattr(
+                            snapshot,
+                            "refinement_id",
+                            None,
+                        ),
+                        "snapshot_version": getattr(snapshot, "version", None),
+                    },
+                )
+            source_snapshot_id = snapshot.id
+            source_snapshot_version = snapshot.version
+            delivery_context, delivery_context_provenance = (
+                _spec_context_from_snapshot(
+                    snapshot,
+                    refinement_id=data.refinement_id,
+                )
+            )
+            if delivery_context is None or delivery_context_provenance is None:
+                raise CodeDeliveryContextRequired(
+                    details={
+                        "reason": "refinement_snapshot_delivery_context_required",
+                        "refinement_id": data.refinement_id,
+                        "refinement_version": snapshot.version,
+                    }
+                )
+            inherited_context = delivery_context
+            source_context_manifest, source_context_sha256 = (
+                _snapshot_source_context_manifest(snapshot)
+            )
+            if (
+                source_context_manifest.get("subject_type")
+                != CodeTraceabilitySubjectType.REFINEMENT.value
+                or source_context_manifest.get("subject_id") != data.refinement_id
+                or source_context_manifest.get("subject_version") != snapshot.version
+                or source_context_manifest.get("delivery_context")
+                != inherited_context.value
+            ):
+                raise CodeInvestigationCurrentnessUnknown(
+                    details={
+                        "reason": "refinement_snapshot_source_context_scope_mismatch"
+                    }
+                )
+            requested_context = (
+                inherited_context
+                if data.delivery_context is None
+                else DeliveryContext(data.delivery_context)
+            )
+            contextual_provenance = SpecDeliveryContextProvenance(
+                value=requested_context,
+                inherited_value=inherited_context,
+                source_refinement_id=data.refinement_id,
+                source_refinement_version=snapshot.version,
+                override_reason=data.delivery_context_override_reason,
+            )
+            delivery_context = requested_context
+            delivery_context_provenance = _spec_context_provenance_payload(
+                contextual_provenance
+            )
 
         # Fail-closed scenario_type (spec ac16b3c9): every scenario in a NEW spec
         # is a new write — reject an unsupported type before insert/flush, never
@@ -8998,7 +9393,7 @@ class SpecService:
         )
         spec = _new_application_record(
             "spec",
-            **({"id": target_id} if target_id is not None else {}),
+            id=spec_id,
             board_id=board_id,
             title=data.title,
             description=data.description,
@@ -9036,6 +9431,12 @@ class SpecService:
             labels=data.labels,
             ideation_id=data.ideation_id,
             refinement_id=data.refinement_id,
+            source_refinement_snapshot_id=source_snapshot_id,
+            source_refinement_version=source_snapshot_version,
+            delivery_context=delivery_context,
+            delivery_context_provenance=delivery_context_provenance,
+            source_context_manifest=source_context_manifest,
+            source_context_sha256=source_context_sha256,
         )
         # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
         # at creation BEFORE persistence — the create twin of the update_spec gate. The
@@ -9112,6 +9513,17 @@ class SpecService:
             changes=[
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": data.status.value},
+                *(
+                    [
+                        {
+                            "field": "delivery_context",
+                            "old": None,
+                            "new": delivery_context.value,
+                        }
+                    ]
+                    if delivery_context is not None
+                    else []
+                ),
                 *(
                     [
                         {
@@ -9889,16 +10301,291 @@ class SpecService:
             if "refinement_id" in update_data
             else spec.refinement_id
         )
+        refinement_link_changed = next_refinement_id != spec.refinement_id
         parent_link_changed = (
             next_ideation_id != spec.ideation_id
-            or next_refinement_id != spec.refinement_id
+            or refinement_link_changed
         )
+        lineage_is_pinned = any(
+            value is not None
+            for value in (
+                getattr(spec, "source_refinement_snapshot_id", None),
+                getattr(spec, "source_refinement_version", None),
+                getattr(spec, "delivery_context_provenance", None),
+                getattr(spec, "source_context_sha256", None),
+            )
+        )
+        target_refinement = None
         if parent_link_changed:
-            await self._validate_lineage(
+            _target_ideation, target_refinement = await self._validate_lineage(
                 spec.board_id,
                 ideation_id=next_ideation_id,
                 refinement_id=next_refinement_id,
             )
+        if refinement_link_changed and lineage_is_pinned:
+            raise SpecLineagePreflightError(
+                "spec_refinement_relink_requires_governed_rebase",
+                "A snapshot-pinned Spec cannot change Refinement through a generic update.",
+                facts={
+                    "spec_id": spec.id,
+                    "current_refinement_id": spec.refinement_id,
+                    "requested_refinement_id": next_refinement_id,
+                    "source_refinement_snapshot_id": getattr(
+                        spec,
+                        "source_refinement_snapshot_id",
+                        None,
+                    ),
+                    "source_refinement_version": getattr(
+                        spec,
+                        "source_refinement_version",
+                        None,
+                    ),
+                },
+            )
+        if refinement_link_changed:
+            if next_refinement_id is None:
+                update_data.update(
+                    {
+                        "source_refinement_snapshot_id": None,
+                        "source_refinement_version": None,
+                        "source_context_manifest": None,
+                        "source_context_sha256": None,
+                    }
+                )
+                if (
+                    getattr(spec, "delivery_context", None) is not None
+                    or getattr(spec, "delivery_context_provenance", None) is not None
+                ):
+                    update_data.update(
+                        {
+                            "delivery_context": None,
+                            "delivery_context_provenance": None,
+                        }
+                    )
+            else:
+                if target_refinement is None:  # pragma: no cover - lineage owns this.
+                    raise SpecLineagePreflightError(
+                        "spec_refinement_not_found",
+                        "The requested parent refinement does not exist.",
+                    )
+                target_snapshot = await RefinementService(
+                    self.db
+                ).resolve_completed_snapshot(target_refinement)
+                target_context, target_provenance = _spec_context_from_snapshot(
+                    target_snapshot,
+                    refinement_id=next_refinement_id,
+                )
+                target_source_manifest, target_source_sha256 = (
+                    _snapshot_source_context_manifest(target_snapshot)
+                )
+                update_data.update(
+                    {
+                        "source_refinement_snapshot_id": target_snapshot.id,
+                        "source_refinement_version": target_snapshot.version,
+                        "source_context_manifest": target_source_manifest,
+                        "source_context_sha256": target_source_sha256,
+                    }
+                )
+                if (
+                    target_context is not None
+                    or getattr(spec, "delivery_context", None) is not None
+                    or getattr(spec, "delivery_context_provenance", None) is not None
+                ):
+                    update_data.update(
+                        {
+                            "delivery_context": target_context,
+                            "delivery_context_provenance": target_provenance,
+                        }
+                    )
+
+        context_value_explicit = "delivery_context" in update_data
+        context_reason_explicit = "delivery_context_override_reason" in update_data
+        if context_reason_explicit and not context_value_explicit:
+            raise CodeDeliveryContextRequired(
+                details={"reason": "spec_delivery_context_value_required"}
+            )
+        if context_value_explicit and not refinement_link_changed:
+            raw_value = update_data["delivery_context"]
+            try:
+                requested_context = DeliveryContext(raw_value)
+            except (TypeError, ValueError) as exc:
+                raise CodeDeliveryContextRequired(
+                    details={"reason": "spec_delivery_context_required"}
+                ) from exc
+            current_provenance = _spec_context_provenance_or_none(spec)
+            if current_provenance is None:
+                override_reason = update_data.pop(
+                    "delivery_context_override_reason",
+                    None,
+                )
+                if getattr(spec, "refinement_id", None) is not None:
+                    _ideation, bootstrap_refinement = await self._validate_lineage(
+                        spec.board_id,
+                        ideation_id=spec.ideation_id,
+                        refinement_id=spec.refinement_id,
+                    )
+                    if bootstrap_refinement is None:  # pragma: no cover
+                        raise SpecLineagePreflightError(
+                            "spec_refinement_not_found",
+                            "The legacy Spec parent Refinement does not exist.",
+                        )
+                    bootstrap_snapshot = await RefinementService(
+                        self.db
+                    ).resolve_completed_snapshot(bootstrap_refinement)
+                    inherited_context, _ = _spec_context_from_snapshot(
+                        bootstrap_snapshot,
+                        refinement_id=bootstrap_refinement.id,
+                    )
+                    if inherited_context is None:
+                        raise CodeDeliveryContextRequired(
+                            details={
+                                "reason": (
+                                    "refinement_snapshot_delivery_context_required"
+                                )
+                            }
+                        )
+                    manifest, manifest_sha256 = (
+                        _snapshot_source_context_manifest(bootstrap_snapshot)
+                    )
+                    next_provenance = SpecDeliveryContextProvenance(
+                        value=requested_context,
+                        inherited_value=inherited_context,
+                        source_refinement_id=bootstrap_refinement.id,
+                        source_refinement_version=bootstrap_snapshot.version,
+                        override_reason=override_reason,
+                    )
+                    # Both lineage authorities are fenced before the legacy
+                    # row is upgraded.  The immutable Done snapshot is then
+                    # pinned in the same transaction as the Spec version/event.
+                    if not await _application_fence(
+                        self.db,
+                        "refinement",
+                        bootstrap_refinement.id,
+                        expected_values={
+                            "status": RefinementStatus.DONE,
+                            "edition": int(
+                                getattr(bootstrap_refinement, "edition", 1) or 1
+                            ),
+                            "version": int(bootstrap_refinement.version),
+                            "archived": bool(
+                                getattr(bootstrap_refinement, "archived", False)
+                            ),
+                        },
+                    ):
+                        raise LifecycleTransitionConflictError(
+                            "refinement",
+                            bootstrap_refinement.id,
+                        )
+                    if not await _application_fence(
+                        self.db,
+                        "spec",
+                        spec.id,
+                        expected_values={
+                            "status": spec.status,
+                            "edition": int(getattr(spec, "edition", 1) or 1),
+                            "version": int(spec.version),
+                            "archived": bool(getattr(spec, "archived", False)),
+                        },
+                    ):
+                        raise LifecycleTransitionConflictError("spec", spec.id)
+                    update_data["source_refinement_snapshot_id"] = (
+                        bootstrap_snapshot.id
+                    )
+                    update_data["source_refinement_version"] = (
+                        bootstrap_snapshot.version
+                    )
+                else:
+                    if (
+                        getattr(spec, "source_refinement_snapshot_id", None)
+                        is not None
+                        or getattr(spec, "source_refinement_version", None) is not None
+                    ):
+                        raise SpecLineagePreflightError(
+                            "spec_context_bootstrap_lineage_incoherent",
+                            "A direct legacy Spec cannot retain Refinement pins.",
+                            facts={"spec_id": spec.id},
+                        )
+                    if override_reason is not None:
+                        raise CodeTraceabilityContractError(
+                            "code_delivery_context_override_reason_invalid",
+                            details={"reason": "direct_spec_has_no_inherited_value"},
+                        )
+                    # Explicit Draft update is the governed human bootstrap for
+                    # a direct legacy Spec. No value is inferred from code,
+                    # board or live lineage; authorship gets typed provenance.
+                    next_provenance = DirectSpecDeliveryContextProvenance(
+                        value=requested_context,
+                        source_spec_id=spec.id,
+                        source_spec_version=int(spec.version) + 1,
+                    )
+                    manifest, manifest_sha256 = (
+                        _direct_spec_source_context_manifest(
+                            spec_id=spec.id,
+                            delivery_context=requested_context,
+                            provenance=next_provenance,
+                            subject_version=int(spec.version) + 1,
+                        )
+                    )
+                update_data["delivery_context"] = requested_context
+                update_data["delivery_context_provenance"] = (
+                    _spec_context_provenance_payload(next_provenance)
+                )
+                update_data["source_context_manifest"] = manifest
+                update_data["source_context_sha256"] = manifest_sha256
+            elif _delivery_context_or_none(spec) is not current_provenance.value:
+                raise CodeDeliveryContextRequired(
+                    details={"reason": "spec_delivery_context_provenance_mismatch"}
+                )
+            else:
+                override_reason = update_data.pop(
+                    "delivery_context_override_reason",
+                    None,
+                )
+                if isinstance(
+                    current_provenance,
+                    DirectSpecDeliveryContextProvenance,
+                ):
+                    if override_reason is not None:
+                        raise CodeTraceabilityContractError(
+                            "code_delivery_context_override_reason_invalid",
+                            details={"reason": "direct_spec_has_no_inherited_value"},
+                        )
+                    next_provenance = DirectSpecDeliveryContextProvenance(
+                        value=requested_context,
+                        source_spec_id=spec.id,
+                        source_spec_version=int(spec.version) + 1,
+                    )
+                    manifest, manifest_sha256 = (
+                        _direct_spec_source_context_manifest(
+                            spec_id=spec.id,
+                            delivery_context=requested_context,
+                            provenance=next_provenance,
+                            subject_version=int(spec.version) + 1,
+                        )
+                    )
+                    update_data["source_context_manifest"] = manifest
+                    update_data["source_context_sha256"] = manifest_sha256
+                else:
+                    if (
+                        requested_context is not current_provenance.inherited_value
+                        and not context_reason_explicit
+                    ):
+                        raise CodeDeliveryContextOverrideReasonRequired()
+                    next_provenance = SpecDeliveryContextProvenance(
+                        value=requested_context,
+                        inherited_value=current_provenance.inherited_value,
+                        source_refinement_id=current_provenance.source_refinement_id,
+                        source_refinement_version=(
+                            current_provenance.source_refinement_version
+                        ),
+                        override_reason=override_reason,
+                    )
+                update_data["delivery_context"] = requested_context
+                update_data["delivery_context_provenance"] = (
+                    _spec_context_provenance_payload(next_provenance)
+                )
+        else:
+            update_data.pop("delivery_context_override_reason", None)
         previous_knowledge_parent = _governed_spec_knowledge_parent(
             ideation_id=spec.ideation_id,
             refinement_id=spec.refinement_id,
@@ -9926,6 +10613,10 @@ class SpecService:
             "validation_min_confidence",
             "validation_min_completeness",
             "validation_max_drift",
+            "delivery_context",
+            "delivery_context_provenance",
+            "source_context_manifest",
+            "source_context_sha256",
         }
         # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields.
         # Some also bump version through content_fields so bulk and structured
@@ -9933,12 +10624,69 @@ class SpecService:
         # so ConsolidationEnqueuer re-extracts the spec into the KG. Parent
         # lineage is semantic too: the deterministic worker emits a different
         # belongs_to edge when either parent changes.
-        lineage_fields = {"ideation_id", "refinement_id"}
+        lineage_fields = {
+            "ideation_id",
+            "refinement_id",
+            "source_refinement_snapshot_id",
+            "source_refinement_version",
+            "delivery_context",
+            "delivery_context_provenance",
+            "source_context_manifest",
+            "source_context_sha256",
+        }
         changed_lineage_fields = {
             field
             for field, current, next_value in (
                 ("ideation_id", spec.ideation_id, next_ideation_id),
                 ("refinement_id", spec.refinement_id, next_refinement_id),
+                (
+                    "source_refinement_snapshot_id",
+                    getattr(spec, "source_refinement_snapshot_id", None),
+                    update_data.get(
+                        "source_refinement_snapshot_id",
+                        getattr(spec, "source_refinement_snapshot_id", None),
+                    ),
+                ),
+                (
+                    "source_refinement_version",
+                    getattr(spec, "source_refinement_version", None),
+                    update_data.get(
+                        "source_refinement_version",
+                        getattr(spec, "source_refinement_version", None),
+                    ),
+                ),
+                (
+                    "delivery_context",
+                    getattr(spec, "delivery_context", None),
+                    update_data.get(
+                        "delivery_context",
+                        getattr(spec, "delivery_context", None),
+                    ),
+                ),
+                (
+                    "delivery_context_provenance",
+                    getattr(spec, "delivery_context_provenance", None),
+                    update_data.get(
+                        "delivery_context_provenance",
+                        getattr(spec, "delivery_context_provenance", None),
+                    ),
+                ),
+                (
+                    "source_context_manifest",
+                    getattr(spec, "source_context_manifest", None),
+                    update_data.get(
+                        "source_context_manifest",
+                        getattr(spec, "source_context_manifest", None),
+                    ),
+                ),
+                (
+                    "source_context_sha256",
+                    getattr(spec, "source_context_sha256", None),
+                    update_data.get(
+                        "source_context_sha256",
+                        getattr(spec, "source_context_sha256", None),
+                    ),
+                ),
             )
             if current != next_value
         }
@@ -9967,7 +10715,7 @@ class SpecService:
         bumps_semantic = bool(_semantic_changed_fields())
 
         # Capture old values for diff
-        old_data = {k: getattr(spec, k) for k in update_data.keys()}
+        old_data = {k: getattr(spec, k, None) for k in update_data.keys()}
 
         # Serialize structured JSON list fields if present.
         for json_list_field in (
@@ -10217,6 +10965,8 @@ class SpecService:
             "technical_requirements",
             "acceptance_criteria",
             "labels",
+            "delivery_context_provenance",
+            "source_context_manifest",
         }
         if previous_knowledge_parent != next_knowledge_parent:
             await _reset_v2_knowledge_for_relink(
@@ -10675,6 +11425,57 @@ class SpecService:
                 f"Cannot move spec from '{spec.status.value}' to '{data.status.value}'. "
                 f"Allowed transitions: {allowed_values}"
             )
+
+        advancing = (
+            data.status is not SpecStatus.CANCELLED
+            and self._STATUS_ORDER[data.status] > self._STATUS_ORDER[spec.status]
+        )
+        if advancing:
+            delivery_context = _delivery_context_or_none(spec)
+            provenance = _spec_context_provenance_or_none(spec)
+            provenance_matches_lineage = bool(
+                provenance is not None
+                and delivery_context is provenance.value
+                and (
+                    (
+                        isinstance(
+                            provenance,
+                            DirectSpecDeliveryContextProvenance,
+                        )
+                        and provenance.source_spec_id == spec.id
+                        and getattr(spec, "refinement_id", None) is None
+                    )
+                    or (
+                        isinstance(provenance, SpecDeliveryContextProvenance)
+                        and provenance.source_refinement_id
+                        == getattr(spec, "refinement_id", None)
+                    )
+                )
+            )
+            source_context_is_pinned = bool(
+                delivery_context is not None
+                and provenance is not None
+                and _spec_source_context_manifest_matches(
+                    spec,
+                    delivery_context=delivery_context,
+                    provenance=provenance,
+                )
+            )
+            if (
+                delivery_context is None
+                or not provenance_matches_lineage
+                or not source_context_is_pinned
+            ):
+                # Legacy rows remain readable/editable in Draft, but a human
+                # must explicitly bootstrap a direct Spec (or govern a
+                # Refinement-linked rebase) before minting lifecycle facts.
+                raise CodeDeliveryContextRequired(
+                    details={
+                        "reason": "spec_advance_delivery_context_required",
+                        "from_status": spec.status.value,
+                        "to_status": data.status.value,
+                    }
+                )
 
         # Load board for settings
         board = await _application_get(self.db, "board", spec.board_id)
@@ -14631,6 +15432,7 @@ class IdeationService:
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
         query_scope: QueryScope | None = None,
+        delivery_context: DeliveryContext | None = None,
     ) -> Spec | None:
         """Create a Spec draft linked to an ideation.
 
@@ -14695,6 +15497,7 @@ class IdeationService:
             context=context,
             ideation_id=ideation_id,
             labels=ideation.labels,
+            delivery_context=delivery_context,
         )
         spec = await spec_service.create_spec(
             ideation.board_id,
@@ -15087,6 +15890,11 @@ class RefinementService:
         derivation snapshot. If a custom description is provided, the inherited
         context is appended instead of being skipped.
         """
+        delivery_context = _delivery_context_or_none(data)
+        if delivery_context is None:
+            raise CodeDeliveryContextRequired(
+                details={"reason": "refinement_create_delivery_context_required"}
+            )
         ideation_service = IdeationService(self.db)
         ideation = await ideation_service.get_ideation(ideation_id)
         if not ideation:
@@ -15151,6 +15959,7 @@ class RefinementService:
             out_of_scope=data.out_of_scope,
             analysis=data.analysis,
             decisions=data.decisions,
+            delivery_context=delivery_context,
             screen_mockups=None,  # assigned after the Design System gate (below)
             assignee_id=data.assignee_id,
             created_by=user_id,
@@ -15238,6 +16047,11 @@ class RefinementService:
             changes=[
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": RefinementStatus.DRAFT.value},
+                {
+                    "field": "delivery_context",
+                    "old": None,
+                    "new": delivery_context.value,
+                },
                 *(
                     [{"field": "in_scope", "old": None, "new": data.in_scope}]
                     if data.in_scope
@@ -15329,6 +16143,14 @@ class RefinementService:
         require_draft_mutation(refinement, subject_type="refinement")
 
         update_data = data.model_dump(exclude_unset=True)
+        if (
+            "delivery_context" in update_data
+            and update_data["delivery_context"] is None
+            and _delivery_context_or_none(refinement) is not None
+        ):
+            raise CodeDeliveryContextRequired(
+                details={"reason": "delivery_context_cannot_be_cleared"}
+            )
         content_fields = {
             "title",
             "description",
@@ -15336,6 +16158,7 @@ class RefinementService:
             "out_of_scope",
             "analysis",
             "decisions",
+            "delivery_context",
         }
         # Spec eaf78891 (Ideação #2): refinement_semantic_fields cover all
         # update_data keys that affect KG extraction. Refinements have a much
@@ -15550,6 +16373,21 @@ class RefinementService:
                 f"Allowed transitions: {allowed_str}."
             )
 
+        advancing = (
+            data.status is not RefinementStatus.CANCELLED
+            and self._STATUS_ORDER[data.status] > self._STATUS_ORDER[old_status]
+        )
+        if advancing and _delivery_context_or_none(refinement) is None:
+            # Legacy rows remain readable, but cannot mint new lifecycle facts
+            # until a human explicitly classifies their delivery context.
+            raise CodeDeliveryContextRequired(
+                details={
+                    "reason": "refinement_advance_delivery_context_required",
+                    "from_status": old_status.value,
+                    "to_status": data.status.value,
+                }
+            )
+
         # Content gate — draft→review requires at least one non-empty in_scope
         # entry. Prevents stub refinements (no design intent captured) from
         # leaking into review / approved / done where downstream tools
@@ -15626,6 +16464,19 @@ class RefinementService:
             raise LifecycleTransitionConflictError("refinement", refinement.id)
 
         if data.status == RefinementStatus.DONE:
+            # The scalar CAS above acquires the relational write fence. Re-run
+            # Code Traceability inside that fenced transaction immediately
+            # before snapshot materialization, so the approved evidence/head/
+            # receipt set is exactly the set sealed by `_create_snapshot`.
+            await evaluate_code_traceability_transition(
+                self.db,
+                board=board,
+                subject=refinement,
+                subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+                from_status=old_status.value,
+                to_status=data.status.value,
+                enforce=True,
+            )
             await self._enforce_ambiguity_gate(refinement, board)
         await _record_critical_context_decision(
             self.db,
@@ -15790,7 +16641,10 @@ class RefinementService:
                 }
             )
 
-        code_evidence_manifest: list[dict[str, str]] = []
+        code_evidence_manifest: list[dict[str, object]] = []
+        active_evidence = []
+        latest_classifications = []
+        current_receipts: list[SourceContextCurrentReceiptV2] = []
         try:
             from okto_pulse.core.ports.relational_application import (
                 RelationalApplicationAdapterMissing,
@@ -15803,12 +16657,23 @@ class RefinementService:
                 "code_traceability",
                 None,
             )
+            investigation_factory = getattr(
+                relational_adapter,
+                "code_investigations",
+                None,
+            )
             if not callable(traceability_factory):
                 raise RelationalApplicationAdapterMissing(
                     "The composed relational adapter does not expose the "
                     "code-traceability store."
                 )
+            if not callable(investigation_factory):
+                raise RelationalApplicationAdapterMissing(
+                    "The composed relational adapter does not expose the "
+                    "code-investigation store."
+                )
             traceability_store = traceability_factory(self.db)
+            investigation_store = investigation_factory(self.db)
             cursor = None
             evidence_count = 0
             while True:
@@ -15824,13 +16689,7 @@ class RefinementService:
                 )
                 for evidence in page.items:
                     if evidence.parent_version <= refinement.version:
-                        code_evidence_manifest.append(
-                            {
-                                "evidence_id": evidence.id,
-                                "content_sha256": evidence.content_sha256,
-                                "lifecycle_status": evidence.lifecycle_status.value,
-                            }
-                        )
+                        active_evidence.append(evidence)
                 evidence_count += len(page.items)
                 if evidence_count > 2_000:
                     raise CodeInvestigationCurrentnessUnknown(
@@ -15838,6 +16697,87 @@ class RefinementService:
                     )
                 cursor = page.next_cursor
                 if cursor is None:
+                    break
+
+            classification_reader = getattr(
+                traceability_store,
+                "list_latest_evidence_classifications",
+                None,
+            )
+            if active_evidence and not callable(classification_reader):
+                raise CodeInvestigationCurrentnessUnknown(
+                    details={
+                        "reason": "snapshot_classification_reader_unavailable"
+                    }
+                )
+            if active_evidence:
+                latest_classifications = list(
+                    await classification_reader(
+                        board_id=refinement.board_id,
+                        evidence_ids=tuple(
+                            sorted(item.id for item in active_evidence)
+                        ),
+                    )
+                )
+
+            receipt_cursor = None
+            receipt_count = 0
+            evaluated_at = datetime.now(timezone.utc)
+            expected_context = _delivery_context_or_none(refinement)
+            while True:
+                receipt_page = await investigation_store.list_receipts(
+                    CodeInvestigationReceiptQuery(
+                        board_id=refinement.board_id,
+                        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+                        subject_id=refinement.id,
+                        cursor=receipt_cursor,
+                        limit=200,
+                    )
+                )
+                for receipt in receipt_page.items:
+                    if receipt.subject_version != refinement.version:
+                        continue
+                    head = await investigation_store.get_current_head(
+                        board_id=refinement.board_id,
+                        source_ref=receipt.source_ref,
+                    )
+                    revocation = await investigation_store.get_receipt_revocation(
+                        board_id=refinement.board_id,
+                        receipt_id=receipt.id,
+                    )
+                    if code_investigation_receipt_currentness(
+                        receipt,
+                        head=head,
+                        at=evaluated_at,
+                        revocation=revocation,
+                        expected_delivery_context=expected_context,
+                    ) is not CodeInvestigationReceiptCurrentness.CURRENT:
+                        continue
+                    if head is None:  # pragma: no cover - currentness proves it.
+                        raise CodeInvestigationCurrentnessUnknown(
+                            details={"reason": "snapshot_current_head_missing"}
+                        )
+                    current_receipts.append(
+                        SourceContextCurrentReceiptV2(
+                            receipt_id=receipt.id,
+                            source_ref=receipt.source_ref,
+                            generation=receipt.generation,
+                            head_revision=head.revision,
+                            payload_sha256=receipt.payload_sha256,
+                            delivery_context=receipt.delivery_context,
+                            contextual_outcome=receipt.contextual_outcome,
+                            context_contract_version=(
+                                receipt.context_contract_version
+                            ),
+                        )
+                    )
+                receipt_count += len(receipt_page.items)
+                if receipt_count > 2_000:
+                    raise CodeInvestigationCurrentnessUnknown(
+                        details={"reason": "snapshot_receipt_manifest_limit"}
+                    )
+                receipt_cursor = receipt_page.next_cursor
+                if receipt_cursor is None:
                     break
         except (
             CodeTraceabilityAdapterMissing,
@@ -15848,7 +16788,73 @@ class RefinementService:
             raise CodeInvestigationCurrentnessUnknown(
                 details={"reason": "snapshot_traceability_adapter_unavailable"}
             ) from exc
+        classifications_by_evidence = {
+            item.evidence_id: item for item in latest_classifications
+        }
+        if len(classifications_by_evidence) != len(latest_classifications):
+            raise CodeInvestigationCurrentnessUnknown(
+                details={"reason": "snapshot_classification_heads_invalid"}
+            )
+        for evidence in active_evidence:
+            classification = classifications_by_evidence.get(evidence.id)
+            effective_context = source_context_evidence_item_v2(
+                evidence,
+                classification,
+            )
+            contextual_payload = source_context_evidence_payload_v2(
+                effective_context
+            )
+            code_evidence_manifest.append(
+                {
+                    "evidence_id": evidence.id,
+                    "content_sha256": evidence.content_sha256,
+                    "lifecycle_status": evidence.lifecycle_status.value,
+                    "context_contract_version": (
+                        effective_context.context_contract_version
+                    ),
+                    "context_origin": effective_context.context_origin.value,
+                    "context_sha256": canonical_code_traceability_sha256(
+                        contextual_payload
+                    ),
+                    "classification_revision": (
+                        effective_context.classification_revision
+                    ),
+                    "classification_sha256": (
+                        effective_context.classification_sha256
+                    ),
+                }
+            )
         code_evidence_manifest.sort(key=lambda item: item["evidence_id"])
+        current_receipts.sort(key=lambda item: (item.source_ref, item.receipt_id))
+        delivery_context = _delivery_context_or_none(refinement)
+        refinement_provenance = (
+            None
+            if delivery_context is None
+            else RefinementDeliveryContextProvenance(
+                value=delivery_context,
+                source_refinement_id=refinement.id,
+                source_refinement_version=refinement.version,
+            )
+        )
+        source_context_summary = build_source_context_summary_v2(
+            delivery_context=delivery_context,
+            delivery_context_provenance=refinement_provenance,
+            current_investigation_outcomes=tuple(
+                item.contextual_outcome for item in current_receipts
+            ),
+            evidence=tuple(active_evidence),
+            classifications=tuple(latest_classifications),
+        )
+        source_context_manifest = RefinementSourceContextManifestV2(
+            refinement_id=refinement.id,
+            refinement_version=refinement.version,
+            summary=source_context_summary,
+            current_receipts=tuple(current_receipts),
+            classification_fence=source_context_classification_fence_v2(
+                tuple(latest_classifications)
+            ),
+        )
+        source_context_manifest_payload = source_context_manifest.as_dict()
 
         snapshot = _new_application_record(
             "refinement_snapshot",
@@ -15860,9 +16866,12 @@ class RefinementService:
             out_of_scope=refinement.out_of_scope,
             analysis=refinement.analysis,
             decisions=refinement.decisions,
+            delivery_context=delivery_context,
             labels=refinement.labels,
             qa_snapshot=qa_snapshot if qa_snapshot else None,
             code_evidence_manifest=code_evidence_manifest,
+            source_context_manifest=source_context_manifest_payload,
+            source_context_sha256=source_context_manifest.payload_sha256,
             created_by=user_id,
         )
         await _application_add(self.db, snapshot)
@@ -16058,7 +17067,6 @@ class RefinementService:
             refinement_id=refinement.id,
         )
         source_snapshot = await self.resolve_completed_snapshot(refinement)
-        source_snapshot_id = source_snapshot.id
         source_snapshot_version = source_snapshot.version
 
         # Compile rich context from refinement data plus the parent ideation
@@ -16147,10 +17155,9 @@ class RefinementService:
             query_scope=query_scope,
             target_id=target_id,
             knowledge_propagation_v2=knowledge_propagation_v2,
+            source_refinement_snapshot=source_snapshot,
         )
         if spec:
-            spec.source_refinement_snapshot_id = source_snapshot_id
-            spec.source_refinement_version = source_snapshot_version
             # Propagate artifacts using pre-flush snapshots
             artifact_counts = await propagate_artifacts(
                 db=self.db,

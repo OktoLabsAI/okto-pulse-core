@@ -47,8 +47,8 @@ def test_r1_uses_shared_scanner_tool_descriptions_profile_and_live_passes():
     assert profile.name == "tool_descriptions"
     assert profile.per_tool_description_chars == 900
     assert profile.aggregate_tool_description_chars == 73000
-    # Owner-authorised renegotiation (R1.1 card): instructions budget 8000 -> 10000.
-    assert profile.always_loaded_instruction_chars == 10000
+    # Owner-authorised Source Context guidance rebaseline: 10000 -> 11250.
+    assert profile.always_loaded_instruction_chars == 11250
 
     scanner = MCPPayloadBudgetScanner(profile)
     report = scanner.scan(
@@ -72,7 +72,7 @@ def test_over_budget_fixture_fails_with_actionable_char_based_shape():
     scanner = MCPPayloadBudgetScanner(TOOL_DESCRIPTIONS_BUDGET_PROFILE)
     report = scanner.scan(
         tool_descriptions={"okto_pulse_big": "x" * 1500, "okto_pulse_ok": "fine"},
-        instructions={"big_instructions.md": "y" * 11000, "small.md": "ok"},
+        instructions={"big_instructions.md": "y" * 11251, "small.md": "ok"},
     )
     assert report.passed is False
     assert report.unit == "chars"
@@ -97,13 +97,13 @@ def test_over_budget_fixture_fails_with_actionable_char_based_shape():
 
 
 def test_instruction_over_renegotiated_budget_fails():
-    # 10001 chars > the formalised 10000 instruction budget → violation.
+    # 11251 chars > the formalised 11250 instruction budget → violation.
     scanner = MCPPayloadBudgetScanner(TOOL_DESCRIPTIONS_BUDGET_PROFILE)
-    report = scanner.scan(instructions={"agent_instructions.md": "z" * 10001})
+    report = scanner.scan(instructions={"agent_instructions.md": "z" * 11251})
     assert report.passed is False
     v = next(iter(report.violations))
     assert v.reason == "always_loaded_instruction_over_budget"
-    assert v.budget_chars == 10000
+    assert v.budget_chars == 11250
 
 
 # ---------------------------------------------------------------------------
@@ -142,9 +142,9 @@ def test_callable_names_and_schema_keys_stable():
     # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
     # al. +6). Set-level drift is now ALSO guarded by
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
-    # 2026-08-12: reviewed surface is 337 tools after adding the closed
-    # add/remove/list Spec dependency contract.
-    assert len(tools) == 337
+    # 2026-08-22: reviewed surface is 338 tools after adding governed agent
+    # legacy-Evidence classification.
+    assert len(tools) == 338
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

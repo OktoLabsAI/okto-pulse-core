@@ -343,6 +343,7 @@ async def test_create_spec_persists_mockups_for_later_auto_backfill(db_factory):
             actor_id,
             SpecCreate(
                 title="Spec created with resources",
+                delivery_context="brownfield",
                 status=SpecStatus.APPROVED,
                 screen_mockups=[
                     {

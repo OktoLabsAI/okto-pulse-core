@@ -39,13 +39,13 @@ from okto_pulse.core.services.spec_structured_entities import (
     StructuredSpecEntityCommand,
     StructuredSpecEntityService,
 )
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     DomainEventRow,
     Ideation,
     Refinement,
-    RefinementSnapshot,
     Spec,
     SpecHistory,
 )
@@ -217,6 +217,7 @@ async def test_bulk_create_and_update_never_execute_legacy_lint_hook(
             ACTOR_ID,
             SpecCreate(
                 title="Bulk create",
+                delivery_context="brownfield",
                 functional_requirements=["FR bulk"],
                 technical_requirements=["TR bulk"],
                 acceptance_criteria=["AC bulk"],
@@ -270,18 +271,11 @@ async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook
             description="Refinement snapshot.",
             created_by=ACTOR_ID,
             status=RefinementStatus.DONE,
+            delivery_context="brownfield",
         )
         db.add(refinement)
         await db.flush()
-        db.add(
-            RefinementSnapshot(
-                refinement_id=refinement.id,
-                version=refinement.version,
-                title=refinement.title,
-                description=refinement.description,
-                created_by=ACTOR_ID,
-            )
-        )
+        await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
         direct_id = ideation_direct.id
         refinement_id = refinement.id
@@ -293,6 +287,7 @@ async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook
             direct_id,
             ACTOR_ID,
             skip_ownership_check=True,
+            delivery_context="brownfield",
         )
         assert direct_spec is not None
         assert hook.calls == []
@@ -324,7 +319,10 @@ async def test_structured_crud_never_executes_legacy_lint_hook(db_factory) -> No
         spec = await SpecService(db).create_spec(
             board_id,
             ACTOR_ID,
-            SpecCreate(title="Structured writer"),
+            SpecCreate(
+                title="Structured writer",
+                delivery_context="brownfield",
+            ),
         )
         assert spec is not None
         await db.commit()
@@ -368,6 +366,7 @@ async def test_scenario_body_update_and_delete_never_execute_legacy_lint_hook(
             ACTOR_ID,
             SpecCreate(
                 title="Scenario writer",
+                delivery_context="brownfield",
                 test_scenarios=[
                     {
                         "id": "ts_writer_matrix",
@@ -467,6 +466,7 @@ async def test_legacy_hook_stage_faults_do_not_participate_in_mutation_uow(
             ACTOR_ID,
             SpecCreate(
                 title=f"External lint {failure_stage}",
+                delivery_context="brownfield",
                 functional_requirements=["The entity mutation must survive."],
             ),
         )
@@ -497,6 +497,7 @@ async def test_outer_commit_fault_rolls_back_without_executing_legacy_lint_hook(
             ACTOR_ID,
             SpecCreate(
                 title="Commit must fail",
+                delivery_context="brownfield",
                 functional_requirements=["No partial commit."],
             ),
         )

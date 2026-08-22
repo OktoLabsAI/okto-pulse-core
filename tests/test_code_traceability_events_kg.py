@@ -12,6 +12,7 @@ from okto_pulse.core.events.types import (
     EVENT_TYPES,
     CodeEvidenceCreated,
     CodeEvidenceDispositionChanged,
+    CodeEvidenceLegacyClassified,
     CodeEvidenceLinked,
     CodeEvidenceRevoked,
     CodeEvidenceSuperseded,
@@ -55,6 +56,7 @@ _TRACEABILITY_EVENT_CLASSES = (
     CodeEvidenceLinked,
     CodeEvidenceUnlinked,
     CodeEvidenceDispositionChanged,
+    CodeEvidenceLegacyClassified,
     ImplementationTargetCreated,
     ImplementationTargetUpdated,
     ImplementationTargetRevoked,
@@ -75,6 +77,7 @@ _TRACEABILITY_EVENT_TYPES = {
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
+    "code_evidence.legacy_classified",
     "implementation_target.created",
     "implementation_target.updated",
     "implementation_target.revoked",
@@ -174,10 +177,10 @@ def _target() -> dict[str, object]:
     }
 
 
-def test_event_registry_adds_exactly_the_seventeen_closed_event_names():
+def test_event_registry_adds_exactly_the_eighteen_closed_event_names():
     actual = {event.event_type for event in _TRACEABILITY_EVENT_CLASSES}
     assert actual == _TRACEABILITY_EVENT_TYPES
-    assert len(EVENT_TYPES) == 62
+    assert len(EVENT_TYPES) == 64
     assert _TRACEABILITY_EVENT_TYPES.issubset(EVENT_TYPES)
     for event_class in _TRACEABILITY_EVENT_CLASSES:
         assert resolve_event_class(event_class.event_type) is event_class

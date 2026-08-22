@@ -30,6 +30,7 @@ from okto_pulse.core.services.main import (
     SpecService,
     _reset_v2_knowledge_for_relink,
 )
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 
 
 BOARD_ID = "imp5-relink-board"
@@ -269,6 +270,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     title="Old",
                     created_by=ACTOR_ID,
                     status=RefinementStatus.DONE,
+                    delivery_context="brownfield",
                 ),
                 Refinement(
                     id="refinement-new",
@@ -277,6 +279,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     title="New",
                     created_by=ACTOR_ID,
                     status=RefinementStatus.DONE,
+                    delivery_context="brownfield",
                 ),
                 _spec(
                     "spec-relink",
@@ -287,6 +290,9 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
             )
         )
         await db.flush()
+        target_refinement = await db.get(Refinement, "refinement-new")
+        assert target_refinement is not None
+        await freeze_refinement_completion_fixture(db, target_refinement)
 
         updated = await SpecService(
             db,

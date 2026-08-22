@@ -168,6 +168,7 @@ async def _seed():
             title="Refine A",
             status=RefinementStatus.DRAFT,
             created_by=USER_ID,
+            delivery_context="brownfield",
             # draft->review has a content gate (>=1 non-empty in_scope item).
             in_scope=["the in-scope item"],
         )
@@ -272,6 +273,7 @@ async def _board_scope_graph(_seed):
             title="Local sibling",
             status=RefinementStatus.DRAFT,
             created_by=USER_ID,
+            delivery_context="brownfield",
             in_scope=["sibling"],
         )
         foreign_parent = Ideation(
@@ -288,6 +290,7 @@ async def _board_scope_graph(_seed):
             title="foreign-secret-refinement",
             status=RefinementStatus.DRAFT,
             created_by=OTHER_USER_ID,
+            delivery_context="brownfield",
             in_scope=["foreign secret scope"],
         )
         db.add(foreign)
@@ -392,6 +395,7 @@ async def test_create_refinement_same_board_succeeds(_create_parent_ideations):
         board_id=BOARD_ID,
         ideation_id=local_ideation_id,
         title="Board-scoped refinement",
+        delivery_context="brownfield",
     )
 
     assert created["success"] is True
@@ -401,6 +405,24 @@ async def test_create_refinement_same_board_succeeds(_create_parent_ideations):
         assert refinement is not None
         assert refinement.board_id == BOARD_ID
         assert refinement.ideation_id == local_ideation_id
+
+
+@pytest.mark.asyncio
+async def test_create_refinement_requires_delivery_context(
+    _create_parent_ideations,
+):
+    local_ideation_id, _ = _create_parent_ideations
+    before = await _refinement_count()
+
+    result = await _call(
+        "okto_pulse_create_refinement",
+        board_id=BOARD_ID,
+        ideation_id=local_ideation_id,
+        title="Missing contextual classification",
+    )
+
+    assert result["error"] == "code_delivery_context_required"
+    assert await _refinement_count() == before
 
 
 @pytest.mark.asyncio
@@ -415,6 +437,7 @@ async def test_create_refinement_cross_board_is_not_found_and_writes_nothing(
         board_id=BOARD_ID,
         ideation_id=foreign_ideation_id,
         title="Must not cross boards",
+        delivery_context="brownfield",
     )
 
     assert result == {"error": "Failed to create refinement (ideation not found)"}
@@ -432,6 +455,7 @@ async def test_create_refinement_missing_parent_is_not_found_and_writes_nothing(
         board_id=BOARD_ID,
         ideation_id="missing-ideation",
         title="Must not create without a parent",
+        delivery_context="brownfield",
     )
 
     assert result == {"error": "Failed to create refinement (ideation not found)"}
@@ -451,8 +475,10 @@ async def test_get_update_move_delete_roundtrip(_seed):
         board_id=BOARD_ID,
         refinement_id=_seed,
         title="Refine A v2",
+        delivery_context="hybrid",
     )
     assert updated["refinement"]["title"] == "Refine A v2"
+    assert updated["refinement"]["delivery_context"] == "hybrid"
 
     moved = await _call(
         "okto_pulse_move_refinement",

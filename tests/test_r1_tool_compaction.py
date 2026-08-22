@@ -15,7 +15,7 @@ BUDGET NOTE: tool descriptions hit the reviewed live-surface budget (aggregate �
 per-tool ≤ 900). ``agent_instructions.md`` is kept richer than the spec's 8000
 target by an explicit, owner-authorised decision (see the R1.1 card comment) —
 all operational/safety DIRECTIVES stay inline; only deep REFERENCE moved to lazy
-resources. The renegotiated always-loaded budget is 10000 chars.
+resources. The Source Context-rebaselined always-loaded budget is 11250 chars.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from okto_pulse.core.mcp.payload_budget import (
 )
 
 # Renegotiated always-loaded instruction budget (owner-authorised, R1.1 card).
-R1_INSTRUCTION_BUDGET = 10000
+R1_INSTRUCTION_BUDGET = 11250
 PER_TOOL_BUDGET = 900
 AGGREGATE_TOOL_BUDGET = 73000
 
@@ -76,9 +76,9 @@ def test_tool_names_stable_after_compaction():
     # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
     # tools entraram); o delta exato agora é nomeado por
     # test_mcp_tools_catalog_drift.py.
-    # 2026-08-12: reviewed surface is 337 tools after adding the closed
-    # add/remove/list Spec dependency contract.
-    assert len(names) == 337
+    # 2026-08-22: reviewed surface is 338 tools after adding governed agent
+    # legacy-Evidence classification.
+    assert len(names) == 338
     assert all(n.startswith("okto_pulse_") for n in names)
 
 
@@ -158,8 +158,8 @@ def test_safety_guidance_discoverable_after_compaction():
     assert "Card execution pre-flight" in instr
     assert "Resource Fetching Protocol" in instr  # MANDATORY directive restored
 
-    # Owner-authorised budget: rich always-loaded instructions, <= 10000 chars
-    # (see R1.1 card decision). Directives stay inline; deep reference is lazy.
+    # Owner-authorised budget: rich always-loaded instructions, <= 11250 chars.
+    # Source Context directives stay inline; deep reference remains lazy.
     assert len(instr) <= R1_INSTRUCTION_BUDGET
 
 
@@ -209,7 +209,10 @@ def test_tool_docs_resources_registered_and_nonempty(family):
     assert uri in registered
     content = mcp_server._load_resource_file(f"reference/tool-docs/{family}.md")
     assert content.startswith("---")  # frontmatter
-    expected_version = "2.0" if family == "test-scenario" else "1.0"
+    expected_version = {
+        "spec": "1.2",
+        "test-scenario": "2.0",
+    }.get(family, "1.0")
     assert f'version: "{expected_version}"' in content
 
 

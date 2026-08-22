@@ -90,7 +90,12 @@ def _derive_tool(source: str) -> str:
 
 
 def _derive_id_argument(source: str, source_id: str) -> dict[str, str]:
-    return {f"{source}_id": source_id}
+    arguments = {f"{source}_id": source_id}
+    if source == "ideation":
+        # Ideation-derived Specs have no refinement provenance to inherit, so
+        # the caller must state the delivery context explicitly.
+        arguments["delivery_context"] = "brownfield"
+    return arguments
 
 
 @pytest.mark.asyncio
@@ -415,6 +420,7 @@ async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
         board_id=board_id,
         ideation_id=ideation_id,
         title="AC-A8 governed refinement",
+        delivery_context="brownfield",
     )
     assert refinement_result.get("success") is True, refinement_result
     refinement_id = refinement_result["refinement"]["id"]

@@ -62,13 +62,16 @@ VALIDATION = {
     "expected_validation_edition": 1,
     "expected_spec_version": 1,
     "expected_head_revision": 0,
-    "completeness": 90,
-    "completeness_justification": "Complete enough for the authorization probe.",
+    "confidence": 90,
+    "confidence_justification": "Confident enough for the authorization probe.",
+    "clarity": 90,
+    "clarity_justification": "Clear enough for the authorization probe.",
     "assertiveness": 90,
     "assertiveness_justification": "Assertive enough for the authorization probe.",
+    "decidability": 90,
+    "decidability_justification": "Decidable enough for the authorization probe.",
     "ambiguity": 10,
     "ambiguity_justification": "Ambiguity is explicitly bounded in this probe.",
-    "general_justification": "This is a complete authorization-boundary validation probe.",
     "recommendation": "approve",
 }
 
@@ -489,13 +492,13 @@ async def test_board_create_and_list_role_realm_matrix(
             client,
             "POST",
             f"boards/{ids[f'{scope}_board']}/specs",
-            json={"title": "denied"},
+            json={"title": "denied", "delivery_context": "brownfield"},
         )
         missing_create = _request(
             client,
             "POST",
             f"boards/{missing_board}/specs",
-            json={"title": "missing"},
+            json={"title": "missing", "delivery_context": "brownfield"},
         )
         assert denied_create.status_code == missing_create.status_code == 404
         assert denied_create.content == missing_create.content
@@ -505,7 +508,7 @@ async def test_board_create_and_list_role_realm_matrix(
         client,
         "POST",
         f"boards/{ids['viewer_board']}/specs",
-        json={"title": "viewer denied"},
+        json={"title": "viewer denied", "delivery_context": "brownfield"},
     )
     assert viewer_list.status_code == 200, viewer_list.text
     assert ids["viewer_spec"] in {row["id"] for row in viewer_list.json()}
@@ -517,7 +520,10 @@ async def test_board_create_and_list_role_realm_matrix(
             client,
             "POST",
             f"boards/{ids[f'{scope}_board']}/specs",
-            json={"title": f"created by {scope}"},
+            json={
+                "title": f"created by {scope}",
+                "delivery_context": "brownfield",
+            },
         )
         assert listed.status_code == 200, (scope, listed.text)
         assert ids[f"{scope}_spec"] in {row["id"] for row in listed.json()}

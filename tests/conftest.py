@@ -984,6 +984,20 @@ class _CoreTestRelationalApplicationAdapter:
 
         return CommunitySqlAlchemyCodeTraceabilityStore(session)
 
+    def code_investigations(self, session):
+        from okto_pulse.community.adapters.sqlalchemy_code_traceability import (
+            CommunitySqlAlchemyCodeInvestigationStore,
+        )
+
+        return CommunitySqlAlchemyCodeInvestigationStore(session)
+
+    def code_traceability(self, session):
+        from okto_pulse.community.adapters.sqlalchemy_code_traceability import (
+            CommunitySqlAlchemyCodeTraceabilityStore,
+        )
+
+        return CommunitySqlAlchemyCodeTraceabilityStore(session)
+
     def checklists(self, session):
         class _CreateBoardChecklistStub:
             async def apply_binding_cas(

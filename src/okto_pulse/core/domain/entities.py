@@ -12,6 +12,11 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     SpecStatus,
 )
+from okto_pulse.core.domain.code_traceability import (
+    DirectSpecDeliveryContextProvenance,
+    DeliveryContext,
+    SpecDeliveryContextProvenance,
+)
 
 
 @dataclass(kw_only=True)
@@ -85,6 +90,14 @@ class Spec:
     refinement_id: str | None = None
     source_refinement_snapshot_id: str | None = None
     source_refinement_version: int | None = None
+    delivery_context: DeliveryContext | None = None
+    delivery_context_provenance: (
+        SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ) = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = None
     description: str | None = None
     context: str | None = None
     functional_requirements: list[Any] | None = None

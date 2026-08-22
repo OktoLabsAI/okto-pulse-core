@@ -173,14 +173,14 @@ def _current_view() -> CurrentAssessmentView:
 
 
 @pytest.mark.asyncio
-async def test_quality_mcp_inventory_remains_seven_tools_at_334() -> None:
+async def test_quality_mcp_inventory_remains_seven_tools() -> None:
     tools = await server.mcp.get_tools()
 
     # Semantic guideline v2 replaces the evaluation command with evidence
     # recording and retains four bounded read surfaces (list, get, current and
     # findings).  Those reads are part of the public projection/pagination
-    # contract; Code Traceability adds 19 reviewed, typed commands.
-    assert len(tools) == 337
+    # contract; Code Traceability adds 20 reviewed, typed commands.
+    assert len(tools) == 338
     assert {
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_semantic_guideline_assessment",

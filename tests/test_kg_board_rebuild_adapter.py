@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -17,6 +18,7 @@ _board_rebuild_ingestion = pytest.importorskip(
     reason="AF-04 Community integration test requires the Community rebuild ingestion adapter.",
 )
 BoardRebuildIngestionAdapter = _board_rebuild_ingestion.BoardRebuildIngestionAdapter
+CONFIRMATION_REF = "conf_fp_" + ("a" * 64)
 
 
 def _noop_purge_report(self, *, board_id: str, reason: str) -> PurgeReport:
@@ -32,6 +34,7 @@ def _create_consolidation_queue(conn: sqlite3.Connection) -> None:
         "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
         "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
         "claim_timeout_at TEXT, next_retry_at TEXT, claim_token TEXT, "
+        "triggered_by_event TEXT, payload TEXT, "
         "work_kind TEXT NOT NULL DEFAULT 'consolidate', "
         "generation INTEGER NOT NULL DEFAULT 0)"
     )
@@ -40,6 +43,20 @@ def _create_consolidation_queue(conn: sqlite3.Connection) -> None:
         "ON consolidation_queue(board_id, artifact_type, artifact_id) "
         "WHERE work_kind='consolidate'"
     )
+
+
+def _enqueue_counts(**overrides: int) -> dict[str, int]:
+    counts = {
+        "inserted": 0,
+        "reset_to_pending": 0,
+        "reordered_pending": 0,
+        "fenced_claimed": 0,
+        "deferred_unrelated": 0,
+        "preserved_live_intent": 0,
+        "left_alone": 0,
+    }
+    counts.update(overrides)
+    return counts
 
 
 def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
@@ -72,7 +89,7 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
         ],
     )
 
-    assert counts == {"inserted": 8, "reset_to_pending": 0, "left_alone": 0}
+    assert counts == _enqueue_counts(inserted=8)
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute(
             "SELECT artifact_type, artifact_id, priority FROM consolidation_queue "
@@ -90,10 +107,14 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
     ]
 
 
-@pytest.mark.parametrize("status", ["pending", "claimed"])
-def test_enqueue_sources_leaves_active_rows_alone_for_new_rebuild(
+@pytest.mark.parametrize(
+    ("status", "adoption_counter"),
+    (("pending", "reordered_pending"), ("claimed", "fenced_claimed")),
+)
+def test_enqueue_sources_adopts_active_rows_for_new_rebuild(
     tmp_path: Path,
     status: str,
+    adoption_counter: str,
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
@@ -118,25 +139,34 @@ def test_enqueue_sources_leaves_active_rows_alone_for_new_rebuild(
         sources=[{"artifact_type": "spec", "id": "s1"}],
     )
 
-    assert counts == {"inserted": 0, "reset_to_pending": 0, "left_alone": 1}
+    assert counts == _enqueue_counts(
+        **{adoption_counter: 1, "preserved_live_intent": 1}
+    )
     with sqlite3.connect(str(db_path)) as conn:
         row = conn.execute(
             "SELECT status, attempts, last_error, claimed_by_session_id, "
-            "claimed_at, worker_id, claim_timeout_at, next_retry_at, priority, source "
+            "claimed_at, worker_id, claim_timeout_at, next_retry_at, priority, source, "
+            "payload "
             "FROM consolidation_queue WHERE id='q1'"
         ).fetchone()
-    assert row == (
-        status,
-        4,
-        "corrupt graph",
-        "old-session",
-        "2026-05-27 10:00:00",
-        "old-worker",
-        "2026-05-27 10:30:00",
-        "2026-05-27 11:00:00",
-        "low",
-        "old-rebuild",
+    assert row is not None
+    assert row[:-1] == (
+        "pending",
+        0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        "high",
+        "rebuild:new-manifest",
     )
+    assert json.loads(row[-1])["_rebuild_deferred_live"] == {
+        "source": "old-rebuild",
+        "triggered_by_event": None,
+        "payload": None,
+    }
 
 
 def test_enqueue_sources_preserves_row_claimed_after_source_enumeration(
@@ -196,25 +226,32 @@ def test_enqueue_sources_preserves_row_claimed_after_source_enumeration(
     finally:
         worker.join(timeout=1.0)
 
-    assert counts == {"inserted": 0, "reset_to_pending": 0, "left_alone": 1}
+    assert counts == _enqueue_counts(fenced_claimed=1, preserved_live_intent=1)
     with sqlite3.connect(str(db_path)) as conn:
         row = conn.execute(
             "SELECT status, attempts, last_error, claimed_by_session_id, "
-            "claimed_at, worker_id, claim_timeout_at, next_retry_at, priority, source "
+            "claimed_at, worker_id, claim_timeout_at, next_retry_at, priority, source, "
+            "payload "
             "FROM consolidation_queue WHERE id='q1'"
         ).fetchone()
-    assert row == (
-        "claimed",
-        4,
-        "corrupt graph",
-        "race-session",
-        "2026-05-27 10:00:00",
-        "race-worker",
-        "2026-05-27 10:30:00",
-        "2026-05-27 11:00:00",
-        "low",
-        "old-rebuild",
+    assert row is not None
+    assert row[:-1] == (
+        "pending",
+        0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        "high",
+        "rebuild:new-manifest",
     )
+    assert json.loads(row[-1])["_rebuild_deferred_live"] == {
+        "source": "old-rebuild",
+        "triggered_by_event": None,
+        "payload": None,
+    }
 
 
 def test_enqueue_sources_resets_terminal_rows_for_new_rebuild(
@@ -242,7 +279,7 @@ def test_enqueue_sources_resets_terminal_rows_for_new_rebuild(
         sources=[{"artifact_type": "spec", "id": "s1"}],
     )
 
-    assert counts == {"inserted": 0, "reset_to_pending": 1, "left_alone": 0}
+    assert counts == _enqueue_counts(reset_to_pending=1)
     with sqlite3.connect(str(db_path)) as conn:
         row = conn.execute(
             "SELECT status, attempts, last_error, claimed_by_session_id, "
@@ -267,12 +304,10 @@ def test_enqueue_sources_docstring_documents_active_row_contract() -> None:
     doc = BoardRebuildIngestionAdapter.enqueue_sources.__doc__ or ""
     lowered = " ".join(doc.lower().split())
 
-    assert "pending and claimed rows are left alone" in lowered
-    assert "claim ownership fields" in lowered
+    assert "pending target rows are adopted and re-enqueued" in lowered
+    assert "claimed target rows have their exact claim token revoked" in lowered
+    assert "live intent carried by an adopted row is preserved" in lowered
     assert "terminal/retryable rows are reset" in lowered
-    assert "supersedes older behavior that reset pending/claimed rows" in lowered
-    assert "pending/claimed rows are reset" not in lowered
-    assert "pending and claimed rows are reset" not in lowered
 
 
 def test_prepare_board_graph_storage_quarantines_existing_graph(
@@ -367,6 +402,7 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
             actor_id="user-1",
             operation="rebuild",
             owner_token="owner-token",
+            authorized_confirmation_ref=CONFIRMATION_REF,
             previous_kg_generation_id=None,
             candidate_kg_generation_id="gen-1",
         )
@@ -379,7 +415,7 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
     assert result.drilldown["queue_drain"]["grace_applied"] is False
 
 
-def test_rebuild_step_result_counts_include_enqueue_left_alone(
+def test_rebuild_step_result_counts_include_enqueue_admission_buckets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -407,11 +443,13 @@ def test_rebuild_step_result_counts_include_enqueue_left_alone(
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
         "enqueue_sources",
-        lambda self, **_: {
-            "inserted": 2,
-            "reset_to_pending": 3,
-            "left_alone": 4,
-        },
+        lambda self, **_: _enqueue_counts(
+            inserted=2,
+            reset_to_pending=3,
+            reordered_pending=5,
+            fenced_claimed=6,
+            preserved_live_intent=7,
+        ),
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
@@ -430,6 +468,7 @@ def test_rebuild_step_result_counts_include_enqueue_left_alone(
             actor_id="user-1",
             operation="rebuild",
             owner_token="owner-token",
+            authorized_confirmation_ref=CONFIRMATION_REF,
             previous_kg_generation_id=None,
             candidate_kg_generation_id="gen-1",
         )
@@ -438,8 +477,10 @@ def test_rebuild_step_result_counts_include_enqueue_left_alone(
     assert result.ok is False
     assert result.counts["enqueue_inserted"] == 2
     assert result.counts["enqueue_reset_to_pending"] == 3
-    assert result.counts["enqueue_left_alone"] == 4
-    assert result.drilldown["enqueue"]["left_alone"] == 4
+    assert result.counts["enqueue_reordered_pending"] == 5
+    assert result.counts["enqueue_fenced_claimed"] == 6
+    assert result.counts["enqueue_left_alone"] == 0
+    assert result.drilldown["enqueue"]["preserved_live_intent"] == 7
 
 
 def test_drain_until_idle_uses_final_grace_for_nearly_drained_queue(
@@ -664,9 +705,12 @@ def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
     assert "bad wal" in result.detail
 
 
-def test_rebuild_endpoint_wires_registry_lifecycle_adapter() -> None:
+def test_rebuild_endpoint_is_recovery_only_offline() -> None:
     endpoint_module = pytest.importorskip("okto_pulse.community.api.kg_rebuild")
     endpoint = Path(endpoint_module.__file__).resolve().read_text(encoding="utf-8")
 
     assert "step_adapter=lambda b, g, s: LifecycleStepResult(ok=True)" not in endpoint
-    assert "step_adapter=resolve_graph_lifecycle().apply_step" in endpoint
+    assert "step_adapter=resolve_graph_lifecycle().apply_step" not in endpoint
+    assert '"recovery_execution_required"' in endpoint
+    assert '"recovery_only_offline"' in endpoint
+    assert "okto-pulse-kg-recovery-only" in endpoint

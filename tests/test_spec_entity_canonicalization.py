@@ -192,6 +192,7 @@ async def test_create_spec_canonicalizes(db_factory):
             USER,
             SpecCreate(
                 title="S",
+                delivery_context="brownfield",
                 functional_requirements=["FR one", "FR two"],
                 acceptance_criteria=["AC one"],
             ),
@@ -209,7 +210,13 @@ async def test_update_spec_preserves_ids(db_factory):
     board_id = await _seed_board(db_factory)
     async with db_factory() as db:
         spec = await SpecService(db).create_spec(
-            board_id, USER, SpecCreate(title="S", functional_requirements=["A", "B"])
+            board_id,
+            USER,
+            SpecCreate(
+                title="S",
+                delivery_context="brownfield",
+                functional_requirements=["A", "B"],
+            ),
         )
         await db.commit()
         spec_id = spec.id
@@ -233,6 +240,7 @@ async def test_no_breaking_change_text_links(db_factory):
             USER,
             SpecCreate(
                 title="S",
+                delivery_context="brownfield",
                 functional_requirements=["User can log in"],
                 business_rules=[
                     {

@@ -198,6 +198,7 @@ async def test_ac5_create_refinement_comma_only_returns_envelope():
     raw = await mcp_server.okto_pulse_create_refinement.fn(
         board_id=BOARD_ID, ideation_id="ideation-fake",
         title="x", in_scope="alpha, beta, gamma",
+        delivery_context="brownfield",
     )
     res = json.loads(raw)  # no exception propagated == no raw ValueError leak
     assert res.get("error") == "invalid_multi_value_input", res

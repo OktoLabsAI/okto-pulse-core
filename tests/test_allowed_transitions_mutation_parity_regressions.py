@@ -31,6 +31,8 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCurrentnessUnknown,
     CodeTraceabilityContractError,
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
 )
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.kg.cognitive_closeout_gate import (
@@ -70,6 +72,36 @@ def _board(board_id: str, *, settings: dict | None = None) -> Board:
         realm_id=LOCAL_REALM_ID,
         settings=settings or {},
     )
+
+
+def _direct_spec_context_fields(
+    spec_id: str,
+    *,
+    version: int = 1,
+) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=version,
+    )
+    manifest, manifest_sha256 = (
+        main_service._direct_spec_source_context_manifest(
+            spec_id=spec_id,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            provenance=provenance,
+            subject_version=version,
+        )
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 async def _persist(db_factory, *rows: object) -> None:
@@ -138,6 +170,7 @@ async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
         ),
         Spec(
             id=spec_id,
+            **_direct_spec_context_fields(spec_id),
             board_id=board_id,
             title="Code Evidence coverage preview",
             status=SpecStatus.APPROVED,
@@ -196,6 +229,7 @@ async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
         _board(board_id, settings={"code_traceability": {"mode": "advisory"}}),
         Spec(
             id=spec_id,
+            **_direct_spec_context_fields(spec_id),
             board_id=board_id,
             title="Code Evidence start coverage",
             status=SpecStatus.VALIDATED,
@@ -261,6 +295,7 @@ async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
         ),
         Spec(
             id=spec_id,
+            **_direct_spec_context_fields(spec_id),
             board_id=board_id,
             title="Code Evidence technical failure",
             status=SpecStatus.APPROVED,
@@ -825,6 +860,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
             RefinementCreate(
                 ideation_id=ideation_id,
                 title="Derived after ideation completion",
+                delivery_context="brownfield",
             ),
             skip_ownership_check=True,
         )
@@ -1196,6 +1232,7 @@ async def test_spec_move_not_targeting_draft_preserves_edition(
         _board(board_id),
         Spec(
             id=spec_id,
+            **_direct_spec_context_fields(spec_id, version=42),
             board_id=board_id,
             title="Forward move preserves edition",
             status=SpecStatus.DRAFT,

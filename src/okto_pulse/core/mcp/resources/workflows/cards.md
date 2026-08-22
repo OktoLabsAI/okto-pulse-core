@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Cards Workflow — Implementation, Bug & Test Execution
@@ -277,12 +277,16 @@ New boards (including the no-active-template fallback) and new default-board tem
 When Code Traceability is enabled, use this order before implementation:
 
 1. Read `okto_pulse_get_task_context(profile="full", context_scope="gate")`.
-2. Review relevant Code Evidence and inherited dispositions.
+2. Review the inherited `delivery_context`, effective `source_context`,
+   relevant Code Evidence, and dispositions. Counts describe the complete
+   effective set even when item drilldowns are bounded; never infer a legacy
+   item's meaning.
 3. Start the initial Card preflight request. The authenticated external agent
    checks real access and capabilities and investigates the source in its own
    environment; Pulse Core and Pulse Community never open or search it.
-4. Submit that receipt, then create or adjust semantic Targets against its
-   source head.
+4. Submit a contextual V2 receipt, then create or adjust semantic Targets
+   against its source head. Direct Card Evidence is AS-IS only. A path or
+   symbol the Card plans to create is TO-BE Target intent, not Evidence.
 5. Refetch the Card and Target revisions. Start and submit a new Target-bound
    Card preflight whose selector scope includes those exact Target revisions;
    submit a Resolution for every required Target from this second receipt.
@@ -302,6 +306,13 @@ do not block the move, but Pulse cannot reconstruct them; later source,
 selector, Target, or dependency drift can force the full investigation to be
 repeated. Never resolve a newly created Target with the initial receipt whose
 selector scope predates that Target.
+
+For Greenfield/Hybrid work, an existing starter/base can be Evidence only as
+`existing_scaffold` with an explicit `interpretation_limit`; source consulted
+only as a pattern is `reference_pattern`. Neither proves the requested behavior
+already exists. `unclassified_legacy` remains visible until an authorized
+human appends classification through UI/REST; agents have no MCP mutation for
+that governance action.
 
 Run a new external preflight, re-evaluate the Targets, and submit a new receipt
 when a dependency finishes, the observed workspace fingerprint changes, a

@@ -133,7 +133,11 @@ async def test_commit_precedes_refetch_and_effective_knowledge_projection(
     data = SimpleNamespace(model_fields_set=set(), status=target_status)
     result = await use_case_type().execute(
         command_type("entity-1", data),
-        actor=ActorContext("actor-1", "rest"),
+        actor=ActorContext(
+            "actor-1",
+            "rest",
+            permissions=["card.validation.read", "spec.validation.read"],
+        ),
         uow=uow,
     )
 

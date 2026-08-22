@@ -210,6 +210,7 @@ async def test_ac5_fr_id_ref_passes_validate_spec_linked_refs_gate(db_factory):
                 fromlist=["SpecCreate"],
             ).SpecCreate(
                 title="Structured Spec",
+                delivery_context="brownfield",
                 functional_requirements=["Register", "Login"],
                 business_rules=[
                     {

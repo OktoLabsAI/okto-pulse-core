@@ -24,6 +24,9 @@ from okto_pulse.core.discovery_params_schema import (
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityEnforcement,
+    DirectSpecDeliveryContextProvenance,
+    DeliveryContext,
+    SpecDeliveryContextProvenance,
 )
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
@@ -1790,6 +1793,14 @@ class RefinementCreate(BaseModel):
     decisions: list[str] | None = Field(
         None, description="Decisoes registradas durante o refinamento."
     )
+    delivery_context: DeliveryContext = Field(
+        ...,
+        description=(
+            "Contexto de entrega explicitamente classificado: brownfield, "
+            "greenfield ou hybrid. A leitura de registros legados permanece "
+            "nullable, mas toda nova autoria deve classificar o contexto."
+        ),
+    )
     assignee_id: str | None = Field(
         None, description="ID do responsavel pelo refinement."
     )
@@ -1858,6 +1869,13 @@ class RefinementUpdate(BaseModel):
     )
     decisions: list[str] | None = Field(
         None, description="Novas decisoes do refinamento (opcional)."
+    )
+    delivery_context: DeliveryContext | None = Field(
+        None,
+        description=(
+            "Novo contexto de entrega. Omitido preserva o valor atual; null "
+            "explicito nao remove um contexto ja classificado."
+        ),
     )
     assignee_id: str | None = Field(
         None, description="Novo ID do responsavel pelo refinement (opcional)."
@@ -1935,6 +1953,7 @@ class RefinementSummary(BaseSchema):
     status: RefinementStatus
     edition: int = Field(1, ge=1)
     version: int
+    delivery_context: DeliveryContext | None = None
     assignee_id: str | None
     created_by: str
     created_at: datetime
@@ -2032,6 +2051,7 @@ class RefinementSnapshotResponse(BaseSchema):
     id: str
     refinement_id: str
     version: int
+    delivery_context: DeliveryContext | None = None
     title: str
     description: str | None
     in_scope: list[str] | None
@@ -2040,6 +2060,12 @@ class RefinementSnapshotResponse(BaseSchema):
     decisions: list[str] | None
     labels: list[str] | None
     qa_snapshot: list[dict] | None
+    code_evidence_manifest: list[dict[str, Any]] | None = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     created_by: str
     created_at: datetime
 
@@ -2049,6 +2075,7 @@ class RefinementSnapshotSummary(BaseSchema):
 
     id: str
     version: int
+    delivery_context: DeliveryContext | None = None
     title: str
     created_by: str
     created_at: datetime
@@ -2218,6 +2245,22 @@ class SpecCreate(BaseModel):
     refinement_id: str | None = Field(
         None, description="ID do refinement de origem desta spec."
     )
+    delivery_context: DeliveryContext | None = Field(
+        None,
+        description=(
+            "Contexto de entrega explicitamente classificado. Omitido somente "
+            "quando um Refinement contextual fornece o valor herdado."
+        ),
+    )
+    delivery_context_override_reason: str | None = Field(
+        None,
+        min_length=1,
+        max_length=2000,
+        description=(
+            "Justificativa obrigatoria quando o contexto da Spec divergir do "
+            "snapshot do Refinement."
+        ),
+    )
 
 
 class SpecUpdate(BaseModel):
@@ -2333,6 +2376,22 @@ class SpecUpdate(BaseModel):
     refinement_id: str | None = Field(
         None, description="Novo ID do refinement de origem desta spec."
     )
+    delivery_context: DeliveryContext | None = Field(
+        None,
+        description=(
+            "Valor efetivo do contexto da Spec. Quando divergir do valor "
+            "herdado do snapshot, delivery_context_override_reason e obrigatorio."
+        ),
+    )
+    delivery_context_override_reason: str | None = Field(
+        None,
+        min_length=1,
+        max_length=2000,
+        description=(
+            "Justificativa humana para um contexto efetivo diferente do "
+            "snapshot herdado. Envie null ao reconciliar com o valor herdado."
+        ),
+    )
 
 
 class SpecMove(BaseModel):
@@ -2441,6 +2500,17 @@ class SpecSummary(BaseSchema):
     refinement_id: str | None = None
     source_refinement_snapshot_id: str | None = None
     source_refinement_version: int | None = Field(default=None, ge=1)
+    delivery_context: DeliveryContext | None = None
+    delivery_context_provenance: (
+        SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ) = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
@@ -2499,6 +2569,7 @@ class RefinementResponse(BaseSchema):
     status: RefinementStatus
     edition: int = Field(1, ge=1)
     version: int
+    delivery_context: DeliveryContext | None = None
     assignee_id: str | None
     created_by: str
     created_at: datetime
@@ -2779,6 +2850,17 @@ class SpecResponse(BaseSchema):
     refinement_id: str | None = None
     source_refinement_snapshot_id: str | None = None
     source_refinement_version: int | None = Field(default=None, ge=1)
+    delivery_context: DeliveryContext | None = None
+    delivery_context_provenance: (
+        SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ) = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     cards: list[CardSummaryForSpec] = []
     knowledge_bases: list[SpecKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []

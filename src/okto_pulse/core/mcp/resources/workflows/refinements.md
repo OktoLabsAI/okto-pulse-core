@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 Knowledge Base placement and promotion are governed by
@@ -17,6 +17,10 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 > **MANDATORY — Query the KG before moving to `approved`.** Run the Stage 2 query set: `okto_pulse_kg_find_similar_decisions` for the refinement topic, `okto_pulse_kg_find_contradictions` on anchor decisions the refinement depends on, and `okto_pulse_kg_list_alternatives` on those anchors. Use `okto_pulse_kg_get_related_context` only for an existing formalized spec/card and pass its typed reference (`spec:<uuid>` or `card:<uuid>`); raw UUIDs and ideation IDs are not valid anchors. Ideations are lightweight lineage Entity nodes, not cognitive knowledge containers. Every decision referenced in the refinement body must either (a) cite an existing node_id or (b) declare explicitly that it is new knowledge. Silent reuse or silent contradiction is rejected.
 
 - **Governance**: Refinements can only be created from a **"done" ideation** — the ideation must be fully reviewed and snapshotted first. This ensures refinements are based on a stable, agreed-upon version of the ideation.
+- **Delivery context is required**: set `delivery_context` to `brownfield`,
+  `greenfield`, or `hybrid` when the Refinement is created. This declares the
+  implementation situation for downstream consumers; never infer it from an
+  empty Evidence list or from whether source access succeeds.
 - **Context compilation**: When creating a refinement without a description, context is automatically compiled from the ideation (problem statement, approach, scope assessment, Q&A decisions).
 - **Status flow**: draft → review → approved → done
   - **Draft**: Editable — write and iterate freely
@@ -138,8 +142,8 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 
 | Source | Tools / actions | When it applies |
 |---|---|---|
-| **Project files** | Start a Code Traceability investigation, then let the authenticated external agent inspect its own authorized environment and submit a bounded receipt/Evidence. Pulse never opens the working directory. | When source context is relevant. If the external agent cannot access it, submit `partial` or `unavailable` and use an explicit scoped waiver when appropriate. |
-| **Source code** | The authenticated external agent inspects the impacted modules in its own environment and submits immutable Code Evidence with the receipt, logical source ref, revision/workspace claim, selector, digests, and snapshot coordinates. | When source behavior informs the refinement. An unavailable capability is explicit evidence, never a fabricated code mapping. |
+| **Project files** | Start a contextual V2 Code Traceability investigation, then let the authenticated external agent inspect its own authorized environment and submit a bounded receipt/Evidence. Pulse never opens the working directory. | When AS-IS source context is relevant. If the external agent cannot access it, submit `partial` or `unavailable` and use an explicit scoped waiver when appropriate. |
+| **Source code** | Record only source present in the accepted baseline. Classify delivered behavior as `current_implementation`; existing Greenfield scaffold/base as `existing_scaffold`; platform/schema/config/dependency constraints as `existing_constraint`; and source consulted only as a model as `reference_pattern`. Scaffold/reference Evidence requires `interpretation_limit`. | When source informs the refinement. Planned TO-BE paths and structures belong in requirements, Architecture Design, or later Implementation Targets, never Code Evidence. |
 | **Knowledge bases (KE)** | `okto_pulse_list_knowledge(entity_type="spec")` on related specs; `okto_pulse_add_spec_knowledge` once the knowledge is formalized in a spec. | Whenever there is documented domain knowledge — never paraphrase a KE; cite it and attach at spec/card level if missing. |
 | **Knowledge Graph** | The Stage 2 query set (`okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_find_contradictions`, `okto_pulse_kg_list_alternatives`, plus `okto_pulse_kg_get_related_context` only for existing formalized specs/cards using `spec:<uuid>`/`card:<uuid>`) — see "Query Timing — MANDATORY at every stage". | Always — institutional memory MUST be checked for prior decisions on the same topic. |
 | **Mockups & visual artifacts** | `okto_pulse_list_screen_mockups` on the parent ideation; create new mockups via `okto_pulse_add_screen_mockup` when the refinement implies a UI surface; ask Q&A first when screen, state, workflow, or visual behavior is ambiguous. | Whenever a user-facing behaviour is in scope. |
@@ -150,7 +154,7 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 
 **Mandatory deliverables in the refinement body** — once the investigation is done, the refinement MUST cite the evidence:
 
-1. **`analysis`** — written narrative of what you found in each applicable source above. For code claims cite `evidence:<id>`, logical source ref, normalized relative path, symbol, agent receipt, declared revision/workspace claim, and snapshot coordinates. A bare `path:line` is not source truth. If source access is unavailable, cite the `partial|unavailable` receipt and the explicit waiver/N/A decision; silent omission is never acceptable.
+1. **`analysis`** — written narrative of what you found in each applicable source above. For code claims cite `evidence:<id>`, its AS-IS `source_role`, relevance/interpretation boundary, logical source ref, normalized relative path, symbol, agent receipt, declared revision/workspace claim, and snapshot coordinates. A bare `path:line` is not source truth. For a complete Greenfield absence, cite the V2 `no_relevant_existing_implementation` receipt; for access failure cite `partial|unavailable` and the explicit waiver/N/A decision. Silent omission is never acceptable.
 2. **`in_scope`** / **`out_of_scope`** — the boundary MUST be derived from the investigation, not from intuition. Each scope item should be traceable back to a source or decision.
 3. **`decisions`** — every architectural choice the refinement locks in. Each decision must reference (a) the alternatives considered, (b) the source that informed the pick, (c) the prior art it extends or supersedes (KG node id when applicable).
 4. **Attached KEs / mockups / Architecture Designs** — when the investigation produced new reference material, UI decisions, or structural design, attach it via `okto_pulse_add_refinement_knowledge`, `okto_pulse_add_screen_mockup`, or the architecture tools. Do not leave findings in chat — make them addressable for the downstream spec.
@@ -160,6 +164,8 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 | Anti-pattern | Why it's wrong | What to do instead |
 |---|---|---|
 | Writing the refinement from ideation text alone, or citing only `path:line` | The refinement claims behavior without an immutable, version-bound attestation | Run the external agent preflight and cite `evidence:<id>`. If access is unavailable, submit that result and use the explicit waiver path; never fabricate a location. |
+| Creating Evidence for a module/file the solution intends to add | It turns TO-BE design into false AS-IS history and misleads the next clean-context consumer | Put planned structure in the Spec, Architecture Design, or Card Implementation Target. Evidence an existing scaffold/reference only when it was present at baseline and include its interpretation limit. |
+| Treating an empty Greenfield search as `unavailable` or inventing `current_implementation` Evidence | It confuses a complete absence finding with failed access or delivered behavior | With complete access, submit V2 `no_relevant_existing_implementation`; record any existing scaffold/constraint/reference under its truthful role. |
 | "I think the library handles this" | Speculation that becomes a bug at impl time | Read the library's official docs or its source; cite the page or commit. |
 | Skipping `okto_pulse_kg_find_contradictions` because the topic "feels new" | Silent contradiction with prior decisions in the KG | Always run the Stage 2 query set. |
 | Marking the refinement `approved` while open Q&A items exist | Pushes ambiguity downstream | Resolve every Q&A item first; ambiguity at refinement = exponentially worse at spec/impl. |
@@ -167,6 +173,12 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 
 **Stop condition — the refinement is genuinely ready when:**
 - A reviewer reading the `analysis` field can resolve every source-code claim to immutable Code Evidence or an explicit unavailable receipt/waiver, without requiring Pulse to open a repository.
+- The full context has an explicit `delivery_context`; its `source_context`
+  reports complete role counts and classification state independently from
+  any bounded item list.
+- No new item is `uncategorized_legacy`. Any legacy item remains visibly
+  unclassified until an authorized human uses the UI/REST classification
+  workflow; agents never classify it through MCP.
 - Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
 - There are zero unresolved Q&A items on the refinement.
 - New evidence discovered during investigation has been attached as a KE, mockup, or Architecture Design, not buried in prose.
@@ -175,20 +187,29 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 
 Read `okto-pulse://reference/code-traceability`, then:
 
-1. start an investigation for the exact Refinement version;
+1. confirm the Refinement's explicit `delivery_context`, then start an
+   investigation for the exact version;
 2. check access and capabilities in the authenticated agent's environment;
-3. submit `accessible`, `partial`, or `unavailable`;
-4. submit immutable Evidence for each consequential finding;
+3. submit a contextual V2 receipt as `evidence_applicable`,
+   `no_relevant_existing_implementation`, `partial`, or `unavailable`;
+4. submit immutable V2 AS-IS Evidence for each consequential finding, with
+   source role and baseline provenance;
 5. cite `evidence:<id>` in analysis;
 6. use an explicit waiver when code is genuinely not applicable; and
 7. verify the Code Evidence gate before approval.
 
 The UI's **Technical Evidence** items are these immutable Code Evidence
 records. A meaningful claim plus the strongest applicable path/symbol selector
-is required; a receipt by itself does not communicate the finding. Even in
+and clean-context role/relevance/interpretation metadata are required; a
+receipt by itself does not communicate the finding. Even in
 `advisory`, record the finding now: Pulse cannot reconstruct it, and source or
 Refinement-version drift can require the next agent to repeat the whole
 preflight and deterministic investigation. Field recipes, symbol examples,
 and completion criteria live in the canonical resource above.
+
+When the Refinement becomes `done`, its snapshot freezes delivery context,
+contextual receipt versions, effective Evidence roles/origins, and legacy
+classification revisions/digests. A later human classification does not
+retroactively change a Spec already derived from this snapshot.
 
 There is no `decoupled_mode`. Pulse and Community never inspect source code.

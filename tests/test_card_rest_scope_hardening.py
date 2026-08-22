@@ -31,13 +31,15 @@ ATTACKER = "card-rest-scope-attacker"
 OTHER_OWNER = "card-rest-scope-owner"
 
 VALID_VALIDATION = {
+    "expected_subject_version": 1,
+    "idempotency_key": "card-rest-scope-validation",
     "confidence": 90,
-    "confidence_justification": "high",
+    "confidence_justification": "The reviewer inspected the delivered behavior.",
     "estimated_completeness": 100,
-    "completeness_justification": "complete",
+    "completeness_justification": "All acceptance criteria are implemented.",
     "estimated_drift": 0,
-    "drift_justification": "none",
-    "general_justification": "scope probe",
+    "drift_justification": "No implementation drift was identified.",
+    "general_justification": "The implementation satisfies the reviewed task contract.",
     "recommendation": "approve",
 }
 

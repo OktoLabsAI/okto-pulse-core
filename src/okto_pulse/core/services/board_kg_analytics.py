@@ -34,6 +34,7 @@ from okto_pulse.core.ports.board_kg_analytics import (
     BoardKgEffectivenessProjection,
     BoardKgEffectivenessState,
     BoardKgHealthComponent,
+    BoardKgHealthEvidenceSnapshot,
     BoardKgHealthState,
     BoardKgHistoricalAsOfUnsupported,
     LegacyBoardKgAnalyticsProjection,
@@ -54,6 +55,12 @@ _RESULT_SEVERITY = {
     BoardKgAnalyticsResultState.RESTRICTED: 4,
     BoardKgAnalyticsResultState.ERROR: 5,
 }
+
+
+def _text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"board_kg_analytics_{field}_required")
+    return value.strip()
 
 
 def _mapping(value: object, *, field: str) -> Mapping[str, Any]:
@@ -274,6 +281,62 @@ class BoardKgAnalyticsService:
             health_payload=health,
             effectiveness_payload=effectiveness,
         )
+
+
+async def read_board_kg_health_evidence(
+    context: object,
+    *,
+    board_id: str,
+) -> BoardKgHealthEvidenceSnapshot:
+    """Read KG health through one public, validated Analytics facade."""
+
+    from okto_pulse.core.services.kg_health_service import get_kg_health
+
+    canonical_board_id = _text(board_id, field="board_id")
+    payload = _mapping(
+        await get_kg_health(canonical_board_id, context),
+        field="health_payload",
+    )
+    if str(payload.get("board_id") or "") != canonical_board_id:
+        raise ValueError("board_kg_analytics_board_mismatch")
+
+    health_state = _health_state(payload.get("overall_state"), field="health_state")
+    result_state = BoardKgAnalyticsService._health_result_state(payload)
+    reason = _text(
+        payload.get("classification_reason"),
+        field="classification_reason",
+    )
+    raw_reasons = payload.get("classification_reasons") or (reason,)
+    if not isinstance(raw_reasons, (list, tuple)):
+        raise ValueError("board_kg_analytics_reason_codes_invalid")
+    reasons = tuple(sorted({_text(item, field="reason_code") for item in raw_reasons}))
+    return BoardKgHealthEvidenceSnapshot(
+        board_id=canonical_board_id,
+        health_state=health_state,
+        result_state=result_state,
+        classification_reason=reason,
+        reason_codes=reasons,
+        components=BoardKgAnalyticsService._components(payload, result_state),
+    )
+
+
+def resolve_board_kg_cognitive_status(
+    *,
+    ledger_status: object,
+    outcome_type: object,
+) -> BoardKgCognitiveStatus | None:
+    """Map the internal cognitive ledger vocabulary into the public A6 status."""
+
+    from okto_pulse.core.kg.query_contract import CognitiveOutcomeType
+
+    raw_outcome = getattr(outcome_type, "value", outcome_type)
+    if raw_outcome == CognitiveOutcomeType.NO_ACTION_REQUIRED.value:
+        return BoardKgCognitiveStatus.NO_ACTION
+    raw_status = getattr(ledger_status, "value", ledger_status)
+    try:
+        return BoardKgCognitiveStatus(str(raw_status))
+    except ValueError:
+        return None
 
 
 class BoardKgEffectivenessService:
@@ -674,4 +737,9 @@ class BoardKgEffectivenessService:
         )
 
 
-__all__ = ["BoardKgAnalyticsService", "BoardKgEffectivenessService"]
+__all__ = [
+    "BoardKgAnalyticsService",
+    "BoardKgEffectivenessService",
+    "read_board_kg_health_evidence",
+    "resolve_board_kg_cognitive_status",
+]

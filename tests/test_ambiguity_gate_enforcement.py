@@ -13,6 +13,7 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.domain.code_traceability import DeliveryContext
 from sqlalchemy_test_models import (
     Board,
     Ideation,
@@ -482,6 +483,7 @@ async def _seed_refinement(db) -> tuple[str, str]:
             in_scope=["ambiguity gate"],
             status=RefinementStatus.APPROVED,
             version=1,
+            delivery_context=DeliveryContext.BROWNFIELD.value,
             created_by=ACTOR,
         )
     )

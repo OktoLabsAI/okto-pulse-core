@@ -36,12 +36,20 @@ from sqlalchemy_test_models import (
     Ideation,
     IdeationStatus,
     Refinement,
+    RefinementSnapshot,
     RefinementStatus,
     Spec,
     SpecHistory,
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import SpecMove, SpecUpdate
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    RefinementDeliveryContextProvenance,
+    RefinementSourceContextManifestV2,
+    SpecDeliveryContextProvenance,
+    build_source_context_summary_v2,
+)
 from okto_pulse.core.domain.human_validation_cycle import (
     SubjectEditRequiresDraftError,
 )
@@ -114,8 +122,31 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
 
     ideation_id = str(uuid.uuid4())
     ref_id = str(uuid.uuid4())
+    refinement_snapshot_id = str(uuid.uuid4())
     card_impl_id = str(uuid.uuid4())
     card_test_id = str(uuid.uuid4())
+    refinement_context_provenance = RefinementDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_refinement_id=ref_id,
+        source_refinement_version=1,
+    )
+    source_context = RefinementSourceContextManifestV2(
+        refinement_id=ref_id,
+        refinement_version=1,
+        summary=build_source_context_summary_v2(
+            delivery_context=DeliveryContext.BROWNFIELD,
+            delivery_context_provenance=refinement_context_provenance,
+            current_investigation_outcomes=(),
+            evidence=(),
+        ),
+        current_receipts=(),
+    )
+    spec_context_provenance = SpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        inherited_value=DeliveryContext.BROWNFIELD,
+        source_refinement_id=ref_id,
+        source_refinement_version=1,
+    )
     async with db_factory() as db:
         db.add(
             Board(
@@ -148,6 +179,21 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                 title="Validation Gate Refinement",
                 status=RefinementStatus.DONE,
                 archived=False,
+                delivery_context=DeliveryContext.BROWNFIELD.value,
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            RefinementSnapshot(
+                id=refinement_snapshot_id,
+                refinement_id=ref_id,
+                version=1,
+                title="Validation Gate Refinement",
+                delivery_context=DeliveryContext.BROWNFIELD.value,
+                qa_snapshot=[],
+                code_evidence_manifest=[],
+                source_context_manifest=source_context.as_dict(),
+                source_context_sha256=source_context.payload_sha256,
                 created_by=USER_ID,
             )
         )
@@ -160,6 +206,24 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                 title="Validation Gate Spec",
                 status=SpecStatus.APPROVED,
                 archived=False,
+                delivery_context=DeliveryContext.BROWNFIELD.value,
+                delivery_context_provenance={
+                    "value": spec_context_provenance.value.value,
+                    "inherited_value": (
+                        spec_context_provenance.inherited_value.value
+                    ),
+                    "source_refinement_id": (
+                        spec_context_provenance.source_refinement_id
+                    ),
+                    "source_refinement_version": (
+                        spec_context_provenance.source_refinement_version
+                    ),
+                    "override_reason": None,
+                },
+                source_refinement_snapshot_id=refinement_snapshot_id,
+                source_refinement_version=1,
+                source_context_manifest=source_context.as_dict(),
+                source_context_sha256=source_context.payload_sha256,
                 skip_test_coverage=True,
                 acceptance_criteria=[
                     "AC1: System returns 200 on health check",

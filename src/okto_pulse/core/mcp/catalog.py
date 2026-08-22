@@ -117,6 +117,28 @@ def _without_nonsemantic_titles(value: Any) -> Any:
     return value
 
 
+def _close_declared_object_schemas(value: Any) -> Any:
+    """Close every fixed-shape object in an opted-in governed schema.
+
+    Pydantic can emit nested standard-dataclass schemas without an
+    ``additionalProperties`` declaration.  A closed command must not become
+    open again at that nested boundary.  Typed mappings remain dynamic: they
+    have no fixed ``properties`` collection and retain their value schema.
+    """
+
+    if isinstance(value, dict):
+        closed = {
+            key: _close_declared_object_schemas(item)
+            for key, item in value.items()
+        }
+        if isinstance(closed.get("properties"), dict):
+            closed["additionalProperties"] = False
+        return closed
+    if isinstance(value, list):
+        return [_close_declared_object_schemas(item) for item in value]
+    return value
+
+
 def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
     """Build an object schema from the public signature of ``fn``."""
 
@@ -165,11 +187,11 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
 
     result: dict[str, Any] = {"type": "object", "properties": properties}
     if getattr(fn, "__mcp_closed_schema__", False):
-        # New governed surfaces opt in to an explicitly closed root object.
-        # Python would reject an unknown keyword at invocation time anyway,
-        # but publishing ``additionalProperties: false`` makes that contract
-        # discoverable before a client sends a request.
-        result["additionalProperties"] = False
+        # Governed surfaces opt in to a recursively closed fixed-object
+        # schema. Python would reject an unknown root keyword at invocation
+        # time, but nested dataclasses also need their contract published
+        # explicitly so clients cannot infer an open payload boundary.
+        result = _close_declared_object_schemas(result)
     if required:
         result["required"] = required
     return result

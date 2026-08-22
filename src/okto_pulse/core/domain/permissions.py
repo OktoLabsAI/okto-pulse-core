@@ -1146,6 +1146,24 @@ CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
+CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1 = (
+    PermissionIntroductionManifest(
+        version="CODE-EVIDENCE-LEGACY-CLASSIFICATION/v1",
+        leaves=("code_traceability.evidence.classify_legacy",),
+        preset_grants=_explicit_preset_grants(
+            ("code_traceability.evidence.classify_legacy",),
+            {"Spec": ("code_traceability.evidence.classify_legacy",)},
+        ),
+        historical_authorities=(
+            (
+                "code_traceability.evidence.classify_legacy",
+                "spec.entity.edit_fields",
+            ),
+        ),
+    )
+)
+
+
 SKM_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="SK-M/v1",
     leaves=("spec.entity.manage_dependencies",),
@@ -1198,6 +1216,7 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
+    CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1,
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
 )
@@ -1863,6 +1882,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "submit": True,
             "supersede": True,
             "revoke": True,
+            "classify_legacy": True,
         },
         "spec_link": {
             "create": True,
@@ -4198,6 +4218,7 @@ __all__ = [
     "ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1",
     "ALL_FLAGS",
     "CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1",
+    "CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1",
     "DefaultPermissionPolicy",
     "HUMAN_ONLY_MCP_TOOL_EXEMPTIONS",
     "GUIDELINE_ADOPTION_MANAGE",

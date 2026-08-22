@@ -10,7 +10,7 @@ Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okt
 ## What's inside
 
 - **0 SQLAlchemy models** — Core owns no concrete relational mappings. This is checked by scanning for `__tablename__` assignments anywhere under `core/`; the Community edition owns the SQLAlchemy model and repository adapters.
-- **48 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
+- **59 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
 - **0 API route modules** — Core owns application contracts and use cases, not concrete FastAPI routers. The count scans `core/api/*.py`; Community owns the REST adapter and route modules.
 - **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
 - **337 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:

@@ -39,9 +39,11 @@ from test_card8_stale_sweep import _sweep_entry
 NOW = datetime(2026, 7, 21, 15, 0, tzinfo=timezone.utc)
 
 
-class _SkipBlockingExecution:
-    async def run(self, _operation: Any) -> None:
-        """The graph lifecycle has its own tests; retain the worker boundary."""
+class _InlineBlockingExecution:
+    async def run(self, operation: Any) -> Any:
+        """Retain the worker boundary while honoring its durability callback."""
+
+        return operation()
 
 
 @pytest.mark.asyncio
@@ -87,7 +89,10 @@ async def test_ts11_partial_and_final_runs_share_delete_event_but_not_attempt(
     async def _claim_is_current(*_args: object, **_kwargs: object) -> bool:
         return True
 
-    async def _reconcile(*_args: object, **_kwargs: object) -> StaleReconcileResult:
+    async def _reconcile(*_args: object, **kwargs: object) -> StaleReconcileResult:
+        before_graph_write = kwargs.get("before_graph_write")
+        assert callable(before_graph_write)
+        before_graph_write()
         return runs.pop(0)
 
     monkeypatch.setattr(
@@ -98,18 +103,35 @@ async def test_ts11_partial_and_final_runs_share_delete_event_but_not_attempt(
     monkeypatch.setattr(reconciler, "reconcile_stale_canonical", _reconcile)
     caplog.set_level(logging.INFO, logger="okto_pulse.kg.consolidation_worker")
 
+    durability_refs: list[str] = []
+
+    class _Lease:
+        durability_applied = False
+
+        def ensure_owned(self, **_kwargs: object) -> None:
+            return None
+
+        def ensure_durable(self, *, mutation_ref: str, **_kwargs: object) -> None:
+            durability_refs.append(mutation_ref)
+            self.durability_applied = True
+
+    lease = _Lease()
+
     entry.attempts = 4
     assert not await consolidation._process_stale_reconcile_entry(
         object(),
         entry,
-        blocking_execution=_SkipBlockingExecution(),
+        blocking_execution=_InlineBlockingExecution(),
+        enter_graph_write=lambda _mutation_ref: lease,
     )
     entry.attempts = 5
     assert await consolidation._process_stale_reconcile_entry(
         object(),
         entry,
-        blocking_execution=_SkipBlockingExecution(),
+        blocking_execution=_InlineBlockingExecution(),
+        enter_graph_write=lambda _mutation_ref: lease,
     )
+    assert len(durability_refs) == 2
 
     records = [
         record

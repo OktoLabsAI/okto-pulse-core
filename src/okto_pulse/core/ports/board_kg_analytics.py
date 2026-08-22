@@ -114,6 +114,58 @@ class BoardKgHealthComponent:
 
 
 @dataclass(frozen=True, slots=True)
+class BoardKgHealthEvidenceSnapshot:
+    """Strict public projection of the health facts consumed by Analytics."""
+
+    board_id: str
+    health_state: BoardKgHealthState
+    result_state: BoardKgAnalyticsResultState
+    classification_reason: str
+    reason_codes: tuple[str, ...]
+    components: tuple[BoardKgHealthComponent, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "board_id", _text(self.board_id, field="board_id"))
+        if not isinstance(self.health_state, BoardKgHealthState):
+            raise ValueError("board_kg_analytics_health_state_invalid")
+        if not isinstance(self.result_state, BoardKgAnalyticsResultState):
+            raise ValueError("board_kg_analytics_health_result_state_invalid")
+        object.__setattr__(
+            self,
+            "classification_reason",
+            _text(self.classification_reason, field="classification_reason"),
+        )
+        if (
+            not isinstance(self.reason_codes, tuple)
+            or len(self.reason_codes) > MAX_BOARD_KG_REASON_CODES
+        ):
+            raise ValueError("board_kg_analytics_reason_codes_invalid")
+        reasons = tuple(_text(item, field="reason_code") for item in self.reason_codes)
+        if tuple(sorted(set(reasons))) != reasons:
+            raise ValueError("board_kg_analytics_reason_codes_not_canonical")
+        object.__setattr__(self, "reason_codes", reasons)
+        if not isinstance(self.components, tuple) or any(
+            not isinstance(item, BoardKgHealthComponent) for item in self.components
+        ):
+            raise ValueError("board_kg_analytics_components_invalid")
+        if len(self.components) > MAX_BOARD_KG_COMPONENTS:
+            raise ValueError("board_kg_analytics_components_too_many")
+        component_names = tuple(item.component for item in self.components)
+        if tuple(sorted(set(component_names))) != component_names:
+            raise ValueError("board_kg_analytics_components_not_canonical")
+
+    def canonical_dict(self) -> dict[str, object]:
+        return {
+            "board_id": self.board_id,
+            "health_state": self.health_state.value,
+            "result_state": self.result_state.value,
+            "classification_reason": self.classification_reason,
+            "reason_codes": list(self.reason_codes),
+            "components": [item.canonical_dict() for item in self.components],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class BoardKgDebtDomains:
     result_state: BoardKgAnalyticsResultState
     active_queue_count: int | None
@@ -1204,6 +1256,7 @@ __all__ = [
     "BoardKgEffectivenessProjection",
     "BoardKgEffectivenessState",
     "BoardKgHealthComponent",
+    "BoardKgHealthEvidenceSnapshot",
     "BoardKgHealthState",
     "BoardKgMetricUnavailable",
     "BoardKgOperationalDomain",

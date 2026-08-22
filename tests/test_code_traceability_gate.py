@@ -15,9 +15,12 @@ from okto_pulse.core.domain.code_traceability import (
     CodeEvidenceAttestationState,
     CodeEvidenceDisposition,
     CodeEvidenceDispositionKind,
+    CodeEvidenceBaselinePresence,
+    CodeEvidenceBaselineProvenance,
     CodeEvidenceSelectorKind,
     CodeEvidenceSpecLink,
     CodeEvidenceSpecRelationType,
+    CodeEvidenceSourceRole,
     CodeEvidenceType,
     CodeInvestigationCapability,
     CodeInvestigationReceiptCurrentness,
@@ -227,6 +230,25 @@ def _evidence(
         received_at=NOW,
         payload_sha256=H2,
         idempotency_key=f"idem-{evidence_id}",
+        source_role=CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION,
+        relevance_summary="Current implementation behavior for this refinement.",
+        scope_relation="same delivery scope",
+        source_origin="repository baseline",
+        interpretation_limit=None,
+        baseline_provenance=CodeEvidenceBaselineProvenance(
+            presence=(
+                CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
+                if receipt.workspace_state.declared_dirty
+                else CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT
+            ),
+            workspace_state_id=receipt.workspace_state.workspace_state_id,
+            provenance_note=(
+                "Present in the worktree before delivery began."
+                if receipt.workspace_state.declared_dirty
+                else None
+            ),
+        ),
+        context_contract_version=2,
     )
 
 
@@ -331,7 +353,7 @@ def _resolution(
 
 
 @pytest.mark.asyncio
-async def test_refinement_gate_uses_current_agent_receipt_and_explicit_waiver() -> None:
+async def test_refinement_gate_rejects_unrelated_waiver_for_stale_receipt() -> None:
     committed, service, store, clock = await _accepted(
         subject_type=CodeTraceabilitySubjectType.REFINEMENT,
         subject_id="refinement-1",
@@ -358,12 +380,36 @@ async def test_refinement_gate_uses_current_agent_receipt_and_explicit_waiver() 
         receipts=(committed.receipt,),
         evidence=(evidence,),
     )
-    passed = evaluator.evaluate(
+    unclassified = replace(
+        evidence,
+        source_role=CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
+        relevance_summary=None,
+        scope_relation=None,
+        source_origin=None,
+        interpretation_limit=None,
+        baseline_provenance=None,
+        context_contract_version=None,
+    )
+    legacy_blocked = evaluator.evaluate(
+        replace(context, evidence=(unclassified,)),
+        settings,
+        phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
+        referenced_evidence_ids=(unclassified.id,),
+    )
+    assert legacy_blocked.allowed is False
+    assert legacy_blocked.blockers[0].code == (
+        "code_evidence_materiality_link_required"
+    )
+    legacy_receipt_blocked = evaluator.evaluate(
         context,
         settings,
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
+        referenced_evidence_ids=(evidence.id,),
     )
-    assert passed.allowed is True
+    assert legacy_receipt_blocked.allowed is False
+    assert legacy_receipt_blocked.blockers[0].code == (
+        "code_evidence_materiality_link_required"
+    )
     missing_reference = evaluator.evaluate(
         context,
         settings,
@@ -401,6 +447,7 @@ async def test_refinement_gate_uses_current_agent_receipt_and_explicit_waiver() 
         outdated,
         settings,
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
+        referenced_evidence_ids=(evidence.id,),
     )
     assert blocked.allowed is False
     assert blocked.receipt_currentness[committed.receipt.id] == "conflicted"
@@ -418,12 +465,14 @@ async def test_refinement_gate_uses_current_agent_receipt_and_explicit_waiver() 
         ),
         settings,
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
+        referenced_evidence_ids=(evidence.id,),
     )
-    assert waived.allowed is True
+    assert waived.allowed is False
+    assert waived.blockers[0].code == "code_investigation_currentness_unknown"
 
 
 @pytest.mark.asyncio
-async def test_metadata_only_receipt_uses_same_effective_capabilities_in_gate() -> None:
+async def test_metadata_only_legacy_receipt_has_no_gate_authority() -> None:
     clock = MutableClock()
     store = FakeInvestigationStore()
     service = CodeInvestigationService(
@@ -480,8 +529,10 @@ async def test_metadata_only_receipt_uses_same_effective_capabilities_in_gate() 
             evidence_attestation="required",
         ),
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
+        referenced_evidence_ids=(evidence.id,),
     )
-    assert evaluation.allowed is True
+    assert evaluation.allowed is False
+    assert evaluation.blockers[0].code == "code_evidence_materiality_link_required"
     assert evaluation.receipt_currentness[committed.receipt.id] == "current"
 
 

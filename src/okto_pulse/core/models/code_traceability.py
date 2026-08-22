@@ -9,9 +9,10 @@ source code.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import hashlib
-from typing import ClassVar, Self
+from typing import ClassVar, Literal, Self
 import unicodedata
 
 from pydantic import (
@@ -24,13 +25,18 @@ from pydantic import (
 )
 
 from okto_pulse.core.domain.code_traceability import (
+    CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT,
     DEFAULT_CODE_TRACEABILITY_LIMITS,
     CodeEvidence,
     CodeEvidenceAttestationBasis,
     CodeEvidenceAttestationState,
+    CodeEvidenceBaselineProvenance,
+    CodeEvidenceLegacyClassification,
+    CodeEvidenceLegacyClassificationBatchReceipt,
     CodeEvidenceDisposition,
     CodeEvidenceDispositionKind,
     CodeEvidenceSelectorKind,
+    CodeEvidenceSourceRole,
     CodeEvidenceSpecLink,
     CodeEvidenceSpecRelationType,
     CodeEvidenceType,
@@ -46,6 +52,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationRequestStatus,
     CodeInvestigationTooling,
     CodeInvestigationTrustLevel,
+    ContextualInvestigationOutcomeV2,
     CodeTraceabilityLifecycleStatus,
     CodeTraceabilityContextScope,
     CodeTraceabilityProjectionProfile,
@@ -54,6 +61,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityWaiverEntityType,
     CodeTraceabilityWaiverReason,
     CodeTraceabilityWaiverScope,
+    DeliveryContext,
     ImplementationTarget,
     ImplementationTargetExecutionDisposition,
     ImplementationTargetExecutionRecord,
@@ -67,6 +75,7 @@ from okto_pulse.core.domain.code_traceability import (
     TargetOverlapAcknowledgement,
     TargetOverlapDisposition,
     WorkspaceReproducibilityClaim,
+    authored_code_evidence_source_role,
     normalize_code_relative_path,
     normalize_code_source_ref,
 )
@@ -213,6 +222,81 @@ class CodeInvestigationReceiptSubmission(_ClosedModel):
         return self
 
 
+class CodeInvestigationReceiptSubmissionV2(_ClosedModel):
+    """Context-aware attestation; delivery context remains server-owned."""
+
+    envelope_limit: ClassVar[int] = (
+        DEFAULT_CODE_TRACEABILITY_LIMITS.receipt_envelope_bytes
+    )
+
+    contract_version: Literal[2]
+    board_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    challenge_token: SecretStr = Field(min_length=1, max_length=4096)
+    outcome: ContextualInvestigationOutcomeV2
+    capabilities: tuple[CodeInvestigationCapability, ...]
+    source_identity_digest: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
+    declared_revision: str | None = Field(default=None, max_length=2048)
+    workspace_state: ObservedWorkspaceStateSubmission | None = None
+    omission_manifest: tuple[CodeInvestigationOmissionInput, ...] = Field(
+        default=(),
+        max_length=DEFAULT_CODE_TRACEABILITY_LIMITS.omission_entries,
+    )
+    tooling: CodeInvestigationToolingInput
+    observed_at: datetime
+    idempotency_key: str = Field(min_length=1, max_length=512)
+
+    @field_validator("capabilities")
+    @classmethod
+    def _unique_capabilities(
+        cls,
+        value: tuple[CodeInvestigationCapability, ...],
+    ) -> tuple[CodeInvestigationCapability, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("code_investigation_capabilities_duplicate")
+        return tuple(sorted(value, key=lambda item: item.value))
+
+    @model_validator(mode="after")
+    def _coherent_outcome(self) -> Self:
+        complete_outcomes = {
+            ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION,
+        }
+        if self.outcome in complete_outcomes:
+            if self.omission_manifest:
+                raise ValueError("code_investigation_outcome_omissions_incoherent")
+        elif not self.omission_manifest:
+            raise ValueError("code_investigation_omission_reason_required")
+        if self.outcome is ContextualInvestigationOutcomeV2.UNAVAILABLE and any(
+            value is not None
+            for value in (
+                self.source_identity_digest,
+                self.declared_revision,
+                self.workspace_state,
+            )
+        ):
+            raise ValueError("code_investigation_unavailable_claims_incoherent")
+        if (
+            self.outcome
+            is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+            and any(
+                value is None
+                for value in (
+                    self.source_identity_digest,
+                    self.declared_revision,
+                    self.workspace_state,
+                )
+            )
+        ):
+            raise ValueError(
+                "code_investigation_no_relevant_existing_implementation_invalid"
+            )
+        return self
+
+
 class CodeEvidenceSelectorInput(_ClosedModel):
     kind: CodeEvidenceSelectorKind
     relative_path: str | None = None
@@ -314,11 +398,156 @@ class CodeEvidenceSubmission(_ClosedModel):
         return self
 
 
+class CodeEvidenceSubmissionV2(CodeEvidenceSubmission):
+    """Contextual Evidence write contract with an explicit AS-IS meaning."""
+
+    contract_version: Literal[2] = 2
+    source_role: CodeEvidenceSourceRole
+    relevance_summary: str = Field(min_length=1, max_length=20_000)
+    scope_relation: str = Field(min_length=1, max_length=20_000)
+    source_origin: str = Field(min_length=1, max_length=20_000)
+    interpretation_limit: str | None = Field(default=None, max_length=20_000)
+    baseline_provenance: CodeEvidenceBaselineProvenance
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_context_contract(cls, value: object) -> object:
+        if isinstance(value, Mapping):
+            if value.get("source_role") is None:
+                raise ValueError("code_evidence_source_role_required")
+            if value.get("baseline_provenance") is None:
+                raise ValueError("code_evidence_baseline_provenance_invalid")
+        return value
+
+    @field_validator("source_role", mode="before")
+    @classmethod
+    def _authored_source_role(cls, value: object) -> CodeEvidenceSourceRole:
+        try:
+            return authored_code_evidence_source_role(value)
+        except ValueError as exc:
+            raise ValueError(getattr(exc, "code", str(exc))) from exc
+
+    @field_validator(
+        "relevance_summary",
+        "scope_relation",
+        "source_origin",
+        "interpretation_limit",
+    )
+    @classmethod
+    def _normalize_context_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = unicodedata.normalize("NFC", value).strip()
+        if not normalized:
+            raise ValueError("code_evidence_context_text_required")
+        return _bounded_utf8(
+            normalized,
+            max_bytes=20_000,
+            field_name="code_evidence_context_text",
+        )
+
+    @model_validator(mode="after")
+    def _context_is_authored(self) -> Self:
+        if (
+            self.source_role
+            in {
+                CodeEvidenceSourceRole.EXISTING_SCAFFOLD,
+                CodeEvidenceSourceRole.REFERENCE_PATTERN,
+            }
+            and self.interpretation_limit is None
+        ):
+            raise ValueError("code_evidence_interpretation_limit_required")
+        return self
+
+
 class CodeEvidenceSupersessionSubmission(CodeEvidenceSubmission):
     """Distinct immutable replacement command, never a partial dict patch."""
 
     supersedes_evidence_id: str = Field(min_length=1)
     supersession_reason: str = Field(min_length=1)
+
+
+class CodeEvidenceSupersessionSubmissionV2(CodeEvidenceSubmissionV2):
+    """Immutable contextual replacement; never a patch over prior Evidence."""
+
+    supersedes_evidence_id: str = Field(min_length=1)
+    supersession_reason: str = Field(min_length=1)
+
+
+class LegacyEvidenceClassificationItemInput(_ClosedModel):
+    """One explicit actor-authored overlay over immutable legacy Evidence."""
+
+    evidence_id: str = Field(min_length=1, max_length=255)
+    expected_evidence_payload_sha256: str = Field(pattern=SHA256_PATTERN)
+    expected_classification_revision: int = Field(ge=0)
+    source_role: CodeEvidenceSourceRole
+    relevance_summary: str = Field(min_length=1, max_length=20_000)
+    scope_relation: str = Field(min_length=1, max_length=20_000)
+    source_origin: str = Field(min_length=1, max_length=20_000)
+    interpretation_limit: str | None = Field(default=None, max_length=20_000)
+    baseline_provenance: CodeEvidenceBaselineProvenance
+
+    @field_validator("source_role", mode="before")
+    @classmethod
+    def _authored_source_role(cls, value: object) -> CodeEvidenceSourceRole:
+        try:
+            return authored_code_evidence_source_role(value)
+        except ValueError as exc:
+            raise ValueError(getattr(exc, "code", str(exc))) from exc
+
+    @model_validator(mode="after")
+    def _interpretation_limit_is_explicit_when_conditional(self) -> Self:
+        if (
+            self.source_role
+            in {
+                CodeEvidenceSourceRole.EXISTING_SCAFFOLD,
+                CodeEvidenceSourceRole.REFERENCE_PATTERN,
+            }
+            and self.interpretation_limit is None
+        ):
+            raise ValueError("code_evidence_interpretation_limit_required")
+        return self
+
+
+class LegacyEvidenceClassificationBatchInput(_ClosedModel):
+    """Authorized human-or-agent, all-or-none legacy classification batch."""
+
+    board_id: str = Field(min_length=1, max_length=255)
+    items: tuple[LegacyEvidenceClassificationItemInput, ...] = Field(
+        min_length=1,
+        max_length=CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT,
+    )
+    justification: str = Field(min_length=1, max_length=20_000)
+    idempotency_key: str = Field(min_length=1, max_length=512)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bounded_non_empty_batch(cls, value: object) -> object:
+        if isinstance(value, Mapping):
+            items = value.get("items")
+            if isinstance(items, (list, tuple)):
+                if not items:
+                    raise ValueError(
+                        "code_evidence_legacy_classification_items_required"
+                    )
+                if (
+                    len(items)
+                    > CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT
+                ):
+                    raise ValueError(
+                        "code_evidence_legacy_classification_limit_exceeded"
+                    )
+        return value
+
+    @field_validator("items")
+    @classmethod
+    def _canonical_unique_items(
+        cls,
+        value: tuple[LegacyEvidenceClassificationItemInput, ...],
+    ) -> tuple[LegacyEvidenceClassificationItemInput, ...]:
+        if len({item.evidence_id for item in value}) != len(value):
+            raise ValueError("code_evidence_legacy_classification_items_duplicate")
+        return tuple(sorted(value, key=lambda item: item.evidence_id))
 
 
 class CodeEvidenceRevokeInput(_ClosedModel):
@@ -831,6 +1060,9 @@ class CodeInvestigationReceiptView(_DomainView):
     observation_sha256: str
     payload_sha256: str
     idempotency_key: str
+    delivery_context: DeliveryContext | None = None
+    contextual_outcome: ContextualInvestigationOutcomeV2 | None = None
+    context_contract_version: int | None = None
 
 
 class CodeInvestigationHeadView(_DomainView):
@@ -877,6 +1109,13 @@ class CodeEvidenceView(_DomainView):
     submitted_by: str | None = None
     received_at: datetime | None = None
     payload_sha256: str | None = None
+    source_role: CodeEvidenceSourceRole = CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
+    relevance_summary: str | None = None
+    scope_relation: str | None = None
+    source_origin: str | None = None
+    interpretation_limit: str | None = None
+    baseline_provenance: CodeEvidenceBaselineProvenance | None = None
+    context_contract_version: int | None = None
 
     @classmethod
     def project(
@@ -933,6 +1172,65 @@ class CodeEvidenceView(_DomainView):
         payload["excerpt"] = excerpt
         payload["excerpt_truncated"] = truncated
         return cls.model_validate(payload)
+
+
+class CodeEvidenceLegacyClassificationView(_DomainView):
+    id: str
+    batch_id: str
+    board_id: str
+    evidence_id: str
+    evidence_payload_sha256: str
+    revision: int
+    predecessor_classification_id: str | None
+    source_role: CodeEvidenceSourceRole
+    relevance_summary: str
+    scope_relation: str
+    source_origin: str
+    interpretation_limit: str | None
+    baseline_provenance: CodeEvidenceBaselineProvenance
+    classified_by: str
+    classified_at: datetime
+    justification: str
+    request_sha256: str
+    batch_item_count: int
+    batch_item_index: int
+    context_contract_version: Literal[2]
+    classification_sha256: str
+
+    @classmethod
+    def project(
+        cls,
+        classification: CodeEvidenceLegacyClassification,
+    ) -> Self:
+        return cls.model_validate(classification)
+
+
+class LegacyEvidenceClassificationBatchResult(_ClosedModel):
+    batch_id: str
+    board_id: str
+    classified_by: str
+    classified_at: datetime
+    request_sha256: str
+    classifications: tuple[CodeEvidenceLegacyClassificationView, ...]
+    replayed: bool
+
+    @classmethod
+    def project(
+        cls,
+        receipt: CodeEvidenceLegacyClassificationBatchReceipt,
+    ) -> Self:
+        return cls(
+            batch_id=receipt.batch_id,
+            board_id=receipt.board_id,
+            classified_by=receipt.classified_by,
+            classified_at=receipt.classified_at,
+            request_sha256=receipt.request_sha256,
+            classifications=tuple(
+                CodeEvidenceLegacyClassificationView.project(item)
+                for item in receipt.classifications
+            ),
+            replayed=receipt.replayed,
+        )
 
 
 class CodeEvidenceSpecLinkView(_DomainView):
@@ -1092,6 +1390,7 @@ _PUBLIC_DOMAIN_RECORD_TYPES = (
     CodeInvestigationOmission,
     CodeInvestigationTooling,
     CodeEvidence,
+    CodeEvidenceLegacyClassification,
     CodeEvidenceSpecLink,
     CodeEvidenceDisposition,
     ImplementationTarget,

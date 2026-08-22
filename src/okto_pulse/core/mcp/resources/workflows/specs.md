@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -17,11 +17,21 @@ Semantic guideline assessment follows
 **A spec is NOT a copy of the ideation.** When populating a spec's structured fields, you MUST:
 
 1. **Read the ideation/refinement context**: `okto_pulse_get_spec` returns the compiled context. Read it carefully.
-2. **Analyze the codebase**: Before writing requirements, explore the actual codebase to understand:
-   - What already exists (don't re-specify existing functionality)
-   - Current architecture and patterns (requirements must be compatible)
-   - Technical constraints (language, frameworks, dependencies)
-   - File structure and naming conventions
+2. **Establish delivery context, then investigate AS-IS source**: A direct
+   Spec requires `delivery_context=brownfield|greenfield|hybrid`; a Spec
+   derived from a Refinement inherits the frozen value and provenance. Before
+   writing requirements, inspect only source that actually exists in the
+   accepted baseline:
+   - In Brownfield, distinguish delivered `current_implementation` from
+     constraints and references.
+   - In Greenfield, do not force an existing implementation. An existing
+     scaffold/base is `existing_scaffold`; a pattern consulted elsewhere is
+     `reference_pattern`; both require an `interpretation_limit`.
+   - In Hybrid work, state which scope is current implementation and which
+     scope is new. Do not let one role imply the other.
+   - Put planned files, modules, schemas, endpoints, and tests in normative
+     Spec/Architecture/Target artifacts. Never record TO-BE structure as Code
+     Evidence.
 3. **Check knowledge bases**: Use `okto_pulse_list_knowledge(entity_type="spec")` and `okto_pulse_get_spec_knowledge` to read attached reference documents
 4. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
 5. **Then write requirements**:
@@ -202,7 +212,9 @@ When Code Traceability is enabled, the Spec remains normative and Code
 Evidence remains factual, immutable, and historical. Before moving a Spec to
 `review`:
 
-1. Read `inherited_code_evidence` from the full Spec context.
+1. Read `delivery_context`, `source_context`, `source_context_items`, and
+   `inherited_code_evidence` from the full Spec context. Role counts are over
+   the complete effective set even when the visible item list is bounded.
 2. Formalize the applicable FR, TR, BR, Decision, and Contract entities.
 3. Link every inherited Evidence item to each entity it supports.
 4. Record an explicit disposition for every inherited item that is not
@@ -231,5 +243,27 @@ or its observed source state. Pulse Core and Pulse Community do not inspect a
 repository to establish these facts. An authenticated external agent first
 performs the capability/access preflight and deterministic investigation in its
 own environment, then submits the bounded receipt and Evidence.
+
+Every effective item states its origin explicitly:
+`authored`, `human_legacy_classification`, or `unclassified_legacy`. Never
+infer legacy meaning from a path, evidence type, or claim. Human legacy
+classification is an append-only UI/REST batch guarded by
+`code_traceability.evidence.classify_legacy`; there is no MCP mutation. A V1
+receipt remains V1 after classification and may still require a fresh V2
+investigation for current gate authority.
+
+A derived Spec is intentionally frozen to the exact Refinement snapshot's
+delivery-context and source-context manifest, including receipt context
+versions and per-Evidence classification revision/digest. Later live
+Evidence, receipt, or human-classification changes do not silently rewrite the
+Spec. To adopt a newer Refinement snapshot, use the governed rebase preview,
+review the context/classification/link/disposition delta, and apply that exact
+`preview_sha256`. Never simulate a rebase by copying Evidence, editing links,
+or rewriting the manifest. If preview/apply is not available over MCP, surface
+the required authorized UI/REST action.
+
+New writes are contextual V2. If the live inbound schema exposes only V1
+`accessible`/unclassified Evidence, stop and report the missing capability;
+do not create ambiguous compatibility history to advance the Spec.
 
 Canonical protocol: `okto-pulse://reference/code-traceability`.

@@ -181,7 +181,7 @@ class McpDeriveSpecCommand:
     __slots__ = (
         "source", "source_id", "mockup_ids", "kb_ids",
         "architecture_design_ids", "architecture_propagation_mode",
-        "knowledge_propagation",
+        "knowledge_propagation", "delivery_context",
     )
 
     def __init__(
@@ -194,6 +194,7 @@ class McpDeriveSpecCommand:
         architecture_design_ids: Any = None,
         architecture_propagation_mode: str = "copy",
         knowledge_propagation: Any = None,
+        delivery_context: Any = None,
     ) -> None:
         self.source = source
         self.source_id = source_id
@@ -202,6 +203,7 @@ class McpDeriveSpecCommand:
         self.architecture_design_ids = architecture_design_ids
         self.architecture_propagation_mode = architecture_propagation_mode
         self.knowledge_propagation = knowledge_propagation
+        self.delivery_context = delivery_context
 
 
 class McpDeriveSpecResult:
@@ -286,14 +288,19 @@ class McpDeriveSpecUseCase:
         )
         if parent is None or actor.board_id is None or parent.board_id != actor.board_id:
             raise EntityNotFoundError(command.source, command.source_id)
+        derive_kwargs = {
+            "skip_ownership_check": True,
+            "mockup_ids": command.mockup_ids,
+            "kb_ids": command.kb_ids,
+            "architecture_design_ids": command.architecture_design_ids,
+            "architecture_propagation_mode": command.architecture_propagation_mode,
+        }
+        if command.source == "ideation":
+            derive_kwargs["delivery_context"] = command.delivery_context
         spec = await service.derive_spec(
             command.source_id,
             actor.actor_id,
-            skip_ownership_check=True,
-            mockup_ids=command.mockup_ids,
-            kb_ids=command.kb_ids,
-            architecture_design_ids=command.architecture_design_ids,
-            architecture_propagation_mode=command.architecture_propagation_mode,
+            **derive_kwargs,
         )
         if not spec:
             raise EntityNotFoundError(command.source, command.source_id)

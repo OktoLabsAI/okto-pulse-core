@@ -31,12 +31,19 @@ from okto_pulse.core.application.use_cases.code_traceability import (
     _resolution_card_version_or_replay,
 )
 from okto_pulse.core.domain.code_traceability import (
+    SOURCE_CONTEXT_INTERPRETATION_RULE_V2,
+    CodeEvidence,
     CodeEvidenceAttestationBasis,
     CodeEvidenceAttestationState,
+    CodeEvidenceBaselinePresence,
+    CodeEvidenceBaselineProvenance,
     CodeEvidenceDisposition,
     CodeEvidenceDispositionKind,
     CodeEvidenceLinkInvalid,
+    CodeEvidenceLegacyClassification,
+    CodeDeliveryContextRequired,
     CodeEvidenceSelectorKind,
+    CodeEvidenceSourceRole,
     CodeEvidenceSpecLink,
     CodeEvidenceSubmissionFailed,
     CodeEvidenceSpecRelationType,
@@ -64,6 +71,8 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityWaiverEntityType,
     CodeTraceabilityWaiverReason,
     CodeTraceabilityWaiverScope,
+    ContextualInvestigationOutcomeV2,
+    DeliveryContext,
     ImplementationTarget,
     ImplementationTargetEvidenceRelationType,
     ImplementationTargetResolution,
@@ -74,11 +83,17 @@ from okto_pulse.core.domain.code_traceability import (
     ImplementationTargetRole,
     ImplementationTargetSelectorKind,
     SpecEntityType,
+    SpecDeliveryContextProvenance,
     ObservedWorkspaceStateRef,
     TargetOverlap,
     TargetOverlapDisposition,
     TargetOverlapSeverity,
     WorkspaceReproducibilityClaim,
+    canonical_code_traceability_sha256,
+    source_context_classification_input_v2,
+    source_context_classification_fence_v2,
+    source_context_evidence_item_v2,
+    source_context_evidence_payload_v2,
 )
 from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSelectorInput,
@@ -144,6 +159,164 @@ UTC = timezone.utc
 NOW = datetime(2026, 8, 9, 18, 0, tzinfo=UTC)
 H1 = "1" * 64
 H2 = "2" * 64
+
+
+def _legacy_evidence_record(
+    evidence_id: str,
+    *,
+    parent_version: int,
+    payload_sha256: str,
+    lifecycle_status: CodeTraceabilityLifecycleStatus = (
+        CodeTraceabilityLifecycleStatus.ACTIVE
+    ),
+    supersedes_evidence_id: str | None = None,
+) -> CodeEvidence:
+    return CodeEvidence(
+        id=evidence_id,
+        board_id="board-1",
+        investigation_receipt_id=f"receipt-{evidence_id}",
+        source_ref="source-1",
+        parent_type=CodeTraceabilitySubjectType.REFINEMENT,
+        parent_id="refinement-1",
+        parent_version=parent_version,
+        evidence_type=CodeEvidenceType.BEHAVIOR,
+        claim=f"Legacy claim {evidence_id}",
+        workspace_state=ObservedWorkspaceStateRef(
+            declared_revision="abc123",
+            workspace_state_id="workspace-1",
+            declared_dirty=False,
+            observed_at=NOW,
+            reproducibility_claim=WorkspaceReproducibilityClaim.COMMITTED,
+            fingerprint_algorithm="sha256_manifest_v1",
+            manifest_digest=H1,
+            manifest_entry_count=1,
+        ),
+        selector_kind=CodeEvidenceSelectorKind.FILE,
+        relative_path="src/service.py",
+        language="python",
+        symbol_kind=None,
+        qualified_symbol=None,
+        symbol_signature=None,
+        snapshot_line_start=None,
+        snapshot_line_end=None,
+        excerpt=None,
+        excerpt_sha256=None,
+        declared_file_blob_sha256=H1,
+        declared_source_content_sha256=H1,
+        excerpt_omitted_reason="not_requested",
+        attestation_state=CodeEvidenceAttestationState.AGENT_ATTESTED,
+        attestation_basis=CodeEvidenceAttestationBasis.AUTHENTICATED_AGENT_RECEIPT,
+        lifecycle_status=lifecycle_status,
+        supersedes_evidence_id=supersedes_evidence_id,
+        revocation_reason=(
+            "Revoked legacy evidence."
+            if lifecycle_status is CodeTraceabilityLifecycleStatus.REVOKED
+            else None
+        ),
+        submitted_by="agent-1",
+        received_at=NOW,
+        payload_sha256=payload_sha256,
+        idempotency_key=f"idem-{evidence_id}",
+        source_role=CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
+        relevance_summary=None,
+        scope_relation=None,
+        source_origin=None,
+        interpretation_limit=None,
+        baseline_provenance=None,
+        context_contract_version=None,
+    )
+
+
+def _context_sha256(
+    source_role: str = "uncategorized_legacy",
+    *,
+    relevance_summary: str | None = None,
+    scope_relation: str | None = None,
+    source_origin: str | None = None,
+    interpretation_limit: str | None = None,
+) -> str:
+    return canonical_code_traceability_sha256(
+        {
+            "source_role": source_role,
+            "relevance_summary": relevance_summary,
+            "scope_relation": scope_relation,
+            "source_origin": source_origin,
+            "interpretation_limit": interpretation_limit,
+            "baseline_provenance": None,
+        }
+    )
+
+
+def _source_context_manifest(
+    *,
+    refinement_version: int,
+    delivery_context: DeliveryContext,
+    receipt_id: str,
+    generation: int,
+    head_revision: int,
+    receipt_sha256: str,
+    outcome: ContextualInvestigationOutcomeV2,
+    role_counts: dict[str, int] | None = None,
+    classification_revision: int | None = None,
+    classification_sha256: str | None = None,
+) -> tuple[dict[str, object], str]:
+    counts = role_counts or {
+        "current_implementation_count": 0,
+        "existing_scaffold_count": 0,
+        "existing_constraint_count": 0,
+        "reference_pattern_count": 0,
+        "uncategorized_legacy_count": 2,
+    }
+    classified_count = sum(counts.values()) - counts["uncategorized_legacy_count"]
+    evidence_applicable = {
+        ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE: True,
+        ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION: False,
+        ContextualInvestigationOutcomeV2.PARTIAL: None,
+        ContextualInvestigationOutcomeV2.UNAVAILABLE: None,
+    }[outcome]
+    payload: dict[str, object] = {
+        "contract_version": 2,
+        "subject_type": "refinement",
+        "subject_id": "refinement-1",
+        "subject_version": refinement_version,
+        "delivery_context": delivery_context.value,
+        "delivery_context_provenance": {
+            "value": delivery_context.value,
+            "source_refinement_id": "refinement-1",
+            "source_refinement_version": refinement_version,
+        },
+        "current_receipts": [
+            {
+                "receipt_id": receipt_id,
+                "source_ref": "source-1",
+                "generation": generation,
+                "head_revision": head_revision,
+                "payload_sha256": receipt_sha256,
+                "delivery_context": delivery_context.value,
+                "contextual_outcome": outcome.value,
+                "context_contract_version": 2,
+            }
+        ],
+        "investigation_outcome": outcome.value,
+        "evidence_applicable": evidence_applicable,
+        "role_counts": counts,
+        "classification_state": {
+            "classified_count": classified_count,
+            "uncategorized_legacy_count": counts[
+                "uncategorized_legacy_count"
+            ],
+        },
+        "classification_fence": {
+            "revision": classification_revision,
+            "payload_sha256": classification_sha256,
+        },
+        "interpretation_rule": SOURCE_CONTEXT_INTERPRETATION_RULE_V2,
+        "items_not_current_implementation_count": (
+            sum(counts.values()) - counts["current_implementation_count"]
+        ),
+        "technical_details_available": sum(counts.values()) > 0,
+    }
+    return payload, canonical_code_traceability_sha256(payload)
 
 
 class MutableClock:
@@ -341,6 +514,9 @@ class FakeTraceabilityStore:
     def __init__(self, investigations: FakeInvestigationStore) -> None:
         self.investigations = investigations
         self.evidence: dict[str, object] = {}
+        self.evidence_classifications: dict[
+            tuple[str, int], CodeEvidenceLegacyClassification
+        ] = {}
         self.targets: dict[str, ImplementationTarget] = {}
         self.resolutions: dict[str, object] = {}
         self.executions: dict[str, object] = {}
@@ -354,10 +530,32 @@ class FakeTraceabilityStore:
         self.fail_next_target_create_cas = False
         self.fail_next_rebase_cas = False
         self.rebase_apply_count = 0
-        self.spec_rebase_state: dict[str, tuple[str, int, int]] = {}
+        self.spec_rebase_state: dict[
+            str,
+            tuple[
+                str,
+                int,
+                int,
+                DeliveryContext,
+                SpecDeliveryContextProvenance,
+                dict[str, object],
+                str,
+            ],
+        ] = {}
+        self.last_rebase_cas_arguments: dict[str, object] | None = None
 
     async def get_evidence(self, *, board_id: str, evidence_id: str):
         item = self.evidence.get(evidence_id)
+        return item if item is not None and item.board_id == board_id else None
+
+    async def get_evidence_classification(
+        self,
+        *,
+        board_id: str,
+        evidence_id: str,
+        revision: int,
+    ):
+        item = self.evidence_classifications.get((evidence_id, revision))
         return item if item is not None and item.board_id == board_id else None
 
     async def list_evidence(self, query):
@@ -465,6 +663,14 @@ class FakeTraceabilityStore:
         current_refinement_version: int,
         target_refinement_snapshot_id: str,
         target_refinement_version: int,
+        expected_delivery_context: DeliveryContext,
+        expected_delivery_context_provenance: SpecDeliveryContextProvenance,
+        next_delivery_context: DeliveryContext,
+        next_delivery_context_provenance: SpecDeliveryContextProvenance,
+        expected_source_context_manifest: dict[str, object],
+        expected_source_context_sha256: str,
+        next_source_context_manifest: dict[str, object],
+        next_source_context_sha256: str,
         stale_link_ids: tuple[str, ...],
         invalid_disposition_ids: tuple[str, ...],
         cleared_by: str,
@@ -472,6 +678,12 @@ class FakeTraceabilityStore:
         expected_spec_version: int,
         next_spec_version: int,
     ):
+        self.last_rebase_cas_arguments = {
+            "expected_source_context_manifest": expected_source_context_manifest,
+            "expected_source_context_sha256": expected_source_context_sha256,
+            "next_source_context_manifest": next_source_context_manifest,
+            "next_source_context_sha256": next_source_context_sha256,
+        }
         current_state = self.spec_rebase_state.get(spec_id)
         if self.fail_next_rebase_cas:
             self.fail_next_rebase_cas = False
@@ -480,8 +692,20 @@ class FakeTraceabilityStore:
             current_refinement_snapshot_id,
             current_refinement_version,
             expected_spec_version,
+            expected_delivery_context,
+            expected_delivery_context_provenance,
+            expected_source_context_manifest,
+            expected_source_context_sha256,
         ):
             raise CodeEvidenceLinkInvalid(details={"reason": "spec_version_conflict"})
+        if (
+            next_delivery_context is not next_delivery_context_provenance.value
+            or next_delivery_context_provenance.source_refinement_version
+            != target_refinement_version
+            or canonical_code_traceability_sha256(next_source_context_manifest)
+            != next_source_context_sha256
+        ):
+            raise CodeEvidenceLinkInvalid(details={"reason": "rebase_set_conflict"})
         if any(link_id not in self.links for link_id in stale_link_ids) or any(
             disposition_id not in {item.id for item in self.dispositions.values()}
             for disposition_id in invalid_disposition_ids
@@ -509,6 +733,10 @@ class FakeTraceabilityStore:
             target_refinement_snapshot_id,
             target_refinement_version,
             next_spec_version,
+            next_delivery_context,
+            next_delivery_context_provenance,
+            next_source_context_manifest,
+            next_source_context_sha256,
         )
         self.rebase_apply_count += 1
         return next_spec_version
@@ -2378,18 +2606,44 @@ class FakeBoardService:
 
 class FakeRefinementService:
     def __init__(self) -> None:
+        source_context_3, source_context_sha256_3 = _source_context_manifest(
+            refinement_version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            receipt_id="receipt-context-3",
+            generation=3,
+            head_revision=3,
+            receipt_sha256=H1,
+            outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+        )
+        source_context_4, source_context_sha256_4 = _source_context_manifest(
+            refinement_version=4,
+            delivery_context=DeliveryContext.GREENFIELD,
+            receipt_id="receipt-context-4",
+            generation=4,
+            head_revision=4,
+            receipt_sha256=H2,
+            outcome=(
+                ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+            ),
+        )
         self.snapshots = {
             3: SimpleNamespace(
                 id="snapshot-3",
                 refinement_id="refinement-1",
                 version=3,
+                delivery_context=DeliveryContext.BROWNFIELD,
                 code_evidence_manifest=[],
+                source_context_manifest=source_context_3,
+                source_context_sha256=source_context_sha256_3,
             ),
             4: SimpleNamespace(
                 id="snapshot-4",
                 refinement_id="refinement-1",
                 version=4,
+                delivery_context=DeliveryContext.GREENFIELD,
                 code_evidence_manifest=[],
+                source_context_manifest=source_context_4,
+                source_context_sha256=source_context_sha256_4,
             ),
         }
 
@@ -2444,6 +2698,15 @@ class FakeSpecService:
     async def get_spec(self, spec_id: str):
         if spec_id != "spec-1":
             return None
+        source_context, source_context_sha256 = _source_context_manifest(
+            refinement_version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            receipt_id="receipt-context-3",
+            generation=3,
+            head_revision=3,
+            receipt_sha256=H1,
+            outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+        )
         return SimpleNamespace(
             id="spec-1",
             board_id="board-1",
@@ -2453,6 +2716,16 @@ class FakeSpecService:
             refinement_id="refinement-1",
             source_refinement_snapshot_id="snapshot-3",
             source_refinement_version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            delivery_context_provenance={
+                "value": DeliveryContext.BROWNFIELD.value,
+                "inherited_value": DeliveryContext.BROWNFIELD.value,
+                "source_refinement_id": "refinement-1",
+                "source_refinement_version": 3,
+                "override_reason": None,
+            },
+            source_context_manifest=source_context,
+            source_context_sha256=source_context_sha256,
         )
 
 
@@ -2678,6 +2951,84 @@ async def test_aggregate_projection_requires_every_leaf_read_permission() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("can_classify_legacy_evidence", (False, True))
+async def test_aggregate_projection_redacts_legacy_classification_inputs_only_when_denied(
+    can_classify_legacy_evidence: bool,
+) -> None:
+    marker = object()
+    legacy = _legacy_evidence_record(
+        "evidence-legacy",
+        parent_version=3,
+        payload_sha256=H2,
+    )
+    classification_input = source_context_classification_input_v2(legacy)
+    loaded_context = CodeTraceabilityContext(
+        board_id="board-1",
+        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+        subject_id="refinement-1",
+        subject_version=3,
+        profile=CodeTraceabilityProjectionProfile.FULL,
+        context_scope=CodeTraceabilityContextScope.DEFAULT,
+        evidence=(legacy,),
+        source_context_items=(source_context_evidence_item_v2(legacy),),
+        source_context_classification_inputs=(classification_input,),
+    )
+
+    class ProjectionSpy:
+        projected_context: CodeTraceabilityContext | None = None
+
+        async def load_context(self, _query, **_kwargs):
+            return loaded_context
+
+        def project_context(self, context, _settings, **_kwargs):
+            self.projected_context = context
+            return marker
+
+    investigations = FakeInvestigationStore()
+    traceability = FakeTraceabilityStore(investigations)
+    uow = FakeUnitOfWork(investigations, traceability)
+    projection = ProjectionSpy()
+    permissions = [
+        "code_traceability.investigation.read",
+        "code_traceability.evidence.read",
+        "code_traceability.target.read",
+        "code_traceability.overlap.read",
+    ]
+    if can_classify_legacy_evidence:
+        permissions.append("code_traceability.evidence.classify_legacy")
+
+    result = await GetCodeTraceabilityProjectionUseCase(
+        projection,  # type: ignore[arg-type]
+    ).execute(
+        CodeTraceabilityProjectionQuery(
+            board_id="board-1",
+            subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+            subject_id="refinement-1",
+            subject_version=3,
+            profile=CodeTraceabilityProjectionProfile.FULL,
+            context_scope=CodeTraceabilityContextScope.DEFAULT,
+        ),
+        actor=ActorContext(
+            "user-1",
+            "rest",
+            actor_kind="user",
+            board_id="board-1",
+            permissions=tuple(permissions),
+        ),
+        uow=uow,  # type: ignore[arg-type]
+    )
+
+    assert result is marker
+    assert projection.projected_context is not None
+    assert projection.projected_context.source_context_items == (
+        source_context_evidence_item_v2(legacy),
+    )
+    assert projection.projected_context.source_context_classification_inputs == (
+        (classification_input,) if can_classify_legacy_evidence else ()
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("spec_skip", "board_skip"),
     ((True, False), (False, True)),
@@ -2765,16 +3116,42 @@ async def test_spec_projection_propagates_effective_code_evidence_coverage_skip(
 async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() -> None:
     investigations = FakeInvestigationStore()
     traceability = FakeTraceabilityStore(investigations)
-    replacement = SimpleNamespace(
-        id="evidence-4",
-        board_id="board-1",
-        parent_id="refinement-1",
+    current_provenance = SpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        inherited_value=DeliveryContext.BROWNFIELD,
+        source_refinement_id="refinement-1",
+        source_refinement_version=3,
+    )
+    resulting_provenance = SpecDeliveryContextProvenance(
+        value=DeliveryContext.GREENFIELD,
+        inherited_value=DeliveryContext.GREENFIELD,
+        source_refinement_id="refinement-1",
+        source_refinement_version=4,
+    )
+    current_source_context, current_source_context_sha256 = (
+        _source_context_manifest(
+            refinement_version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            receipt_id="receipt-context-3",
+            generation=3,
+            head_revision=3,
+            receipt_sha256=H1,
+            outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+        )
+    )
+    replacement = _legacy_evidence_record(
+        "evidence-4",
         parent_version=4,
-        lifecycle_status=CodeTraceabilityLifecycleStatus.ACTIVE,
-        content_sha256=H2,
+        payload_sha256=H2,
         supersedes_evidence_id="evidence-3",
     )
     traceability.evidence[replacement.id] = replacement
+    retained = _legacy_evidence_record(
+        "evidence-retained",
+        parent_version=2,
+        payload_sha256=H1,
+    )
+    traceability.evidence[retained.id] = retained
     link = CodeEvidenceSpecLink(
         id="link-stale",
         board_id="board-1",
@@ -2785,7 +3162,7 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
         relation_type=CodeEvidenceSpecRelationType.SUPPORTS,
         rationale="Evidence inherited from the frozen Refinement snapshot.",
         evidence_content_sha256=H1,
-        source_refinement_version=3,
+        source_refinement_version=2,
         spec_version=7,
         created_by="user-1",
         created_at=NOW,
@@ -2804,25 +3181,85 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
         cleared_by=None,
         cleared_at=None,
     )
+    retained_link = replace(
+        link,
+        id="link-retained",
+        evidence_id=retained.id,
+        entity_id="tr-retained",
+    )
+    added_direct_link = replace(
+        link,
+        id="link-added-direct",
+        evidence_id=replacement.id,
+        entity_id="tr-added-direct",
+        evidence_content_sha256=H2,
+        source_refinement_version=4,
+    )
+    retained_disposition = replace(
+        disposition,
+        id="disposition-retained",
+        evidence_id=retained.id,
+    )
     traceability.links[link.id] = link
+    traceability.links[retained_link.id] = retained_link
+    traceability.links[added_direct_link.id] = added_direct_link
     traceability.dispositions[(disposition.spec_id, disposition.evidence_id)] = (
         disposition
     )
-    traceability.spec_rebase_state["spec-1"] = ("snapshot-3", 3, 7)
+    traceability.dispositions[
+        (retained_disposition.spec_id, retained_disposition.evidence_id)
+    ] = retained_disposition
+    traceability.spec_rebase_state["spec-1"] = (
+        "snapshot-3",
+        3,
+        7,
+        DeliveryContext.BROWNFIELD,
+        current_provenance,
+        current_source_context,
+        current_source_context_sha256,
+    )
     uow = FakeUnitOfWork(investigations, traceability)
+    loaded_spec = await uow.services.specs.get_spec("spec-1")
+
+    async def get_loaded_spec(spec_id: str):
+        return loaded_spec if spec_id == "spec-1" else None
+
+    uow.services.specs.get_spec = get_loaded_spec
     uow.services.refinements.snapshots[3].code_evidence_manifest = [
         {
             "evidence_id": "evidence-3",
             "content_sha256": H1,
             "lifecycle_status": "active",
-        }
+            "context_sha256": _context_sha256(),
+            "classification_revision": None,
+            "classification_sha256": None,
+        },
+        {
+            "evidence_id": retained.id,
+            "content_sha256": H1,
+            "lifecycle_status": "active",
+            "context_sha256": _context_sha256(),
+            "classification_revision": None,
+            "classification_sha256": None,
+        },
     ]
     uow.services.refinements.snapshots[4].code_evidence_manifest = [
         {
             "evidence_id": "evidence-4",
             "content_sha256": H2,
             "lifecycle_status": "active",
-        }
+            "context_sha256": _context_sha256(),
+            "classification_revision": None,
+            "classification_sha256": None,
+        },
+        {
+            "evidence_id": retained.id,
+            "content_sha256": H1,
+            "lifecycle_status": "active",
+            "context_sha256": _context_sha256(),
+            "classification_revision": None,
+            "classification_sha256": None,
+        },
     ]
     actor = ActorContext(
         "user-1",
@@ -2847,10 +3284,181 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
     assert preview.added_evidence_ids == ("evidence-4",)
     assert preview.removed_evidence_ids == ("evidence-3",)
     assert preview.superseded_evidence_pairs == (("evidence-3", "evidence-4"),)
-    assert preview.stale_link_ids == (link.id,)
-    assert preview.invalid_disposition_ids == (disposition.id,)
+    assert preview.stale_link_ids == (retained_link.id, link.id)
+    assert preview.invalid_disposition_ids == (
+        retained_disposition.id,
+        disposition.id,
+    )
+    assert preview.current_delivery_context_provenance == current_provenance
+    assert preview.target_delivery_context_provenance == resulting_provenance
+    assert preview.resulting_delivery_context_provenance == resulting_provenance
+    assert preview.delivery_context_delta.as_dict() == {
+        "effective_value_changed": True,
+        "inherited_value_changed": True,
+        "override_state_changed": False,
+        "override_reason_changed": False,
+    }
+    assert preview.as_dict()["resulting_delivery_context_provenance"] == {
+        "value": "greenfield",
+        "inherited_value": "greenfield",
+        "source_refinement_id": "refinement-1",
+        "source_refinement_version": 4,
+        "override_reason": None,
+    }
+    assert preview.source_context_delta.investigation.as_dict() == {
+        "changed": True,
+        "head_changed_source_refs": ("source-1",),
+        "current_receipt_changed_source_refs": ("source-1",),
+        "outcome_changed": True,
+        "previous_outcome": "evidence_applicable",
+        "next_outcome": "no_relevant_existing_implementation",
+    }
+    assert (
+        preview.source_context_delta.evidence.context_sha256_changed_evidence_ids
+        == ("evidence-3", "evidence-4")
+    )
+    assert preview.source_context_delta.evidence.role_counts_changed is False
+    assert preview.source_context_delta.classification.changed is False
     assert uow.commit_count == 0
     assert uow.published_events == []
+
+    target_manifest = uow.services.refinements.snapshots[4].source_context_manifest
+    target_manifest_sha256 = (
+        uow.services.refinements.snapshots[4].source_context_sha256
+    )
+    classification = CodeEvidenceLegacyClassification(
+        id="classification-retained-1",
+        batch_id="classification-batch-1",
+        board_id="board-1",
+        evidence_id=retained.id,
+        evidence_payload_sha256=retained.payload_sha256,
+        revision=1,
+        predecessor_classification_id=None,
+        source_role=CodeEvidenceSourceRole.EXISTING_CONSTRAINT,
+        relevance_summary="The legacy item constrains the planned change.",
+        scope_relation="same bounded delivery scope",
+        source_origin="repository baseline",
+        interpretation_limit=None,
+        baseline_provenance=CodeEvidenceBaselineProvenance(
+            presence=CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT,
+            workspace_state_id=retained.workspace_state.workspace_state_id,
+        ),
+        classified_by="user-1",
+        classified_at=NOW,
+        justification="Human review resolved the legacy ambiguity.",
+        idempotency_key="classification-retained-1",
+        request_sha256=H1,
+        batch_item_count=1,
+        batch_item_index=1,
+    )
+    traceability.evidence_classifications[(retained.id, 1)] = classification
+    classification_fence = source_context_classification_fence_v2(
+        (classification,)
+    )
+    classified_manifest, classified_manifest_sha256 = _source_context_manifest(
+        refinement_version=4,
+        delivery_context=DeliveryContext.GREENFIELD,
+        receipt_id="receipt-context-4",
+        generation=4,
+        head_revision=4,
+        receipt_sha256=H2,
+        outcome=(
+            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+        ),
+        role_counts={
+            "current_implementation_count": 0,
+            "existing_scaffold_count": 0,
+            "existing_constraint_count": 1,
+            "reference_pattern_count": 0,
+            "uncategorized_legacy_count": 1,
+        },
+        classification_revision=classification_fence.revision,
+        classification_sha256=classification_fence.payload_sha256,
+    )
+    uow.services.refinements.snapshots[4].source_context_manifest = (
+        classified_manifest
+    )
+    uow.services.refinements.snapshots[4].source_context_sha256 = (
+        classified_manifest_sha256
+    )
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "classification_revision"
+    ] = 1
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "classification_sha256"
+    ] = classification.classification_sha256
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "context_contract_version"
+    ] = 2
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "context_origin"
+    ] = "human_legacy_classification"
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "context_sha256"
+    ] = canonical_code_traceability_sha256(
+        source_context_evidence_payload_v2(
+            source_context_evidence_item_v2(retained, classification)
+        )
+    )
+    classified_preview = await PreviewSpecCodeEvidenceRebaseUseCase(
+        SpecCodeEvidenceRebaseService(clock=lambda: NOW)
+    ).execute(preview_command, actor=actor, uow=uow)  # type: ignore[arg-type]
+    classification_delta = classified_preview.source_context_delta.classification
+    assert classification_delta.overlay_changed_evidence_ids == (retained.id,)
+    assert classification_delta.revision_changed_evidence_ids == (retained.id,)
+    assert classification_delta.digest_changed_evidence_ids == (retained.id,)
+    assert classification_delta.fence_revision_changed is True
+    assert classification_delta.fence_digest_changed is True
+    assert classified_preview.preview_sha256 != preview.preview_sha256
+    # A later human classification belongs to the target Refinement snapshot.
+    # The pinned Spec and its gate inputs stay frozen until the explicit rebase.
+    assert traceability.spec_rebase_state["spec-1"] == (
+        "snapshot-3",
+        3,
+        7,
+        DeliveryContext.BROWNFIELD,
+        current_provenance,
+        current_source_context,
+        current_source_context_sha256,
+    )
+    assert link.id in traceability.links
+    assert retained_link.id in traceability.links
+    assert added_direct_link.id in traceability.links
+    assert traceability.dispositions[("spec-1", retained.id)].active is True
+    with pytest.raises(CodeEvidenceLinkInvalid) as stale_classification_preview:
+        await ApplySpecCodeEvidenceRebaseUseCase(
+            SpecCodeEvidenceRebaseService(clock=lambda: NOW)
+        ).execute(
+            SpecCodeEvidenceRebaseApplyInput(
+                **preview_command.model_dump(mode="python"),
+                preview_sha256=preview.preview_sha256,
+            ),
+            actor=actor,
+            uow=uow,  # type: ignore[arg-type]
+        )
+    assert stale_classification_preview.value.details == {
+        "reason": "rebase_preview_stale"
+    }
+    assert traceability.rebase_apply_count == 0
+    uow.services.refinements.snapshots[4].source_context_manifest = target_manifest
+    uow.services.refinements.snapshots[4].source_context_sha256 = (
+        target_manifest_sha256
+    )
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "classification_revision"
+    ] = None
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "classification_sha256"
+    ] = None
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1].pop(
+        "context_contract_version"
+    )
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1].pop(
+        "context_origin"
+    )
+    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
+        "context_sha256"
+    ] = _context_sha256()
 
     with pytest.raises(CodeEvidenceLinkInvalid) as not_newer:
         await PreviewSpecCodeEvidenceRebaseUseCase().execute(
@@ -2864,6 +3472,41 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
             uow=uow,  # type: ignore[arg-type]
         )
     assert not_newer.value.details == {"reason": "newer_refinement_snapshot_required"}
+
+    uow.services.refinements.snapshots[4].delivery_context = None
+    with pytest.raises(CodeDeliveryContextRequired) as missing_target_context:
+        await PreviewSpecCodeEvidenceRebaseUseCase().execute(
+            preview_command,
+            actor=actor,
+            uow=uow,  # type: ignore[arg-type]
+        )
+    assert missing_target_context.value.details == {
+        "reason": "target_refinement_snapshot_delivery_context_required"
+    }
+    uow.services.refinements.snapshots[4].delivery_context = DeliveryContext.GREENFIELD
+    uow.services.refinements.snapshots[3].delivery_context = None
+    with pytest.raises(CodeDeliveryContextRequired) as missing_current_context:
+        await PreviewSpecCodeEvidenceRebaseUseCase().execute(
+            preview_command,
+            actor=actor,
+            uow=uow,  # type: ignore[arg-type]
+        )
+    assert missing_current_context.value.details == {
+        "reason": "current_refinement_snapshot_delivery_context_required"
+    }
+    uow.services.refinements.snapshots[3].delivery_context = DeliveryContext.BROWNFIELD
+
+    uow.services.refinements.snapshots[4].source_context_manifest = None
+    with pytest.raises(CodeEvidenceLinkInvalid) as legacy_context_missing:
+        await PreviewSpecCodeEvidenceRebaseUseCase().execute(
+            preview_command,
+            actor=actor,
+            uow=uow,  # type: ignore[arg-type]
+        )
+    assert legacy_context_missing.value.details == {
+        "reason": "target_refinement_snapshot_source_context_manifest_required"
+    }
+    uow.services.refinements.snapshots[4].source_context_manifest = target_manifest
 
     uow.services.refinements.snapshots[4].code_evidence_manifest[0][
         "content_sha256"
@@ -2900,6 +3543,15 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
         **preview_command.model_dump(mode="python"),
         preview_sha256=preview.preview_sha256,
     )
+    uow.services.refinements.snapshots[4].delivery_context = DeliveryContext.HYBRID
+    with pytest.raises(CodeEvidenceLinkInvalid) as stale_context_preview:
+        await ApplySpecCodeEvidenceRebaseUseCase(
+            SpecCodeEvidenceRebaseService(clock=lambda: NOW)
+        ).execute(apply_command, actor=actor, uow=uow)  # type: ignore[arg-type]
+    assert stale_context_preview.value.details == {"reason": "rebase_preview_stale"}
+    assert traceability.rebase_apply_count == 0
+    uow.services.refinements.snapshots[4].delivery_context = DeliveryContext.GREENFIELD
+
     traceability.fail_next_rebase_cas = True
     with pytest.raises(CodeEvidenceLinkInvalid) as cas_conflict:
         await ApplySpecCodeEvidenceRebaseUseCase(
@@ -2908,7 +3560,15 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
     assert cas_conflict.value.details == {"reason": "spec_version_conflict"}
     assert link.id in traceability.links
     assert traceability.dispositions[("spec-1", "evidence-3")].active is True
-    assert traceability.spec_rebase_state["spec-1"] == ("snapshot-3", 3, 7)
+    assert traceability.spec_rebase_state["spec-1"] == (
+        "snapshot-3",
+        3,
+        7,
+        DeliveryContext.BROWNFIELD,
+        current_provenance,
+        current_source_context,
+        current_source_context_sha256,
+    )
     assert uow.published_events == []
 
     applied = await ApplySpecCodeEvidenceRebaseUseCase(
@@ -2919,14 +3579,147 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
     cleared = traceability.dispositions[("spec-1", "evidence-3")]
     assert cleared.active is False
     assert cleared.cleared_by == "user-1"
-    assert traceability.spec_rebase_state["spec-1"] == ("snapshot-4", 4, 8)
+    assert retained_link.id not in traceability.links
+    assert added_direct_link.id in traceability.links
+    assert traceability.dispositions[("spec-1", retained.id)].active is False
+    assert traceability.spec_rebase_state["spec-1"] == (
+        "snapshot-4",
+        4,
+        8,
+        DeliveryContext.GREENFIELD,
+        resulting_provenance,
+        preview.target_source_context_manifest,
+        preview.target_source_context_sha256,
+    )
+    assert traceability.last_rebase_cas_arguments == {
+        "expected_source_context_manifest": preview.current_source_context_manifest,
+        "expected_source_context_sha256": preview.current_source_context_sha256,
+        "next_source_context_manifest": preview.target_source_context_manifest,
+        "next_source_context_sha256": preview.target_source_context_sha256,
+    }
     assert traceability.rebase_apply_count == 1
+    assert loaded_spec.source_context_manifest == (
+        preview.target_source_context_manifest
+    )
+    assert loaded_spec.source_context_sha256 == preview.target_source_context_sha256
     assert uow.commit_count == 1
     assert [event.event_type for event in uow.published_events] == [
+        "spec.version_bumped",
+        "code_evidence.unlinked",
         "code_evidence.unlinked",
         "code_evidence.disposition_changed",
+        "code_evidence.disposition_changed",
+    ]
+    assert uow.published_events[0].changed_fields == [
+        "delivery_context",
+        "delivery_context_provenance",
+        "source_context_manifest",
+        "source_context_sha256",
+        "source_refinement_snapshot_id",
+        "source_refinement_version",
     ]
     assert all(event.actor_type == "user" for event in uow.published_events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target_context", "expected_override_reason", "expected_overridden"),
+    (
+        (DeliveryContext.GREENFIELD, "Approved architecture exception.", True),
+        (DeliveryContext.HYBRID, None, False),
+    ),
+)
+async def test_spec_evidence_rebase_preserves_or_normalizes_context_override(
+    target_context: DeliveryContext,
+    expected_override_reason: str | None,
+    expected_overridden: bool,
+) -> None:
+    investigations = FakeInvestigationStore()
+    traceability = FakeTraceabilityStore(investigations)
+    current_provenance = SpecDeliveryContextProvenance(
+        value=DeliveryContext.HYBRID,
+        inherited_value=DeliveryContext.BROWNFIELD,
+        source_refinement_id="refinement-1",
+        source_refinement_version=3,
+        override_reason="Approved architecture exception.",
+    )
+    empty_role_counts = {
+        "current_implementation_count": 0,
+        "existing_scaffold_count": 0,
+        "existing_constraint_count": 0,
+        "reference_pattern_count": 0,
+        "uncategorized_legacy_count": 0,
+    }
+    current_source_context, current_source_context_sha256 = (
+        _source_context_manifest(
+            refinement_version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            receipt_id="receipt-context-3",
+            generation=3,
+            head_revision=3,
+            receipt_sha256=H1,
+            outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+            role_counts=empty_role_counts,
+        )
+    )
+    target_source_context, target_source_context_sha256 = (
+        _source_context_manifest(
+            refinement_version=4,
+            delivery_context=target_context,
+            receipt_id="receipt-context-4",
+            generation=4,
+            head_revision=4,
+            receipt_sha256=H2,
+            outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+            role_counts=empty_role_counts,
+        )
+    )
+    plan = await SpecCodeEvidenceRebaseService(clock=lambda: NOW).preview(
+        board_id="board-1",
+        spec=SimpleNamespace(
+            id="spec-1",
+            refinement_id="refinement-1",
+            source_refinement_snapshot_id="snapshot-3",
+            source_refinement_version=3,
+            version=7,
+            delivery_context=DeliveryContext.HYBRID,
+            delivery_context_provenance=current_provenance,
+            source_context_manifest=current_source_context,
+            source_context_sha256=current_source_context_sha256,
+        ),
+        current_snapshot=SimpleNamespace(
+            id="snapshot-3",
+            refinement_id="refinement-1",
+            version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            code_evidence_manifest=[],
+            source_context_manifest=current_source_context,
+            source_context_sha256=current_source_context_sha256,
+        ),
+        target_snapshot=SimpleNamespace(
+            id="snapshot-4",
+            refinement_id="refinement-1",
+            version=4,
+            delivery_context=target_context,
+            code_evidence_manifest=[],
+            source_context_manifest=target_source_context,
+            source_context_sha256=target_source_context_sha256,
+        ),
+        target_refinement_version=4,
+        expected_spec_version=7,
+        store=traceability,  # type: ignore[arg-type]
+    )
+
+    resulting = plan.resulting_delivery_context_provenance
+    assert resulting.value is DeliveryContext.HYBRID
+    assert resulting.inherited_value is target_context
+    assert resulting.source_refinement_id == "refinement-1"
+    assert resulting.source_refinement_version == 4
+    assert resulting.override_reason == expected_override_reason
+    assert resulting.overridden is expected_overridden
+    assert plan.delivery_context_delta.override_state_changed is (
+        not expected_overridden
+    )
 
 
 @pytest.mark.asyncio
@@ -3122,6 +3915,9 @@ async def test_snapshot_does_not_swallow_internal_adapter_attribute_error(
         def code_traceability(self, _session):
             raise AttributeError("internal adapter defect")
 
+        def code_investigations(self, _session):
+            return object()
+
     monkeypatch.setattr(
         relational_application,
         "require_relational_application_adapter",
@@ -3146,35 +3942,32 @@ async def test_reopened_refinement_snapshot_inherits_prior_active_evidence(
     from okto_pulse.core.services import main as service_main
 
     records = (
-        SimpleNamespace(
-            id="evidence-v3-active",
+        _legacy_evidence_record(
+            "evidence-v3-active",
             parent_version=3,
-            lifecycle_status=CodeTraceabilityLifecycleStatus.ACTIVE,
-            content_sha256=H1,
+            payload_sha256=H1,
         ),
-        SimpleNamespace(
-            id="evidence-v4-active",
+        _legacy_evidence_record(
+            "evidence-v4-active",
             parent_version=4,
-            lifecycle_status=CodeTraceabilityLifecycleStatus.ACTIVE,
-            content_sha256=H2,
+            payload_sha256=H2,
         ),
-        SimpleNamespace(
-            id="evidence-v3-superseded",
+        _legacy_evidence_record(
+            "evidence-v3-superseded",
             parent_version=3,
+            payload_sha256=H1,
             lifecycle_status=CodeTraceabilityLifecycleStatus.SUPERSEDED,
-            content_sha256=H1,
         ),
-        SimpleNamespace(
-            id="evidence-v3-revoked",
+        _legacy_evidence_record(
+            "evidence-v3-revoked",
             parent_version=3,
+            payload_sha256=H1,
             lifecycle_status=CodeTraceabilityLifecycleStatus.REVOKED,
-            content_sha256=H1,
         ),
-        SimpleNamespace(
-            id="evidence-v5-future",
+        _legacy_evidence_record(
+            "evidence-v5-future",
             parent_version=5,
-            lifecycle_status=CodeTraceabilityLifecycleStatus.ACTIVE,
-            content_sha256=H1,
+            payload_sha256=H1,
         ),
     )
     queries: list[object] = []
@@ -3188,12 +3981,32 @@ async def test_reopened_refinement_snapshot_inherits_prior_active_evidence(
                     for item in records
                     if item.lifecycle_status is query.lifecycle_status
                 ),
-                limit=query.limit,
+                    limit=query.limit,
+                )
+
+        async def list_latest_evidence_classifications(
+            self,
+            *,
+            board_id: str,
+            evidence_ids: tuple[str, ...],
+        ):
+            assert board_id == "board-1"
+            assert evidence_ids == (
+                "evidence-v3-active",
+                "evidence-v4-active",
             )
+            return ()
 
     class Adapter:
         def code_traceability(self, _session):
             return Store()
+
+        def code_investigations(self, _session):
+            class InvestigationStore:
+                async def list_receipts(self, query):
+                    return CodeTraceabilityPage(items=(), limit=query.limit)
+
+            return InvestigationStore()
 
     added: list[object] = []
 

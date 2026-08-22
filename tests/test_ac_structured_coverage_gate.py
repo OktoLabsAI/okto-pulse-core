@@ -33,7 +33,12 @@ import uuid
 import pytest
 
 from sqlalchemy_test_models import Board, Spec, SpecStatus
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
 from okto_pulse.core.models.schemas import SpecMove
+from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import CardService, SpecService
 
 # NOTE: no module-level ``pytestmark = pytest.mark.asyncio`` — the project runs
@@ -66,6 +71,30 @@ def _scenario(sid: str, linked: list) -> dict:
     }
 
 
+def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=1,
+    )
+    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+        spec_id=spec_id,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        provenance=provenance,
+        subject_version=1,
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
+
+
 def _make_spec(spec_id: str, board_id: str, *, acs: list, scenarios: list) -> Spec:
     return Spec(
         id=spec_id,
@@ -80,6 +109,7 @@ def _make_spec(spec_id: str, board_id: str, *, acs: list, scenarios: list) -> Sp
         test_scenarios=scenarios,
         business_rules=[],
         api_contracts=[],
+        **_direct_spec_context_fields(spec_id),
     )
 
 

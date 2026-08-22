@@ -732,8 +732,9 @@ def test_kg_hit_flushed_event_class_registered():
     # fail-closed full-rebuild intent added dedicated event types; the latest
     # additive events are quality.assessment_recorded.v1, the A3
     # checklist.binding_changed.v1 governance audit, the two RDL events, and
-    # quality.clarification_changed.v1 for parent-consolidation invalidation.
-    assert len(EVENT_TYPES) == 62
+    # quality.clarification_changed.v1 for parent-consolidation invalidation;
+    # Code Traceability subsequently added its governed classification events.
+    assert len(EVENT_TYPES) == 64
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1389,9 +1390,9 @@ def test_impl_d_kg_daily_tick_event_class_registered():
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    # Registry ratchet also includes the two research-decision events and
-    # quality.clarification_changed.v1.
-    assert len(EVENT_TYPES) == 62
+    # Registry ratchet also includes the two research-decision events,
+    # quality clarification, and the governed Code Traceability events.
+    assert len(EVENT_TYPES) == 64
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

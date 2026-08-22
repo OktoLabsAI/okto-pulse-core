@@ -308,7 +308,14 @@ def _auth():
 
 @pytest.fixture
 async def _seed():
+    from okto_pulse.core.domain.code_traceability import (
+        DeliveryContext,
+        DirectSpecDeliveryContextProvenance,
+    )
     from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.services.main import (
+        _direct_spec_source_context_manifest,
+    )
 
     factory = get_session_factory()
     async with factory() as db:
@@ -376,6 +383,25 @@ async def _seed():
         db.add(spec)
         await db.flush()
         spec_id = spec.id
+        spec.delivery_context = "brownfield"
+        provenance = DirectSpecDeliveryContextProvenance(
+            value=DeliveryContext.BROWNFIELD,
+            source_spec_id=spec_id,
+            source_spec_version=1,
+        )
+        spec.delivery_context_provenance = {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        }
+        (
+            spec.source_context_manifest,
+            spec.source_context_sha256,
+        ) = _direct_spec_source_context_manifest(
+            spec_id=spec_id,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            provenance=provenance,
+        )
         db.add(
             Card(
                 id=_seed_card_id(spec_id),
@@ -413,6 +439,24 @@ async def _seed():
         )
         await db.commit()
     return spec_id
+
+
+@pytest.mark.asyncio
+async def test_update_spec_exposes_delivery_context_bootstrap(_seed) -> None:
+    updated = await _call(
+        "okto_pulse_update_spec",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        delivery_context="greenfield",
+    )
+
+    assert updated["success"] is True
+    assert updated["spec"]["delivery_context"] == "greenfield"
+    assert updated["spec"]["delivery_context_provenance"] == {
+        "value": "greenfield",
+        "source_spec_id": _seed,
+        "source_spec_version": 2,
+    }
 
 
 async def _call(tool: str, **kwargs) -> dict:

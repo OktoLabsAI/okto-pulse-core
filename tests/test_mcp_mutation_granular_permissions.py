@@ -45,7 +45,7 @@ async def test_card_create_validates_input_before_core_lookup_and_authorization(
     )
 
     payload = json.loads(raw)
-    assert "Invalid status" in payload["error"]
+    assert payload["error"] == "card_initial_status_invalid"
 
 
 @pytest.mark.asyncio
@@ -65,7 +65,7 @@ async def test_card_create_keeps_legacy_list_fallback(
     )
 
     payload = json.loads(raw)
-    assert "Invalid status" in payload["error"]
+    assert payload["error"] == "card_initial_status_invalid"
     assert "permission" not in payload["error"].lower()
 
 
@@ -86,7 +86,7 @@ async def test_card_create_keeps_internal_mcp_wildcard_compatibility(
     )
 
     payload = json.loads(raw)
-    assert "Invalid status" in payload["error"]
+    assert payload["error"] == "card_initial_status_invalid"
     assert "permission" not in payload["error"].lower()
 
 

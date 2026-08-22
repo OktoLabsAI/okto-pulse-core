@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Tool docs — `spec`
@@ -184,6 +184,11 @@ Args:
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
     ideation_id: Optional parent ideation ID for traceability when creating a spec manually
     refinement_id: Optional parent refinement ID for traceability when creating a spec manually
+    delivery_context: Required for a direct Spec without refinement lineage;
+        one of brownfield, greenfield, or hybrid. A refinement-backed Spec
+        inherits the frozen Refinement value when omitted.
+    delivery_context_override_reason: Required when delivery_context differs
+        from the inherited Refinement value; omit when no override is made.
 
 Returns:
     JSON with created spec details
@@ -237,6 +242,10 @@ Artifacts (mockups, KBs, Architecture Designs) from the ideation are
 automatically propagated to the spec. Use mockup_ids/kb_ids/
 architecture_design_ids to select specific ones (default: all).
 
+An Ideation has no inherited Code Evidence delivery context. Select the
+explicit `delivery_context` for this Spec deliberately; do not infer it from
+repository contents, source access, or an empty Evidence list.
+
 Args:
     board_id: Board ID
     ideation_id: Ideation ID (must be in 'done' status)
@@ -246,6 +255,8 @@ Args:
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
         while reference_only/none keep only parent linkage.
+    delivery_context: Required implementation context — one of brownfield,
+        greenfield, or hybrid.
 
 Returns:
     JSON with the created spec details
@@ -254,6 +265,9 @@ Returns:
 
 Create a spec draft from a DONE refinement. The refinement must be in 'done' status.
 Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
+The Spec inherits and pins the exact delivery-context provenance and effective
+source-context manifest from the frozen Refinement snapshot. Later live
+Evidence or human-classification changes do not silently rewrite this Spec.
 
 Artifacts (mockups, KBs, Architecture Designs) from the refinement are
 automatically propagated to the spec. Use mockup_ids/kb_ids/
@@ -645,11 +659,27 @@ payload shape remains explicit while still delegating to StructuredSpecEntitySer
 
 ## Code Evidence links and dispositions
 
-Read inherited Evidence from full Spec context. Use
+Read `delivery_context`, effective `source_context`, `source_context_items`,
+and inherited Evidence from full Spec context. Summary role/classification
+counts cover the complete effective set even when item collections are
+bounded. Every item reports `context_origin` as `authored`,
+`human_legacy_classification`, or `unclassified_legacy`; never infer a legacy
+role from its path, type, or claim. Human legacy classification is an
+append-only UI/REST action and has no MCP mutation.
+
+Use
 `okto_pulse_link_code_evidence` and `okto_pulse_unlink_code_evidence` for
 version-fenced normative links, and `okto_pulse_set_code_evidence_disposition`
 for an explicit non-applicable outcome. Every inherited item needs a current
 link or final disposition before review in blocking mode. Evidence is an
-immutable factual snapshot and never becomes Spec text.
+immutable AS-IS factual snapshot and never becomes Spec text or a planned
+TO-BE path.
+
+A refinement-derived Spec stays bound to its frozen manifest and SHA-256. To
+adopt a later Refinement snapshot, preview the governed Evidence rebase,
+review context/classification/link/disposition deltas, and apply the exact
+`preview_sha256`. Do not emulate rebase by copying Evidence or editing the
+manifest. If the agent surface lacks preview/apply, surface the authorized
+UI/REST action.
 
 Canonical protocol: `okto-pulse://reference/code-traceability`.

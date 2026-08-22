@@ -834,6 +834,7 @@ class StoryLinkedToIdeation(DomainEvent):
 
 _TraceabilityId = Annotated[str, Field(min_length=1, max_length=255)]
 _TraceabilityState = Annotated[str, Field(min_length=1, max_length=128)]
+_TraceabilityContextText = Annotated[str, Field(min_length=1, max_length=20_000)]
 _TraceabilityDigest = Annotated[
     str,
     Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$"),
@@ -845,10 +846,10 @@ _TraceabilityVersion = Annotated[int, Field(ge=1, le=2_147_483_647)]
 class CodeTraceabilityDomainEvent(DomainEvent):
     """Closed, bounded event envelope with no operational code locator.
 
-    Event-specific fields are limited to identifiers, states, digests and
-    counts.  Repository paths, symbols, snippets, challenges and secrets are
-    deliberately absent; consumers needing those details read the governed
-    relational projection under their own authorization.
+    Contextual Evidence events may also carry bounded human-readable meaning.
+    Repository paths, symbols, snippets, challenges and secrets remain absent;
+    consumers needing those details read the governed relational projection
+    under their own authorization.
     """
 
     model_config = ConfigDict(
@@ -884,6 +885,18 @@ class CodeInvestigationReceiptSubmitted(CodeTraceabilityDomainEvent):
     omission_count: _TraceabilityCount
     observation_sha256: _TraceabilityDigest
     payload_sha256: _TraceabilityDigest
+    delivery_context: _TraceabilityState | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    contextual_outcome: _TraceabilityState | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    context_contract_version: Literal[2] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class CodeInvestigationReceiptRevoked(CodeTraceabilityDomainEvent):
@@ -903,6 +916,42 @@ class CodeEvidenceCreated(CodeTraceabilityDomainEvent):
     lifecycle_status: _TraceabilityState
     attestation_state: _TraceabilityState
     payload_sha256: _TraceabilityDigest
+    context_contract_version: Literal[2] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    source_role: _TraceabilityState | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    baseline_presence: _TraceabilityState | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    relevance_summary: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    scope_relation: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    source_origin: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    interpretation_limit: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    baseline_workspace_state_id: _TraceabilityId | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    baseline_provenance_note: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class CodeEvidenceSuperseded(CodeTraceabilityDomainEvent):
@@ -911,6 +960,42 @@ class CodeEvidenceSuperseded(CodeTraceabilityDomainEvent):
     superseding_evidence_id: _TraceabilityId
     investigation_receipt_id: _TraceabilityId
     payload_sha256: _TraceabilityDigest
+    context_contract_version: Literal[2] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    source_role: _TraceabilityState | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    baseline_presence: _TraceabilityState | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    relevance_summary: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    scope_relation: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    source_origin: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    interpretation_limit: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    baseline_workspace_state_id: _TraceabilityId | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    baseline_provenance_note: _TraceabilityContextText | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class CodeEvidenceRevoked(CodeTraceabilityDomainEvent):
@@ -951,6 +1036,28 @@ class CodeEvidenceDispositionChanged(CodeTraceabilityDomainEvent):
     disposition: _TraceabilityState
     active_state: _TraceabilityState
     spec_version: _TraceabilityVersion
+
+
+class CodeEvidenceLegacyClassified(CodeTraceabilityDomainEvent):
+    """Metadata-only notification for one item of an atomic human batch."""
+
+    event_type: ClassVar[str] = "code_evidence.legacy_classified"
+    classification_id: _TraceabilityId
+    batch_id: _TraceabilityId
+    evidence_id: _TraceabilityId
+    evidence_payload_sha256: _TraceabilityDigest
+    classification_revision: _TraceabilityVersion
+    predecessor_classification_id: _TraceabilityId | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    classification_sha256: _TraceabilityDigest
+    request_sha256: _TraceabilityDigest
+    justification_sha256: _TraceabilityDigest
+    source_role: _TraceabilityState
+    context_contract_version: Literal[2]
+    batch_item_count: _TraceabilityVersion
+    batch_item_index: _TraceabilityVersion
 
 
 class ImplementationTargetCreated(CodeTraceabilityDomainEvent):
@@ -1049,6 +1156,7 @@ CODE_TRACEABILITY_EVENT_TYPES: tuple[str, ...] = (
     CodeEvidenceLinked.event_type,
     CodeEvidenceUnlinked.event_type,
     CodeEvidenceDispositionChanged.event_type,
+    CodeEvidenceLegacyClassified.event_type,
     ImplementationTargetCreated.event_type,
     ImplementationTargetUpdated.event_type,
     ImplementationTargetRevoked.event_type,
@@ -1228,6 +1336,7 @@ EVENT_TYPES: list[str] = [
     CodeEvidenceLinked.event_type,
     CodeEvidenceUnlinked.event_type,
     CodeEvidenceDispositionChanged.event_type,
+    CodeEvidenceLegacyClassified.event_type,
     ImplementationTargetCreated.event_type,
     ImplementationTargetUpdated.event_type,
     ImplementationTargetRevoked.event_type,
@@ -1295,6 +1404,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CodeEvidenceLinked.event_type: CodeEvidenceLinked,
     CodeEvidenceUnlinked.event_type: CodeEvidenceUnlinked,
     CodeEvidenceDispositionChanged.event_type: CodeEvidenceDispositionChanged,
+    CodeEvidenceLegacyClassified.event_type: CodeEvidenceLegacyClassified,
     ImplementationTargetCreated.event_type: ImplementationTargetCreated,
     ImplementationTargetUpdated.event_type: ImplementationTargetUpdated,
     ImplementationTargetRevoked.event_type: ImplementationTargetRevoked,

@@ -48,7 +48,7 @@ from sqlalchemy_domain_event_delivery_store import build_test_event_processor
 
 
 async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
-    """Board + spec(approved) + 1 card normal em in_progress. Retorna card_id."""
+    """Board + spec(in_progress) + 1 card normal em in_progress. Retorna card_id."""
     async with db_factory() as db:
         db.add(Board(id=board_id, name="valdone", owner_id="owner-valdone"))
         db.add(
@@ -56,7 +56,10 @@ async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
                 id=spec_id,
                 board_id=board_id,
                 title="Validation→done spec",
-                status=SpecStatus.APPROVED,
+                # The card completion gate requires its parent Spec to have
+                # entered execution.  ``approved`` now correctly routes an
+                # otherwise successful validation to ``rejected``.
+                status=SpecStatus.IN_PROGRESS,
                 created_by="owner-valdone",
                 functional_requirements=["FR1"],
                 acceptance_criteria=["AC1"],

@@ -58,8 +58,9 @@ def test_ac1_when_it_applies_is_conditional_not_bare_always(md: str):
     sc = _row(md, "Source code")
     assert "external agent" in pf
     assert "Pulse never opens the working directory" in pf
-    assert "authenticated external agent" in sc
-    assert "immutable Code Evidence" in sc
+    assert "accepted baseline" in sc
+    assert "`current_implementation`" in sc
+    assert "Planned TO-BE paths" in sc
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +73,8 @@ def test_ac2_source_table_declares_na_eligible_for_decoupled(md: str):
     sc = _row(md, "Source code")
     assert "`partial` or `unavailable`" in pf
     assert "explicit scoped waiver" in pf
-    assert "unavailable capability is explicit evidence" in sc
-    assert "never a fabricated code mapping" in sc
+    assert "never Code Evidence" in sc
+    assert "`no_relevant_existing_implementation`" in _analysis_valve(md)
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +87,8 @@ def test_ac3_analysis_valve_names_code_sources(md: str):
     assert "`evidence:<id>`" in valve
     assert "agent receipt" in valve
     assert "A bare `path:line` is not source truth" in valve
-    assert "`partial|unavailable` receipt" in valve
+    assert "`partial|unavailable`" in valve
+    assert "explicit waiver/N/A decision" in valve
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +127,7 @@ def test_ac5_antipattern_never_fabricate_pathline(md: str):
 def test_ac6_na_requires_justification_no_silent(md: str):
     valve = _analysis_valve(md)
     assert "explicit waiver/N/A decision" in valve
-    assert "silent omission is never acceptable" in valve
+    assert "silent omission is never acceptable" in valve.casefold()
 
 
 # ---------------------------------------------------------------------------

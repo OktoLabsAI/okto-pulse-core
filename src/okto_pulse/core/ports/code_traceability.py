@@ -18,6 +18,8 @@ from okto_pulse.core.domain.code_traceability import (
     CodeEvidence,
     CodeEvidenceAttestationState,
     CodeEvidenceDisposition,
+    CodeEvidenceLegacyClassification,
+    CodeEvidenceLegacyClassificationBatchReceipt,
     CodeEvidenceSpecLink,
     CodeTraceabilityContext,
     CodeTraceabilityContextScope,
@@ -31,12 +33,14 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityWaiver,
     CodeTraceabilityWaiverEntityType,
     CodeTraceabilityWaiverScope,
+    DeliveryContext,
     ImplementationTarget,
     ImplementationTargetEvidenceLink,
     ImplementationTargetExecutionRecord,
     ImplementationTargetResolution,
     ImplementationTargetRole,
     ImplementationTargetSpecLink,
+    SpecDeliveryContextProvenance,
     TargetOverlap,
     TargetOverlapAcknowledgement,
 )
@@ -99,6 +103,24 @@ class CodeTraceabilityIdempotencyConflict(CodeTraceabilityPersistenceError):
 
 class CodeTraceabilityCursorInvalid(CodeTraceabilityPersistenceError):
     code = "code_traceability_cursor_invalid"
+
+
+class LegacyEvidenceClassificationPersistenceConflict(
+    CodeTraceabilityPersistenceError
+):
+    code = "code_evidence_legacy_classification_persistence_conflict"
+
+
+class LegacyEvidenceClassificationRevisionConflict(
+    CodeTraceabilityPersistenceError
+):
+    code = "code_evidence_legacy_classification_revision_conflict"
+
+
+class LegacyEvidenceClassificationIdempotencyConflict(
+    CodeTraceabilityPersistenceError
+):
+    code = "code_evidence_legacy_classification_idempotency_conflict"
 
 
 def _required(value: object, code: str) -> str:
@@ -421,6 +443,50 @@ class CodeTraceabilityStore(Protocol):
         expected_lifecycle_status: CodeTraceabilityLifecycleStatus,
     ) -> CodeEvidence: ...
 
+    async def get_latest_evidence_classification(
+        self,
+        *,
+        board_id: str,
+        evidence_id: str,
+    ) -> CodeEvidenceLegacyClassification | None: ...
+
+    async def get_evidence_classification(
+        self,
+        *,
+        board_id: str,
+        evidence_id: str,
+        revision: int,
+    ) -> CodeEvidenceLegacyClassification | None: ...
+
+    async def list_latest_evidence_classifications(
+        self,
+        *,
+        board_id: str,
+        evidence_ids: tuple[str, ...],
+    ) -> tuple[CodeEvidenceLegacyClassification, ...]: ...
+
+    async def resolve_legacy_classification_batch_replay(
+        self,
+        *,
+        board_id: str,
+        classified_by: str,
+        idempotency_key: str,
+    ) -> CodeEvidenceLegacyClassificationBatchReceipt | None: ...
+
+    async def append_legacy_evidence_classification_batch(
+        self,
+        *,
+        receipt: CodeEvidenceLegacyClassificationBatchReceipt,
+        expected_revisions: Mapping[str, int],
+    ) -> CodeEvidenceLegacyClassificationBatchReceipt:
+        """Atomically append all events and CAS every per-Evidence head.
+
+        Adapters must verify each referenced Evidence payload digest and every
+        expected classification revision in the same transaction.  A failure
+        rolls back the complete batch; no mutable batch row is implied.
+        """
+        ...
+
     async def get_spec_link(
         self,
         *,
@@ -491,6 +557,14 @@ class CodeTraceabilityStore(Protocol):
         current_refinement_version: int,
         target_refinement_snapshot_id: str,
         target_refinement_version: int,
+        expected_delivery_context: DeliveryContext,
+        expected_delivery_context_provenance: SpecDeliveryContextProvenance,
+        next_delivery_context: DeliveryContext,
+        next_delivery_context_provenance: SpecDeliveryContextProvenance,
+        expected_source_context_manifest: dict[str, object],
+        expected_source_context_sha256: str,
+        next_source_context_manifest: dict[str, object],
+        next_source_context_sha256: str,
         stale_link_ids: tuple[str, ...],
         invalid_disposition_ids: tuple[str, ...],
         cleared_by: str,
@@ -498,7 +572,7 @@ class CodeTraceabilityStore(Protocol):
         expected_spec_version: int,
         next_spec_version: int,
     ) -> int:
-        """Apply the complete previewed rebase under one Spec-version CAS."""
+        """Atomically CAS Spec lineage/context and affected Evidence mappings."""
         ...
 
     async def effective_spec_evidence(
@@ -721,5 +795,8 @@ __all__ = [
     "CodeTraceabilityStore",
     "ImplementationTargetQuery",
     "ImplementationTargetResolutionCommitResult",
+    "LegacyEvidenceClassificationIdempotencyConflict",
+    "LegacyEvidenceClassificationPersistenceConflict",
+    "LegacyEvidenceClassificationRevisionConflict",
     "TargetOverlapQuery",
 ]

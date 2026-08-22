@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Tool docs — Code Traceability
@@ -23,15 +23,25 @@ Evidence says what exists or was observed. A Target says where and why a Card
 should act. Never create only a receipt: a receipt proves bounded access and
 capability, but does not communicate a source finding or implementation intent.
 
+Set the subject's `delivery_context` (`brownfield`, `greenfield`, or `hybrid`)
+before investigation. New Evidence is contextual V2 and strictly AS-IS. An
+existing Greenfield scaffold/base may be `existing_scaffold`; an existing
+constraint may be `existing_constraint`; source consulted only as a model is
+`reference_pattern`. A planned file or structure is TO-BE and belongs in the
+Spec, Architecture Design, mockup, or Implementation Target, never Evidence.
+
 ## Mandatory operation and fence order
 
-1. Fetch the full current subject context and its technical `version`.
+1. Fetch the full current subject context and its technical `version`. Confirm
+   the explicit delivery context and provenance; never infer it from source
+   availability.
 2. Start the exact-version preflight with
    `okto_pulse_start_code_investigation`.
 3. Inspect source only in the authenticated agent environment.
-4. Submit the single-use challenge with
+4. Submit the single-use challenge as contextual V2 with
    `okto_pulse_submit_code_investigation_receipt`.
-5. For a Refinement/Spec/Card fact, submit Code Evidence. For Card action
+5. For a Refinement/Spec/Card AS-IS fact, submit contextual V2 Code Evidence.
+   For Card action
    intent, use the initial Card receipt/source head to create or adjust the
    Implementation Targets.
 6. When linking Evidence to a Spec, use the current `expected_spec_version`.
@@ -44,6 +54,9 @@ capability, but does not communicate a source finding or implementation intent.
    lifecycle transition.
 9. After Card execution, start a new result-state preflight and submit one
    Execution Disposition for every active required Target.
+10. Read `source_context` for the effective role/origin summary. A bounded
+    item list does not bound its complete counts. Treat a derived Spec's
+    source-context manifest as frozen until an explicit preview/apply rebase.
 
 Use an `idempotency_key` again only for an exact retry of the same payload.
 Entity version, source head/workspace identity, selector, Target revision, or
@@ -66,23 +79,30 @@ Args:
 
 ## `okto_pulse_submit_code_investigation_receipt`
 
-Submit the external agent's bounded `accessible`, `partial`, or `unavailable`
-claim. Actor, source scope, subject/version, head, and trust are server-owned.
+Submit the external agent's contextual V2 result. Actor, delivery context,
+source scope, subject/version, head, and trust are server-owned.
 
 Args:
     request_id/challenge_token: Exact single-use pair returned by start.
-    outcome: `accessible`, `partial`, or `unavailable`.
-    capabilities: Only capabilities actually exercised. `accessible` requires
-        every `required_capability` returned by start; otherwise use `partial`
-        plus omissions. Include additional exercised capabilities required by
-        the intended record, such as `symbol_resolution` for symbol Evidence.
-        Never claim a capability merely to pass the fence.
+    contract_version: `2` for new governed work.
+    outcome: `evidence_applicable`,
+        `no_relevant_existing_implementation`, `partial`, or `unavailable`.
+        The no-existing outcome is complete success, valid only for a
+        Greenfield subject with full identity/workspace/capabilities and no
+        omissions. It may coexist with scaffold/constraint/reference Evidence
+        but never with `current_implementation` Evidence in the same scope.
+    capabilities: Only capabilities actually exercised. Either complete V2
+        outcome requires every `required_capability` returned by start;
+        outcome; otherwise use `partial` plus omissions. Include additional
+        exercised capabilities required by the intended record, such as
+        `symbol_resolution` for symbol Evidence. Never claim a capability
+        merely to pass the fence.
     source_identity_digest/declared_revision/workspace_state: Reproducible
         observed identity. A usable receipt needs the workspace fingerprint;
         all three must be absent for `unavailable`.
     omission_manifest: Required for `partial` and `unavailable`; each item has
         a bounded reason, affected-scope digest, and count. It must be empty for
-        `accessible`.
+        either complete V2 outcome.
     tooling: `tool_id`, `tool_version`, and deterministic `method_id`.
     observed_at: Agent observation time; server receipt time owns freshness.
     idempotency_key: Exact-retry key.
@@ -90,6 +110,11 @@ Args:
 Do not stop after this call when access exists. The accepted receipt is the
 attestation fence for the Code Evidence or Target Resolution that communicates
 the investigation result.
+
+V1 `accessible|partial|unavailable` receipts remain readable only. They do not
+prove contextual applicability. If the live MCP schema does not advertise the
+V2 discriminator/outcomes, stop and surface the missing capability rather than
+using V1 for a new write.
 
 ## `okto_pulse_get_code_investigation_receipt`
 
@@ -107,6 +132,7 @@ Submit one immutable factual observation bound to an accepted current agent
 receipt. Prefer one record per independently reusable claim.
 
 Args:
+    contract_version: `2` for new Evidence.
     investigation_receipt_id: Accepted receipt for this exact parent/version.
     parent_type/parent_id: `refinement`, `spec`, or `card` and its ID.
     evidence_type: `behavior`, `structure`, `contract`, `test`,
@@ -114,6 +140,16 @@ Args:
         `runtime_observation`.
     claim: Standalone human assertion explaining what was observed. “See file”
         and an ID alone are not useful Evidence.
+    source_role: `current_implementation`, `existing_scaffold`,
+        `existing_constraint`, or `reference_pattern`. Never author
+        `uncategorized_legacy`.
+    relevance_summary/scope_relation/source_origin: Required bounded context
+        that makes the observation understandable to a clean-context consumer.
+    interpretation_limit: Required for `existing_scaffold` and
+        `reference_pattern`; explain what the observation does not prove.
+    baseline_provenance: Required `presence`, matching `workspace_state_id`,
+        and optional provenance note. `preexisting_worktree` requires a note.
+        Post-baseline or planned source is forbidden.
     selector_kind: `symbol`, `file`, `span`, `configuration_key`,
         `schema_object`, `endpoint`, or `test_case`.
     relative_path: Normalized repository-relative path when applicable.
@@ -133,9 +169,20 @@ Minimal symbol-shaped call:
 ```text
 okto_pulse_submit_code_evidence(
   board_id=<board_id>, investigation_receipt_id=<accepted_receipt_id>,
+  contract_version=2,
   parent_type="refinement", parent_id=<refinement_id>,
   evidence_type="behavior",
   claim="OrderService.submit persists the key after the provider call.",
+  source_role="current_implementation",
+  relevance_summary="Defines the current submission baseline.",
+  scope_relation="Directly implements the in-scope flow.",
+  source_origin="Observed in the accepted service snapshot.",
+  interpretation_limit=null,
+  baseline_provenance={
+    presence:"committed_snapshot",
+    workspace_state_id:<opaque_workspace_state_id>,
+    provenance_note:null
+  },
   selector_kind="symbol", relative_path="src/orders/service.py",
   language="python", symbol_kind="method",
   qualified_symbol="OrderService.submit", line_start=118, line_end=146,
@@ -143,6 +190,49 @@ okto_pulse_submit_code_evidence(
   idempotency_key="ct-evidence-order-submit-1"
 )
 ```
+
+These V2-only fields must be present in the live inbound schema. A legacy MCP
+shape is not permission to omit them; stop rather than create ambiguous V1
+Evidence.
+
+## Effective context and explicit actor classification
+
+`okto_pulse_get_code_evidence` and `okto_pulse_list_code_evidence` expose the
+immutable Evidence record. The entity context's `source_context` and
+`source_context_items` expose effective contextual meaning, including
+`context_origin=authored|human_legacy_classification|unclassified_legacy`,
+complete role counts, and classification state. The middle origin is a
+compatibility label for an actor-authored overlay. Summary/gate projections
+omit classifier identity; detail/full may expose it for authorized audit.
+
+An authorized human may use the UI/REST batch and an authorized agent may use
+`okto_pulse_classify_legacy_code_evidence`. Both are governed by
+`code_traceability.evidence.classify_legacy`; each correction appends a new
+revision over the immutable Evidence payload. Agents must consume the exact
+server-authored classification inputs and must request human input when the
+available context does not support a defensible classification.
+
+A derived Spec keeps the source-context manifest frozen at its exact
+Refinement snapshot. Live Evidence or human-classification changes do not
+rewrite it. Adopt a later snapshot only through the governed preview/apply
+rebase and its exact `preview_sha256`; when that surface is not available over
+MCP, request the authorized UI/REST action.
+
+## `okto_pulse_classify_legacy_code_evidence`
+
+Append one atomic classification batch over legacy Evidence.
+
+Args:
+    board_id: Board owning every Evidence item.
+    items: Complete classification items using the exact projected
+        `expected_evidence_payload_sha256`, `expected_classification_revision`,
+        and `baseline_provenance`, plus explicit source role, relevance, scope,
+        origin, and any required interpretation limit.
+    justification: Plain-language reason supporting the batch decision.
+    idempotency_key: Reuse only for a byte-for-byte retry.
+
+The tool never edits the original Evidence. A stale payload or classification
+revision fails closed; refresh the current Refinement context before retrying.
 
 ## `okto_pulse_get_code_evidence`
 
@@ -162,7 +252,7 @@ it. Filter by `parent_type` and `parent_id` when building one subject's record.
 ## `okto_pulse_supersede_code_evidence`
 
 Create an immutable correction and mark its predecessor superseded. Supply a
-new accepted receipt, complete replacement Evidence fields,
+new accepted V2 receipt, complete contextual replacement Evidence fields,
 `supersedes_evidence_id`, and a human `supersession_reason`. Do not edit or
 silently contradict the predecessor.
 

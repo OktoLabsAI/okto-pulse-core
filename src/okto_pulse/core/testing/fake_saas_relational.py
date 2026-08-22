@@ -451,6 +451,18 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model code-traceability projections."
         )
 
+    def delivery_forecast_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Delivery Forecast evidence."
+        )
+
+    def board_kg_analytics_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Board KG Analytics evidence."
+        )
+
     def research_decisions(self, session: Any) -> Any:
         _ = session
         from okto_pulse.core.ports.research_decision_ledger import (

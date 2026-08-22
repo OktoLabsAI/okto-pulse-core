@@ -34,6 +34,12 @@ from sqlalchemy_test_models import (
 from okto_pulse.core.domain.research_decision_ledger import (
     ResearchDecisionLedgerSnapshot,
 )
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    RefinementDeliveryContextProvenance,
+    RefinementSourceContextManifestV2,
+    build_source_context_summary_v2,
+)
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
 )
@@ -77,6 +83,31 @@ async def new_board(db_factory) -> str:
 async def freeze_refinement_completion_fixture(db, refinement) -> None:
     """Persist both immutable completion snapshots required by derivation."""
 
+    raw_context = getattr(refinement, "delivery_context", None)
+    delivery_context = (
+        None if raw_context is None else DeliveryContext(raw_context)
+    )
+    provenance = (
+        None
+        if delivery_context is None
+        else RefinementDeliveryContextProvenance(
+            value=delivery_context,
+            source_refinement_id=refinement.id,
+            source_refinement_version=refinement.version,
+        )
+    )
+    source_context = RefinementSourceContextManifestV2(
+        refinement_id=refinement.id,
+        refinement_version=refinement.version,
+        summary=build_source_context_summary_v2(
+            delivery_context=delivery_context,
+            delivery_context_provenance=provenance,
+            current_investigation_outcomes=(),
+            evidence=(),
+        ),
+        current_receipts=(),
+    )
+
     db.add(
         RefinementSnapshot(
             refinement_id=refinement.id,
@@ -87,8 +118,12 @@ async def freeze_refinement_completion_fixture(db, refinement) -> None:
             out_of_scope=refinement.out_of_scope,
             analysis=refinement.analysis,
             decisions=refinement.decisions,
+            delivery_context=getattr(refinement, "delivery_context", None),
             labels=refinement.labels,
             qa_snapshot=[],
+            code_evidence_manifest=[],
+            source_context_manifest=source_context.as_dict(),
+            source_context_sha256=source_context.payload_sha256,
             created_by=USER_ID,
         )
     )
@@ -123,6 +158,7 @@ async def seed_refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="R3 refinement", created_by=USER_ID,
             status=RefinementStatus(status),
+            delivery_context=DeliveryContext.BROWNFIELD.value,
             screen_mockups=(
                 [{"id": mockup_id, "title": "Ref mockup", "screen_type": "form",
                   "html_content": "<div/>"}] if mockup else []

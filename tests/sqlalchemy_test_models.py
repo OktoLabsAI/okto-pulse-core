@@ -796,6 +796,7 @@ class Refinement(Base):
     out_of_scope: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    delivery_context: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[RefinementStatus] = mapped_column(
         RefinementStatusType(), default=RefinementStatus.DRAFT, nullable=False
     )
@@ -882,8 +883,14 @@ class RefinementSnapshot(Base):
     out_of_scope: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    delivery_context: Mapped[str | None] = mapped_column(String(32), nullable=True)
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     qa_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    code_evidence_manifest: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_context_manifest: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_context_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1060,6 +1067,14 @@ class Spec(Base):
     )
     source_refinement_version: Mapped[int | None] = mapped_column(
         Integer, nullable=True
+    )
+    delivery_context: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    delivery_context_provenance: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )
+    source_context_manifest: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_context_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

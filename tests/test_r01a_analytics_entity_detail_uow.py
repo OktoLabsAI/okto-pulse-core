@@ -62,7 +62,12 @@ async def _seed_spec(board_id: str) -> str:
 
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            board_id, USER, SpecCreate(title=f"fu2f-{uuid.uuid4().hex[:6]}")
+            board_id,
+            USER,
+            SpecCreate(
+                title=f"fu2f-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         return spec.id

@@ -26,6 +26,8 @@ CODE_TRACEABILITY_CONTRACT_VERSION = "pulse-code-traceability/v1"
 CODE_INVESTIGATION_CANONICALIZATION_PROFILE = "pulse-code-receipt-c14n-v1"
 CODE_INVESTIGATION_LIMITS_PROFILE = "pulse-code-receipt-limits-v1"
 CODE_EVIDENCE_EXCERPT_OMITTED_NOT_SUBMITTED = "not_submitted"
+CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT = 100
+CODE_EVIDENCE_CLASSIFICATION_ACTOR_ID_MAX_BYTES = 255
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
@@ -298,6 +300,10 @@ CodeInvestigationSubmissionLimitExceeded = _typed_error(
     "CodeInvestigationSubmissionLimitExceeded",
     "code_investigation_submission_limit_exceeded",
 )
+CodeInvestigationNoRelevantExistingImplementationInvalid = _typed_error(
+    "CodeInvestigationNoRelevantExistingImplementationInvalid",
+    "code_investigation_no_relevant_existing_implementation_invalid",
+)
 CodePathInvalid = _typed_error("CodePathInvalid", "code_path_invalid")
 CodePathDenied = _typed_error("CodePathDenied", "code_path_denied")
 CodeEvidenceSubmissionFailed = _typed_error(
@@ -323,6 +329,78 @@ CodeEvidenceDispositionRequired = _typed_error(
 CodeEvidenceLinkInvalid = _typed_error(
     "CodeEvidenceLinkInvalid",
     "code_evidence_link_invalid",
+)
+CodeDeliveryContextRequired = _typed_error(
+    "CodeDeliveryContextRequired",
+    "code_delivery_context_required",
+)
+CodeDeliveryContextOverrideReasonRequired = _typed_error(
+    "CodeDeliveryContextOverrideReasonRequired",
+    "code_delivery_context_override_reason_required",
+)
+CodeEvidenceSourceRoleRequired = _typed_error(
+    "CodeEvidenceSourceRoleRequired",
+    "code_evidence_source_role_required",
+)
+CodeEvidenceLegacyRoleWriteForbidden = _typed_error(
+    "CodeEvidenceLegacyRoleWriteForbidden",
+    "code_evidence_legacy_role_write_forbidden",
+)
+CodeEvidenceInterpretationLimitRequired = _typed_error(
+    "CodeEvidenceInterpretationLimitRequired",
+    "code_evidence_interpretation_limit_required",
+)
+CodeEvidenceBaselineProvenanceInvalid = _typed_error(
+    "CodeEvidenceBaselineProvenanceInvalid",
+    "code_evidence_baseline_provenance_invalid",
+)
+CodeEvidencePostBaselineSourceForbidden = _typed_error(
+    "CodeEvidencePostBaselineSourceForbidden",
+    "code_evidence_post_baseline_source_forbidden",
+)
+CodeEvidenceMaterialityLinkRequired = _typed_error(
+    "CodeEvidenceMaterialityLinkRequired",
+    "code_evidence_materiality_link_required",
+)
+CodeEvidenceLegacyClassificationHumanRequired = _typed_error(
+    "CodeEvidenceLegacyClassificationHumanRequired",
+    "code_evidence_legacy_classification_human_required",
+)
+CodeEvidenceLegacyClassificationItemsRequired = _typed_error(
+    "CodeEvidenceLegacyClassificationItemsRequired",
+    "code_evidence_legacy_classification_items_required",
+)
+CodeEvidenceLegacyClassificationItemsDuplicate = _typed_error(
+    "CodeEvidenceLegacyClassificationItemsDuplicate",
+    "code_evidence_legacy_classification_items_duplicate",
+)
+CodeEvidenceLegacyClassificationLimitExceeded = _typed_error(
+    "CodeEvidenceLegacyClassificationLimitExceeded",
+    "code_evidence_legacy_classification_limit_exceeded",
+)
+CodeEvidenceLegacyClassificationEvidenceNotFound = _typed_error(
+    "CodeEvidenceLegacyClassificationEvidenceNotFound",
+    "code_evidence_legacy_classification_evidence_not_found",
+)
+CodeEvidenceLegacyClassificationLegacyRequired = _typed_error(
+    "CodeEvidenceLegacyClassificationLegacyRequired",
+    "code_evidence_legacy_classification_legacy_required",
+)
+CodeEvidenceLegacyClassificationPayloadConflict = _typed_error(
+    "CodeEvidenceLegacyClassificationPayloadConflict",
+    "code_evidence_legacy_classification_payload_conflict",
+)
+CodeEvidenceLegacyClassificationRevisionConflict = _typed_error(
+    "CodeEvidenceLegacyClassificationRevisionConflict",
+    "code_evidence_legacy_classification_revision_conflict",
+)
+CodeEvidenceLegacyClassificationIdempotencyConflict = _typed_error(
+    "CodeEvidenceLegacyClassificationIdempotencyConflict",
+    "code_evidence_legacy_classification_idempotency_conflict",
+)
+CodeEvidenceLegacyClassificationPersistenceConflict = _typed_error(
+    "CodeEvidenceLegacyClassificationPersistenceConflict",
+    "code_evidence_legacy_classification_persistence_conflict",
 )
 ImplementationTargetInvalid = _typed_error(
     "ImplementationTargetInvalid",
@@ -663,6 +741,14 @@ class CodeTraceabilitySubjectType(str, Enum):
     CARD = "card"
 
 
+class DeliveryContext(str, Enum):
+    """Implementation context inherited by a Spec from its Refinement."""
+
+    BROWNFIELD = "brownfield"
+    GREENFIELD = "greenfield"
+    HYBRID = "hybrid"
+
+
 class CodeInvestigationRequestStatus(str, Enum):
     OPEN = "open"
     CONSUMED = "consumed"
@@ -674,6 +760,44 @@ class CodeInvestigationOutcome(str, Enum):
     ACCESSIBLE = "accessible"
     PARTIAL = "partial"
     UNAVAILABLE = "unavailable"
+
+
+class ContextualInvestigationOutcomeV2(str, Enum):
+    """Meaning of an investigation after applying the delivery context."""
+
+    EVIDENCE_APPLICABLE = "evidence_applicable"
+    NO_RELEVANT_EXISTING_IMPLEMENTATION = "no_relevant_existing_implementation"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
+
+
+_CONTEXTUAL_TO_LEGACY_INVESTIGATION_OUTCOME = MappingProxyType(
+    {
+        ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE: (
+            CodeInvestigationOutcome.ACCESSIBLE
+        ),
+        ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION: (
+            CodeInvestigationOutcome.ACCESSIBLE
+        ),
+        ContextualInvestigationOutcomeV2.PARTIAL: CodeInvestigationOutcome.PARTIAL,
+        ContextualInvestigationOutcomeV2.UNAVAILABLE: (
+            CodeInvestigationOutcome.UNAVAILABLE
+        ),
+    }
+)
+
+
+def legacy_code_investigation_outcome(
+    outcome: ContextualInvestigationOutcomeV2,
+) -> CodeInvestigationOutcome:
+    """Project one authored V2 outcome into the readable legacy field."""
+
+    resolved = _enum(
+        outcome,
+        ContextualInvestigationOutcomeV2,
+        "code_investigation_contextual_outcome_invalid",
+    )
+    return _CONTEXTUAL_TO_LEGACY_INVESTIGATION_OUTCOME[resolved]
 
 
 class CodeInvestigationTrustLevel(str, Enum):
@@ -742,6 +866,35 @@ class CodeEvidenceType(str, Enum):
     MIGRATION = "migration"
     DEPENDENCY = "dependency"
     RUNTIME_OBSERVATION = "runtime_observation"
+
+
+class CodeEvidenceSourceRole(str, Enum):
+    """How an AS-IS source may be interpreted by a clean-context consumer.
+
+    ``UNCATEGORIZED_LEGACY`` exists only so old Evidence can be projected
+    truthfully. New contextual Evidence must use one of the authored roles.
+    """
+
+    CURRENT_IMPLEMENTATION = "current_implementation"
+    EXISTING_SCAFFOLD = "existing_scaffold"
+    EXISTING_CONSTRAINT = "existing_constraint"
+    REFERENCE_PATTERN = "reference_pattern"
+    UNCATEGORIZED_LEGACY = "uncategorized_legacy"
+
+
+class CodeEvidenceContextOrigin(str, Enum):
+    """Truthful origin of the contextual meaning shown to a consumer."""
+
+    AUTHORED = "authored"
+    HUMAN_LEGACY_CLASSIFICATION = "human_legacy_classification"
+    UNCLASSIFIED_LEGACY = "unclassified_legacy"
+
+
+class CodeEvidenceBaselinePresence(str, Enum):
+    """Where the evidenced source existed at the frozen investigation baseline."""
+
+    COMMITTED_SNAPSHOT = "committed_snapshot"
+    PREEXISTING_WORKTREE = "preexisting_worktree"
 
 
 class CodeEvidenceSelectorKind(str, Enum):
@@ -897,6 +1050,1197 @@ class CodeTraceabilityProjectionProfile(str, Enum):
 class CodeTraceabilityContextScope(str, Enum):
     DEFAULT = "default"
     GATE = "gate"
+
+
+def authored_code_evidence_source_role(
+    value: object,
+) -> CodeEvidenceSourceRole:
+    """Resolve a V2 write role while keeping the legacy value projection-only."""
+
+    try:
+        role = _enum(
+            value,
+            CodeEvidenceSourceRole,
+            "code_evidence_source_role_required",
+        )
+    except CodeTraceabilityContractError as exc:
+        raise CodeEvidenceSourceRoleRequired() from exc
+    if role is CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY:
+        raise CodeEvidenceLegacyRoleWriteForbidden()
+    return role
+
+
+@dataclass(frozen=True, slots=True)
+class RefinementDeliveryContextProvenance:
+    """Versioned provenance for context authored on one Refinement version."""
+
+    value: DeliveryContext
+    source_refinement_id: str
+    source_refinement_version: int
+
+    def __post_init__(self) -> None:
+        try:
+            value = _enum(
+                self.value,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+        except CodeTraceabilityContractError as exc:
+            raise CodeDeliveryContextRequired() from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(
+            self,
+            "source_refinement_id",
+            _required_text(
+                self.source_refinement_id,
+                "code_delivery_context_source_refinement_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_refinement_version",
+            _positive_int(
+                self.source_refinement_version,
+                "code_delivery_context_source_refinement_version_invalid",
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DirectSpecDeliveryContextProvenance:
+    """Context explicitly authored on a Spec with no Refinement source."""
+
+    value: DeliveryContext
+    source_spec_id: str
+    source_spec_version: int
+
+    def __post_init__(self) -> None:
+        try:
+            value = _enum(
+                self.value,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+        except CodeTraceabilityContractError as exc:
+            raise CodeDeliveryContextRequired() from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(
+            self,
+            "source_spec_id",
+            _required_text(
+                self.source_spec_id,
+                "code_delivery_context_source_spec_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_spec_version",
+            _positive_int(
+                self.source_spec_version,
+                "code_delivery_context_source_spec_version_invalid",
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SpecDeliveryContextProvenance:
+    """Versioned provenance for the delivery context materialized on a Spec."""
+
+    value: DeliveryContext
+    inherited_value: DeliveryContext
+    source_refinement_id: str
+    source_refinement_version: int
+    override_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            value = _enum(
+                self.value,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+            inherited_value = _enum(
+                self.inherited_value,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+        except CodeTraceabilityContractError as exc:
+            raise CodeDeliveryContextRequired() from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "inherited_value", inherited_value)
+        object.__setattr__(
+            self,
+            "source_refinement_id",
+            _required_text(
+                self.source_refinement_id,
+                "code_delivery_context_source_refinement_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_refinement_version",
+            _positive_int(
+                self.source_refinement_version,
+                "code_delivery_context_source_refinement_version_invalid",
+            ),
+        )
+        override_reason = _optional_text(
+            self.override_reason,
+            "code_delivery_context_override_reason_invalid",
+        )
+        if value is not inherited_value and override_reason is None:
+            raise CodeDeliveryContextOverrideReasonRequired()
+        if value is inherited_value and override_reason is not None:
+            raise CodeTraceabilityContractError(
+                "code_delivery_context_override_reason_invalid",
+                details={"reason": "override_absent"},
+            )
+        object.__setattr__(self, "override_reason", override_reason)
+
+    @property
+    def overridden(self) -> bool:
+        return self.value is not self.inherited_value
+
+
+@dataclass(frozen=True, slots=True)
+class CodeEvidenceBaselineProvenance:
+    """Frozen proof that Evidence points to source present before delivery work."""
+
+    presence: CodeEvidenceBaselinePresence
+    workspace_state_id: str
+    provenance_note: str | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            presence = _enum(
+                self.presence,
+                CodeEvidenceBaselinePresence,
+                "code_evidence_baseline_provenance_invalid",
+            )
+            workspace_state_id = _required_text(
+                self.workspace_state_id,
+                "code_evidence_baseline_provenance_invalid",
+            )
+            provenance_note = _optional_text(
+                self.provenance_note,
+                "code_evidence_baseline_provenance_invalid",
+            )
+        except CodeTraceabilityContractError as exc:
+            raise CodeEvidenceBaselineProvenanceInvalid() from exc
+        if (
+            presence is CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
+            and provenance_note is None
+        ):
+            raise CodeEvidenceBaselineProvenanceInvalid(
+                details={"field": "provenance_note"}
+            )
+        object.__setattr__(self, "presence", presence)
+        object.__setattr__(self, "workspace_state_id", workspace_state_id)
+        object.__setattr__(self, "provenance_note", provenance_note)
+
+
+@dataclass(frozen=True, slots=True)
+class CodeEvidenceLegacyClassification:
+    """One immutable actor-authored overlay for a legacy Evidence item.
+
+    The record never edits the Evidence payload.  ``revision`` and
+    ``predecessor_classification_id`` form an append-only per-Evidence chain;
+    batch metadata lets an adapter provide atomic replay without requiring a
+    mutable batch row.
+    """
+
+    id: str
+    batch_id: str
+    board_id: str
+    evidence_id: str
+    evidence_payload_sha256: str
+    revision: int
+    predecessor_classification_id: str | None
+    source_role: CodeEvidenceSourceRole
+    relevance_summary: str
+    scope_relation: str
+    source_origin: str
+    interpretation_limit: str | None
+    baseline_provenance: CodeEvidenceBaselineProvenance
+    classified_by: str
+    classified_at: datetime
+    justification: str
+    idempotency_key: str
+    request_sha256: str
+    batch_item_count: int
+    batch_item_index: int
+    context_contract_version: int = 2
+    classification_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "id",
+            "batch_id",
+            "board_id",
+            "evidence_id",
+            "idempotency_key",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _required_text(
+                    getattr(self, name),
+                    f"code_evidence_legacy_classification_{name}_invalid",
+                ),
+            )
+        object.__setattr__(
+            self,
+            "classified_by",
+            _required_text(
+                self.classified_by,
+                "code_evidence_legacy_classification_classified_by_invalid",
+                max_bytes=CODE_EVIDENCE_CLASSIFICATION_ACTOR_ID_MAX_BYTES,
+            ),
+        )
+        if self.context_contract_version != 2:
+            raise CodeTraceabilityContractError(
+                "code_evidence_legacy_classification_contract_version_invalid"
+            )
+        object.__setattr__(
+            self,
+            "evidence_payload_sha256",
+            _sha256(
+                self.evidence_payload_sha256,
+                "code_evidence_legacy_classification_payload_sha256_invalid",
+            ),
+        )
+        revision = _positive_int(
+            self.revision,
+            "code_evidence_legacy_classification_revision_invalid",
+        )
+        object.__setattr__(self, "revision", revision)
+        predecessor = _optional_text(
+            self.predecessor_classification_id,
+            "code_evidence_legacy_classification_predecessor_invalid",
+        )
+        if (revision == 1) != (predecessor is None):
+            raise CodeTraceabilityContractError(
+                "code_evidence_legacy_classification_predecessor_invalid"
+            )
+        object.__setattr__(self, "predecessor_classification_id", predecessor)
+        try:
+            source_role = authored_code_evidence_source_role(self.source_role)
+        except CodeTraceabilityContractError as exc:
+            raise CodeEvidenceLegacyClassificationLegacyRequired() from exc
+        object.__setattr__(self, "source_role", source_role)
+        for name in ("relevance_summary", "scope_relation", "source_origin"):
+            object.__setattr__(
+                self,
+                name,
+                _required_text(
+                    getattr(self, name),
+                    f"code_evidence_legacy_classification_{name}_required",
+                    max_bytes=20_000,
+                ),
+            )
+        interpretation_limit = _optional_text(
+            self.interpretation_limit,
+            "code_evidence_legacy_classification_interpretation_limit_invalid",
+            max_bytes=20_000,
+        )
+        if (
+            source_role
+            in {
+                CodeEvidenceSourceRole.EXISTING_SCAFFOLD,
+                CodeEvidenceSourceRole.REFERENCE_PATTERN,
+            }
+            and interpretation_limit is None
+        ):
+            raise CodeEvidenceInterpretationLimitRequired(
+                details={"source_role": source_role.value}
+            )
+        object.__setattr__(self, "interpretation_limit", interpretation_limit)
+        if not isinstance(self.baseline_provenance, CodeEvidenceBaselineProvenance):
+            raise CodeEvidenceBaselineProvenanceInvalid()
+        object.__setattr__(
+            self,
+            "classified_at",
+            _aware_utc(
+                self.classified_at,
+                "code_evidence_legacy_classification_classified_at_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "justification",
+            _required_text(
+                self.justification,
+                "code_evidence_legacy_classification_justification_required",
+                max_bytes=20_000,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "request_sha256",
+            _sha256(
+                self.request_sha256,
+                "code_evidence_legacy_classification_request_sha256_invalid",
+            ),
+        )
+        item_count = _positive_int(
+            self.batch_item_count,
+            "code_evidence_legacy_classification_batch_count_invalid",
+        )
+        if item_count > CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT:
+            raise CodeEvidenceLegacyClassificationLimitExceeded(
+                details={
+                    "max_items": CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT
+                }
+            )
+        item_index = _positive_int(
+            self.batch_item_index,
+            "code_evidence_legacy_classification_batch_index_invalid",
+        )
+        if item_index > item_count:
+            raise CodeTraceabilityContractError(
+                "code_evidence_legacy_classification_batch_index_invalid"
+            )
+        object.__setattr__(self, "batch_item_count", item_count)
+        object.__setattr__(self, "batch_item_index", item_index)
+        expected_digest = canonical_code_traceability_sha256(
+            self.digest_payload()
+        )
+        if self.classification_sha256 is not None:
+            provided_digest = _sha256(
+                self.classification_sha256,
+                "code_evidence_legacy_classification_sha256_invalid",
+            )
+            if provided_digest != expected_digest:
+                raise CodeEvidenceLegacyClassificationPayloadConflict(
+                    details={"field": "classification_sha256"}
+                )
+        object.__setattr__(self, "classification_sha256", expected_digest)
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "contract_version": 1,
+            "operation": "classify_legacy_code_evidence",
+            "id": self.id,
+            "batch_id": self.batch_id,
+            "board_id": self.board_id,
+            "evidence_id": self.evidence_id,
+            "evidence_payload_sha256": self.evidence_payload_sha256,
+            "revision": self.revision,
+            "predecessor_classification_id": (
+                self.predecessor_classification_id
+            ),
+            "source_role": self.source_role,
+            "relevance_summary": self.relevance_summary,
+            "scope_relation": self.scope_relation,
+            "source_origin": self.source_origin,
+            "interpretation_limit": self.interpretation_limit,
+            "baseline_provenance": self.baseline_provenance,
+            "classified_by": self.classified_by,
+            "classified_at": self.classified_at,
+            "justification": self.justification,
+            "idempotency_key": self.idempotency_key,
+            "request_sha256": self.request_sha256,
+            "batch_item_count": self.batch_item_count,
+            "batch_item_index": self.batch_item_index,
+            "context_contract_version": self.context_contract_version,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CodeEvidenceLegacyClassificationBatchReceipt:
+    """Logical receipt for one atomic append across multiple Evidence heads."""
+
+    batch_id: str
+    board_id: str
+    classified_by: str
+    classified_at: datetime
+    idempotency_key: str
+    request_sha256: str
+    classifications: tuple[CodeEvidenceLegacyClassification, ...]
+    replayed: bool = False
+
+    def __post_init__(self) -> None:
+        for name in ("batch_id", "board_id", "classified_by", "idempotency_key"):
+            object.__setattr__(
+                self,
+                name,
+                _required_text(
+                    getattr(self, name),
+                    f"code_evidence_legacy_classification_batch_{name}_invalid",
+                ),
+            )
+        object.__setattr__(
+            self,
+            "classified_at",
+            _aware_utc(
+                self.classified_at,
+                "code_evidence_legacy_classification_batch_time_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "request_sha256",
+            _sha256(
+                self.request_sha256,
+                "code_evidence_legacy_classification_request_sha256_invalid",
+            ),
+        )
+        items = _typed_tuple(
+            self.classifications,
+            CodeEvidenceLegacyClassification,
+            "code_evidence_legacy_classification_batch_items_invalid",
+            max_items=CODE_EVIDENCE_LEGACY_CLASSIFICATION_BATCH_LIMIT,
+        )
+        if not items:
+            raise CodeEvidenceLegacyClassificationItemsRequired()
+        if items != tuple(sorted(items, key=lambda item: item.evidence_id)):
+            raise CodeTraceabilityContractError(
+                "code_evidence_legacy_classification_batch_order_invalid"
+            )
+        if len({item.evidence_id for item in items}) != len(items):
+            raise CodeEvidenceLegacyClassificationItemsDuplicate()
+        for index, item in enumerate(items, start=1):
+            if (
+                item.batch_id != self.batch_id
+                or item.board_id != self.board_id
+                or item.classified_by != self.classified_by
+                or item.classified_at != self.classified_at
+                or item.idempotency_key != self.idempotency_key
+                or item.request_sha256 != self.request_sha256
+                or item.batch_item_count != len(items)
+                or item.batch_item_index != index
+            ):
+                raise CodeTraceabilityContractError(
+                    "code_evidence_legacy_classification_batch_incoherent"
+                )
+        if not isinstance(self.replayed, bool):
+            raise CodeTraceabilityContractError(
+                "code_evidence_legacy_classification_batch_replayed_invalid"
+            )
+        object.__setattr__(self, "classifications", items)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextEvidenceItemV2:
+    """Effective contextual meaning without modifying the Evidence record."""
+
+    evidence_id: str
+    source_role: CodeEvidenceSourceRole
+    relevance_summary: str | None
+    scope_relation: str | None
+    source_origin: str | None
+    interpretation_limit: str | None
+    baseline_provenance: CodeEvidenceBaselineProvenance | None
+    context_origin: CodeEvidenceContextOrigin
+    context_contract_version: int | None = None
+    classification_revision: int | None = None
+    classification_sha256: str | None = None
+    classification_id: str | None = None
+    classified_by: str | None = None
+    classified_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "evidence_id",
+            _required_text(
+                self.evidence_id,
+                "source_context_evidence_id_invalid",
+            ),
+        )
+        role = _enum(
+            self.source_role,
+            CodeEvidenceSourceRole,
+            "source_context_evidence_role_invalid",
+        )
+        origin = _enum(
+            self.context_origin,
+            CodeEvidenceContextOrigin,
+            "source_context_evidence_origin_invalid",
+        )
+        object.__setattr__(self, "source_role", role)
+        object.__setattr__(self, "context_origin", origin)
+        contextual = (
+            self.relevance_summary,
+            self.scope_relation,
+            self.source_origin,
+            self.interpretation_limit,
+            self.baseline_provenance,
+        )
+        classification_values = (
+            self.classification_revision,
+            self.classification_sha256,
+            self.classification_id,
+        )
+        actor_values = (self.classified_by, self.classified_at)
+        if origin is CodeEvidenceContextOrigin.UNCLASSIFIED_LEGACY:
+            if (
+                role is not CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
+                or self.context_contract_version is not None
+                or any(item is not None for item in contextual)
+                or any(item is not None for item in classification_values)
+                or any(item is not None for item in actor_values)
+            ):
+                raise CodeTraceabilityContractError(
+                    "source_context_evidence_origin_invalid"
+                )
+            return
+        if self.context_contract_version != 2:
+            raise CodeTraceabilityContractError(
+                "source_context_evidence_contract_version_invalid"
+            )
+        if role is CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY:
+            raise CodeTraceabilityContractError(
+                "source_context_evidence_role_invalid"
+            )
+        for name in ("relevance_summary", "scope_relation", "source_origin"):
+            object.__setattr__(
+                self,
+                name,
+                _required_text(
+                    getattr(self, name),
+                    f"source_context_evidence_{name}_invalid",
+                    max_bytes=20_000,
+                ),
+            )
+        object.__setattr__(
+            self,
+            "interpretation_limit",
+            _optional_text(
+                self.interpretation_limit,
+                "source_context_evidence_interpretation_limit_invalid",
+                max_bytes=20_000,
+            ),
+        )
+        if not isinstance(self.baseline_provenance, CodeEvidenceBaselineProvenance):
+            raise CodeEvidenceBaselineProvenanceInvalid()
+        if origin is CodeEvidenceContextOrigin.AUTHORED:
+            if any(item is not None for item in classification_values) or any(
+                item is not None for item in actor_values
+            ):
+                raise CodeTraceabilityContractError(
+                    "source_context_evidence_origin_invalid"
+                )
+            return
+        if any(item is None for item in classification_values):
+            raise CodeTraceabilityContractError(
+                "source_context_evidence_classification_invalid"
+            )
+        object.__setattr__(
+            self,
+            "classification_revision",
+            _positive_int(
+                self.classification_revision,
+                "source_context_classification_revision_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "classification_sha256",
+            _sha256(
+                self.classification_sha256,
+                "source_context_classification_sha256_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "classification_id",
+            _required_text(
+                self.classification_id,
+                "source_context_classification_id_invalid",
+            ),
+        )
+        if (self.classified_by is None) != (self.classified_at is None):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_actor_invalid"
+            )
+        if self.classified_by is not None:
+            object.__setattr__(
+                self,
+                "classified_by",
+                _required_text(
+                    self.classified_by,
+                    "source_context_classification_actor_invalid",
+                ),
+            )
+            object.__setattr__(
+                self,
+                "classified_at",
+                _aware_utc(
+                    self.classified_at,
+                    "source_context_classification_actor_invalid",
+                ),
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextClassificationBaselineInputV2:
+    """Server-authored baseline defaults for one legacy classification form."""
+
+    presence: CodeEvidenceBaselinePresence
+    workspace_state_id: str
+    provenance_note: str | None
+    provenance_note_required: bool
+
+    def __post_init__(self) -> None:
+        presence = _enum(
+            self.presence,
+            CodeEvidenceBaselinePresence,
+            "source_context_classification_baseline_presence_invalid",
+        )
+        object.__setattr__(self, "presence", presence)
+        object.__setattr__(
+            self,
+            "workspace_state_id",
+            _required_text(
+                self.workspace_state_id,
+                "source_context_classification_baseline_workspace_state_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "provenance_note",
+            _optional_text(
+                self.provenance_note,
+                "source_context_classification_baseline_provenance_note_invalid",
+                max_bytes=20_000,
+            ),
+        )
+        required = _strict_bool(
+            self.provenance_note_required,
+            "source_context_classification_baseline_note_required_invalid",
+        )
+        if required is not (
+            presence is CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_baseline_note_required_invalid"
+            )
+        object.__setattr__(self, "provenance_note_required", required)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextClassificationInputV2:
+    """Server-authoritative optimistic fence and baseline for one legacy item."""
+
+    evidence_id: str
+    expected_evidence_payload_sha256: str
+    expected_classification_revision: int
+    baseline_provenance: SourceContextClassificationBaselineInputV2
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "evidence_id",
+            _required_text(
+                self.evidence_id,
+                "source_context_classification_input_evidence_id_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "expected_evidence_payload_sha256",
+            _sha256(
+                self.expected_evidence_payload_sha256,
+                "source_context_classification_input_payload_sha256_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "expected_classification_revision",
+            _non_negative_int(
+                self.expected_classification_revision,
+                "source_context_classification_input_revision_invalid",
+            ),
+        )
+        if not isinstance(
+            self.baseline_provenance,
+            SourceContextClassificationBaselineInputV2,
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_input_baseline_invalid"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextRoleCountsV2:
+    """Closed counts for every Code Evidence source-role classification."""
+
+    current_implementation_count: int = 0
+    existing_scaffold_count: int = 0
+    existing_constraint_count: int = 0
+    reference_pattern_count: int = 0
+    uncategorized_legacy_count: int = 0
+
+    def __post_init__(self) -> None:
+        for name in (
+            "current_implementation_count",
+            "existing_scaffold_count",
+            "existing_constraint_count",
+            "reference_pattern_count",
+            "uncategorized_legacy_count",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _non_negative_int(
+                    getattr(self, name),
+                    "source_context_role_count_invalid",
+                ),
+            )
+
+    @property
+    def total_count(self) -> int:
+        return sum(
+            (
+                self.current_implementation_count,
+                self.existing_scaffold_count,
+                self.existing_constraint_count,
+                self.reference_pattern_count,
+                self.uncategorized_legacy_count,
+            )
+        )
+
+    def count_for(self, role: CodeEvidenceSourceRole) -> int:
+        resolved = _enum(
+            role,
+            CodeEvidenceSourceRole,
+            "source_context_role_invalid",
+        )
+        return {
+            CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION: (
+                self.current_implementation_count
+            ),
+            CodeEvidenceSourceRole.EXISTING_SCAFFOLD: self.existing_scaffold_count,
+            CodeEvidenceSourceRole.EXISTING_CONSTRAINT: (
+                self.existing_constraint_count
+            ),
+            CodeEvidenceSourceRole.REFERENCE_PATTERN: self.reference_pattern_count,
+            CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY: (
+                self.uncategorized_legacy_count
+            ),
+        }[resolved]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextClassificationStateV2:
+    """Structural classification state without an invented status vocabulary."""
+
+    classified_count: int
+    uncategorized_legacy_count: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "classified_count",
+            _non_negative_int(
+                self.classified_count,
+                "source_context_classified_count_invalid",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "uncategorized_legacy_count",
+            _non_negative_int(
+                self.uncategorized_legacy_count,
+                "source_context_uncategorized_legacy_count_invalid",
+            ),
+        )
+
+    @property
+    def fully_classified(self) -> bool:
+        return self.uncategorized_legacy_count == 0
+
+    @property
+    def has_unclassified_legacy(self) -> bool:
+        return self.uncategorized_legacy_count > 0
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextSummaryV2:
+    """Small transport-neutral summary consumed by later human projections."""
+
+    delivery_context: DeliveryContext | None
+    delivery_context_provenance: (
+        RefinementDeliveryContextProvenance
+        | SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    )
+    investigation_outcome: ContextualInvestigationOutcomeV2 | None
+    role_counts: SourceContextRoleCountsV2
+    classification_state: SourceContextClassificationStateV2
+    evidence_applicable: bool | None
+    interpretation_rule: str
+    items_not_current_implementation_count: int
+    technical_details_available: bool
+
+    def __post_init__(self) -> None:
+        delivery_context = self.delivery_context
+        provenance = self.delivery_context_provenance
+        if delivery_context is not None:
+            delivery_context = _enum(
+                delivery_context,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+        if (delivery_context is None) != (provenance is None):
+            raise CodeTraceabilityContractError(
+                "source_context_delivery_context_provenance_invalid",
+                details={"reason": "legacy_pair_incoherent"},
+            )
+        if provenance is not None and not isinstance(
+            provenance,
+            RefinementDeliveryContextProvenance
+            | SpecDeliveryContextProvenance
+            | DirectSpecDeliveryContextProvenance,
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_delivery_context_provenance_invalid"
+            )
+        if provenance is not None and delivery_context is not provenance.value:
+            raise CodeTraceabilityContractError(
+                "source_context_delivery_context_provenance_invalid",
+                details={"reason": "effective_value_mismatch"},
+            )
+        outcome = self.investigation_outcome
+        if outcome is not None:
+            outcome = _enum(
+                outcome,
+                ContextualInvestigationOutcomeV2,
+                "source_context_investigation_outcome_invalid",
+            )
+            if delivery_context is None:
+                raise CodeTraceabilityContractError(
+                    "source_context_investigation_outcome_invalid",
+                    details={"reason": "delivery_context_required"},
+                )
+        if not isinstance(self.role_counts, SourceContextRoleCountsV2):
+            raise CodeTraceabilityContractError("source_context_role_counts_invalid")
+        if not isinstance(
+            self.classification_state,
+            SourceContextClassificationStateV2,
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_state_invalid"
+            )
+        classified_count = (
+            self.role_counts.total_count - self.role_counts.uncategorized_legacy_count
+        )
+        if (
+            self.classification_state.classified_count != classified_count
+            or self.classification_state.uncategorized_legacy_count
+            != self.role_counts.uncategorized_legacy_count
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_state_invalid",
+                details={"reason": "role_count_mismatch"},
+            )
+        if (
+            outcome
+            is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+            and (
+                delivery_context is not DeliveryContext.GREENFIELD
+                or self.role_counts.current_implementation_count != 0
+            )
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_investigation_outcome_invalid",
+                details={
+                    "reason": "no_relevant_existing_implementation_incoherent"
+                },
+            )
+        evidence_applicable = self.evidence_applicable
+        if evidence_applicable is not None:
+            evidence_applicable = _strict_bool(
+                evidence_applicable,
+                "source_context_evidence_applicable_invalid",
+            )
+        expected_applicability = {
+            ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE: True,
+            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION: (
+                False
+            ),
+            ContextualInvestigationOutcomeV2.PARTIAL: None,
+            ContextualInvestigationOutcomeV2.UNAVAILABLE: None,
+            None: None,
+        }[outcome]
+        if evidence_applicable is not expected_applicability:
+            raise CodeTraceabilityContractError(
+                "source_context_evidence_applicable_invalid",
+                details={"reason": "investigation_outcome_mismatch"},
+            )
+        interpretation_rule = _required_text(
+            self.interpretation_rule,
+            "source_context_interpretation_rule_invalid",
+        )
+        not_current_count = _non_negative_int(
+            self.items_not_current_implementation_count,
+            "source_context_items_not_current_implementation_count_invalid",
+        )
+        expected_not_current_count = (
+            self.role_counts.total_count - self.role_counts.current_implementation_count
+        )
+        if not_current_count != expected_not_current_count:
+            raise CodeTraceabilityContractError(
+                "source_context_items_not_current_implementation_count_invalid",
+                details={"expected": expected_not_current_count},
+            )
+        technical_details_available = _strict_bool(
+            self.technical_details_available,
+            "source_context_technical_details_available_invalid",
+        )
+        object.__setattr__(self, "delivery_context", delivery_context)
+        object.__setattr__(self, "delivery_context_provenance", provenance)
+        object.__setattr__(self, "investigation_outcome", outcome)
+        object.__setattr__(self, "evidence_applicable", evidence_applicable)
+        object.__setattr__(self, "interpretation_rule", interpretation_rule)
+        object.__setattr__(
+            self,
+            "items_not_current_implementation_count",
+            not_current_count,
+        )
+        object.__setattr__(
+            self,
+            "technical_details_available",
+            technical_details_available,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextCurrentReceiptV2:
+    """Current contextual receipt identity sealed into one Refinement snapshot."""
+
+    receipt_id: str
+    source_ref: str
+    generation: int
+    head_revision: int
+    payload_sha256: str
+    delivery_context: DeliveryContext | None
+    contextual_outcome: ContextualInvestigationOutcomeV2 | None
+    context_contract_version: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "receipt_id", _required_text(
+            self.receipt_id,
+            "source_context_receipt_id_invalid",
+        ))
+        object.__setattr__(
+            self,
+            "source_ref",
+            normalize_code_source_ref(self.source_ref),
+        )
+        object.__setattr__(self, "generation", _positive_int(
+            self.generation,
+            "source_context_receipt_generation_invalid",
+        ))
+        object.__setattr__(self, "head_revision", _positive_int(
+            self.head_revision,
+            "source_context_receipt_head_revision_invalid",
+        ))
+        object.__setattr__(self, "payload_sha256", _sha256(
+            self.payload_sha256,
+            "source_context_receipt_payload_sha256_invalid",
+        ))
+        delivery_context = self.delivery_context
+        contextual_outcome = self.contextual_outcome
+        if (delivery_context is None) != (contextual_outcome is None):
+            raise CodeTraceabilityContractError(
+                "source_context_receipt_context_invalid"
+            )
+        if delivery_context is None:
+            if self.context_contract_version is not None:
+                raise CodeTraceabilityContractError(
+                    "source_context_receipt_contract_version_invalid"
+                )
+        elif self.context_contract_version != 2:
+            raise CodeTraceabilityContractError(
+                "source_context_receipt_contract_version_invalid"
+            )
+        if delivery_context is not None:
+            delivery_context = _enum(
+                delivery_context,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+            contextual_outcome = _enum(
+                contextual_outcome,
+                ContextualInvestigationOutcomeV2,
+                "source_context_investigation_outcome_invalid",
+            )
+        object.__setattr__(self, "delivery_context", delivery_context)
+        object.__setattr__(self, "contextual_outcome", contextual_outcome)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "receipt_id": self.receipt_id,
+            "source_ref": self.source_ref,
+            "generation": self.generation,
+            "head_revision": self.head_revision,
+            "payload_sha256": self.payload_sha256,
+            "delivery_context": (
+                None
+                if self.delivery_context is None
+                else self.delivery_context.value
+            ),
+            "contextual_outcome": (
+                None
+                if self.contextual_outcome is None
+                else self.contextual_outcome.value
+            ),
+            "context_contract_version": self.context_contract_version,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SourceContextClassificationFenceV2:
+    """Extensible append-only classification fence; I3 seals explicit absence."""
+
+    revision: int | None = None
+    payload_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.revision is None) != (self.payload_sha256 is None):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_fence_invalid"
+            )
+        if self.revision is not None:
+            object.__setattr__(self, "revision", _positive_int(
+                self.revision,
+                "source_context_classification_revision_invalid",
+            ))
+            object.__setattr__(self, "payload_sha256", _sha256(
+                self.payload_sha256,
+                "source_context_classification_sha256_invalid",
+            ))
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "revision": self.revision,
+            "payload_sha256": self.payload_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RefinementSourceContextManifestV2:
+    """Immutable contextual input sealed at one exact Refinement version."""
+
+    refinement_id: str
+    refinement_version: int
+    summary: SourceContextSummaryV2
+    current_receipts: tuple[SourceContextCurrentReceiptV2, ...]
+    classification_fence: SourceContextClassificationFenceV2 = (
+        SourceContextClassificationFenceV2()
+    )
+    contract_version: int = 2
+
+    def __post_init__(self) -> None:
+        if self.contract_version != 2:
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_contract_version_invalid"
+            )
+        refinement_id = _required_text(
+            self.refinement_id,
+            "source_context_manifest_refinement_id_invalid",
+        )
+        refinement_version = _positive_int(
+            self.refinement_version,
+            "source_context_manifest_refinement_version_invalid",
+        )
+        if not isinstance(self.summary, SourceContextSummaryV2):
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_summary_invalid"
+            )
+        provenance = self.summary.delivery_context_provenance
+        if provenance is not None and (
+            not isinstance(provenance, RefinementDeliveryContextProvenance)
+            or provenance.source_refinement_id != refinement_id
+            or provenance.source_refinement_version != refinement_version
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_provenance_invalid"
+            )
+        receipts = tuple(self.current_receipts)
+        if any(not isinstance(item, SourceContextCurrentReceiptV2) for item in receipts):
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_receipts_invalid"
+            )
+        sorted_receipts = tuple(
+            sorted(receipts, key=lambda item: (item.source_ref, item.receipt_id))
+        )
+        if receipts != sorted_receipts or len({item.source_ref for item in receipts}) != len(receipts):
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_receipts_invalid"
+            )
+        if not isinstance(
+            self.classification_fence,
+            SourceContextClassificationFenceV2,
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_classification_fence_invalid"
+            )
+        object.__setattr__(self, "refinement_id", refinement_id)
+        object.__setattr__(self, "refinement_version", refinement_version)
+        object.__setattr__(self, "current_receipts", receipts)
+
+    def as_dict(self) -> dict[str, object]:
+        summary = self.summary
+        provenance = summary.delivery_context_provenance
+        provenance_payload = None
+        if isinstance(provenance, RefinementDeliveryContextProvenance):
+            provenance_payload = {
+                "value": provenance.value.value,
+                "source_refinement_id": provenance.source_refinement_id,
+                "source_refinement_version": provenance.source_refinement_version,
+            }
+        return {
+            "contract_version": self.contract_version,
+            "subject_type": CodeTraceabilitySubjectType.REFINEMENT.value,
+            "subject_id": self.refinement_id,
+            "subject_version": self.refinement_version,
+            "delivery_context": (
+                None
+                if summary.delivery_context is None
+                else summary.delivery_context.value
+            ),
+            "delivery_context_provenance": provenance_payload,
+            "current_receipts": [item.as_dict() for item in self.current_receipts],
+            "investigation_outcome": (
+                None
+                if summary.investigation_outcome is None
+                else summary.investigation_outcome.value
+            ),
+            "evidence_applicable": summary.evidence_applicable,
+            "role_counts": {
+                "current_implementation_count": (
+                    summary.role_counts.current_implementation_count
+                ),
+                "existing_scaffold_count": summary.role_counts.existing_scaffold_count,
+                "existing_constraint_count": (
+                    summary.role_counts.existing_constraint_count
+                ),
+                "reference_pattern_count": summary.role_counts.reference_pattern_count,
+                "uncategorized_legacy_count": (
+                    summary.role_counts.uncategorized_legacy_count
+                ),
+            },
+            "classification_state": {
+                "classified_count": summary.classification_state.classified_count,
+                "uncategorized_legacy_count": (
+                    summary.classification_state.uncategorized_legacy_count
+                ),
+            },
+            "classification_fence": self.classification_fence.as_dict(),
+            "interpretation_rule": summary.interpretation_rule,
+            "items_not_current_implementation_count": (
+                summary.items_not_current_implementation_count
+            ),
+            "technical_details_available": summary.technical_details_available,
+        }
+
+    @property
+    def payload_sha256(self) -> str:
+        return canonical_code_traceability_sha256(self.as_dict())
 
 
 def normalize_code_source_ref(value: object) -> str:
@@ -1105,6 +2449,76 @@ def code_investigation_observation_sha256(
                 outcome,
                 CodeInvestigationOutcome,
                 "code_investigation_receipt_outcome_invalid",
+            ),
+            "capabilities": _enum_tuple(
+                capabilities,
+                CodeInvestigationCapability,
+                "code_investigation_receipt_capabilities_invalid",
+            ),
+            "source_identity_digest": _optional_sha256(
+                source_identity_digest,
+                "code_investigation_source_identity_digest_invalid",
+            ),
+            "declared_revision": _optional_text(
+                declared_revision,
+                "code_investigation_declared_revision_invalid",
+            ),
+            "workspace_state": state_claim,
+            "omission_manifest": _typed_tuple(
+                omission_manifest,
+                CodeInvestigationOmission,
+                "code_investigation_omission_manifest_invalid",
+                max_items=DEFAULT_CODE_TRACEABILITY_LIMITS.omission_entries,
+            ),
+        }
+    )
+
+
+def code_investigation_observation_sha256_v2(
+    *,
+    source_ref: str,
+    selector_scope_digest: str,
+    delivery_context: DeliveryContext,
+    outcome: ContextualInvestigationOutcomeV2,
+    capabilities: Sequence[CodeInvestigationCapability],
+    source_identity_digest: str | None,
+    declared_revision: str | None,
+    workspace_state: ObservedWorkspaceStateRef | None,
+    omission_manifest: Sequence[CodeInvestigationOmission],
+) -> str:
+    """Hash a contextual investigation without changing the V1 digest contract."""
+
+    state_claim: Mapping[str, object] | None = None
+    if workspace_state is not None:
+        if not isinstance(workspace_state, ObservedWorkspaceStateRef):
+            raise CodeTraceabilityContractError(
+                "code_investigation_workspace_state_invalid"
+            )
+        state_claim = {
+            "workspace_state_id": workspace_state.workspace_state_id,
+            "declared_dirty": workspace_state.declared_dirty,
+            "reproducibility_claim": workspace_state.reproducibility_claim,
+            "fingerprint_algorithm": workspace_state.fingerprint_algorithm,
+            "manifest_digest": workspace_state.manifest_digest,
+            "manifest_entry_count": workspace_state.manifest_entry_count,
+        }
+    return canonical_code_traceability_sha256(
+        {
+            "contract_version": 2,
+            "source_ref": normalize_code_source_ref(source_ref),
+            "selector_scope_digest": _sha256(
+                selector_scope_digest,
+                "code_investigation_selector_scope_digest_invalid",
+            ),
+            "delivery_context": _enum(
+                delivery_context,
+                DeliveryContext,
+                "code_delivery_context_required",
+            ),
+            "outcome": _enum(
+                outcome,
+                ContextualInvestigationOutcomeV2,
+                "code_investigation_contextual_outcome_invalid",
             ),
             "capabilities": _enum_tuple(
                 capabilities,
@@ -1361,6 +2775,9 @@ class CodeInvestigationReceipt:
     observation_sha256: str
     payload_sha256: str
     idempotency_key: str
+    delivery_context: DeliveryContext | None = None
+    contextual_outcome: ContextualInvestigationOutcomeV2 | None = None
+    context_contract_version: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -1434,6 +2851,44 @@ class CodeInvestigationReceipt:
             "code_investigation_receipt_outcome_invalid",
         )
         object.__setattr__(self, "outcome", outcome)
+        delivery_context = self.delivery_context
+        contextual_outcome = self.contextual_outcome
+        if (delivery_context is None) != (contextual_outcome is None):
+            raise CodeDeliveryContextRequired()
+        if contextual_outcome is None:
+            if self.context_contract_version is not None:
+                raise CodeTraceabilityContractError(
+                    "code_investigation_context_contract_version_invalid"
+                )
+        elif self.context_contract_version != 2:
+            raise CodeTraceabilityContractError(
+                "code_investigation_context_contract_version_invalid"
+            )
+        if contextual_outcome is not None:
+            delivery_context = _enum(
+                delivery_context,
+                DeliveryContext,
+                "code_delivery_context_required",
+            )
+            contextual_outcome = _enum(
+                contextual_outcome,
+                ContextualInvestigationOutcomeV2,
+                "code_investigation_contextual_outcome_invalid",
+            )
+            if outcome is not legacy_code_investigation_outcome(contextual_outcome):
+                raise CodeTraceabilityContractError(
+                    "code_investigation_contextual_outcome_mapping_invalid"
+                )
+            if (
+                contextual_outcome
+                is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+                and delivery_context is not DeliveryContext.GREENFIELD
+            ):
+                raise CodeInvestigationNoRelevantExistingImplementationInvalid(
+                    details={"delivery_context": delivery_context.value}
+                )
+        object.__setattr__(self, "delivery_context", delivery_context)
+        object.__setattr__(self, "contextual_outcome", contextual_outcome)
         object.__setattr__(
             self,
             "capabilities",
@@ -1499,11 +2954,24 @@ class CodeInvestigationReceipt:
             "code_investigation_omission_manifest_invalid",
             max_items=DEFAULT_CODE_TRACEABILITY_LIMITS.omission_entries,
         )
-        if outcome is CodeInvestigationOutcome.ACCESSIBLE and omissions:
-            raise CodeTraceabilityContractError(
-                "code_investigation_outcome_omissions_incoherent"
-            )
-        if outcome is not CodeInvestigationOutcome.ACCESSIBLE and not omissions:
+        if contextual_outcome is None:
+            if outcome is CodeInvestigationOutcome.ACCESSIBLE and omissions:
+                raise CodeTraceabilityContractError(
+                    "code_investigation_outcome_omissions_incoherent"
+                )
+            if outcome is not CodeInvestigationOutcome.ACCESSIBLE and not omissions:
+                raise CodeTraceabilityContractError(
+                    "code_investigation_omission_reason_required"
+                )
+        elif contextual_outcome in {
+            ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
+            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION,
+        }:
+            if omissions:
+                raise CodeTraceabilityContractError(
+                    "code_investigation_outcome_omissions_incoherent"
+                )
+        elif not omissions:
             raise CodeTraceabilityContractError(
                 "code_investigation_omission_reason_required"
             )
@@ -1573,6 +3041,48 @@ class CodeInvestigationReceipt:
                 raise CodeInvestigationCapabilityMissing(
                     details={"capability": capability.value}
                 )
+        if (
+            contextual_outcome
+            is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+        ):
+            missing_claims = tuple(
+                name
+                for name, value in (
+                    ("source_identity_digest", self.source_identity_digest),
+                    ("declared_revision", declared_revision),
+                    ("workspace_state", workspace_state),
+                )
+                if value is None
+            )
+            identity_capabilities = {
+                CodeInvestigationCapability.SOURCE_IDENTITY,
+                CodeInvestigationCapability.REVISION_IDENTITY,
+                CodeInvestigationCapability.WORKSPACE_FINGERPRINT,
+            }
+            missing_identity_capabilities = tuple(
+                sorted(item.value for item in identity_capabilities - capabilities)
+            )
+            if missing_claims or missing_identity_capabilities:
+                raise CodeInvestigationNoRelevantExistingImplementationInvalid(
+                    details={
+                        "missing_claims": missing_claims,
+                        "missing_capabilities": missing_identity_capabilities,
+                    }
+                )
+        if (
+            contextual_outcome is ContextualInvestigationOutcomeV2.UNAVAILABLE
+            and any(
+                value is not None
+                for value in (
+                    self.source_identity_digest,
+                    declared_revision,
+                    workspace_state,
+                )
+            )
+        ):
+            raise CodeTraceabilityContractError(
+                "code_investigation_unavailable_claims_incoherent"
+            )
         clock_skew = abs((received_at - observed_at).total_seconds())
         if clock_skew > DEFAULT_CODE_TRACEABILITY_LIMITS.observed_at_clock_skew_seconds:
             raise CodeTraceabilityContractError(
@@ -1590,16 +3100,29 @@ class CodeInvestigationReceipt:
                     f"code_investigation_{name}_invalid",
                 ),
             )
-        expected_observation_sha256 = code_investigation_observation_sha256(
-            source_ref=self.source_ref,
-            selector_scope_digest=self.selector_scope_digest,
-            outcome=outcome,
-            capabilities=self.capabilities,
-            source_identity_digest=self.source_identity_digest,
-            declared_revision=declared_revision,
-            workspace_state=workspace_state,
-            omission_manifest=omissions,
-        )
+        if contextual_outcome is None:
+            expected_observation_sha256 = code_investigation_observation_sha256(
+                source_ref=self.source_ref,
+                selector_scope_digest=self.selector_scope_digest,
+                outcome=outcome,
+                capabilities=self.capabilities,
+                source_identity_digest=self.source_identity_digest,
+                declared_revision=declared_revision,
+                workspace_state=workspace_state,
+                omission_manifest=omissions,
+            )
+        else:
+            expected_observation_sha256 = code_investigation_observation_sha256_v2(
+                source_ref=self.source_ref,
+                selector_scope_digest=self.selector_scope_digest,
+                delivery_context=delivery_context,
+                outcome=contextual_outcome,
+                capabilities=self.capabilities,
+                source_identity_digest=self.source_identity_digest,
+                declared_revision=declared_revision,
+                workspace_state=workspace_state,
+                omission_manifest=omissions,
+            )
         if self.observation_sha256 != expected_observation_sha256:
             raise CodeInvestigationPayloadDigestMismatch(
                 details={"field": "observation_sha256"}
@@ -1612,11 +3135,33 @@ class CodeInvestigationReceipt:
                 "code_investigation_idempotency_key_invalid",
             ),
         )
+        envelope: object = self
+        if contextual_outcome is None:
+            # Preserve the byte budget of the historical V1 aggregate. The
+            # additive V2 fields do not retroactively enlarge legacy receipts.
+            envelope = {
+                field.name: getattr(self, field.name)
+                for field in fields(self)
+                if field.name
+                not in {
+                    "delivery_context",
+                    "contextual_outcome",
+                    "context_contract_version",
+                }
+            }
         _enforce_envelope_size(
-            self,
+            envelope,
             max_bytes=DEFAULT_CODE_TRACEABILITY_LIMITS.receipt_envelope_bytes,
             envelope="receipt",
         )
+
+    @property
+    def effective_outcome(
+        self,
+    ) -> CodeInvestigationOutcome | ContextualInvestigationOutcomeV2:
+        """Return the authored outcome while keeping legacy receipts readable."""
+
+        return self.contextual_outcome or self.outcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -1728,12 +3273,19 @@ def code_investigation_receipt_currentness(
     head: CodeInvestigationHead | None,
     at: datetime,
     revocation: CodeInvestigationReceiptRevocation | None = None,
+    expected_delivery_context: DeliveryContext | None = None,
 ) -> CodeInvestigationReceiptCurrentness:
     """Classify ledger currentness without probing the underlying source."""
 
     if not isinstance(receipt, CodeInvestigationReceipt):
         raise CodeTraceabilityContractError("code_investigation_receipt_invalid")
     evaluated_at = _aware_utc(at, "code_investigation_currentness_at_invalid")
+    if expected_delivery_context is not None:
+        expected_delivery_context = _enum(
+            expected_delivery_context,
+            DeliveryContext,
+            "code_delivery_context_required",
+        )
     if revocation is not None:
         if (
             not isinstance(revocation, CodeInvestigationReceiptRevocation)
@@ -1756,6 +3308,12 @@ def code_investigation_receipt_currentness(
         raise CodeInvestigationSourceScopeMismatch()
     if head.state is CodeInvestigationHeadState.CONFLICTED:
         return CodeInvestigationReceiptCurrentness.CONFLICTED
+    if (
+        expected_delivery_context is not None
+        and receipt.delivery_context is not None
+        and receipt.delivery_context is not expected_delivery_context
+    ):
+        return CodeInvestigationReceiptCurrentness.OUTDATED
     if head.current_receipt_id == receipt.id:
         return CodeInvestigationReceiptCurrentness.CURRENT
     return CodeInvestigationReceiptCurrentness.OUTDATED
@@ -1858,6 +3416,13 @@ class CodeEvidence:
     received_at: datetime
     payload_sha256: str
     idempotency_key: str
+    source_role: CodeEvidenceSourceRole = CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
+    relevance_summary: str | None = None
+    scope_relation: str | None = None
+    source_origin: str | None = None
+    interpretation_limit: str | None = None
+    baseline_provenance: CodeEvidenceBaselineProvenance | None = None
+    context_contract_version: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -2060,6 +3625,78 @@ class CodeEvidence:
             "payload_sha256",
             _sha256(self.payload_sha256, "code_evidence_payload_sha256_invalid"),
         )
+        source_role = _enum(
+            self.source_role,
+            CodeEvidenceSourceRole,
+            "code_evidence_source_role_required",
+        )
+        contextual_values = {
+            "relevance_summary": self.relevance_summary,
+            "scope_relation": self.scope_relation,
+            "source_origin": self.source_origin,
+            "interpretation_limit": self.interpretation_limit,
+            "baseline_provenance": self.baseline_provenance,
+        }
+        if source_role is CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY:
+            if (
+                self.context_contract_version is not None
+                or any(value is not None for value in contextual_values.values())
+            ):
+                raise CodeEvidenceLegacyRoleWriteForbidden()
+            object.__setattr__(self, "source_role", source_role)
+        else:
+            if self.context_contract_version != 2:
+                raise CodeTraceabilityContractError(
+                    "code_evidence_context_contract_version_invalid"
+                )
+            source_role = authored_code_evidence_source_role(source_role)
+            object.__setattr__(self, "source_role", source_role)
+            for name in ("relevance_summary", "scope_relation", "source_origin"):
+                value = _required_text(
+                    getattr(self, name),
+                    f"code_evidence_{name}_required",
+                )
+                object.__setattr__(self, name, value)
+            interpretation_limit = _optional_text(
+                self.interpretation_limit,
+                "code_evidence_interpretation_limit_invalid",
+            )
+            if (
+                source_role
+                in {
+                    CodeEvidenceSourceRole.EXISTING_SCAFFOLD,
+                    CodeEvidenceSourceRole.REFERENCE_PATTERN,
+                }
+                and interpretation_limit is None
+            ):
+                raise CodeEvidenceInterpretationLimitRequired(
+                    details={"source_role": source_role.value}
+                )
+            object.__setattr__(
+                self,
+                "interpretation_limit",
+                interpretation_limit,
+            )
+            if not isinstance(
+                self.baseline_provenance,
+                CodeEvidenceBaselineProvenance,
+            ):
+                raise CodeEvidenceBaselineProvenanceInvalid()
+            if (
+                self.baseline_provenance.workspace_state_id
+                != self.workspace_state.workspace_state_id
+            ):
+                raise CodeEvidencePostBaselineSourceForbidden(
+                    details={"reason": "workspace_state_mismatch"}
+                )
+            baseline_is_worktree = (
+                self.baseline_provenance.presence
+                is CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
+            )
+            if baseline_is_worktree is not self.workspace_state.declared_dirty:
+                raise CodeEvidenceBaselineProvenanceInvalid(
+                    details={"reason": "workspace_presence_mismatch"}
+                )
         _enforce_envelope_size(
             self,
             max_bytes=DEFAULT_CODE_TRACEABILITY_LIMITS.evidence_envelope_bytes,
@@ -2071,6 +3708,446 @@ class CodeEvidence:
         """Immutable Evidence content digest used by snapshots and Spec links."""
 
         return self.payload_sha256
+
+
+def source_context_evidence_item_v2(
+    evidence: CodeEvidence,
+    classification: CodeEvidenceLegacyClassification | None = None,
+    *,
+    include_classification_actor: bool = False,
+) -> SourceContextEvidenceItemV2:
+    """Resolve authored/legacy context without guessing from code coordinates."""
+
+    if not isinstance(evidence, CodeEvidence):
+        raise CodeTraceabilityContractError("source_context_evidence_invalid")
+    if classification is not None:
+        if (
+            not isinstance(classification, CodeEvidenceLegacyClassification)
+            or classification.board_id != evidence.board_id
+            or classification.evidence_id != evidence.id
+            or classification.evidence_payload_sha256 != evidence.payload_sha256
+            or evidence.source_role
+            is not CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
+        ):
+            raise CodeEvidenceLegacyClassificationPayloadConflict(
+                details={"evidence_id": evidence.id}
+            )
+        return SourceContextEvidenceItemV2(
+            evidence_id=evidence.id,
+            source_role=classification.source_role,
+            relevance_summary=classification.relevance_summary,
+            scope_relation=classification.scope_relation,
+            source_origin=classification.source_origin,
+            interpretation_limit=classification.interpretation_limit,
+            baseline_provenance=classification.baseline_provenance,
+            context_origin=(
+                CodeEvidenceContextOrigin.HUMAN_LEGACY_CLASSIFICATION
+            ),
+            context_contract_version=2,
+            classification_revision=classification.revision,
+            classification_sha256=classification.classification_sha256,
+            classification_id=classification.id,
+            classified_by=(
+                classification.classified_by
+                if include_classification_actor
+                else None
+            ),
+            classified_at=(
+                classification.classified_at
+                if include_classification_actor
+                else None
+            ),
+        )
+    if evidence.source_role is CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY:
+        return SourceContextEvidenceItemV2(
+            evidence_id=evidence.id,
+            source_role=evidence.source_role,
+            relevance_summary=None,
+            scope_relation=None,
+            source_origin=None,
+            interpretation_limit=None,
+            baseline_provenance=None,
+            context_origin=CodeEvidenceContextOrigin.UNCLASSIFIED_LEGACY,
+            context_contract_version=None,
+        )
+    return SourceContextEvidenceItemV2(
+        evidence_id=evidence.id,
+        source_role=evidence.source_role,
+        relevance_summary=evidence.relevance_summary,
+        scope_relation=evidence.scope_relation,
+        source_origin=evidence.source_origin,
+        interpretation_limit=evidence.interpretation_limit,
+        baseline_provenance=evidence.baseline_provenance,
+        context_origin=CodeEvidenceContextOrigin.AUTHORED,
+        context_contract_version=2,
+    )
+
+
+def source_context_classification_input_v2(
+    evidence: CodeEvidence,
+    classification: CodeEvidenceLegacyClassification | None = None,
+) -> SourceContextClassificationInputV2:
+    """Build the only client-safe command defaults for legacy Evidence."""
+
+    if (
+        not isinstance(evidence, CodeEvidence)
+        or evidence.source_role is not CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY
+    ):
+        raise CodeTraceabilityContractError(
+            "source_context_classification_input_legacy_evidence_required"
+        )
+    if classification is not None:
+        # Reuse the effective-context resolver as the single payload/scope guard.
+        source_context_evidence_item_v2(evidence, classification)
+        presence = classification.baseline_provenance.presence
+        workspace_state_id = (
+            classification.baseline_provenance.workspace_state_id
+        )
+        provenance_note = classification.baseline_provenance.provenance_note
+        revision = classification.revision
+    else:
+        presence = (
+            CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
+            if evidence.workspace_state.declared_dirty
+            else CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT
+        )
+        workspace_state_id = evidence.workspace_state.workspace_state_id
+        provenance_note = None
+        revision = 0
+    return SourceContextClassificationInputV2(
+        evidence_id=evidence.id,
+        expected_evidence_payload_sha256=evidence.payload_sha256,
+        expected_classification_revision=revision,
+        baseline_provenance=SourceContextClassificationBaselineInputV2(
+            presence=presence,
+            workspace_state_id=workspace_state_id,
+            provenance_note=provenance_note,
+            provenance_note_required=(
+                presence is CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE
+            ),
+        ),
+    )
+
+
+def source_context_evidence_payload_v2(
+    item: SourceContextEvidenceItemV2,
+) -> dict[str, object]:
+    """Canonical, actor-free contextual payload sealed by a snapshot."""
+
+    if not isinstance(item, SourceContextEvidenceItemV2):
+        raise CodeTraceabilityContractError("source_context_evidence_invalid")
+    return {
+        "context_contract_version": item.context_contract_version,
+        "context_origin": item.context_origin.value,
+        "source_role": item.source_role.value,
+        "relevance_summary": item.relevance_summary,
+        "scope_relation": item.scope_relation,
+        "source_origin": item.source_origin,
+        "interpretation_limit": item.interpretation_limit,
+        "baseline_provenance": item.baseline_provenance,
+    }
+
+
+def source_context_classification_fence_v2(
+    classifications: Sequence[CodeEvidenceLegacyClassification],
+) -> SourceContextClassificationFenceV2:
+    """Build a deterministic aggregate fence over current per-Evidence heads."""
+
+    items = tuple(classifications)
+    if any(not isinstance(item, CodeEvidenceLegacyClassification) for item in items):
+        raise CodeTraceabilityContractError(
+            "source_context_classifications_invalid"
+        )
+    if not items:
+        return SourceContextClassificationFenceV2()
+    ordered = tuple(sorted(items, key=lambda item: item.evidence_id))
+    if len({item.evidence_id for item in ordered}) != len(ordered):
+        raise CodeTraceabilityContractError(
+            "source_context_classifications_invalid"
+        )
+    return SourceContextClassificationFenceV2(
+        revision=sum(item.revision for item in ordered),
+        payload_sha256=canonical_code_traceability_sha256(
+            [
+                {
+                    "evidence_id": item.evidence_id,
+                    "revision": item.revision,
+                    "classification_sha256": item.classification_sha256,
+                }
+                for item in ordered
+            ]
+        ),
+    )
+
+
+SOURCE_CONTEXT_INTERPRETATION_RULE_V2 = (
+    "Only current implementation Evidence represents existing delivered behavior; "
+    "all other source roles provide context only."
+)
+
+
+def parse_refinement_source_context_manifest_v2(
+    value: object,
+) -> RefinementSourceContextManifestV2:
+    """Parse one canonical frozen Refinement manifest without source access.
+
+    The parser deliberately accepts only the public persisted payload. It does
+    not consult Evidence, receipt heads, a repository, or any other mutable
+    authority, so callers can verify an immutable snapshot before deciding how
+    to project or rebase it.
+    """
+
+    if not isinstance(value, Mapping):
+        raise CodeTraceabilityContractError(
+            "source_context_manifest_structure_invalid"
+        )
+
+    provenance_raw = value.get("delivery_context_provenance")
+    provenance = None
+    if provenance_raw is not None:
+        if not isinstance(provenance_raw, Mapping):
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_provenance_invalid"
+            )
+        provenance = RefinementDeliveryContextProvenance(
+            value=provenance_raw.get("value"),
+            source_refinement_id=provenance_raw.get("source_refinement_id"),
+            source_refinement_version=provenance_raw.get(
+                "source_refinement_version"
+            ),
+        )
+
+    role_counts_raw = value.get("role_counts")
+    classification_state_raw = value.get("classification_state")
+    classification_fence_raw = value.get("classification_fence")
+    receipts_raw = value.get("current_receipts")
+    if (
+        not isinstance(role_counts_raw, Mapping)
+        or not isinstance(classification_state_raw, Mapping)
+        or not isinstance(classification_fence_raw, Mapping)
+        or isinstance(receipts_raw, str | bytes)
+        or not isinstance(receipts_raw, Sequence)
+    ):
+        raise CodeTraceabilityContractError(
+            "source_context_manifest_structure_invalid"
+        )
+
+    current_receipts: list[SourceContextCurrentReceiptV2] = []
+    for item in receipts_raw:
+        if not isinstance(item, Mapping):
+            raise CodeTraceabilityContractError(
+                "source_context_manifest_receipts_invalid"
+            )
+        current_receipts.append(
+            SourceContextCurrentReceiptV2(
+                receipt_id=item.get("receipt_id"),
+                source_ref=item.get("source_ref"),
+                generation=item.get("generation"),
+                head_revision=item.get("head_revision"),
+                payload_sha256=item.get("payload_sha256"),
+                delivery_context=item.get("delivery_context"),
+                contextual_outcome=item.get("contextual_outcome"),
+                context_contract_version=item.get("context_contract_version"),
+            )
+        )
+
+    manifest = RefinementSourceContextManifestV2(
+        refinement_id=value.get("subject_id"),
+        refinement_version=value.get("subject_version"),
+        summary=SourceContextSummaryV2(
+            delivery_context=value.get("delivery_context"),
+            delivery_context_provenance=provenance,
+            investigation_outcome=value.get("investigation_outcome"),
+            role_counts=SourceContextRoleCountsV2(
+                current_implementation_count=role_counts_raw.get(
+                    "current_implementation_count"
+                ),
+                existing_scaffold_count=role_counts_raw.get(
+                    "existing_scaffold_count"
+                ),
+                existing_constraint_count=role_counts_raw.get(
+                    "existing_constraint_count"
+                ),
+                reference_pattern_count=role_counts_raw.get(
+                    "reference_pattern_count"
+                ),
+                uncategorized_legacy_count=role_counts_raw.get(
+                    "uncategorized_legacy_count"
+                ),
+            ),
+            classification_state=SourceContextClassificationStateV2(
+                classified_count=classification_state_raw.get("classified_count"),
+                uncategorized_legacy_count=classification_state_raw.get(
+                    "uncategorized_legacy_count"
+                ),
+            ),
+            evidence_applicable=value.get("evidence_applicable"),
+            interpretation_rule=value.get("interpretation_rule"),
+            items_not_current_implementation_count=value.get(
+                "items_not_current_implementation_count"
+            ),
+            technical_details_available=value.get("technical_details_available"),
+        ),
+        current_receipts=tuple(current_receipts),
+        classification_fence=SourceContextClassificationFenceV2(
+            revision=classification_fence_raw.get("revision"),
+            payload_sha256=classification_fence_raw.get("payload_sha256"),
+        ),
+        contract_version=value.get("contract_version"),
+    )
+    if (
+        value.get("subject_type")
+        != CodeTraceabilitySubjectType.REFINEMENT.value
+        or manifest.summary.interpretation_rule
+        != SOURCE_CONTEXT_INTERPRETATION_RULE_V2
+        or dict(value) != manifest.as_dict()
+    ):
+        raise CodeTraceabilityContractError(
+            "source_context_manifest_structure_invalid"
+        )
+    return manifest
+
+_SOURCE_CONTEXT_OUTCOME_PRECEDENCE: Mapping[ContextualInvestigationOutcomeV2, int] = (
+    MappingProxyType(
+        {
+            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION: 0,
+            ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE: 1,
+            ContextualInvestigationOutcomeV2.PARTIAL: 2,
+            ContextualInvestigationOutcomeV2.UNAVAILABLE: 3,
+        }
+    )
+)
+
+
+def aggregate_current_contextual_investigation_outcome_v2(
+    outcomes: Sequence[ContextualInvestigationOutcomeV2 | None],
+) -> ContextualInvestigationOutcomeV2 | None:
+    """Aggregate already-current authored outcomes with closed precedence.
+
+    The caller owns current-head selection. ``None`` denotes a readable legacy
+    receipt and never causes Core to infer a contextual outcome from V1 fields.
+    """
+
+    if isinstance(outcomes, str | bytes) or not isinstance(outcomes, Sequence):
+        raise CodeTraceabilityContractError(
+            "source_context_investigation_outcomes_invalid"
+        )
+    contextual: list[ContextualInvestigationOutcomeV2] = []
+    for value in outcomes:
+        if value is None:
+            continue
+        contextual.append(
+            _enum(
+                value,
+                ContextualInvestigationOutcomeV2,
+                "source_context_investigation_outcome_invalid",
+            )
+        )
+    if not contextual:
+        return None
+    return max(
+        contextual,
+        key=_SOURCE_CONTEXT_OUTCOME_PRECEDENCE.__getitem__,
+    )
+
+
+def active_source_context_role_counts_v2(
+    evidence: Sequence[CodeEvidence | SourceContextEvidenceItemV2],
+) -> SourceContextRoleCountsV2:
+    """Count factual source roles from active, already-scoped Evidence only."""
+
+    if isinstance(evidence, str | bytes) or not isinstance(evidence, Sequence):
+        raise CodeTraceabilityContractError("source_context_evidence_invalid")
+    counts = {role: 0 for role in CodeEvidenceSourceRole}
+    for item in evidence:
+        if not isinstance(item, CodeEvidence | SourceContextEvidenceItemV2):
+            raise CodeTraceabilityContractError("source_context_evidence_invalid")
+        if isinstance(item, SourceContextEvidenceItemV2) or (
+            item.lifecycle_status is CodeTraceabilityLifecycleStatus.ACTIVE
+        ):
+            counts[item.source_role] += 1
+    return SourceContextRoleCountsV2(
+        current_implementation_count=counts[
+            CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
+        ],
+        existing_scaffold_count=counts[CodeEvidenceSourceRole.EXISTING_SCAFFOLD],
+        existing_constraint_count=counts[CodeEvidenceSourceRole.EXISTING_CONSTRAINT],
+        reference_pattern_count=counts[CodeEvidenceSourceRole.REFERENCE_PATTERN],
+        uncategorized_legacy_count=counts[CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY],
+    )
+
+
+def build_source_context_summary_v2(
+    *,
+    delivery_context: DeliveryContext | None,
+    delivery_context_provenance: (
+        RefinementDeliveryContextProvenance
+        | SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ),
+    current_investigation_outcomes: Sequence[ContextualInvestigationOutcomeV2 | None],
+    evidence: Sequence[CodeEvidence],
+    classifications: Sequence[CodeEvidenceLegacyClassification] = (),
+) -> SourceContextSummaryV2:
+    """Build the source-blind canonical summary from server-selected facts."""
+
+    outcome = aggregate_current_contextual_investigation_outcome_v2(
+        current_investigation_outcomes
+    )
+    if isinstance(classifications, str | bytes) or not isinstance(
+        classifications, Sequence
+    ):
+        raise CodeTraceabilityContractError("source_context_classifications_invalid")
+    classifications_by_evidence: dict[str, CodeEvidenceLegacyClassification] = {}
+    for item in classifications:
+        if (
+            not isinstance(item, CodeEvidenceLegacyClassification)
+            or item.evidence_id in classifications_by_evidence
+        ):
+            raise CodeTraceabilityContractError(
+                "source_context_classifications_invalid"
+            )
+        classifications_by_evidence[item.evidence_id] = item
+    effective_items = tuple(
+        source_context_evidence_item_v2(
+            item,
+            classifications_by_evidence.get(item.id),
+        )
+        for item in evidence
+        if item.lifecycle_status is CodeTraceabilityLifecycleStatus.ACTIVE
+    )
+    if set(classifications_by_evidence) - {
+        item.evidence_id for item in effective_items
+    }:
+        raise CodeTraceabilityContractError("source_context_classifications_invalid")
+    role_counts = active_source_context_role_counts_v2(effective_items)
+    classification_state = SourceContextClassificationStateV2(
+        classified_count=(
+            role_counts.total_count - role_counts.uncategorized_legacy_count
+        ),
+        uncategorized_legacy_count=role_counts.uncategorized_legacy_count,
+    )
+    evidence_applicable = {
+        ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE: True,
+        ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION: False,
+        ContextualInvestigationOutcomeV2.PARTIAL: None,
+        ContextualInvestigationOutcomeV2.UNAVAILABLE: None,
+        None: None,
+    }[outcome]
+    return SourceContextSummaryV2(
+        delivery_context=delivery_context,
+        delivery_context_provenance=delivery_context_provenance,
+        investigation_outcome=outcome,
+        role_counts=role_counts,
+        classification_state=classification_state,
+        evidence_applicable=evidence_applicable,
+        interpretation_rule=SOURCE_CONTEXT_INTERPRETATION_RULE_V2,
+        items_not_current_implementation_count=(
+            role_counts.total_count - role_counts.current_implementation_count
+        ),
+        technical_details_available=role_counts.total_count > 0,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3396,6 +5473,11 @@ class CodeTraceabilityContext:
     source_refinement_id: str | None = None
     source_refinement_snapshot_id: str | None = None
     source_refinement_version: int | None = None
+    source_context: SourceContextSummaryV2 | None = None
+    source_context_items: tuple[SourceContextEvidenceItemV2, ...] = ()
+    source_context_classification_inputs: tuple[
+        SourceContextClassificationInputV2, ...
+    ] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -3522,6 +5604,134 @@ class CodeTraceabilityContext:
             raise CodeTraceabilityContractError(
                 "code_traceability_context_source_refinement_lineage_incoherent"
             )
+        source_context = self.source_context
+        if source_context is not None:
+            if not isinstance(source_context, SourceContextSummaryV2):
+                raise CodeTraceabilityContractError(
+                    "code_traceability_context_source_context_invalid"
+                )
+            provenance = source_context.delivery_context_provenance
+            if (
+                provenance is not None
+                and self.subject_type is CodeTraceabilitySubjectType.REFINEMENT
+            ):
+                if not isinstance(
+                    provenance,
+                    RefinementDeliveryContextProvenance,
+                ):
+                    raise CodeTraceabilityContractError(
+                        "code_traceability_context_source_context_provenance_invalid",
+                        details={"subject_type": self.subject_type.value},
+                    )
+                if (
+                    provenance.source_refinement_id != self.subject_id
+                    or provenance.source_refinement_version != self.subject_version
+                ):
+                    raise CodeTraceabilityContractError(
+                        "code_traceability_context_source_context_provenance_invalid",
+                        details={"reason": "refinement_subject_mismatch"},
+                    )
+            elif provenance is not None:
+                if not isinstance(
+                    provenance,
+                    SpecDeliveryContextProvenance
+                    | DirectSpecDeliveryContextProvenance,
+                ):
+                    raise CodeTraceabilityContractError(
+                        "code_traceability_context_source_context_provenance_invalid",
+                        details={"subject_type": self.subject_type.value},
+                    )
+                if isinstance(provenance, DirectSpecDeliveryContextProvenance):
+                    if self.source_refinement_id is not None:
+                        raise CodeTraceabilityContractError(
+                            "code_traceability_context_source_context_provenance_invalid",
+                            details={"reason": "direct_spec_has_refinement_lineage"},
+                        )
+                    if (
+                        self.subject_type is CodeTraceabilitySubjectType.SPEC
+                        and (
+                            provenance.source_spec_id != self.subject_id
+                            or provenance.source_spec_version > self.subject_version
+                        )
+                    ):
+                        raise CodeTraceabilityContractError(
+                            "code_traceability_context_source_context_provenance_invalid",
+                            details={"reason": "direct_spec_subject_mismatch"},
+                        )
+                elif self.source_refinement_id is not None and (
+                    provenance.source_refinement_id != self.source_refinement_id
+                    or provenance.source_refinement_version
+                    != self.source_refinement_version
+                ):
+                    raise CodeTraceabilityContractError(
+                        "code_traceability_context_source_context_provenance_invalid",
+                        details={"reason": "source_refinement_lineage_mismatch"},
+                    )
+        object.__setattr__(self, "source_context", source_context)
+        source_context_items = _typed_tuple(
+            self.source_context_items,
+            SourceContextEvidenceItemV2,
+            "code_traceability_context_source_context_items_invalid",
+            max_items=DEFAULT_CODE_TRACEABILITY_LIMITS.context_evidence,
+        )
+        if len({item.evidence_id for item in source_context_items}) != len(
+            source_context_items
+        ):
+            raise CodeTraceabilityContractError(
+                "code_traceability_context_source_context_items_invalid",
+                details={"reason": "duplicate_evidence_id"},
+            )
+        if (
+            profile is CodeTraceabilityProjectionProfile.SUMMARY
+            or context_scope is CodeTraceabilityContextScope.GATE
+        ) and any(
+            item.classified_by is not None or item.classified_at is not None
+            for item in source_context_items
+        ):
+            raise CodeTraceabilityContractError(
+                "code_traceability_context_source_context_actor_forbidden"
+            )
+        object.__setattr__(
+            self,
+            "source_context_items",
+            tuple(sorted(source_context_items, key=lambda item: item.evidence_id)),
+        )
+        classification_inputs = _typed_tuple(
+            self.source_context_classification_inputs,
+            SourceContextClassificationInputV2,
+            "code_traceability_context_classification_inputs_invalid",
+            max_items=DEFAULT_CODE_TRACEABILITY_LIMITS.context_evidence,
+        )
+        classification_input_ids = tuple(
+            item.evidence_id for item in classification_inputs
+        )
+        if (
+            len(set(classification_input_ids)) != len(classification_input_ids)
+            or not set(classification_input_ids).issubset(
+                item.evidence_id for item in source_context_items
+            )
+            or (
+                classification_inputs
+                and self.subject_type is not CodeTraceabilitySubjectType.REFINEMENT
+            )
+            or (
+                classification_inputs
+                and (
+                    profile is CodeTraceabilityProjectionProfile.SUMMARY
+                    or context_scope is CodeTraceabilityContextScope.GATE
+                )
+            )
+        ):
+            raise CodeTraceabilityContractError(
+                "code_traceability_context_classification_inputs_invalid"
+            )
+        object.__setattr__(
+            self,
+            "source_context_classification_inputs",
+            tuple(
+                sorted(classification_inputs, key=lambda item: item.evidence_id)
+            ),
+        )
         if (
             profile is CodeTraceabilityProjectionProfile.SUMMARY
             or context_scope is CodeTraceabilityContextScope.GATE

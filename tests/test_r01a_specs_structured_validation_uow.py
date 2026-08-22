@@ -84,7 +84,12 @@ async def _seed_spec(owner: str = USER) -> str:
         await db.commit()
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            bid, owner, SpecCreate(title=f"fu3bs1-{uuid.uuid4().hex[:6]}")
+            bid,
+            owner,
+            SpecCreate(
+                title=f"fu3bs1-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         return spec.id
@@ -179,13 +184,16 @@ def _valid_submit_data() -> dict:
         "expected_validation_edition": 1,
         "expected_spec_version": 1,
         "expected_head_revision": 0,
-        "completeness": 90,
-        "completeness_justification": "All ACs are covered with detailed test plans",
+        "confidence": 90,
+        "confidence_justification": "The evidence supports a confident decision",
+        "clarity": 90,
+        "clarity_justification": "The requirements use clear domain language",
         "assertiveness": 85,
         "assertiveness_justification": "FRs are measurable with no weasel words",
+        "decidability": 90,
+        "decidability_justification": "Every criterion has a binary outcome",
         "ambiguity": 15,
         "ambiguity_justification": "Glossary added and terms defined clearly",
-        "general_justification": "Spec is ready for execution with high confidence",
         "recommendation": "approve",
     }
 

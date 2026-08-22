@@ -10,9 +10,15 @@ from okto_pulse.core.ports.analytics_foundation import (
 )
 from okto_pulse.core.ports.board_kg_analytics import (
     BoardKgAnalyticsResultState,
+    BoardKgCognitiveStatus,
+    BoardKgHealthEvidenceSnapshot,
     BoardKgHealthState,
 )
-from okto_pulse.core.services.board_kg_analytics import BoardKgAnalyticsService
+from okto_pulse.core.services.board_kg_analytics import (
+    BoardKgAnalyticsService,
+    read_board_kg_health_evidence,
+    resolve_board_kg_cognitive_status,
+)
 
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
@@ -146,6 +152,70 @@ def test_board_scope_mismatch_fails_before_projection():
 
     with pytest.raises(ValueError, match="board_mismatch"):
         _compose(_health(), payload)
+
+
+@pytest.mark.asyncio
+async def test_public_health_evidence_facade_returns_strict_board_scoped_contract(
+    monkeypatch,
+):
+    from okto_pulse.core.services import kg_health_service
+
+    async def fake_health(board_id, context):
+        assert board_id == "board-1"
+        assert context is sentinel
+        return _health("backpressure", metric_status="restricted")
+
+    sentinel = object()
+    monkeypatch.setattr(kg_health_service, "get_kg_health", fake_health)
+
+    evidence = await read_board_kg_health_evidence(sentinel, board_id="board-1")
+
+    assert isinstance(evidence, BoardKgHealthEvidenceSnapshot)
+    assert evidence.board_id == "board-1"
+    assert evidence.health_state is BoardKgHealthState.BACKPRESSURE
+    assert evidence.result_state is BoardKgAnalyticsResultState.RESTRICTED
+    assert evidence.reason_codes == ("canonical_backpressure",)
+    assert tuple(item.component for item in evidence.components) == (
+        "discovery",
+        "graph",
+    )
+
+
+@pytest.mark.asyncio
+async def test_public_health_evidence_facade_rejects_cross_board_payload(monkeypatch):
+    from okto_pulse.core.services import kg_health_service
+
+    async def fake_health(_board_id, _context):
+        payload = _health()
+        payload["board_id"] = "other-board"
+        return payload
+
+    monkeypatch.setattr(kg_health_service, "get_kg_health", fake_health)
+
+    with pytest.raises(ValueError, match="board_mismatch"):
+        await read_board_kg_health_evidence(object(), board_id="board-1")
+
+
+@pytest.mark.parametrize(
+    ("ledger_status", "outcome_type", "expected"),
+    (
+        ("pending", None, BoardKgCognitiveStatus.PENDING),
+        ("skipped", "no_action_required", BoardKgCognitiveStatus.NO_ACTION),
+        ("future_status", "relation_created", None),
+    ),
+)
+def test_public_cognitive_status_facade_hides_internal_ledger_vocabulary(
+    ledger_status,
+    outcome_type,
+    expected,
+):
+    assert (
+        resolve_board_kg_cognitive_status(
+            ledger_status=ledger_status,
+            outcome_type=outcome_type,
+        )
+        is expected
+    )
 
 
 def test_projection_uses_public_service_boundaries_without_adapter_reach_in():

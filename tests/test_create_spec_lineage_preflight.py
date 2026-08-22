@@ -23,10 +23,11 @@ from okto_pulse.core.domain.enums import (
     IdeationComplexity,
     IdeationStatus,
     RefinementStatus,
+    SpecStatus,
 )
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
+from okto_pulse.core.models.schemas import SpecCreate, SpecMove, SpecUpdate
 from okto_pulse.core.services.effective_resource_propagation import (
     ResourceLineageResolutionError,
 )
@@ -35,6 +36,11 @@ from okto_pulse.core.services.main import (
     RefinementService,
     SpecLineagePreflightError,
     SpecService,
+)
+from okto_pulse.core.domain.code_traceability import (
+    CodeDeliveryContextRequired,
+    CodeDeliveryContextOverrideReasonRequired,
+    DeliveryContext,
 )
 from r3_scenario_helpers import freeze_refinement_completion_fixture
 from sqlalchemy_domain_event_delivery_store import build_test_event_processor
@@ -187,6 +193,17 @@ async def lineage_graph() -> dict[str, str]:
             created_by=USER_ID,
             status=RefinementStatus.DONE,
         )
+        for contextual_refinement in (
+            refinement_a,
+            refinement_a_other,
+            refinement_b,
+            refinement_medium_done,
+            refinement_large_draft,
+            refinement_large_done,
+            refinement_draft_ancestor,
+            refinement_cross_board_ancestor,
+        ):
+            contextual_refinement.delivery_context = "brownfield"
         db.add_all(
             (
                 refinement_a,
@@ -328,6 +345,7 @@ async def _create_spec(
                     title=f"Lineage spec {uuid.uuid4().hex[:8]}",
                     ideation_id=ideation_id,
                     refinement_id=refinement_id,
+                    delivery_context="brownfield",
                 ),
             ),
             actor=actor,
@@ -344,6 +362,19 @@ async def _update_spec(spec_id: str, **updates):
             actor=actor,
             uow=uow,
         )
+
+
+async def _make_spec_legacy_unpinned(spec_id: str) -> None:
+    """Model a readable pre-I3 Spec for compatibility-path relink tests."""
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec is not None
+        spec.delivery_context = None
+        spec.delivery_context_provenance = None
+        spec.source_context_manifest = None
+        spec.source_context_sha256 = None
+        await db.commit()
 
 
 async def _spec_write_snapshot(board_id: str, spec_id: str) -> dict[str, object]:
@@ -623,6 +654,7 @@ async def test_derive_spec_entrypoints_accept_valid_shared_lineage(
                 lineage_graph["idea_a"],
                 USER_ID,
                 skip_ownership_check=True,
+                delivery_context="brownfield",
             )
             expected_ideation_id = lineage_graph["idea_a"]
             expected_refinement_id = None
@@ -746,6 +778,8 @@ async def test_update_spec_accepts_valid_effective_lineage(
 ):
     board_id = lineage_graph["board_id"]
     created = await _create_spec(board_id)
+    if refinement_key is not None:
+        await _make_spec_legacy_unpinned(created.spec.id)
     updates = {"ideation_id": lineage_graph[ideation_key]}
     if refinement_key is not None:
         updates["refinement_id"] = lineage_graph[refinement_key]
@@ -772,6 +806,7 @@ async def test_update_spec_accepts_refinement_only_with_done_ancestor(
     refinement_key,
 ):
     created = await _create_spec(lineage_graph["board_id"])
+    await _make_spec_legacy_unpinned(created.spec.id)
 
     result = await _update_spec(
         created.spec.id,
@@ -791,6 +826,7 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
         board_id,
         ideation_id=lineage_graph["idea_a"],
     )
+    await _make_spec_legacy_unpinned(created.spec.id)
     spec_id = created.spec.id
     spec_entity_id = f"spec_{spec_id[:8]}_entity"
     before_worker = DeterministicWorker().process_spec(
@@ -849,7 +885,7 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
         refinement_id=lineage_graph["refinement_medium_done"],
     )
 
-    assert updated.spec.version == old_version
+    assert updated.spec.version == old_version + 1
     after_worker = DeterministicWorker().process_spec(
         _spec_to_dict(updated.spec)
     )
@@ -902,8 +938,14 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
         ]
         assert len(semantic_events) == 1
         assert semantic_events[0].payload_json["changed_fields"] == [
+            "delivery_context",
+            "delivery_context_provenance",
             "ideation_id",
             "refinement_id",
+            "source_context_manifest",
+            "source_context_sha256",
+            "source_refinement_snapshot_id",
+            "source_refinement_version",
         ]
 
         version_events = (
@@ -918,10 +960,12 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
             .scalars()
             .all()
         )
-        assert all(
-            event.payload_json.get("spec_id") != spec_id
+        matching_version_events = [
+            event
             for event in version_events
-        )
+            if event.payload_json.get("spec_id") == spec_id
+        ]
+        assert len(matching_version_events) == 1
 
         queue_rows = (
             (
@@ -938,8 +982,12 @@ async def test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_wor
         )
         assert len(queue_rows) == 1
         assert queue_rows[0].status == "pending"
-        assert queue_rows[0].triggered_by_event == "spec.semantic_changed"
-        assert queue_rows[0].source == "event:spec.semantic_changed"
+        # Pinning a legacy Spec to its exact Refinement snapshot now changes
+        # the governed Source Context as well as lineage.  That is a versioned
+        # semantic mutation, so the high-priority version event owns the
+        # coalesced queue row while the semantic event remains in the outbox.
+        assert queue_rows[0].triggered_by_event == "spec.version_bumped"
+        assert queue_rows[0].source == "event:spec.version_bumped"
 
 
 @pytest.mark.asyncio
@@ -951,6 +999,161 @@ async def test_update_spec_non_lineage_write_is_unchanged(lineage_graph):
     assert result.spec.title == "Updated without lineage"
     assert result.spec.ideation_id is None
     assert result.spec.refinement_id is None
+
+
+@pytest.mark.asyncio
+async def test_direct_spec_create_persists_typed_context_and_manifest(lineage_graph):
+    created = await _create_spec(lineage_graph["board_id"])
+
+    assert DeliveryContext(created.spec.delivery_context) is DeliveryContext.BROWNFIELD
+    assert created.spec.delivery_context_provenance == {
+        "value": "brownfield",
+        "source_spec_id": created.spec.id,
+        "source_spec_version": 1,
+    }
+    assert created.spec.source_context_manifest["subject_type"] == "spec"
+    assert len(created.spec.source_context_sha256) == 64
+
+
+@pytest.mark.asyncio
+async def test_legacy_direct_spec_requires_explicit_context_bootstrap(lineage_graph):
+    created = await _create_spec(lineage_graph["board_id"])
+    await _make_spec_legacy_unpinned(created.spec.id)
+
+    async with get_session_factory()() as db:
+        with pytest.raises(CodeDeliveryContextRequired) as raised:
+            await SpecService(db).move_spec(
+                created.spec.id,
+                USER_ID,
+                SpecMove(status=SpecStatus.REVIEW),
+            )
+        assert raised.value.details["reason"] == (
+            "spec_advance_delivery_context_required"
+        )
+
+    bootstrapped = await _update_spec(
+        created.spec.id,
+        delivery_context="greenfield",
+    )
+    assert bootstrapped.spec.version == 2
+    assert bootstrapped.spec.delivery_context_provenance == {
+        "value": "greenfield",
+        "source_spec_id": created.spec.id,
+        "source_spec_version": 2,
+    }
+    assert bootstrapped.spec.source_context_manifest["subject_version"] == 2
+    assert len(bootstrapped.spec.source_context_sha256) == 64
+
+
+@pytest.mark.asyncio
+async def test_spec_advance_requires_coherent_source_context_manifest(lineage_graph):
+    created = await _create_spec(lineage_graph["board_id"])
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, created.spec.id)
+        assert spec is not None
+        spec.source_context_sha256 = "0" * 64
+        await db.commit()
+
+    async with get_session_factory()() as db:
+        with pytest.raises(CodeDeliveryContextRequired) as raised:
+            await SpecService(db).move_spec(
+                created.spec.id,
+                USER_ID,
+                SpecMove(status=SpecStatus.REVIEW),
+            )
+
+    assert raised.value.details["reason"] == (
+        "spec_advance_delivery_context_required"
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_refinement_spec_context_bootstrap_pins_exact_snapshot(
+    lineage_graph,
+):
+    created = await _create_spec(
+        lineage_graph["board_id"],
+        ideation_id=lineage_graph["idea_medium"],
+        refinement_id=lineage_graph["refinement_medium_done"],
+    )
+    await _make_spec_legacy_unpinned(created.spec.id)
+
+    bootstrapped = await _update_spec(
+        created.spec.id,
+        delivery_context="brownfield",
+    )
+
+    assert bootstrapped.spec.source_refinement_snapshot_id is not None
+    assert bootstrapped.spec.source_refinement_version == 1
+    assert bootstrapped.spec.delivery_context_provenance == {
+        "value": "brownfield",
+        "inherited_value": "brownfield",
+        "source_refinement_id": lineage_graph["refinement_medium_done"],
+        "source_refinement_version": 1,
+        "override_reason": None,
+    }
+    assert bootstrapped.spec.source_context_manifest["subject_type"] == "refinement"
+    assert len(bootstrapped.spec.source_context_sha256) == 64
+
+    async with get_session_factory()() as db:
+        moved = await SpecService(db).move_spec(
+            created.spec.id,
+            USER_ID,
+            SpecMove(status=SpecStatus.REVIEW),
+        )
+        await db.commit()
+
+    assert moved is not None
+    assert moved.status is SpecStatus.REVIEW
+
+
+@pytest.mark.asyncio
+async def test_snapshot_pinned_spec_rejects_generic_refinement_relink(lineage_graph):
+    created = await _create_spec(lineage_graph["board_id"])
+
+    with pytest.raises(SpecLineagePreflightError) as raised:
+        await _update_spec(
+            created.spec.id,
+            ideation_id=lineage_graph["idea_medium"],
+            refinement_id=lineage_graph["refinement_medium_done"],
+        )
+
+    assert raised.value.code == "spec_refinement_relink_requires_governed_rebase"
+
+
+@pytest.mark.asyncio
+async def test_spec_context_override_requires_reason_and_reconciles_explicitly(
+    lineage_graph,
+):
+    created = await _create_spec(
+        lineage_graph["board_id"],
+        ideation_id=lineage_graph["idea_medium"],
+        refinement_id=lineage_graph["refinement_medium_done"],
+    )
+
+    with pytest.raises(CodeDeliveryContextOverrideReasonRequired):
+        await _update_spec(created.spec.id, delivery_context="hybrid")
+
+    overridden = await _update_spec(
+        created.spec.id,
+        delivery_context="hybrid",
+        delivery_context_override_reason="A pre-existing integration changes scope.",
+    )
+    assert DeliveryContext(overridden.spec.delivery_context) is DeliveryContext.HYBRID
+    assert overridden.spec.delivery_context_provenance["inherited_value"] == (
+        "brownfield"
+    )
+
+    reconciled = await _update_spec(
+        created.spec.id,
+        delivery_context="brownfield",
+        delivery_context_override_reason=None,
+    )
+    assert (
+        DeliveryContext(reconciled.spec.delivery_context)
+        is DeliveryContext.BROWNFIELD
+    )
+    assert reconciled.spec.delivery_context_provenance["override_reason"] is None
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Agent-mediated Code Traceability
@@ -37,6 +37,44 @@ observed**. A Target answers **where and why the implementation should act**.
   exists.
 - Evidence remains at its source and is linked by ID. It is never copied into
   a Spec or Card as a new source of truth.
+
+## Delivery context and the AS-IS boundary
+
+Set `delivery_context` before source conclusions are authored. A Refinement
+requires one of `brownfield`, `greenfield`, or `hybrid`; a direct Spec also
+requires it. A Spec derived from a Refinement inherits the exact value and its
+provenance from the frozen Refinement snapshot. An override is an explicit,
+reasoned decision, never an inference from whether a repository looks empty.
+
+Code Evidence is always **AS-IS**: it records source that existed in the
+accepted investigation baseline. It never describes a file, module, schema,
+endpoint, or test that the agent plans to create. Put that **TO-BE** intent in
+the Spec, Decision, Architecture Design, mockup, or Card Implementation Target.
+Do not manufacture a future path and submit it as Evidence.
+
+Classify every new contextual Evidence item with `contract_version=2` and one
+authored `source_role`:
+
+| `source_role` | Meaning for a clean-context consumer |
+|---|---|
+| `current_implementation` | Existing delivered behavior or structure that implements the subject today |
+| `existing_scaffold` | Existing scaffold, starter/base code, generated shell, or structural baseline; context only, not delivered subject behavior |
+| `existing_constraint` | Existing platform, schema, configuration, dependency, or compatibility constraint |
+| `reference_pattern` | Existing source consulted as a pattern; it is not the subject's implementation |
+| `uncategorized_legacy` | Read-only projection of pre-V2 Evidence; never valid on a new authored write |
+
+`existing_scaffold` and `reference_pattern` always require an explicit
+`interpretation_limit` explaining what the next consumer must not conclude.
+Every authored role also requires a human-readable `relevance_summary`,
+`scope_relation`, `source_origin`, and `baseline_provenance`. The baseline is
+either `committed_snapshot` or `preexisting_worktree`; a pre-existing dirty
+worktree needs a provenance note and must match the receipt workspace state.
+
+Greenfield does not mean "no source may exist." A repository can contain a
+scaffold, shared base, constraints, or reference implementations worth
+recording with the roles above. It means the bounded investigation found no
+relevant existing implementation of the requested behavior. Never relabel a
+scaffold or reference as `current_implementation` merely to satisfy a gate.
 
 ## When the agent must record
 
@@ -97,8 +135,9 @@ currentness.
 2. Call `okto_pulse_start_code_investigation` for the exact subject/version.
 3. In the agent's own environment, check whether source access exists and
    which requested capabilities are actually available.
-4. Submit one canonical bounded receipt as `accessible`, `partial`, or
-   `unavailable` with the single-use challenge. If delivery is uncertain,
+4. Submit one contextual V2 receipt with `contract_version=2` and outcome
+   `evidence_applicable`, `no_relevant_existing_implementation`, `partial`, or
+   `unavailable`. If delivery is uncertain,
    retry the exact same payload with the same idempotency key; do not create a
    second semantic submission.
 5. Submit Evidence or Target Resolution only when the accepted receipt and
@@ -108,13 +147,33 @@ Starting an investigation allocates a request; it does not schedule work,
 contact a provider, or install anything on a user's machine. A missing source
 capability is a first-class `unavailable` or `partial` result.
 
+`no_relevant_existing_implementation` is a successful, complete Greenfield
+finding, not an access failure. It is valid only for `delivery_context` =
+`greenfield`, with complete source identity, declared revision, workspace
+state, all required capabilities, and no omissions. It may coexist with
+`existing_scaffold`, `existing_constraint`, or `reference_pattern` Evidence,
+but conflicts with `current_implementation` Evidence for the same effective
+scope. Record absence on the receipt; do not fabricate an Evidence row whose
+claim is merely that a future implementation does not exist.
+
+V1 receipts and Evidence remain readable for compatibility, but they do not
+carry contextual meaning. A V1 receipt cannot be treated as
+`evidence_applicable`, and V1 Evidence projects as `uncategorized_legacy` with
+`context_origin=unclassified_legacy`. New governed work must not author V1.
+If the live inbound schema exposes only the legacy shape, stop and report the
+missing V2 capability; never infer a role, reuse `accessible` as a contextual
+outcome, or create new ambiguous history. A fresh V2 investigation may still
+be required even after a human classifies old Evidence.
+
 ## Submitting Code Evidence
 
-Evidence submission is agent-only and must reference an accepted current
-receipt, the frozen selector scope, exact parent/version, and recomputable
-digests. Unknown fields, absolute paths, traversal, oversized excerpts, stale
-heads, and mismatched actors fail closed. Accepted Evidence is immutable.
-Correction creates a successor with `okto_pulse_supersede_code_evidence`.
+Evidence submission is agent-only and must reference an accepted current V2
+receipt, the frozen selector scope, exact parent/version, explicit contextual
+fields, and recomputable digests. Unknown fields, absolute paths, traversal,
+oversized excerpts, stale heads, mismatched actors, V1/V2 mixtures, and
+`uncategorized_legacy` on a new write fail closed. Accepted Evidence is
+immutable. Correction creates a complete contextual successor with
+`okto_pulse_supersede_code_evidence`.
 
 Product language is **Agent-attested** or **Receipt accepted**. Never label an
 attestation **Verified**.
@@ -126,21 +185,108 @@ For each distinct, consequential fact:
 1. Write `claim` as a standalone human-readable assertion, for example:
    “`OrderService.submit` stores the idempotency key only after the provider
    call succeeds.” Do not write only “see file” or repeat an ID.
-2. Choose the strongest stable selector available. Prefer `symbol` with
+2. Set `contract_version=2`, choose the truthful `source_role`, and write
+   `relevance_summary`, `scope_relation`, and `source_origin` for a consumer
+   who did not participate in the investigation. Add `interpretation_limit`
+   whenever the role is `existing_scaffold` or `reference_pattern`.
+3. Bind `baseline_provenance` to the same receipt workspace state. Evidence
+   may describe only a committed snapshot or a source item already present in
+   the accepted worktree baseline; anything created afterward is TO-BE or an
+   execution result, not baseline Evidence.
+4. Choose the strongest stable selector available. Prefer `symbol` with
    `relative_path`, `qualified_symbol`, language and symbol kind; use `file`,
    `span`, `configuration_key`, `schema_object`, `endpoint`, or `test_case`
    when that is the actual observation boundary.
-3. Use normalized repository-relative `/` paths. Never submit an absolute
+5. Use normalized repository-relative `/` paths. Never submit an absolute
    path, repository URL, checkout locator, `..`, `.git`, or credentials.
-4. Compute `declared_source_content_sha256` from the exact observed source
+6. Compute `declared_source_content_sha256` from the exact observed source
    content under the preflight's canonicalization profile. If an excerpt is
    safe and useful, submit its exact normalized text and its separate
    `excerpt_sha256`. `declared_file_blob_sha256` identifies the whole observed
    file blob when available.
-5. Keep snapshot lines paired and treat them only as coordinates for that
+7. Keep snapshot lines paired and treat them only as coordinates for that
    snapshot. The path, symbol, digests, source head and receipt carry identity.
-6. Use one idempotency key only for byte-for-byte retries. A corrected fact is
+8. Use one idempotency key only for byte-for-byte retries. A corrected fact is
    a new immutable record through `okto_pulse_supersede_code_evidence`.
+
+## Legacy classification is explicit actor governance
+
+When an old item projects as `unclassified_legacy`, neither a human nor an
+agent may infer its role from its path, evidence type, claim, or surrounding
+Spec alone. An authorized human may use the UI/REST batch, and an authorized
+agent may use `okto_pulse_classify_legacy_code_evidence`. Both paths require
+the same `code_traceability.evidence.classify_legacy` permission, complete
+context fields, baseline provenance, justification, and current CAS values.
+
+Classification is an append-only overlay: it records the Evidence payload
+digest, expected classification revision, authored contextual fields,
+baseline provenance, justification, actor, time, revision, and classification
+digest. The original Evidence payload is never edited. A batch is all-or-none,
+idempotent, and compare-and-swap fenced. A later correction appends a new
+classification revision; it does not overwrite history. Public activity
+exposes bounded metadata such as a justification digest, not the justification
+text or source content.
+
+Classification gives an old Evidence item explicit contextual meaning;
+it does not turn its V1 investigation receipt into a V2 receipt and does not
+automatically satisfy a current investigation gate. If classification is
+needed, read the server-authored classification inputs and classify only when
+the existing Evidence and investigation context provide a defensible answer.
+If the meaning remains ambiguous, surface the affected IDs for a human
+decision instead of guessing.
+
+## Effective projection and frozen Specs
+
+Read `source_context`, not raw Evidence fields alone. Its role counts and
+classification state cover the complete effective evidence set even when the
+visible `evidence` or `source_context_items` collections are bounded. Each
+effective item reports `context_origin` as `authored`,
+`human_legacy_classification`, or `unclassified_legacy`; the middle value is a
+compatibility label for an actor-authored legacy overlay and does not imply
+that the current classifier was human. Never infer origin. Summary and gate
+projections omit the classifier identity. Use
+`detail`/`full` only for an authorized bounded audit that actually needs actor
+provenance.
+
+For the **current Refinement only**, `detail` and `full` with the default scope
+also expose `source_context_classification_inputs` for each visible legacy
+Evidence item. This is the server-authoritative classification preflight: consume
+its `expected_evidence_payload_sha256`, `expected_classification_revision`, and
+`baseline_provenance` exactly. A clean frozen workspace reports
+`committed_snapshot`; a dirty frozen workspace reports
+`preexisting_worktree` with `provenance_note_required=true`, and the classifier must
+supply that note before submission. Do not derive these values from paths,
+claims, or UI state. The collection is always empty for `summary`, gate scope,
+Spec, and Card projections. Spec/Card remain historical views and deliberately
+offer no classification CTA; refresh the current Refinement before starting a
+classification.
+
+Use `contextual_evidence_coverage` for the human Source Context Matrix; do not
+reinterpret the legacy `coverage` field. Its authoritative `total` includes
+only inherited active `current_implementation` Evidence, while scaffold,
+constraint, and reference-pattern items remain context-only. The
+`unresolved_applicability_count` reports unclassified legacy items. A numeric
+`coverage_pct` exists only when applicability is explicitly true, the
+projection is complete, every legacy item is classified, the investigation is
+neither partial nor unavailable, and total is non-zero. Otherwise it is null.
+When `projection_complete=false`, `linked`, `dispositioned`, `pending`, and
+`pending_ids` are bounded lower bounds; refresh or narrow the projection rather
+than presenting them as complete coverage.
+
+Completing a Refinement freezes its delivery context, contextual receipt
+versions, effective Evidence context, and classification revision/digest in
+the Refinement snapshot. A derived Spec pins that exact source-context manifest
+and SHA-256. Later Evidence, receipt, or human-classification changes may alter
+a live Refinement projection, but they do not silently rewrite an existing
+Spec.
+
+To adopt a later Refinement snapshot, use the governed Spec Evidence rebase:
+preview against the current Spec version and exact target Refinement version,
+review context/classification/link/disposition deltas, then apply the exact
+`preview_sha256`. A stale preview fails closed. Do not emulate a rebase by
+editing links, copying Evidence, or rewriting a frozen manifest. If the live
+agent surface does not expose preview/apply, stop and surface the required
+UI/REST action.
 
 ## Linking Evidence to a Spec
 
@@ -231,7 +377,8 @@ This example assumes `receipt_content="safe_excerpt"` and adds
 ```text
 okto_pulse_submit_code_investigation_receipt(
   board_id=<board_id>, request_id=<request_id>,
-  challenge_token=<challenge_token>, outcome="accessible",
+  challenge_token=<challenge_token>, contract_version=2,
+  outcome="evidence_applicable",
   capabilities=<all_required_capabilities_plus_symbol_resolution>,
   source_identity_digest=<sha256>, declared_revision=<revision>,
   workspace_state={
@@ -244,9 +391,10 @@ okto_pulse_submit_code_investigation_receipt(
 )
 ```
 
-Use `accessible` only after exercising every capability returned as required.
-Otherwise submit `partial` with the capabilities actually exercised and a
-bounded omission manifest; never claim capabilities merely to pass the fence.
+Use `evidence_applicable` only after exercising every capability returned as
+required and finding source facts applicable to this subject. Otherwise submit
+`partial` with the capabilities actually exercised and a bounded omission
+manifest; never claim capabilities merely to pass the fence.
 
 Then record the consequential fact. The excerpt hash is the SHA-256 of the
 exact submitted excerpt, not the file hash:
@@ -254,9 +402,20 @@ exact submitted excerpt, not the file hash:
 ```text
 okto_pulse_submit_code_evidence(
   board_id=<board_id>, investigation_receipt_id=<accepted_receipt_id>,
+  contract_version=2,
   parent_type="refinement", parent_id=<refinement_id>,
   evidence_type="behavior",
   claim="OrderService.submit persists the idempotency key only after the provider call succeeds.",
+  source_role="current_implementation",
+  relevance_summary="Establishes the current failure-recovery baseline for this refinement.",
+  scope_relation="Directly implements the in-scope order submission flow.",
+  source_origin="Observed in the accepted service snapshot.",
+  interpretation_limit=null,
+  baseline_provenance={
+    presence:"committed_snapshot",
+    workspace_state_id:<opaque_workspace_state_id>,
+    provenance_note:null
+  },
   selector_kind="symbol", relative_path="src/orders/service.py",
   language="python", symbol_kind="method",
   qualified_symbol="OrderService.submit",
@@ -274,6 +433,36 @@ One receipt may support multiple bounded Evidence submissions within its
 accepted scope; create one Evidence record per independently reusable claim.
 When board policy uses `receipt_content="metadata_only"`, omit `excerpt` and
 `excerpt_sha256`; the claim, selector, and source digest still record the fact.
+
+For a Greenfield subject with an existing starter/base module, use a complete
+V2 receipt outcome of `no_relevant_existing_implementation`, then record only
+the AS-IS scaffold that materially informs the design:
+
+```text
+okto_pulse_submit_code_evidence(
+  board_id=<board_id>, investigation_receipt_id=<accepted_receipt_id>,
+  contract_version=2,
+  parent_type="refinement", parent_id=<refinement_id>,
+  evidence_type="structure",
+  claim="The generated service shell already provides dependency injection and health wiring.",
+  source_role="existing_scaffold",
+  relevance_summary="The new implementation should extend the existing service shell.",
+  scope_relation="Structural baseline for the in-scope service.",
+  source_origin="Generated starter module present in the accepted baseline.",
+  interpretation_limit="This shell is not evidence that the requested business behavior already exists.",
+  baseline_provenance={
+    presence:"committed_snapshot",
+    workspace_state_id:<opaque_workspace_state_id>,
+    provenance_note:null
+  },
+  selector_kind="file", relative_path="src/orders/service.py",
+  declared_source_content_sha256=<source_content_sha256>,
+  idempotency_key="ct-greenfield-scaffold-1"
+)
+```
+
+If the path/module is only planned, omit this call and describe it as TO-BE in
+the Spec or an Implementation Target instead.
 
 ### Example B — link Evidence to TR, FR, and AC with fresh fences
 
@@ -348,7 +537,8 @@ okto_pulse_start_code_investigation(
 )
 okto_pulse_submit_code_investigation_receipt(
   board_id=<board_id>, request_id=<target_bound_request_id>,
-  challenge_token=<challenge_token>, outcome="accessible",
+  challenge_token=<challenge_token>, contract_version=2,
+  outcome="evidence_applicable",
   capabilities=<all_required_capabilities_returned_by_start>,
   source_identity_digest=<sha256>, declared_revision=<revision>,
   workspace_state={
@@ -475,9 +665,30 @@ All failures return a typed code, bounded details, retryability, and structured
 remediation. Common branches:
 
 - `code_investigation_actor_kind_required`: use an authenticated agent;
+- `code_delivery_context_required`: set `brownfield`, `greenfield`, or
+  `hybrid` on the Refinement/direct Spec before contextual investigation;
+- `code_investigation_no_relevant_existing_implementation_invalid`: use the
+  absence outcome only for a complete Greenfield investigation and remove any
+  conflicting `current_implementation` claim;
 - `code_investigation_unavailable`: report the unavailable capability;
 - `code_investigation_head_conflict`: start a fresh preflight on the new head;
 - `code_investigation_subject_version_conflict`: refetch full context;
+- `code_evidence_source_role_required` or
+  `code_evidence_legacy_role_write_forbidden`: submit a V2 authored role;
+  never author `uncategorized_legacy`;
+- `code_evidence_interpretation_limit_required`: explain the limit of a
+  scaffold/reference observation;
+- `code_evidence_baseline_provenance_invalid` or
+  `code_evidence_post_baseline_source_forbidden`: bind only source that was
+  present in the accepted baseline, not planned TO-BE work;
+- `code_evidence_legacy_classification_human_required`: legacy compatibility
+  code for a system/unsupported identity; use an authenticated human or agent
+  with `code_traceability.evidence.classify_legacy`;
+- `code_evidence_legacy_classification_payload_conflict`,
+  `code_evidence_legacy_classification_revision_conflict`, or
+  `code_evidence_legacy_classification_idempotency_conflict`: refresh the
+  legacy classification detail and retry the complete batch with fresh
+  fences or a new idempotency key as appropriate;
 - `code_evidence_disposition_required`: link or disposition pending Evidence;
   an authorized human may explicitly skip this one matrix coverage obligation
   in the Code Evidence Matrix tab or for the Board in Menu → Board;
@@ -502,9 +713,12 @@ challenge; it does not contact a source provider.
 
 ## `okto_pulse_submit_code_investigation_receipt`
 
-Accepts the authenticated external agent's bounded `accessible`, `partial`, or
-`unavailable` claim. Actor, source scope, subject/version, head and trust are
-server-owned.
+For new governed work, accepts the authenticated external agent's contextual
+V2 outcome: `evidence_applicable`,
+`no_relevant_existing_implementation`, `partial`, or `unavailable`. Actor,
+delivery context, source scope, subject/version, head and trust are
+server-owned. A live schema that exposes only V1 is compatibility-only and
+must not be used to author new contextual history.
 
 ## `okto_pulse_get_code_investigation_receipt`
 
@@ -513,7 +727,16 @@ workspace locator or source excerpt.
 
 ## `okto_pulse_submit_code_evidence`
 
-Submits one immutable factual snapshot bound to an accepted agent receipt.
+Submits one immutable AS-IS factual snapshot bound to an accepted contextual
+agent receipt. New writes require the V2 role, relevance, scope, origin,
+interpretation-limit, and baseline-provenance contract.
+
+## `okto_pulse_classify_legacy_code_evidence`
+
+Appends one atomic, audited contextual overlay over legacy Evidence without
+editing the original payload. Supply the exact server-authored payload digest,
+classification revision and baseline provenance for every item. Classify only
+when the Evidence context supports the decision; otherwise request human input.
 
 ## `okto_pulse_get_code_evidence`
 
@@ -538,6 +761,8 @@ Removes one Evidence link under the same Spec-version fence.
 ## `okto_pulse_set_code_evidence_disposition`
 
 Records the explicit treatment of inherited Evidence for the current Spec.
+
+Do not simulate a frozen Spec rebase through ordinary link/disposition calls.
 
 ## `okto_pulse_create_implementation_target`
 

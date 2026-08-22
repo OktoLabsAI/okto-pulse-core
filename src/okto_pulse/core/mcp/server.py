@@ -980,6 +980,7 @@ _TOOL_DOCS_FAMILY_RULES = [
 _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
     {
         "okto_pulse_acknowledge_implementation_overlap",
+        "okto_pulse_classify_legacy_code_evidence",
         "okto_pulse_clear_code_traceability_not_applicable",
         "okto_pulse_create_implementation_target",
         "okto_pulse_get_code_evidence",
@@ -7667,6 +7668,7 @@ async def okto_pulse_derive_spec_from_ideation(
     kb_ids: str = "",
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
+    delivery_context: str = "",
 ) -> str:
     """Derive a draft spec from a DONE ideation; parent context and selected
     resources propagate (default all).
@@ -7689,6 +7691,17 @@ async def okto_pulse_derive_spec_from_ideation(
         _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
     except ValueError as e:
         return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
+    from okto_pulse.core.domain.code_traceability import DeliveryContext
+
+    try:
+        _delivery_context = DeliveryContext(delivery_context)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": "code_delivery_context_required",
+                "message": "delivery_context must be brownfield, greenfield, or hybrid.",
+            }
+        )
 
     from okto_pulse.core.application.use_cases import (
         McpDeriveSpecCommand,
@@ -7708,6 +7721,7 @@ async def okto_pulse_derive_spec_from_ideation(
                     kb_ids=_kb_ids,
                     architecture_design_ids=_architecture_ids,
                     architecture_propagation_mode=architecture_propagation_mode,
+                    delivery_context=_delivery_context,
                 ),
                 actor=actor,
                 uow=uow,
@@ -8251,6 +8265,7 @@ async def okto_pulse_create_refinement(
     kb_ids: str = "",
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
+    delivery_context: str = "",
 ) -> str:
     """
     Create a new refinement for a DONE ideation. The ideation must be in 'done' status
@@ -8274,6 +8289,17 @@ async def okto_pulse_create_refinement(
         return _perm_error(perm_err)
 
     from okto_pulse.core.models.schemas import RefinementCreate
+    from okto_pulse.core.domain.code_traceability import DeliveryContext
+
+    try:
+        resolved_delivery_context = DeliveryContext(delivery_context)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": "code_delivery_context_required",
+                "message": "delivery_context must be brownfield, greenfield, or hybrid.",
+            }
+        )
 
     try:
         in_scope_list = coerce_to_list_str(in_scope) or None
@@ -8292,6 +8318,7 @@ async def okto_pulse_create_refinement(
         out_of_scope=out_of_scope_list,
         analysis=analysis.replace("\\n", "\n") if analysis else None,
         decisions=decisions_list,
+        delivery_context=resolved_delivery_context,
         assignee_id=assignee_id or None,
         labels=label_list,
         mockup_ids=parse_multi_value(mockup_ids) or None,
@@ -8607,6 +8634,7 @@ async def okto_pulse_update_refinement(
     out_of_scope: list[str] | str = "",
     analysis: str = "",
     decisions: list[str] | str = "",
+    delivery_context: str = "",
     assignee_id: str = "",
     labels: list[str] | str = "",
 ) -> str:
@@ -8617,7 +8645,17 @@ async def okto_pulse_update_refinement(
         return _auth_error()
 
     required_permissions: list[str] = []
-    if any((title, description, in_scope, out_of_scope, analysis, decisions)):
+    if any(
+        (
+            title,
+            description,
+            in_scope,
+            out_of_scope,
+            analysis,
+            decisions,
+            delivery_context,
+        )
+    ):
         required_permissions.append("refinement.entity.edit_fields")
     if assignee_id:
         required_permissions.append("refinement.entity.assign")
@@ -8658,6 +8696,22 @@ async def okto_pulse_update_refinement(
             update_kwargs["decisions"] = coerce_to_list_str(decisions)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+    if delivery_context:
+        from okto_pulse.core.domain.code_traceability import DeliveryContext
+
+        try:
+            update_kwargs["delivery_context"] = DeliveryContext(delivery_context)
+        except ValueError:
+            return json.dumps(
+                {
+                    "code": "code_delivery_context_required",
+                    "message": (
+                        "delivery_context must be brownfield, greenfield, or hybrid."
+                    ),
+                    "details": {"field": "delivery_context"},
+                    "remediation": [],
+                }
+            )
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
@@ -8678,6 +8732,9 @@ async def okto_pulse_update_refinement(
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
     from okto_pulse.core.domain.human_validation_cycle import (
         SubjectEditRequiresDraftError,
+    )
+    from okto_pulse.core.domain.code_traceability import (
+        CodeTraceabilityContractError,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
@@ -8702,6 +8759,8 @@ async def okto_pulse_update_refinement(
             return json.dumps({"error": "Refinement not found"})
         except SubjectEditRequiresDraftError as exc:
             return _subject_edit_requires_draft_mcp_error(exc)
+        except CodeTraceabilityContractError as exc:
+            return json.dumps(exc.as_dict())
 
         return json.dumps(
             {
@@ -8711,6 +8770,11 @@ async def okto_pulse_update_refinement(
                     "title": refinement.title,
                     "status": refinement.status.value,
                     "version": refinement.version,
+                    "delivery_context": getattr(
+                        refinement,
+                        "delivery_context",
+                        None,
+                    ),
                 },
             },
             default=str,
@@ -10610,6 +10674,8 @@ async def okto_pulse_create_spec(
     labels: list[str] | str = "",
     ideation_id: str = "",
     refinement_id: str = "",
+    delivery_context: str = "",
+    delivery_context_override_reason: str = "",
 ) -> str:
     """
     Create a new spec (specification) on the board. Specs define requirements that drive card/task creation.
@@ -10627,6 +10693,7 @@ async def okto_pulse_create_spec(
         return _perm_error(perm_err)
 
     from okto_pulse.core.domain.enums import SpecStatus
+    from okto_pulse.core.domain.code_traceability import DeliveryContext
     from okto_pulse.core.models.schemas import SpecCreate
 
     try:
@@ -10635,6 +10702,25 @@ async def okto_pulse_create_spec(
         return json.dumps(
             {
                 "error": f"Invalid status. Must be one of: {[s.value for s in SpecStatus]}"
+            }
+        )
+
+    try:
+        resolved_delivery_context = (
+            DeliveryContext(delivery_context) if delivery_context else None
+        )
+    except ValueError:
+        return json.dumps(
+            {
+                "error": "code_delivery_context_required",
+                "message": "delivery_context must be brownfield, greenfield, or hybrid.",
+            }
+        )
+    if not refinement_id and resolved_delivery_context is None:
+        return json.dumps(
+            {
+                "error": "code_delivery_context_required",
+                "message": "A direct Spec requires delivery_context.",
             }
         )
 
@@ -10671,6 +10757,10 @@ async def okto_pulse_create_spec(
             labels=label_list,
             ideation_id=ideation_id or None,
             refinement_id=refinement_id or None,
+            delivery_context=resolved_delivery_context,
+            delivery_context_override_reason=(
+                delivery_context_override_reason or None
+            ),
         )
 
         _r = await McpCreateSpecUseCase().execute(
@@ -11230,6 +11320,8 @@ async def okto_pulse_update_spec(
     functional_requirements: list[str] | str = "",
     technical_requirements: list[str] | str = "",
     acceptance_criteria: list[str] | str = "",
+    delivery_context: str = "",
+    delivery_context_override_reason: str = "",
     assignee_id: str = "",
     labels: list[str] | str = "",
 ) -> str:
@@ -11249,6 +11341,8 @@ async def okto_pulse_update_spec(
             functional_requirements,
             technical_requirements,
             acceptance_criteria,
+            delivery_context,
+            delivery_context_override_reason,
         )
     ):
         required_permissions.append("spec.entity.edit_fields")
@@ -11298,6 +11392,35 @@ async def okto_pulse_update_spec(
             )
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+    if delivery_context_override_reason and not delivery_context:
+        return json.dumps(
+            {
+                "code": "code_delivery_context_required",
+                "message": "delivery_context is required when an override reason is sent.",
+                "details": {"reason": "spec_delivery_context_value_required"},
+                "remediation": [],
+            }
+        )
+    if delivery_context:
+        from okto_pulse.core.domain.code_traceability import DeliveryContext
+
+        try:
+            update_kwargs["delivery_context"] = DeliveryContext(delivery_context)
+        except ValueError:
+            return json.dumps(
+                {
+                    "code": "code_delivery_context_required",
+                    "message": (
+                        "delivery_context must be brownfield, greenfield, or hybrid."
+                    ),
+                    "details": {"field": "delivery_context"},
+                    "remediation": [],
+                }
+            )
+        if delivery_context_override_reason:
+            update_kwargs["delivery_context_override_reason"] = (
+                delivery_context_override_reason
+            )
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
@@ -11318,6 +11441,9 @@ async def okto_pulse_update_spec(
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
     from okto_pulse.core.domain.human_validation_cycle import (
         SubjectEditRequiresDraftError,
+    )
+    from okto_pulse.core.domain.code_traceability import (
+        CodeTraceabilityContractError,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
@@ -11345,6 +11471,16 @@ async def okto_pulse_update_spec(
                         "functional_requirements": spec.functional_requirements,
                         "technical_requirements": spec.technical_requirements,
                         "acceptance_criteria": spec.acceptance_criteria,
+                        "delivery_context": getattr(
+                            spec,
+                            "delivery_context",
+                            None,
+                        ),
+                        "delivery_context_provenance": getattr(
+                            spec,
+                            "delivery_context_provenance",
+                            None,
+                        ),
                     },
                 },
                 default=str,
@@ -11355,6 +11491,8 @@ async def okto_pulse_update_spec(
         return _spec_locked_error(exc)
     except SpecLineagePreflightError as exc:
         return json.dumps(exc.to_error_dict())
+    except CodeTraceabilityContractError as exc:
+        return json.dumps(exc.as_dict())
     except SubjectEditRequiresDraftError as exc:
         return _subject_edit_requires_draft_mcp_error(exc)
     except ValueError as exc:

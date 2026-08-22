@@ -183,15 +183,34 @@ def test_af16_rest_mcp_health_wire_generation_through_artifact_store() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     core_root = repo_root / "src" / "okto_pulse" / "core"
     community_root = community_source_for(repo_root)
-    migrated_sources = [
-        community_root / "api" / "kg_rebuild.py",
-        core_root / "mcp" / "server.py",
+
+    # Concrete generation access belongs to the health authority and to the
+    # offline recovery executor. Online REST/MCP transports delegate through
+    # public use-case/service seams and must not reconstruct this repository.
+    generation_owner_sources = [
+        community_root / "kg_recovery_only.py",
         core_root / "services" / "kg_health_service.py",
     ]
-
-    for path in migrated_sources:
+    for path in generation_owner_sources:
         source = path.read_text(encoding="utf-8")
         assert "RebuildAuditKGGenerationRepository" in source
         assert "require_rebuild_audit_artifact_store" in source
         assert "KGGenerationRepository(base_dir=_REBUILD_BASE_DIR)" not in source
-        assert "KGGenerationRepository(\n            base_dir=rebuild_base" not in source
+        assert (
+            "KGGenerationRepository(\n            base_dir=rebuild_base" not in source
+        )
+
+    community_health_probe = (community_root / "api" / "kg_health_probe.py").read_text(
+        encoding="utf-8"
+    )
+    community_rebuild = (community_root / "api" / "kg_rebuild.py").read_text(
+        encoding="utf-8"
+    )
+    mcp_server = (core_root / "mcp" / "server.py").read_text(encoding="utf-8")
+
+    assert "uow.services.kg.health" in community_health_probe
+    assert "community.api.kg_health_probe import get_kg_health" in community_rebuild
+    assert "GetKgHealthUseCase" in mcp_server
+    assert "RebuildAuditKGGenerationRepository" not in community_health_probe
+    assert "RebuildAuditKGGenerationRepository" not in community_rebuild
+    assert "RebuildAuditKGGenerationRepository" not in mcp_server

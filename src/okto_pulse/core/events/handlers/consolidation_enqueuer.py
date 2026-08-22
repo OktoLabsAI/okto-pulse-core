@@ -63,6 +63,7 @@ _CODE_EVIDENCE_EVENTS = {
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
+    "code_evidence.legacy_classified",
 }
 _IMPLEMENTATION_TARGET_EVENTS = {
     "implementation_target.created",
@@ -137,6 +138,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
+    "code_evidence.legacy_classified",
     "implementation_target.created",
     "implementation_target.updated",
     "implementation_target.revoked",

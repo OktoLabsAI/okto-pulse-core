@@ -85,10 +85,14 @@ async def test_upload_staging_failure_removes_unowned_object(monkeypatch) -> Non
 async def test_delete_staging_failure_restores_exact_object(monkeypatch) -> None:
     storage = _MemoryStorage()
     storage.objects[storage.saved_path] = b"evidence"
-    attachment = SimpleNamespace(id=ATTACHMENT_ID, path=storage.saved_path)
+    attachment = SimpleNamespace(
+        id=ATTACHMENT_ID,
+        card_id=CARD_ID,
+        path=storage.saved_path,
+    )
 
-    async def _get(*_args, **_kwargs):
-        return attachment
+    async def _get(_db, entity_type, _entity_id):
+        return attachment if entity_type == "attachment" else None
 
     async def _delete(*_args, **_kwargs):
         raise RuntimeError("injected attachment delete staging failure")

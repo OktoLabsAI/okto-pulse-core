@@ -32,13 +32,15 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 # lifecycle fence now serializes a successful validation with the board's Spec
 # dependency graph before mutating the validation head. The canonical five-score
 # quality contract intentionally replaced the old three-score gate while keeping
-# legacy record compatibility. If a gate changes intentionally, review its
-# semantic tests and update this versioned constant in the same change.
+# legacy record compatibility. The 2026-08-22 Source Context contract adds the
+# fail-closed Code Evidence Matrix prerequisite and its typed validation error
+# projection. If a gate changes intentionally, review its semantic tests and
+# update this versioned constant in the same change.
 # ---------------------------------------------------------------------------
 
 EXPECTED_HASHES = {
     "submit_spec_validation": (
-        "e919bc3d104549153ca9b05fd6089117e2ca5477a29a37abbd0f88283025cccc"
+        "478c0747f8ad13cd4c48cdee07d4c7373836a3ae6ae3999ac3a19b3e087a0611"
     ),
     "submit_evaluation": (
         "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"

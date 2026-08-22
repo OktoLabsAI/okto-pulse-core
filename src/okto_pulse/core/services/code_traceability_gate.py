@@ -19,8 +19,11 @@ from pydantic import ValidationError
 from okto_pulse.core.domain.code_traceability import (
     DEFAULT_CODE_TRACEABILITY_LIMITS,
     CodeEvidence,
+    CodeEvidenceContextOrigin,
     CodeEvidenceDispositionKind,
+    CodeEvidenceSourceRole,
     CodeTraceabilityEnforcement,
+    ContextualInvestigationOutcomeV2,
     CodeInvestigationOutcome,
     CodeInvestigationReceipt,
     CodeInvestigationReceiptCurrentness,
@@ -32,9 +35,12 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityRemediation,
     CodeTraceabilityProjectionProfile,
     CodeTraceabilitySubjectType,
+    SourceContextEvidenceItemV2,
     CodeTraceabilityWaiver,
     CodeTraceabilityWaiverEntityType,
+    CodeTraceabilityWaiverReason,
     CodeTraceabilityWaiverScope,
+    DeliveryContext,
     ImplementationTargetResolutionState,
     ImplementationTargetRole,
     TargetOverlapSeverity,
@@ -109,6 +115,73 @@ class EvidenceDispositionCoverage:
             "pending": len(self.pending_ids),
             "pending_ids": list(self.pending_ids),
             "coverage_pct": self.coverage_pct,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ContextualEvidenceCoverage:
+    """Bounded-safe coverage for applicable inherited implementation Evidence."""
+
+    total: int
+    linked: int
+    dispositioned: int
+    pending: int
+    pending_ids: tuple[str, ...]
+    unresolved_applicability_count: int
+    coverage_pct: float | None
+    projection_complete: bool
+
+    def __post_init__(self) -> None:
+        counts = (
+            self.total,
+            self.linked,
+            self.dispositioned,
+            self.pending,
+            self.unresolved_applicability_count,
+        )
+        if any(type(value) is not int or value < 0 for value in counts):
+            raise CodeTraceabilityContractError(
+                "contextual_evidence_coverage_invalid"
+            )
+        if (
+            not isinstance(self.pending_ids, tuple)
+            or any(not isinstance(value, str) or not value for value in self.pending_ids)
+            or tuple(sorted(set(self.pending_ids))) != self.pending_ids
+            or len(self.pending_ids) != self.pending
+            or self.linked + self.dispositioned + self.pending > self.total
+            or type(self.projection_complete) is not bool
+        ):
+            raise CodeTraceabilityContractError(
+                "contextual_evidence_coverage_invalid"
+            )
+        if self.projection_complete and (
+            self.linked + self.dispositioned + self.pending != self.total
+        ):
+            raise CodeTraceabilityContractError(
+                "contextual_evidence_coverage_invalid",
+                details={"reason": "complete_projection_does_not_close"},
+            )
+        if self.coverage_pct is not None and (
+            isinstance(self.coverage_pct, bool)
+            or not isinstance(self.coverage_pct, int | float)
+            or not 0 <= self.coverage_pct <= 100
+        ):
+            raise CodeTraceabilityContractError(
+                "contextual_evidence_coverage_invalid"
+            )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "total": self.total,
+            "linked": self.linked,
+            "dispositioned": self.dispositioned,
+            "pending": self.pending,
+            "pending_ids": list(self.pending_ids),
+            "unresolved_applicability_count": (
+                self.unresolved_applicability_count
+            ),
+            "coverage_pct": self.coverage_pct,
+            "projection_complete": self.projection_complete,
         }
 
 
@@ -202,6 +275,26 @@ class CodeTraceabilityProjection:
             "source_refinement_id": context.source_refinement_id,
             "source_refinement_snapshot_id": (context.source_refinement_snapshot_id),
             "source_refinement_version": context.source_refinement_version,
+            "source_context": _public_value(context.source_context),
+            "source_context_items": [
+                _source_context_item(
+                    item,
+                    profile=context.profile,
+                    context_scope=context.context_scope,
+                )
+                for item in context.source_context_items
+            ],
+            "source_context_classification_inputs": [
+                _public_value(item)
+                for item in context.source_context_classification_inputs
+            ],
+            "contextual_evidence_coverage": _contextual_evidence_coverage(
+                context,
+                inherited_evidence=self.inherited_evidence,
+            ).as_dict(),
+            "obligation_evidence_mappings": (
+                _obligation_evidence_mappings(context)
+            ),
             "referenced_evidence_ids": list(self.referenced_evidence_ids),
             "gate_readiness": self.gate_readiness.as_dict(),
         }
@@ -444,9 +537,201 @@ def _summary_evidence(value: CodeEvidence) -> dict[str, Any]:
         "attestation_state",
         "lifecycle_status",
         "supersedes_evidence_id",
+        "source_role",
     )
     projected["content_sha256"] = value.content_sha256
     return projected
+
+
+def _source_context_item(
+    value: SourceContextEvidenceItemV2,
+    *,
+    profile: CodeTraceabilityProjectionProfile,
+    context_scope: CodeTraceabilityContextScope,
+) -> dict[str, Any]:
+    common = _selected_public_value(
+        value,
+        "evidence_id",
+        "context_contract_version",
+        "context_origin",
+        "source_role",
+        "relevance_summary",
+        "scope_relation",
+        "source_origin",
+        "interpretation_limit",
+    )
+    common["evidence_applicable"] = (
+        None
+        if value.context_origin
+        is CodeEvidenceContextOrigin.UNCLASSIFIED_LEGACY
+        else value.source_role is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
+    )
+    if context_scope is CodeTraceabilityContextScope.GATE:
+        common.update(
+            _selected_public_value(
+                value,
+                "classification_revision",
+                "classification_sha256",
+            )
+        )
+        return common
+    if profile is CodeTraceabilityProjectionProfile.SUMMARY:
+        return common
+    return {
+        **_public_value(value),
+        "evidence_applicable": common["evidence_applicable"],
+    }
+
+
+def _obligation_evidence_mappings(
+    context: CodeTraceabilityContext,
+) -> list[dict[str, Any]]:
+    """Expose a stable Spec-obligation join with server-owned applicability."""
+
+    source_items = {
+        item.evidence_id: item for item in context.source_context_items
+    }
+    mappings: list[dict[str, Any]] = []
+    for link in sorted(
+        context.evidence_links,
+        key=lambda item: (
+            item.entity_type.value,
+            item.entity_id,
+            item.evidence_id,
+            item.id,
+        ),
+    ):
+        source_item = source_items.get(link.evidence_id)
+        applicable = None
+        context_origin = None
+        source_role = None
+        if source_item is not None:
+            context_origin = source_item.context_origin.value
+            source_role = source_item.source_role.value
+            if (
+                source_item.context_origin
+                is not CodeEvidenceContextOrigin.UNCLASSIFIED_LEGACY
+            ):
+                applicable = (
+                    source_item.source_role
+                    is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
+                )
+        mappings.append(
+            {
+                "link_id": link.id,
+                "evidence_id": link.evidence_id,
+                "obligation_type": link.entity_type.value,
+                "obligation_id": link.entity_id,
+                "obligation_ref": (
+                    f"{link.entity_type.value}:{link.entity_id}"
+                ),
+                "relation_type": link.relation_type.value,
+                "evidence_applicable": applicable,
+                "context_origin": context_origin,
+                "source_role": source_role,
+            }
+        )
+    return mappings
+
+
+def _contextual_evidence_coverage(
+    context: CodeTraceabilityContext,
+    *,
+    inherited_evidence: tuple[CodeEvidence, ...],
+) -> ContextualEvidenceCoverage:
+    """Measure only effective current-implementation inheritance."""
+
+    summary = context.source_context
+    has_inherited_universe = context.source_refinement_id is not None
+    total = (
+        summary.role_counts.current_implementation_count
+        if summary is not None and has_inherited_universe
+        else 0
+    )
+    unresolved = (
+        summary.classification_state.uncategorized_legacy_count
+        if summary is not None and has_inherited_universe
+        else 0
+    )
+    inherited_by_id = {
+        item.id: item
+        for item in inherited_evidence
+        if item.lifecycle_status is CodeTraceabilityLifecycleStatus.ACTIVE
+    }
+    item_by_id = {
+        item.evidence_id: item
+        for item in context.source_context_items
+        if item.evidence_id in inherited_by_id
+    }
+    current_ids = {
+        evidence_id
+        for evidence_id, item in item_by_id.items()
+        if item.source_role is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
+        and item.context_origin
+        is not CodeEvidenceContextOrigin.UNCLASSIFIED_LEGACY
+    }
+    linked_ids = {
+        item.evidence_id
+        for item in context.evidence_links
+        if item.evidence_id in current_ids
+        and item.evidence_content_sha256
+        == inherited_by_id[item.evidence_id].content_sha256
+    }
+    dispositioned_ids = {
+        item.evidence_id
+        for item in context.evidence_dispositions
+        if item.evidence_id in current_ids
+        and item.evidence_id not in linked_ids
+        and item.active
+        and item.disposition
+        in {
+            CodeEvidenceDispositionKind.NOT_RELEVANT,
+            CodeEvidenceDispositionKind.SUPERSEDED,
+        }
+    }
+    pending_ids = tuple(sorted(current_ids - linked_ids - dispositioned_ids))
+    expected_item_count = (
+        summary.role_counts.total_count
+        if summary is not None and has_inherited_universe
+        else 0
+    )
+    projection_complete = (
+        not context.omitted_content_manifest
+        and len(inherited_by_id) == expected_item_count
+        and set(item_by_id) == set(inherited_by_id)
+        and len(current_ids) == total
+    )
+    indeterminate_outcome = (
+        summary is not None
+        and summary.investigation_outcome
+        in {
+            ContextualInvestigationOutcomeV2.PARTIAL,
+            ContextualInvestigationOutcomeV2.UNAVAILABLE,
+        }
+    )
+    coverage_pct = None
+    if (
+        projection_complete
+        and summary is not None
+        and summary.evidence_applicable is True
+        and not indeterminate_outcome
+        and unresolved == 0
+        and total > 0
+    ):
+        coverage_pct = round(
+            ((len(linked_ids) + len(dispositioned_ids)) / total) * 100,
+            2,
+        )
+    return ContextualEvidenceCoverage(
+        total=total,
+        linked=len(linked_ids),
+        dispositioned=len(dispositioned_ids),
+        pending=len(pending_ids),
+        pending_ids=pending_ids,
+        unresolved_applicability_count=unresolved,
+        coverage_pct=coverage_pct,
+        projection_complete=projection_complete,
+    )
 
 
 def _summary_target(value: Any) -> dict[str, Any]:
@@ -582,6 +867,8 @@ def _gate_receipt(value: Any) -> dict[str, Any]:
         "observed_at",
         "received_at",
         "expires_at",
+        "delivery_context",
+        "contextual_outcome",
     )
 
 
@@ -618,6 +905,7 @@ def _projection_counts(context: CodeTraceabilityContext) -> dict[str, int]:
         "heads": len(context.heads),
         "receipts": len(context.receipts),
         "evidence": len(context.evidence),
+        "source_context_items": len(context.source_context_items),
         "links": len(context.evidence_links),
         "dispositions": len(context.evidence_dispositions),
         "targets": len(context.targets),
@@ -642,6 +930,12 @@ _REMEDIATIONS: dict[str, tuple[CodeTraceabilityRemediation, ...]] = {
         CodeTraceabilityRemediation(
             "mark_not_applicable",
             "okto_pulse_mark_code_traceability_not_applicable",
+        ),
+    ),
+    "code_evidence_materiality_link_required": (
+        CodeTraceabilityRemediation(
+            "submit_current_implementation_evidence_from_the_accepted_receipt",
+            "okto_pulse_submit_code_evidence",
         ),
     ),
     "code_evidence_disposition_required": (
@@ -1181,6 +1475,16 @@ class CodeTraceabilityGateEvaluator:
             or receipt.source_ref != source_ref
         ):
             return "subject_mismatch", "code_evidence_receipt_mismatch"
+        inherited_delivery_context = (
+            context.source_context.delivery_context
+            if context.source_context is not None
+            else None
+        )
+        delivery_context_mismatch = (
+            receipt.delivery_context is not None
+            and inherited_delivery_context is not None
+            and receipt.delivery_context is not inherited_delivery_context
+        )
         head = next(
             (item for item in context.heads if item.source_ref == source_ref),
             None,
@@ -1199,16 +1503,49 @@ class CodeTraceabilityGateEvaluator:
             head=head,
             at=now,
             revocation=revocation,
+            expected_delivery_context=inherited_delivery_context,
         )
         if currentness is not CodeInvestigationReceiptCurrentness.CURRENT:
-            return currentness.value, "code_investigation_currentness_unknown"
+            return (
+                currentness.value,
+                (
+                    "code_evidence_receipt_mismatch"
+                    if delivery_context_mismatch
+                    and currentness is CodeInvestigationReceiptCurrentness.OUTDATED
+                    else "code_investigation_currentness_unknown"
+                ),
+            )
         policy_expiry = receipt.received_at + timedelta(
             seconds=settings.preflight_freshness_seconds
         )
         if now >= policy_expiry:
             return "expired", "code_investigation_receipt_expired"
-        if receipt.outcome is CodeInvestigationOutcome.UNAVAILABLE:
+        effective_outcome = receipt.effective_outcome
+        if effective_outcome in {
+            CodeInvestigationOutcome.PARTIAL,
+            ContextualInvestigationOutcomeV2.PARTIAL,
+        }:
+            return "partial", "code_investigation_unavailable"
+        if effective_outcome in {
+            CodeInvestigationOutcome.UNAVAILABLE,
+            ContextualInvestigationOutcomeV2.UNAVAILABLE,
+        }:
             return "unavailable", "code_investigation_unavailable"
+        if (
+            effective_outcome
+            is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+            and (
+                receipt.delivery_context is not DeliveryContext.GREENFIELD
+                or receipt.source_identity_digest is None
+                or receipt.declared_revision is None
+                or receipt.workspace_state is None
+                or receipt.omission_manifest
+            )
+        ):
+            return (
+                "invalid_contextual_absence",
+                "code_investigation_no_relevant_existing_implementation_invalid",
+            )
         if any(
             item.affected_scope_digest == receipt.selector_scope_digest
             for item in receipt.omission_manifest
@@ -1274,16 +1611,6 @@ class CodeTraceabilityGateEvaluator:
             if missing_references
             else []
         )
-        if any(
-            _waiver_matches(
-                item,
-                entity_type=CodeTraceabilityWaiverEntityType.REFINEMENT,
-                entity_id=context.subject_id,
-                scope=CodeTraceabilityWaiverScope.CODE_EVIDENCE,
-            )
-            for item in context.waivers
-        ):
-            return blockers
         candidates = tuple(
             item
             for item in context.evidence
@@ -1293,9 +1620,119 @@ class CodeTraceabilityGateEvaluator:
             and item.parent_version == context.subject_version
         )
         receipt_by_id = {item.id: item for item in context.receipts}
-        valid_count = 0
+        exact_receipts = tuple(
+            item
+            for item in context.receipts
+            if item.board_id == context.board_id
+            and item.subject_type is CodeTraceabilitySubjectType.REFINEMENT
+            and item.subject_id == context.subject_id
+            and item.subject_version == context.subject_version
+        )
+        policy_by_receipt_id: dict[str, tuple[str, str | None]] = {}
+        for receipt in exact_receipts:
+            status = self._receipt_policy_status(
+                context,
+                settings,
+                receipt,
+                subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+                subject_id=context.subject_id,
+                subject_version=context.subject_version,
+                source_ref=receipt.source_ref,
+            )
+            policy_by_receipt_id[receipt.id] = status
+            receipt_currentness[receipt.id] = status[0]
+
+        legitimate_absence = tuple(
+            item
+            for item in exact_receipts
+            if policy_by_receipt_id.get(item.id) == ("current", None)
+            and item.contextual_outcome
+            is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+        )
+        current_applicable_receipts = tuple(
+            item
+            for item in exact_receipts
+            if policy_by_receipt_id.get(item.id) == ("current", None)
+            and item.contextual_outcome
+            is ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE
+        )
+        current_legacy_receipts = tuple(
+            item
+            for item in exact_receipts
+            if policy_by_receipt_id.get(item.id) == ("current", None)
+            and item.contextual_outcome is None
+        )
+        if legitimate_absence and not current_applicable_receipts:
+            conflicting_current_implementation = tuple(
+                item.id
+                for item in candidates
+                if item.source_role
+                is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
+            )
+            if conflicting_current_implementation:
+                blockers.append(
+                    self._blocker(
+                        settings,
+                        "code_investigation_no_relevant_existing_implementation_invalid",
+                        "The absence outcome conflicts with current-implementation Evidence.",
+                        refinement_id=context.subject_id,
+                        refinement_version=context.subject_version,
+                        conflicting_evidence_ids=list(
+                            sorted(conflicting_current_implementation)
+                        ),
+                    )
+                )
+                return blockers
+
+        access_failure_receipts = tuple(
+            item
+            for item in exact_receipts
+            if policy_by_receipt_id.get(item.id, ("unknown", None))[0]
+            in {"partial", "unavailable"}
+        )
+        access_failure_waived = bool(access_failure_receipts) and any(
+            _waiver_matches(
+                item,
+                entity_type=CodeTraceabilityWaiverEntityType.REFINEMENT,
+                entity_id=context.subject_id,
+                scope=CodeTraceabilityWaiverScope.CODE_EVIDENCE,
+            )
+            and item.reason_code
+            is CodeTraceabilityWaiverReason.EXTERNAL_SOURCE_UNAVAILABLE
+            for item in context.waivers
+        )
+        blocking_access_failure_receipts = (
+            () if access_failure_waived else access_failure_receipts
+        )
+        if (
+            not current_applicable_receipts
+            and not current_legacy_receipts
+            and access_failure_waived
+            and not legitimate_absence
+        ):
+            return blockers
+        if (
+            legitimate_absence
+            and not current_applicable_receipts
+            and not current_legacy_receipts
+            and not blocking_access_failure_receipts
+        ):
+            return blockers
+
+        valid_applicable_receipt_ids: set[str] = set()
+        materiality_failures: list[str] = []
         invalid: list[tuple[CodeEvidence, str, str]] = []
-        for evidence in candidates:
+        referenced_set = set(referenced_evidence_ids)
+        scoped_candidates = tuple(
+            item
+            for item in candidates
+            if item.id in referenced_set
+        )
+        applicable_receipt_requires_mapping = bool(current_applicable_receipts)
+        unmapped_references = tuple(
+            sorted(referenced_set - {item.id for item in scoped_candidates})
+        )
+        for evidence in scoped_candidates:
             receipt = receipt_by_id.get(evidence.investigation_receipt_id)
             if receipt is None:
                 invalid.append(
@@ -1306,40 +1743,117 @@ class CodeTraceabilityGateEvaluator:
                     )
                 )
                 continue
-            status, code = self._receipt_policy_status(
-                context,
-                settings,
-                receipt,
-                subject_type=CodeTraceabilitySubjectType.REFINEMENT,
-                subject_id=context.subject_id,
-                subject_version=context.subject_version,
-                source_ref=evidence.source_ref,
-            )
+            policy_status = policy_by_receipt_id.get(receipt.id)
+            if policy_status is None:
+                policy_status = self._receipt_policy_status(
+                    context,
+                    settings,
+                    receipt,
+                    subject_type=CodeTraceabilitySubjectType.REFINEMENT,
+                    subject_id=context.subject_id,
+                    subject_version=context.subject_version,
+                    source_ref=evidence.source_ref,
+                )
+            status, code = policy_status
             receipt_currentness[receipt.id] = status
-            if code is None and evidence.workspace_state == receipt.workspace_state:
-                valid_count += 1
+            source_matches = evidence.source_ref == receipt.source_ref
+            workspace_matches = evidence.workspace_state == receipt.workspace_state
+            if (
+                code is None
+                and source_matches
+                and workspace_matches
+                and evidence.source_role
+                is CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION
+                and receipt.contextual_outcome
+                is ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE
+            ):
+                valid_applicable_receipt_ids.add(receipt.id)
             else:
+                failure_code = code or "code_evidence_receipt_mismatch"
+                if (
+                    code is None
+                    and source_matches
+                    and workspace_matches
+                ):
+                    failure_code = "code_evidence_materiality_link_required"
+                    materiality_failures.append(evidence.id)
                 invalid.append(
                     (
                         evidence,
                         status,
-                        code or "code_evidence_receipt_mismatch",
+                        failure_code,
                     )
                 )
-        if valid_count:
+        required_applicable_receipt_ids = {
+            item.id for item in current_applicable_receipts
+        }
+        unmapped_applicable_receipt_ids = tuple(
+            sorted(
+                required_applicable_receipt_ids - valid_applicable_receipt_ids
+            )
+        )
+        if (
+            not unmapped_applicable_receipt_ids
+            and required_applicable_receipt_ids
+            and not unmapped_references
+            and not blocking_access_failure_receipts
+            and not current_legacy_receipts
+        ):
             return blockers
         details: dict[str, object] = {
             "refinement_id": context.subject_id,
             "refinement_version": context.subject_version,
-            "active_evidence_count": len(candidates),
+            "active_evidence_count": len(scoped_candidates),
             "invalid_evidence_ids": [item.id for item, _, _ in invalid],
         }
-        code = invalid[0][2] if invalid else "code_evidence_attestation_required"
+        if referenced_set:
+            details["referenced_evidence_ids"] = sorted(referenced_set)
+        if applicable_receipt_requires_mapping and not referenced_set:
+            details["reason"] = "referenced_evidence_mapping_required"
+        if current_legacy_receipts:
+            details["legacy_receipt_ids"] = sorted(
+                item.id for item in current_legacy_receipts
+            )
+            details.setdefault("reason", "contextual_receipt_required")
+        if unmapped_applicable_receipt_ids:
+            details["unmapped_applicable_receipt_ids"] = list(
+                unmapped_applicable_receipt_ids
+            )
+        if unmapped_references:
+            details["unmapped_referenced_evidence_ids"] = list(
+                unmapped_references
+            )
+        if materiality_failures:
+            details["non_material_evidence_ids"] = sorted(materiality_failures)
+            details["required_source_role"] = (
+                CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION.value
+            )
+        if blocking_access_failure_receipts:
+            details["access_failure_receipt_ids"] = sorted(
+                item.id for item in blocking_access_failure_receipts
+            )
+            details["required_waiver_reason"] = (
+                CodeTraceabilityWaiverReason.EXTERNAL_SOURCE_UNAVAILABLE.value
+            )
+            code = "code_investigation_unavailable"
+        elif (
+            materiality_failures
+            or unmapped_references
+            or unmapped_applicable_receipt_ids
+            or current_legacy_receipts
+        ):
+            code = "code_evidence_materiality_link_required"
+        else:
+            code = (
+                invalid[0][2]
+                if invalid
+                else "code_evidence_attestation_required"
+            )
         blockers.append(
             self._blocker(
                 settings,
                 code,
-                "Current agent-attested Code Evidence or an explicit waiver is required.",
+                "A current, materially compatible Code Evidence mapping is required.",
                 enforce=enforce,
                 **details,
             )
@@ -1811,6 +2325,7 @@ __all__ = [
     "CodeTraceabilityGatePhase",
     "CodeTraceabilityProjection",
     "CodeTraceabilityProjectionService",
+    "ContextualEvidenceCoverage",
     "EvidenceDispositionCoverage",
     "TargetEntityCoverage",
     "phases_for_transition",

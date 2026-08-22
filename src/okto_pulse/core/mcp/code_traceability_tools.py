@@ -15,7 +15,7 @@ from enum import Enum
 from functools import wraps
 import hashlib
 import json
-from typing import Annotated, Any, Callable, Mapping
+from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
 
@@ -25,8 +25,10 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeEvidenceAttestationState,
+    CodeEvidenceBaselineProvenance,
     CodeEvidenceDispositionKind,
     CodeEvidenceSelectorKind,
+    CodeEvidenceSourceRole,
     CodeEvidenceSpecRelationType,
     CodeEvidenceType,
     CodeTraceabilityContractError,
@@ -52,9 +54,12 @@ from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSpecLinkInput,
     CodeEvidenceSpecUnlinkInput,
     CodeEvidenceSubmission,
+    CodeEvidenceSubmissionV2,
     CodeEvidenceSupersessionSubmission,
+    CodeEvidenceSupersessionSubmissionV2,
     CodeInvestigationOmissionInput,
     CodeInvestigationReceiptSubmission,
+    CodeInvestigationReceiptSubmissionV2,
     CodeInvestigationToolingInput,
     CodeTraceabilityWaiverClearInput,
     CodeTraceabilityWaiverInput,
@@ -64,6 +69,8 @@ from okto_pulse.core.models.code_traceability import (
     ImplementationTargetResolutionSubmission,
     ImplementationTargetSpecLinkInput,
     ImplementationTargetUpdateInput,
+    LegacyEvidenceClassificationBatchInput,
+    LegacyEvidenceClassificationItemInput,
     ObservedWorkspaceStateSubmission,
     ResolutionCandidateInput,
     StartCodeInvestigationInput,
@@ -94,6 +101,22 @@ Digest = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{64}$")]
 OptionalDigest = Annotated[str | None, Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")]
 PageLimit = Annotated[int, Field(ge=1, le=200)]
 CursorToken = Annotated[str, Field(min_length=1, max_length=4096)]
+ContractVersion = Literal[1, 2]
+AuthoredEvidenceSourceRole = Literal[
+    "current_implementation",
+    "existing_scaffold",
+    "existing_constraint",
+    "reference_pattern",
+]
+InvestigationOutcome = Annotated[
+    str,
+    Field(
+        pattern=(
+            "^(accessible|evidence_applicable|"
+            "no_relevant_existing_implementation|partial|unavailable)$"
+        )
+    ),
+]
 
 
 def _native(value: object) -> object:
@@ -296,6 +319,170 @@ def _closed_input(model: type, values: Mapping[str, object]) -> object:
     return model.model_validate(payload)
 
 
+def _selected_contract_model(
+    contract_version: object,
+    *,
+    legacy: type,
+    contextual: type,
+) -> type:
+    """Select an inbound contract without inferring V2 from optional fields."""
+
+    if type(contract_version) is int and contract_version == 1:
+        return legacy
+    if type(contract_version) is int and contract_version == 2:
+        return contextual
+    raise CodeTraceabilityContractError(
+        "code_traceability_contract_version_invalid",
+        details={"contract_version": contract_version},
+    )
+
+
+def _investigation_receipt_command(
+    *,
+    board_id: str,
+    request_id: str,
+    challenge_token: str,
+    outcome: str,
+    capabilities: list[str],
+    tooling: CodeInvestigationToolingInput,
+    observed_at: datetime,
+    idempotency_key: str,
+    source_identity_digest: str | None = None,
+    declared_revision: str | None = None,
+    workspace_state: ObservedWorkspaceStateSubmission | None = None,
+    omission_manifest: list[CodeInvestigationOmissionInput] | None = None,
+    contract_version: ContractVersion = 1,
+    **_ignored: object,
+) -> CodeInvestigationReceiptSubmission | CodeInvestigationReceiptSubmissionV2:
+    """Build exactly the selected receipt version from source-blind fields."""
+
+    payload: dict[str, object] = {
+        "board_id": board_id,
+        "request_id": request_id,
+        "challenge_token": challenge_token,
+        "outcome": outcome,
+        "capabilities": tuple(capabilities),
+        "source_identity_digest": source_identity_digest,
+        "declared_revision": declared_revision,
+        "workspace_state": workspace_state,
+        "omission_manifest": tuple(omission_manifest or ()),
+        "tooling": tooling,
+        "observed_at": observed_at,
+        "idempotency_key": idempotency_key,
+    }
+    model = _selected_contract_model(
+        contract_version,
+        legacy=CodeInvestigationReceiptSubmission,
+        contextual=CodeInvestigationReceiptSubmissionV2,
+    )
+    if model is CodeInvestigationReceiptSubmissionV2:
+        payload["contract_version"] = 2
+    return model.model_validate(payload)
+
+
+def _evidence_command(
+    *,
+    board_id: str,
+    investigation_receipt_id: str,
+    parent_type: CodeTraceabilitySubjectType,
+    parent_id: str,
+    evidence_type: CodeEvidenceType,
+    claim: str,
+    selector_kind: CodeEvidenceSelectorKind,
+    relative_path: str | None,
+    language: str | None,
+    symbol_kind: str | None,
+    qualified_symbol: str | None,
+    symbol_signature: str | None,
+    line_start: int | None,
+    line_end: int | None,
+    excerpt: str | None,
+    excerpt_sha256: str | None,
+    declared_file_blob_sha256: str | None,
+    declared_source_content_sha256: str,
+    idempotency_key: str,
+    supersedes_evidence_id: str | None = None,
+    supersession_reason: str | None = None,
+    contract_version: ContractVersion = 1,
+    source_role: CodeEvidenceSourceRole | None = None,
+    relevance_summary: str | None = None,
+    scope_relation: str | None = None,
+    source_origin: str | None = None,
+    interpretation_limit: str | None = None,
+    baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
+    **_ignored: object,
+) -> (
+    CodeEvidenceSubmission
+    | CodeEvidenceSubmissionV2
+    | CodeEvidenceSupersessionSubmission
+    | CodeEvidenceSupersessionSubmissionV2
+):
+    """Build exactly the selected Evidence version from source-blind fields."""
+
+    payload: dict[str, object] = {
+        "board_id": board_id,
+        "investigation_receipt_id": investigation_receipt_id,
+        "parent_type": parent_type,
+        "parent_id": parent_id,
+        "evidence_type": evidence_type,
+        "claim": claim,
+        "selector": CodeEvidenceSelectorInput(
+            kind=selector_kind,
+            relative_path=relative_path,
+            language=language,
+            symbol_kind=symbol_kind,
+            qualified_symbol=qualified_symbol,
+            symbol_signature=symbol_signature,
+            line_start=line_start,
+            line_end=line_end,
+        ),
+        "excerpt": excerpt,
+        "excerpt_sha256": excerpt_sha256,
+        "declared_file_blob_sha256": declared_file_blob_sha256,
+        "declared_source_content_sha256": declared_source_content_sha256,
+        "idempotency_key": idempotency_key,
+    }
+    contextual_values = {
+        "source_role": source_role,
+        "relevance_summary": relevance_summary,
+        "scope_relation": scope_relation,
+        "source_origin": source_origin,
+        "interpretation_limit": interpretation_limit,
+        "baseline_provenance": baseline_provenance,
+    }
+    model = _selected_contract_model(
+        contract_version,
+        legacy=(
+            CodeEvidenceSupersessionSubmission
+            if supersedes_evidence_id is not None
+            else CodeEvidenceSubmission
+        ),
+        contextual=(
+            CodeEvidenceSupersessionSubmissionV2
+            if supersedes_evidence_id is not None
+            else CodeEvidenceSubmissionV2
+        ),
+    )
+    if contract_version == 2:
+        payload["contract_version"] = 2
+        payload.update(contextual_values)
+    else:
+        # Passing any V2 meaning while selecting V1 is an incoherent mix.
+        # Feed those authored values to the closed legacy model so the
+        # attempt fails before authentication or persistence.
+        payload.update(
+            {
+                name: value
+                for name, value in contextual_values.items()
+                if value is not None
+            }
+        )
+    if supersedes_evidence_id is not None:
+        payload["supersedes_evidence_id"] = supersedes_evidence_id
+        payload["supersession_reason"] = supersession_reason
+    return model.model_validate(payload)
+
+
 def register_code_traceability_tools(
     mcp: object,
     *,
@@ -303,7 +490,7 @@ def register_code_traceability_tools(
     get_uow: Callable[[], Any],
     get_settings: Callable[[], object],
 ) -> None:
-    """Register the reviewed 19-tool Code Traceability inventory."""
+    """Register the reviewed 20-tool Code Traceability inventory."""
 
     async def _execute(board_id: str, command: object, use_case: object) -> McpToolOutcome:
         context = await get_board_agent(board_id)
@@ -364,11 +551,12 @@ def register_code_traceability_tools(
         board_id: BoundedId,
         request_id: BoundedId,
         challenge_token: Annotated[str, Field(min_length=1, max_length=4096)],
-        outcome: Annotated[str, Field(pattern="^(accessible|partial|unavailable)$")],
+        outcome: InvestigationOutcome,
         capabilities: list[str],
         tooling: CodeInvestigationToolingInput,
         observed_at: datetime,
         idempotency_key: BoundedId,
+        contract_version: ContractVersion = 1,
         source_identity_digest: OptionalDigest = None,
         declared_revision: OptionalBoundedText = None,
         workspace_state: ObservedWorkspaceStateSubmission | None = None,
@@ -377,20 +565,7 @@ def register_code_traceability_tools(
         """Persist the authenticated external agent's bounded capability/access receipt."""
         from okto_pulse.core.application.use_cases.code_traceability import SubmitCodeInvestigationReceiptUseCase
 
-        command = CodeInvestigationReceiptSubmission(
-            board_id=board_id,
-            request_id=request_id,
-            challenge_token=challenge_token,
-            outcome=outcome,
-            capabilities=tuple(capabilities),
-            source_identity_digest=source_identity_digest,
-            declared_revision=declared_revision,
-            workspace_state=workspace_state,
-            omission_manifest=tuple(omission_manifest or ()),
-            tooling=tooling,
-            observed_at=observed_at,
-            idempotency_key=idempotency_key,
-        )
+        command = _investigation_receipt_command(**locals())
         investigation, _, _ = _services()
         return await _execute(board_id, command, SubmitCodeInvestigationReceiptUseCase(investigation))
 
@@ -408,60 +583,6 @@ def register_code_traceability_tools(
             GetCodeInvestigationReceiptUseCase(investigation),
         )
 
-    def _evidence_command(
-        *,
-        board_id: str,
-        investigation_receipt_id: str,
-        parent_type: CodeTraceabilitySubjectType,
-        parent_id: str,
-        evidence_type: CodeEvidenceType,
-        claim: str,
-        selector_kind: CodeEvidenceSelectorKind,
-        relative_path: str | None,
-        language: str | None,
-        symbol_kind: str | None,
-        qualified_symbol: str | None,
-        symbol_signature: str | None,
-        line_start: int | None,
-        line_end: int | None,
-        excerpt: str | None,
-        excerpt_sha256: str | None,
-        declared_file_blob_sha256: str | None,
-        declared_source_content_sha256: str,
-        idempotency_key: str,
-        supersedes_evidence_id: str | None = None,
-        supersession_reason: str | None = None,
-        **_ignored: object,
-    ) -> CodeEvidenceSubmission:
-        payload: dict[str, object] = {
-            "board_id": board_id,
-            "investigation_receipt_id": investigation_receipt_id,
-            "parent_type": parent_type,
-            "parent_id": parent_id,
-            "evidence_type": evidence_type,
-            "claim": claim,
-            "selector": CodeEvidenceSelectorInput(
-                kind=selector_kind,
-                relative_path=relative_path,
-                language=language,
-                symbol_kind=symbol_kind,
-                qualified_symbol=qualified_symbol,
-                symbol_signature=symbol_signature,
-                line_start=line_start,
-                line_end=line_end,
-            ),
-            "excerpt": excerpt,
-            "excerpt_sha256": excerpt_sha256,
-            "declared_file_blob_sha256": declared_file_blob_sha256,
-            "declared_source_content_sha256": declared_source_content_sha256,
-            "idempotency_key": idempotency_key,
-        }
-        if supersedes_evidence_id is not None:
-            payload["supersedes_evidence_id"] = supersedes_evidence_id
-            payload["supersession_reason"] = supersession_reason
-            return CodeEvidenceSupersessionSubmission.model_validate(payload)
-        return CodeEvidenceSubmission.model_validate(payload)
-
     async def okto_pulse_submit_code_evidence(
         board_id: BoundedId,
         investigation_receipt_id: BoundedId,
@@ -472,6 +593,13 @@ def register_code_traceability_tools(
         selector_kind: CodeEvidenceSelectorKind,
         declared_source_content_sha256: Digest,
         idempotency_key: BoundedId,
+        contract_version: ContractVersion = 1,
+        source_role: AuthoredEvidenceSourceRole | None = None,
+        relevance_summary: OptionalBoundedText = None,
+        scope_relation: OptionalBoundedText = None,
+        source_origin: OptionalBoundedText = None,
+        interpretation_limit: OptionalBoundedText = None,
+        baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
         relative_path: OptionalBoundedText = None,
         language: OptionalBoundedText = None,
         symbol_kind: OptionalBoundedText = None,
@@ -489,6 +617,27 @@ def register_code_traceability_tools(
         command = _evidence_command(**locals())
         investigation, evidence, _ = _services()
         return await _execute(board_id, command, SubmitCodeEvidenceUseCase(investigation, evidence))
+
+    async def okto_pulse_classify_legacy_code_evidence(
+        board_id: BoundedId,
+        items: list[LegacyEvidenceClassificationItemInput],
+        justification: BoundedText,
+        idempotency_key: BoundedId,
+    ) -> McpToolOutcome:
+        """Classify legacy Evidence atomically with explicit source meaning and audit provenance."""
+        from okto_pulse.core.application.use_cases.code_traceability import ClassifyLegacyCodeEvidenceUseCase
+
+        command = LegacyEvidenceClassificationBatchInput(
+            board_id=board_id,
+            items=tuple(items),
+            justification=justification,
+            idempotency_key=idempotency_key,
+        )
+        return await _execute(
+            board_id,
+            command,
+            ClassifyLegacyCodeEvidenceUseCase(),
+        )
 
     async def okto_pulse_get_code_evidence(
         board_id: BoundedId,
@@ -536,6 +685,13 @@ def register_code_traceability_tools(
         selector_kind: CodeEvidenceSelectorKind,
         declared_source_content_sha256: Digest,
         idempotency_key: BoundedId,
+        contract_version: ContractVersion = 1,
+        source_role: AuthoredEvidenceSourceRole | None = None,
+        relevance_summary: OptionalBoundedText = None,
+        scope_relation: OptionalBoundedText = None,
+        source_origin: OptionalBoundedText = None,
+        interpretation_limit: OptionalBoundedText = None,
+        baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
         relative_path: OptionalBoundedText = None,
         language: OptionalBoundedText = None,
         symbol_kind: OptionalBoundedText = None,
@@ -789,6 +945,7 @@ def register_code_traceability_tools(
         okto_pulse_submit_code_investigation_receipt,
         okto_pulse_get_code_investigation_receipt,
         okto_pulse_submit_code_evidence,
+        okto_pulse_classify_legacy_code_evidence,
         okto_pulse_get_code_evidence,
         okto_pulse_list_code_evidence,
         okto_pulse_supersede_code_evidence,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable
 
@@ -148,7 +149,16 @@ async def _invoke_agent(uow: _Uow, actor: ActorContext) -> Any:
 
 
 def _board_case() -> tuple[_Uow, _ServiceSpy]:
-    board = SimpleNamespace(id="board-1", owner_id="owner-1", settings={})
+    timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    board = SimpleNamespace(
+        id="board-1",
+        name="Authorization board",
+        description=None,
+        owner_id="owner-1",
+        settings={},
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
     service = _ServiceSpy(update_board=board, get_board=board)
     agents = _ServiceSpy(list_agents_for_board=[])
     return _Uow(SimpleNamespace(boards=service, agents=agents)), service

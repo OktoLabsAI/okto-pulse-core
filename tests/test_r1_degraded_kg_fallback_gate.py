@@ -271,8 +271,13 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
     requiring skip_cognitive_consolidation=True.  The gate emits outcome=
     UNAVAILABLE + reason=DEGRADED_KG_AUTO_SKIP but does NOT raise."""
     import okto_pulse.core.services.kg_health_service as kg_health_service
+    from okto_pulse.core.domain.code_traceability import (
+        DeliveryContext,
+        DirectSpecDeliveryContextProvenance,
+    )
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.kg.cognitive_closeout_gate import reset_closeout_gate_samples, get_closeout_gate_samples
+    from okto_pulse.core.services import main as main_service
     from sqlalchemy_test_models import Board, Spec, SpecStatus
 
     async def _stub_degraded(board_id, db, scheduler_control=None):
@@ -282,6 +287,18 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=1,
+    )
+    source_context_manifest, source_context_sha256 = (
+        main_service._direct_spec_source_context_manifest(
+            spec_id=spec_id,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            provenance=provenance,
+        )
+    )
 
     async with get_session_factory()() as db:
         db.add(Board(
@@ -297,6 +314,14 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
             title="R1 degraded E2E spec",
             status=SpecStatus.IN_PROGRESS,
             created_by="r1-agent",
+            delivery_context=DeliveryContext.BROWNFIELD,
+            delivery_context_provenance={
+                "value": provenance.value.value,
+                "source_spec_id": provenance.source_spec_id,
+                "source_spec_version": provenance.source_spec_version,
+            },
+            source_context_manifest=source_context_manifest,
+            source_context_sha256=source_context_sha256,
             acceptance_criteria=[],
             test_scenarios=[],
         ))

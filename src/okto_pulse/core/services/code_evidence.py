@@ -21,6 +21,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeEvidenceDispositionKind,
     CodeEvidenceLinkInvalid,
     CodeEvidenceSelectorKind,
+    CodeEvidenceSourceRole,
     CodeEvidenceSpecLink,
     CodeEvidenceSubmissionFailed,
     CodeEvidenceImmutable,
@@ -40,6 +41,7 @@ from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSpecUnlinkInput,
     CodeEvidenceRevokeInput,
     CodeEvidenceSubmission,
+    CodeEvidenceSubmissionV2,
     CodeEvidenceSupersessionSubmission,
 )
 from okto_pulse.core.ports.code_investigation import CodeInvestigationStore
@@ -267,6 +269,20 @@ class CodeEvidenceService:
                 details={"field": "workspace_state"}
             )
         selector = submission.selector
+        contextual_fields: dict[str, object] = {
+            "source_role": CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
+            "context_contract_version": None,
+        }
+        if isinstance(submission, CodeEvidenceSubmissionV2):
+            contextual_fields = {
+                "source_role": submission.source_role,
+                "relevance_summary": submission.relevance_summary,
+                "scope_relation": submission.scope_relation,
+                "source_origin": submission.source_origin,
+                "interpretation_limit": submission.interpretation_limit,
+                "baseline_provenance": submission.baseline_provenance,
+                "context_contract_version": 2,
+            }
         return CodeEvidence(
             id=self._id_factory("code_evidence"),
             board_id=submission.board_id,
@@ -310,6 +326,7 @@ class CodeEvidenceService:
             received_at=self._now(),
             payload_sha256=payload_sha256,
             idempotency_key=submission.idempotency_key,
+            **contextual_fields,
         )
 
     async def submit(

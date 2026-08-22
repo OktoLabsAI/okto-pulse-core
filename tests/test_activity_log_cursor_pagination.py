@@ -42,7 +42,7 @@ def _stub_ctx(board_id: str):
             "agent_id": "test-agent",
             "agent_name": "cursor-pagination-test",
             "board_id": board_id,
-            "permissions": ["board:read"],
+            "permissions": ["board:read", "board.activity_read"],
         },
     )()
 
