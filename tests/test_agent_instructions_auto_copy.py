@@ -45,6 +45,12 @@ def test_pre_flight_marks_attach_steps_as_mandatory(text):
     )
 
 
+def test_bootstrap_explains_rejected_rework_handoff(text):
+    assert "moves it to `rejected`" in text
+    assert "sole public exit `rejected` → `in_progress`" in text
+    assert "Test Cards retain their separate `validation` → `in_progress`" in text
+
+
 def test_legacy_fallback_and_active_v2_semantics_are_documented(text):
     assert "legacy_all" in text
     assert "propagation v2 is active and opt-in" in text

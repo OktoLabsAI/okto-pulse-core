@@ -23,6 +23,7 @@ from r3_scenario_helpers import (
     USER_ID,
     add_card,
     call_tool,
+    freeze_refinement_completion_fixture,
     new_board,
     seed_legacy_spec_with_card,
     seed_refinement,
@@ -89,7 +90,12 @@ def _derive_tool(source: str) -> str:
 
 
 def _derive_id_argument(source: str, source_id: str) -> dict[str, str]:
-    return {f"{source}_id": source_id}
+    arguments = {f"{source}_id": source_id}
+    if source == "ideation":
+        # Ideation-derived Specs have no refinement provenance to inherit, so
+        # the caller must state the delivery context explicitly.
+        arguments["delivery_context"] = "brownfield"
+    return arguments
 
 
 @pytest.mark.asyncio
@@ -414,6 +420,7 @@ async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
         board_id=board_id,
         ideation_id=ideation_id,
         title="AC-A8 governed refinement",
+        delivery_context="brownfield",
     )
     assert refinement_result.get("success") is True, refinement_result
     refinement_id = refinement_result["refinement"]["id"]
@@ -432,6 +439,7 @@ async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
     async with db_factory() as db:
         refinement = await db.get(Refinement, refinement_id)
         refinement.status = RefinementStatus.DONE
+        await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
 
     spec_result = await call_tool(

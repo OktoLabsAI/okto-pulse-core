@@ -17,6 +17,7 @@ RebuildAuditNamespace = Literal[
     "event_audit",
     "cognitive_pending",
     "confirmation_audit",
+    "rebuild_confirmation_receipt",
     "run_audit",
     "generation_current",
     "generation_history",
@@ -187,6 +188,24 @@ class RebuildAuditArtifactStore(Protocol):
         same key is a fail-closed conflict.  The receipt is persisted before
         deleting the source so a crash can burn a token but cannot erase proof
         that the destructive operation was authorized.
+        """
+        ...
+
+    def consume_json_replacing_terminal_receipt(
+        self,
+        *,
+        source_key: RebuildAuditKey,
+        expected_source: Mapping[str, Any],
+        receipt_key: RebuildAuditKey,
+        expected_terminal_receipt: Mapping[str, Any],
+        receipt_payload: Mapping[str, Any],
+    ) -> AtomicConsumeOutcome:
+        """Consume a token while rotating one exact terminal active marker.
+
+        Implementations serialize validation and replacement under the same
+        edition lock used by ``consume_json_with_receipt``. A mismatch leaves
+        both documents unchanged. The new receipt is durable before token
+        deletion so authorization proof survives a process crash.
         """
         ...
 

@@ -12,6 +12,11 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     SpecStatus,
 )
+from okto_pulse.core.domain.code_traceability import (
+    DirectSpecDeliveryContextProvenance,
+    DeliveryContext,
+    SpecDeliveryContextProvenance,
+)
 
 
 @dataclass(kw_only=True)
@@ -47,6 +52,7 @@ class Ideation:
     scope_assessment: dict[str, Any] | None = None
     complexity: IdeationComplexity | None = None
     status: IdeationStatus = IdeationStatus.DRAFT
+    edition: int = 1
     version: int = 1
     assignee_id: str | None = None
     created_at: datetime | None = None
@@ -56,6 +62,7 @@ class Ideation:
     archived: bool = False
     pre_archive_status: str | None = None
     skip_ambiguity_gate: bool = False
+    skip_ambiguity_gate_edition: int | None = None
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
@@ -81,6 +88,16 @@ class Spec:
     created_by: str
     ideation_id: str | None = None
     refinement_id: str | None = None
+    source_refinement_snapshot_id: str | None = None
+    source_refinement_version: int | None = None
+    delivery_context: DeliveryContext | None = None
+    delivery_context_provenance: (
+        SpecDeliveryContextProvenance
+        | DirectSpecDeliveryContextProvenance
+        | None
+    ) = None
+    source_context_manifest: dict[str, Any] | None = None
+    source_context_sha256: str | None = None
     description: str | None = None
     context: str | None = None
     functional_requirements: list[Any] | None = None
@@ -100,6 +117,7 @@ class Spec:
     skip_contract_coverage: bool = False
     skip_ir_coverage: bool = False
     skip_or_coverage: bool = False
+    skip_code_evidence_coverage: bool = False
     skip_qualitative_validation: bool = False
     validation_threshold: int | None = None
     require_task_validation: bool | None = None
@@ -118,6 +136,12 @@ class Spec:
     # Human-facing lifecycle counter. Unlike ``version`` (the technical
     # revision/CAS token), this only advances when a Spec re-enters draft.
     edition: int = 1
+    # Monotonic execution marker for the human lifecycle edition.  Unlike the
+    # nominal status it remains set if an executing Spec returns to validated.
+    last_started_edition: int | None = None
+    # Read-only transport projection populated by GetSpecUseCase. Relational
+    # adapters do not persist this derived snapshot.
+    dependency_readiness: Any | None = field(default=None, repr=False)
     version: int = 1
     assignee_id: str | None = None
     created_at: datetime | None = None

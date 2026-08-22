@@ -38,11 +38,12 @@ def _ctx(
     agent_id: str = "af35-agent",
     permissions: list[str] | None = None,
 ) -> SimpleNamespace:
+    default_permissions = [*Permissions.DEFAULT, "board.activity_read"]
     return SimpleNamespace(
         agent_id=agent_id,
         agent_name=AGENT_NAME,
         board_id=board_id,
-        permissions=permissions if permissions is not None else Permissions.DEFAULT,
+        permissions=permissions if permissions is not None else default_permissions,
     )
 
 

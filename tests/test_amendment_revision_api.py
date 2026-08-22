@@ -141,7 +141,11 @@ async def _lock_spec(db, spec_id, *, outcome="success", dangling=False):
     spec = await db.get(Spec, spec_id)
     vid = f"val_{uuid.uuid4().hex[:8]}"
     spec.current_validation_id = vid
-    spec.validations = [] if dangling else [{"id": vid, "outcome": outcome}]
+    spec.validations = (
+        []
+        if dangling
+        else [{"id": vid, "outcome": outcome, "edition": spec.edition}]
+    )
     await db.flush()
     return vid
 

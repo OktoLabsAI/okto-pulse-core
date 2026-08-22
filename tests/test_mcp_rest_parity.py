@@ -65,6 +65,7 @@ async def _seed_board(db_factory) -> None:
     Idempotent — skips if board already seeded by a prior test in this session.
     """
     from sqlalchemy import select
+
     async with db_factory() as db:
         existing = (
             await db.execute(select(Board).where(Board.id == BOARD_ID))
@@ -74,72 +75,91 @@ async def _seed_board(db_factory) -> None:
     ideation_id = str(uuid.uuid4())
     async with db_factory() as db:
         db.add(Board(id=BOARD_ID, name="Parity Board", owner_id="owner-1"))
-        db.add(Ideation(
-            id=ideation_id,
-            board_id=BOARD_ID,
-            title="Parity ideation",
-            status=IdeationStatus.DONE,
-            archived=False,
-            created_by="user-1",
-        ))
-        db.add(Refinement(
-            id=str(uuid.uuid4()),
-            ideation_id=ideation_id,
-            board_id=BOARD_ID,
-            title="Parity refinement",
-            status=RefinementStatus.DONE,
-            archived=False,
-            created_by="user-1",
-        ))
-        db.add(Spec(
-            id=SPEC_ID,
-            board_id=BOARD_ID,
-            title="Parity spec",
-            status=SpecStatus.DONE,
-            archived=False,
-            acceptance_criteria=["AC1", "AC2", "AC3"],
-            functional_requirements=["FR1", "FR2"],
-            test_scenarios=[
-                {"id": "ts_x", "title": "S1", "linked_criteria": [0, "1"], "status": "passed",
-                 "linked_task_ids": ["card-done-1"]},
-            ],
-            business_rules=[
-                {"id": "br_1", "title": "BR1", "linked_requirements": [0],
-                 "linked_task_ids": ["card-done-1"]},
-            ],
-            api_contracts=[],
-            technical_requirements=[
-                {"id": "tr_1", "text": "TR1", "linked_task_ids": ["card-done-1"]},
-            ],
-            decisions=[
-                {"id": "d1", "title": "Decision 1", "status": "active"},
-                {"id": "d2", "title": "Decision 2", "status": "superseded"},
-            ],
-            created_by="user-1",
-        ))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=BOARD_ID,
+                title="Parity ideation",
+                status=IdeationStatus.DONE,
+                archived=False,
+                created_by="user-1",
+            )
+        )
+        db.add(
+            Refinement(
+                id=str(uuid.uuid4()),
+                ideation_id=ideation_id,
+                board_id=BOARD_ID,
+                title="Parity refinement",
+                status=RefinementStatus.DONE,
+                archived=False,
+                created_by="user-1",
+            )
+        )
+        db.add(
+            Spec(
+                id=SPEC_ID,
+                board_id=BOARD_ID,
+                title="Parity spec",
+                status=SpecStatus.DONE,
+                archived=False,
+                acceptance_criteria=["AC1", "AC2", "AC3"],
+                functional_requirements=["FR1", "FR2"],
+                test_scenarios=[
+                    {
+                        "id": "ts_x",
+                        "title": "S1",
+                        "linked_criteria": [0, "1"],
+                        "status": "passed",
+                        "linked_task_ids": ["card-done-1"],
+                    },
+                ],
+                business_rules=[
+                    {
+                        "id": "br_1",
+                        "title": "BR1",
+                        "linked_requirements": [0],
+                        "linked_task_ids": ["card-done-1"],
+                    },
+                ],
+                api_contracts=[],
+                technical_requirements=[
+                    {"id": "tr_1", "text": "TR1", "linked_task_ids": ["card-done-1"]},
+                ],
+                decisions=[
+                    {"id": "d1", "title": "Decision 1", "status": "active"},
+                    {"id": "d2", "title": "Decision 2", "status": "superseded"},
+                ],
+                created_by="user-1",
+            )
+        )
         yesterday = datetime.now(timezone.utc) - timedelta(hours=12)
-        db.add(Card(
-            id="card-done-1",
-            board_id=BOARD_ID,
-            spec_id=SPEC_ID,
-            title="Done impl",
-            status=CardStatus.DONE,
-            card_type=CardType.NORMAL,
-            archived=False,
-            created_by="user-1",
-            created_at=yesterday,
-            updated_at=yesterday,
-        ))
-        db.add(Card(
-            id="card-test-1",
-            board_id=BOARD_ID,
-            spec_id=SPEC_ID,
-            title="Open test",
-            status=CardStatus.IN_PROGRESS,
-            card_type=CardType.TEST,
-            archived=False,
-            created_by="user-1",
-        ))
+        db.add(
+            Card(
+                id="card-done-1",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Done impl",
+                status=CardStatus.DONE,
+                card_type=CardType.NORMAL,
+                archived=False,
+                created_by="user-1",
+                created_at=yesterday,
+                updated_at=yesterday,
+            )
+        )
+        db.add(
+            Card(
+                id="card-test-1",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Open test",
+                status=CardStatus.IN_PROGRESS,
+                card_type=CardType.TEST,
+                archived=False,
+                created_by="user-1",
+            )
+        )
         await db.commit()
 
 
@@ -193,9 +213,16 @@ class TestCoverageParity:
         assert rows
         row = rows[0]
         for k in (
-            "spec_id", "title", "total_ac", "covered_ac", "total_scenarios",
-            "scenario_status_counts", "business_rules_count",
-            "api_contracts_count", "fr_with_rules_pct", "fr_with_contracts_pct",
+            "spec_id",
+            "title",
+            "total_ac",
+            "covered_ac",
+            "total_scenarios",
+            "scenario_status_counts",
+            "business_rules_count",
+            "api_contracts_count",
+            "fr_with_rules_pct",
+            "fr_with_contracts_pct",
         ):
             assert k in row, f"coverage row missing migrated key: {k}"
 
@@ -220,21 +247,47 @@ class TestFunnelParity:
         async with db_factory() as db:
             funnel = await compute_funnel(db, BOARD_ID)
         for k in (
-            "ideations", "refinements", "specs", "sprints", "cards", "done",
-            "ideations_done", "specs_done", "refinements_done",
-            "cards_impl", "cards_test", "cards_bug",
-            "rules_count", "contracts_count",
-            "specs_with_rules", "specs_with_contracts",
-            "spec_status_breakdown", "card_status_breakdown",
+            "ideations",
+            "refinements",
+            "specs",
+            "sprints",
+            "cards",
+            "done",
+            "ideations_done",
+            "specs_done",
+            "refinements_done",
+            "cards_impl",
+            "cards_test",
+            "cards_bug",
+            "rules_count",
+            "contracts_count",
+            "specs_with_rules",
+            "specs_with_contracts",
+            "spec_status_breakdown",
+            "card_status_breakdown",
             "sprint_status_breakdown",
-            "bugs_total", "bugs_open", "bugs_by_severity",
-            "avg_cycle_hours", "cycle_time_by_phase",
-            "stories", "stories_converted", "story_conversion_pct",
-            "story_ideation_links", "story_status_breakdown", "stories_by_topic",
+            "bugs_total",
+            "bugs_open",
+            "bugs_by_severity",
+            "avg_cycle_hours",
+            "cycle_time_by_phase",
+            "stories",
+            "stories_converted",
+            "story_conversion_pct",
+            "story_ideation_links",
+            "story_status_breakdown",
+            "stories_by_topic",
         ):
             assert k in funnel, f"funnel missing key: {k}"
         cycle = funnel["cycle_time_by_phase"]
-        assert set(cycle.keys()) == {"story", "ideation", "refinement", "spec", "sprint", "card"}
+        assert set(cycle.keys()) == {
+            "story",
+            "ideation",
+            "refinement",
+            "spec",
+            "sprint",
+            "card",
+        }
 
 
 @pytest.mark.asyncio
@@ -245,10 +298,16 @@ class TestVelocityParity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             rest = await compute_velocity(
-                db, BOARD_ID, granularity="week", weeks=12,
+                db,
+                BOARD_ID,
+                granularity="week",
+                weeks=12,
             )
             mcp = await compute_velocity(
-                db, BOARD_ID, granularity="week", weeks=12,
+                db,
+                BOARD_ID,
+                granularity="week",
+                weeks=12,
                 include_archived=True,
             )
         assert rest and mcp
@@ -259,7 +318,10 @@ class TestVelocityParity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             daily = await compute_velocity(
-                db, BOARD_ID, granularity="day", days=7,
+                db,
+                BOARD_ID,
+                granularity="day",
+                days=7,
             )
         assert daily
         assert "day" in daily[0]
@@ -269,7 +331,14 @@ class TestVelocityParity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             buckets = await compute_velocity(db, BOARD_ID, granularity="week", weeks=4)
-        for k in ("impl", "test", "bug", "validation_bounce", "spec_done", "sprint_done"):
+        for k in (
+            "impl",
+            "test",
+            "bug",
+            "validation_bounce",
+            "spec_done",
+            "sprint_done",
+        ):
             assert k in buckets[0], f"velocity bucket missing migrated key: {k}"
 
 
@@ -277,32 +346,66 @@ class TestSpecCoverageSummaryParity:
     """D-7 — spec_coverage_summary is a pure function; verify all 22 keys present."""
 
     EXPECTED_KEYS = {
-        "ac_coverage_pct", "ac_covered", "ac_total", "ac_uncovered_indices",
-        "fr_coverage_pct", "fr_covered", "fr_total", "fr_uncovered_indices",
-        "scenario_task_linkage_pct", "scenarios_linked", "scenarios_total",
-        "br_task_linkage_pct", "brs_linked", "brs_total",
-        "contract_task_linkage_pct", "contracts_linked", "contracts_total",
-        "tr_task_linkage_pct", "trs_linked", "trs_total",
+        "ac_coverage_pct",
+        "ac_covered",
+        "ac_total",
+        "ac_uncovered_indices",
+        "fr_coverage_pct",
+        "fr_covered",
+        "fr_total",
+        "fr_uncovered_indices",
+        "scenario_task_linkage_pct",
+        "scenarios_linked",
+        "scenarios_total",
+        "br_task_linkage_pct",
+        "brs_linked",
+        "brs_total",
+        "contract_task_linkage_pct",
+        "contracts_linked",
+        "contracts_total",
+        "tr_task_linkage_pct",
+        "trs_linked",
+        "trs_total",
         # Ideação #10 Fase 1 — decisions paridade
-        "decisions_coverage_pct", "decisions_linked", "decisions_total",
+        "decisions_coverage_pct",
+        "decisions_linked",
+        "decisions_total",
         "decisions_uncovered_ids",
         # IR/OR first-class requirement coverage
-        "ir_task_linkage_pct", "irs_linked", "irs_total", "irs_uncovered_ids",
-        "or_task_linkage_pct", "ors_linked", "ors_total", "ors_uncovered_ids",
-        "cards_total", "cards_done",
-        "cards_total_raw", "cards_done_raw",
-        "cards_total_effective", "cards_done_effective",
-        "skip_test_coverage", "skip_rules_coverage", "skip_decisions_coverage",
-        "skip_ir_coverage", "skip_or_coverage",
+        "ir_task_linkage_pct",
+        "irs_linked",
+        "irs_total",
+        "irs_uncovered_ids",
+        "or_task_linkage_pct",
+        "ors_linked",
+        "ors_total",
+        "ors_uncovered_ids",
+        "cards_total",
+        "cards_done",
+        "cards_total_raw",
+        "cards_done_raw",
+        "cards_total_effective",
+        "cards_done_effective",
+        "skip_test_coverage",
+        "skip_rules_coverage",
+        "skip_decisions_coverage",
+        "skip_ir_coverage",
+        "skip_or_coverage",
     }
 
     class _FakeSpec:
         acceptance_criteria = ["AC1", "AC2"]
         functional_requirements = ["FR1"]
-        test_scenarios = [{"id": "t1", "linked_criteria": [0], "linked_task_ids": ["c1"]}]
-        business_rules = [{"id": "b1", "linked_requirements": [0], "linked_task_ids": ["c1"]}]
+        test_scenarios = [
+            {"id": "t1", "linked_criteria": [0], "linked_task_ids": ["c1"]}
+        ]
+        business_rules = [
+            {"id": "b1", "linked_requirements": [0], "linked_task_ids": ["c1"]}
+        ]
         api_contracts = []
-        technical_requirements = [{"id": "tr1", "text": "TR", "linked_task_ids": ["c1"]}]
+        technical_requirements = [
+            {"id": "tr1", "text": "TR", "linked_task_ids": ["c1"]}
+        ]
         skip_test_coverage = False
         skip_rules_coverage = False
 
@@ -347,7 +450,13 @@ class TestDecisionsHelpersParity:
 
     def test_stats_has_fixed_keys(self):
         stats = decisions_stats(self.FIXTURE)
-        assert set(stats.keys()) == {"total", "active", "superseded", "revoked", "other"}
+        assert set(stats.keys()) == {
+            "total",
+            "active",
+            "superseded",
+            "revoked",
+            "other",
+        }
         # All counts are ints
         for v in stats.values():
             assert isinstance(v, int)
@@ -362,8 +471,12 @@ class TestBlockersParity:
         async with db_factory() as db:
             payload = await compute_blockers(db, BOARD_ID)
         assert set(payload.keys()) == {
-            "board_id", "summary", "total",
-            "stale_hours_threshold", "filter_type", "blockers",
+            "board_id",
+            "summary",
+            "total",
+            "stale_hours_threshold",
+            "filter_type",
+            "blockers",
         }
         assert isinstance(payload["summary"], dict)
         assert isinstance(payload["blockers"], list)
@@ -382,19 +495,23 @@ class TestBlockersParity:
         board_id = f"cancelled-spec-board-{uuid.uuid4().hex[:8]}"
         spec_id = f"cancelled-spec-{uuid.uuid4().hex[:8]}"
         async with db_factory() as db:
-            db.add(Board(id=board_id, name="Cancelled spec blockers", owner_id="owner-1"))
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Cancelled spec with orphan scenario",
-                status=SpecStatus.CANCELLED,
-                archived=False,
-                acceptance_criteria=["AC1"],
-                test_scenarios=[
-                    {"id": "ts_cancelled", "title": "orphan", "status": "draft"},
-                ],
-                created_by="user-1",
-            ))
+            db.add(
+                Board(id=board_id, name="Cancelled spec blockers", owner_id="owner-1")
+            )
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Cancelled spec with orphan scenario",
+                    status=SpecStatus.CANCELLED,
+                    archived=False,
+                    acceptance_criteria=["AC1"],
+                    test_scenarios=[
+                        {"id": "ts_cancelled", "title": "orphan", "status": "draft"},
+                    ],
+                    created_by="user-1",
+                )
+            )
             await db.commit()
 
         async with db_factory() as db:
@@ -415,32 +532,65 @@ class TestValidationGateParity:
     """D-2 / D-3 — task + spec validation gate aggregators are pure, shape fixed."""
 
     TASK_EXPECTED_KEYS = {
-        "total_submitted", "total_success", "total_failed", "success_rate",
-        "avg_attempts_per_card", "first_pass_rate", "avg_scores",
-        "rejection_reasons", "cards_with_validation",
+        "total_submitted",
+        "total_success",
+        "total_failed",
+        "success_rate",
+        "avg_attempts_per_card",
+        "first_pass_rate",
+        "avg_scores",
+        "rejection_reasons",
+        "cards_with_validation",
     }
     SPEC_EXPECTED_KEYS = {
-        "total_submitted", "total_success", "total_failed", "success_rate",
-        "avg_attempts_per_spec", "avg_scores", "rejection_reasons",
+        "total_submitted",
+        "total_success",
+        "total_failed",
+        "success_rate",
+        "avg_attempts_per_spec",
+        "avg_scores",
+        "rejection_reasons",
         "specs_with_validation",
     }
 
     class _FakeCard:
         validations = [
-            {"outcome": "success", "confidence": 90, "completeness": 95, "drift": 5,
-             "recommendation": "approve"},
-            {"outcome": "failed", "confidence": 50, "estimated_completeness": 40,
-             "estimated_drift": 80, "recommendation": "reject",
-             "threshold_violations": ["confidence below 70", "drift above 50"]},
+            {
+                "outcome": "success",
+                "confidence": 90,
+                "completeness": 95,
+                "drift": 5,
+                "recommendation": "approve",
+            },
+            {
+                "outcome": "failed",
+                "confidence": 50,
+                "estimated_completeness": 40,
+                "estimated_drift": 80,
+                "recommendation": "reject",
+                "threshold_violations": ["confidence below 70", "drift above 50"],
+            },
         ]
 
     class _FakeSpec:
         validations = [
-            {"outcome": "success", "completeness": 90, "assertiveness": 85,
-             "ambiguity": 15, "recommendation": "approve"},
-            {"outcome": "failed", "completeness": 60, "assertiveness": 70,
-             "ambiguity": 45, "recommendation": "reject",
-             "threshold_violations": ["completeness below 80", "ambiguity above 30"]},
+            {
+                "outcome": "success",
+                "confidence": 90,
+                "clarity": 88,
+                "assertiveness": 85,
+                "decidability": 86,
+                "ambiguity": 15,
+                "recommendation": "approve",
+            },
+            {
+                "outcome": "failed",
+                "completeness": 60,
+                "assertiveness": 70,
+                "ambiguity": 45,
+                "recommendation": "reject",
+                "threshold_violations": ["completeness below 80", "ambiguity above 30"],
+            },
         ]
 
     def test_task_gate_has_all_expected_keys(self):
@@ -456,8 +606,10 @@ class TestValidationGateParity:
         assert out["total_submitted"] == 0
         assert out["success_rate"] is None
         assert set(out["rejection_reasons"].keys()) == {
-            "confidence_below", "completeness_below",
-            "drift_above", "reject_recommendation",
+            "confidence_below",
+            "completeness_below",
+            "drift_above",
+            "reject_recommendation",
         }
 
     def test_spec_gate_empty_input(self):
@@ -465,8 +617,24 @@ class TestValidationGateParity:
         assert out["total_submitted"] == 0
         assert out["success_rate"] is None
         assert set(out["rejection_reasons"].keys()) == {
-            "completeness_below", "assertiveness_below",
-            "ambiguity_above", "reject_recommendation",
+            "confidence_below",
+            "clarity_below",
+            "completeness_below",
+            "assertiveness_below",
+            "decidability_below",
+            "ambiguity_above",
+            "reject_recommendation",
+        }
+
+    def test_spec_gate_aggregates_canonical_and_legacy_dimensions_separately(self):
+        out = aggregate_spec_validation_gate([self._FakeSpec()])
+        assert out["avg_scores"] == {
+            "confidence": 90.0,
+            "clarity": 88.0,
+            "completeness": 60.0,
+            "assertiveness": 77.5,
+            "decidability": 86.0,
+            "ambiguity": 30.0,
         }
 
     def test_task_gate_first_pass_tracked(self):
@@ -480,8 +648,10 @@ class TestValidationGateParity:
             "reject",
         )
         assert set(reasons) == {
-            "confidence_below", "drift_above",
-            "completeness_below", "reject_recommendation",
+            "confidence_below",
+            "drift_above",
+            "completeness_below",
+            "reject_recommendation",
         }
 
     def test_classify_spec_multi_count(self):
@@ -490,7 +660,9 @@ class TestValidationGateParity:
             "reject",
         )
         assert set(reasons) == {
-            "completeness_below", "ambiguity_above", "reject_recommendation",
+            "completeness_below",
+            "ambiguity_above",
+            "reject_recommendation",
         }
 
 
@@ -511,22 +683,30 @@ class TestDelegationContract:
         # The delegation contract moved from the HTTP adapter to the application
         # (use case) + service layers — assert it there, not in api/analytics.py.
         from okto_pulse.core.application.use_cases import analytics_helpers
+
         uc_src = inspect.getsource(analytics_helpers)
         for capability in (
-            ".analytics.coverage", ".analytics.funnel", ".analytics.velocity",
-            ".analytics.blockers", ".analytics.quality", ".analytics.validations",
-            ".analytics.spec", ".analytics.sprint",
+            ".analytics.coverage",
+            ".analytics.funnel",
+            ".analytics.velocity",
+            ".analytics.blockers",
+            ".analytics.quality",
+            ".analytics.validations",
+            ".analytics.spec",
+            ".analytics.sprint",
         ):
             assert capability in uc_src, (
                 f"analytics use cases missing catalog delegation: {capability}"
             )
         from okto_pulse.core.services import analytics_service
+
         svc_src = inspect.getsource(analytics_service)
         for fn in ("aggregate_task_validation_gate", "aggregate_spec_validation_gate"):
             assert fn in svc_src, f"analytics service missing gate aggregator: {fn}"
 
     def test_mcp_server_delegates_analytics_to_use_cases(self):
         from okto_pulse.core.mcp import server as mcp_mod
+
         src = inspect.getsource(mcp_mod)
         for symbol in (
             "McpGetAnalyticsUseCase",
@@ -534,7 +714,9 @@ class TestDelegationContract:
             "McpListBlockersUseCase",
             "McpListBlockersCommand",
         ):
-            assert symbol in src, f"MCP server missing analytics use-case delegation: {symbol}"
+            assert symbol in src, (
+                f"MCP server missing analytics use-case delegation: {symbol}"
+            )
 
         from okto_pulse.core.application.use_cases import mcp_admin_validation_analytics
 
@@ -548,11 +730,13 @@ class TestDelegationContract:
         """D-8 — MCP server re-exports filter_decisions_by_status + decisions_stats
         from the service (backwards compat shim)."""
         from okto_pulse.core.mcp import server as mcp_mod
+
         assert hasattr(mcp_mod, "_filter_decisions_by_status")
         assert hasattr(mcp_mod, "_decisions_stats")
 
     def test_mcp_re_exports_spec_coverage(self):
         from okto_pulse.core.mcp import server as mcp_mod
+
         assert hasattr(mcp_mod, "_spec_coverage")
 
     def test_architecture_rest_and_mcp_share_core_services(self):

@@ -1,0 +1,46 @@
+{
+  "binding_id": "binding-id",
+  "board_id": "board-id",
+  "confidence": 95,
+  "contract_version": "v2",
+  "expected_binding_revision": 2,
+  "expected_subject_edition": 3,
+  "expected_subject_version": 7,
+  "guideline_revision_id": "guideline-revision-id",
+  "idempotency_key": "semantic-assessment-example-1",
+  "metric_results": [
+    {
+      "contract_version": "v2",
+      "evidence_refs": [
+        {
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source_id": "spec-id",
+          "source_type": "spec",
+          "source_version": 7
+        }
+      ],
+      "metric_id": "metric-architecture",
+      "pinpoints": [
+        {
+          "anchor": {
+            "anchor_ref": "technical_requirements",
+            "anchor_type": "field",
+            "excerpt_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "contract_version": "v2",
+          "detail": "The technical requirement does not name the outbound port.",
+          "kind": "issue",
+          "pinpoint_key": "architecture-boundary",
+          "remediation": "Name the outbound port and its owner.",
+          "severity": "high",
+          "title": "Persistence boundary is implicit"
+        }
+      ],
+      "rationale": "The boundary remains implicit.",
+      "score": 72
+    }
+  ],
+  "model_id": "review-model",
+  "subject_id": "spec-id",
+  "subject_type": "spec"
+}

@@ -42,12 +42,18 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
+    decide_authorization,
     require_authorization,
+    resolve_actor_permissions,
 )
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     card_create_permission_requirement,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.models.schemas import (
+    BoardResponse,
+    redact_card_validation_projection,
+)
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 
 logger = logging.getLogger(__name__)
@@ -71,6 +77,39 @@ def _attach_effective_board_settings(board: Any) -> Any:
             BoardGovernanceService.normalize_settings(getattr(board, "settings", None)),
         )
     return board
+
+
+async def _project_board_validation_visibility(
+    board: Any,
+    *,
+    actor: ActorContext,
+    uow: PulseUnitOfWork,
+    board_id: str,
+) -> Any:
+    """Keep the nested Board cards behind ``card.validation.read``.
+
+    Board access alone is intentionally insufficient: every nested Card carries
+    the same validation, causal-history and aggregate-score fields as the
+    dedicated Card surfaces.  A detached response DTO avoids mutating ORM or
+    application records merely to redact those fields.
+    """
+
+    permissions = await resolve_actor_permissions(actor, uow, board_id)
+    can_read_validations = decide_authorization(
+        actor,
+        PermissionRequirement("card.validation.read"),
+        permissions,
+    ).allowed
+    if can_read_validations:
+        return board
+    projected = BoardResponse.model_validate(board)
+    return projected.model_copy(
+        update={
+            "cards": [
+                redact_card_validation_projection(card) for card in projected.cards
+            ]
+        }
+    )
 
 
 def _query_scope_for_actor(
@@ -243,7 +282,15 @@ class GetBoardUseCase:
             _attach_value(board, "cards", [])
         else:
             _attach_value(board, "agents", board_agents)
-        return GetBoardResult(_attach_effective_board_settings(board))
+        board = _attach_effective_board_settings(board)
+        return GetBoardResult(
+            await _project_board_validation_visibility(
+                board,
+                actor=actor,
+                uow=uow,
+                board_id=command.board_id,
+            )
+        )
 
 
 # --- update -----------------------------------------------------------------
@@ -303,7 +350,15 @@ class UpdateBoardUseCase:
             "agents",
             await uow.services.agents.list_agents_for_board(command.board_id),
         )
-        return UpdateBoardResult(_attach_effective_board_settings(board))
+        board = _attach_effective_board_settings(board)
+        return UpdateBoardResult(
+            await _project_board_validation_visibility(
+                board,
+                actor=actor,
+                uow=uow,
+                board_id=command.board_id,
+            )
+        )
 
 
 # --- delete -----------------------------------------------------------------

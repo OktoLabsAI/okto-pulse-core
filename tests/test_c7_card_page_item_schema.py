@@ -39,6 +39,18 @@ EXPECTED_FIELDS = {
     "created_at",
     "updated_at",
     "open_qa_count",
+    "current_rejection_kind",
+    "current_rejection_id",
+    "current_rejection_code",
+    "current_rejection_summary",
+}
+
+OPTIONAL_FIELDS = {
+    "open_qa_count",
+    "current_rejection_kind",
+    "current_rejection_id",
+    "current_rejection_code",
+    "current_rejection_summary",
 }
 
 ITEM = {
@@ -75,12 +87,21 @@ ITEM = {
 }
 
 
-def test_card_page_item_has_exactly_the_authoritative_required_fields() -> None:
+def test_card_page_item_has_exactly_the_authoritative_fields() -> None:
     schema = CardPageItem.model_json_schema()
 
     assert set(schema["properties"]) == EXPECTED_FIELDS
-    assert set(schema["required"]) == EXPECTED_FIELDS
+    assert set(schema["required"]) == EXPECTED_FIELDS - OPTIONAL_FIELDS
     assert set(CardPageItem.model_fields) == EXPECTED_FIELDS
+
+
+def test_card_page_item_omits_open_qa_count_when_qa_read_is_denied() -> None:
+    payload = dict(ITEM)
+    payload.pop("open_qa_count")
+
+    item = CardPageItem.model_validate(payload)
+
+    assert "open_qa_count" not in item.model_dump()
 
 
 def test_card_page_item_accepts_orm_nulls_and_reuses_domain_enums() -> None:

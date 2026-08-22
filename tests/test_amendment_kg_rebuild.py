@@ -188,13 +188,19 @@ def test_expected_layers_counts_amendment_canonical():
 
 def _temp_pulse_db(tmp_path):
     """A self-contained sync SQLite pulse.db with the full schema (create_all)."""
+    import sqlite3
+
     from sqlalchemy import create_engine
     from sqlalchemy_test_models import Base
     import sqlalchemy_test_models  # noqa: F401 - register all tables
+    from source_reader_schema_testing import create_complete_source_catalog
 
     db_file = tmp_path / "pulse.db"
     engine = create_engine(f"sqlite:///{db_file}")
     Base.metadata.create_all(engine)
+    with sqlite3.connect(db_file) as connection:
+        create_complete_source_catalog(connection)
+        connection.commit()
     return db_file, engine  # Path (BoardSourceStore calls db_path.exists())
 
 
@@ -409,7 +415,8 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     assert amd_rows[0]["artifact_type"] == AMD
     assert amd_rows[0]["status"] == "pending"
 
-    # idempotent re-enqueue leaves the active pending row alone (no duplicate row).
+    # Re-enqueue adopts the existing rebuild row into the new deterministic
+    # order without creating a duplicate.
     counts2 = adapter.enqueue_sources(
         board_id=board_id,
         run_id="run-2",
@@ -417,7 +424,9 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     )
     assert counts2["inserted"] == 0
     assert counts2["reset_to_pending"] == 0
-    assert counts2["left_alone"] == 1
+    assert counts2["reordered_pending"] == 1
+    assert counts2["preserved_live_intent"] == 0
+    assert counts2["left_alone"] == 0
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -433,7 +442,7 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     assert len(amd_rows_after) == 1
     assert amd_rows_after[0]["artifact_type"] == AMD
     assert amd_rows_after[0]["status"] == "pending"
-    assert amd_rows_after[0]["source"] == "rebuild:run-1"
+    assert amd_rows_after[0]["source"] == "rebuild:run-2"
 
 
 # ---------------------------------------------------------------------------

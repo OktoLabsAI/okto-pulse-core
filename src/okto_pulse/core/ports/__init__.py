@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import importlib
 
+from .entity_export import EntityExportReadPort
+
 from .data_bootstrapper import (
     BOOTSTRAP_DOMAINS,
     BootstrapDomain,
@@ -102,23 +104,6 @@ from .relational_effects import (
     get_relational_effects_port,
     register_relational_effects_port,
     reset_relational_effects_port_for_tests,
-)
-from .kg_operational import (
-    KGCanonicalDebtSignal,
-    KGDeadLetterSignal,
-    KGGovernanceEffectsPort,
-    KGOperationalProviderMissing,
-    KGOperationalReadModelPort,
-    KGOutboxCounts,
-    KGQueueEntrySnapshot,
-    KGWorkerAuditPort,
-    KGWorkerQueuePort,
-    get_kg_governance_effects_port,
-    get_kg_operational_read_model_port,
-    get_kg_worker_audit_port,
-    get_kg_worker_queue_port,
-    register_kg_operational_ports,
-    reset_kg_operational_ports_for_tests,
 )
 from .takedown_telemetry import (
     TAKEDOWN_NORMAL_SLO_SECONDS,
@@ -297,6 +282,7 @@ from .telemetry import (
 )
 
 __all__ = [
+    "EntityExportReadPort",
     "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT",
     "COGNITIVE_SOURCE_FINGERPRINT_CONTRACT_V3",
     "HEALTH_REPORT_FIELDS",
@@ -550,8 +536,29 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS = {
-    name: "okto_pulse.core.ports.policy_constraint_projection"
-    for name in (
+    **{
+        name: "okto_pulse.core.ports.kg_operational"
+        for name in (
+            "KGCanonicalDebtSignal",
+            "KGDeadLetterSignal",
+            "KGGovernanceEffectsPort",
+            "KGOperationalProviderMissing",
+            "KGOperationalReadModelPort",
+            "KGOutboxCounts",
+            "KGQueueEntrySnapshot",
+            "KGWorkerAuditPort",
+            "KGWorkerQueuePort",
+            "get_kg_governance_effects_port",
+            "get_kg_operational_read_model_port",
+            "get_kg_worker_audit_port",
+            "get_kg_worker_queue_port",
+            "register_kg_operational_ports",
+            "reset_kg_operational_ports_for_tests",
+        )
+    },
+    **{
+        name: "okto_pulse.core.ports.policy_constraint_projection"
+        for name in (
         "POLICY_CONSTRAINT_GUIDELINE_RETIRED_REASON",
         "POLICY_CONSTRAINT_GUIDELINE_SUPERSEDED_REASON",
         "POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS",
@@ -564,7 +571,8 @@ _LAZY_EXPORTS = {
         "get_policy_constraint_projection_port",
         "register_policy_constraint_projection_port",
         "reset_policy_constraint_projection_port_for_tests",
-    )
+        )
+    },
 }
 
 

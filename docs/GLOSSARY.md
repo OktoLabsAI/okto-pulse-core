@@ -26,7 +26,7 @@ A policy-enforcement boundary (17 named gates) evaluating resource readiness, sp
 The architectural pattern (Ports & Adapters) separating domain logic from external mechanisms like databases, APIs, and graph runtimes. See [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ### Knowledge Graph
-A structured representation of domain concepts and relationships (11 node types, 13 relationship types) providing contextual memory and orchestration. See [README.md](../README.md).
+A structured representation of domain concepts and relationships (11 node types, 16 relationship types) providing contextual memory and orchestration. See [README.md](../README.md).
 
 ### Lineage
 The verifiable record of resource propagation and history tracked across business services and entities. See [README.md](../README.md).

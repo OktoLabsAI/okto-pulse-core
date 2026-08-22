@@ -65,7 +65,14 @@ async def test_ideation_open_qa_count_counts_only_unanswered_and_exposes_scope()
     board_id, ideation_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="QA Badge Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="QA Badge Board",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(
             Ideation(
                 id=ideation_id,
@@ -133,7 +140,11 @@ async def test_ideation_summary_scope_absent_and_zero_count_when_clean():
     board_id, ideation_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Clean Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(
+                id=board_id, name="Clean Board", owner_id=USER, realm_id=LOCAL_REALM_ID
+            )
+        )
         db.add(
             Ideation(
                 id=ideation_id,
@@ -159,7 +170,14 @@ async def test_spec_open_qa_count():
     board_id, spec_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Spec QA Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="Spec QA Board",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(
             Spec(
                 id=spec_id,
@@ -212,7 +230,14 @@ async def test_card_columns_open_qa_count():
     board_id, card_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Card QA Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="Card QA Board",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(
             Card(
                 id=card_id,
@@ -252,7 +277,13 @@ async def test_card_columns_open_qa_count():
             principal=Principal(
                 subject=USER,
                 realm_id=LOCAL_REALM_ID,
-                claims={"permissions": ["board.read", "board:read"]},
+                claims={
+                    "permissions": [
+                        "board.read",
+                        "board:read",
+                        "card.qa.read",
+                    ]
+                },
                 actor_kind="human",
             ),
             uow=SQLAlchemyUnitOfWork(db),
@@ -283,7 +314,14 @@ async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
     board_id, ideation_id, refinement_id = _id(), _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="QA Inherit Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="QA Inherit Board",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(
             Ideation(
                 id=ideation_id,
@@ -350,12 +388,16 @@ async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
         await db.commit()
 
         copied = (
-            await db.execute(
-                select(RefinementQAItem).where(
-                    RefinementQAItem.refinement_id == refinement_id
+            (
+                await db.execute(
+                    select(RefinementQAItem).where(
+                        RefinementQAItem.refinement_id == refinement_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     # Só as respondidas são copiadas, e TODAS chegam com answered_at.
     assert len(copied) == 2
@@ -377,7 +419,14 @@ async def test_backfill_qa_answered_at_stamps_only_answered_rows():
     board_id, spec_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="QA Backfill Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="QA Backfill Board",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(
             Spec(
                 id=spec_id,
@@ -419,10 +468,10 @@ async def test_backfill_qa_answered_at_stamps_only_answered_rows():
         assert fixed.get("spec_qa_items", 0) >= 2
 
         rows = (
-            await db.execute(
-                select(SpecQAItem).where(SpecQAItem.spec_id == spec_id)
-            )
-        ).scalars().all()
+            (await db.execute(select(SpecQAItem).where(SpecQAItem.spec_id == spec_id)))
+            .scalars()
+            .all()
+        )
         by_q = {r.question: r for r in rows}
         assert by_q["Inherited text answer, no timestamp"].answered_at is not None
         assert by_q["Inherited choice answer, no timestamp"].answered_at is not None

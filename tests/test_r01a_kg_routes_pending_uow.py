@@ -210,6 +210,21 @@ async def test_list_pending_empty_200(client) -> None:
     assert resp.json() == {"entries": [], "count": 0}
 
 
+@pytest.mark.asyncio
+async def test_list_pending_excludes_code_traceability_rows_and_count(client) -> None:
+    board_id = await _seed_board()
+    legacy_id = await _seed_pending_entry(board_id, artifact_type="spec")
+    ct_id = await _seed_pending_entry(board_id, artifact_type="code_evidence")
+
+    resp = client.get(f"{PREFIX}/kg/boards/{board_id}/pending")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["count"] == 1
+    assert [entry["id"] for entry in body["entries"]] == [legacy_id]
+    assert ct_id not in {entry["id"] for entry in body["entries"]}
+
+
 # --- list_pending_tree ------------------------------------------------------
 
 
@@ -317,6 +332,31 @@ async def test_retry_200_resets_failed_entry(client) -> None:
         assert refreshed.claimed_at is None
         assert refreshed.claimed_by_session_id is None
         assert refreshed.source == "retry_from_ui"
+
+
+@pytest.mark.asyncio
+async def test_retry_code_traceability_entry_is_denied_before_mutation(client) -> None:
+    from sqlalchemy_test_models import ConsolidationQueue
+
+    board_id = await _seed_board()
+    entry_id = await _seed_pending_entry(
+        board_id,
+        artifact_type="implementation_target",
+        status="failed",
+        source="deterministic_projection",
+        claimed_by_session_id="ct-session",
+    )
+
+    resp = client.post(
+        f"{PREFIX}/kg/boards/{board_id}/pending/{entry_id}/retry"
+    )
+
+    assert resp.status_code == 404, resp.text
+    async with get_session_factory()() as db:
+        refreshed = await db.get(ConsolidationQueue, entry_id)
+        assert refreshed.status == "failed"
+        assert refreshed.source == "deterministic_projection"
+        assert refreshed.claimed_by_session_id == "ct-session"
 
 
 @pytest.mark.asyncio

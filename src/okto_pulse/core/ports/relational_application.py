@@ -21,6 +21,10 @@ from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
     from .checklist import ChecklistPersistencePort
+    from .code_investigation import CodeInvestigationStore
+    from .code_traceability import CodeTraceabilityReadPort, CodeTraceabilityStore
+    from .board_kg_analytics import BoardKgAnalyticsEvidencePort
+    from .delivery_forecast import DeliveryForecastEvidencePort
     from .guideline_policy import (
         GuidelinePolicyPersistencePort,
         SemanticGuidelineAssessmentPersistencePort,
@@ -30,6 +34,7 @@ if TYPE_CHECKING:
         QualityAssessmentLifecyclePersistencePort,
     )
     from .research_decision_ledger import ResearchDecisionLedgerPersistencePort
+    from .spec_dependency import SpecDependencyPersistencePort
 
 
 class RelationalApplicationAdapterMissing(RuntimeError):
@@ -165,6 +170,38 @@ class RelationalApplicationAdapter(Protocol):
         session: Any,
     ) -> "ResearchDecisionLedgerPersistencePort":
         """Return the transaction-bound SK-A RDL persistence port."""
+        ...
+
+    def spec_dependencies(
+        self,
+        session: Any,
+    ) -> "SpecDependencyPersistencePort":
+        """Return the transaction-bound operational Spec precedence authority."""
+        ...
+
+    def code_investigations(self, session: Any) -> "CodeInvestigationStore":
+        """Return the transaction-bound agent-attestation request/receipt ledger."""
+
+        ...
+
+    def code_traceability(self, session: Any) -> "CodeTraceabilityStore":
+        """Return the transaction-bound Evidence/Target traceability ledger."""
+
+        ...
+
+    def code_traceability_read(self, session: Any) -> "CodeTraceabilityReadPort":
+        """Return bounded Code Traceability aggregate projections."""
+
+        ...
+
+    def delivery_forecast_read(self, session: Any) -> "DeliveryForecastEvidencePort":
+        """Return authorized Phase 1 evidence for governed forecasting."""
+
+        ...
+
+    def board_kg_analytics_read(self, session: Any) -> "BoardKgAnalyticsEvidencePort":
+        """Return board-only KG/effectiveness evidence with no mutation surface."""
+
         ...
 
     def guideline_policy(

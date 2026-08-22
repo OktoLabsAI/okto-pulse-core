@@ -138,6 +138,7 @@ Semantic guideline protocol:
 - `okto_pulse_list_semantic_guideline_waiver_events` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_semantic_guideline_waivers` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_record_semantic_guideline_assessment` — docs: `okto-pulse://reference/tool-docs/guideline`
+- `okto_pulse_record_semantic_guideline_assessment_v2` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_request_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_revalidate_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_review_semantic_guideline_waiver` — docs: `okto-pulse://reference/tool-docs/guideline`
@@ -163,6 +164,27 @@ Semantic guideline protocol:
 - `okto_pulse_update_default_guideline_refs` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_update_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 
+## Code Traceability
+- `okto_pulse_acknowledge_implementation_overlap` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_clear_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_create_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_implementation_overlaps` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_link_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_list_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_list_implementation_targets` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_mark_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_set_code_evidence_disposition` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_start_code_investigation` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_implementation_target_execution_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_submit_implementation_target_resolution` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_supersede_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_unlink_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_update_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+
 ## Stories & Topics
 - `okto_pulse_archive_story` — docs: `okto-pulse://reference/tool-docs/story`
 - `okto_pulse_archive_topic` — docs: `okto-pulse://reference/tool-docs/topic`
@@ -183,9 +205,11 @@ Semantic guideline protocol:
 ## Quality Assessments
 - `okto_pulse_get_current_quality_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_get_quality_assessment_receipt` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_get_requirement_lint_preflight` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_list_quality_assessments` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_list_quality_findings` — docs: `okto-pulse://reference/tool-docs/quality`
 - `okto_pulse_record_ambiguity_assessment` — docs: `okto-pulse://reference/tool-docs/quality`
+- `okto_pulse_record_requirement_lint` — docs: `okto-pulse://reference/tool-docs/quality`
 
 ## Ideations
 - `okto_pulse_add_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
@@ -225,6 +249,11 @@ Semantic guideline protocol:
 - `okto_pulse_list_research_decisions` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_move_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_update_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
+
+## Specs — dependencies
+- `okto_pulse_add_spec_dependency` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_list_spec_dependencies` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_remove_spec_dependency` — docs: `okto-pulse://reference/tool-docs/spec`
 
 ## Specs — lifecycle & gates
 - `okto_pulse_add_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`

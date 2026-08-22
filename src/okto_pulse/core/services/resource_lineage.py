@@ -216,6 +216,39 @@ class AmbiguousResourceOrigin(ResourceLineageError):
         )
 
 
+class MetadataLineageCapabilityUnavailable(ResourceLineageError):
+    """Raised when a gate projection cannot use bounded lineage reads."""
+
+    required_methods: tuple[str, ...] = (
+        "load_entity_ref_metadata",
+        "load_parent_refs_metadata",
+        "collect_refs_metadata",
+        "filter_inherited_refs_metadata",
+    )
+
+    def __init__(
+        self,
+        *,
+        missing_methods: Iterable[str] = (),
+        reason: str = "metadata_lineage_capability_unavailable",
+    ) -> None:
+        missing = tuple(sorted({str(item) for item in missing_methods}))
+        super().__init__(
+            "metadata_lineage_capability_unavailable",
+            (
+                "The gate projection requires the complete metadata-only "
+                "resource-lineage capability."
+            ),
+            details={
+                "projection_profile": "gate",
+                "reason": reason,
+                "required_methods": list(self.required_methods),
+                "missing_methods": list(missing),
+                "fallback_allowed": False,
+            },
+        )
+
+
 @dataclass(frozen=True)
 class LineageEntityRef:
     entity_type: str
@@ -497,6 +530,34 @@ class ResourceLineageProvider(Protocol):
     ) -> dict[str, Any] | None: ...
 
 
+class ResourceLineageMetadataProvider(Protocol):
+    """Optional all-or-nothing origin-bounded lineage read capability."""
+
+    def supports_metadata_lineage(self) -> bool: ...
+
+    async def load_entity_ref_metadata(
+        self,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+    ) -> Any: ...
+
+    async def load_parent_refs_metadata(
+        self, board_id: str, root: Any
+    ) -> list[Any]: ...
+
+    async def collect_refs_metadata(
+        self, ref: Any
+    ) -> dict[str, list[dict[str, Any]]]: ...
+
+    async def filter_inherited_refs_metadata(
+        self,
+        root: Any,
+        parent: Any,
+        refs: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, list[dict[str, Any]]]: ...
+
+
 class ResolvedResourceLineageService:
     """Resolve Resource Gate resource lineage through an inverted provider."""
 
@@ -510,7 +571,7 @@ class ResolvedResourceLineageService:
         entity_id: str,
         *,
         include_coverage: bool = True,
-        projection_profile: Literal["legacy", "summary", "full"] = "full",
+        projection_profile: Literal["legacy", "summary", "gate", "full"] = "full",
     ) -> ResolvedResourceLineage:
         started_at = perf_counter()
         try:
@@ -549,16 +610,61 @@ class ResolvedResourceLineageService:
         entity_id: str,
         *,
         include_coverage: bool,
-        projection_profile: Literal["legacy", "summary", "full"],
+        projection_profile: Literal["legacy", "summary", "gate", "full"],
     ) -> ResolvedResourceLineage:
-        del projection_profile  # Projection formatting is handled by RG-01.4.
         self._validate_entity_type(entity_type)
-        root = await self._provider.load_entity_ref(
-            board_id, str(entity_type), entity_id
+        supports_metadata = projection_profile == "gate"
+        if supports_metadata:
+            missing_methods = tuple(
+                method_name
+                for method_name in MetadataLineageCapabilityUnavailable.required_methods
+                if not callable(getattr(self._provider, method_name, None))
+            )
+            capability_check = getattr(
+                self._provider,
+                "supports_metadata_lineage",
+                None,
+            )
+            if missing_methods:
+                raise MetadataLineageCapabilityUnavailable(
+                    missing_methods=missing_methods,
+                    reason="metadata_lineage_methods_missing",
+                )
+            if callable(capability_check):
+                try:
+                    declared_available = bool(capability_check())
+                except Exception as exc:
+                    raise MetadataLineageCapabilityUnavailable(
+                        reason="metadata_lineage_capability_check_failed",
+                    ) from exc
+                if not declared_available:
+                    raise MetadataLineageCapabilityUnavailable(
+                        reason="metadata_lineage_capability_disabled",
+                    )
+        load_entity_ref = (
+            self._provider.load_entity_ref_metadata  # type: ignore[attr-defined]
+            if supports_metadata
+            else self._provider.load_entity_ref
         )
+        load_parent_refs = (
+            self._provider.load_parent_refs_metadata  # type: ignore[attr-defined]
+            if supports_metadata
+            else self._provider.load_parent_refs
+        )
+        collect_refs = (
+            self._provider.collect_refs_metadata  # type: ignore[attr-defined]
+            if supports_metadata
+            else self._provider.collect_refs
+        )
+        root = await load_entity_ref(board_id, str(entity_type), entity_id)
         owner = self._coerce_entity_ref(root)
-        parents = await self._load_checked_parents(board_id, root, owner)
-        direct_refs = await self._provider.collect_refs(root)
+        parents = await self._load_checked_parents(
+            board_id,
+            root,
+            owner,
+            load_parent_refs=load_parent_refs,
+        )
+        direct_refs = await collect_refs(root)
 
         inherited_refs: dict[str, list[dict[str, Any]]] = {
             resource_type: [] for resource_type in RESOURCE_TYPES
@@ -567,10 +673,14 @@ class ResolvedResourceLineageService:
         inherited_na_sources: dict[str, Any] = {}
         for parent in parents:
             parent_ref = self._coerce_entity_ref(parent)
-            parent_refs = await self._provider.collect_refs(parent)
+            parent_refs = await collect_refs(parent)
             filter_inherited = getattr(
                 self._provider,
-                "filter_inherited_refs",
+                (
+                    "filter_inherited_refs_metadata"
+                    if supports_metadata
+                    else "filter_inherited_refs"
+                ),
                 None,
             )
             if callable(filter_inherited):
@@ -726,8 +836,11 @@ class ResolvedResourceLineageService:
         board_id: str,
         root: Any,
         owner: LineageEntityRef,
+        *,
+        load_parent_refs: Any | None = None,
     ) -> list[Any]:
-        parents = await self._provider.load_parent_refs(board_id, root)
+        loader = load_parent_refs or self._provider.load_parent_refs
+        parents = await loader(board_id, root)
         seen = {owner.ref}
         for parent in parents:
             parent_ref = self._coerce_entity_ref(parent)

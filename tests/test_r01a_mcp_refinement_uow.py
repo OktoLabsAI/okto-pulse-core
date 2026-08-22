@@ -168,6 +168,7 @@ async def _seed():
             title="Refine A",
             status=RefinementStatus.DRAFT,
             created_by=USER_ID,
+            delivery_context="brownfield",
             # draft->review has a content gate (>=1 non-empty in_scope item).
             in_scope=["the in-scope item"],
         )
@@ -184,6 +185,41 @@ async def _call(tool: str, **kwargs) -> dict:
     register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
+
+
+@pytest.mark.asyncio
+async def test_refinement_context_adds_traceability_without_changing_legacy_shape(
+    _seed,
+) -> None:
+    projection = AsyncMock(
+        return_value={"subject_type": "refinement", "subject_id": _seed}
+    )
+    with patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        projection,
+    ):
+        modern = await _call(
+            "okto_pulse_get_refinement_context",
+            board_id=BOARD_ID,
+            refinement_id=_seed,
+            profile="full",
+        )
+        legacy = await _call(
+            "okto_pulse_get_refinement_context",
+            board_id=BOARD_ID,
+            refinement_id=_seed,
+            profile="legacy",
+        )
+
+    assert modern["code_traceability"] == {
+        "subject_type": "refinement",
+        "subject_id": _seed,
+    }
+    assert modern["edition"] == legacy["edition"] == 1
+    assert "code_traceability" not in legacy
+    projection.assert_awaited_once()
+    assert projection.await_args.kwargs["profile"] == "full"
 
 
 @pytest.fixture
@@ -237,6 +273,7 @@ async def _board_scope_graph(_seed):
             title="Local sibling",
             status=RefinementStatus.DRAFT,
             created_by=USER_ID,
+            delivery_context="brownfield",
             in_scope=["sibling"],
         )
         foreign_parent = Ideation(
@@ -253,6 +290,7 @@ async def _board_scope_graph(_seed):
             title="foreign-secret-refinement",
             status=RefinementStatus.DRAFT,
             created_by=OTHER_USER_ID,
+            delivery_context="brownfield",
             in_scope=["foreign secret scope"],
         )
         db.add(foreign)
@@ -357,14 +395,34 @@ async def test_create_refinement_same_board_succeeds(_create_parent_ideations):
         board_id=BOARD_ID,
         ideation_id=local_ideation_id,
         title="Board-scoped refinement",
+        delivery_context="brownfield",
     )
 
     assert created["success"] is True
+    assert created["refinement"]["edition"] == 1
     async with get_session_factory()() as db:
         refinement = await db.get(Refinement, created["refinement"]["id"])
         assert refinement is not None
         assert refinement.board_id == BOARD_ID
         assert refinement.ideation_id == local_ideation_id
+
+
+@pytest.mark.asyncio
+async def test_create_refinement_requires_delivery_context(
+    _create_parent_ideations,
+):
+    local_ideation_id, _ = _create_parent_ideations
+    before = await _refinement_count()
+
+    result = await _call(
+        "okto_pulse_create_refinement",
+        board_id=BOARD_ID,
+        ideation_id=local_ideation_id,
+        title="Missing contextual classification",
+    )
+
+    assert result["error"] == "code_delivery_context_required"
+    assert await _refinement_count() == before
 
 
 @pytest.mark.asyncio
@@ -379,6 +437,7 @@ async def test_create_refinement_cross_board_is_not_found_and_writes_nothing(
         board_id=BOARD_ID,
         ideation_id=foreign_ideation_id,
         title="Must not cross boards",
+        delivery_context="brownfield",
     )
 
     assert result == {"error": "Failed to create refinement (ideation not found)"}
@@ -396,6 +455,7 @@ async def test_create_refinement_missing_parent_is_not_found_and_writes_nothing(
         board_id=BOARD_ID,
         ideation_id="missing-ideation",
         title="Must not create without a parent",
+        delivery_context="brownfield",
     )
 
     assert result == {"error": "Failed to create refinement (ideation not found)"}
@@ -408,14 +468,17 @@ async def test_get_update_move_delete_roundtrip(_seed):
         "okto_pulse_get_refinement", board_id=BOARD_ID, refinement_id=_seed
     )
     assert got["id"] == _seed
+    assert got["edition"] == 1
 
     updated = await _call(
         "okto_pulse_update_refinement",
         board_id=BOARD_ID,
         refinement_id=_seed,
         title="Refine A v2",
+        delivery_context="hybrid",
     )
     assert updated["refinement"]["title"] == "Refine A v2"
+    assert updated["refinement"]["delivery_context"] == "hybrid"
 
     moved = await _call(
         "okto_pulse_move_refinement",
@@ -424,6 +487,7 @@ async def test_get_update_move_delete_roundtrip(_seed):
         status="review",
     )
     assert moved["from_status"] == "draft" and moved["to_status"] == "review"
+    assert moved["edition"] == 1
 
     deleted = await _call(
         "okto_pulse_delete_refinement", board_id=BOARD_ID, refinement_id=_seed
@@ -431,6 +495,41 @@ async def test_get_update_move_delete_roundtrip(_seed):
     assert deleted["success"] is True
     assert deleted["takedown"]["artifact_type"] == "refinement"
     assert deleted["takedown"]["artifact_id"] == _seed
+
+
+@pytest.mark.asyncio
+async def test_move_to_draft_projects_new_refinement_edition(_seed):
+    await _call(
+        "okto_pulse_move_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        status="review",
+    )
+    returned_to_draft = await _call(
+        "okto_pulse_move_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        status="draft",
+    )
+    assert returned_to_draft["edition"] == 2
+
+    got = await _call(
+        "okto_pulse_get_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+    )
+    with patch.object(
+        mcp_server,
+        "_mcp_code_traceability_projection",
+        AsyncMock(return_value={}),
+    ):
+        context = await _call(
+            "okto_pulse_get_refinement_context",
+            board_id=BOARD_ID,
+            refinement_id=_seed,
+            profile="full",
+        )
+    assert got["edition"] == context["edition"] == 2
 
 
 @pytest.mark.asyncio

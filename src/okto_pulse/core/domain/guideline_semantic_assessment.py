@@ -1034,6 +1034,11 @@ def _bound_pinpoint_payload(
         "subject_type": pinpoint.subject.entity_type.value,
         "subject_id": pinpoint.subject.subject_id,
         "subject_version": pinpoint.subject.subject_version,
+        **(
+            {"subject_edition": pinpoint.subject.subject_edition}
+            if pinpoint.subject.subject_edition is not None
+            else {}
+        ),
         "input_digest": pinpoint.input_digest,
     }
 
@@ -1063,6 +1068,15 @@ def semantic_assessment_input_digest_v1(
                 "subject_id": context.subject_snapshot.subject.subject_id,
                 "subject_version": (
                     context.subject_snapshot.subject.subject_version
+                ),
+                **(
+                    {
+                        "subject_edition": (
+                            context.subject_snapshot.subject.subject_edition
+                        )
+                    }
+                    if context.subject_snapshot.subject.subject_edition is not None
+                    else {}
                 ),
                 "content_digest": context.subject_snapshot.content_digest,
                 "last_semantic_editor_id": (
@@ -1142,6 +1156,11 @@ def semantic_assessment_receipt_digest_v1(
                 "subject_type": receipt.subject.entity_type.value,
                 "subject_id": receipt.subject.subject_id,
                 "subject_version": receipt.subject.subject_version,
+                **(
+                    {"subject_edition": receipt.subject.subject_edition}
+                    if receipt.subject.subject_edition is not None
+                    else {}
+                ),
                 "content_digest": receipt.subject_content_digest,
                 "last_semantic_editor_id": receipt.last_semantic_editor_id,
             },

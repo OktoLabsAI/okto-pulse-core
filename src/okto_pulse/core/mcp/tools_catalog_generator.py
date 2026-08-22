@@ -76,7 +76,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Design Systems", "board",
      r"design_system"),
     ("Semantic Guideline Assessments & Exceptions", "guideline",
-     r"^okto_pulse_(record_semantic_guideline_assessment|"
+     r"^okto_pulse_(record_semantic_guideline_assessment(?:_v2)?|"
      r"list_semantic_guideline_assessments|"
      r"get_semantic_guideline_assessment|"
      r"get_current_semantic_guideline_assessment|"
@@ -87,17 +87,23 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"(request|review|revoke|revalidate)_semantic_guideline_waiver)$"),
     ("Guidelines", "guideline",
      r"guideline"),
+    ("Code Traceability", "code-traceability",
+     r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
+     r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),
     # --- SDLC entities ------------------------------------------------------
     ("Stories & Topics", "story",
      r"(story$|stories|topic)"),
     ("Quality Assessments", "quality",
-     r"^okto_pulse_(record_ambiguity_assessment|"
+     r"^okto_pulse_(record_ambiguity_assessment|record_requirement_lint|"
+     r"get_requirement_lint_preflight|"
      r"get_current_quality_assessment|get_quality_assessment_receipt|"
      r"list_quality_assessments|list_quality_findings)$"),
     ("Ideations", "ideation",
      r"ideation"),
     ("Refinements", "refinement",
      r"refinement|research_decision"),
+    ("Specs — dependencies", "spec",
+     r"^okto_pulse_(add|list|remove)_spec_dependenc(?:y|ies)$"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
      r"get_spec_context|get_spec_history|derive_spec_from_ideation|"

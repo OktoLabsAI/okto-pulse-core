@@ -39,6 +39,8 @@ def _id(prefix: str) -> str:
 
 def _validation_payload() -> dict:
     return {
+        "expected_subject_version": 1,
+        "idempotency_key": "reviewer-separation-validation",
         "confidence": 95,
         "confidence_justification": "The implementation was inspected.",
         "estimated_completeness": 95,
@@ -186,8 +188,32 @@ async def test_off_warn_and_legacy_modes_persist_transparent_decision(
 
         persisted = await db.get(Card, card_id)
         assert persisted.board_id == board_id
-        assert persisted.status == CardStatus.VALIDATION
+        assert persisted.status == CardStatus.REJECTED
+        assert result["validation_outcome"] == "failed"
+        assert result["completion_outcome"] == "rejected"
+        assert result["reviewer_name"] == "Task Reviewer"
+        assert result["evaluator_name"] == "Task Reviewer"
         assert persisted.validations[-1]["reviewer_separation"] == decision
+        assert persisted.validations[-1]["reviewer_name"] == "Task Reviewer"
+        assert persisted.validations[-1]["evaluator_name"] == "Task Reviewer"
+        assert len(persisted.rejection_records) == 1
+        rejection = persisted.rejection_records[0]
+        assert persisted.current_rejection_id == rejection["id"]
+        assert rejection["source_id"] == result["id"]
+        assert rejection["kind"] == "task_validation"
+
+        replay = await CardService(db).submit_task_validation(
+            card_id,
+            REVIEWER_ID,
+            "Task Reviewer",
+            _validation_payload(),
+        )
+        assert replay["id"] == result["id"]
+        assert replay["reviewer_name"] == "Task Reviewer"
+        assert replay["evaluator_name"] == "Task Reviewer"
+        assert replay["replayed"] is True
+        await db.refresh(persisted)
+        assert len(persisted.rejection_records) == 1
 
 
 @pytest.mark.asyncio
@@ -219,7 +245,14 @@ async def test_enforce_fails_closed_before_validation_or_status_mutation(
 class _Ctx:
     agent_id = REVIEWER_ID
     agent_name = "Task Reviewer"
-    permissions = ["card.validation.submit"]
+    permissions = [
+        "card.validation.submit",
+        "card.validation.read",
+        "code_traceability.investigation.read",
+        "code_traceability.evidence.read",
+        "code_traceability.target.read",
+        "code_traceability.overlap.read",
+    ]
 
 
 async def _call_tool(name: str, db_factory, **kwargs) -> dict:

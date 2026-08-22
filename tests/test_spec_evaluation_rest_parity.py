@@ -23,10 +23,38 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api.ideations import router as ideations_router
 from okto_pulse.community.api.specs import router as specs_router
 from okto_pulse.community.api import auth_deps as _auth_mod
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.services import main as main_service
 from sqlalchemy_test_models import Board, Spec, SpecStatus
 
 USER_ID = "spec-eval-rest-user"
+
+
+def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=1,
+    )
+    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+        spec_id=spec_id,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        provenance=provenance,
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 def _evaluation_payload(recommendation: str = "approve") -> dict:
@@ -69,6 +97,7 @@ async def spec_eval_client(db_factory):
             decisions=[{"id": "dec_seed", "title": "Seed decision",
                         "rationale": "Decision de fixture p/ o gate decision-required.",
                         "status": "active"}],
+            **_direct_spec_context_fields(validated_spec_id),
         ))
         db.add(Spec(
             id=draft_spec_id, board_id=board_id, title="Draft Spec",

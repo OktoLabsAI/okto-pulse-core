@@ -420,20 +420,26 @@ async def ensure_research_decision_snapshot(
     *,
     refinement,
     uow: PulseUnitOfWork,
+    refinement_version: int | None = None,
+    require_existing: bool = False,
 ) -> ResearchDecisionLedgerSnapshot:
     """Freeze current RDL heads at the authoritative Refinement version."""
 
     board_id = str(refinement.board_id)
     refinement_id = str(refinement.id)
-    refinement_version = int(refinement.version)
+    resolved_version = int(
+        refinement.version if refinement_version is None else refinement_version
+    )
     persistence = uow.services.research_decisions
     existing = await persistence.get_snapshot_for_version(
         board_id=board_id,
         refinement_id=refinement_id,
-        refinement_version=refinement_version,
+        refinement_version=resolved_version,
     )
     if existing is not None:
         return existing
+    if require_existing:
+        raise ValueError("research_decision_snapshot_required")
     status = (
         refinement.status
         if isinstance(refinement.status, RefinementStatus)
@@ -442,7 +448,7 @@ async def ensure_research_decision_snapshot(
     context = RefinementLedgerContext(
         board_id=board_id,
         refinement_id=refinement_id,
-        version=refinement_version,
+        version=resolved_version,
         status=status,
         archived=bool(getattr(refinement, "archived", False)),
     )
@@ -470,9 +476,14 @@ async def bind_research_decisions_to_spec(
         or str(spec.refinement_id) != str(refinement.id)
     ):
         raise ValueError("research_decision_derivation_scope_mismatch")
+    source_version = getattr(spec, "source_refinement_version", None)
     snapshot = await ensure_research_decision_snapshot(
         refinement=refinement,
         uow=uow,
+        refinement_version=(
+            int(source_version) if source_version is not None else None
+        ),
+        require_existing=source_version is not None,
     )
     derivation = ResearchDecisionLedgerService().derive_resolved_references(
         snapshot=snapshot,

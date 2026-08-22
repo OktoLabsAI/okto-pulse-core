@@ -131,7 +131,7 @@ async def _seed_spec_with_kb():
             id=spec_id,
             board_id=BOARD_ID,
             title="Spec for KB copy bug repro",
-            status=SpecStatus.APPROVED,
+            status=SpecStatus.DRAFT,
             created_by=USER_ID,
             functional_requirements=["FR1"],
             acceptance_criteria=["AC1"],

@@ -9,6 +9,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
+from okto_pulse.core.domain.code_traceability import (
+    CodeDeliveryContextRequired,
+    DeliveryContext,
+)
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
@@ -24,6 +28,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.models.schemas import RefinementCreate
 from okto_pulse.core.services.main import RefinementService
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 
 
 USER_ID = "refinement-parent-context-agent"
@@ -41,7 +46,14 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": ["board:read", "specs:create"],
+            "permissions": [
+                "board:read",
+                "specs:create",
+                "code_traceability.investigation.read",
+                "code_traceability.evidence.read",
+                "code_traceability.target.read",
+                "code_traceability.overlap.read",
+            ],
         },
     )()
 
@@ -112,8 +124,9 @@ async def test_create_refinement_preserves_parent_context_with_explicit_descript
             RefinementCreate(
                 ideation_id=ideation_id,
                 title="Refine Resource Gate",
-                description="Focused refinement for Level 1 and Level 2 gates.",
-                in_scope=["Resource state", "Task coverage gate"],
+                    description="Focused refinement for Level 1 and Level 2 gates.",
+                    in_scope=["Resource state", "Task coverage gate"],
+                    delivery_context=DeliveryContext.BROWNFIELD,
             ),
             skip_ownership_check=True,
         )
@@ -157,8 +170,9 @@ async def test_create_refinement_serializes_manual_screen_mockups():
             RefinementCreate(
                 ideation_id=ideation_id,
                 title="Refine Resource Gate Mockups",
-                description="Refinement with a manually supplied mockup.",
-                in_scope=["Mockup persistence"],
+                    description="Refinement with a manually supplied mockup.",
+                    in_scope=["Mockup persistence"],
+                    delivery_context=DeliveryContext.BROWNFIELD,
                 screen_mockups=[
                     {
                         "id": "mock-refinement-1",
@@ -204,8 +218,9 @@ async def test_mcp_refinement_context_exposes_parent_ideation_and_resolved_refer
             RefinementCreate(
                 ideation_id=ideation_id,
                 title="Refine Resource Gate Context",
-                description="Agent supplied a short description.",
-                in_scope=["Parent context visibility"],
+                    description="Agent supplied a short description.",
+                    in_scope=["Parent context visibility"],
+                    delivery_context=DeliveryContext.BROWNFIELD,
             ),
             skip_ownership_check=True,
         )
@@ -232,14 +247,13 @@ async def test_mcp_refinement_context_exposes_parent_ideation_and_resolved_refer
 
 
 @pytest.mark.asyncio
-async def test_refinement_to_spec_derivation_includes_parent_context_for_legacy_refinement():
+async def test_legacy_refinement_without_context_cannot_derive_new_spec():
     board_id, ideation_id, _ = await _seed_ideation()
     refinement_id = _id()
     db_factory = get_session_factory()
 
     async with db_factory() as db:
-        db.add(
-            Refinement(
+        refinement = Refinement(
                 id=refinement_id,
                 ideation_id=ideation_id,
                 board_id=board_id,
@@ -249,19 +263,15 @@ async def test_refinement_to_spec_derivation_includes_parent_context_for_legacy_
                 status=RefinementStatus.DONE,
                 created_by=USER_ID,
             )
-        )
+        db.add(refinement)
+        await db.flush()
+        await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
 
     async with db_factory() as db:
-        spec = await RefinementService(db).derive_spec(
-            refinement_id,
-            USER_ID,
-            skip_ownership_check=True,
-        )
-        await db.commit()
-
-        assert spec is not None
-        assert "## Refinement Description" in spec.context
-        assert "Legacy scope" in spec.context
-        assert "## Parent Ideation Context" in spec.context
-        assert "Entities can advance without explicit resource completeness." in spec.context
+        with pytest.raises(CodeDeliveryContextRequired):
+            await RefinementService(db).derive_spec(
+                refinement_id,
+                USER_ID,
+                skip_ownership_check=True,
+            )

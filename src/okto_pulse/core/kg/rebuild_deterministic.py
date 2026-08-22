@@ -64,6 +64,9 @@ DETERMINISTIC_REBUILD_ARTIFACT_TYPES: frozenset[str] = frozenset({
     "task",
     "test",
     "bug",
+    "code_investigation_receipt",
+    "code_evidence",
+    "implementation_target",
     # Backward-compatible queue/source rows from older rebuild manifests.
     "card",
 })
@@ -554,10 +557,29 @@ def default_source_materialiser(
 
     nodes = tuple(
         {
-            "type": str(row.get("artifact_type", "unknown")),
+            "type": (
+                "Entity"
+                if str(row.get("artifact_type", ""))
+                in {
+                    "code_investigation_receipt",
+                    "code_evidence",
+                    "implementation_target",
+                }
+                else str(row.get("artifact_type", "unknown"))
+            ),
             "id": str(row.get("id", "")),
             "source_ref": str(row.get("source_ref", "")),
             "content_hash": str(row.get("content_hash", "")),
+            **(
+                {"kind_of": str(row.get("artifact_type", ""))}
+                if str(row.get("artifact_type", ""))
+                in {
+                    "code_investigation_receipt",
+                    "code_evidence",
+                    "implementation_target",
+                }
+                else {}
+            ),
         }
         for row in sources
     )

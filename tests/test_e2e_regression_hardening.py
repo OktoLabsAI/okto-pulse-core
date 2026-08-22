@@ -18,6 +18,7 @@ from sqlalchemy_test_models import (
     SprintStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate, SprintMove
+from okto_pulse.core.domain.spec_validation import SpecValidationGateNotReady
 from okto_pulse.core.services.main import (
     CardOperationError,
     CardService,
@@ -40,6 +41,9 @@ def _id(prefix: str) -> str:
 
 def _validation_payload() -> dict:
     return {
+        "expected_validation_edition": 1,
+        "expected_spec_version": 1,
+        "expected_head_revision": 0,
         "completeness": 95,
         "completeness_justification": "All mandatory checks are satisfied.",
         "assertiveness": 90,
@@ -49,6 +53,34 @@ def _validation_payload() -> dict:
         "general_justification": "Ready for execution.",
         "recommendation": "approve",
     }
+
+
+def _install_current_external_requirement_lint(monkeypatch) -> None:
+    """Keep architecture-focused tests past the independent lint admission gate."""
+
+    from okto_pulse.core.ports import relational_application
+
+    base_adapter = relational_application.require_relational_application_adapter()
+
+    class CurrentExternalLint:
+        async def get_current(self, **kwargs):
+            assert kwargs["subject_type"].value == "spec"
+            assert kwargs["assessment_kind"].value == "requirement_lint"
+            assert kwargs["subject_edition"] == 1
+            return (object(), object())
+
+    class Adapter:
+        def quality_assessments(self, _db):
+            return CurrentExternalLint()
+
+        def __getattr__(self, name):
+            return getattr(base_adapter, name)
+
+    monkeypatch.setattr(
+        relational_application,
+        "require_relational_application_adapter",
+        lambda: Adapter(),
+    )
 
 
 async def _seed_board_and_spec(
@@ -285,7 +317,10 @@ async def test_bug_regression_gate_blocks_direct_jump_to_validation(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_spec_validation_blocks_missing_architecture_when_policy_requires_it(db_factory):
+async def test_spec_validation_blocks_missing_architecture_when_policy_requires_it(
+    db_factory, monkeypatch
+):
+    _install_current_external_requirement_lint(monkeypatch)
     async with db_factory() as db:
         _, spec_id = await _seed_board_and_spec(
             db,
@@ -296,18 +331,27 @@ async def test_spec_validation_blocks_missing_architecture_when_policy_requires_
             },
         )
 
-        with pytest.raises(ResourceGateViolation) as exc:
+        with pytest.raises(SpecValidationGateNotReady) as exc:
             await SpecService(db).submit_spec_validation(
                 spec_id,
                 USER_ID,
                 "Validator",
                 _validation_payload(),
             )
-        assert exc.value.code == "resource_gate_spec_missing_architecture"
+        assert exc.value.code == "spec_validation_gate_not_ready"
+        assert exc.value.details == {"reason": "ResourceGateViolation"}
+        assert isinstance(exc.value.__cause__, ResourceGateViolation)
+        assert (
+            exc.value.__cause__.code
+            == "resource_gate_spec_missing_architecture"
+        )
 
 
 @pytest.mark.asyncio
-async def test_spec_validation_accepts_architecture_na_and_policy_off(db_factory):
+async def test_spec_validation_accepts_architecture_na_and_policy_off(
+    db_factory, monkeypatch
+):
+    _install_current_external_requirement_lint(monkeypatch)
     async with db_factory() as db:
         board_id, spec_id = await _seed_board_and_spec(
             db,

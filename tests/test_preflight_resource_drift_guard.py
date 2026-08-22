@@ -109,7 +109,7 @@ def test_ac1_preflight_md_verbatim() -> None:
     text = _read(PREFLIGHT_MD)
     assert text.startswith("---"), "preflight.md missing leading frontmatter."
     match = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
-    assert match is not None and 'version: "1.0"' in match.group(1), (
+    assert match is not None and 'version: "1.1"' in match.group(1), (
         "preflight.md frontmatter missing version."
     )
     for seq in PREFLIGHT_SEQUENCES:

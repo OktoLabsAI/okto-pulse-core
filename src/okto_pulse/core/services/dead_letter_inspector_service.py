@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from okto_pulse.core.domain.code_traceability_kg import (
+    KGDeadLetterReprocessScope,
+)
 from okto_pulse.core.ports.application_persistence import bounded_page_offset
 from okto_pulse.core.ports.kg_operational import get_kg_worker_queue_port
 
@@ -75,6 +78,7 @@ async def list_cognitive_dlq_rows(
     *,
     limit: int,
     offset: int,
+    include_code_traceability: bool = False,
 ) -> tuple[int, list[Any]]:
     """Read the board's technical-DLQ rows for the cognitive DLQ surface
     (spec R01A MCP-FU3B): the total count + a page of ``ConsolidationDeadLetter``
@@ -87,6 +91,7 @@ async def list_cognitive_dlq_rows(
         board_id=board_id,
         limit=limit,
         offset=offset,
+        include_code_traceability=include_code_traceability,
     )
     return total, list(rows)
 
@@ -97,6 +102,7 @@ async def list_dead_letter_rows(
     *,
     limit: int = 50,
     offset: int = 0,
+    include_code_traceability: bool = True,
 ) -> dict[str, Any]:
     """Paginated list of DLQ rows for a board.
 
@@ -107,12 +113,22 @@ async def list_dead_letter_rows(
     """
     bounded_limit = max(1, min(int(limit or 50), 200))
     bounded_offset = bounded_page_offset(offset)
-    total, rows = await get_kg_worker_queue_port().list_dead_letter_page(
-        db,
-        board_id=board_id,
-        limit=bounded_limit,
-        offset=bounded_offset,
-    )
+    queue = get_kg_worker_queue_port()
+    if include_code_traceability:
+        total, rows = await queue.list_dead_letter_page(
+            db,
+            board_id=board_id,
+            limit=bounded_limit,
+            offset=bounded_offset,
+        )
+    else:
+        total, rows = await queue.list_dead_letter_page(
+            db,
+            board_id=board_id,
+            limit=bounded_limit,
+            offset=bounded_offset,
+            include_code_traceability=False,
+        )
     projected = [_row_to_dict(row) for row in rows]
     return {
         "rows": projected,
@@ -131,6 +147,7 @@ async def reprocess_dead_letter_rows(
     *,
     dead_letter_ids: Iterable[str] | None = None,
     limit: int = 50,
+    scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
 ) -> dict[str, Any]:
     """Move DLQ rows back to ConsolidationQueue for another processing attempt.
 
@@ -140,13 +157,40 @@ async def reprocess_dead_letter_rows(
     queue uniqueness constraint.
     """
     limit = max(1, min(int(limit or 50), 200))
-    ids = [str(item) for item in (dead_letter_ids or []) if str(item).strip()]
+    resolved_scope = KGDeadLetterReprocessScope(scope)
+    supplied_ids = [
+        str(item).strip()
+        for item in (dead_letter_ids or [])
+        if str(item).strip()
+    ]
+    ids = list(dict.fromkeys(supplied_ids))
 
+    if resolved_scope is KGDeadLetterReprocessScope.CODE_TRACEABILITY and (
+        not ids or len(ids) != len(supplied_ids) or len(ids) > limit
+    ):
+        return {
+            "success": False,
+            "blocked": True,
+            "mutated": False,
+            "scope": resolved_scope.value,
+            "error": "code_traceability_dlq_selection_invalid",
+            "requested": len(supplied_ids),
+            "selected": 0,
+            "requeued": [],
+            "already_queued": [],
+            "requeued_count": 0,
+            "already_queued_count": 0,
+        }
+
+    kwargs: dict[str, Any] = {
+        "board_id": board_id,
+        "dead_letter_ids": ids,
+        "limit": limit,
+    }
+    # Preserve compatibility for generic providers while making the privileged
+    # CT scope explicit at the edition boundary.
+    if resolved_scope is KGDeadLetterReprocessScope.CODE_TRACEABILITY:
+        kwargs["scope"] = resolved_scope
     return dict(
-        await get_kg_worker_queue_port().reprocess_dead_letter_rows(
-            db,
-            board_id=board_id,
-            dead_letter_ids=ids,
-            limit=limit,
-        )
+        await get_kg_worker_queue_port().reprocess_dead_letter_rows(db, **kwargs)
     )

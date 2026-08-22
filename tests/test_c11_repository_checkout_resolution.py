@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import multiprocessing
 import os
 import sys
@@ -25,15 +26,6 @@ def _checkout(workspace: Path, name: str, edition: str) -> Path:
     return repo
 
 
-def _capture_spawned_import_paths(queue) -> None:  # noqa: ANN001
-    queue.put(
-        {
-            "sys_path": tuple(sys.path),
-            "pythonpath": os.environ.get("PYTHONPATH", ""),
-        }
-    )
-
-
 def test_c11_explicit_repository_override_wins_and_is_provenanced(
     tmp_path: Path,
 ) -> None:
@@ -54,7 +46,7 @@ def test_c11_explicit_repository_override_wins_and_is_provenanced(
     assert resolved.checked == (str(configured.resolve()),)
 
 
-def test_c11_current_name_wins_globally_before_legacy_name(
+def test_c11_hyphenated_anchor_family_wins_before_alternate_name(
     tmp_path: Path,
 ) -> None:
     outer = tmp_path / "outer"
@@ -73,6 +65,89 @@ def test_c11_current_name_wins_globally_before_legacy_name(
     assert resolved.repo_root == current.resolve()
     assert resolved.repo_root != legacy.resolve()
     assert resolved.selected_by.startswith("inferred-current:")
+
+
+@pytest.mark.parametrize(
+    ("anchor_edition", "paired_edition"),
+    (("core", "community"), ("community", "core")),
+)
+def test_c11_okto_labs_anchor_selects_its_paired_family_before_stale_sibling(
+    tmp_path: Path,
+    anchor_edition: str,
+    paired_edition: str,
+) -> None:
+    workspace = tmp_path / "workspace"
+    labs_names = {
+        "core": "okto_labs_pulse_core",
+        "community": "okto_labs_pulse_community",
+    }
+    hyphenated_names = {
+        "core": "okto-pulse-core",
+        "community": "okto-pulse",
+    }
+    anchor = _checkout(workspace, labs_names[anchor_edition], anchor_edition)
+    expected = _checkout(workspace, labs_names[paired_edition], paired_edition)
+    stale = _checkout(
+        workspace,
+        hyphenated_names[paired_edition],
+        paired_edition,
+    )
+
+    resolved = resolve_repository_checkout(
+        paired_edition,
+        anchor_repo=anchor,
+        environ={},
+    )
+
+    assert resolved is not None
+    assert resolved.repo_root == expected.resolve()
+    assert resolved.repo_root != stale.resolve()
+    assert resolved.selected_by.startswith("inferred-legacy:")
+
+
+def test_c11_anchor_family_falls_back_to_other_supported_layout(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    anchor = _checkout(workspace, "okto_labs_pulse_core", "core")
+    compatible = _checkout(workspace, "okto-pulse", "community")
+
+    resolved = resolve_repository_checkout(
+        "community",
+        anchor_repo=anchor,
+        environ={},
+    )
+
+    assert resolved is not None
+    assert resolved.repo_root == compatible.resolve()
+    assert resolved.selected_by.startswith("inferred-current:")
+
+
+def test_c11_workspace_override_preserves_anchor_family_precedence(
+    tmp_path: Path,
+) -> None:
+    anchor = _checkout(
+        tmp_path / "anchor-workspace",
+        "okto_labs_pulse_core",
+        "core",
+    )
+    configured_workspace = tmp_path / "configured-workspace"
+    expected = _checkout(
+        configured_workspace,
+        "okto_labs_pulse_community",
+        "community",
+    )
+    _checkout(configured_workspace, "okto-pulse", "community")
+
+    resolved = resolve_repository_checkout(
+        "community",
+        anchor_repo=anchor,
+        environ={"OKTO_PULSE_WORKSPACE_ROOT": str(configured_workspace)},
+    )
+
+    assert resolved is not None
+    assert resolved.repo_root == expected.resolve()
+    assert resolved.selected_by == "OKTO_PULSE_WORKSPACE_ROOT"
 
 
 def test_c11_invalid_explicit_override_fails_closed(
@@ -115,9 +190,25 @@ def test_c11_activation_removes_legacy_roots_from_parent_and_child_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # This test exercises inferred current-vs-legacy selection. The suite may
+    # pin the real paired checkouts explicitly; those process-level overrides
+    # must not replace the synthetic workspace under test.
+    monkeypatch.delenv("OKTO_PULSE_CORE_REPO", raising=False)
+    monkeypatch.delenv("OKTO_PULSE_COMMUNITY_REPO", raising=False)
     workspace = tmp_path / "workspace"
     current_core = _checkout(workspace, "okto-pulse-core", "core")
     current_community = _checkout(workspace, "okto-pulse", "community")
+    probe_module = "c11_spawn_path_probe"
+    (current_core / "src" / f"{probe_module}.py").write_text(
+        "import os\n"
+        "import sys\n\n"
+        "def capture(queue):\n"
+        "    queue.put({\n"
+        "        'sys_path': tuple(sys.path),\n"
+        "        'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+        "    })\n",
+        encoding="utf-8",
+    )
     legacy_core = _checkout(workspace, "okto_labs_pulse_core", "core")
     legacy_community = _checkout(
         workspace,
@@ -157,9 +248,10 @@ def test_c11_activation_removes_legacy_roots_from_parent_and_child_paths(
     assert not any("okto_labs_pulse_" in value for value in sys.path)
     assert "okto_labs_pulse_" not in os.environ["PYTHONPATH"]
 
+    probe = importlib.import_module(probe_module)
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
-    process = context.Process(target=_capture_spawned_import_paths, args=(queue,))
+    process = context.Process(target=probe.capture, args=(queue,))
     process.start()
     process.join(timeout=20)
     assert process.exitcode == 0
@@ -169,3 +261,44 @@ def test_c11_activation_removes_legacy_roots_from_parent_and_child_paths(
     assert tuple(child["sys_path"][:2]) == expected
     assert "okto_labs_pulse_" not in os.pathsep.join(child["sys_path"])
     assert "okto_labs_pulse_" not in child["pythonpath"]
+    sys.modules.pop(probe_module, None)
+
+
+def test_c11_labs_activation_removes_stale_hyphenated_roots(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    labs_core = _checkout(workspace, "okto_labs_pulse_core", "core")
+    labs_community = _checkout(
+        workspace,
+        "okto_labs_pulse_community",
+        "community",
+    )
+    stale_core = _checkout(workspace, "okto-pulse-core", "core")
+    stale_community = _checkout(workspace, "okto-pulse", "community")
+    search_path = [
+        str(stale_core / "src"),
+        str(stale_community / "src"),
+        str(labs_core / "src"),
+        str(labs_community / "src"),
+    ]
+    environ = {"PYTHONPATH": os.pathsep.join(search_path)}
+
+    activation = activate_repository_checkout_paths(
+        anchor_repo=labs_community,
+        environ=environ,
+        search_path=search_path,
+    )
+
+    expected = (
+        str((labs_core / "src").resolve()),
+        str((labs_community / "src").resolve()),
+    )
+    stale_sources = {
+        str((stale_core / "src").resolve()),
+        str((stale_community / "src").resolve()),
+    }
+    assert tuple(search_path[:2]) == expected
+    assert activation.pythonpath[:2] == expected
+    assert stale_sources.isdisjoint(search_path)
+    assert stale_sources.isdisjoint(environ["PYTHONPATH"].split(os.pathsep))

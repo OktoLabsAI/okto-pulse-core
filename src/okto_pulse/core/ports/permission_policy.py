@@ -35,6 +35,7 @@ from okto_pulse.core.domain.permissions import (
     PERMISSION_REGISTRY,
     SKA_PERMISSION_INTRODUCTION_V1,
     SKB3_PERMISSION_INTRODUCTION_V1,
+    SKM_PERMISSION_INTRODUCTION_V1,
     _flatten_registry,
     _get_nested,
     _match_builtin_preset_name,
@@ -149,6 +150,12 @@ def skb3_permission_introduction_v1() -> PermissionIntroductionManifest:
     return SKB3_PERMISSION_INTRODUCTION_V1
 
 
+def skm_permission_introduction_v1() -> PermissionIntroductionManifest:
+    """Return the immutable SK-M/v1 permission-introduction manifest."""
+
+    return SKM_PERMISSION_INTRODUCTION_V1
+
+
 def permission_introduction_manifests() -> tuple[PermissionIntroductionManifest, ...]:
     """Return all permission introductions in deterministic upgrade order."""
 
@@ -224,6 +231,7 @@ __all__ = [
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "SKA_PERMISSION_INTRODUCTION_V1",
     "SKB3_PERMISSION_INTRODUCTION_V1",
+    "SKM_PERMISSION_INTRODUCTION_V1",
     "builtin_permission_presets",
     "builtin_preset_name",
     "evaluate_permission",
@@ -240,5 +248,6 @@ __all__ = [
     "set_permission_flag",
     "ska_permission_introduction_v1",
     "skb3_permission_introduction_v1",
+    "skm_permission_introduction_v1",
     "validate_permission_flag_values",
 ]

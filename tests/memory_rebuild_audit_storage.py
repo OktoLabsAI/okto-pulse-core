@@ -243,6 +243,41 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             self._records.pop(source_identity, None)
             return "consumed"
 
+    def consume_json_replacing_terminal_receipt(
+        self,
+        *,
+        source_key: RebuildAuditKey,
+        expected_source: Mapping[str, Any],
+        receipt_key: RebuildAuditKey,
+        expected_terminal_receipt: Mapping[str, Any],
+        receipt_payload: Mapping[str, Any],
+    ) -> AtomicConsumeOutcome:
+        with self._lock:
+            source_identity = self._identity(source_key)
+            receipt_identity = self._identity(receipt_key)
+            expected = dict(expected_source)
+            expected_terminal = dict(expected_terminal_receipt)
+            receipt = dict(receipt_payload)
+            if self._records.get(receipt_identity) == receipt:
+                current_source = self._records.get(source_identity)
+                if current_source is None:
+                    return "receipt_exists"
+                if current_source != expected:
+                    return "source_mismatch"
+                self._records.pop(source_identity, None)
+                return "consumed"
+            if self._records.get(receipt_identity) != expected_terminal:
+                return "receipt_conflict"
+            if self._records.get(source_identity) != expected:
+                return (
+                    "source_missing"
+                    if source_identity not in self._records
+                    else "source_mismatch"
+                )
+            self._records[receipt_identity] = copy.deepcopy(receipt)
+            self._records.pop(source_identity, None)
+            return "consumed"
+
     def quarantine_storage(
         self,
         *,

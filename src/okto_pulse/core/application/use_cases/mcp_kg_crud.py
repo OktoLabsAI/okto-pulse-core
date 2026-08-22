@@ -90,13 +90,25 @@ class ListCanonicalDebtUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        data = await uow.services.kg.list_canonical_debt(
-            board_id=command.board_id,
-            artifact_type=command.artifact_type,
-            state=command.state,
-            limit=command.limit,
-            offset=command.offset,
+        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+            EvaluateCodeTraceabilityKGReadAccessUseCase,
         )
+
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
+        )
+        kwargs = {
+            "board_id": command.board_id,
+            "artifact_type": command.artifact_type,
+            "state": command.state,
+            "limit": command.limit,
+            "offset": command.offset,
+        }
+        if not ct_access.allowed:
+            kwargs["include_code_traceability"] = False
+        data = await uow.services.kg.list_canonical_debt(**kwargs)
         return ListCanonicalDebtResult(data)
 
 

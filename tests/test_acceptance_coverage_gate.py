@@ -8,9 +8,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecMove
+from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import SpecService
 
 
@@ -34,6 +39,30 @@ def _stub_ctx(board_id: str):
             "permissions": ["board:read", "specs:update"],
         },
     )()
+
+
+def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=1,
+    )
+    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+        spec_id=spec_id,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        provenance=provenance,
+        subject_version=1,
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
@@ -88,6 +117,7 @@ async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
                 ],
                 business_rules=[],
                 api_contracts=[],
+                **_direct_spec_context_fields(spec_id),
             )
         )
         await db.commit()

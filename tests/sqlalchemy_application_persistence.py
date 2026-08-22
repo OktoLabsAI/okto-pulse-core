@@ -105,6 +105,26 @@ def _model(entity: str):
 
 
 def _predicate(model: Any, item: ApplicationFilter):
+    if model is models.Card and item.field == "conclusion_actor_id":
+        if item.operator != "eq" or not str(item.value or "").strip():
+            raise ValueError(f"unsupported_application_operator:{item.operator}")
+        entries = func.json_each(
+            func.coalesce(models.Card.conclusions, "[]")
+        ).table_valued("key", "value", joins_implicitly=True)
+        actor_id = func.coalesce(
+            func.json_extract(entries.c.value, "$.author_id"),
+            func.json_extract(entries.c.value, "$.actor_id"),
+            func.json_extract(entries.c.value, "$.author_agent_id"),
+            func.json_extract(entries.c.value, "$.author"),
+            func.json_extract(entries.c.value, "$.created_by"),
+        )
+        return (
+            select(1)
+            .select_from(entries)
+            .where(actor_id == str(item.value))
+            .correlate(models.Card)
+            .exists()
+        )
     if model is models.Ideation and item.field == "derivation_pending":
         active_refinement_exists = (
             select(models.Refinement.id)
@@ -247,6 +267,38 @@ def _load_option(model: Any, path: str):
     return option
 
 
+def _projection_expression(model: Any, field_name: str) -> Any:
+    if model is models.Story and field_name == "screen_mockups_count":
+        return func.coalesce(
+            func.json_array_length(models.Story.screen_mockups), 0
+        ).label(field_name)
+    if model is models.Story and field_name == "ideation_links_count":
+        return (
+            select(func.count())
+            .select_from(models.StoryIdeationLink)
+            .where(models.StoryIdeationLink.story_id == models.Story.id)
+            .correlate(models.Story)
+            .scalar_subquery()
+            .label(field_name)
+        )
+    if model is models.Card and field_name == "validations_count":
+        return func.json_array_length(
+            func.coalesce(models.Card.validations, "[]")
+        ).label(field_name)
+    if model is models.Card and field_name.startswith("recent_validation_"):
+        raw_index = field_name.removeprefix("recent_validation_")
+        if raw_index not in {"1", "2", "3", "4", "5"}:
+            raise ValueError(f"unsupported_application_projection:{field_name}")
+        return func.json_extract(
+            func.coalesce(models.Card.validations, "[]"),
+            f"$[#-{raw_index}]",
+        ).label(field_name)
+    column = getattr(model, field_name, None)
+    if column is None:
+        raise ValueError(f"unsupported_application_projection:{field_name}")
+    return column.label(field_name)
+
+
 def _relationship_includes(includes: tuple[str, ...], name: str) -> tuple[str, ...]:
     nested: list[str] = []
     for path in includes:
@@ -314,29 +366,11 @@ class TestSqlAlchemyApplicationPersistence:
         self, context: Any, query: ApplicationQuery
     ) -> tuple[ApplicationRecord, ...]:
         model = _model(query.entity)
-        if query.select_fields and model is models.Story:
+        if query.select_fields:
             if query.includes:
                 raise ValueError("application_projection_includes_conflict")
-
-            def _story_projection(field_name: str):
-                if field_name == "screen_mockups_count":
-                    return func.coalesce(
-                        func.json_array_length(models.Story.screen_mockups),
-                        0,
-                    ).label(field_name)
-                if field_name == "ideation_links_count":
-                    return (
-                        select(func.count())
-                        .select_from(models.StoryIdeationLink)
-                        .where(models.StoryIdeationLink.story_id == models.Story.id)
-                        .correlate(models.Story)
-                        .scalar_subquery()
-                        .label(field_name)
-                    )
-                return getattr(models.Story, field_name).label(field_name)
-
             statement = select(
-                *(_story_projection(field) for field in query.select_fields)
+                *(_projection_expression(model, field) for field in query.select_fields)
             )
         else:
             statement = select(model)
@@ -373,7 +407,7 @@ class TestSqlAlchemyApplicationPersistence:
         result = await context.execute(
             statement.execution_options(populate_existing=True)
         )
-        if query.select_fields and model is models.Story:
+        if query.select_fields:
             return tuple(
                 ApplicationRecord(
                     entity=query.entity,

@@ -183,6 +183,9 @@ def test_source_maturity_tracks_rebuild_and_canonical_artifact_sets() -> None:
         "test",
         "bug",
         "amendment_hotfix_revision",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     )
     assert CANONICAL_ARTIFACT_TYPES == (
         "refinement",
@@ -191,6 +194,9 @@ def test_source_maturity_tracks_rebuild_and_canonical_artifact_sets() -> None:
         "test",
         "bug",
         "amendment_hotfix_revision",
+        "code_investigation_receipt",
+        "code_evidence",
+        "implementation_target",
     )
     assert "card" not in REBUILD_ARTIFACT_TYPES
     assert "card" not in CANONICAL_ARTIFACT_TYPES

@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.2"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -17,11 +17,21 @@ Semantic guideline assessment follows
 **A spec is NOT a copy of the ideation.** When populating a spec's structured fields, you MUST:
 
 1. **Read the ideation/refinement context**: `okto_pulse_get_spec` returns the compiled context. Read it carefully.
-2. **Analyze the codebase**: Before writing requirements, explore the actual codebase to understand:
-   - What already exists (don't re-specify existing functionality)
-   - Current architecture and patterns (requirements must be compatible)
-   - Technical constraints (language, frameworks, dependencies)
-   - File structure and naming conventions
+2. **Establish delivery context, then investigate AS-IS source**: A direct
+   Spec requires `delivery_context=brownfield|greenfield|hybrid`; a Spec
+   derived from a Refinement inherits the frozen value and provenance. Before
+   writing requirements, inspect only source that actually exists in the
+   accepted baseline:
+   - In Brownfield, distinguish delivered `current_implementation` from
+     constraints and references.
+   - In Greenfield, do not force an existing implementation. An existing
+     scaffold/base is `existing_scaffold`; a pattern consulted elsewhere is
+     `reference_pattern`; both require an `interpretation_limit`.
+   - In Hybrid work, state which scope is current implementation and which
+     scope is new. Do not let one role imply the other.
+   - Put planned files, modules, schemas, endpoints, and tests in normative
+     Spec/Architecture/Target artifacts. Never record TO-BE structure as Code
+     Evidence.
 3. **Check knowledge bases**: Use `okto_pulse_list_knowledge(entity_type="spec")` and `okto_pulse_get_spec_knowledge` to read attached reference documents
 4. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
 5. **Then write requirements**:
@@ -31,75 +41,89 @@ Semantic guideline assessment follows
 
 ## 2.3a Detail Saturation — DO NOT Push Forward With Gaps
 
-**This is a hard behavioral rule, not a suggestion.** Coverage gates (existing tests/rules/TRs/contracts counts) tell you that content *exists*, not that it is *good enough*. Your job as spec author is to iterate on detail until your own perception of **completeness**, **assertiveness**, and **ambiguity** is satisfactory — not to race to the next stage.
+**This is a hard behavioral rule, not a suggestion.** Coverage gates (existing tests/rules/TRs/contracts counts) tell you that content *exists*, not that it is *good enough*. Your job as spec author is to iterate on detail until an evaluator can assess **confidence**, **clarity**, **assertiveness**, **decidability**, and **ambiguity** with concrete evidence — not to race to the next stage.
 
-**Before you call any tool that promotes a spec forward**, you MUST self-assess the spec on three dimensions:
+**Before you call any tool that promotes a spec forward**, you MUST assess the spec on five dimensions:
 
 | Dimension | Self-assessment question | Raise the bar when... |
 |-----------|-------------------------|-----------------------|
-| **Completeness** | Have I covered every functional requirement with concrete ACs, BRs, TRs, test scenarios, and (where applicable) API contracts? Are there scenarios, edge cases, or error paths I haven't written down? | You can think of any plausible user flow, failure mode, or integration point that isn't yet documented in the spec. |
-| **Assertiveness** | Is every statement in the spec **measurable and testable**? Would two independent engineers produce the same implementation from this text, or would they have to guess? | You find words like "should", "appropriate", "reasonable", "if needed", "etc." without objective criteria behind them. |
-| **Ambiguity** (lower is better) | How many sentences in the spec admit more than one interpretation? How many terms are undefined, implicit, or rely on shared context that isn't written down? | Any requirement can be read two ways, or any domain term is used without a definition. |
+| **Confidence** | How reliable is the evaluator's inspection of the whole current Spec edition? | Important sections were not inspected, current identity was not confirmed, or conclusions are not traceable to evidence. Confidence measures the evaluation, not Spec quality. |
+| **Clarity** | Does the Spec state the problem, solution and requirements clearly? | Scope, actors, behavior or terminology require contextual inference. |
+| **Assertiveness** | Does every normative statement provide an observable pass/fail oracle, with units, bounds or tolerances when applicable? | You find words like "should", "appropriate", "reasonable", "if needed", "quickly", or "etc." without objective criteria. |
+| **Decidability** | Does every material requirement direct an implementation/operational choice, or deliberately delegate it with explicit constraints and decision criteria? | A requirement names a quality such as "high availability" without topology, bounds, SLOs, defaults, ownership, or other decision criteria. |
+| **Ambiguity** (lower is better) | Are two or more materially different interpretations plausible? | A requirement can be read in ways that change behavior, security, data, testing, or operations, or a domain term is undefined. |
+
+The calibrated bands, evidence caps, dimension-boundary rules, examples, and
+pinpoint anchors are canonical in `okto-pulse://reference/spec_gates` under
+**Canonical Spec Validation scoring rubric**. Read that section before scoring;
+the summary above is not sufficient to choose a number.
 
 **The required loop — iterate until saturation:**
 
 1. **Draft** — populate ACs, FRs, BRs, TRs, contracts, test scenarios.
-2. **Read your own spec out loud** (i.e., call `okto_pulse_get_spec` and re-read it in full). Look for weasel words, undefined terms, missing edge cases, and untested error paths.
-3. **Score yourself** on completeness / assertiveness / ambiguity. Be honest.
-4. **If any dimension is below your bar, KEEP DETAILING.** Specific actions:
+2. **Read the full current edition** with
+   `okto_pulse_get_spec_context(profile="full")`, not only its description and
+   requirements. Cross-check Q&A, rules, contracts, scenarios, decisions,
+   dependencies, and every applicable artifact. Confirm the current `edition`
+   and technical `version` before evaluating.
+3. **Inspect the effective thresholds** from
+   `okto_pulse_get_board(board_id).settings`; do not assume defaults.
+4. **Select a rubric band from evidence first**, then choose a score inside the
+   band. Score confidence / clarity / assertiveness / decidability / ambiguity,
+   justify every score, and pinpoint concrete problems. Do not start at the
+   configured threshold or make scores compensate for one another.
+5. **If any dimension is below your bar, KEEP DETAILING.** Specific actions:
    - Add more test scenarios (edge cases, error flows, boundary conditions)
    - Rewrite vague ACs into measurable, verifiable statements (numbers, specific endpoints, concrete inputs/outputs)
    - Add BRs to capture invariants you've been assuming implicitly
    - Add TRs for architectural constraints you derived from codebase analysis
    - Add API contracts with concrete request/response shapes
-5. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
-6. **Re-read and re-score.** Repeat until all three dimensions clear your bar.
-7. **Only then promote.**
+6. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
+7. **Re-read and re-score.** Repeat until all five dimensions clear the
+   configured bar and no blocker remains.
+8. **On a retry after failed validation**, first read the Current result and
+   its `threshold_violations`, all five justifications, and pinpoints. Modify
+   the Spec rather than only changing scores; then refresh edition, version,
+   head revision, prerequisite results, and full context before resubmitting.
+9. **Only then promote.**
 
 ### Spec Quality — Canonical Agent Flow
 
-Use this section for **status-to-action routing**. Receipt mechanics live in
+Use this section for **status-to-action routing**. Result lifecycle rules live in
 `okto-pulse://reference/quality-assessments`, signatures in
 `okto-pulse://reference/tool-docs/quality`, and validation rules in
 `okto-pulse://reference/spec_gates`.
 
 #### Surface responsibilities
 
-- **Quality is read-only for Specs.** From `draft`, semantic Spec writers issue
-  `requirement_lint` automatically. Any `spec_validation` receipt is migrated
-  audit evidence; the live validation action does not write it through Quality.
+- **Requirement Lint is external agent evidence.** Pulse Core and Community do
+  not inspect a local repository or run lint cognition. At `approved`, the
+  agent records it with `okto_pulse_record_requirement_lint`.
 - **Validation is actionable at `approved`.** It owns the configured checklist
   and `okto_pulse_submit_spec_validation`.
-- Never call `okto_pulse_record_ambiguity_assessment` or create a Spec receipt
-  manually. Lint is advisory: its score is the finding count over evaluated
-  rules (lower is better); zero is not permission to advance.
-- **Every semantic write ends with a lint review, not with the write.** The
-  write you just made produced a fresh `requirement_lint` receipt and may have
-  materialized proposed questions into the Spec's Q&A. Read the receipt,
-  triage its findings, and account for every generated question (answer it or
-  explicitly leave it for the human) before declaring the authoring step done
-  — the mandatory steps live in
-  `okto-pulse://reference/quality-assessments` under "After any semantic Spec
-  write, review what the lint generated".
+- Never call `okto_pulse_record_ambiguity_assessment` for a Spec. Requirement
+  Lint requires an accepted result for the Current edition; finding count and
+  severity are advisory and never independently authorize or block the move.
 
 #### Agent flow by Spec status
 
 | Status | Required behavior |
 |---|---|
-| `draft` | Author with semantic Spec tools, then read current `requirement_lint`. No head means **no evidence**, not zero findings. Diagnose through findings and fix stable anchors through the owning writer. Never require a native `spec_validation` receipt. |
-| `review` | Refresh full context and lint. Resolve material findings or record why they are acceptable. Lint informs saturation but does not block approval. |
-| `approved` | Correct missing, stale, or material lint before validating. Otherwise follow **The Spec Validation Gate** below; its live result and current Spec status are authoritative. |
-| `validated`, `in_progress`, `done` | Read Quality only for a decision or audit. Stale, superseded, or historical receipts never authorize transitions. Reopened content reruns authoring and validation. |
-| `cancelled` or archived | Audit only. After restore or reopen, follow the row for the resulting status and require current evidence. |
+| `draft` | Author with semantic Spec tools. Previous validation results are history, not live gates. |
+| `review` | Review the candidate without issuing a new Requirement Lint result. |
+| `approved` | Run the external analysis, call `okto_pulse_record_requirement_lint`, then follow **The Spec Validation Gate** below. |
+| `validated`, `in_progress`, `done` | Read Quality only for a decision or audit. Only the Current result for this lifecycle edition may support a decision; Previous results are history. Reopening in `draft` starts a new edition and reruns authoring and validation. |
+| `cancelled` or archived | Audit only. After restore or reopen, follow the row for the resulting status and require a Current result for the new edition. |
 
 #### Token-efficient read sequence
 
-1. Read the mandatory full Spec context.
-2. Call `okto_pulse_get_current_quality_assessment` for
+1. Read the mandatory full Spec context at `approved`.
+2. Record Requirement Lint with exact version, edition, and head fences.
+3. Call `okto_pulse_get_current_quality_assessment` for
    `subject_type="spec"` and `assessment_kind="requirement_lint"`.
-3. If a head exists, inspect `currentness.current`; call
+4. If a Current result exists, inspect its lifecycle state; call
    `okto_pulse_list_quality_findings` only to diagnose an issue.
-4. Read `spec_validation` receipts/history only for audit. For readiness, use
+5. Read earlier results only for audit. For readiness, use
    live Validation and the current Spec context.
 
 ### The Spec Validation Gate
@@ -116,25 +140,43 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
    `blocking`, combine its identity with the current Spec version from the
    required full Spec context, then call `okto_pulse_start_checklist_execution`.
    Submit all ten ordered `/specify/v1` results with concrete anchors via
-   `okto_pulse_submit_checklist_execution`, and read the issued receipt with
-   `okto_pulse_get_checklist_receipt`. Re-run the full Spec context or
+   `okto_pulse_submit_checklist_execution`, and read the submitted result with
+   `okto_pulse_get_checklist_receipt` (the compatibility API name). Re-run the full Spec context or
    `okto_pulse_get_allowed_transitions` before validation; that canonical
-   readiness check detects stale or failing receipts.
-5. Only then call `okto_pulse_submit_spec_validation`.
+   readiness check detects a missing or failing Current result.
+5. Only then call `okto_pulse_submit_spec_validation` with the current fences,
+   the five externally evaluated scores (confidence, clarity, assertiveness,
+   decidability and ambiguity), a justification for each, optional
+   metric-tagged pinpoints, and an approve/reject recommendation. Pulse records
+   this evaluation; it does not generate the scores. For each accepted
+   pinpoint Pulse resolves the authorized anchor and seals its human label,
+   text/excerpt, source version and digest into validation history. Clients
+   submit only the anchor selector and explanation; they cannot supply the
+   sealed snapshot. Records created before this contract explicitly report the
+   snapshot as `legacy_unavailable` and are never re-resolved from current
+   mutable Spec content.
 
 Checklist mode/template governance is human-owned in Board Config. Agents may
-read the binding and receipts and execute the configured immutable template,
-but must not attempt to mutate its binding or author checklist items. Any Spec
-content/input identity change or executable binding identity change can make an
-earlier receipt stale. The executable identity is the binding digest/template
-pin presented at execution start; mode/version-only governance changes stay in
-the audit history and preserve currentness when that executable identity is
-unchanged. Use the ordered `stale_reasons` rather than guessing which fence
-changed.
+read the binding and validation results and execute the configured immutable
+template, but must not attempt to mutate its binding or author checklist
+items. The result belongs to the Spec lifecycle edition. Returning the Spec to
+`draft` increments that edition, moves the earlier result to Previous, and
+requires a new execution when the candidate reaches validation again. The
+binding digest/template pin remains technical audit evidence; it does not
+create a second human-facing lifecycle state.
 
-**Thresholds** (default 80/80/30): `completeness` and `assertiveness` higher-is-better minimums; `ambiguity` LOWER-is-better maximum. All scores are 0-100 integers, not 1-5 — a value like `5` is read literally as 5/100 and will usually fail the gate.
+**Thresholds** (defaults 70/80/80/80/30): `confidence`, `clarity`,
+`assertiveness`, and `decidability` are higher-is-better minimums;
+`ambiguity` is a LOWER-is-better maximum. All scores are 0-100 integers, not
+1-5 — a value like `5` is read literally as 5/100 and will usually fail the
+gate.
 
-**Single source for gate mechanics** — canonical flow, atomic `outcome` computation, content lock, and the unlock path (`okto_pulse_move_spec` back to `draft`/`approved`, clearing `current_validation_id`): `okto-pulse://reference/spec_gates`.
+**Single source for gate mechanics** — canonical flow, atomic `outcome`
+computation, content lock, and the reopen path (`okto_pulse_move_spec` back to
+`draft`, starting a new edition and clearing `current_validation_id`):
+`okto-pulse://reference/spec_gates`. Forward execution moves and Code
+Investigation/Evidence/waiver events preserve Current; they do not open a new
+human validation edition.
 
 ## 2.3b Spec Evaluation — Quality Gate for Execution
 
@@ -154,9 +196,74 @@ Every tool that feeds into a coverage gate **automatically returns a `coverage` 
 | `okto_pulse_add_business_rule` | `fr_coverage_pct` + `fr_uncovered_indices` | `fr_coverage_pct = 100` or `skip_rules_coverage = true` |
 | `okto_pulse_link_task(target_type="scenario", ...)` | `scenario_task_linkage_pct` | `scenario_task_linkage_pct = 100` |
 | `okto_pulse_link_task(target_type="rule", ...)` | `br_task_linkage_pct` | `br_task_linkage_pct = 100` |
+| Code Evidence link/disposition tools | `evidence_disposition_coverage.coverage_pct` | `coverage_pct = 100` or effective Board/Spec Code Evidence skip = true |
 
 **The `skip_*` flags tell you if full coverage is mandatory:**
 - `skip_test_coverage = false` → AC coverage MUST reach 100% before spec can advance
 - `skip_test_coverage = true` → AC coverage is tracked but not enforced
+- both `skip_code_evidence_coverage_global = false` and `skip_code_evidence_coverage = false` → every inherited Code Evidence item MUST be linked or dispositioned before validation
+- either `skip_code_evidence_coverage_global = true` or `skip_code_evidence_coverage = true` → coverage stays visible but this matrix obligation is not enforced; these are human UI/REST controls, not agent remediation tools
 
 **FR coverage source:** `fr_coverage_pct` is computed from `business_rules[].linked_requirements`. Direct links on `functional_requirements[].linked_task_ids` are useful task traceability, but they do not satisfy the FR→BR coverage gate.
+
+## 2.3d Agent-mediated Code Traceability
+
+When Code Traceability is enabled, the Spec remains normative and Code
+Evidence remains factual, immutable, and historical. Before moving a Spec to
+`review`:
+
+1. Read `delivery_context`, `source_context`, `source_context_items`, and
+   `inherited_code_evidence` from the full Spec context. Role counts are over
+   the complete effective set even when the visible item list is bounded.
+2. Formalize the applicable FR, TR, BR, Decision, and Contract entities.
+3. Link every inherited Evidence item to each entity it supports.
+4. Record an explicit disposition for every inherited item that is not
+   applicable to this Spec version.
+5. Confirm `evidence_disposition_coverage_pct = 100`.
+
+This matrix is a deterministic validation gate even when the board-wide Code
+Traceability mode is `advisory`. It is checked by Spec Validation, direct
+`approved → validated`, and again before `validated → in_progress`. A human can
+set `skip_code_evidence_coverage_global` in Menu → Board or the audited
+per-Spec `skip_code_evidence_coverage` control in the Code Evidence Matrix tab.
+The effective skip is their OR and suppresses only pending matrix coverage; it
+does not admit an incomplete bounded projection or disable
+traceability/currentness controls that apply independently. Agents must
+remediate coverage rather than attempt to author the human skip.
+
+Each Evidence link/disposition mutates the technical Spec version. Use the
+`spec_version` returned by one successful mutation as the
+`expected_spec_version` of the next, or refetch the full Spec context. Link to
+stable entity IDs (FR/TR/AC/etc.), never array positions. The canonical
+resource contains a complete sequential TR/FR/AC example.
+
+Do not move to `review` while inherited Evidence is pending. A link or
+disposition never rewrites the Evidence snapshot, its accepted agent receipt,
+or its observed source state. Pulse Core and Pulse Community do not inspect a
+repository to establish these facts. An authenticated external agent first
+performs the capability/access preflight and deterministic investigation in its
+own environment, then submits the bounded receipt and Evidence.
+
+Every effective item states its origin explicitly:
+`authored`, `human_legacy_classification`, or `unclassified_legacy`. Never
+infer legacy meaning from a path, evidence type, or claim. Human legacy
+classification is an append-only UI/REST batch guarded by
+`code_traceability.evidence.classify_legacy`; there is no MCP mutation. A V1
+receipt remains V1 after classification and may still require a fresh V2
+investigation for current gate authority.
+
+A derived Spec is intentionally frozen to the exact Refinement snapshot's
+delivery-context and source-context manifest, including receipt context
+versions and per-Evidence classification revision/digest. Later live
+Evidence, receipt, or human-classification changes do not silently rewrite the
+Spec. To adopt a newer Refinement snapshot, use the governed rebase preview,
+review the context/classification/link/disposition delta, and apply that exact
+`preview_sha256`. Never simulate a rebase by copying Evidence, editing links,
+or rewriting the manifest. If preview/apply is not available over MCP, surface
+the required authorized UI/REST action.
+
+New writes are contextual V2. If the live inbound schema exposes only V1
+`accessible`/unclassified Evidence, stop and report the missing capability;
+do not create ambiguous compatibility history to advance the Spec.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

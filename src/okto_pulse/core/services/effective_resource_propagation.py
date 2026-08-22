@@ -677,11 +677,20 @@ async def resolve_effective_card_copy_plan(
     obligation_id = _obligation_id_for_type(lineage, resource_type)
     accepted = list(ACCEPTED_IDENTITY_FIELDS.get(resource_type, ()))
 
+    inherited_refs = _dedupe_effective_refs(
+        resource_type,
+        state.inherited_refs or () if state else (),
+    )
     plan = {
         "resource_type": resource_type,
         "has_direct": bool(state and state.direct_count > 0),
         "fallback": False,
         "fallback_refs": [],
+        # Keep the complete effective inherited set even when the Spec also has
+        # direct resources.  Card copy tools need this to satisfy per-resource
+        # coverage for partially propagated Specs instead of treating the
+        # presence of one direct item as an all-or-nothing override.
+        "inherited_refs": inherited_refs,
         "not_applicable": _state_is_not_applicable(state),
         "has_obligation": obligation_id is not None,
         "coverage_obligation_id": obligation_id,
@@ -689,8 +698,8 @@ async def resolve_effective_card_copy_plan(
         "source_entity_type": None,
         "source_entity_id": None,
     }
-    if not plan["has_direct"] and not plan["not_applicable"] and state and state.inherited_count > 0:
-        fallback_refs = _dedupe_effective_refs(resource_type, state.inherited_refs or ())
+    if not plan["has_direct"] and not plan["not_applicable"] and inherited_refs:
+        fallback_refs = inherited_refs
         ref = (fallback_refs or [{}])[0]
         plan["fallback"] = True
         plan["fallback_refs"] = fallback_refs

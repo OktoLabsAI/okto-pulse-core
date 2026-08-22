@@ -217,9 +217,7 @@ def _build_policy_constraint_projection_health(
         0,
         int(snapshot.policy_constraint_projection_max_attempt_count),
     )
-    retry_due_at = _as_utc(
-        snapshot.policy_constraint_projection_oldest_retry_due_at
-    )
+    retry_due_at = _as_utc(snapshot.policy_constraint_projection_oldest_retry_due_at)
     retry_overdue_age_seconds = (
         _age_seconds(retry_due_at, now)
         if retry_due_at is not None and retry_due_at <= _as_utc(now)
@@ -261,9 +259,7 @@ def _build_policy_constraint_projection_health(
             snapshot.policy_constraint_projection_oldest_retry_scheduled_at
         ),
         "oldest_retry_due_at": _iso(retry_due_at),
-        "oldest_dlq_at": _iso(
-            snapshot.policy_constraint_projection_oldest_dlq_at
-        ),
+        "oldest_dlq_at": _iso(snapshot.policy_constraint_projection_oldest_dlq_at),
     }
     domain = {
         "domain": _POLICY_CONSTRAINT_PROJECTION_DOMAIN,
@@ -666,7 +662,15 @@ def _build_health_diagnostics(
                     "Relational audit/ref history shows prior KG materialization "
                     "but the graph adapter currently returns zero nodes."
                 ),
-                "operator_action": "run_explicit_rebuild",
+                "operator_action": "run_local_offline_kg_recovery_executor",
+                "execution_mode": "recovery_only_offline",
+                "recovery_executor": "okto-pulse-kg-recovery-only",
+                "remediation": (
+                    "Stop Pulse/API/MCP and SDLC writers; inspect the live "
+                    "data home, rehearse on a physical isolated copy, then "
+                    "execute against the exact live home within 2 hours using "
+                    "the path-bound single-use rehearsal receipt."
+                ),
             }
         )
     elif board_graph_queryable:
@@ -749,7 +753,7 @@ def _build_health_diagnostics(
 
     if board_graph_recovery_required:
         primary = "board_graph_recovery_required"
-        operator_action = "run_explicit_rebuild"
+        operator_action = "run_local_offline_kg_recovery_executor"
     elif discovery_recovery_required:
         primary = "discovery_recovery_required"
         operator_action = "run_explicit_global_discovery_recovery"
@@ -3090,9 +3094,7 @@ async def get_kg_health(
                     "separate from consolidation DLQ and the active retry window."
                 ),
                 "operator_action": "inspect_global_outbox_dead_letters",
-                "drill_down_tool": (
-                    "okto_pulse_kg_global_outbox_dead_letter_list"
-                ),
+                "drill_down_tool": ("okto_pulse_kg_global_outbox_dead_letter_list"),
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
@@ -3619,16 +3621,10 @@ async def get_kg_health(
     ) = _build_policy_constraint_projection_health(
         relational,
         now=now,
-        stuck_after_seconds=(
-            _policy_constraint_projection_stuck_after_seconds()
-        ),
+        stuck_after_seconds=(_policy_constraint_projection_stuck_after_seconds()),
     )
-    health_diagnostics["health_issues"].extend(
-        policy_constraint_projection_issues
-    )
-    _policy_projection_classification = policy_constraint_projection[
-        "classification"
-    ]
+    health_diagnostics["health_issues"].extend(policy_constraint_projection_issues)
+    _policy_projection_classification = policy_constraint_projection["classification"]
     if (
         _policy_projection_classification in {"dead_letter", "retry_stuck"}
         and health_diagnostics["primary_health_cause"] == "none"
@@ -3673,9 +3669,7 @@ async def get_kg_health(
             "semantics": "terminal_global_discovery_delivery_failure",
             "count": global_outbox_dead_letter_count,
             "oldest_age_seconds": global_outbox_dead_letter["oldest_age_seconds"],
-            "drill_down_tool": (
-                "okto_pulse_kg_global_outbox_dead_letter_list"
-            ),
+            "drill_down_tool": ("okto_pulse_kg_global_outbox_dead_letter_list"),
             "drill_down_signal": "global_outbox_dead_letter",
         },
         "canonical_debt": {
@@ -3684,9 +3678,7 @@ async def get_kg_health(
             "count": int(canonical_debt.get("open_count") or 0),
             "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
         },
-        _POLICY_CONSTRAINT_PROJECTION_DOMAIN: (
-            policy_constraint_projection
-        ),
+        _POLICY_CONSTRAINT_PROJECTION_DOMAIN: (policy_constraint_projection),
     }
 
     # SPEC4 (card 2e913ac3): structured, bounded recovery root-cause block.
@@ -3952,9 +3944,7 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
 
         source_set = RebuildSourceEnumerator(
             source_store=build_source_store()
-        ).enumerate(
-            board_id=board_id
-        )
+        ).enumerate(board_id=board_id)
         canonical = int(source_set.canonical_source_count)
         working = int(source_set.working_source_count)
         return {

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from okto_pulse.core.models.schemas import BoardSettings
+from okto_pulse.core.models.schemas import BoardSettings, CodeTraceabilitySettings
 from okto_pulse.core.ports.domain_event_delivery import (
     get_domain_event_fact_reader,
 )
@@ -75,7 +75,9 @@ class BoardGovernanceService:
         default exactly like ``resolve_impact_evidence_mode``. WRITE callers
         (board create/update, default-config templates) keep the strict
         parse: an out-of-enum value there is an authoring error and must be
-        rejected, never silently disabled.
+        rejected, never silently disabled. Historical Code Traceability
+        ``off``/``null`` values are likewise normalized to Advisory only on
+        tolerant reads; authored values remain closed to Advisory or Blocking.
         """
 
         if isinstance(settings, BoardSettings):
@@ -92,6 +94,9 @@ class BoardGovernanceService:
                 and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
             ):
                 raw.pop("impact_evidence_mode", None)
+            raw["code_traceability"] = CodeTraceabilitySettings.from_persisted(
+                raw.get("code_traceability")
+            ).model_dump(mode="json")
         return BoardSettings.model_validate(raw).model_dump(mode="json")
 
     @classmethod
@@ -142,6 +147,12 @@ class BoardGovernanceService:
             if isinstance(patch, BoardSettings)
             else dict(patch or {})
         )
+        if "code_traceability" in patch_raw:
+            # Validate the authored nested policy before enabling tolerance for
+            # the persisted half of this merge. Otherwise an explicit new
+            # ``off`` could be mistaken for a legacy value and silently
+            # upgraded instead of being rejected by BoardUpdate/default config.
+            CodeTraceabilitySettings.model_validate(patch_raw["code_traceability"])
         preserve_absent = {
             key
             for key in LEGACY_ABSENT_SETTING_KEYS
@@ -152,10 +163,12 @@ class BoardGovernanceService:
         # actually writing stays strict, so a typo is rejected instead of
         # silently disabling governance, while a previously tampered value
         # never blocks an unrelated settings edit.
-        normalized = cls.normalize_settings(
-            {**current_raw, **patch_raw},
-            read_tolerant=("impact_evidence_mode" not in patch_raw),
-        )
+        # Normalize only the persisted half tolerantly, then validate the
+        # authored patch under the closed write contract. This lets an
+        # unrelated valid patch converge historical ``off`` without letting
+        # that compatibility value back through the API.
+        persisted = cls.normalize_settings(current_raw, read_tolerant=True)
+        normalized = cls.normalize_settings({**persisted, **patch_raw})
         for key in preserve_absent:
             normalized.pop(key, None)
         return normalized

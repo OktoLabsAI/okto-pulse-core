@@ -25,6 +25,7 @@ from okto_pulse.core.domain.checklist import (
     ChecklistPhase,
     ChecklistPreflight,
     ChecklistReceipt,
+    ChecklistReceiptState,
     ChecklistReceiptView,
     ChecklistSpecSnapshot,
     ChecklistSubmission,
@@ -33,6 +34,7 @@ from okto_pulse.core.domain.checklist import (
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.domain.permissions import Permissions
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.ports.checklist import ChecklistListQuery
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.services.checklist import (
@@ -104,18 +106,39 @@ async def _preflight(
         raise EntityNotFoundError("spec", spec_id)
     if not isinstance(subject, ChecklistSpecSnapshot):
         raise RuntimeError("checklist_subject_port_invalid")
-    binding = await persistence.get_binding(
-        board_id=board_id,
-        target_type=ChecklistTargetType.SPEC,
-        phase=ChecklistPhase.SPEC_VALIDATION,
-    )
-    if binding is None:
-        binding = ChecklistBinding.synthetic_off(board_id=board_id)
-    current = await persistence.get_current(
-        board_id=board_id,
-        spec_id=spec_id,
-        phase=ChecklistPhase.SPEC_VALIDATION,
-    )
+    if subject.spec_edition is None:
+        binding = await persistence.get_binding(
+            board_id=board_id,
+            target_type=ChecklistTargetType.SPEC,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+        if binding is None:
+            binding = ChecklistBinding.synthetic_off(board_id=board_id)
+    else:
+        binding = await persistence.get_validation_binding(
+            board_id=board_id,
+            spec_id=spec_id,
+            spec_edition=subject.spec_edition,
+            target_type=ChecklistTargetType.SPEC,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+        if not isinstance(binding, ChecklistBinding):
+            raise RuntimeError("checklist_validation_binding_port_invalid")
+    try:
+        current = await persistence.get_current(
+            board_id=board_id,
+            spec_id=spec_id,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+            spec_edition=subject.spec_edition,
+        )
+    except TypeError:
+        current = await persistence.get_current(
+            board_id=board_id,
+            spec_id=spec_id,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+    if current is not None and current[0].spec_edition != subject.spec_edition:
+        current = None
     return ChecklistPreflight(
         subject=subject,
         binding=binding,
@@ -193,8 +216,30 @@ class StartChecklistExecutionCommand:
     board_id: str
     spec_id: str
     expected_spec_version: int
-    idempotency_key: str
+    spec_edition: int | None = None
+    binding_version: int | None = None
+    # Legacy transport aliases. Canonical transports use ``spec_edition`` and
+    # ``binding_version`` and let Core derive idempotency.
+    expected_spec_edition: int | None = None
+    idempotency_key: str | None = None
     binding_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        canonical = self.spec_edition
+        legacy = self.expected_spec_edition
+        if canonical is not None and legacy is not None and canonical != legacy:
+            raise ValueError("checklist_spec_edition_alias_conflict")
+        resolved = canonical if canonical is not None else legacy
+        if not isinstance(resolved, int) or isinstance(resolved, bool) or resolved < 1:
+            raise ValueError("checklist_spec_edition_invalid")
+        object.__setattr__(self, "spec_edition", resolved)
+        object.__setattr__(self, "expected_spec_edition", resolved)
+        if self.binding_version is not None and (
+            not isinstance(self.binding_version, int)
+            or isinstance(self.binding_version, bool)
+            or self.binding_version < 1
+        ):
+            raise ValueError("checklist_binding_version_invalid")
 
 
 class StartChecklistExecutionUseCase:
@@ -229,15 +274,38 @@ class StartChecklistExecutionUseCase:
         )
         if preflight.subject.spec_version != command.expected_spec_version:
             raise ChecklistConflictError("checklist_spec_version_conflict")
+        if preflight.subject.spec_edition != command.spec_edition:
+            raise ChecklistConflictError(
+                "checklist_spec_edition_conflict",
+                details={
+                    "expected": command.spec_edition,
+                    "current": preflight.subject.spec_edition,
+                },
+            )
+        if (
+            command.binding_version is not None
+            and command.binding_version != preflight.binding.version
+        ):
+            raise ChecklistConflictError("checklist_binding_conflict")
         if (
             command.binding_digest is not None
             and command.binding_digest != preflight.binding.digest
         ):
             raise ChecklistConflictError("checklist_binding_conflict")
+        idempotency_key = command.idempotency_key or canonical_sha256(
+            {
+                "operation": "start_checklist_execution",
+                "board_id": command.board_id,
+                "spec_id": command.spec_id,
+                "spec_edition": command.spec_edition,
+                "expected_spec_version": command.expected_spec_version,
+                "binding_version": preflight.binding.version,
+            }
+        )
         result = await ChecklistService().start_execution(
             preflight=preflight,
             actor_id=actor.actor_id,
-            idempotency_key=command.idempotency_key,
+            idempotency_key=idempotency_key,
             persistence=uow.services.checklists,
         )
         if not result.replayed:
@@ -250,9 +318,24 @@ class SubmitChecklistExecutionCommand:
     board_id: str
     spec_id: str
     execution_id: str
-    expected_execution_revision: int
-    items: tuple[ChecklistItemResult, ...]
-    idempotency_key: str
+    spec_edition: int
+    expected_spec_version: int
+    item_results: tuple[ChecklistItemResult, ...]
+    # Legacy aliases are accepted only at the application boundary.
+    expected_execution_revision: int | None = None
+    items: tuple[ChecklistItemResult, ...] | None = None
+    idempotency_key: str | None = None
+
+    def __post_init__(self) -> None:
+        canonical_items = tuple(self.item_results)
+        if self.items is not None:
+            legacy_items = tuple(self.items)
+            if canonical_items and canonical_items != legacy_items:
+                raise ValueError("checklist_item_results_alias_conflict")
+            if not canonical_items:
+                canonical_items = legacy_items
+        object.__setattr__(self, "item_results", canonical_items)
+        object.__setattr__(self, "items", canonical_items)
 
 
 class SubmitChecklistExecutionUseCase:
@@ -288,11 +371,52 @@ class SubmitChecklistExecutionUseCase:
         )
         if execution is None:
             raise EntityNotFoundError("checklist_execution", command.execution_id)
+        if execution.spec_edition != command.spec_edition:
+            raise ChecklistConflictError(
+                "checklist_spec_edition_conflict",
+                details={
+                    "expected": command.spec_edition,
+                    "current": execution.spec_edition,
+                },
+            )
+        if execution.spec_version != command.expected_spec_version:
+            raise ChecklistConflictError("checklist_spec_version_conflict")
+        expected_execution_revision = (
+            execution.revision - 1
+            if execution.status is ChecklistExecutionStatus.SUBMITTED
+            else execution.revision
+        )
+        if (
+            command.expected_execution_revision is not None
+            and command.expected_execution_revision
+            != expected_execution_revision
+        ):
+            raise ChecklistConflictError(
+                "checklist_execution_revision_conflict"
+            )
+        idempotency_key = command.idempotency_key or canonical_sha256(
+            {
+                "operation": "submit_checklist_execution",
+                "board_id": command.board_id,
+                "spec_id": command.spec_id,
+                "spec_edition": command.spec_edition,
+                "expected_spec_version": command.expected_spec_version,
+                "execution_id": command.execution_id,
+                "item_results": [
+                    {
+                        "item_id": item.item_id,
+                        "outcome": item.outcome.value,
+                        "anchor": item.anchor,
+                        "rationale": item.rationale,
+                    }
+                    for item in command.item_results
+                ],
+            }
+        )
         if execution.status is ChecklistExecutionStatus.SUBMITTED:
             if (
                 execution.receipt_id is None
-                or command.expected_execution_revision
-                != execution.revision - 1
+                or expected_execution_revision != execution.revision - 1
             ):
                 raise ChecklistConflictError(
                     "checklist_execution_revision_conflict"
@@ -317,8 +441,9 @@ class SubmitChecklistExecutionUseCase:
                 binding_version=execution.binding_version,
                 binding_digest=execution.binding_digest,
                 expected_head_revision=receipt.head_revision - 1,
-                items=command.items,
-                idempotency_key=command.idempotency_key,
+                items=command.item_results,
+                idempotency_key=idempotency_key,
+                spec_edition=execution.spec_edition,
             )
             return ChecklistService().resolve_replay(
                 replay_submission,
@@ -331,6 +456,7 @@ class SubmitChecklistExecutionUseCase:
                     request_digest=receipt.request_digest,
                     head_revision=receipt.head_revision,
                     replayed=True,
+                    spec_edition=receipt.spec_edition,
                 ),
             )
         preflight = await _preflight(
@@ -349,13 +475,14 @@ class SubmitChecklistExecutionUseCase:
             binding_version=execution.binding_version,
             binding_digest=execution.binding_digest,
             expected_head_revision=preflight.current_head_revision,
-            items=command.items,
-            idempotency_key=command.idempotency_key,
+            items=command.item_results,
+            idempotency_key=idempotency_key,
+            spec_edition=execution.spec_edition,
         )
         result = await ChecklistService().submit_started_execution(
             execution,
             submission,
-            expected_execution_revision=command.expected_execution_revision,
+            expected_execution_revision=expected_execution_revision,
             actor_id=actor.actor_id,
             preflight=preflight,
             persistence=persistence,
@@ -514,6 +641,7 @@ class ListChecklistExecutionsCommand:
     spec_id: str
     offset: int = 0
     limit: int = 25
+    state: ChecklistReceiptState | None = None
 
 
 class ListChecklistExecutionsUseCase:
@@ -552,6 +680,8 @@ class ListChecklistExecutionsUseCase:
                 spec_id=command.spec_id,
                 offset=command.offset,
                 limit=command.limit,
+                current_spec_edition=preflight.subject.spec_edition,
+                state=command.state,
             ),
             current_subject=preflight.subject,
             current_binding=preflight.binding,

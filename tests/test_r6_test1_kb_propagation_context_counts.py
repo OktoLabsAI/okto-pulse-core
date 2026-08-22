@@ -50,7 +50,12 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r6 test1 agent"
-        self.permissions = set()
+        self.permissions = [
+            "code_traceability.investigation.read",
+            "code_traceability.evidence.read",
+            "code_traceability.target.read",
+            "code_traceability.overlap.read",
+        ]
 
 
 async def _call(name: str, **kwargs) -> dict:
@@ -62,7 +67,9 @@ async def _call(name: str, **kwargs) -> dict:
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
         raw = await tool.fn(**kwargs)
-    return json.loads(raw)
+    result = json.loads(raw)
+    assert "error" not in result, result
+    return result
 
 
 async def _seed_chain(db_factory):

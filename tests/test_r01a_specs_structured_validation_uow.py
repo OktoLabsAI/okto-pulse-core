@@ -84,7 +84,12 @@ async def _seed_spec(owner: str = USER) -> str:
         await db.commit()
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            bid, owner, SpecCreate(title=f"fu3bs1-{uuid.uuid4().hex[:6]}")
+            bid,
+            owner,
+            SpecCreate(
+                title=f"fu3bs1-{uuid.uuid4().hex[:6]}",
+                delivery_context="brownfield",
+            ),
         )
         await db.commit()
         return spec.id
@@ -176,13 +181,19 @@ def _valid_submit_data() -> dict:
     # Justifications must clear the command's ≥20-char shape gate so the request
     # reaches the spec lookup (otherwise CommandValidationError → 400 fires first).
     return {
-        "completeness": 90,
-        "completeness_justification": "All ACs are covered with detailed test plans",
+        "expected_validation_edition": 1,
+        "expected_spec_version": 1,
+        "expected_head_revision": 0,
+        "confidence": 90,
+        "confidence_justification": "The evidence supports a confident decision",
+        "clarity": 90,
+        "clarity_justification": "The requirements use clear domain language",
         "assertiveness": 85,
         "assertiveness_justification": "FRs are measurable with no weasel words",
+        "decidability": 90,
+        "decidability_justification": "Every criterion has a binary outcome",
         "ambiguity": 15,
         "ambiguity_justification": "Glossary added and terms defined clearly",
-        "general_justification": "Spec is ready for execution with high confidence",
         "recommendation": "approve",
     }
 
@@ -191,7 +202,9 @@ def _valid_submit_data() -> dict:
 async def test_submit_validation_missing_spec_404(client) -> None:
     """Proves the hybrid fix: the gate now flows through the UoW and a missing
     spec surfaces as 404 (EntityNotFoundError) instead of a 500."""
-    resp = client.post(f"{PREFIX}/specs/{_missing()}/validation", json=_valid_submit_data())
+    resp = client.post(
+        f"{PREFIX}/specs/{_missing()}/validation", json=_valid_submit_data()
+    )
     assert resp.status_code == 404, resp.text
     assert resp.json()["detail"] == "Spec not found"
 
@@ -205,6 +218,36 @@ async def test_list_validations_200_and_404(client) -> None:
     assert body["spec_id"] == spec_id and "validations" in body
     miss = client.get(f"{PREFIX}/specs/{_missing()}/validations")
     assert miss.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "permission_flags",
+    (
+        {"entity": {"read": True}, "validation": {"read": False}},
+        {"entity": {"read": False}, "validation": {"read": True}},
+    ),
+)
+async def test_legacy_validation_history_requires_entity_and_validation_reads(
+    client,
+    monkeypatch,
+    permission_flags: dict,
+) -> None:
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    async def _restricted_permissions(db, user_id, board_id):
+        return PermissionSet({"spec": permission_flags})
+
+    monkeypatch.setattr(
+        "okto_pulse.core.services.main.resolve_user_permissions",
+        _restricted_permissions,
+    )
+    spec_id = await _seed_spec()
+
+    history = client.get(f"{PREFIX}/specs/{spec_id}/validations")
+    current = client.get(f"{PREFIX}/specs/{spec_id}/validations/current")
+
+    assert history.status_code == current.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -235,8 +278,12 @@ async def test_run_structured_use_case_raises_for_missing_spec() -> None:
         RunStructuredSpecEntityCommand,
         RunStructuredSpecEntityUseCase,
     )
-    from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

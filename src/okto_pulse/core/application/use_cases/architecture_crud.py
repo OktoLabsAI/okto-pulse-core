@@ -54,6 +54,17 @@ from okto_pulse.core.services.application_schemas import (
 from okto_pulse.core.services.architecture import (
     stable_architecture_finding_key,
 )
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
+from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
+
+
+def _require_architecture_parent_draft(parent: Any, parent_type: str) -> None:
+    """Architecture is editable only inside a lifecycle subject's Draft."""
+
+    if parent_type in {"ideation", "refinement", "spec"}:
+        require_draft_mutation(parent, subject_type=parent_type)
 
 
 async def _resolve_parent(
@@ -315,6 +326,7 @@ class CreateArchitectureUseCase:
             command.parent_id,
             board_id=command.board_id,
         )
+        _require_architecture_parent_draft(parent, command.parent_type)
         if command.parent_type == "spec" and _spec_architecture_locked(parent):
             raise SpecArchitectureLockedError(parent)
         repo = uow.services.architecture_designs
@@ -365,12 +377,11 @@ async def _resolve_mutable_design(
     )
     if design.parent_type == "card":
         raise ConflictError("card_architecture_readonly", design_id)
-    if design.parent_type == "spec":
-        spec = await uow.services.specs.get_spec(design.spec_id)
-        if spec is None:
-            raise EntityNotFoundError("Spec", design.spec_id)
-        if _spec_architecture_locked(spec):
-            raise SpecArchitectureLockedError(spec)
+    parent_id = uow.services.architecture_designs.parent_id_for(design)
+    parent = await _resolve_parent(uow.services, design.parent_type, parent_id)
+    _require_architecture_parent_draft(parent, design.parent_type)
+    if design.parent_type == "spec" and _spec_architecture_locked(parent):
+        raise SpecArchitectureLockedError(parent)
     return design
 
 
@@ -666,6 +677,8 @@ class McpValidateArchitecturePayloadUseCase:
                 command.parent_id,
                 board_id=command.board_id,
             )
+            if command.commit_requested:
+                _require_architecture_parent_draft(parent, command.parent_type)
             if (
                 command.commit_requested
                 and command.parent_type == "spec"
@@ -1236,6 +1249,10 @@ class CopyArchitectureFromSpecToCardUseCase:
         )
         if spec.board_id != card.board_id or getattr(card, "spec_id", None) != spec.id:
             raise EntityNotFoundError("spec", command.spec_id)
+        require_card_operational_mutation_allowed(
+            card,
+            operation="copy_architecture_to_card",
+        )
         service = uow.services.architecture_propagation
         designs, _plan = await service.copy_effective_spec_to_card(
             board_id=command.board_id or card.board_id,

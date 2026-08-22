@@ -15,6 +15,9 @@ from okto_pulse.core.services.card_traceability import (
     TraceabilityScenarioLimitError,
     link_card_traceability,
 )
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 
 
 _CARD_TRACEABILITY_WRITE_PERMISSIONS = {"editor", "admin"}
@@ -67,6 +70,10 @@ class LinkCardTraceabilityUseCase:
             raise EntityNotFoundError("card", command.card_id)
         if card.board_id != spec.board_id:
             raise EntityNotFoundError("card", command.card_id)
+        require_card_operational_mutation_allowed(
+            card,
+            operation="link_card_traceability",
+        )
 
         max_scenarios_per_card: int | None = None
         card_type = getattr(getattr(card, "card_type", None), "value", None)

@@ -39,7 +39,11 @@ class CanonicalDebtRecord:
 
 class CanonicalDebtStore(Protocol):
     async def counts_by_state(
-        self, context: object, *, board_id: str
+        self,
+        context: object,
+        *,
+        board_id: str,
+        include_code_traceability: bool = True,
     ) -> dict[str, int]: ...
 
     async def list_records(
@@ -51,6 +55,7 @@ class CanonicalDebtStore(Protocol):
         state: str | None,
         limit: int,
         offset: int,
+        include_code_traceability: bool = True,
     ) -> tuple[int, Sequence[CanonicalDebtRecord]]: ...
 
     async def find_by_identity(
@@ -65,7 +70,11 @@ class CanonicalDebtStore(Protocol):
     ) -> CanonicalDebtRecord | None: ...
 
     async def get(
-        self, context: object, *, debt_id: str
+        self,
+        context: object,
+        *,
+        debt_id: str,
+        include_code_traceability: bool = True,
     ) -> CanonicalDebtRecord | None: ...
 
     async def find_open_by_evidence(

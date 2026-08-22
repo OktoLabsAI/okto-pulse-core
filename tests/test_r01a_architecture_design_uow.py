@@ -36,8 +36,8 @@ from okto_pulse.core.services.architecture import CARD_ARCHITECTURE_READ_ONLY_ME
 USER = "r01a-fu5-s1b-user"
 PREFIX = "/api/v1"
 SPEC_LOCKED_DETAIL = (
-    "Spec is locked because validation passed. Move it back to draft or approved "
-    "to edit architecture."
+    "Spec is locked because validation passed. Move it to Draft to open a new "
+    "edition before editing architecture."
 )
 _ENDPOINTS = (
     "get_architecture_design",
@@ -422,12 +422,16 @@ def test_validate_architecture_payload_200_structured_topology(client) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["valid"] is True
-    assert [item["code"] for item in body["structured_warnings"]] == ["isolated_entity_node"]
+    assert [item["code"] for item in body["structured_warnings"]] == [
+        "isolated_entity_node"
+    ]
     # No design_id supplied → no finding_key enrichment.
     assert "finding_key" not in body["structured_warnings"][0]
 
 
-def test_validate_architecture_payload_200_design_id_enriches_finding_key(client) -> None:
+def test_validate_architecture_payload_200_design_id_enriches_finding_key(
+    client,
+) -> None:
     payload = _topology_warning_body()
     payload["design_id"] = "design-fu5s1b-fixed"
     resp = client.post(f"{PREFIX}/architecture/validate", json=payload)
@@ -469,6 +473,7 @@ async def test_get_architecture_design_use_case_raises_for_missing_design() -> N
         EntityNotFoundError,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

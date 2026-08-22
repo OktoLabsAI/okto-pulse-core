@@ -82,7 +82,11 @@ def _resource_uow(
     permission: str | None = None,
     entity_board_id: str = BOARD_A,
 ):
-    entity = SimpleNamespace(id="child-a", board_id=entity_board_id)
+    entity = SimpleNamespace(
+        id="child-a",
+        board_id=entity_board_id,
+        status="draft",
+    )
     resource_gate = SimpleNamespace(
         is_spec_resource_task_coverage_required=MagicMock(return_value=True),
         validate_spec_resource_task_coverage=AsyncMock(

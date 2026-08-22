@@ -11,6 +11,8 @@ from okto_pulse.core.application.service_catalog import (
     build_application_service_catalog,
 )
 from okto_pulse.core.application.use_cases.quality_assessment import (
+    RecordRequirementLintCommand,
+    RecordRequirementLintUseCase,
     SubmitQualityAssessmentCommand,
     SubmitQualityAssessmentUseCase,
 )
@@ -43,6 +45,13 @@ from okto_pulse.core.domain.quality_assessment import (
     project_assessment_receipt_view,
 )
 from okto_pulse.core.domain.realm import MissingRealmScope, RealmScope
+from okto_pulse.core.domain.requirement_lint import (
+    external_requirement_lint_scale_v1,
+)
+from okto_pulse.core.domain.validation_cycle import (
+    RequirementLintPreflight,
+    ValidationSubmissionFence,
+)
 from okto_pulse.core.events.types import QualityAssessmentRecorded
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.ports.quality_assessment import (
@@ -473,28 +482,6 @@ def test_wrong_subject_status_is_a_non_retryable_conflict() -> None:
             QualityAssessmentForbiddenError,
             "assessment_permission_denied",
         ),
-        (
-            _submission(
-                questions=(
-                    ProposedQuestionDraft(
-                        client_key="q1",
-                        question="Why?",
-                        question_type="free_text",
-                        finding_keys=("f1",),
-                    ),
-                )
-            ),
-            _preflight(
-                authority=AssessmentAuthoritySnapshot(
-                    domain_write=True,
-                    quality_assess=True,
-                    qa_ask=False,
-                    authority_digest=AUTHORITY_DIGEST,
-                )
-            ),
-            QualityAssessmentForbiddenError,
-            "assessment_qa_permission_required",
-        ),
     ],
 )
 def test_prepare_fails_before_persistence(submission, preflight, error_type, code) -> None:
@@ -506,6 +493,37 @@ def test_prepare_fails_before_persistence(submission, preflight, error_type, cod
             preflight=preflight,
         )
     assert exc_info.value.code == code
+
+
+def test_proposed_questions_are_evidence_and_do_not_require_qa_write_permission(
+) -> None:
+    service = QualityAssessmentService(id_factory=_Ids(), clock=lambda: NOW)
+    submission = _submission(
+        questions=(
+            ProposedQuestionDraft(
+                client_key="q1",
+                question="Why?",
+                question_type="free_text",
+                finding_keys=("f1",),
+            ),
+        )
+    )
+    preflight = _preflight(
+        authority=AssessmentAuthoritySnapshot(
+            domain_write=True,
+            quality_assess=True,
+            qa_ask=False,
+            authority_digest=AUTHORITY_DIGEST,
+        )
+    )
+
+    bundle = service.prepare_submission(
+        submission,
+        actor_id="agent-1",
+        preflight=preflight,
+    )
+
+    assert len(bundle.proposed_questions) == 1
 
 
 def test_scale_mismatch_is_rejected_before_persistence() -> None:
@@ -790,6 +808,158 @@ class _UowFactory:
         except Exception:
             await self.uow.rollback()
             raise
+
+
+class _RequirementLintReplayReader:
+    def __init__(self) -> None:
+        self.head_revision = 0
+        self.replay: AssessmentCommitResult | None = None
+        self.lookup_calls = 0
+
+    def assessment_preflight(self) -> AssessmentPreflight:
+        return AssessmentPreflight(
+            subject=AssessmentSubjectRef(
+                board_id="b1",
+                subject_type=AssessmentSubjectType.SPEC,
+                subject_id="spec-1",
+                subject_version=7,
+                subject_edition=1,
+            ),
+            status="approved",
+            current_head_revision=self.head_revision,
+            current_head_receipt_id=(
+                None if self.head_revision == 0 else "qar_lint_original"
+            ),
+            channel="mcp:quality_assess",
+            expected_scale=external_requirement_lint_scale_v1(1),
+            digests=_digests(),
+            versions=AssessmentVersionSet(
+                "rules/v1",
+                "taxonomy/v1",
+                "external-agent/v1",
+                "policy/v1",
+            ),
+            anchors=AssessmentAnchorCatalog(),
+            allowed_category_codes=frozenset({"acceptance_measurability"}),
+            authority=AssessmentAuthoritySnapshot(
+                domain_write=True,
+                quality_assess=True,
+                authority_digest=AUTHORITY_DIGEST,
+            ),
+            origin=AssessmentOrigin.HUMAN_OR_AGENT,
+        )
+
+    async def resolve_requirement_lint_preflight(
+        self,
+        *,
+        spec_id,
+        actor_id,
+        realm_scope,
+    ):
+        assert spec_id == "spec-1"
+        assert actor_id == "agent-1"
+        assert realm_scope == RealmScope.local()
+        preflight = self.assessment_preflight()
+        return RequirementLintPreflight(
+            subject_edition=1,
+            subject_status="approved",
+            ruleset_digest=preflight.digests.ruleset_digest,
+            requirement_anchors=(),
+            submission_fence=ValidationSubmissionFence(
+                expected_validation_edition=1,
+                expected_subject_version=7,
+                expected_head_revision=self.head_revision,
+            ),
+        )
+
+    async def resolve_assessment_preflight_request(
+        self,
+        request,
+        *,
+        actor_id,
+        realm_scope,
+    ):
+        assert actor_id == "agent-1"
+        assert realm_scope == RealmScope.local()
+        assert request.expected_head_revision == self.head_revision
+        return self.assessment_preflight()
+
+    async def lookup_assessment_replay(self, **kwargs):
+        assert kwargs["board_id"] == "b1"
+        assert kwargs["idempotency_key"] == "lint-idem-1"
+        assert kwargs["actor_id"] == "agent-1"
+        assert kwargs["realm_scope"] == RealmScope.local()
+        self.lookup_calls += 1
+        return self.replay
+
+
+class _RequirementLintReplayPersistence(_Persistence):
+    def __init__(self, reader: _RequirementLintReplayReader) -> None:
+        super().__init__()
+        self.reader = reader
+
+    async def apply_bundle_cas(self, bundle):
+        self.bundles.append(bundle)
+        result = AssessmentCommitResult(
+            board_id=bundle.receipt.subject.board_id,
+            subject_type=bundle.receipt.subject.subject_type,
+            subject_id=bundle.receipt.subject.subject_id,
+            subject_version=bundle.receipt.subject.subject_version,
+            subject_edition=bundle.receipt.subject.subject_edition,
+            assessment_kind=bundle.receipt.assessment_kind,
+            request_fingerprint=bundle.request_fingerprint,
+            receipt_id=bundle.receipt.id,
+            head_revision=bundle.next_head.revision,
+            event_id=bundle.audit_intent.event_id,
+            history_id=bundle.audit_intent.history_id,
+            outbox_id=bundle.audit_intent.outbox_id,
+            qa_id_map=(),
+        )
+        self.reader.head_revision = result.head_revision
+        self.reader.replay = replace(result, replayed=True)
+        return result
+
+
+@pytest.mark.asyncio
+async def test_requirement_lint_exact_retry_replays_before_mutable_head_conflict(
+) -> None:
+    reader = _RequirementLintReplayReader()
+    persistence = _RequirementLintReplayPersistence(reader)
+    factory = _UowFactory(persistence)
+    service = QualityAssessmentService(id_factory=_Ids(), clock=lambda: NOW)
+    use_case = RecordRequirementLintUseCase(
+        preflight_reader=reader,
+        uow_factory=factory,
+        service=service,
+    )
+    command = RecordRequirementLintCommand(
+        board_id="b1",
+        spec_id="spec-1",
+        expected_subject_version=7,
+        expected_subject_edition=1,
+        expected_head_revision=0,
+        ruleset_digest=_digests().ruleset_digest,
+        idempotency_key="lint-idem-1",
+        score=0,
+        summary="No requirement lint findings.",
+    )
+    actor = ActorContext(
+        "agent-1",
+        "mcp",
+        board_id="b1",
+        realm_scope=RealmScope.local(),
+    )
+
+    first = await use_case.execute(command, actor=actor)
+    replay = await use_case.execute(command, actor=actor)
+
+    assert first.replayed is False
+    assert replay.replayed is True
+    assert replay.receipt_id == first.receipt_id
+    assert reader.head_revision == 1
+    assert reader.lookup_calls == 2
+    assert factory.opens == 1
+    assert len(persistence.bundles) == 1
 
 
 @pytest.mark.asyncio

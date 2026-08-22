@@ -130,6 +130,7 @@ def _submission(
             entity_type=PolicyEntityType.SPEC,
             subject_id="spec-1",
             subject_version=4,
+            subject_edition=1,
         ),
         binding_id="binding-1",
         expected_binding_revision=3,
@@ -282,15 +283,27 @@ class _Port:
 
 class _Uow:
     def __init__(self, port: _Port) -> None:
+        self._board_id = port.board_id
         self.boards = _BoardRepo()
         self.services = SimpleNamespace(
             guidelines=SimpleNamespace(
                 policy_persistence=lambda: port,
                 semantic_policy_persistence=lambda: port,
-            )
+            ),
+            specs=SimpleNamespace(
+                get_spec=self._get_spec,
+            ),
         )
         self.commit_count = 0
         self.rollback_count = 0
+
+    async def _get_spec(self, spec_id: str):
+        return SimpleNamespace(
+            id=spec_id,
+            board_id=self._board_id,
+            status=SimpleNamespace(value="approved"),
+            edition=1,
+        )
 
     async def commit(self) -> None:
         self.commit_count += 1

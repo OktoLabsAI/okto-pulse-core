@@ -11,6 +11,9 @@ Scenarios:
 
 from __future__ import annotations
 
+import asyncio
+import threading
+
 import pytest
 
 from okto_pulse.core.kg import cognitive_closeout_production as ccp
@@ -51,6 +54,26 @@ class _FakePersister:
         return True
 
 
+class _OffLoopExistingPersister:
+    """Fails if the synchronous graph probe runs on the asyncio loop thread."""
+
+    def __init__(self) -> None:
+        self.probe_thread_ids: list[int] = []
+
+    def already_persisted(self, board_id, node_type, source_artifact_ref):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:  # pragma: no cover - assertion documents the regression contract
+            raise AssertionError("synchronous graph probe ran on the event loop")
+        self.probe_thread_ids.append(threading.get_ident())
+        return True
+
+    async def persist(self, board_id, artifact_type, candidate):
+        raise AssertionError("an existing candidate must not be persisted again")
+
+
 def _bug_probe(known):
     return lambda uuid: uuid in known
 
@@ -87,6 +110,25 @@ async def test_ac1_idempotent_replay_does_not_duplicate():
     assert second.outcome == "persisted"
     assert len(p.persisted) == n_after_first  # replay persisted nothing new
     assert second.skipped_existing_refs  # recognised as already persisted
+
+
+@pytest.mark.asyncio
+async def test_ac1_idempotency_probe_runs_off_event_loop():
+    loop_thread_id = threading.get_ident()
+    p = _OffLoopExistingPersister()
+
+    result = await ccp.run_cognitive_closeout(
+        board_id="b",
+        artifact_type="spec",
+        artifact_ref="spec:s1",
+        spec_context=ANALYSIS_WITH_ALT,
+        persister=p,
+    )
+
+    assert result.outcome == "persisted"
+    assert result.skipped_existing_refs
+    assert p.probe_thread_ids
+    assert all(thread_id != loop_thread_id for thread_id in p.probe_thread_ids)
 
 
 # ---------------------------------------------------------------------------

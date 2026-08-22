@@ -178,7 +178,7 @@ async def _seed_spec(db_factory, *, board_id, spec_id, **spec_kwargs):
         db.add(Board(id=board_id, name="R4", owner_id=USER_ID))
         db.add(Spec(
             id=spec_id, board_id=board_id, title="Spec",
-            status=SpecStatus.IN_PROGRESS, created_by=USER_ID, **spec_kwargs,
+            status=SpecStatus.DRAFT, created_by=USER_ID, **spec_kwargs,
         ))
         await db.commit()
 
@@ -247,7 +247,7 @@ async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
     board_id, spec_id, card_id = _id("r4q-board"), _id("r4q-spec"), _id("r4q-card")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="R4Q", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.IN_PROGRESS, created_by=USER_ID))
+        db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.DRAFT, created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="Card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL, created_by=USER_ID))
         await db.commit()
@@ -353,14 +353,14 @@ async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
             board_id=board_id,
             ideation_id=local_ideation.id,
             title="Local spec",
-            status=SpecStatus.IN_PROGRESS,
+            status=SpecStatus.DRAFT,
             created_by=USER_ID,
         )
         foreign_spec = Spec(
             board_id=foreign_board_id,
             ideation_id=foreign_ideation.id,
             title="Foreign spec",
-            status=SpecStatus.IN_PROGRESS,
+            status=SpecStatus.DRAFT,
             created_by=USER_ID,
         )
         db.add_all(
@@ -438,17 +438,17 @@ async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
 
 
 # ===========================================================================
-# Lazy migration docs — tools/list points to tool-families/ resources instead
-# of embedding migration prose (TC-R4.3, ac_ac75da3a / AC6)
+# Lazy migration docs — tools/list points to the canonical lazy documentation
+# instead of embedding migration prose (TC-R4.3, ac_ac75da3a / AC6)
 # ===========================================================================
 
 
 @pytest.mark.asyncio
 async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
     # ac_ac75da3a (AC6): the consolidated tools' tools/list descriptions REFERENCE
-    # the lazy okto-pulse://reference/tool-families/{family_id} resources instead of
-    # embedding long migration prose. The detailed migration guidance must live in
-    # the resource (moved, NOT deleted) and stay out of the compact description.
+    # canonical lazy documentation instead of embedding long migration prose. The
+    # detailed migration guidance must remain reachable (moved, NOT deleted) and
+    # stay out of the compact description.
     tools = await mcp_server.mcp.get_tools()
     load = mcp_server._load_resource_file
 
@@ -457,34 +457,39 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
             "okto_pulse_remove_spec_entity",
             "okto-pulse://reference/tool-families/spec_entity_remove",
             "reference/tool-families/spec_entity_remove.md",
+            "reference/tool-families/spec_entity_remove.md",
             # full-form legacy alias that lives in the doc, not the compact description
             # (the description only abbreviates it to `/_api_contract`).
             "okto_pulse_remove_api_contract",
         ),
         (
             "okto_pulse_ask",
-            "okto-pulse://reference/tool-families/qa_ask",
+            "okto-pulse://reference/tool-docs/qa",
+            "reference/tool-docs/qa.md",
             "reference/tool-families/qa_ask.md",
             # the description abbreviates to `/_sprint_question`; full form is doc-only.
             "okto_pulse_ask_sprint_question",
         ),
     ]
 
-    for tool_name, family_uri, resource_path, moved_detail in cases:
+    for tool_name, docs_uri, landing_path, detail_path, moved_detail in cases:
         assert tool_name in tools, f"{tool_name} is not registered"
         desc = tools[tool_name].description or ""
 
-        # 1) the compact tools/list description points to the lazy family doc...
-        assert family_uri in desc, f"{tool_name} desc does not reference {family_uri}"
+        # 1) the compact tools/list description points to the canonical lazy doc...
+        assert docs_uri in desc, f"{tool_name} desc does not reference {docs_uri}"
         # 2) ...and stays within the R1 compaction budget (no embedded long prose).
         assert len(desc) <= 900, f"{tool_name} desc {len(desc)} > 900-char budget"
 
         # 3) the long migration detail is MOVED to the lazy resource, not deleted...
-        doc = load(resource_path)
+        landing_doc = load(landing_path)
+        if detail_path != landing_path:
+            assert "okto-pulse://reference/tool-families/qa_ask" in landing_doc
+        doc = load(detail_path)
         assert doc and "R4 consolidation" in doc
         for section in ("Legacy aliases", "Telemetry"):
-            assert section in doc, f"{section} missing from {resource_path}"
-        assert moved_detail in doc, f"{moved_detail} missing from {resource_path}"
+            assert section in doc, f"{section} missing from {detail_path}"
+        assert moved_detail in doc, f"{moved_detail} missing from {detail_path}"
         # 4) ...and is NOT re-embedded into the compact tools/list description.
         assert moved_detail not in desc, (
             f"{tool_name} embeds migration detail '{moved_detail}' "

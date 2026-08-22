@@ -167,6 +167,7 @@ class FindingAnchorType(str, Enum):
 
 
 class AssessmentStaleReason(str, Enum):
+    SUBJECT_EDITION_CHANGED = "subject_edition_changed"
     CONTENT_CHANGED = "content_changed"
     CLARIFICATION_CHANGED = "clarification_changed"
     RULESET_CHANGED = "ruleset_changed"
@@ -177,11 +178,14 @@ class AssessmentStaleReason(str, Enum):
 
 class AssessmentReceiptState(str, Enum):
     CURRENT = "current"
+    PREVIOUS = "previous"
+    # Technical compatibility only. Human lifecycle projections use PREVIOUS.
     STALE = "stale"
     SUPERSEDED = "superseded"
 
 
 ASSESSMENT_STALE_REASON_ORDER: tuple[AssessmentStaleReason, ...] = (
+    AssessmentStaleReason.SUBJECT_EDITION_CHANGED,
     AssessmentStaleReason.SUBJECT_VERSION_CHANGED,
     AssessmentStaleReason.CONTENT_CHANGED,
     AssessmentStaleReason.CLARIFICATION_CHANGED,
@@ -272,6 +276,9 @@ class AssessmentSubjectRef:
     subject_type: AssessmentSubjectType
     subject_id: str
     subject_version: int
+    # ``None`` is accepted only to deserialize evidence created before lifecycle
+    # editions existed. Live subject snapshots and all new writes carry >= 1.
+    subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _enum_instance(
@@ -297,6 +304,15 @@ class AssessmentSubjectRef:
                 "assessment_subject_version_invalid",
             ),
         )
+        if self.subject_edition is not None:
+            object.__setattr__(
+                self,
+                "subject_edition",
+                _strict_positive_int(
+                    self.subject_edition,
+                    "assessment_subject_edition_invalid",
+                ),
+            )
 
     @property
     def identity(self) -> AssessmentSubjectIdentity:
@@ -323,6 +339,10 @@ class AssessmentPreflightRequest:
     expected_subject_version: int
     expected_head_revision: int
     channel: str
+    # Optional at the pure-domain boundary for old integrations; application
+    # commands for lifecycle-managed subjects require and validate it.
+    expected_subject_edition: int | None = None
+    evaluated_rule_count: int | None = None
 
     def __post_init__(self) -> None:
         _enum_instance(
@@ -353,6 +373,34 @@ class AssessmentPreflightRequest:
                 "assessment_subject_version_invalid",
             ),
         )
+        if self.expected_subject_edition is not None:
+            object.__setattr__(
+                self,
+                "expected_subject_edition",
+                _strict_positive_int(
+                    self.expected_subject_edition,
+                    "assessment_subject_edition_invalid",
+                ),
+            )
+        if (
+            self.assessment_kind is AssessmentKind.REQUIREMENT_LINT
+            and self.evaluated_rule_count is not None
+        ):
+            object.__setattr__(
+                self,
+                "evaluated_rule_count",
+                _strict_positive_int(
+                    self.evaluated_rule_count,
+                    "requirement_lint_evaluated_rule_count_invalid",
+                ),
+            )
+        elif (
+            self.assessment_kind is not AssessmentKind.REQUIREMENT_LINT
+            and self.evaluated_rule_count is not None
+        ):
+            raise QualityAssessmentContractError(
+                "assessment_evaluated_rule_count_forbidden"
+            )
         object.__setattr__(
             self,
             "expected_head_revision",
@@ -1602,6 +1650,7 @@ class AssessmentSubmission:
     scale: AssessmentScale
     findings: tuple[QualityFindingDraft, ...] = ()
     proposed_questions: tuple[ProposedQuestionDraft, ...] = ()
+    expected_subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _instance(self.scale, AssessmentScale, "assessment_scale_invalid")
@@ -1633,6 +1682,15 @@ class AssessmentSubmission:
                 "assessment_idempotency_key_required",
             ),
         )
+        if self.expected_subject_edition is not None:
+            object.__setattr__(
+                self,
+                "expected_subject_edition",
+                _strict_positive_int(
+                    self.expected_subject_edition,
+                    "assessment_subject_edition_invalid",
+                ),
+            )
         object.__setattr__(
             self,
             "expected_subject_version",
@@ -1695,6 +1753,7 @@ class AssessmentWriteBundle:
     finding_qa_links: tuple[FindingQaLink, ...]
     next_head: AssessmentSubjectHead
     audit_intent: AssessmentAuditIntent
+    expected_subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _instance(
@@ -1732,6 +1791,17 @@ class AssessmentWriteBundle:
             self.expected_subject_version,
             "assessment_subject_version_invalid",
         )
+        expected_subject_edition = self.expected_subject_edition
+        if expected_subject_edition is not None:
+            expected_subject_edition = _strict_positive_int(
+                expected_subject_edition,
+                "assessment_subject_edition_invalid",
+            )
+            object.__setattr__(
+                self,
+                "expected_subject_edition",
+                expected_subject_edition,
+            )
         expected_head_revision = _strict_non_negative_int(
             self.expected_head_revision,
             "assessment_head_revision_invalid",
@@ -1823,6 +1893,13 @@ class AssessmentWriteBundle:
         if subject.subject_version != expected_subject_version:
             raise QualityAssessmentContractError(
                 "assessment_bundle_subject_version_mismatch"
+            )
+        if (
+            expected_subject_edition is not None
+            and subject.subject_edition != expected_subject_edition
+        ):
+            raise QualityAssessmentContractError(
+                "assessment_bundle_subject_edition_mismatch"
             )
         if self.receipt.digests.input_digest != self.expected_input_digest:
             raise QualityAssessmentContractError(
@@ -1936,6 +2013,7 @@ class AssessmentCommitResult:
     outbox_id: str
     qa_id_map: tuple[tuple[str, str], ...]
     replayed: bool = False
+    subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _enum_instance(
@@ -1966,6 +2044,15 @@ class AssessmentCommitResult:
                 "assessment_subject_version_invalid",
             ),
         )
+        if self.subject_edition is not None:
+            object.__setattr__(
+                self,
+                "subject_edition",
+                _strict_positive_int(
+                    self.subject_edition,
+                    "assessment_subject_edition_invalid",
+                ),
+            )
         object.__setattr__(
             self,
             "request_fingerprint",
@@ -2135,6 +2222,18 @@ def evaluate_assessment_input_currentness(
     ):
         raise QualityAssessmentContractError("assessment_subject_mismatch")
 
+    # Human currentness is lifecycle-edition scoped. Once a live edition is
+    # available, technical version and digest drift remain audit/CAS evidence
+    # and cannot turn an accepted result into a human-facing stale result.
+    if current_subject.subject_edition is not None:
+        if assessed_subject.subject_edition == current_subject.subject_edition:
+            return AssessmentCurrentness(current=True, stale_reasons=())
+        return AssessmentCurrentness(
+            current=False,
+            stale_reasons=(AssessmentStaleReason.SUBJECT_EDITION_CHANGED,),
+        )
+
+    # Compatibility for callers not yet upgraded to lifecycle editions.
     reasons: list[AssessmentStaleReason] = []
     if assessed_subject.subject_version != current_subject.subject_version:
         reasons.append(AssessmentStaleReason.SUBJECT_VERSION_CHANGED)

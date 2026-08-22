@@ -15,7 +15,7 @@ from okto_pulse.core.domain.quality_assessment import (
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 
 QUALITY_ASSESSMENT_LIFECYCLE_CONTRACT_VERSION = (
-    "quality-assessment-lifecycle/v1"
+    "quality-assessment-lifecycle/v2"
 )
 
 
@@ -70,6 +70,7 @@ def _sha256(value: object, code: str) -> str:
 
 
 class AssessmentLifecycleAction(str, Enum):
+    ADMIT_VALIDATION = "admit_validation"
     ARCHIVE = "archive"
     CANCEL = "cancel"
     RESTORE = "restore"
@@ -294,7 +295,22 @@ class AssessmentLifecycleTransition:
                 "assessment_lifecycle_occurred_at_must_be_aware",
             ),
         )
-        if self.action is AssessmentLifecycleAction.ARCHIVE:
+        if self.action is AssessmentLifecycleAction.ADMIT_VALIDATION:
+            validation_status = {
+                AssessmentSubjectType.IDEATION: "evaluating",
+                AssessmentSubjectType.REFINEMENT: "approved",
+                AssessmentSubjectType.SPEC: "approved",
+            }[self.after.subject.subject_type]
+            valid = (
+                self.after.status == validation_status
+                and self.before.status != validation_status
+                and self.before.subject.subject_version
+                == self.after.subject.subject_version
+                and self.before.subject.subject_edition
+                == self.after.subject.subject_edition
+                and not self.after.archived
+            )
+        elif self.action is AssessmentLifecycleAction.ARCHIVE:
             valid = not self.before.archived and self.after.archived
         elif self.action is AssessmentLifecycleAction.CANCEL:
             valid = (
@@ -304,13 +320,25 @@ class AssessmentLifecycleTransition:
         elif self.action is AssessmentLifecycleAction.RESTORE:
             valid = self.before.archived and not self.after.archived
         else:
-            valid = (
-                self.after.status == "draft"
-                and self.before.status in {"done", "cancelled"}
-                and self.after.subject.subject_version
-                == self.before.subject.subject_version + 1
-                and not self.after.archived
-            )
+            before_edition = self.before.subject.subject_edition
+            after_edition = self.after.subject.subject_edition
+            if before_edition is not None or after_edition is not None:
+                valid = (
+                    self.after.status == "draft"
+                    and self.before.status != "draft"
+                    and before_edition is not None
+                    and after_edition == before_edition + 1
+                    and not self.after.archived
+                )
+            else:
+                # Compatibility for pre-edition lifecycle events.
+                valid = (
+                    self.after.status == "draft"
+                    and self.before.status in {"done", "cancelled"}
+                    and self.after.subject.subject_version
+                    == self.before.subject.subject_version + 1
+                    and not self.after.archived
+                )
         if not valid:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_transition_invalid"
@@ -325,9 +353,11 @@ class AssessmentLifecycleTransition:
                 "subject_type": self.after.subject.subject_type.value,
                 "subject_id": self.after.subject.subject_id,
                 "before_version": self.before.subject.subject_version,
+                "before_edition": self.before.subject.subject_edition,
                 "before_status": self.before.status,
                 "before_archived": self.before.archived,
                 "after_version": self.after.subject.subject_version,
+                "after_edition": self.after.subject.subject_edition,
                 "after_status": self.after.status,
                 "after_archived": self.after.archived,
                 "idempotency_key": self.idempotency_key,
@@ -503,6 +533,9 @@ class AssessmentLifecyclePlan:
     head_rebuilds: tuple[AssessmentHeadRebuild, ...]
     preserve_immutable_history: bool
     event_and_outbox_same_uow: bool
+    # A Spec reopen also removes its mutable checklist execution head in the
+    # same UoW. Immutable executions/receipts remain historical evidence.
+    clear_checklist_execution_head: bool = False
     contract_version: str = QUALITY_ASSESSMENT_LIFECYCLE_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
@@ -540,17 +573,21 @@ class AssessmentLifecyclePlan:
             AssessmentLifecycleAction.RESTORE,
             AssessmentLifecycleAction.REOPEN,
         }
+        reconcile = recover or (
+            self.transition.action
+            is AssessmentLifecycleAction.ADMIT_VALIDATION
+        )
         if recover != (self.head_strategy is AssessmentHeadStrategy.RECOMPUTE):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_head_strategy_mismatch"
             )
-        if recover != (
+        if reconcile != (
             self.projection_action is AssessmentProjectionAction.REBUILD
         ):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_projection_action_mismatch"
             )
-        if recover != (self.kg_action is AssessmentKgAction.RECONCILE):
+        if reconcile != (self.kg_action is AssessmentKgAction.RECONCILE):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_kg_action_mismatch"
             )
@@ -565,6 +602,19 @@ class AssessmentLifecyclePlan:
         if self.event_and_outbox_same_uow is not True:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_atomic_audit_required"
+            )
+        if not isinstance(self.clear_checklist_execution_head, bool):
+            raise AssessmentLifecycleContractError(
+                "assessment_lifecycle_checklist_head_flag_invalid"
+            )
+        checklist_reset_required = (
+            self.transition.action is AssessmentLifecycleAction.REOPEN
+            and self.transition.after.subject.subject_type
+            is AssessmentSubjectType.SPEC
+        )
+        if self.clear_checklist_execution_head is not checklist_reset_required:
+            raise AssessmentLifecycleContractError(
+                "assessment_lifecycle_checklist_head_strategy_mismatch"
             )
         if self.contract_version != QUALITY_ASSESSMENT_LIFECYCLE_CONTRACT_VERSION:
             raise AssessmentLifecycleContractError(

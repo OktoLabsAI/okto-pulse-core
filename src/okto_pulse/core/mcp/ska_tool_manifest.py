@@ -1,4 +1,4 @@
-"""Deterministic contract freeze for the eleven SK-A MCP tools.
+"""Deterministic contract freeze for the thirteen SK-A MCP tools.
 
 The manifest binds each tool name to its agent-facing documentation, effective
 permission policy, live FastMCP input-schema digest, and callable digest.  It is
@@ -49,12 +49,28 @@ _TOOL_CONTRACTS: tuple[_ToolContract, ...] = (
         permission_policy=(
             "SPECS_UPDATE",
             "{subject_type}.quality.assess",
-            "{subject_type}.qa.ask when proposed_questions is non-empty",
         ),
         required_source_tokens=(
             "Permissions.SPECS_UPDATE",
             ".quality.assess",
-            ".qa.ask",
+        ),
+    ),
+    _ToolContract(
+        name="okto_pulse_record_requirement_lint",
+        documentation_uri=_QUALITY_DOC,
+        permission_policy=("SPECS_UPDATE", "spec.quality.assess"),
+        required_source_tokens=(
+            "Permissions.SPECS_UPDATE",
+            '"spec.quality.assess"',
+        ),
+    ),
+    _ToolContract(
+        name="okto_pulse_get_requirement_lint_preflight",
+        documentation_uri=_QUALITY_DOC,
+        permission_policy=("BOARD_READ", "spec.quality.read"),
+        required_source_tokens=(
+            "Permissions.BOARD_READ",
+            '"spec.quality.read"',
         ),
     ),
     _ToolContract(
@@ -191,7 +207,7 @@ def _registered_resource_uris() -> frozenset[str]:
 
 
 def build_ska_tool_manifest() -> dict[str, Any]:
-    """Build and validate the frozen contract for all eleven SK-A tools."""
+    """Build and validate the frozen contract for all twelve SK-A tools."""
 
     tools = _live_tools()
     resource_uris = _registered_resource_uris()

@@ -33,6 +33,8 @@ SPEC_ID = "spec-card-auth"
 VALIDATION_ID = "validation-card-auth"
 
 VALIDATION_DATA = {
+    "expected_subject_version": 1,
+    "idempotency_key": "validation-card-auth-submit",
     "confidence": 90,
     "confidence_justification": "high confidence",
     "estimated_completeness": 95,
@@ -228,7 +230,6 @@ _PREFLIGHT_EVENTS = {
     "delete": (
         f"cards:get:{CARD_ID}",
         f"boards:get:{BOARD_ID}",
-        f"validations:get:{CARD_ID}:{VALIDATION_ID}",
     ),
     "link": (
         f"cards:get:{BUG_ID}",
@@ -266,8 +267,7 @@ async def test_rest_denial_resolves_board_after_preflight_and_before_writer(
     permission_event = f"permissions:{ACTOR_ID}:{BOARD_ID}"
     permission_index = uow.events.index(permission_event)
     assert all(
-        uow.events.index(event) < permission_index
-        for event in _PREFLIGHT_EVENTS[case]
+        uow.events.index(event) < permission_index for event in _PREFLIGHT_EVENTS[case]
     )
     assert uow.services.cards.submit_calls == 0
     assert uow.services.cards.delete_calls == 0
@@ -327,6 +327,29 @@ async def test_validation_permissions_do_not_fall_back_to_cards_update(
 
     assert uow.services.cards.submit_calls == 0
     assert uow.services.cards.delete_calls == 0
+    assert uow.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_submit_permission_does_not_disclose_result_without_validation_read() -> (
+    None
+):
+    uow = _Uow(None)
+    actor = ActorContext(
+        ACTOR_ID,
+        "mcp",
+        board_id=BOARD_ID,
+        permissions=[
+            "card.validation.submit",
+            "card.interact_in.validation",
+        ],
+    )
+
+    with pytest.raises(PermissionDeniedError, match="card.validation.read"):
+        await _execute("submit", actor=actor, uow=uow)
+
+    assert uow.services.cards.submit_calls == 0
+    assert uow.services.actor_name_calls == 0
     assert uow.commits == 0
 
 

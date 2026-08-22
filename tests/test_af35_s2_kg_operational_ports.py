@@ -99,7 +99,7 @@ class _ReadModel:
 class _QueuePort:
     def __init__(self) -> None:
         self.dlq_calls: list[tuple[Any, KGQueueEntrySnapshot, Sequence[Mapping[str, Any]]]] = []
-        self.list_calls: list[tuple[Any, str, int]] = []
+        self.list_calls: list[tuple[Any, str, int, bool]] = []
 
     async def route_to_dead_letter(
         self,
@@ -122,8 +122,11 @@ class _QueuePort:
         *,
         board_id: str,
         limit: int = 100,
+        include_code_traceability: bool = True,
     ) -> Sequence[Mapping[str, Any]]:
-        self.list_calls.append((context, board_id, limit))
+        self.list_calls.append(
+            (context, board_id, limit, include_code_traceability)
+        )
         return [{"id": "dlq-1", "board_id": board_id}]
 
     async def retry_pending_entry(
@@ -307,6 +310,7 @@ async def test_dead_letter_helper_delegates_queue_transition_to_port() -> None:
 
     assert result["original_queue_id"] == "q1"
     assert rows == [{"id": "dlq-1", "board_id": "b1"}]
+    assert port.list_calls == [(context, "b1", 5, False)]
     _, snapshot, errors = port.dlq_calls[0]
     assert snapshot == KGQueueEntrySnapshot(
         id="q1",
@@ -319,7 +323,6 @@ async def test_dead_letter_helper_delegates_queue_transition_to_port() -> None:
     assert [item["attempt"] for item in errors] == [1, 2, 3]
     assert errors[-1]["error_type"] == "ValueError"
     assert errors[-1]["message"] == "final failure"
-    assert port.list_calls == [(context, "b1", 5)]
 
 
 @pytest.mark.asyncio

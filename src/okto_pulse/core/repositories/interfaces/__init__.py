@@ -9,6 +9,7 @@ from okto_pulse.core.repositories.interfaces.repositories import (
     SpecRepository,
 )
 from okto_pulse.core.repositories.interfaces.unit_of_work import (
+    ConsistentReadContractError,
     PulseUnitOfWork,
     UnitOfWorkFactory,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "IdeationRepository",
     "SpecRepository",
     "RepositoryCatalog",
+    "ConsistentReadContractError",
     "PulseUnitOfWork",
     "UnitOfWorkFactory",
 ]

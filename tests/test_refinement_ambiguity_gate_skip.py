@@ -110,6 +110,7 @@ async def test_human_skip_is_version_fenced_audited_and_does_not_bump_version(
             True,
             reason="  Accepted residual ambiguity for this release.  ",
             expected_refinement_version=7,
+            expected_refinement_edition=1,
             source="rest",
             actor_name="Owner",
         )
@@ -139,6 +140,7 @@ async def test_human_skip_is_version_fenced_audited_and_does_not_bump_version(
             "state_changed": True,
             "expected_refinement_version": 7,
             "refinement_version": 7,
+            "edition": 1,
         }
 
 
@@ -156,6 +158,7 @@ async def test_skip_rejects_non_human_source_before_reading_or_writing(
                 True,
                 reason="Agent cannot grant this override.",
                 expected_refinement_version=7,
+                expected_refinement_edition=1,
                 source="mcp",
             )
         assert await _activity_rows(db, refinement_id) == []
@@ -180,6 +183,7 @@ async def test_skip_conflict_and_wrong_lifecycle_have_zero_side_effects(
                 True,
                 reason="Stale modal.",
                 expected_refinement_version=6,
+                expected_refinement_edition=1,
                 source="rest",
             )
         with pytest.raises(
@@ -192,6 +196,7 @@ async def test_skip_conflict_and_wrong_lifecycle_have_zero_side_effects(
                 True,
                 reason="Wrong lifecycle.",
                 expected_refinement_version=7,
+                expected_refinement_edition=1,
                 source="rest",
             )
         assert await _activity_rows(db, approved_id) == []
@@ -203,6 +208,7 @@ def test_skip_request_is_closed_and_normalizes_reason() -> None:
         skip_ambiguity_gate=False,
         reason="  ambiguity resolved  ",
         expected_refinement_version=4,
+        expected_refinement_edition=1,
     )
     assert parsed.reason == "ambiguity resolved"
 
@@ -211,6 +217,7 @@ def test_skip_request_is_closed_and_normalizes_reason() -> None:
             skip_ambiguity_gate=True,
             reason=" ",
             expected_refinement_version=4,
+            expected_refinement_edition=1,
         )
     with pytest.raises(ValidationError):
         RefinementAmbiguityGateSkipUpdate.model_validate(
@@ -218,6 +225,7 @@ def test_skip_request_is_closed_and_normalizes_reason() -> None:
                 "skip_ambiguity_gate": True,
                 "reason": "smuggled edit",
                 "expected_refinement_version": 4,
+                "expected_refinement_edition": 1,
                 "analysis": "must not be writable here",
             }
         )
@@ -237,6 +245,7 @@ async def test_use_case_rejects_mcp_actor_before_touching_unit_of_work() -> None
                 skip=True,
                 reason="Only a human may authorize this.",
                 expected_refinement_version=1,
+                expected_refinement_edition=1,
             ),
             actor=ActorContext(
                 actor_id="agent-1",

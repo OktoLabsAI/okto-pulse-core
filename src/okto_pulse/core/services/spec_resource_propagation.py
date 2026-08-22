@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from okto_pulse.core.domain.card_completion import card_is_rejected
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignUpdate,
     ArchitectureWarningAcknowledgementRequest,
@@ -85,6 +86,16 @@ class SpecResourcePropagationService:
         card = await store.get_card(self.db, card_id=card_id)
         if not spec or not card or spec.board_id != board_id or card.board_id != board_id:
             return {"enabled": True, "reason": "spec_or_card_not_found"}
+        if card_is_rejected(card):
+            return {
+                "enabled": True,
+                "reason": "card_rejected_operational_freeze",
+                "spec_id": spec_id,
+                "card_id": card_id,
+                "resource_types": resource_types,
+                "results": {},
+                "skipped": True,
+            }
 
         # Resolve authority before the first resource mutation.  A port/read
         # failure aborts the whole propagation attempt, so mockup or architecture

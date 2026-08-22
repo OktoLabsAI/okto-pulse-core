@@ -93,6 +93,21 @@ class QualityAssessmentLifecycleService:
             AssessmentLifecycleAction.RESTORE,
             AssessmentLifecycleAction.REOPEN,
         }
+        if transition.action is AssessmentLifecycleAction.ADMIT_VALIDATION:
+            # Admission freezes the edition's governance scope through the
+            # persistence port in the caller-owned UoW. Existing human-result
+            # heads remain unchanged; no new result exists until an external
+            # evaluator submits it.
+            return AssessmentLifecyclePlan(
+                transition=transition,
+                head_strategy=AssessmentHeadStrategy.PRESERVE,
+                projection_action=AssessmentProjectionAction.REBUILD,
+                kg_action=AssessmentKgAction.RECONCILE,
+                head_rebuilds=(),
+                preserve_immutable_history=True,
+                event_and_outbox_same_uow=True,
+                clear_checklist_execution_head=False,
+            )
         if not recover:
             return AssessmentLifecyclePlan(
                 transition=transition,
@@ -102,6 +117,42 @@ class QualityAssessmentLifecycleService:
                 head_rebuilds=(),
                 preserve_immutable_history=True,
                 event_and_outbox_same_uow=True,
+                clear_checklist_execution_head=False,
+            )
+
+        if transition.action is AssessmentLifecycleAction.REOPEN:
+            # Opening a new lifecycle edition has no current human result. Clear
+            # every mutable head association while preserving all immutable rows.
+            heads_by_kind = {
+                item.assessment_kind: item for item in resolved_heads
+            }
+            rebuilds = tuple(
+                AssessmentHeadRebuild(
+                    assessment_kind=kind,
+                    expected_revision=head.revision,
+                    previous_receipt_id=head.receipt_id,
+                    selected_receipt_id=None,
+                    selected_state=None,
+                    resulting_revision=head.revision + 1,
+                    stale_transition_required=False,
+                    stale_transition_key=None,
+                )
+                for kind, head in sorted(
+                    heads_by_kind.items(),
+                    key=lambda item: item[0].value,
+                )
+            )
+            return AssessmentLifecyclePlan(
+                transition=transition,
+                head_strategy=AssessmentHeadStrategy.RECOMPUTE,
+                projection_action=AssessmentProjectionAction.REBUILD,
+                kg_action=AssessmentKgAction.RECONCILE,
+                head_rebuilds=rebuilds,
+                preserve_immutable_history=True,
+                event_and_outbox_same_uow=True,
+                clear_checklist_execution_head=(
+                    transition.after.subject.subject_type.value == "spec"
+                ),
             )
 
         inputs = {
@@ -220,6 +271,7 @@ class QualityAssessmentLifecycleService:
             head_rebuilds=tuple(rebuilds),
             preserve_immutable_history=True,
             event_and_outbox_same_uow=True,
+            clear_checklist_execution_head=False,
         )
 
     def prepare_subject_purge(

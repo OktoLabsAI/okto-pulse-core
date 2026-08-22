@@ -293,6 +293,112 @@ async def test_copy_mockups_falls_back_to_effective(db_factory):
 
 
 @pytest.mark.asyncio
+async def test_copy_mockups_merges_partial_direct_and_effective_inherited(db_factory):
+    """A partial direct selection must not hide another inherited obligation."""
+
+    board_id = _id("board")
+    ideation_id = _id("idea")
+    refinement_id = _id("ref")
+    spec_id = _id("spec")
+    card_id = _id("card")
+    shared_root_id = _id("shared-root")
+    receipt_root_id = _id("receipt-root")
+    direct_copy_id = _id("direct-copy")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="partial mockups", owner_id=USER_ID))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="idea",
+                created_by=USER_ID,
+                screen_mockups=[
+                    {
+                        "id": shared_root_id,
+                        "title": "Shared screen",
+                        "screen_type": "page",
+                        "html_content": "<main>shared</main>",
+                    },
+                    {
+                        "id": receipt_root_id,
+                        "title": "Receipt detail",
+                        "screen_type": "modal",
+                        "html_content": "<section>receipt</section>",
+                    },
+                ],
+            )
+        )
+        db.add(
+            Refinement(
+                id=refinement_id,
+                board_id=board_id,
+                ideation_id=ideation_id,
+                title="refinement",
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                refinement_id=refinement_id,
+                ideation_id=ideation_id,
+                title="partially propagated spec",
+                created_by=USER_ID,
+                screen_mockups=[
+                    {
+                        "id": direct_copy_id,
+                        "origin_id": shared_root_id,
+                        "source_mockup_id": shared_root_id,
+                        "title": "Shared screen",
+                        "screen_type": "page",
+                        "html_content": "<main>shared</main>",
+                    }
+                ],
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="impl card",
+                status=CardStatus.IN_PROGRESS,
+                card_type=CardType.NORMAL,
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+
+    result = await _call(
+        "okto_pulse_copy_mockups_to_card",
+        board_id=board_id,
+        spec_id=spec_id,
+        card_id=card_id,
+    )
+
+    assert result.get("success") is True, result
+    assert result["fallback"] is False
+    assert result["copied"] == 2
+
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        mockups = list(card.screen_mockups or [])
+        coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
+            board_id,
+            spec_id,
+        )
+
+    assert {item.get("id") for item in mockups} == {
+        direct_copy_id,
+        receipt_root_id,
+    }
+    assert coverage["allowed"] is True, coverage
+    assert coverage["uncovered_resources"] == [], coverage
+
+
+@pytest.mark.asyncio
 async def test_copy_knowledge_rejects_mixed_valid_and_foreign_ids_atomically(db_factory):
     seed = await _legacy_spec_inheriting(db_factory, with_kb=True)
     foreign_id = _id("foreign-kb")

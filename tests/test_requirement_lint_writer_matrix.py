@@ -1,4 +1,4 @@
-"""A1a governed-writer channel, snapshot, and transaction fault matrix."""
+"""Explicit lint compatibility contracts and mutation-decoupling matrix."""
 
 from __future__ import annotations
 
@@ -35,13 +35,11 @@ from okto_pulse.core.services.requirement_lint_assessment import (
     build_requirement_lint_assessment_bundle,
     requirement_lint_authority_snapshot_v1,
 )
-from okto_pulse.core.services.requirement_lint_writer import (
-    spec_requirement_lint_payload,
-)
 from okto_pulse.core.services.spec_structured_entities import (
     StructuredSpecEntityCommand,
     StructuredSpecEntityService,
 )
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
@@ -114,7 +112,8 @@ def _command(writer: RequirementLintWriter) -> RequirementLintWriteCommand:
     )
 
 
-def test_all_closed_writer_channels_analyze_an_equivalent_semantic_snapshot() -> None:
+def test_explicit_compatibility_channels_build_an_equivalent_semantic_snapshot() -> None:
+    """The dormant compatibility builder remains deterministic when called directly."""
     bundles = {}
     for writer in RequirementLintWriter:
         command = _command(writer)
@@ -189,16 +188,6 @@ class _RecordingHook:
         )
 
 
-def _assert_final_snapshot(
-    command: RequirementLintWriteCommand,
-    spec: object,
-    writer: RequirementLintWriter,
-) -> None:
-    assert command.writer is writer
-    assert command.spec_version == getattr(spec, "version")
-    assert command.spec_payload == spec_requirement_lint_payload(spec)
-
-
 async def _seed_board(db_factory, *, suffix: str) -> str:
     board_id = f"board-ska-writer-{suffix}-{uuid4().hex[:8]}"
     async with db_factory() as db:
@@ -214,11 +203,11 @@ async def _seed_board(db_factory, *, suffix: str) -> str:
     return board_id
 
 
-async def test_bulk_create_and_update_stage_one_exact_final_snapshot(
+async def test_bulk_create_and_update_never_execute_legacy_lint_hook(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="bulk")
-    hook = _RecordingHook()
+    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
     register_requirement_lint_writer_hook(hook)
 
     async with db_factory() as db:
@@ -228,21 +217,16 @@ async def test_bulk_create_and_update_stage_one_exact_final_snapshot(
             ACTOR_ID,
             SpecCreate(
                 title="Bulk create",
+                delivery_context="brownfield",
                 functional_requirements=["FR bulk"],
                 technical_requirements=["TR bulk"],
                 acceptance_criteria=["AC bulk"],
             ),
         )
         assert created is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            created,
-            RequirementLintWriter.BULK_CREATE,
-        )
+        assert hook.calls == []
         await db.commit()
 
-        hook.calls.clear()
         updated = await service.update_spec(
             created.id,
             ACTOR_ID,
@@ -252,16 +236,12 @@ async def test_bulk_create_and_update_stage_one_exact_final_snapshot(
             ),
         )
         assert updated is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            updated,
-            RequirementLintWriter.BULK_UPDATE,
-        )
+        assert updated.title == "Bulk update"
+        assert hook.calls == []
         await db.commit()
 
 
-async def test_ideation_and_refinement_derivation_use_their_explicit_channels(
+async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="derivation")
@@ -291,30 +271,28 @@ async def test_ideation_and_refinement_derivation_use_their_explicit_channels(
             description="Refinement snapshot.",
             created_by=ACTOR_ID,
             status=RefinementStatus.DONE,
+            delivery_context="brownfield",
         )
         db.add(refinement)
+        await db.flush()
+        await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
         direct_id = ideation_direct.id
         refinement_id = refinement.id
 
-    hook = _RecordingHook()
+    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
     register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
         direct_spec = await IdeationService(db).derive_spec(
             direct_id,
             ACTOR_ID,
             skip_ownership_check=True,
+            delivery_context="brownfield",
         )
         assert direct_spec is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            direct_spec,
-            RequirementLintWriter.DERIVE_IDEATION,
-        )
+        assert hook.calls == []
         await db.commit()
 
-    hook.calls.clear()
     async with db_factory() as db:
         refined_spec = await RefinementService(db).derive_spec(
             refinement_id,
@@ -322,12 +300,7 @@ async def test_ideation_and_refinement_derivation_use_their_explicit_channels(
             skip_ownership_check=True,
         )
         assert refined_spec is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            refined_spec,
-            RequirementLintWriter.DERIVE_REFINEMENT,
-        )
+        assert hook.calls == []
         await db.commit()
 
 
@@ -338,19 +311,21 @@ def _spec_writer_permissions():
     return resolve_permissions(None, preset["flags"], None)
 
 
-async def test_structured_crud_stages_one_post_mutation_snapshot(db_factory) -> None:
+async def test_structured_crud_never_executes_legacy_lint_hook(db_factory) -> None:
     board_id = await _seed_board(db_factory, suffix="structured")
-    hook = _RecordingHook()
+    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
     register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
         spec = await SpecService(db).create_spec(
             board_id,
             ACTOR_ID,
-            SpecCreate(title="Structured writer"),
+            SpecCreate(
+                title="Structured writer",
+                delivery_context="brownfield",
+            ),
         )
         assert spec is not None
         await db.commit()
-        hook.calls.clear()
 
         result = await StructuredSpecEntityService(db).mutate(
             StructuredSpecEntityCommand(
@@ -370,20 +345,19 @@ async def test_structured_crud_stages_one_post_mutation_snapshot(db_factory) -> 
         assert result.success is True
         persisted = await db.get(Spec, spec.id)
         assert persisted is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            persisted,
-            RequirementLintWriter.STRUCTURED_CRUD,
+        assert any(
+            requirement.get("id") == "tr_writer_matrix"
+            for requirement in persisted.technical_requirements
         )
+        assert hook.calls == []
         await db.commit()
 
 
-async def test_scenario_body_update_and_delete_stage_their_final_snapshots(
+async def test_scenario_body_update_and_delete_never_execute_legacy_lint_hook(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="scenario")
-    hook = _RecordingHook()
+    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
     register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
         service = SpecService(db)
@@ -392,6 +366,7 @@ async def test_scenario_body_update_and_delete_stage_their_final_snapshots(
             ACTOR_ID,
             SpecCreate(
                 title="Scenario writer",
+                delivery_context="brownfield",
                 test_scenarios=[
                     {
                         "id": "ts_writer_matrix",
@@ -406,7 +381,6 @@ async def test_scenario_body_update_and_delete_stage_their_final_snapshots(
         )
         assert spec is not None
         await db.commit()
-        hook.calls.clear()
 
         await service.update_test_scenario(
             spec.id,
@@ -416,14 +390,10 @@ async def test_scenario_body_update_and_delete_stage_their_final_snapshots(
         )
         updated = await service.get_spec(spec.id)
         assert updated is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            updated,
-            RequirementLintWriter.SCENARIO_BODY_UPDATE,
-        )
+        assert updated.test_scenarios[0]["given"] == "an updated draft spec"
+        assert hook.calls == []
+        await db.commit()
 
-        hook.calls.clear()
         await service.delete_test_scenario(
             spec.id,
             ACTOR_ID,
@@ -431,12 +401,9 @@ async def test_scenario_body_update_and_delete_stage_their_final_snapshots(
         )
         deleted = await service.get_spec(spec.id)
         assert deleted is not None
-        assert len(hook.calls) == 1
-        _assert_final_snapshot(
-            hook.calls[0][1],
-            deleted,
-            RequirementLintWriter.SCENARIO_DELETE,
-        )
+        assert deleted.test_scenarios == []
+        assert hook.calls == []
+        await db.commit()
 
 
 async def _assert_no_spec_side_effects(
@@ -481,7 +448,7 @@ async def _assert_no_spec_side_effects(
     "failure_stage",
     ("analyzer", "persistence", "head_cas", "outbox"),
 )
-async def test_hook_stage_faults_roll_back_the_writer_uow_exactly_once(
+async def test_legacy_hook_stage_faults_do_not_participate_in_mutation_uow(
     db_factory,
     failure_stage: str,
 ) -> None:
@@ -494,27 +461,27 @@ async def test_hook_stage_faults_roll_back_the_writer_uow_exactly_once(
     register_requirement_lint_writer_hook(hook)
 
     async with db_factory() as db:
-        with pytest.raises(RequirementLintExecutionFailed) as raised:
-            await SpecService(db).create_spec(
-                board_id,
-                ACTOR_ID,
-                SpecCreate(
-                    title=f"Rollback {failure_stage}",
-                    functional_requirements=["Nothing may survive."],
-                ),
-            )
-        assert raised.value is failure
-        assert len(hook.calls) == 1
-        await db.rollback()
+        spec = await SpecService(db).create_spec(
+            board_id,
+            ACTOR_ID,
+            SpecCreate(
+                title=f"External lint {failure_stage}",
+                delivery_context="brownfield",
+                functional_requirements=["The entity mutation must survive."],
+            ),
+        )
+        assert spec is not None
+        spec_id = spec.id
+        assert hook.calls == []
+        await db.commit()
 
-    await _assert_no_spec_side_effects(
-        db_factory,
-        board_id,
-        hook.calls[0][1].spec_id,
-    )
+    async with db_factory() as db:
+        persisted = await db.get(Spec, spec_id)
+        assert persisted is not None
+        assert persisted.title == f"External lint {failure_stage}"
 
 
-async def test_outer_commit_fault_rolls_back_after_one_successful_lint_stage(
+async def test_outer_commit_fault_rolls_back_without_executing_legacy_lint_hook(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="fault-commit")
@@ -530,11 +497,13 @@ async def test_outer_commit_fault_rolls_back_after_one_successful_lint_stage(
             ACTOR_ID,
             SpecCreate(
                 title="Commit must fail",
+                delivery_context="brownfield",
                 functional_requirements=["No partial commit."],
             ),
         )
         assert spec is not None
-        assert len(hook.calls) == 1
+        spec_id = spec.id
+        assert hook.calls == []
 
         def _fail_commit(_session) -> None:
             raise CommitFailure("fault_injected")
@@ -547,9 +516,9 @@ async def test_outer_commit_fault_rolls_back_after_one_successful_lint_stage(
             event.remove(db.sync_session, "before_commit", _fail_commit)
             await db.rollback()
 
-    assert len(hook.calls) == 1
+    assert hook.calls == []
     await _assert_no_spec_side_effects(
         db_factory,
         board_id,
-        hook.calls[0][1].spec_id,
+        spec_id,
     )

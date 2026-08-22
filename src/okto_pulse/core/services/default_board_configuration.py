@@ -338,6 +338,10 @@ class DefaultBoardConfigurationService:
             else:
                 supplied_settings = dict(settings_override or {})
             supplied_settings.setdefault("reviewer_separation_mode", "enforce")
+            supplied_settings.setdefault(
+                "code_traceability",
+                {"mode": "advisory"},
+            )
             return BoardGovernanceService.normalize_settings(supplied_settings), None
 
         effective = BoardGovernanceService.merge_settings_patch(
@@ -348,6 +352,7 @@ class DefaultBoardConfigurationService:
         # materialize the current safe default on the new board unless the
         # template/override explicitly selected another mode.
         effective.setdefault("reviewer_separation_mode", "enforce")
+        effective.setdefault("code_traceability", {"mode": "advisory"})
         snapshot_meta = {
             "template_id": template.id,
             "template_version": template.version,
@@ -779,6 +784,7 @@ class DefaultBoardConfigurationService:
         else:
             supplied_settings = dict(settings_payload or {})
         supplied_settings.setdefault("reviewer_separation_mode", "enforce")
+        supplied_settings.setdefault("code_traceability", {"mode": "advisory"})
         validated_payload = self._validate_settings(supplied_settings)
         await self._validate_guideline_default_refs(
             guideline_default_refs,

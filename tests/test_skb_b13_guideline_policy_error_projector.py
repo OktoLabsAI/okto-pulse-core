@@ -27,6 +27,7 @@ from okto_pulse.core.inbound.guideline_policy_cursor import (
     GuidelinePolicyCursorConfigurationError,
 )
 from okto_pulse.core.inbound.guideline_policy_error import (
+    UnsupportedGuidelinePolicyError,
     guideline_policy_http_status,
     project_guideline_policy_error,
 )
@@ -323,7 +324,7 @@ def test_import_path_is_omitted_even_when_it_looks_structural() -> None:
 
 def test_unknown_programming_errors_are_not_silently_reclassified() -> None:
     with pytest.raises(
-        TypeError,
+        UnsupportedGuidelinePolicyError,
         match="guideline_policy_error_type_unsupported",
     ):
         project_guideline_policy_error(RuntimeError("unexpected bug"))

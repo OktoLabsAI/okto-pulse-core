@@ -28,9 +28,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server
+from okto_pulse.core.domain.human_validation_cycle import (
+    SubjectEditRequiresDraftError,
+)
 from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
-from okto_pulse.core.services.main import SpecLockedError, SpecService
+from okto_pulse.core.services.main import SpecService
 
 
 # Each tuple is (target_type, requires_spec_id)
@@ -324,22 +327,16 @@ async def test_locked_spec_allows_traceability_only_links_for_fr_tr_decision(
             created_by=actor_id,
         ))
         await db.commit()
-        service = SpecService(db)
-        await service.submit_spec_validation(
-            spec_id=spec_id,
-            reviewer_id=actor_id,
-            reviewer_name="Validator",
-            data={
-                "completeness": 90,
-                "completeness_justification": "Complete enough for execution",
-                "assertiveness": 90,
-                "assertiveness_justification": "Requirements are measurable",
-                "ambiguity": 5,
-                "ambiguity_justification": "Terminology is clear",
-                "general_justification": "Approved for implementation",
-                "recommendation": "approve",
-            },
-        )
+        spec = await db.get(Spec, spec_id)
+        validation_id = f"validation-{uuid.uuid4().hex[:8]}"
+        spec.current_validation_id = validation_id
+        spec.validations = [
+            {
+                "id": validation_id,
+                "outcome": "success",
+                "edition": spec.edition,
+            }
+        ]
         await db.commit()
 
     ctx = type(
@@ -374,7 +371,7 @@ async def test_locked_spec_allows_traceability_only_links_for_fr_tr_decision(
         collection = getattr(spec, field)
         target = next(item for item in collection if item["id"] == target_id)
         assert target["linked_task_ids"] == [card_id]
-        with pytest.raises(SpecLockedError):
+        with pytest.raises(SubjectEditRequiresDraftError):
             await SpecService(db).update_spec(
                 spec_id,
                 actor_id,

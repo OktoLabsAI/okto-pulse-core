@@ -89,6 +89,7 @@ class QueueHealthReadPort(Protocol):
         now: datetime,
         stuck_before: datetime,
         item_limit: int,
+        include_code_traceability: bool = True,
     ) -> ActiveQueueStorageSnapshot: ...
 
     async def global_outbox_dead_letter_snapshot(

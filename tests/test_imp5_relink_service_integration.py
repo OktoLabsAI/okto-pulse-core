@@ -30,6 +30,7 @@ from okto_pulse.core.services.main import (
     SpecService,
     _reset_v2_knowledge_for_relink,
 )
+from r3_scenario_helpers import freeze_refinement_completion_fixture
 
 
 BOARD_ID = "imp5-relink-board"
@@ -79,6 +80,7 @@ def _spec(
     *,
     ideation_id: str | None = None,
     refinement_id: str | None = None,
+    status: SpecStatus = SpecStatus.APPROVED,
 ) -> Spec:
     return Spec(
         id=spec_id,
@@ -86,7 +88,7 @@ def _spec(
         ideation_id=ideation_id,
         refinement_id=refinement_id,
         title=spec_id,
-        status=SpecStatus.APPROVED,
+        status=status,
         created_by=ACTOR_ID,
         functional_requirements=[],
         acceptance_criteria=[],
@@ -268,6 +270,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     title="Old",
                     created_by=ACTOR_ID,
                     status=RefinementStatus.DONE,
+                    delivery_context="brownfield",
                 ),
                 Refinement(
                     id="refinement-new",
@@ -276,15 +279,20 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     title="New",
                     created_by=ACTOR_ID,
                     status=RefinementStatus.DONE,
+                    delivery_context="brownfield",
                 ),
                 _spec(
                     "spec-relink",
                     ideation_id="ideation-parent",
                     refinement_id="refinement-old",
+                    status=SpecStatus.DRAFT,
                 ),
             )
         )
         await db.flush()
+        target_refinement = await db.get(Refinement, "refinement-new")
+        assert target_refinement is not None
+        await freeze_refinement_completion_fixture(db, target_refinement)
 
         updated = await SpecService(
             db,
@@ -327,6 +335,7 @@ async def test_spec_relink_validates_new_parent_before_v2_write(db_factory) -> N
             _spec(
                 "spec-relink",
                 ideation_id="ideation-parent",
+                status=SpecStatus.DRAFT,
             )
         )
         await db.flush()

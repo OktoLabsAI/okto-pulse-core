@@ -8,6 +8,8 @@ Gate / lineage services.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -25,8 +27,21 @@ from sqlalchemy_test_models import (
     IdeationStatus,
     Refinement,
     RefinementKnowledgeBase,
+    RefinementSnapshot,
     RefinementStatus,
     Spec,
+)
+from okto_pulse.core.domain.research_decision_ledger import (
+    ResearchDecisionLedgerSnapshot,
+)
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    RefinementDeliveryContextProvenance,
+    RefinementSourceContextManifestV2,
+    build_source_context_summary_v2,
+)
+from okto_pulse.core.ports.relational_application import (
+    require_relational_application_adapter,
 )
 
 USER_ID = "user-r3-scenarios"
@@ -65,6 +80,67 @@ async def new_board(db_factory) -> str:
     return board_id
 
 
+async def freeze_refinement_completion_fixture(db, refinement) -> None:
+    """Persist both immutable completion snapshots required by derivation."""
+
+    raw_context = getattr(refinement, "delivery_context", None)
+    delivery_context = (
+        None if raw_context is None else DeliveryContext(raw_context)
+    )
+    provenance = (
+        None
+        if delivery_context is None
+        else RefinementDeliveryContextProvenance(
+            value=delivery_context,
+            source_refinement_id=refinement.id,
+            source_refinement_version=refinement.version,
+        )
+    )
+    source_context = RefinementSourceContextManifestV2(
+        refinement_id=refinement.id,
+        refinement_version=refinement.version,
+        summary=build_source_context_summary_v2(
+            delivery_context=delivery_context,
+            delivery_context_provenance=provenance,
+            current_investigation_outcomes=(),
+            evidence=(),
+        ),
+        current_receipts=(),
+    )
+
+    db.add(
+        RefinementSnapshot(
+            refinement_id=refinement.id,
+            version=refinement.version,
+            title=refinement.title,
+            description=refinement.description,
+            in_scope=refinement.in_scope,
+            out_of_scope=refinement.out_of_scope,
+            analysis=refinement.analysis,
+            decisions=refinement.decisions,
+            delivery_context=getattr(refinement, "delivery_context", None),
+            labels=refinement.labels,
+            qa_snapshot=[],
+            code_evidence_manifest=[],
+            source_context_manifest=source_context.as_dict(),
+            source_context_sha256=source_context.payload_sha256,
+            created_by=USER_ID,
+        )
+    )
+    await require_relational_application_adapter().research_decisions(
+        db
+    ).save_snapshot(
+        ResearchDecisionLedgerSnapshot(
+            id=sid("rdl-snapshot"),
+            board_id=refinement.board_id,
+            refinement_id=refinement.id,
+            refinement_version=refinement.version,
+            heads=(),
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+
+
 async def seed_refinement(
     db_factory, board_id, *, status="done", kb=False, mockup=False, architecture=False,
 ) -> dict:
@@ -78,15 +154,17 @@ async def seed_refinement(
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="R3 ideation",
                         status=IdeationStatus.DONE, created_by=USER_ID))
-        db.add(Refinement(
+        refinement = Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="R3 refinement", created_by=USER_ID,
             status=RefinementStatus(status),
+            delivery_context=DeliveryContext.BROWNFIELD.value,
             screen_mockups=(
                 [{"id": mockup_id, "title": "Ref mockup", "screen_type": "form",
                   "html_content": "<div/>"}] if mockup else []
             ),
-        ))
+        )
+        db.add(refinement)
         if kb:
             db.add(RefinementKnowledgeBase(
                 id=kb_id, refinement_id=refinement_id, title="Ref KB",
@@ -99,6 +177,9 @@ async def seed_refinement(
                 refinement_id=refinement_id, title="Ref design", global_description="g",
                 entities=[], interfaces=[], diagrams=[], created_by=USER_ID,
             ))
+        if refinement.status is RefinementStatus.DONE:
+            await db.flush()
+            await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
     return {"ideation_id": ideation_id, "refinement_id": refinement_id,
             "kb_id": kb_id, "mockup_id": mockup_id, "design_id": design_id}

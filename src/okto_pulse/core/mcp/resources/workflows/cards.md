@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Cards Workflow — Implementation, Bug & Test Execution
@@ -233,8 +233,8 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 ### Implementor Workflow
 
 1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Check `validation_config.required`.
-2. **MANDATORY for restarts** — if the card has a failed validation, read `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, `general_justification` before changing the implementation.
-3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, a normal card moves to `started` and then `in_progress`. Resume directly to `in_progress` only from an advertised current-state edge.
+2. **MANDATORY for rework** — a failed admitted completion is status `rejected`. Read `current_rejection_summary` plus the referenced validation's `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, and `general_justification`. Editing implementation while Rejected is forbidden because it would erase the human handoff boundary. In blocking Code Traceability mode, the rejection's version bump can make an existing Target resolution outdated: investigation preflight and Target resolution renewal are the only allowed technical writes while Rejected; Target create/update, execution receipts, evidence dispositions, and implementation content remain frozen.
+3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, a normal card moves to `started` and then `in_progress`. A Rejected card has exactly one exit: move it to `in_progress` before changing implementation. That clears only the Current pointer; causal history remains append-only.
 4. Implement the task.
 5. Link artifacts — attach knowledge bases, mockups, or comments as work progresses.
 6. Move to validation — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)`.
@@ -245,12 +245,12 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 1. Confirm the card is in `validation` before analyzing. Find queued cards with `okto_pulse_list_cards_by_status(board_id, status="validation")`; if a candidate is not in that status, the implementor has not completed the handoff and validation must not start.
 2. Get full gate context for each card — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Inspect `reviewer_separation` before acting; it is evaluated for the current agent against the card creator, assignee, and executor report author.
 3. Analyze the work — review implementation against card description and spec requirements. When `reviewer_separation.mode="enforce"` and `allowed=false`, hand the validation to an independent principal instead of retrying.
-4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, ...)` with:
+4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, expected_subject_version, idempotency_key, ...)` with:
    - `confidence` (0-100) + `confidence_justification`
    - `estimated_completeness` (0-100) + `completeness_justification`
    - `estimated_drift` (0-100) + `drift_justification`
    - `general_justification` + `recommendation` (`"approve"` or `"reject"`)
-5. System routes automatically — you do NOT need to move the card.
+5. System routes automatically — `completion_outcome=completed` moves to `done`; `completion_outcome=rejected` moves Normal/Bug to `rejected` with one sealed Current cause. Test cards remain on their separate scenario workflow. Infrastructure/authorization/concurrency errors persist neither validation nor rejection.
 
 ### Reviewer Separation Modes
 
@@ -271,3 +271,55 @@ New boards (including the no-active-template fallback) and new default-board tem
 | `min_confidence` | 70 | `confidence < min_confidence` → **auto-fail** |
 | `min_completeness` | 80 | `estimated_completeness < min_completeness` → **auto-fail** |
 | `max_drift` | 50 | `estimated_drift > max_drift` → **auto-fail** |
+
+## 2.12 Agent-mediated implementation targets
+
+When Code Traceability is enabled, use this order before implementation:
+
+1. Read `okto_pulse_get_task_context(profile="full", context_scope="gate")`.
+2. Review the inherited `delivery_context`, effective `source_context`,
+   relevant Code Evidence, and dispositions. Counts describe the complete
+   effective set even when item drilldowns are bounded; never infer a legacy
+   item's meaning.
+3. Start the initial Card preflight request. The authenticated external agent
+   checks real access and capabilities and investigates the source in its own
+   environment; Pulse Core and Pulse Community never open or search it.
+4. Submit a contextual V2 receipt, then create or adjust semantic Targets
+   against its source head. Direct Card Evidence is AS-IS only. A path or
+   symbol the Card plans to create is TO-BE Target intent, not Evidence.
+5. Refetch the Card and Target revisions. Start and submit a new Target-bound
+   Card preflight whose selector scope includes those exact Target revisions;
+   submit a Resolution for every required Target from this second receipt.
+6. Review overlaps. Create a dependency or a bounded acknowledgement when the
+   policy permits it.
+7. Read `okto_pulse_get_allowed_transitions` and follow only an advertised
+   edge before starting execution.
+8. After implementation, submit an Execution Disposition for every active
+   required Target before `validation` or `done`.
+
+The UI's **Technical Anchors** are these Implementation Targets. Create one
+per independently resolvable action area with a concrete intent, role,
+path/symbol hint, stable Spec links, and baseline Evidence when available. A
+Target is mutable intent, not proof; the agent must still submit its current
+Resolution and post-work Execution Disposition. In `advisory`, missing records
+do not block the move, but Pulse cannot reconstruct them; later source,
+selector, Target, or dependency drift can force the full investigation to be
+repeated. Never resolve a newly created Target with the initial receipt whose
+selector scope predates that Target.
+
+For Greenfield/Hybrid work, an existing starter/base can be Evidence only as
+`existing_scaffold` with an explicit `interpretation_limit`; source consulted
+only as a pattern is `reference_pattern`. Neither proves the requested behavior
+already exists. `unclassified_legacy` remains visible until an authorized
+human appends classification through UI/REST; agents have no MCP mutation for
+that governance action.
+
+Run a new external preflight, re-evaluate the Targets, and submit a new receipt
+when a dependency finishes, the observed workspace fingerprint changes, a
+Target becomes stale, or the agent discovers additional code. A prior overlap
+acknowledgement or resolution may become outdated when those identities change.
+There is no `decoupled_mode` and no fallback repository reader in Community;
+an unavailable agent capability produces a typed blocker or an explicit human
+waiver according to board policy.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

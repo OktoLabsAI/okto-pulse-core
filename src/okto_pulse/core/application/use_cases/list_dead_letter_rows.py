@@ -24,6 +24,9 @@ from okto_pulse.core.application.use_cases.authorization import (
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+    EvaluateCodeTraceabilityKGReadAccessUseCase,
+)
 
 
 class DeadLetterBoardNotFoundError(EntityNotFoundError):
@@ -73,9 +76,22 @@ class ListDeadLetterRowsUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        data = await uow.services.kg.list_dead_letter_rows(
-            command.board_id,
-            limit=command.limit,
-            offset=command.offset,
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
         )
+        if ct_access.allowed:
+            data = await uow.services.kg.list_dead_letter_rows(
+                command.board_id,
+                limit=command.limit,
+                offset=command.offset,
+            )
+        else:
+            data = await uow.services.kg.list_dead_letter_rows(
+                command.board_id,
+                limit=command.limit,
+                offset=command.offset,
+                include_code_traceability=False,
+            )
         return ListDeadLetterRowsResult(data=data)

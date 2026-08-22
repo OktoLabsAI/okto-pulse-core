@@ -24,6 +24,11 @@ Args:
 Returns:
     JSON string with the board overview, plus any inlined collections.
 
+The returned `settings.skip_code_evidence_coverage_global` flag controls the
+Board-wide Code Evidence Matrix coverage skip. Missing legacy values resolve to
+`false`. Its effective value for a Spec is the OR of this Board setting and the
+Spec's audited `skip_code_evidence_coverage` flag.
+
 ## `okto_pulse_list_board_members`
 
 List all members of the board (owner + agents).

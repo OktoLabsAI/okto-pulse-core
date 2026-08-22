@@ -421,6 +421,48 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model quality lifecycle persistence."
         )
 
+    def code_investigations(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.code_investigation import (
+            CodeInvestigationAdapterMissing,
+        )
+
+        raise CodeInvestigationAdapterMissing(
+            "The SaaS fake does not model code-investigation persistence."
+        )
+
+    def code_traceability(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.code_traceability import (
+            CodeTraceabilityAdapterMissing,
+        )
+
+        raise CodeTraceabilityAdapterMissing(
+            "The SaaS fake does not model code-traceability persistence."
+        )
+
+    def code_traceability_read(self, session: Any) -> Any:
+        _ = session
+        from okto_pulse.core.ports.code_traceability import (
+            CodeTraceabilityAdapterMissing,
+        )
+
+        raise CodeTraceabilityAdapterMissing(
+            "The SaaS fake does not model code-traceability projections."
+        )
+
+    def delivery_forecast_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Delivery Forecast evidence."
+        )
+
+    def board_kg_analytics_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Board KG Analytics evidence."
+        )
+
     def research_decisions(self, session: Any) -> Any:
         _ = session
         from okto_pulse.core.ports.research_decision_ledger import (
@@ -429,6 +471,12 @@ class FakeSaaSRelationalApplicationAdapter:
 
         raise ResearchDecisionAdapterMissing(
             "The SaaS fake does not model research-decision persistence."
+        )
+
+    def spec_dependencies(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Spec-dependency persistence."
         )
 
     def checklists(self, session: Any) -> Any:

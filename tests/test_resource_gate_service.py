@@ -5,6 +5,7 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.services import architecture as architecture_module
 from okto_pulse.core.services import resource_gate as resource_gate_module
 from sqlalchemy_test_models import (
     ArchitectureDesign,
@@ -57,6 +58,61 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
 
 
+def _lineage_with_inherited_architecture(
+    *,
+    metadata: dict | None = None,
+) -> ResolvedResourceLineage:
+    architecture_ref: dict = {
+        "id": "arch-source-1",
+        "title": "Inherited architecture",
+        "source_entity_type": "spec",
+        "source_entity_id": "spec-1",
+        "source_entity_title": "Source spec",
+    }
+    architecture_ref.update(metadata or {})
+    return ResolvedResourceLineage(
+        owner=LineageEntityRef("card", "card-1", "Card"),
+        unique_resources=(),
+        attachments=(),
+        counts={"attachment_count": 1},
+        resource_states=(
+            ResourceStateEnvelope(
+                resource_type="architecture",
+                state="provided",
+                direct_count=0,
+                inherited_count=1,
+                total_count=1,
+                direct_refs=(),
+                inherited_refs=(architecture_ref,),
+                na_mark=None,
+                blocking=False,
+            ),
+            ResourceStateEnvelope(
+                resource_type="mockup",
+                state="missing",
+                direct_count=0,
+                inherited_count=0,
+                total_count=0,
+                direct_refs=(),
+                inherited_refs=(),
+                na_mark=None,
+                blocking=True,
+            ),
+            ResourceStateEnvelope(
+                resource_type="knowledge_base",
+                state="missing",
+                direct_count=0,
+                inherited_count=0,
+                total_count=0,
+                direct_refs=(),
+                inherited_refs=(),
+                na_mark=None,
+                blocking=True,
+            ),
+        ),
+    )
+
+
 def test_resource_gate_coverage_path_has_static_lineage_drift_guard():
     source = inspect.getsource(ResourceGateService.validate_spec_resource_task_coverage)
 
@@ -104,6 +160,231 @@ async def test_completion_fails_closed_on_architecture_propagation_block_without
 
     assert exc_info.value.code == "architecture_propagation_blocked"
     assert exc_info.value.details["architecture_propagation"]["blocking"] is True
+
+
+@pytest.mark.asyncio
+async def test_metadata_summary_never_loads_or_critiques_architecture(
+    monkeypatch,
+) -> None:
+    lineage = _lineage_with_inherited_architecture()
+    resolver_calls: list[dict] = []
+    forbidden_calls: list[str] = []
+
+    async def fake_resolve(_self, *_args, **kwargs):
+        resolver_calls.append(kwargs)
+        return lineage
+
+    async def forbidden_findings(*_args, **_kwargs):
+        forbidden_calls.append("architecture_finding_gate")
+        raise AssertionError("metadata summary listed architecture findings")
+
+    async def forbidden_policy(*_args, **_kwargs):
+        forbidden_calls.append("propagation_policy")
+        raise AssertionError("metadata summary evaluated propagation policy")
+
+    async def forbidden_design_load(*_args, **_kwargs):
+        forbidden_calls.append("design_load")
+        raise AssertionError("metadata summary loaded an architecture design")
+
+    def forbidden_critic(*_args, **_kwargs):
+        forbidden_calls.append("critic")
+        raise AssertionError("metadata summary ran the architecture critic")
+
+    monkeypatch.setattr(ResourceGateService, "_resolve_resource_lineage", fake_resolve)
+    monkeypatch.setattr(
+        resource_gate_module.ArchitectureFindingGate,
+        "evaluate",
+        forbidden_findings,
+    )
+    monkeypatch.setattr(
+        resource_gate_module.ArchitecturePropagationEligibilityPolicy,
+        "evaluate",
+        forbidden_policy,
+    )
+    monkeypatch.setattr(
+        architecture_module.ArchitectureDesignRepository,
+        "get",
+        forbidden_design_load,
+    )
+    monkeypatch.setattr(
+        architecture_module.ArchitectureDesignRepository,
+        "critique_payload",
+        forbidden_critic,
+    )
+
+    summary = await ResourceGateService(db=None).get_summary(
+        "board-1",
+        "card",
+        "card-1",
+        metadata_only=True,
+    )
+
+    assert resolver_calls == [
+        {"include_coverage": False, "projection_profile": "gate"}
+    ]
+    assert forbidden_calls == []
+    propagation = summary["architecture_propagation"]
+    assert propagation["blocking"] is True
+    assert propagation["evaluation_mode"] == "metadata_only"
+    assert propagation["decision"] == "fail_closed"
+    assert (
+        propagation["reason_code"]
+        == "architecture_propagation_metadata_unavailable"
+    )
+    assert propagation["ineligible_sources"] == [
+        {
+            "code": "architecture_propagation_metadata_unavailable",
+            "eligible": False,
+            "eligibility_state": "unknown",
+            "design_id": "arch-source-1",
+            "design_version": None,
+            "source_design_id": None,
+            "source_ref": None,
+            "source_entity_type": "spec",
+            "source_entity_id": "spec-1",
+            "current_finding_run": None,
+            "verdict_status": "unavailable",
+            "revalidation_reason": "current_finding_run_missing",
+        }
+    ]
+    assert propagation["drilldown"] == {
+        "rel": "read_full_resource_gate_summary",
+        "tool": "okto_pulse_get_resource_gate_summary",
+        "arguments": {
+            "board_id": "board-1",
+            "entity_type": "card",
+            "entity_id": "card-1",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("run_override", "expected_blocking", "expected_reason"),
+    [
+        ({}, False, None),
+        ({"design_version": 6}, True, "design_version_incompatible"),
+    ],
+)
+async def test_metadata_summary_uses_only_current_persisted_finding_run(
+    monkeypatch,
+    run_override,
+    expected_blocking,
+    expected_reason,
+) -> None:
+    current_run = {
+        "critic_run_id": "critic-run-1",
+        "design_version": 7,
+        "is_current": True,
+        "active_count": 0,
+        "resolved_count": 2,
+        "superseded_count": 1,
+        "validator_valid": True,
+        "validator_issue_count": 0,
+        **run_override,
+    }
+    lineage = _lineage_with_inherited_architecture(
+        metadata={
+            "design_version": 7,
+            "current_finding_run": current_run,
+        }
+    )
+    forbidden_calls: list[str] = []
+
+    async def fake_resolve(_self, *_args, **_kwargs):
+        return lineage
+
+    async def forbidden_findings(*_args, **_kwargs):
+        forbidden_calls.append("architecture_finding_gate")
+        raise AssertionError("metadata summary listed architecture findings")
+
+    async def forbidden_policy(*_args, **_kwargs):
+        forbidden_calls.append("propagation_policy")
+        raise AssertionError("metadata summary reached the full propagation policy")
+
+    monkeypatch.setattr(ResourceGateService, "_resolve_resource_lineage", fake_resolve)
+    monkeypatch.setattr(
+        resource_gate_module.ArchitectureFindingGate,
+        "evaluate",
+        forbidden_findings,
+    )
+    monkeypatch.setattr(
+        resource_gate_module.ArchitecturePropagationEligibilityPolicy,
+        "evaluate",
+        forbidden_policy,
+    )
+
+    summary = await ResourceGateService(db=None).get_summary(
+        "board-1",
+        "card",
+        "card-1",
+        metadata_only=True,
+    )
+
+    assert forbidden_calls == []
+    propagation = summary["architecture_propagation"]
+    assert propagation["blocking"] is expected_blocking
+    if expected_reason is None:
+        assert propagation["decision"] == "eligible"
+        assert propagation["ineligible_sources"] == []
+        assert propagation["drilldown"] is None
+    else:
+        assert propagation["decision"] == "fail_closed"
+        assert propagation["ineligible_sources"][0]["revalidation_reason"] == (
+            expected_reason
+        )
+
+
+@pytest.mark.asyncio
+async def test_full_summary_keeps_canonical_architecture_propagation_policy(
+    monkeypatch,
+) -> None:
+    lineage = _lineage_with_inherited_architecture()
+    policy_calls: list[str] = []
+
+    async def fake_resolve(_self, *_args, **_kwargs):
+        return lineage
+
+    async def fake_findings(_self, **_kwargs):
+        return {
+            "architecture_findings": {
+                "active_count": 0,
+                "design_count": 1,
+                "top_remediation": [],
+            }
+        }
+
+    class Eligible:
+        eligible = True
+
+    async def fake_policy(_self, design_id):
+        policy_calls.append(design_id)
+        return Eligible()
+
+    monkeypatch.setattr(ResourceGateService, "_resolve_resource_lineage", fake_resolve)
+    monkeypatch.setattr(
+        resource_gate_module.ArchitectureFindingGate,
+        "evaluate",
+        fake_findings,
+    )
+    monkeypatch.setattr(
+        resource_gate_module.ArchitecturePropagationEligibilityPolicy,
+        "evaluate",
+        fake_policy,
+    )
+
+    summary = await ResourceGateService(db=None).get_summary(
+        "board-1",
+        "card",
+        "card-1",
+    )
+
+    assert policy_calls == ["arch-source-1"]
+    assert summary["architecture_propagation"] == {
+        "blocking": False,
+        "ineligible_sources": [],
+        "remediation": None,
+    }
 
 
 @pytest.mark.asyncio

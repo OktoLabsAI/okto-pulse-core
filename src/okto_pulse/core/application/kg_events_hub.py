@@ -82,6 +82,20 @@ def _supports_composite_cursor(method: Any) -> bool:
     )
 
 
+def _supports_visibility_scope(method: Any) -> bool:
+    """Whether the reader can exclude CT rows before polling its provider."""
+
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        return True
+    return any(
+        parameter.name == "include_code_traceability"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+
 def format_sse(event_type: str, payload: Mapping[str, Any]) -> str:
     """Serialize one event in the wire format consumed by the web client."""
 
@@ -129,11 +143,18 @@ class KgEventsSubscription:
     cursor: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     initial_progress: dict[str, int] | None = None
     cursor_event_id: str | None = None
+    include_code_traceability: bool = True
 
 
 class _BoardStream:
-    def __init__(self, board_id: str) -> None:
+    def __init__(
+        self,
+        board_id: str,
+        *,
+        include_code_traceability: bool = True,
+    ) -> None:
         self.board_id = board_id
+        self.include_code_traceability = include_code_traceability
         self.subscribers: set[asyncio.Queue[str]] = set()
         self.task: asyncio.Task[None] | None = None
         self.last_seen: datetime = datetime.now(timezone.utc)
@@ -173,8 +194,16 @@ class KgEventsHub:
         self._reader_replay_supports_composite_cursor = _supports_composite_cursor(
             self._reader.replay
         )
+        self._reader_poll_supports_visibility_scope = _supports_visibility_scope(
+            self._reader.poll
+        )
+        self._reader_replay_supports_visibility_scope = _supports_visibility_scope(
+            self._reader.replay
+        )
         self._poll_interval = poll_interval
-        self._streams: dict[str, _BoardStream] = {}
+        # Preserve the historical board-id key for the fully authorized stream
+        # while using a distinct tuple key for the restricted stream.
+        self._streams: dict[str | tuple[str, bool], _BoardStream] = {}
         self._closed = False
 
     def configure_reader(self, reader: KGEventsReaderPort) -> None:
@@ -187,14 +216,33 @@ class KgEventsHub:
         self._reader_replay_supports_composite_cursor = _supports_composite_cursor(
             reader.replay
         )
+        self._reader_poll_supports_visibility_scope = _supports_visibility_scope(
+            reader.poll
+        )
+        self._reader_replay_supports_visibility_scope = _supports_visibility_scope(
+            reader.replay
+        )
 
-    def subscribe(self, board_id: str) -> KgEventsSubscription:
+    def subscribe(
+        self,
+        board_id: str,
+        *,
+        include_code_traceability: bool = True,
+    ) -> KgEventsSubscription:
         if self._closed:
             raise RuntimeError("KgEventsHub is shut down")
-        stream = self._streams.get(board_id)
+        stream_key: str | tuple[str, bool] = (
+            board_id
+            if include_code_traceability
+            else (board_id, False)
+        )
+        stream = self._streams.get(stream_key)
         if stream is None:
-            stream = _BoardStream(board_id)
-            self._streams[board_id] = stream
+            stream = _BoardStream(
+                board_id,
+                include_code_traceability=include_code_traceability,
+            )
+            self._streams[stream_key] = stream
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAXSIZE)
         stream.subscribers.add(queue)
         if stream.task is None or stream.task.done():
@@ -207,17 +255,23 @@ class KgEventsHub:
             cursor=stream.last_seen,
             cursor_event_id=stream.last_seen_event_id,
             initial_progress=stream.last_progress,
+            include_code_traceability=include_code_traceability,
         )
 
     def unsubscribe(self, subscription: KgEventsSubscription) -> None:
-        stream = self._streams.get(subscription.board_id)
+        stream_key: str | tuple[str, bool] = (
+            subscription.board_id
+            if subscription.include_code_traceability
+            else (subscription.board_id, False)
+        )
+        stream = self._streams.get(stream_key)
         if stream is None:
             return
         stream.subscribers.discard(subscription.queue)
         if not stream.subscribers:
             if stream.task is not None and not stream.task.done():
                 stream.task.cancel()
-            self._streams.pop(subscription.board_id, None)
+            self._streams.pop(stream_key, None)
 
     async def replay(
         self,
@@ -226,6 +280,7 @@ class KgEventsHub:
         after: datetime,
         limit: int,
         after_event_id: str | None = None,
+        include_code_traceability: bool = True,
     ) -> Sequence[KGOutboxEvent]:
         kwargs: dict[str, Any] = {
             "board_id": board_id,
@@ -234,6 +289,13 @@ class KgEventsHub:
         }
         if self._reader_replay_supports_composite_cursor:
             kwargs["after_event_id"] = after_event_id
+        if self._reader_replay_supports_visibility_scope:
+            kwargs["include_code_traceability"] = include_code_traceability
+        elif not include_code_traceability:
+            # A legacy provider cannot prove pre-provider filtering. Denied
+            # subscriptions therefore see an empty replay, never a fallback
+            # unscoped read.
+            return ()
         return await self._reader.replay(
             **kwargs,
         )
@@ -271,6 +333,14 @@ class KgEventsHub:
                 }
                 if self._reader_poll_supports_composite_cursor:
                     kwargs["after_event_id"] = stream.last_seen_event_id
+                if self._reader_poll_supports_visibility_scope:
+                    kwargs["include_code_traceability"] = (
+                        stream.include_code_traceability
+                    )
+                elif not stream.include_code_traceability:
+                    # No unsafe provider fallback for a restricted stream.
+                    await asyncio.sleep(self._poll_interval)
+                    continue
                 result = await self._reader.poll(**kwargs)
                 ordered_events = sorted(
                     result.events,

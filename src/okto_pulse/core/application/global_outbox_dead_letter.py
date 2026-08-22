@@ -303,6 +303,7 @@ class GlobalOutboxDeadLetterOperations:
         limit: int = 50,
         cursor: str | None = None,
         classification: str | None = None,
+        include_code_traceability: bool = True,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         try:
@@ -320,13 +321,23 @@ class GlobalOutboxDeadLetterOperations:
             ):
                 raise GlobalOutboxDeadLetterError("invalid_classification")
             after = _decode_cursor(cursor)
-            rows = list(
-                await self._store.list_terminal_events(
-                    context,
-                    limit=bounded_limit + 1,
-                    after=after,
+            if include_code_traceability:
+                rows = list(
+                    await self._store.list_terminal_events(
+                        context,
+                        limit=bounded_limit + 1,
+                        after=after,
+                    )
                 )
-            )
+            else:
+                rows = list(
+                    await self._store.list_terminal_events(
+                        context,
+                        limit=bounded_limit + 1,
+                        after=after,
+                        include_code_traceability=False,
+                    )
+                )
             consumed = rows[:bounded_limit]
             has_more = len(rows) > bounded_limit
             items = []
@@ -380,12 +391,16 @@ class GlobalOutboxDeadLetterOperations:
         context: Any,
         dead_letter_ids: Sequence[str],
         reason: str,
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         try:
             selected_ids = _normalize_ids(dead_letter_ids)
             normalized_reason = _normalize_reason(reason)
-            rows = await self._store.get_events_by_ids(context, ids=selected_ids)
+            rows = await self._store.get_events_by_ids(
+                context,
+                ids=selected_ids,
+                include_code_traceability=False,
+            )
             by_id = {row.id: row for row in rows}
             governed_ids = [
                 row_id
@@ -485,11 +500,15 @@ class GlobalOutboxDeadLetterOperations:
         *,
         context: Any,
         dead_letter_ids: Sequence[str],
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         try:
             selected_ids = _normalize_ids(dead_letter_ids)
-            rows = await self._store.get_events_by_ids(context, ids=selected_ids)
+            rows = await self._store.get_events_by_ids(
+                context,
+                ids=selected_ids,
+                include_code_traceability=False,
+            )
             by_id = {row.id: row for row in rows}
             items = []
             for row_id in selected_ids:
@@ -569,7 +588,11 @@ class GlobalOutboxDeadLetterOperations:
             normalized = next_id.strip()
             if normalized in seen:
                 return chain, None, "supersedence_cycle_detected"
-            candidates = await self._store.get_events_by_ids(context, ids=(normalized,))
+            candidates = await self._store.get_events_by_ids(
+                context,
+                ids=(normalized,),
+                include_code_traceability=False,
+            )
             chain.append(normalized)
             seen.add(normalized)
             if not candidates:

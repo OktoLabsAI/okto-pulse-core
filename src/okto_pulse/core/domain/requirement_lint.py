@@ -20,6 +20,10 @@ from okto_pulse.core.domain.quality_assessment import (
     MAX_PROPOSED_QUESTIONS_PER_ASSESSMENT_V1,
     AssessmentScale,
     AssessmentScaleKind,
+    AssessmentDigestSet,
+    AssessmentAuthoritySnapshot,
+    AssessmentVersionSet,
+    QUALITY_ASSESSMENT_CHANNELS_V1,
     AssessmentSubjectType,
     FindingAnchor,
     FindingAnchorType,
@@ -29,12 +33,27 @@ from okto_pulse.core.domain.quality_assessment import (
     ScoreDirection,
 )
 from okto_pulse.core.domain.quality_canonicalization import (
+    authority_digest_v1,
     canonical_sha256,
+    policy_digest_v1,
     ruleset_digest_v1,
+)
+from okto_pulse.core.domain.quality_taxonomy import (
+    AMBIGUITY_TAXONOMY_DIGEST,
+    AMBIGUITY_TAXONOMY_VERSION,
 )
 
 REQUIREMENT_LINT_RULESET_VERSION = "requirement_lint_ruleset_v1"
 REQUIREMENT_LINT_ANALYZER_VERSION = "requirement-lint-analyzer/v1"
+EXTERNAL_REQUIREMENT_LINT_ANALYZER_VERSION = (
+    "external-agent-requirement-lint/v1"
+)
+EXTERNAL_REQUIREMENT_LINT_POLICY_VERSION = (
+    "external-requirement-lint-policy/v1"
+)
+EXTERNAL_REQUIREMENT_LINT_AUTHORITY_VERSION = (
+    "external-requirement-lint-authority/v1"
+)
 REQUIREMENT_LINT_TECHNICAL_LEXICON_VERSION = (
     "requirement-lint-technical-lexicon/v1"
 )
@@ -1561,7 +1580,160 @@ def lint_requirements(
     )
 
 
+EXTERNAL_REQUIREMENT_LINT_POLICY_MANIFEST_V1: Final[Mapping[str, object]] = (
+    MappingProxyType(
+        {
+            "writer": "external_agent",
+            "score": "finding_count",
+            "direction": "lower_better",
+            "proposed_questions": "forbidden",
+            "lifecycle": "approved_current_edition",
+        }
+    )
+)
+EXTERNAL_REQUIREMENT_LINT_POLICY_DIGEST: Final[str] = policy_digest_v1(
+    EXTERNAL_REQUIREMENT_LINT_POLICY_VERSION,
+    EXTERNAL_REQUIREMENT_LINT_POLICY_MANIFEST_V1,
+)
+
+
+def external_requirement_lint_scale_v1(
+    evaluated_rule_count: int,
+) -> AssessmentScale:
+    """Return the fixed finding-count scale declared by an external run."""
+
+    if (
+        not isinstance(evaluated_rule_count, int)
+        or isinstance(evaluated_rule_count, bool)
+        or evaluated_rule_count < 1
+    ):
+        raise RequirementLintContractError(
+            "requirement_lint_evaluated_rule_count_invalid"
+        )
+    return AssessmentScale(
+        kind=AssessmentScaleKind.FINDING_COUNT,
+        minimum=0,
+        maximum=evaluated_rule_count,
+        direction=ScoreDirection.LOWER_BETTER,
+    )
+
+
+def external_requirement_lint_rule_capacity_v1(
+    requirement_anchor_count: int,
+) -> int:
+    """Derive the frozen run capacity without trusting a client counter.
+
+    The external agent evaluates the pinned ruleset, while Core owns the
+    bounded scale.  The capacity is a conservative rules-per-anchor upper
+    bound and therefore does not require Pulse to inspect or lint source text.
+    """
+
+    if (
+        not isinstance(requirement_anchor_count, int)
+        or isinstance(requirement_anchor_count, bool)
+        or requirement_anchor_count < 0
+    ):
+        raise RequirementLintContractError(
+            "requirement_lint_anchor_count_invalid"
+        )
+    return max(
+        1,
+        requirement_anchor_count * len(REQUIREMENT_LINT_RULE_CATALOG_V1),
+    )
+
+
+def external_requirement_lint_versions_v1() -> AssessmentVersionSet:
+    """Return the server-owned version catalog for external lint evidence."""
+
+    return AssessmentVersionSet(
+        ruleset_version=REQUIREMENT_LINT_RULESET_VERSION,
+        taxonomy_version=AMBIGUITY_TAXONOMY_VERSION,
+        analyzer_version=EXTERNAL_REQUIREMENT_LINT_ANALYZER_VERSION,
+        policy_version=EXTERNAL_REQUIREMENT_LINT_POLICY_VERSION,
+    )
+
+
+def external_requirement_lint_digests_v1(
+    *,
+    content_digest: str,
+    clarification_digest: str,
+) -> AssessmentDigestSet:
+    """Bind live subject digests to the external lint's frozen authority."""
+
+    return AssessmentDigestSet(
+        content_digest=content_digest,
+        clarification_digest=clarification_digest,
+        ruleset_digest=REQUIREMENT_LINT_RULESET_DIGEST,
+        taxonomy_digest=AMBIGUITY_TAXONOMY_DIGEST,
+        policy_digest=EXTERNAL_REQUIREMENT_LINT_POLICY_DIGEST,
+    )
+
+
+def external_requirement_lint_authority_snapshot_v1(
+    *,
+    board_id: str,
+    spec_id: str,
+    spec_version: int,
+    spec_edition: int,
+    actor_id: str,
+    channel: str,
+    domain_write: bool,
+    quality_assess: bool,
+) -> AssessmentAuthoritySnapshot:
+    """Seal the actual narrow authority used by an external lint preflight."""
+
+    identities = (board_id, spec_id, actor_id)
+    if any(not isinstance(value, str) or not value.strip() for value in identities):
+        raise RequirementLintContractError(
+            "requirement_lint_authority_identity_invalid"
+        )
+    for value, code in (
+        (spec_version, "requirement_lint_authority_spec_version_invalid"),
+        (spec_edition, "requirement_lint_authority_spec_edition_invalid"),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise RequirementLintContractError(code)
+    if channel not in QUALITY_ASSESSMENT_CHANNELS_V1:
+        raise RequirementLintContractError(
+            "requirement_lint_authority_channel_invalid"
+        )
+    if not isinstance(domain_write, bool) or not isinstance(quality_assess, bool):
+        raise RequirementLintContractError(
+            "requirement_lint_authority_flags_invalid"
+        )
+    manifest = {
+        "authority_kind": "external_requirement_lint_agent",
+        "board_id": board_id.strip(),
+        "spec_id": spec_id.strip(),
+        "spec_version": spec_version,
+        "spec_edition": spec_edition,
+        "actor_id": actor_id.strip(),
+        "channel": channel,
+        "domain_write": domain_write,
+        "quality_assess": quality_assess,
+        "qa_ask": False,
+        "spec_validation_submit": False,
+        "reviewer_separation_satisfied": True,
+    }
+    return AssessmentAuthoritySnapshot(
+        domain_write=domain_write,
+        quality_assess=quality_assess,
+        qa_ask=False,
+        spec_validation_submit=False,
+        reviewer_separation_satisfied=True,
+        authority_digest=authority_digest_v1(
+            EXTERNAL_REQUIREMENT_LINT_AUTHORITY_VERSION,
+            manifest,
+        ),
+    )
+
+
 __all__ = [
+    "EXTERNAL_REQUIREMENT_LINT_ANALYZER_VERSION",
+    "EXTERNAL_REQUIREMENT_LINT_AUTHORITY_VERSION",
+    "EXTERNAL_REQUIREMENT_LINT_POLICY_DIGEST",
+    "EXTERNAL_REQUIREMENT_LINT_POLICY_MANIFEST_V1",
+    "EXTERNAL_REQUIREMENT_LINT_POLICY_VERSION",
     "REQUIREMENT_LINT_ANALYZER_VERSION",
     "REQUIREMENT_LINT_SPEC_FIELDS",
     "REQUIREMENT_LINT_RULESET_DIGEST",
@@ -1580,6 +1752,11 @@ __all__ = [
     "RequirementLintSignals",
     "RequirementLocale",
     "detect_requirement_signals",
+    "external_requirement_lint_digests_v1",
+    "external_requirement_lint_rule_capacity_v1",
+    "external_requirement_lint_authority_snapshot_v1",
+    "external_requirement_lint_scale_v1",
+    "external_requirement_lint_versions_v1",
     "lint_requirements",
     "requirement_lint_children_from_spec_payload",
 ]

@@ -57,6 +57,9 @@ is created.
 | `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `okto_pulse_move_spec` (requires `okto_pulse_submit_spec_evaluation` with `recommendation=approve` on a `validated` spec). |
 | `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation` with the executor report, then `okto_pulse_submit_task_validation`. |
 | `"Card is not in 'validation' status"` | Validation was requested before the implementor successfully moved the card out of `in_progress` | The implementor must call `okto_pulse_move_card(status="validation", ...)` with the complete executor report and confirm that it succeeded. Only then can a validator submit. |
+| `card_rejected_rework_handoff_required` | An implementation/content/evidence mutation was attempted while the card is Rejected | Read the Current rejection cause, move the card `rejected` → `in_progress`, then begin the new implementation attempt. |
+| `task_validation_subject_version_conflict` | The card changed after the validation payload was prepared | Reload gate context and retry with the new `expected_subject_version` and a new idempotency key. |
+| `task_validation_idempotency_conflict` | One idempotency key was reused with a different validation payload | Preserve the original key only for an exact retry; otherwise use a new key. |
 | `reviewer_separation_required` | `reviewer_separation_mode="enforce"` and the task validator is also the card creator, current assignee, or executor-report author | This is an `action_required` outcome, not a transient retry. Follow remediation `request_independent_task_validator`: have a different authorized principal read `okto_pulse_get_task_context(..., profile="full", context_scope="gate")` and submit the validation. The blocked attempt persists neither a validation nor a status change. |
 
 If a persisted legacy board has no `reviewer_separation_mode` field, this error is intentionally not raised: the policy decision is `mode="off"`, `source="legacy_absent_compat"`. The accepted validation still records its conflicts and source for auditability.
@@ -160,3 +163,60 @@ These structured error keys appear in KG query responses when the embedded graph
 |---|---|---|
 | `graph_unavailable` | The embedded graph database is in a hard-reject state (`graph_state` is `recovery_needed` or `quarantined`). Returned by KG query tools (e.g. `okto_pulse_kg_get_learning_from_bugs`) when queries cannot be served. On a degraded board, `graph_unavailable` is the **expected** signal — do not retry in a loop. | Call `okto_pulse_kg_health(board_id)` to confirm `graph_state`. If degraded, follow the KG Health recovery flow (`okto-pulse://reference/kg-health`). This is an operator-driven path; the Degraded-KG Fallback Rule lets you proceed past the Stage 1 triad while the graph recovers. |
 | `cognitive_status_unavailable` | The cognitive closeout gate could not confirm the cognitive consolidation status for a `done` transition because `graph_state` is `None` and no generation exists (the unconfirmed shape). This is a fail-closed signal: the gate cannot read the ledger and will not silently allow the transition. | Confirm board health via `okto_pulse_kg_health`. If the board's cognitive consolidation setting needs to be bypassed temporarily, enable `skip_cognitive_consolidation` in board settings. For full recovery, follow the KG Health recovery flow (`okto-pulse://reference/kg-health`). |
+
+## Agent-mediated Code Traceability
+
+These codes govern receipts submitted after an authenticated external agent has
+performed its capability/access check and deterministic investigation. Pulse
+Core and Pulse Community never remediate an error by opening or searching the
+repository themselves.
+
+| Error code | Cause | Remediation |
+|---|---|---|
+| `code_investigation_request_not_found` | The request does not exist or is outside the board. | Re-read the board-scoped subject and start a new investigation request. |
+| `code_investigation_request_not_open` | The request was consumed, revoked, or expired. | Start a new request; only an identical idempotent replay may return the prior result. |
+| `code_investigation_challenge_invalid` | The challenge does not match its server-bound digest. | Discard it and start a new request. |
+| `code_investigation_receipt_expired` | The receipt or challenge exceeded its TTL. | Start a fresh preflight and submit its result within the advertised TTL. |
+| `code_investigation_receipt_revoked` | An append-only revocation applies to the receipt. | Run a new external preflight and submit a replacement receipt. |
+| `code_investigation_receipt_conflicted` | The source head has conflicting attestations. | Re-read the head and resolve the attestation conflict according to board policy. |
+| `code_investigation_challenge_consumed` | The one-time challenge was already consumed. | Use the exact idempotent replay or start a new request. |
+| `code_investigation_actor_kind_required` | The submission principal is not an authenticated agent. | Submit through an authenticated agent principal; a human UI action cannot impersonate one. |
+| `code_investigation_capability_missing` | A required capability was not attested. | Have the external agent perform the missing check or follow the explicit waiver path. |
+| `code_investigation_attestor_mismatch` | The authenticated actor differs from the request or receipt attestor. | Continue with the bound agent or start a new request for the current agent. |
+| `code_investigation_source_scope_mismatch` | The logical source reference is outside the server-bound board/request lineage. | Re-read context and start a correctly scoped request. |
+| `code_investigation_subject_version_conflict` | The live subject changed after the request was created. | Re-read full context and run a new preflight for the current version. |
+| `code_investigation_selector_scope_mismatch` | A parent, target, or selector is outside the request snapshot. | Rebuild the submission from the current request scope. |
+| `code_investigation_unavailable` | The agent declared insufficient access. | Resolve external agent access or use the board's explicit human-waiver flow; Pulse will not inspect the source. |
+| `code_investigation_head_conflict` | Source generation or predecessor advanced before commit. | Re-read the head and run a new external preflight. |
+| `code_investigation_idempotency_conflict` | The same idempotency key was reused with a different digest. | Use a new key for changed input; retain the key only for an exact retry. |
+| `code_investigation_profile_mismatch` | Canonicalization, limits, or fingerprint profile is incompatible. | Use the profiles returned by the current request. |
+| `code_investigation_trust_insufficient` | Trust or corroboration does not meet board policy. | Submit acceptable agent attestation or follow the explicit waiver path. |
+| `code_investigation_currentness_unknown` | No accepted, current, conflict-free source head exists. | Run a fresh external preflight and re-read currentness. |
+| `code_investigation_payload_digest_mismatch` | The recomputed payload or excerpt digest differs. | Re-canonicalize the exact bounded submission and retry with a new key. |
+| `code_investigation_submission_limit_exceeded` | Payload, item, candidate, or excerpt caps were exceeded. | Reduce the bounded submission to the advertised hard limits. |
+| `code_path_invalid` | A submitted path is not relative and normalized. | Submit a safe logical relative path with no absolute root or `..`. |
+| `code_path_denied` | A submitted value violates path or sensitive-content policy. | Remove or redact the denied value; Pulse did not open the file. |
+| `code_evidence_submission_failed` | Evidence failed closed validation. | Correct the safe validation details and submit again. |
+| `code_evidence_receipt_mismatch` | Evidence does not match the accepted receipt, head, or current subject. | Run a current preflight and bind Evidence to its exact receipt. |
+| `code_evidence_immutable` | Historical Evidence was edited in place. | Create a new Evidence item that supersedes the original. |
+| `code_evidence_attestation_required` | Policy requires Evidence linked to an accepted receipt. | Submit a current external-agent receipt, then the Evidence. |
+| `code_evidence_disposition_required` | Inherited Evidence remains pending, so Code Evidence Matrix coverage is below 100%. | Link it to applicable Spec entities or record an explicit disposition. An authorized human can auditably skip only this coverage obligation in the Code Evidence Matrix tab or for every Spec in Menu → Board. |
+| `code_evidence_link_invalid` | The Spec entity or lineage is invalid. | Re-read full Spec context and link to a current supported entity. |
+| `implementation_target_invalid` | The semantic selector is incoherent. | Correct the selector and preserve its logical source scope. |
+| `implementation_target_resolution_required` | A required Target has no resolution. | Have the agent externally re-evaluate it and submit a resolution receipt. |
+| `implementation_target_resolution_outdated` | A newer receipt advanced the source head. | Re-evaluate the Target against the current head and submit a new resolution. |
+| `implementation_target_stale` | The Target changed semantically. | Update or supersede the Target after external agent investigation. |
+| `implementation_target_ambiguous` | Multiple bounded candidates remain. | Refine the selector or explicitly report ambiguity; never choose silently. |
+| `implementation_target_missing` | No candidate was reported. | Confirm source access/state externally, then update or waive the Target. |
+| `implementation_overlap_blocking` | Another active Task operates on the same resolved target. | Create a dependency or a policy-compliant acknowledgement. |
+| `implementation_overlap_ack_stale` | Resolutions changed after acknowledgement. | Re-read overlaps and create a new decision against current resolutions. |
+| `target_execution_disposition_required` | An active required Target lacks an execution record. | Submit its agent execution receipt before completion. |
+| `code_traceability_waiver_required` | A not-applicable decision lacks an explicit waiver. | Ask an authorized human to record the bounded waiver. |
+| `code_traceability_locked` | A mutation targeted a locked entity/version. | Reopen through an advertised SDLC transition or create a new version. |
+
+Every Code Traceability error uses the closed semantic envelope
+`{code, message, details, remediation[]}`. Each remediation entry contains an
+`action` and, when an MCP action exists, its exact `tool`; clients must not
+replace typed blockers with a generic repository fallback.
+
+Canonical protocol: `okto-pulse://reference/code-traceability`.

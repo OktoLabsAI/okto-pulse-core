@@ -28,11 +28,18 @@ from okto_pulse.core.domain.enums import (
     SpecStatus,
     SprintStatus,
 )
+from okto_pulse.core.domain.code_traceability import (
+    CodeInvestigationCurrentnessUnknown,
+    CodeTraceabilityContractError,
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.kg.cognitive_closeout_gate import (
     ELIGIBLE_CLOSEOUT_ENTITY_TYPES,
 )
 from okto_pulse.core.models.schemas import (
+    CardMove,
     IdeationMove,
     RefinementCreate,
     SpecMove,
@@ -40,6 +47,8 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import (
+    CardOperationError,
+    CardService,
     IdeationService,
     RefinementService,
     SpecService,
@@ -63,6 +72,36 @@ def _board(board_id: str, *, settings: dict | None = None) -> Board:
         realm_id=LOCAL_REALM_ID,
         settings=settings or {},
     )
+
+
+def _direct_spec_context_fields(
+    spec_id: str,
+    *,
+    version: int = 1,
+) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=version,
+    )
+    manifest, manifest_sha256 = (
+        main_service._direct_spec_source_context_manifest(
+            spec_id=spec_id,
+            delivery_context=DeliveryContext.BROWNFIELD,
+            provenance=provenance,
+            subject_version=version,
+        )
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 async def _persist(db_factory, *rows: object) -> None:
@@ -111,6 +150,267 @@ def _install_cognitive_block(services, service_name: str) -> None:
             "cognitive_consolidation_pending: done transition blocked (1)"
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_coverage_preview_matches_validated_mutation(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("code-evidence-preview-board")
+    spec_id = _id("code-evidence-preview-spec")
+    await _persist(
+        db_factory,
+        _board(
+            board_id,
+            settings={
+                "require_spec_validation": False,
+                "code_traceability": {"mode": "advisory"},
+            },
+        ),
+        Spec(
+            id=spec_id,
+            **_direct_spec_context_fields(spec_id),
+            board_id=board_id,
+            title="Code Evidence coverage preview",
+            status=SpecStatus.APPROVED,
+            created_by=USER_ID,
+            decisions=[
+                {
+                    "id": "decision-1",
+                    "title": "Use the current architecture",
+                    "status": "active",
+                    "linked_task_ids": ["traceability-placeholder"],
+                }
+            ],
+        ),
+    )
+
+    async def blocked(_service, _spec, _board):
+        raise CodeTraceabilityContractError(
+            "code_evidence_disposition_required",
+            "Every active inherited Evidence needs a link or final disposition.",
+        )
+
+    monkeypatch.setattr(
+        CardService,
+        "check_code_evidence_coverage",
+        blocked,
+    )
+    async with db_factory() as db:
+        preview = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            to_status="validated",
+        )
+        with pytest.raises(CodeTraceabilityContractError) as mutation:
+            await SpecService(db).move_spec(
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.VALIDATED),
+            )
+
+    assert preview.blocked_reason is not None
+    assert preview.blocked_reason.startswith("code_evidence_disposition_required:")
+    assert mutation.value.code == "code_evidence_disposition_required"
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_coverage_rechecked_before_in_progress(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("code-evidence-start-board")
+    spec_id = _id("code-evidence-start-spec")
+    await _persist(
+        db_factory,
+        _board(board_id, settings={"code_traceability": {"mode": "advisory"}}),
+        Spec(
+            id=spec_id,
+            **_direct_spec_context_fields(spec_id),
+            board_id=board_id,
+            title="Code Evidence start coverage",
+            status=SpecStatus.VALIDATED,
+            created_by=USER_ID,
+            skip_qualitative_validation=True,
+            decisions=[
+                {
+                    "id": "decision-1",
+                    "title": "Use the current architecture",
+                    "status": "active",
+                    "linked_task_ids": ["traceability-placeholder"],
+                }
+            ],
+        ),
+    )
+
+    async def blocked(_service, _spec, _board):
+        raise CodeTraceabilityContractError(
+            "code_evidence_disposition_required",
+            "Every active inherited Evidence needs a link or final disposition.",
+        )
+
+    monkeypatch.setattr(
+        CardService,
+        "check_code_evidence_coverage",
+        blocked,
+    )
+    async with db_factory() as db:
+        preview = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            to_status="in_progress",
+        )
+        with pytest.raises(CodeTraceabilityContractError) as mutation:
+            await SpecService(db).move_spec(
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.IN_PROGRESS),
+            )
+
+    assert preview.blocked_reason is not None
+    assert preview.blocked_reason.startswith("code_evidence_disposition_required:")
+    assert mutation.value.code == "code_evidence_disposition_required"
+
+
+@pytest.mark.asyncio
+async def test_spec_code_evidence_skip_does_not_mask_technical_failure_parity(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("code-evidence-technical-failure-board")
+    spec_id = _id("code-evidence-technical-failure-spec")
+    await _persist(
+        db_factory,
+        _board(
+            board_id,
+            settings={
+                "require_spec_validation": False,
+                "code_traceability": {"mode": "advisory"},
+            },
+        ),
+        Spec(
+            id=spec_id,
+            **_direct_spec_context_fields(spec_id),
+            board_id=board_id,
+            title="Code Evidence technical failure",
+            status=SpecStatus.APPROVED,
+            created_by=USER_ID,
+            skip_code_evidence_coverage=True,
+            decisions=[
+                {
+                    "id": "decision-1",
+                    "title": "Use the current architecture",
+                    "status": "active",
+                    "linked_task_ids": ["traceability-placeholder"],
+                }
+            ],
+        ),
+    )
+
+    async def unavailable(_service, spec, _board):
+        assert spec.skip_code_evidence_coverage is True
+        raise CodeInvestigationCurrentnessUnknown(
+            details={"reason": "code_traceability_read_adapter_unavailable"}
+        )
+
+    monkeypatch.setattr(
+        CardService,
+        "check_code_evidence_coverage",
+        unavailable,
+    )
+    async with db_factory() as db:
+        preview = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            to_status="validated",
+        )
+        with pytest.raises(CodeInvestigationCurrentnessUnknown) as mutation:
+            await SpecService(db).move_spec(
+                spec_id,
+                USER_ID,
+                SpecMove(status=SpecStatus.VALIDATED),
+            )
+
+    assert preview.blocked_reason is not None
+    assert preview.blocked_reason.startswith("code_investigation_currentness_unknown:")
+    assert mutation.value.details == {
+        "reason": "code_traceability_read_adapter_unavailable"
+    }
+
+
+@pytest.mark.asyncio
+async def test_rejected_rework_preview_matches_unsealed_current_cause_guard(
+    db_factory,
+) -> None:
+    board_id = _id("rejected-preview-board")
+    spec_id = _id("rejected-preview-spec")
+    card_id = _id("rejected-preview-card")
+    await _persist(
+        db_factory,
+        _board(board_id),
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Rejected preview spec",
+            status=SpecStatus.IN_PROGRESS,
+            created_by=USER_ID,
+        ),
+        Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Rejected card without a Current cause",
+            status=CardStatus.REJECTED,
+            card_type=CardType.NORMAL,
+            position=0,
+            created_by=USER_ID,
+            validations=[
+                {
+                    "id": "val_legacy_direct_pointer",
+                    "card_id": card_id,
+                    "board_id": board_id,
+                    "expected_subject_version": 1,
+                    "validation_outcome": "failed",
+                    "completion_outcome": "rejected",
+                }
+            ],
+            rejection_records=[],
+            current_rejection_kind="task_validation",
+            current_rejection_id="val_legacy_direct_pointer",
+            current_rejection_code="task_validation_failed",
+            current_rejection_summary="Legacy direct validation pointer.",
+        ),
+    )
+
+    async with db_factory() as db:
+        rework = await _preview_transition(
+            db,
+            board_id=board_id,
+            entity_type="card",
+            entity_id=card_id,
+            to_status="in_progress",
+        )
+        with pytest.raises(CardOperationError) as mutation:
+            await CardService(db).move_card(
+                card_id,
+                USER_ID,
+                CardMove(status=CardStatus.IN_PROGRESS),
+            )
+
+    assert rework.blocked_reason is not None
+    assert rework.blocked_reason.startswith("current_rejection_cause_missing:")
+    assert rework.blocked_facts == {
+        "card_id": card_id,
+        "current_rejection_present": False,
+    }
+    assert mutation.value.code == "current_rejection_cause_missing"
 
 
 @pytest.mark.asyncio
@@ -560,6 +860,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
             RefinementCreate(
                 ideation_id=ideation_id,
                 title="Derived after ideation completion",
+                delivery_context="brownfield",
             ),
             skip_ownership_check=True,
         )
@@ -572,9 +873,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
     cognitive_closeout.assert_not_called()
     async with db_factory() as db:
         persisted = await IdeationService(db).get_ideation(ideation_id)
-        persisted_refinement = await RefinementService(db).get_refinement(
-            refinement_id
-        )
+        persisted_refinement = await RefinementService(db).get_refinement(refinement_id)
         snapshots = await IdeationService(db).list_snapshots(ideation_id)
 
     assert persisted is not None
@@ -933,6 +1232,7 @@ async def test_spec_move_not_targeting_draft_preserves_edition(
         _board(board_id),
         Spec(
             id=spec_id,
+            **_direct_spec_context_fields(spec_id, version=42),
             board_id=board_id,
             title="Forward move preserves edition",
             status=SpecStatus.DRAFT,

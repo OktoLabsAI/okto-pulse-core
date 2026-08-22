@@ -130,9 +130,7 @@ class _QueueStore:
             set[str],
         ],
     ) -> None:
-        self.entries, self.delivery_rows, self.partial_writes = copy.deepcopy(
-            snapshot
-        )
+        self.entries, self.delivery_rows, self.partial_writes = copy.deepcopy(snapshot)
 
     def auto_rollback(self, transaction: _Transaction) -> None:
         self.restore(transaction.snapshot)
@@ -290,8 +288,7 @@ class _DeliveryPort:
             attempt=attempt,
             attempt_event_key=(
                 build_attempt_event_key(request.delivery_key, attempt=attempt)
-                if state
-                in {DeliveryState.OUTBOX_PERSISTED, DeliveryState.DELIVERED}
+                if state in {DeliveryState.OUTBOX_PERSISTED, DeliveryState.DELIVERED}
                 or attempt > 0
                 else None
             ),
@@ -475,14 +472,14 @@ async def test_transfer_carries_reconcile_evidence_and_controlled_timestamp(
         "routed_to_debt_count": 1,
         "incomplete": False,
         "incomplete_cause": None,
-            "failed_types": [],
-            "target_identity_count": 1,
-            "target_found_count": 1,
-            "target_demoted_count": 1,
-            "target_already_converged_count": 0,
-            "target_skipped_cognitive_count": 0,
-            "target_preserved_canonical_count": 0,
-            "circuit_reason": "healthy",
+        "failed_types": [],
+        "target_identity_count": 1,
+        "target_found_count": 1,
+        "target_demoted_count": 1,
+        "target_already_converged_count": 0,
+        "target_skipped_cognitive_count": 0,
+        "target_preserved_canonical_count": 0,
+        "circuit_reason": "healthy",
     }
 
 
@@ -701,8 +698,7 @@ async def test_transfer_telemetry_is_not_emitted_before_commit(
     assert processed == 0
     assert store.entries[entry.id].status == "pending"
     assert all(
-        getattr(record, "event", None)
-        != "kg.stale_reconcile.delivery_transferred"
+        getattr(record, "event", None) != "kg.stale_reconcile.delivery_transferred"
         for record in caplog.records
     )
 
@@ -768,6 +764,9 @@ async def test_legacy_consolidate_keeps_standalone_ack_and_skips_delivery_port(
     assert store.ack_calls[0] == {
         "entry_id": entry.id,
         "claim_token": entry.claim_token,
+        "board_id": entry.board_id,
+        "source": entry.source,
+        "work_kind": entry.work_kind,
         "generation": 0,
         "delete_event_id": None,
     }

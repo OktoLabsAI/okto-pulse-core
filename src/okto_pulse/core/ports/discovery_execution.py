@@ -32,6 +32,7 @@ class DiscoverySpecFact:
     skip_ir_coverage: bool
     skip_or_coverage: bool
     skip_decisions_coverage: bool
+    skip_code_evidence_coverage: bool
 
 
 @dataclass(frozen=True, slots=True)

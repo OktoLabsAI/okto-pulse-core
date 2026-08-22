@@ -42,7 +42,10 @@ from okto_pulse.core.kg.query_contract import (
     RELATED_CONTEXT_DEPTHS,
     RELATED_CONTEXT_DIRECTIONS,
 )
-from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
+from okto_pulse.core.kg.schema_contract import (
+    CODE_TRACEABILITY_READ_PROPERTIES,
+    SCHEMA_VERSION,
+)
 
 logger = logging.getLogger("okto_pulse.kg.service")
 
@@ -69,6 +72,23 @@ def _as_iso_timestamp(value: Any) -> str | None:
         return value
     isoformat = getattr(value, "isoformat", None)
     return isoformat() if callable(isoformat) else str(value)
+
+
+def _optional_row_projection(
+    row: list[Any] | tuple[Any, ...],
+    *,
+    start_index: int,
+) -> dict[str, Any]:
+    """Map additive semantic columns while accepting legacy-shaped rows."""
+
+    return {
+        property_name: (
+            row[start_index + offset]
+            if len(row) > start_index + offset
+            else None
+        )
+        for offset, property_name in enumerate(CODE_TRACEABILITY_READ_PROPERTIES)
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -720,7 +740,13 @@ class KGService:
     # 0a. get_node_detail (visualization — any node type)
     # ------------------------------------------------------------------
 
-    def get_node_detail(self, board_id: str, node_id: str) -> dict | None:
+    def get_node_detail(
+        self,
+        board_id: str,
+        node_id: str,
+        *,
+        include_code_traceability: bool = True,
+    ) -> dict | None:
         """Fetch one node by id across any node type in the per-board graph.
 
         Tries each NODE_TYPES table in turn (graph backend has no polymorphic MATCH).
@@ -736,14 +762,22 @@ class KGService:
         for ntype in NODE_TYPES:
             cypher = (
                 f"MATCH (n:{ntype} {{id: $nid}}) "
+                f"WHERE {tpl.code_traceability_visibility_clause('n')} "
                 f"RETURN n.id, n.title, n.content, n.justification, "
                 f"n.source_artifact_ref, n.source_confidence, "
                 f"n.relevance_score, n.query_hits, n.last_queried_at, "
-                f"n.created_at, n.superseded_by"
+                f"n.created_at, n.superseded_by, "
+                f"{tpl.code_traceability_node_projection('n')}"
             )
             try:
                 result = cypher_executor.execute_read_only(
-                    board_id, cypher, {"nid": node_id}, max_rows=1
+                    board_id,
+                    cypher,
+                    {
+                        "nid": node_id,
+                        "include_code_traceability": include_code_traceability,
+                    },
+                    max_rows=1,
                 )
                 rows = result.get("rows", [])
                 if rows:
@@ -758,9 +792,10 @@ class KGService:
                         "relevance_score": r[6] if r[6] is not None else 0.5,
                         "query_hits": r[7] if r[7] is not None else 0,
                         "last_queried_at": r[8],
-                        "created_at": r[9].isoformat() if r[9] else None,
+                        "created_at": _as_iso_timestamp(r[9]),
                         "superseded_by": r[10],
                         "node_type": ntype,
+                        **_optional_row_projection(r, start_index=11),
                     }
             except Exception:
                 continue
@@ -780,6 +815,7 @@ class KGService:
         min_relevance: float | None = None,
         node_type: str | None = None,
         graph_layer: str = GRAPH_LAYER_CANONICAL,
+        include_code_traceability: bool = True,
     ) -> list[dict]:
         """Return nodes ordered ``(created_at DESC, id DESC)`` — Spec 8 / S1.3.
 
@@ -794,6 +830,7 @@ class KGService:
             "max_rows": f.max_rows,
             "min_relevance": f.min_relevance,
             "graph_layer": layer,
+            "include_code_traceability": include_code_traceability,
         }
         if node_type:
             params["node_type"] = node_type
@@ -828,6 +865,7 @@ class KGService:
                 "source_artifact_ref": r[7],
                 "graph_layer": r[8] if len(r) > 8 and r[8] else "legacy_unknown",
                 "maturity_status": r[9] if len(r) > 9 else None,
+                **_optional_row_projection(r, start_index=10),
             }
             for r in rows
         ]
@@ -840,6 +878,7 @@ class KGService:
         min_relevance: float | None = None,
         node_type: str | None = None,
         graph_layer: str = GRAPH_LAYER_CANONICAL,
+        include_code_traceability: bool = True,
     ) -> int:
         """Count nodes matching the same filters as ``get_all_nodes``.
 
@@ -852,6 +891,7 @@ class KGService:
             "min_confidence": f.min_confidence,
             "min_relevance": f.min_relevance,
             "graph_layer": layer,
+            "include_code_traceability": include_code_traceability,
         }
         if node_type:
             params["node_type"] = node_type
@@ -993,6 +1033,7 @@ class KGService:
         direction: str = "both",
         max_depth: int = 2,
         graph_layer: str = GRAPH_LAYER_CANONICAL,
+        include_code_traceability: bool = True,
     ) -> list[dict]:
         """2-hop (or 1-hop) neighborhood around an artifact with optional
         relationship-type + direction filters for impact analysis.
@@ -1020,6 +1061,11 @@ class KGService:
         layer = normalize_graph_layer(graph_layer)
         store = _get_graph_store()
         f = _filters(min_confidence, max_rows, defaults=self.defaults)
+        ct_visibility_kwargs = (
+            {}
+            if include_code_traceability
+            else {"include_code_traceability": False}
+        )
 
         # Prefer the filtered method when the store implements it; otherwise
         # fall back to the legacy 2-hop undirected query (caller gets a hint
@@ -1033,6 +1079,7 @@ class KGService:
                 "direction": direction,
                 "max_depth": max_depth,
                 "graph_layer": layer,
+                "include_code_traceability": include_code_traceability,
             }
             rows = self._cached_call(
                 "get_related_context.filtered",
@@ -1046,18 +1093,24 @@ class KGService:
                     direction=direction,
                     max_depth=max_depth,
                     graph_layer=layer,
+                    **ct_visibility_kwargs,
                 ),
             )
         else:
             rows = self._cached_call(
                 "get_related_context",
                 board_id,
-                {"artifact_id": artifact_id, "graph_layer": layer},
+                {
+                    "artifact_id": artifact_id,
+                    "graph_layer": layer,
+                    "include_code_traceability": include_code_traceability,
+                },
                 lambda: store.find_by_artifact(
                     board_id,
                     artifact_id,
                     f,
                     graph_layer=layer,
+                    **ct_visibility_kwargs,
                 ),
             )
         shaped = [

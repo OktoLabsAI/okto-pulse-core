@@ -57,7 +57,12 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r4 imp4 tester"
-        self.permissions = set()
+        self.permissions = (
+            "code_traceability.investigation.read",
+            "code_traceability.evidence.read",
+            "code_traceability.target.read",
+            "code_traceability.overlap.read",
+        )
 
 
 async def _call(

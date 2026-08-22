@@ -91,9 +91,7 @@ def test_validate_kg_rebuilt_event_accepts_valid_payload() -> None:
     assert reason is None
 
 
-@pytest.mark.parametrize(
-    "field", sorted(KG_REBUILT_REQUIRED_FIELDS)
-)
+@pytest.mark.parametrize("field", sorted(KG_REBUILT_REQUIRED_FIELDS))
 def test_validate_rejects_missing_required_field(field: str) -> None:
     payload = _valid_event_payload()
     del payload[field]
@@ -108,6 +106,37 @@ def test_validate_rejects_non_uuid_v4_generation() -> None:
     valid, reason = validate_kg_rebuilt_event(payload)
     assert valid is False
     assert reason == "kg_generation_id_must_be_uuid_v4"
+
+
+def test_validate_accepts_report_backed_non_promoted_terminal_event() -> None:
+    payload = _valid_event_payload(status="failed")
+    payload["kg_generation_id"] = None
+    payload["candidate_kg_generation_id"] = generate_kg_generation_id()
+
+    assert validate_kg_rebuilt_event(payload) == (True, None)
+
+
+@pytest.mark.parametrize("candidate", [None, "", "not-a-uuid"])
+def test_validate_terminal_null_generation_requires_valid_candidate(candidate) -> None:
+    payload = _valid_event_payload(status="failed")
+    payload["kg_generation_id"] = None
+    payload["candidate_kg_generation_id"] = candidate
+
+    valid, reason = validate_kg_rebuilt_event(payload)
+
+    assert valid is False
+    assert reason == "non_promoted_candidate_generation_id_must_be_uuid_v4"
+
+
+def test_validate_completed_event_never_accepts_null_generation() -> None:
+    payload = _valid_event_payload()
+    payload["kg_generation_id"] = None
+    payload["candidate_kg_generation_id"] = generate_kg_generation_id()
+
+    assert validate_kg_rebuilt_event(payload) == (
+        False,
+        "completed_kg_generation_id_must_be_uuid_v4",
+    )
 
 
 def test_validate_accepts_null_previous_generation() -> None:
@@ -156,10 +185,7 @@ def test_publish_invalid_payload_does_not_persist_audit(base_dir: Path) -> None:
     assert result.outcome == EventPublishOutcome.INVALID_PAYLOAD.value
     assert result.audit_ref is None
     assert (
-        get_event_count(
-            BOARD, outcome=EventPublishOutcome.INVALID_PAYLOAD.value
-        )
-        == 1
+        get_event_count(BOARD, outcome=EventPublishOutcome.INVALID_PAYLOAD.value) == 1
     )
 
 
@@ -173,16 +199,11 @@ def test_publish_adapter_failure_keeps_audit_and_marks_publish_failed(
     def _bad_adapter(_p):
         return False
 
-    publisher = KGRebuiltEventPublisher(
-        base_dir=base_dir, publish_adapter=_bad_adapter
-    )
+    publisher = KGRebuiltEventPublisher(base_dir=base_dir, publish_adapter=_bad_adapter)
     result = publisher.publish(event_payload=_valid_event_payload())
     assert result.accepted is False
     assert result.outcome == EventPublishOutcome.PUBLISH_FAILED.value
-    assert (
-        result.error_code
-        == EventPublishErrorCode.EVENT_PUBLISH_FAILED.value
-    )
+    assert result.error_code == EventPublishErrorCode.EVENT_PUBLISH_FAILED.value
     # Audit IS persisted — operator can re-drive from disk.
     assert result.audit_ref and Path(result.audit_ref).exists()
 
@@ -191,14 +212,64 @@ def test_publish_adapter_exception_lands_publish_failed(base_dir: Path) -> None:
     def _boom(_p):
         raise RuntimeError("bus down")
 
-    publisher = KGRebuiltEventPublisher(
-        base_dir=base_dir, publish_adapter=_boom
-    )
+    publisher = KGRebuiltEventPublisher(base_dir=base_dir, publish_adapter=_boom)
     result = publisher.publish(event_payload=_valid_event_payload())
     assert result.outcome == EventPublishOutcome.PUBLISH_FAILED.value
     assert "publish_adapter_exception" in (result.detail or "")
     # Audit still persisted.
     assert result.audit_ref
+
+
+def test_publish_success_marker_failure_is_counted_and_retries_same_logical_event(
+    base_dir: Path,
+    monkeypatch,
+) -> None:
+    logical_events: set[str] = set()
+    adapter_calls: list[str] = []
+
+    def _deduplicating_adapter(payload):  # noqa: ANN001
+        event_id = str(payload["event_id"])
+        adapter_calls.append(event_id)
+        logical_events.add(event_id)
+        return True
+
+    publisher = KGRebuiltEventPublisher(
+        base_dir=base_dir,
+        publish_adapter=_deduplicating_adapter,
+    )
+    original_write = publisher.artifact_store.write_json_atomic
+    fail_once = {"value": True}
+
+    def _fail_first_success_marker(key, payload):  # noqa: ANN001
+        if payload.get("delivery_outcome") == "published" and fail_once["value"]:
+            fail_once["value"] = False
+            raise OSError("success marker crash cut")
+        return original_write(key, payload)
+
+    monkeypatch.setattr(
+        publisher.artifact_store,
+        "write_json_atomic",
+        _fail_first_success_marker,
+    )
+    payload = {**_valid_event_payload(), "run_id": "run-marker-cut"}
+
+    first = publisher.publish(event_payload=payload)
+    second = publisher.publish(event_payload=payload)
+
+    assert first.accepted is False
+    assert first.outcome == EventPublishOutcome.PUBLISH_FAILED.value
+    assert second.accepted is True
+    assert second.event_ref == first.event_ref
+    assert len(logical_events) == 1
+    assert adapter_calls == [first.event_ref, first.event_ref]
+    assert (
+        get_event_count(
+            BOARD,
+            status="completed",
+            outcome=EventPublishOutcome.PUBLISH_FAILED.value,
+        )
+        == 1
+    )
 
 
 def test_event_counter_labels_bounded() -> None:
@@ -235,9 +306,7 @@ def test_mark_for_generation_returns_pending_marked(base_dir: Path) -> None:
     assert "cmt:1" not in result.pending_refs
     assert result.record_ref and Path(result.record_ref).exists()
     assert (
-        get_pending_count(
-            BOARD, status=CognitivePendingStatus.PENDING_MARKED.value
-        )
+        get_pending_count(BOARD, status=CognitivePendingStatus.PENDING_MARKED.value)
         >= 3
     )
 
@@ -254,12 +323,7 @@ def test_mark_for_generation_skipped_when_no_consolidable_sources(
     )
     assert result.status == CognitivePendingStatus.SKIPPED.value
     assert result.pending_count == 0
-    assert (
-        get_pending_count(
-            BOARD, status=CognitivePendingStatus.SKIPPED.value
-        )
-        >= 1
-    )
+    assert get_pending_count(BOARD, status=CognitivePendingStatus.SKIPPED.value) >= 1
 
 
 def test_mark_for_generation_rejects_invalid_uuid(base_dir: Path) -> None:
@@ -271,10 +335,7 @@ def test_mark_for_generation_rejects_invalid_uuid(base_dir: Path) -> None:
         event_ref="evt_abc",
     )
     assert result.status == CognitivePendingStatus.SKIPPED.value
-    assert (
-        result.error_code
-        == CognitiveMarkerErrorCode.INVALID_GENERATION.value
-    )
+    assert result.error_code == CognitiveMarkerErrorCode.INVALID_GENERATION.value
 
 
 def test_mark_for_generation_adapter_exception_marks_skipped(
@@ -283,9 +344,7 @@ def test_mark_for_generation_adapter_exception_marks_skipped(
     def _boom(_b, _g, _s):
         raise RuntimeError("cognitive offline")
 
-    marker = CognitivePendingMarker(
-        base_dir=base_dir, pending_adapter=_boom
-    )
+    marker = CognitivePendingMarker(base_dir=base_dir, pending_adapter=_boom)
     result = marker.mark_for_generation(
         board_id=BOARD,
         kg_generation_id=generate_kg_generation_id(),
@@ -294,8 +353,7 @@ def test_mark_for_generation_adapter_exception_marks_skipped(
     )
     assert result.status == CognitivePendingStatus.SKIPPED.value
     assert (
-        result.error_code
-        == CognitiveMarkerErrorCode.COGNITIVE_MARKER_UNAVAILABLE.value
+        result.error_code == CognitiveMarkerErrorCode.COGNITIVE_MARKER_UNAVAILABLE.value
     )
 
 
@@ -337,47 +395,35 @@ def test_record_consumed_persists_safe_audit(base_dir: Path) -> None:
     assert result.audit_ref and Path(result.audit_ref).exists()
     assert result.recorded_at
     assert result.error_code is None
-    assert (
-        get_audit_count(BOARD, operation="rebuild", outcome="consumed") == 1
-    )
+    assert get_audit_count(BOARD, operation="rebuild", outcome="consumed") == 1
 
 
 @pytest.mark.parametrize(
     "outcome",
     sorted(o.value for o in ConfirmationAuditOutcome),
 )
-def test_record_accepts_all_canonical_outcomes(
-    base_dir: Path, outcome: str
-) -> None:
+def test_record_accepts_all_canonical_outcomes(base_dir: Path, outcome: str) -> None:
     """br_48da2f8a — every outcome (consumed/expired/replayed/scope_mismatch/missing)
     must leave an audit trail."""
 
     recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
     result = recorder.record(**_audit_kwargs(outcome=outcome))
     assert result.audit_ref is not None
-    assert (
-        get_audit_count(BOARD, operation="rebuild", outcome=outcome) == 1
-    )
+    assert get_audit_count(BOARD, operation="rebuild", outcome=outcome) == 1
 
 
 def test_record_rejects_unknown_operation(base_dir: Path) -> None:
     recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
     result = recorder.record(**_audit_kwargs(operation="not_canonical"))
     assert result.audit_ref is None
-    assert (
-        result.error_code
-        == ConfirmationAuditErrorCode.INVALID_OPERATION.value
-    )
+    assert result.error_code == ConfirmationAuditErrorCode.INVALID_OPERATION.value
 
 
 def test_record_rejects_unknown_outcome(base_dir: Path) -> None:
     recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
     result = recorder.record(**_audit_kwargs(outcome="weird"))
     assert result.audit_ref is None
-    assert (
-        result.error_code
-        == ConfirmationAuditErrorCode.INVALID_OUTCOME.value
-    )
+    assert result.error_code == ConfirmationAuditErrorCode.INVALID_OUTCOME.value
 
 
 @pytest.mark.parametrize(
@@ -385,9 +431,7 @@ def test_record_rejects_unknown_outcome(base_dir: Path) -> None:
     ["conf_abcdef0123456789", "tok_abcdef0123456789xyz"],
     ids=["conf_prefix", "tok_prefix"],
 )
-def test_record_rejects_raw_token_in_actor_ref(
-    base_dir: Path, raw_token: str
-) -> None:
+def test_record_rejects_raw_token_in_actor_ref(base_dir: Path, raw_token: str) -> None:
     """api_c9bc9a8c unsafe_audit_payload — confirmation token shapes
     are forbidden in any leaf of the payload (br_d379c40d)."""
 
@@ -396,10 +440,7 @@ def test_record_rejects_raw_token_in_actor_ref(
     kwargs["actor_ref"] = raw_token
     result = recorder.record(**kwargs)
     assert result.audit_ref is None
-    assert (
-        result.error_code
-        == ConfirmationAuditErrorCode.UNSAFE_AUDIT_PAYLOAD.value
-    )
+    assert result.error_code == ConfirmationAuditErrorCode.UNSAFE_AUDIT_PAYLOAD.value
 
 
 def test_record_rejects_sensitive_field_name(base_dir: Path) -> None:
@@ -407,10 +448,7 @@ def test_record_rejects_sensitive_field_name(base_dir: Path) -> None:
     kwargs = _audit_kwargs()
     kwargs["generation_ids"] = {"api_key": "abc"}
     result = recorder.record(**kwargs)
-    assert (
-        result.error_code
-        == ConfirmationAuditErrorCode.UNSAFE_AUDIT_PAYLOAD.value
-    )
+    assert result.error_code == ConfirmationAuditErrorCode.UNSAFE_AUDIT_PAYLOAD.value
 
 
 def test_audit_counter_labels_bounded() -> None:
@@ -418,16 +456,29 @@ def test_audit_counter_labels_bounded() -> None:
 
 
 def test_canonical_audit_operations_match_api_enum() -> None:
-    assert CANONICAL_AUDIT_OPERATIONS == frozenset({
-        "reset", "quarantine", "rebuild",
-        "promote", "rollback", "reindex_discovery",
-    })
+    assert CANONICAL_AUDIT_OPERATIONS == frozenset(
+        {
+            "reset",
+            "quarantine",
+            "rebuild",
+            "promote",
+            "rollback",
+            "reindex_discovery",
+        }
+    )
 
 
 def test_consolidable_artifact_types_frozen() -> None:
-    assert CONSOLIDABLE_ARTIFACT_TYPES == frozenset({
-        "spec", "decision", "refinement", "task", "test", "bug",
-    })
+    assert CONSOLIDABLE_ARTIFACT_TYPES == frozenset(
+        {
+            "spec",
+            "decision",
+            "refinement",
+            "task",
+            "test",
+            "bug",
+        }
+    )
 
 
 # ---------------- val_302bdec8 — integration wiring ----------------------
@@ -478,14 +529,10 @@ def test_build_kg_rebuilt_event_handler_publishes_then_marks(
     marker_calls: list[dict] = []
 
     def _pending_adapter(board, gen, sources):
-        marker_calls.append(
-            {"board": board, "gen": gen, "sources": list(sources)}
-        )
+        marker_calls.append({"board": board, "gen": gen, "sources": list(sources)})
         return len(sources)
 
-    marker = CognitivePendingMarker(
-        base_dir=base_dir, pending_adapter=_pending_adapter
-    )
+    marker = CognitivePendingMarker(base_dir=base_dir, pending_adapter=_pending_adapter)
 
     resolver_called: list[dict] = []
     sources_payload = _consolidable_sources()
@@ -503,6 +550,7 @@ def test_build_kg_rebuilt_event_handler_publishes_then_marks(
     event = _valid_event_payload()
     result = handler(event)
 
+    assert result.accepted is True
     assert result.publish.accepted is True
     assert result.publish.outcome == EventPublishOutcome.PUBLISHED.value
     assert result.mark is not None
@@ -537,65 +585,52 @@ def test_handler_skips_marker_when_publish_fails(base_dir: Path) -> None:
         marker_called = True
         return 1
 
-    marker = CognitivePendingMarker(
-        base_dir=base_dir, pending_adapter=_pending_adapter
-    )
+    marker = CognitivePendingMarker(base_dir=base_dir, pending_adapter=_pending_adapter)
     handler = build_kg_rebuilt_event_handler(
         publisher=publisher,
         cognitive_marker=marker,
         source_resolver=lambda _p: _consolidable_sources(),
     )
     result = handler(_valid_event_payload())
+    assert result.accepted is False
     assert result.publish.accepted is False
     assert result.mark is None
-    assert (
-        result.skipped_reason
-        == EventPublishErrorCode.EVENT_PUBLISH_FAILED.value
-    )
+    assert result.skipped_reason == EventPublishErrorCode.EVENT_PUBLISH_FAILED.value
     assert marker_called is False
 
 
 def test_handler_skips_marker_when_kg_generation_id_missing(
     base_dir: Path,
 ) -> None:
-    """Cover the post-publish branch where kg_generation_id is missing
-    in the payload. Uses a permissive publisher fake so we reach the
-    branch that ``validate_kg_rebuilt_event`` would otherwise reject."""
+    """A real report-backed failure publishes but has no cognitive generation."""
 
     from okto_pulse.core.kg.rebuild_audit import (
-        EventPublishResult as _EventPublishResult,
         build_kg_rebuilt_event_handler,
     )
 
-    class _AcceptAllPublisher:
-        @staticmethod
-        def publish(*, event_payload):
-            return _EventPublishResult(
-                accepted=True,
-                outcome=EventPublishOutcome.PUBLISHED.value,
-                event_ref="evt_fake",
-                audit_ref=None,
-            )
-
     marker = CognitivePendingMarker(base_dir=base_dir)
     handler = build_kg_rebuilt_event_handler(
-        publisher=_AcceptAllPublisher(),
+        publisher=KGRebuiltEventPublisher(base_dir=base_dir),
         cognitive_marker=marker,
         source_resolver=lambda _p: _consolidable_sources(),
     )
-    payload = _valid_event_payload()
-    result = handler({**payload, "kg_generation_id": ""})
+    payload = {
+        **_valid_event_payload(status="failed"),
+        "kg_generation_id": None,
+        "candidate_kg_generation_id": generate_kg_generation_id(),
+        "run_id": "run-terminal-failure",
+    }
+    result = handler(payload)
+    assert result.accepted is True
     assert result.publish.accepted is True
     assert result.mark is None
     assert result.skipped_reason == "missing_kg_generation_id"
 
 
-def test_handler_resolver_exception_falls_through_with_empty_sources(
+def test_handler_resolver_exception_is_not_misclassified_as_empty_sources(
     base_dir: Path,
 ) -> None:
-    """Resolver exception should NOT crash the handler — marker still
-    runs with empty sources so the report records a pending audit even
-    when source loading fails."""
+    """A missing/corrupt manifest is retryable, not a valid empty board."""
 
     from okto_pulse.core.kg.rebuild_audit import (
         build_kg_rebuilt_event_handler,
@@ -614,10 +649,64 @@ def test_handler_resolver_exception_falls_through_with_empty_sources(
     )
     result = handler(_valid_event_payload())
     assert result.publish.accepted is True
+    assert result.accepted is False
+    assert result.mark is None
+    assert result.skipped_reason == "source_resolver_exception=RuntimeError"
+
+
+def test_handler_accepts_durable_empty_source_marker(base_dir: Path) -> None:
+    """A genuinely empty manifest remains a successful terminal delivery."""
+
+    from okto_pulse.core.kg.rebuild_audit import (
+        build_kg_rebuilt_event_handler,
+    )
+
+    handler = build_kg_rebuilt_event_handler(
+        publisher=KGRebuiltEventPublisher(base_dir=base_dir),
+        cognitive_marker=CognitivePendingMarker(base_dir=base_dir),
+        source_resolver=lambda _payload: (),
+    )
+
+    result = handler(_valid_event_payload())
+
+    assert result.publish.accepted is True
     assert result.mark is not None
-    # Empty source set -> SKIPPED.
     assert result.mark.status == CognitivePendingStatus.SKIPPED.value
-    assert result.mark.pending_count == 0
+    assert result.mark.error_code is None
+    assert result.mark.record_ref is not None
+    assert result.accepted is True
+
+
+def test_handler_marker_failure_keeps_composite_delivery_retryable(
+    base_dir: Path,
+) -> None:
+    """Accepted publication cannot hide a failed cognitive marker."""
+
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitiveMarkerErrorCode,
+        build_kg_rebuilt_event_handler,
+    )
+
+    def _marker_fails(_board, _generation, _sources):  # noqa: ANN001, ANN202
+        raise RuntimeError("cognitive store unavailable")
+
+    handler = build_kg_rebuilt_event_handler(
+        publisher=KGRebuiltEventPublisher(base_dir=base_dir),
+        cognitive_marker=CognitivePendingMarker(
+            base_dir=base_dir,
+            pending_adapter=_marker_fails,
+        ),
+        source_resolver=lambda _payload: _consolidable_sources(),
+    )
+
+    result = handler(_valid_event_payload())
+
+    assert result.publish.accepted is True
+    assert result.mark is not None
+    assert result.mark.error_code == (
+        CognitiveMarkerErrorCode.COGNITIVE_MARKER_UNAVAILABLE.value
+    )
+    assert result.accepted is False
 
 
 def test_confirmation_store_consume_records_safe_audit(
@@ -636,9 +725,7 @@ def test_confirmation_store_consume_records_safe_audit(
     )
 
     recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
-    store = RebuildConfirmationStore(
-        base_dir=base_dir, audit_recorder=recorder
-    )
+    store = RebuildConfirmationStore(base_dir=base_dir, audit_recorder=recorder)
     token = store.issue(
         board_id=BOARD,
         actor_id="user-x",
@@ -656,9 +743,7 @@ def test_confirmation_store_consume_records_safe_audit(
     )
     assert result.outcome == "consumed"
     # Audit row was written by the recorder.
-    assert (
-        get_audit_count(BOARD, operation="rebuild", outcome="consumed") == 1
-    )
+    assert get_audit_count(BOARD, operation="rebuild", outcome="consumed") == 1
     # Verify the audit JSON exists, references the fingerprint and
     # NEVER carries the raw confirmation_id.
     audit_dir = base_dir / "rebuild" / "audit" / "confirmation" / BOARD
@@ -729,10 +814,7 @@ def test_confirmation_store_audit_covers_every_destructive_outcome(
             manifest_ref="rebuild_manifest_abc",
         )
         # Force-expire by rewriting expires_at to the past.
-        path = (
-            base_dir / "rebuild" / "confirmations"
-            / f"{token.confirmation_id}.json"
-        )
+        path = base_dir / "rebuild" / "confirmations" / f"{token.confirmation_id}.json"
         import json as _json
 
         body = _json.loads(path.read_text(encoding="utf-8"))
@@ -784,12 +866,9 @@ def test_confirmation_store_audit_covers_every_destructive_outcome(
         expected_outcome = "missing"
 
     # The audit row landed for the destructive outcome path.
-    assert (
-        get_audit_count(
-            BOARD, operation="rebuild", outcome=expected_outcome
-        )
-        >= 1
-    ), f"no audit recorded for {scenario} ({expected_outcome})"
+    assert get_audit_count(BOARD, operation="rebuild", outcome=expected_outcome) >= 1, (
+        f"no audit recorded for {scenario} ({expected_outcome})"
+    )
 
 
 def test_confirmation_store_does_not_leak_raw_token_in_any_audit_path(
@@ -804,9 +883,7 @@ def test_confirmation_store_does_not_leak_raw_token_in_any_audit_path(
     )
 
     recorder = ConfirmationConsumptionAuditRecorder(base_dir=base_dir)
-    store = RebuildConfirmationStore(
-        base_dir=base_dir, audit_recorder=recorder
-    )
+    store = RebuildConfirmationStore(base_dir=base_dir, audit_recorder=recorder)
     token = store.issue(
         board_id=BOARD,
         actor_id="user-x",

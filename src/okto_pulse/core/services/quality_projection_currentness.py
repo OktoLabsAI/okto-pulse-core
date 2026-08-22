@@ -1,4 +1,4 @@
-"""Closed currentness selector for quality summaries projected into the KG.
+"""Lifecycle-edition selector for quality summaries projected into the KG.
 
 The selector is edition-neutral and deliberately accepts only the assessment
 identities whose normative inputs can be rederived by the current runtime.
@@ -29,16 +29,11 @@ from okto_pulse.core.domain.quality_canonicalization import (
     ruleset_digest_v1,
     semantic_content_digest_v1,
 )
-from okto_pulse.core.domain.requirement_lint import RequirementLocale
 from okto_pulse.core.services.ambiguity_assessment import (
     ambiguity_digest_set,
     ambiguity_qa_payload,
     ambiguity_subject_payload,
     resolve_ambiguity_gate_configuration,
-)
-from okto_pulse.core.services.requirement_lint_assessment import (
-    requirement_lint_normative_digests_v1,
-    resolve_lint_language_profile,
 )
 
 LEGACY_SPEC_VALIDATION_RULESET_VERSION = (
@@ -155,30 +150,6 @@ def current_quality_projection_digests(
             configuration=configuration,
         )
 
-    if resolved_kind is AssessmentKind.REQUIREMENT_LINT:
-        if (
-            resolved_type is not AssessmentSubjectType.SPEC
-            or resolved_origin is not AssessmentOrigin.SEMANTIC_WRITER
-            or resolved_source is not AssessmentSource.NATIVE
-        ):
-            raise QualityProjectionCurrentnessError(
-                "quality_projection_identity_unsupported"
-            )
-        return requirement_lint_normative_digests_v1(
-            content_digest=semantic_content_digest_v1(
-                resolved_type,
-                ambiguity_subject_payload(resolved_type, subject),
-            ),
-            clarification_digest=clarification_digest_v1(
-                ambiguity_qa_payload(qa_items),
-            ),
-            default_locale=RequirementLocale.UNKNOWN,
-            # The write-side hook seals the board language profile into the
-            # policy digest; the read side MUST resolve the same profile or
-            # every profiled receipt is evaluated as policy_changed/stale.
-            default_locales=resolve_lint_language_profile(board_settings),
-        )
-
     if (
         resolved_kind is AssessmentKind.SPEC_VALIDATION
         and resolved_type is AssessmentSubjectType.SPEC
@@ -208,8 +179,9 @@ def evaluate_quality_projection_currentness(
     current_subject: object,
     qa_items: Sequence[object] | None,
     board_settings: Mapping[str, object] | None,
+    assessed_subject_edition: int | None = None,
 ) -> AssessmentCurrentness:
-    """Return current/stale for one head using a closed normative dispatch."""
+    """Return current/previous, retaining digest dispatch for legacy callers."""
 
     try:
         resolved_type = AssessmentSubjectType(subject_type)
@@ -227,6 +199,14 @@ def evaluate_quality_projection_currentness(
             else getattr(current_subject, "version")
         )
         current_version = int(current_version_raw)
+        current_edition_raw: Any = (
+            current_subject.get("edition")
+            if isinstance(current_subject, Mapping)
+            else getattr(current_subject, "edition", None)
+        )
+        current_edition = (
+            int(current_edition_raw) if current_edition_raw is not None else None
+        )
     except (AttributeError, TypeError, ValueError) as exc:
         raise QualityProjectionCurrentnessError(
             "quality_projection_subject_invalid"
@@ -242,6 +222,36 @@ def evaluate_quality_projection_currentness(
     ):
         raise QualityProjectionCurrentnessError(
             "quality_projection_subject_invalid"
+        )
+    if current_edition is not None:
+        if current_edition < 1 or (
+            assessed_subject_edition is not None
+            and (
+                not isinstance(assessed_subject_edition, int)
+                or isinstance(assessed_subject_edition, bool)
+                or assessed_subject_edition < 1
+            )
+        ):
+            raise QualityProjectionCurrentnessError(
+                "quality_projection_subject_invalid"
+            )
+        return evaluate_assessment_input_currentness(
+            AssessmentSubjectRef(
+                board_id=board_id,
+                subject_type=resolved_type,
+                subject_id=subject_id,
+                subject_version=assessed_subject_version,
+                subject_edition=assessed_subject_edition,
+            ),
+            assessed_digests,
+            current_subject=AssessmentSubjectRef(
+                board_id=board_id,
+                subject_type=resolved_type,
+                subject_id=subject_id,
+                subject_version=current_version,
+                subject_edition=current_edition,
+            ),
+            current_digests=assessed_digests,
         )
     current_digests = current_quality_projection_digests(
         subject_type=resolved_type,

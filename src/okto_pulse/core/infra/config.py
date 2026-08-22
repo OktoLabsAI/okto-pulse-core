@@ -100,6 +100,13 @@ class CoreSettings(BaseModel):
     # ONLY when this global flag is True.
     cognitive_readiness_blocking_enabled: bool = Field(False)
 
+    # Semantic assessment v2 uses an explicit readers-first activation fence.
+    # Both switches default off: operators first attest that every deployed
+    # reader understands v2, then request writer activation. Runtime schema and
+    # trigger probes still have to pass before a write is admitted.
+    semantic_assessment_v2_readers_ready: bool = Field(False)
+    semantic_assessment_v2_writer_enabled: bool = Field(False)
+
     # Shared REST/MCP key for authenticated policy-keyset/v1 cursors.  Core
     # deliberately has no process-random or source-code fallback: an edition
     # must inject one stable value (normally from a secret store or persisted

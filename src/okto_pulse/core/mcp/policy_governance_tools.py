@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
+import logging
 from typing import Annotated, Any, Callable, Literal, Mapping
 import uuid
 
@@ -54,7 +55,16 @@ from okto_pulse.core.domain.guideline_policy import (
     POLICY_WAIVER_ID_MAX_LENGTH,
 )
 from okto_pulse.core.domain.guideline_lifecycle import GuidelineVersionBump
+from okto_pulse.core.domain.guideline_semantic_v2 import (
+    SEMANTIC_PINPOINT_DETAIL_MAX_LENGTH,
+    SEMANTIC_PINPOINT_KEY_MAX_LENGTH,
+    SEMANTIC_PINPOINT_REMEDIATION_MAX_LENGTH,
+    SEMANTIC_PINPOINT_TITLE_MAX_LENGTH,
+)
 from okto_pulse.core.mcp.outcome import McpToolOutcome
+
+
+logger = logging.getLogger(__name__)
 
 
 POLICY_PAGE_LIMIT_DEFAULT = 50
@@ -73,6 +83,7 @@ POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION = {
     "list_impact_items": (IMPACT_PREVIEW,),
     "adopt_revision": (ADOPTION_MANAGE,),
     "record_assessment": (ASSESSMENTS_RECORD,),
+    "record_assessment_v2": (ASSESSMENTS_RECORD,),
     "list_assessments": (ASSESSMENTS_READ,),
     "get_assessment": (ASSESSMENTS_READ,),
     "get_current_assessment": (ASSESSMENTS_READ,),
@@ -127,6 +138,9 @@ PolicyEntityTypeValue = Literal[
     "card",
     "test_scenario",
 ]
+EDITION_VALIDATION_SUBJECT_TYPES = frozenset(
+    {"ideation", "refinement", "spec"}
+)
 GuidelineEnforcementValue = Literal["advisory", "blocking"]
 GuidelineLifecycleValue = Literal["retired", "superseded"]
 GuidelineImpactItemKindValue = Literal[
@@ -232,6 +246,61 @@ class SemanticMetricAssessmentInput(_ClosedInput):
     )
 
 
+class SemanticAnchorV2Input(_ClosedInput):
+    anchor_type: Literal[
+        "whole_artifact",
+        "field",
+        "structured_child",
+        "qa",
+    ]
+    anchor_ref: str | None = Field(default=None, min_length=1, max_length=500)
+    excerpt_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_anchor_shape(self) -> "SemanticAnchorV2Input":
+        if self.anchor_type == "whole_artifact" and self.anchor_ref is not None:
+            raise ValueError("finding_whole_artifact_ref_forbidden")
+        if self.anchor_type != "whole_artifact" and self.anchor_ref is None:
+            raise ValueError("finding_anchor_ref_required")
+        return self
+
+
+class SemanticPinpointV2Input(_ClosedInput):
+    contract_version: Literal["v2"]
+    pinpoint_key: str = Field(min_length=1, max_length=SEMANTIC_PINPOINT_KEY_MAX_LENGTH)
+    kind: Literal["evidence", "issue"]
+    title: str = Field(min_length=1, max_length=SEMANTIC_PINPOINT_TITLE_MAX_LENGTH)
+    detail: str = Field(min_length=1, max_length=SEMANTIC_PINPOINT_DETAIL_MAX_LENGTH)
+    severity: Literal["low", "medium", "high", "critical"] | None = None
+    remediation: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=SEMANTIC_PINPOINT_REMEDIATION_MAX_LENGTH,
+    )
+    anchor: SemanticAnchorV2Input
+
+    @model_validator(mode="after")
+    def require_issue_severity(self) -> "SemanticPinpointV2Input":
+        if self.kind == "issue" and self.severity is None:
+            raise ValueError("semantic_pinpoint_v2_issue_severity_required")
+        return self
+
+
+class SemanticMetricAssessmentV2Input(_ClosedInput):
+    contract_version: Literal["v2"]
+    metric_id: str = Field(min_length=1, max_length=POLICY_METRIC_ID_MAX_LENGTH)
+    score: int = Field(ge=0, le=100)
+    rationale: str = Field(min_length=1, max_length=20_000)
+    evidence_refs: list[SemanticEvidenceRefInput] = Field(
+        min_length=1,
+        max_length=200,
+    )
+    pinpoints: list[SemanticPinpointV2Input] = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+
 def _server_id(kind: str, board_id: str, idempotency_key: str) -> str:
     return str(
         uuid.uuid5(
@@ -285,6 +354,13 @@ def _page_payload(page: object, codec: object) -> dict[str, object]:
 
 
 def _result_payload(result: object, codec: object | None) -> object:
+    from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+        SealSemanticGuidelineAssessmentV2Result,
+        semantic_assessment_v2_write_projection,
+    )
+
+    if isinstance(result, SealSemanticGuidelineAssessmentV2Result):
+        return semantic_assessment_v2_write_projection(result)
     page = getattr(result, "page", None)
     if page is not None:
         if codec is None:
@@ -295,10 +371,36 @@ def _result_payload(result: object, codec: object | None) -> object:
 
 def _error_outcome(error: Exception) -> McpToolOutcome:
     from okto_pulse.core.inbound.guideline_policy_error import (
+        UnsupportedGuidelinePolicyError,
         project_guideline_policy_error,
     )
 
-    projected = project_guideline_policy_error(error)
+    try:
+        projected = project_guideline_policy_error(error)
+    except UnsupportedGuidelinePolicyError:
+        # Keep both the wire response and operator logs closed.  Exception
+        # messages and tracebacks can embed DSNs, tokens, or subject content;
+        # the bounded type signal is sufficient to correlate the failure with
+        # the surrounding request telemetry without persisting that payload.
+        logger.error(
+            "guideline_policy.unhandled_error error_type=%s",
+            type(error).__name__,
+            extra={
+                "event": "guideline_policy.unhandled_error",
+                "error_type": type(error).__name__,
+            },
+        )
+        return McpToolOutcome.error(
+            code="internal_error",
+            message="The guideline policy operation could not be completed.",
+            retryable=False,
+            next_action={"rel": "report_error"},
+            details={
+                "category": "internal",
+                "status_category": "internal",
+                "http_status": 500,
+            },
+        )
     next_action = projected.get("next_action")
     details = {
         "category": projected["category"],
@@ -447,8 +549,27 @@ def register_policy_governance_tools(
         extra_capabilities: tuple[str, ...] = (),
         paginated: bool = False,
     ) -> McpToolOutcome:
+        semantic_contract_version = {
+            "record_assessment": "v1",
+            "record_assessment_v2": "v2",
+        }.get(operation)
+        correlation_id = uuid.uuid4().hex
+        validation_subject_type: str | None = None
+        validation_subject_id: str | None = None
+        validation_subject_edition: int | None = None
         context = await get_board_agent(board_id)
         if context is None:
+            if semantic_contract_version is not None:
+                from okto_pulse.core.services.governance_observability import (
+                    emit_semantic_assessment_write_metric,
+                )
+
+                emit_semantic_assessment_write_metric(
+                    surface="mcp",
+                    contract_version=semantic_contract_version,
+                    outcome="error",
+                    reason_code="authentication_required",
+                )
             return _authentication_error()
 
         from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -475,16 +596,98 @@ def register_policy_governance_tools(
                 command = build_command(codec, actor)
             if command is None:
                 raise TypeError("policy_governance_command_required")
-            async with get_uow()(actor=actor) as uow:
+            if semantic_contract_version is not None:
+                command_payload = getattr(command, "submission", None)
+                if command_payload is None:
+                    command_payload = getattr(command, "draft", None)
+                validation_subject = getattr(command_payload, "subject", None)
+                raw_subject_type = getattr(
+                    validation_subject,
+                    "entity_type",
+                    None,
+                )
+                validation_subject_type = str(
+                    getattr(raw_subject_type, "value", raw_subject_type) or ""
+                )
+                validation_subject_id = str(
+                    getattr(validation_subject, "subject_id", "") or ""
+                )
+                raw_subject_edition = getattr(
+                    validation_subject,
+                    "subject_edition",
+                    None,
+                )
+                if (
+                    isinstance(raw_subject_edition, int)
+                    and not isinstance(raw_subject_edition, bool)
+                    and raw_subject_edition > 0
+                ):
+                    validation_subject_edition = raw_subject_edition
+
+            uow_factory = get_uow()
+            if (
+                semantic_contract_version is not None
+                and validation_subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+            ):
+                from okto_pulse.core.services.ska_observability import (
+                    observe_validation_uow_factory,
+                )
+
+                uow_factory = observe_validation_uow_factory(
+                    uow_factory,
+                    assessment_kind="policy_compliance",
+                    subject_type=validation_subject_type,
+                )
+            async with uow_factory(actor=actor) as uow:
                 result = await use_case.execute(command, actor=actor, uow=uow)
+            if semantic_contract_version is not None:
+                from okto_pulse.core.services.governance_observability import (
+                    emit_semantic_assessment_write_metric,
+                )
+
+                emit_semantic_assessment_write_metric(
+                    surface="mcp",
+                    contract_version=semantic_contract_version,
+                    outcome="success",
+                )
             return McpToolOutcome.success(_result_payload(result, codec))
         except Exception as exc:
-            try:
-                return _error_outcome(exc)
-            except TypeError:
-                # Programming errors and unsupported exception classes are not
-                # converted into a misleading successful domain response.
-                raise exc
+            if (
+                semantic_contract_version is not None
+                and validation_subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+                and validation_subject_id
+                and validation_subject_edition is not None
+            ):
+                from okto_pulse.core.services.ska_observability import (
+                    observe_validation_edition_conflict_from_error,
+                )
+
+                observe_validation_edition_conflict_from_error(
+                    exc,
+                    operation="policy_compliance",
+                    subject_type=validation_subject_type,
+                    subject_id=validation_subject_id,
+                    expected_edition=validation_subject_edition,
+                    correlation_id=correlation_id,
+                )
+            outcome = _error_outcome(exc)
+            if semantic_contract_version is not None:
+                from okto_pulse.core.services.governance_observability import (
+                    emit_semantic_assessment_write_metric,
+                )
+
+                emit_semantic_assessment_write_metric(
+                    surface="mcp",
+                    contract_version=semantic_contract_version,
+                    outcome="error",
+                    reason_code=outcome.code,
+                    capability_state=(
+                        str(outcome.details["capability_state"])
+                        if "capability_state" in outcome.details
+                        else None
+                    ),
+                )
+            return outcome
 
     def _decode(
         codec: object | None,
@@ -826,6 +1029,7 @@ def register_policy_governance_tools(
             str | None,
             Field(default=None, min_length=1, max_length=200),
         ] = None,
+        expected_subject_edition: PositiveRevision | None = None,
     ) -> McpToolOutcome:
         """Record complete agent-produced metric evidence against exact fences.
 
@@ -857,12 +1061,18 @@ def register_policy_governance_tools(
             _codec: object | None,
             actor: object,
         ) -> object:
+            if (
+                entity_type in EDITION_VALIDATION_SUBJECT_TYPES
+                and expected_subject_edition is None
+            ):
+                raise ValueError("expected_subject_edition_required")
             submission = SemanticGuidelineAssessmentSubmission(
                 subject=PolicySubjectRef(
                     board_id=board_id,
                     entity_type=PolicyEntityType(entity_type),
                     subject_id=subject_id,
                     subject_version=expected_subject_version,
+                    subject_edition=expected_subject_edition,
                 ),
                 binding_id=binding_id,
                 expected_binding_revision=expected_binding_revision,
@@ -914,6 +1124,133 @@ def register_policy_governance_tools(
             "record_assessment",
             None,
             RecordSemanticGuidelineAssessmentUseCase(),
+            build_command=build_command,
+        )
+
+    async def okto_pulse_record_semantic_guideline_assessment_v2(
+        board_id: BoardId,
+        contract_version: Literal["v2"],
+        subject_type: PolicyEntityTypeValue,
+        subject_id: Annotated[
+            str,
+            Field(min_length=1, max_length=POLICY_SUBJECT_ID_MAX_LENGTH),
+        ],
+        expected_subject_version: PositiveRevision,
+        binding_id: Annotated[str, Field(min_length=1, max_length=128)],
+        expected_binding_revision: PositiveRevision,
+        guideline_revision_id: RevisionId,
+        idempotency_key: IdempotencyKey,
+        confidence: Annotated[int, Field(ge=0, le=100)],
+        metric_results: Annotated[
+            list[SemanticMetricAssessmentV2Input],
+            Field(min_length=1, max_length=200),
+        ],
+        model_id: Annotated[
+            str | None,
+            Field(default=None, min_length=1, max_length=200),
+        ] = None,
+        expected_subject_edition: PositiveRevision | None = None,
+    ) -> McpToolOutcome:
+        """Record an actionable, human-readable semantic assessment v2."""
+
+        from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+            SealSemanticGuidelineAssessmentV2Command,
+            SealSemanticGuidelineAssessmentV2UseCase,
+        )
+        from okto_pulse.core.domain.guideline_policy import (
+            PolicyEntityType,
+            PolicySubjectRef,
+        )
+        from okto_pulse.core.domain.guideline_semantic_assessment import (
+            SemanticAssessmentAssessor,
+        )
+        from okto_pulse.core.domain.guideline_semantic_v2 import (
+            SemanticAssessmentDraftV2,
+            SemanticMetricAssessmentDraftV2,
+            SemanticPinpointDraftV2,
+            SemanticPinpointKind,
+        )
+        from okto_pulse.core.domain.quality_assessment import (
+            EvidenceRef,
+            FindingAnchorType,
+            FindingSeverity,
+            UnboundFindingAnchor,
+        )
+
+        def build_command(_codec: object | None, actor: object) -> object:
+            if (
+                subject_type in EDITION_VALIDATION_SUBJECT_TYPES
+                and expected_subject_edition is None
+            ):
+                raise ValueError("expected_subject_edition_required")
+            draft = SemanticAssessmentDraftV2(
+                subject=PolicySubjectRef(
+                    board_id=board_id,
+                    entity_type=PolicyEntityType(subject_type),
+                    subject_id=subject_id,
+                    subject_version=expected_subject_version,
+                    subject_edition=expected_subject_edition,
+                ),
+                binding_id=binding_id,
+                expected_binding_revision=expected_binding_revision,
+                guideline_revision_id=guideline_revision_id,
+                idempotency_key=idempotency_key,
+                confidence=confidence,
+                assessor=SemanticAssessmentAssessor(
+                    agent_id=str(getattr(actor, "actor_id")),
+                    model_id=model_id,
+                ),
+                metric_results=tuple(
+                    SemanticMetricAssessmentDraftV2(
+                        metric_id=item.metric_id,
+                        score=item.score,
+                        rationale=item.rationale,
+                        evidence_refs=tuple(
+                            EvidenceRef(
+                                source_type=evidence.source_type,
+                                source_id=evidence.source_id,
+                                source_version=evidence.source_version,
+                                content_hash=evidence.content_hash,
+                            )
+                            for evidence in item.evidence_refs
+                        ),
+                        pinpoints=tuple(
+                            SemanticPinpointDraftV2(
+                                pinpoint_key=pinpoint.pinpoint_key,
+                                kind=SemanticPinpointKind(pinpoint.kind),
+                                title=pinpoint.title,
+                                detail=pinpoint.detail,
+                                severity=(
+                                    FindingSeverity(pinpoint.severity)
+                                    if pinpoint.severity is not None
+                                    else None
+                                ),
+                                remediation=pinpoint.remediation,
+                                anchor=UnboundFindingAnchor(
+                                    anchor_type=FindingAnchorType(
+                                        pinpoint.anchor.anchor_type
+                                    ),
+                                    anchor_ref=pinpoint.anchor.anchor_ref,
+                                    excerpt_hash=pinpoint.anchor.excerpt_hash,
+                                ),
+                            )
+                            for pinpoint in item.pinpoints
+                        ),
+                    )
+                    for item in metric_results
+                ),
+            )
+            return SealSemanticGuidelineAssessmentV2Command(
+                board_id=board_id,
+                actor_id=str(getattr(actor, "actor_id")),
+                draft=draft,
+            )
+
+        return await _execute(
+            board_id,
+            "record_assessment_v2",
+            None,
+            SealSemanticGuidelineAssessmentV2UseCase(),
             build_command=build_command,
         )
 
@@ -1047,7 +1384,9 @@ def register_policy_governance_tools(
 
         from okto_pulse.core.application.use_cases import (
             GetCurrentSemanticGuidelineAssessmentCommand,
-            GetCurrentSemanticGuidelineAssessmentUseCase,
+        )
+        from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+            GetCurrentSemanticGuidelineAssessmentAnyUseCase,
         )
         from okto_pulse.core.domain.guideline_policy import PolicyEntityType
         from okto_pulse.core.domain.guideline_semantic_projection import (
@@ -1068,7 +1407,7 @@ def register_policy_governance_tools(
             board_id,
             "get_current_assessment",
             command,
-            GetCurrentSemanticGuidelineAssessmentUseCase(),
+            GetCurrentSemanticGuidelineAssessmentAnyUseCase(),
         )
 
     async def okto_pulse_list_semantic_guideline_findings(
@@ -1493,6 +1832,7 @@ def register_policy_governance_tools(
         okto_pulse_list_guideline_impact_items,
         okto_pulse_adopt_guideline_revision,
         okto_pulse_record_semantic_guideline_assessment,
+        okto_pulse_record_semantic_guideline_assessment_v2,
         okto_pulse_list_semantic_guideline_assessments,
         okto_pulse_get_semantic_guideline_assessment,
         okto_pulse_get_current_semantic_guideline_assessment,
@@ -1513,7 +1853,9 @@ __all__ = [
     "GuidelineRevisionPatchInput",
     "SemanticEvidenceRefInput",
     "SemanticMetricAssessmentInput",
+    "SemanticMetricAssessmentV2Input",
     "SemanticPinpointInput",
+    "SemanticPinpointV2Input",
     "SemanticGuidelineProjectionValue",
     "SEMANTIC_GUIDELINE_RESOURCE_URI",
     "POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION",

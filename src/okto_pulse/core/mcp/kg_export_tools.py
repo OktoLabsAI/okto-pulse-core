@@ -63,7 +63,7 @@ def register_kg_export_tools(
                 permission_error,
                 required_permission="board.read",
             )
-        return agent, None
+        return board_agent, None
 
     @mcp.tool()
     async def okto_pulse_kg_export_jsonld(
@@ -82,9 +82,19 @@ partial document. The graph is never modified."""
             export_board_jsonld,
         )
 
-        _agent, auth_error = await _authorized_board_agent(board_id)
+        board_agent, auth_error = await _authorized_board_agent(board_id)
         if auth_error is not None:
             return auth_error
+        assert board_agent is not None
+        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+            EvaluateCodeTraceabilityKGReadAccessUseCase,
+        )
+        from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+        access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=MCPAdapterContract.actor(board_agent, board_id=board_id),
+            board_id=board_id,
+        )
         import asyncio
 
         try:
@@ -94,6 +104,7 @@ partial document. The graph is never modified."""
                     board_id,
                     cursor=cursor or None,
                     page_size=max(1, min(int(page_size), 1000)),
+                    include_code_traceability=access.allowed,
                 ),
                 timeout=60.0,
             )

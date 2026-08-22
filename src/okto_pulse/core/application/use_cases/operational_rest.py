@@ -27,8 +27,19 @@ from okto_pulse.core.application.knowledge_workspace import (
     KnowledgeWorkspaceProjector,
 )
 from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
+from okto_pulse.core.ports.traceability import (
+    LineageGraphDependencyScope,
+    LineageGraphView,
+    TraceabilityReadError,
+    validate_lineage_graph_dependency_scope,
+    validate_lineage_graph_view,
+)
 from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
+from okto_pulse.core.services.card_operational_freeze import (
+    require_card_operational_mutation_allowed,
+)
 
 
 @dataclass(frozen=True)
@@ -349,12 +360,19 @@ class MarkResourceNotApplicableUseCase:
             actor,
             allowed_share_permissions={"editor", "admin"},
         )
-        await _require_resource_gate_entity(
+        entity = await _require_resource_gate_entity(
             uow,
             command.board_id,
             command.entity_type,
             command.entity_id,
         )
+        if command.entity_type in {"ideation", "refinement", "spec"}:
+            require_draft_mutation(entity, subject_type=command.entity_type)
+        elif command.entity_type == "card":
+            require_card_operational_mutation_allowed(
+                entity,
+                operation="resource_gate.mark_not_applicable",
+            )
         data = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
             command.entity_type,
@@ -379,12 +397,19 @@ class ClearResourceNotApplicableUseCase:
             actor,
             allowed_share_permissions={"editor", "admin"},
         )
-        await _require_resource_gate_entity(
+        entity = await _require_resource_gate_entity(
             uow,
             command.board_id,
             command.entity_type,
             command.entity_id,
         )
+        if command.entity_type in {"ideation", "refinement", "spec"}:
+            require_draft_mutation(entity, subject_type=command.entity_type)
+        elif command.entity_type == "card":
+            require_card_operational_mutation_allowed(
+                entity,
+                operation="resource_gate.clear_not_applicable",
+            )
         data = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,
             command.entity_type,
@@ -475,14 +500,42 @@ class GetLineageGraphCommand:
     entity_type: str
     entity_id: str
     include_artifacts: bool
+    view: LineageGraphView = "lineage"
+    dependency_scope: LineageGraphDependencyScope = "selected"
 
 
 class GetLineageGraphUseCase:
     async def execute(
         self, command: GetLineageGraphCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        view = validate_lineage_graph_view(command.view)
+        dependency_scope = validate_lineage_graph_dependency_scope(
+            command.dependency_scope
+        )
+        if view != "dependency" and dependency_scope != "selected":
+            raise TraceabilityReadError(
+                "dependency_scope_requires_dependency_view",
+                "Lineage dependency scope is available only for dependency view.",
+                status_code=400,
+            )
         if await load_accessible_board(uow, command.board_id, actor) is None:
             raise BoardNotFoundError(command.board_id)
+        if view == "dependency":
+            dependency_kwargs = (
+                {"dependency_scope": dependency_scope}
+                if dependency_scope != "selected"
+                else {}
+            )
+            return DataResult(
+                await uow.services.build_lineage_graph(
+                    command.board_id,
+                    entity_type=command.entity_type,
+                    entity_id=command.entity_id,
+                    include_artifacts=command.include_artifacts,
+                    view=view,
+                    **dependency_kwargs,
+                )
+            )
         return DataResult(
             await uow.services.build_lineage_graph(
                 command.board_id,
@@ -788,13 +841,27 @@ class ListCanonicalDebtUseCase:
             uow=uow,
             board_id=command.board_id,
         )
+        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
+            EvaluateCodeTraceabilityKGReadAccessUseCase,
+        )
+
+        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
+            actor=actor,
+            board_id=command.board_id,
+            uow=uow,
+        )
+        kwargs = {
+            "board_id": command.board_id,
+            "artifact_type": command.artifact_type,
+            "state": command.state,
+            "limit": command.limit,
+            "offset": command.offset,
+        }
+        if not ct_access.allowed:
+            kwargs["include_code_traceability"] = False
         return DataResult(
             await uow.services.kg.list_canonical_debt(
-                board_id=command.board_id,
-                artifact_type=command.artifact_type,
-                state=command.state,
-                limit=command.limit,
-                offset=command.offset,
+                **kwargs,
             )
         )
 

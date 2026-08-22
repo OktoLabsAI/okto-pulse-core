@@ -28,12 +28,12 @@ Profiles (reuses the R5.1 envelope contract):
 - ``full`` / ``legacy`` with the default task ``context_scope=all`` — the
   assembled payload UNCHANGED (FR-2/FR-9 back-compat).
 - task ``full`` + ``context_scope=gate`` — bounded 32 KiB pre-mutation slice:
-  current gate/readiness metadata plus a SHA-256/count manifest for omitted
+  current gate/readiness metadata plus a metadata-only inventory for omitted
   bodies and explicit drilldowns.
 - unsupported profile → structured ``unsupported_projection`` error.
 
-The live byte budget is currently applied to ``get_task_context`` only, after
-authorization and full context assembly. When that selected projection exceeds
+The exploratory live byte budget is applied to ``get_task_context`` after full
+assembly; the gate scope is assembled from bounded reads. When a projection exceeds
 its budget, deterministic collection/string limits are applied and
 ``projection.truncated`` becomes true with a ``read_full_context`` follow-up.
 ``full/all`` and ``legacy`` are never budget-truncated. The additive
@@ -184,6 +184,7 @@ _TRUNCATION_SUFFIX = "…[truncated]"
 _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
     "test_card_operational_flow",
     "gate_readiness",
+    "code_traceability",
 )
 
 _GATE_CARD_KEYS = (
@@ -211,12 +212,17 @@ _GATE_CARD_KEYS = (
     "origin_task_id",
     "severity",
     "depends_on",
+    "current_rejection_kind",
+    "current_rejection_id",
+    "current_rejection_code",
+    "current_rejection_summary",
 )
 _GATE_SPEC_KEYS = (
     "id",
     "title",
     "status",
     "edition",
+    "last_started_edition",
     "version",
     "archived",
     "pre_archive_status",
@@ -230,11 +236,20 @@ _GATE_VALIDATION_KEYS = (
     "reviewer_id",
     "reviewer_name",
     "confidence",
+    "confidence_justification",
     "estimated_confidence",
     "completeness",
     "estimated_completeness",
+    "completeness_justification",
     "drift",
     "estimated_drift",
+    "drift_justification",
+    "general_justification",
+    "summary",
+    "validation_outcome",
+    "completion_outcome",
+    "completion_gate_failures",
+    "rejection_cause",
     "threshold_violations",
     "reviewer_separation",
     "created_at",
@@ -297,9 +312,7 @@ def _compact_ref(entry: Any, *, detail: bool) -> Any:
     return {k: v for k, v in entry.items() if k not in drop}
 
 
-def _compact_resolved_references(
-    resolved: Any, *, detail: bool
-) -> tuple[Any, int]:
+def _compact_resolved_references(resolved: Any, *, detail: bool) -> tuple[Any, int]:
     """Compact every resolved-reference section to id/ref/link fields. Returns
     (compacted, deduped_count) where deduped_count counts the body-carrying refs
     that were slimmed.
@@ -354,9 +367,7 @@ def _compact_primary_artifact(entry: Any, *, detail: bool) -> tuple[Any, bool]:
     return compacted, compacted != dict(entry)
 
 
-def _compact_primary_artifact_list(
-    items: Any, *, detail: bool
-) -> tuple[Any, int]:
+def _compact_primary_artifact_list(items: Any, *, detail: bool) -> tuple[Any, int]:
     if not isinstance(items, list):
         return items, 0
     compacted: list[Any] = []
@@ -368,9 +379,7 @@ def _compact_primary_artifact_list(
     return compacted, deduped
 
 
-def _omit_primary_artifact_bodies(
-    projected: dict[str, Any], *, detail: bool
-) -> int:
+def _omit_primary_artifact_bodies(projected: dict[str, Any], *, detail: bool) -> int:
     """Remove full artifact bodies from their primary context sections."""
 
     omitted = 0
@@ -592,6 +601,85 @@ def _content_manifest(source: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_bounded_task_content_manifest(
+    section_inventory: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Build a truthful gate manifest without materializing omitted bodies.
+
+    ``section_inventory`` is deliberately metadata-only.  The assembler may
+    report presence/counts learned from already-authorized base records, or
+    ``presence=unknown`` for relationships it intentionally did not load.  This
+    function canonicalizes and hashes only that bounded inventory.  It never
+    receives, serializes, or hashes a KB, mockup, architecture, validation, or
+    resolved-reference body.
+
+    The historical top-level ``source_payload_*`` keys remain present but are
+    explicitly unavailable (``None`` / ``not_materialized``).  The separate
+    ``inventory_*`` digest addresses only bounded metadata, never unread content.
+    """
+
+    allowed_metadata = (
+        "presence",
+        "materialization",
+        "item_count",
+        "field_count",
+        "character_count",
+        "reason",
+    )
+    sections: list[dict[str, Any]] = []
+    for path_components in _GATE_CONTENT_PATHS:
+        path = ".".join(path_components)
+        metadata = section_inventory.get(path)
+        if not isinstance(metadata, Mapping):
+            continue
+        section: dict[str, Any] = {
+            "path": path,
+            "materialization": str(
+                metadata.get("materialization") or "not_materialized"
+            ),
+            "presence": str(metadata.get("presence") or "unknown"),
+            "digest_scope": "not_computed",
+        }
+        for key in allowed_metadata:
+            if key in metadata:
+                section[key] = metadata[key]
+        # Never let an assembler-provided body/digest-like extension silently
+        # widen this bounded contract.  Counts are normalized to safe scalars.
+        for count_key in ("item_count", "field_count", "character_count"):
+            if count_key in section:
+                try:
+                    section[count_key] = max(0, int(section[count_key]))
+                except (TypeError, ValueError):
+                    section.pop(count_key, None)
+        sections.append(section)
+
+    inventory = {
+        "schema": "okto-pulse-task-gate-content-inventory-v2",
+        "sections": sections,
+    }
+    inventory_bytes = _canonical_json_bytes(inventory)
+    return {
+        "manifest_version": 2,
+        "canonicalization": "json-sort-keys-compact-utf8-v1",
+        "materialization": "bounded_gate",
+        "digest_scope": "section_inventory",
+        # Compatibility keys remain present but explicitly unavailable: the
+        # source bodies were intentionally never materialized or hashed.
+        "source_payload_bytes": None,
+        "source_payload_sha256": None,
+        "source_payload_status": "not_materialized",
+        "inventory_payload_bytes": len(inventory_bytes),
+        "inventory_sha256": hashlib.sha256(inventory_bytes).hexdigest(),
+        "section_count": len(sections),
+        "omitted_section_count": sum(
+            1
+            for section in sections
+            if section.get("presence") not in {"empty", "absent"}
+        ),
+        "sections": sections,
+    }
+
+
 def _slim_gate_resource_state(value: Any) -> Any:
     if not isinstance(value, Mapping):
         return value
@@ -676,7 +764,14 @@ def _slim_resource_gate_summary(value: Any) -> Any:
     if isinstance(propagation, Mapping):
         out["architecture_propagation"] = {
             key: propagation[key]
-            for key in ("blocking", "remediation")
+            for key in (
+                "blocking",
+                "remediation",
+                "evaluation_mode",
+                "decision",
+                "reason_code",
+                "drilldown",
+            )
             if key in propagation
         }
         sources = propagation.get("ineligible_sources")
@@ -689,12 +784,18 @@ def _slim_resource_gate_summary(value: Any) -> Any:
     return out
 
 
+def build_bounded_gate_resource_summary(value: Any) -> Any:
+    """Expose the gate-safe Resource Gate projection to the MCP assembler."""
+
+    return _slim_resource_gate_summary(value)
+
+
 def _slim_validation_history(value: Any) -> tuple[list[Any], int]:
     if not isinstance(value, list):
         return [], 0
     # Validation history is append-only. The current gate decision depends on
     # the newest records, while the complete history is content-addressed in the
-    # manifest and available from okto_pulse_list_task_validations.
+    # bounded inventory and available from okto_pulse_list_task_validations.
     recent = value[-5:]
     out: list[Any] = []
     for item in recent:
@@ -703,6 +804,12 @@ def _slim_validation_history(value: Any) -> tuple[list[Any], int]:
             continue
         out.append({key: item[key] for key in _GATE_VALIDATION_KEYS if key in item})
     return out, len(value)
+
+
+def build_bounded_gate_validation_history(value: Any) -> tuple[list[Any], int]:
+    """Expose the established gate window to the bounded MCP assembler."""
+
+    return _slim_validation_history(value)
 
 
 def _slim_scenario_state(value: Any) -> Any:
@@ -720,27 +827,25 @@ def _project_task_gate_context(
     *,
     card_id: str,
     tool_name: str,
+    content_manifest: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Bounded full gate/readiness slice for the mandatory mutation pre-flight.
 
     ``profile=full, context_scope=all`` remains untouched for compatibility.
     This additive scope carries every current gate decision input exposed by the
-    context tool, plus a content-addressed manifest of the bodies intentionally
-    left to drill-down reads.
+    context tool.  The MCP assembler supplies a metadata-only v2 inventory for
+    bodies left to drill-down reads; direct projector callers retain the legacy
+    complete-source v1 manifest fallback for compatibility.
     """
 
     projected: dict[str, Any] = {"context_scope": "gate"}
     card = source.get("card")
     if isinstance(card, Mapping):
-        projected["card"] = {
-            key: card[key] for key in _GATE_CARD_KEYS if key in card
-        }
+        projected["card"] = {key: card[key] for key in _GATE_CARD_KEYS if key in card}
 
     spec = source.get("spec")
     if isinstance(spec, Mapping):
-        spec_projection = {
-            key: spec[key] for key in _GATE_SPEC_KEYS if key in spec
-        }
+        spec_projection = {key: spec[key] for key in _GATE_SPEC_KEYS if key in spec}
         if "resource_gate_summary" in spec:
             spec_projection["resource_gate_summary"] = _slim_resource_gate_summary(
                 spec["resource_gate_summary"]
@@ -752,9 +857,14 @@ def _project_task_gate_context(
             source["resource_gate_summary"]
         )
 
-    validations, validation_count = _slim_validation_history(
-        source.get("validations")
-    )
+    validations, validation_count = _slim_validation_history(source.get("validations"))
+    supplied_validation_history = source.get("validation_history")
+    if isinstance(supplied_validation_history, Mapping):
+        try:
+            supplied_total = int(supplied_validation_history.get("total_count", 0))
+        except (TypeError, ValueError):
+            supplied_total = 0
+        validation_count = max(validation_count, supplied_total)
     projected["validations"] = validations
     projected["validation_history"] = {
         "total_count": validation_count,
@@ -768,6 +878,7 @@ def _project_task_gate_context(
         "reviewer_separation",
         "test_card_operational_flow",
         "gate_readiness",
+        "code_traceability",
     ):
         if key in source:
             projected[key] = source[key]
@@ -778,7 +889,6 @@ def _project_task_gate_context(
             _slim_scenario_state(item) for item in scenarios
         ]
 
-    projected["content_manifest"] = _content_manifest(source)
     follow_up = [
         {
             "rel": "read_full_context",
@@ -795,6 +905,14 @@ def _project_task_gate_context(
             "target_ref": f"okto_pulse_list_task_validations:card={card_id}",
         },
     ]
+    if isinstance(content_manifest, Mapping):
+        projected["content_manifest"] = dict(content_manifest)
+        projected["content_manifest"].setdefault("drilldowns", list(follow_up))
+    else:
+        # Preserve the v1 complete-source manifest byte shape for direct
+        # projector callers.  Only the assembler-supplied bounded v2 carries
+        # the additive drilldown inventory.
+        projected["content_manifest"] = _content_manifest(source)
 
     omitted = max(0, _count_fields(source) - _count_fields(projected))
     truncated = False
@@ -822,6 +940,7 @@ def _project_task_gate_context(
                 "reviewer_separation",
                 "test_card_operational_flow",
                 "gate_readiness",
+                "code_traceability",
                 "validation_history",
             )
             if key in projected
@@ -830,10 +949,17 @@ def _project_task_gate_context(
             projected["content_manifest"] = {
                 key: manifest[key]
                 for key in (
+                    "manifest_version",
                     "canonicalization",
+                    "materialization",
+                    "digest_scope",
                     "source_payload_bytes",
                     "source_payload_sha256",
+                    "source_payload_status",
+                    "inventory_payload_bytes",
+                    "inventory_sha256",
                     "section_count",
+                    "omitted_section_count",
                 )
                 if key in manifest
             }
@@ -1093,9 +1219,7 @@ def _gate_decisions_markdown(
     spec = projected.get("spec")
     if isinstance(spec, Mapping) and spec.get("decisions_markdown"):
         spec_id = str(spec.get("id") or "")
-        projected["spec"] = {
-            k: v for k, v in spec.items() if k != "decisions_markdown"
-        }
+        projected["spec"] = {k: v for k, v in spec.items() if k != "decisions_markdown"}
         follow_up.append(_decisions_markdown_follow_up(spec_id))
         gated += 1
     # spec context: result["decisions_markdown"] at the top level
@@ -1155,9 +1279,7 @@ def _dedup_architecture(
             deduped += dropped
 
     if deduped:
-        follow_up.append(
-            {"rel": "read_full_architecture", "target_ref": tool_name}
-        )
+        follow_up.append({"rel": "read_full_architecture", "target_ref": tool_name})
     return deduped
 
 
@@ -1301,6 +1423,7 @@ class MCPContextProjectionService:
         card_id: str,
         profile: str | None,
         context_scope: str | None = "all",
+        content_manifest: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_scope = resolve_task_context_scope(context_scope)
         resolved_profile = resolve_profile(profile)
@@ -1316,6 +1439,7 @@ class MCPContextProjectionService:
                 result,
                 card_id=card_id,
                 tool_name="okto_pulse_get_task_context",
+                content_manifest=content_manifest,
             )
         return self._project(
             result, profile=profile, tool_name="okto_pulse_get_task_context"
@@ -1358,12 +1482,14 @@ def project_task_context(
     card_id: str,
     profile: str | None,
     context_scope: str | None = "all",
+    content_manifest: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return _SERVICE.project_task_context(
         result,
         card_id=card_id,
         profile=profile,
         context_scope=context_scope,
+        content_manifest=content_manifest,
     )
 
 

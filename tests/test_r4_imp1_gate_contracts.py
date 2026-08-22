@@ -19,6 +19,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.domain.code_traceability import (
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+)
+from okto_pulse.core.services import main as main_service
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -42,6 +47,29 @@ USER_ID = "user-r4-imp1"
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
+    provenance = DirectSpecDeliveryContextProvenance(
+        value=DeliveryContext.BROWNFIELD,
+        source_spec_id=spec_id,
+        source_spec_version=1,
+    )
+    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+        spec_id=spec_id,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        provenance=provenance,
+    )
+    return {
+        "delivery_context": DeliveryContext.BROWNFIELD.value,
+        "delivery_context_provenance": {
+            "value": provenance.value.value,
+            "source_spec_id": provenance.source_spec_id,
+            "source_spec_version": provenance.source_spec_version,
+        },
+        "source_context_manifest": manifest,
+        "source_context_sha256": manifest_sha256,
+    }
 
 
 class _Ctx:
@@ -133,7 +161,8 @@ async def _seed_board_spec(db_factory, *, spec_status, require_validation=True):
                     decisions=[{"id": "dec_seed", "title": "Seed decision",
                                 "rationale": "Fixture decision for the gate contract tests.",
                                 "status": "active"}],
-                    skip_decisions_coverage=True))
+                    skip_decisions_coverage=True,
+                    **_direct_spec_context_fields(spec_id)))
         await db.commit()
     return board_id, spec_id
 

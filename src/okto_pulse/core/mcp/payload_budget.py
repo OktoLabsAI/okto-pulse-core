@@ -148,15 +148,15 @@ DEFAULT_BUDGET_PROFILE = BudgetProfile()
 # R1 is a PROFILE of this shared scanner — NOT a parallel token-based scanner.
 # per_tool remains strict; aggregate is the reviewed post-R1 additive surface.
 # always_loaded_
-# instruction_chars was renegotiated from 8000 to 10000 by an explicit owner
-# decision (recorded on the R1.1 card) prioritising agent assertiveness — it is
-# formalised HERE in the shared, version-controlled profile contract, not only in
-# a local test/comment.
+# instruction_chars was renegotiated from 8000 to 10000 by the R1.1 owner
+# decision, then minimally to 11250 for the authorized always-loaded Source
+# Context guidance. It is formalised HERE in the shared, version-controlled
+# profile contract, not only in a local test/comment.
 TOOL_DESCRIPTIONS_BUDGET_PROFILE = BudgetProfile(
     name="tool_descriptions",
     per_tool_description_chars=900,
     aggregate_tool_description_chars=73000,
-    always_loaded_instruction_chars=10000,
+    always_loaded_instruction_chars=11250,
 )
 
 

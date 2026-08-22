@@ -13,11 +13,25 @@ from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
+from okto_pulse.core.ports.traceability import (
+    LineageGraphDependencyScope,
+    LineageGraphView,
+)
+
+from okto_pulse.core.domain.code_traceability_kg import (
+    KGDeadLetterReprocessScope,
+)
+
 if TYPE_CHECKING:
     from okto_pulse.core.application.use_cases.entity_pagination import (
         EntityPageService,
     )
     from okto_pulse.core.ports.relational_application import PermissionPresetGateway
+    from okto_pulse.core.ports.code_investigation import CodeInvestigationStore
+    from okto_pulse.core.ports.code_traceability import (
+        CodeTraceabilityReadPort,
+        CodeTraceabilityStore,
+    )
     from okto_pulse.core.ports.quality_assessment import (
         QualityAssessmentPersistencePort,
     )
@@ -72,6 +86,7 @@ if TYPE_CHECKING:
     from okto_pulse.core.services.spec_structured_entities import (
         StructuredSpecEntityService,
     )
+    from okto_pulse.core.services.spec_dependency import SpecDependencyService
 
 
 class ApplicationServiceCatalog(Protocol):
@@ -117,6 +132,15 @@ class ApplicationServiceCatalog(Protocol):
     def comments(self) -> "CommentService": ...
 
     @property
+    def code_investigations(self) -> "CodeInvestigationStore": ...
+
+    @property
+    def code_traceability(self) -> "CodeTraceabilityStore": ...
+
+    @property
+    def code_traceability_read(self) -> "CodeTraceabilityReadPort": ...
+
+    @property
     def entity_pages(self) -> "EntityPageService": ...
 
     @property
@@ -157,6 +181,9 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def checklists(self) -> "ChecklistPersistencePort": ...
+
+    @property
+    def spec_dependencies(self) -> "SpecDependencyService": ...
 
     @property
     def research_decisions(self) -> "ResearchDecisionLedgerPersistencePort": ...
@@ -341,6 +368,8 @@ class ApplicationServiceCatalog(Protocol):
         entity_type: str,
         entity_id: str,
         include_artifacts: bool,
+        view: LineageGraphView = "lineage",
+        dependency_scope: LineageGraphDependencyScope = "selected",
     ) -> dict[str, object]: ...
 
     async def list_discovery_selector_options(
@@ -419,6 +448,56 @@ class AnalyticsOperations(Protocol):
         metric_type: str,
         dt_from: datetime | None,
         dt_to: datetime | None,
+    ) -> object: ...
+
+    async def board_kg(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+        population_scope: object,
+        exclusions: object,
+    ) -> object: ...
+
+    async def delivery_forecast(self, *, query: object) -> object: ...
+
+    async def delivery_intelligence(
+        self,
+        *,
+        query: object,
+        actor_id: str,
+        operator_visibility: bool,
+        cursor_offset: int,
+        limit: int,
+        minimum_sample_size: int,
+    ) -> object: ...
+
+    async def canonical_coverage(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+    ) -> object: ...
+
+    async def canonical_flow_health(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+    ) -> object: ...
+
+    async def canonical_spec_readiness(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
+    ) -> object: ...
+
+    async def canonical_policy_resource_readiness(
+        self,
+        *,
+        query: object,
+        as_of: datetime,
     ) -> object: ...
 
     async def funnel(
@@ -575,7 +654,11 @@ class KnowledgeGraphOperations(Protocol):
     ) -> dict[str, object]: ...
 
     async def list_consolidation_audit(
-        self, board_id: str, *, limit: int
+        self,
+        board_id: str,
+        *,
+        limit: int,
+        include_code_traceability: bool = True,
     ) -> object: ...
 
     async def start_historical_consolidation(self, board_id: str) -> object: ...
@@ -618,12 +701,22 @@ class KnowledgeGraphOperations(Protocol):
         purge_relational: bool = True,
     ) -> object: ...
 
-    async def list_pending_entries(self, board_id: str) -> object: ...
+    async def list_pending_entries(
+        self,
+        board_id: str,
+        *,
+        include_code_traceability: bool = True,
+    ) -> object: ...
 
     async def build_pending_tree(self, board_id: str, *, depth: int) -> object: ...
 
     async def retry_pending_entry(
-        self, board_id: str, queue_entry_id: str, *, recursive: bool
+        self,
+        board_id: str,
+        queue_entry_id: str,
+        *,
+        recursive: bool,
+        include_code_traceability: bool = True,
     ) -> object: ...
 
     async def boost_node(
@@ -646,6 +739,7 @@ class KnowledgeGraphOperations(Protocol):
         *,
         dead_letter_ids: list[str] | None,
         limit: int,
+        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
     ) -> dict[str, object]: ...
 
     async def diagnose_connectivity_guard_dlq(
@@ -661,11 +755,21 @@ class KnowledgeGraphOperations(Protocol):
     ) -> dict[str, object]: ...
 
     async def list_cognitive_dlq_rows(
-        self, board_id: str, *, limit: int, offset: int
+        self,
+        board_id: str,
+        *,
+        limit: int,
+        offset: int,
+        include_code_traceability: bool = False,
     ) -> object: ...
 
     async def list_dead_letter_rows(
-        self, board_id: str, *, limit: int, offset: int
+        self,
+        board_id: str,
+        *,
+        limit: int,
+        offset: int,
+        include_code_traceability: bool = True,
     ) -> dict[str, object]: ...
 
     async def list_stale_canonical_parity(
@@ -688,6 +792,7 @@ class KnowledgeGraphOperations(Protocol):
         state: str | None,
         limit: int,
         offset: int,
+        include_code_traceability: bool = True,
     ) -> object: ...
 
     async def schedule_canonical_debt_retry(
@@ -728,7 +833,12 @@ class KnowledgeGraphOperations(Protocol):
 
     async def queue_health(self) -> dict[str, object]: ...
 
-    async def queue_drilldown(self, board_id: str | None) -> dict[str, object]: ...
+    async def queue_drilldown(
+        self,
+        board_id: str | None,
+        *,
+        include_code_traceability: bool = True,
+    ) -> dict[str, object]: ...
 
     async def invoke_rebuild_admission(
         self,

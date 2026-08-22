@@ -25,7 +25,6 @@ from okto_pulse.core.domain.permissions import PERMISSION_REGISTRY
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.ports.authentication import Principal
-from okto_pulse.core.repositories import PulseUnitOfWork
 
 USER = "uow-endpoint-04"
 
@@ -88,7 +87,13 @@ async def test_get_unit_of_work_owns_the_request_transaction():
     )
     try:
         uow = await anext(dependency)
-        assert isinstance(uow, PulseUnitOfWork)  # port-shaped, not concrete-locked
+        # This test uses the deliberately minimal SQLAlchemy test adapter; prove
+        # the request-transaction surface it exercises without requiring the
+        # unrelated semantic-assessment capabilities on the full production port.
+        assert uow.realm_scope.realm_id == LOCAL_REALM_ID
+        assert uow.boards is not None
+        assert callable(uow.commit)
+        assert callable(uow.rollback)
         assert not hasattr(uow, "session")
         assert uow.services is not None
     finally:

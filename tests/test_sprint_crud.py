@@ -897,6 +897,50 @@ class TestSprintStateMachine:
 
         assert sprint.status == SprintStatus.ACTIVE
 
+        from okto_pulse.core.services.analytics_service import (
+            compute_sprints_analytics,
+        )
+
+        async with db_factory() as db:
+            analytics = await compute_sprints_analytics(db, BOARD_ID)
+        sprint_row = next(
+            row for row in analytics["sprints"] if row["sprint_id"] == sprint_id
+        )
+        assert sprint_row["commitment"]["state"] == "available"
+        assert sprint_row["commitment"]["original_member_count"] == 2
+        assert sprint_row["commitment"]["current_member_count"] == 2
+
+    async def test_activation_baseline_failure_leaves_sprint_draft(self, db_factory):
+        sprint_id = await self._create_sprint(db_factory)
+        from okto_pulse.core.ports.sprint_activation_baseline import (
+            register_sprint_activation_baseline_store,
+        )
+        from okto_pulse.core.services.main import SprintService
+
+        class _FailingStore:
+            async def get(self, context, *, board_id, sprint_id):
+                return None
+
+            async def save_if_absent(self, context, baseline):
+                raise RuntimeError("injected_activation_baseline_failure")
+
+        register_sprint_activation_baseline_store(_FailingStore())
+        async with db_factory() as db:
+            service = SprintService(db)
+            await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
+            with pytest.raises(
+                RuntimeError, match="injected_activation_baseline_failure"
+            ):
+                await service.move_sprint(
+                    sprint_id, AGENT_ID, SprintMove(status=SprintStatus.ACTIVE)
+                )
+            await db.rollback()
+
+        async with db_factory() as db:
+            persisted = await db.get(Sprint, sprint_id)
+            assert persisted is not None
+            assert persisted.status == SprintStatus.DRAFT
+
     async def test_transition_active_to_review_no_coverage_fails(self, db_factory):
         """Test 10: active → review should fail without test coverage."""
         sprint_id = await self._create_sprint(
@@ -1802,16 +1846,20 @@ class TestSprintCardAssignment:
                 spec=spec,
                 cards=[],
             )
-            assert {
-                str(key[0]) for key in SprintScopeResolver._cache
-            } == {source_id, target_id}
+            assert {str(key[0]) for key in SprintScopeResolver._cache} == {
+                source_id,
+                target_id,
+            }
 
             # A duplicate ID in one request is still one assignment/mutation.
-            assert await service.assign_tasks(
-                target_id,
-                [card_id, card_id],
-                AGENT_ID,
-            ) == 1
+            assert (
+                await service.assign_tasks(
+                    target_id,
+                    [card_id, card_id],
+                    AGENT_ID,
+                )
+                == 1
+            )
             assert not {
                 key
                 for key in SprintScopeResolver._cache
@@ -1826,8 +1874,7 @@ class TestSprintCardAssignment:
             assert target.version == 2
             assert await service.list_assigned_cards(source_id) == []
             assert [
-                item.id
-                for item in await service.list_assigned_cards(target_id)
+                item.id for item in await service.list_assigned_cards(target_id)
             ] == [card_id]
 
             # The source relationship/cache previously contained the pending
@@ -2413,7 +2460,11 @@ class TestSprintAnalyticsLaneBreakdown:
                 origin_bug_id=HOTFIX_BUG_CARD_ID,
                 created_by=AGENT_ID,
             )
-            db.add_all([normal_one, normal_two, hotfix])
+            # Persist the self-referenced origin before its hotfix child so the
+            # SQLite FK does not depend on insert-many ordering.
+            db.add(normal_one)
+            await db.flush()
+            db.add_all([normal_two, hotfix])
             await db.flush()
             normal_card_one = await db.get(Card, CARD_1_ID)
             normal_card_one.sprint_id = normal_one.id
@@ -2459,6 +2510,80 @@ class TestSprintAnalyticsLaneBreakdown:
         assert by_id[hotfix.id]["origin_sprint_id"] == "closed-origin"
         assert by_id[hotfix.id]["origin_bug_id"] == HOTFIX_BUG_CARD_ID
         assert by_id[hotfix.id]["normal_sprint_created"] is False
+        assert by_id[normal_one.id]["commitment"] == {
+            "sprint_id": normal_one.id,
+            "state": "unavailable_legacy",
+            "baseline_ref": None,
+            "unavailable_reason": "activation_baseline_not_persisted",
+        }
+
+    async def test_sprint_analytics_window_keeps_active_sprint_and_full_membership(
+        self, db_factory
+    ):
+        await _seed_board(db_factory)
+        await _clean_sprints(db_factory, BOARD_ID)
+        now = datetime.now(timezone.utc)
+        old = now - timedelta(days=60)
+        recent = now - timedelta(days=2)
+        async with db_factory() as db:
+            active_old = Sprint(
+                id="analytics-active-before-window",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Active before window",
+                status=SprintStatus.ACTIVE,
+                lane_type=SprintLaneType.NORMAL,
+                created_at=old,
+                created_by=AGENT_ID,
+            )
+            closed_old = Sprint(
+                id="analytics-closed-before-window",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Closed before window",
+                status=SprintStatus.CLOSED,
+                lane_type=SprintLaneType.NORMAL,
+                created_at=old,
+                created_by=AGENT_ID,
+            )
+            closed_recent = Sprint(
+                id="analytics-closed-in-window",
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Closed in window",
+                status=SprintStatus.CLOSED,
+                lane_type=SprintLaneType.NORMAL,
+                created_at=recent,
+                created_by=AGENT_ID,
+            )
+            db.add_all([active_old, closed_old, closed_recent])
+            await db.flush()
+            old_member = await _put_card(
+                db,
+                card_id="analytics-old-active-member",
+                spec_id=SPEC_ID,
+                title="Member created before the window",
+                card_type=CardType.NORMAL,
+            )
+            old_member.created_at = old
+            old_member.sprint_id = active_old.id
+            await db.commit()
+
+            from okto_pulse.core.services.analytics_service import (
+                compute_sprints_analytics,
+            )
+
+            payload = await compute_sprints_analytics(
+                db,
+                BOARD_ID,
+                dt_from=now - timedelta(days=7),
+                dt_to=now + timedelta(days=1),
+            )
+
+        by_id = {row["sprint_id"]: row for row in payload["sprints"]}
+        assert set(by_id) == {active_old.id, closed_recent.id}
+        assert by_id[active_old.id]["total_cards"] == 1
+        assert closed_old.id not in by_id
 
 
 # ============================================================================

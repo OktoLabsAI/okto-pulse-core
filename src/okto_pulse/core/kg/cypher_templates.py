@@ -16,6 +16,10 @@ server stays operational while the scoring pipeline lands.
 from okto_pulse.core.ports.policy_constraint_projection import (
     POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS,
 )
+from okto_pulse.core.domain.code_traceability_kg import (
+    CODE_TRACEABILITY_KG_SUBTYPES,
+)
+from okto_pulse.core.kg.schema_contract import CODE_TRACEABILITY_READ_PROPERTIES
 
 # Default filter clause injected into every read query.
 # The service layer replaces $min_confidence, $min_relevance, and $max_rows
@@ -115,6 +119,34 @@ def layer_label_projection(var: str, *, alias: str = "graph_layer") -> str:
     """
     return f"coalesce({var}.graph_layer, 'legacy_unknown') AS {alias}"
 
+
+def code_traceability_node_projection(var: str) -> str:
+    """Return the source-blind semantic metadata projection for a KG node."""
+
+    return ", ".join(
+        f"{var}.{property_name}"
+        for property_name in CODE_TRACEABILITY_READ_PROPERTIES
+    )
+
+
+def code_traceability_visibility_clause(
+    var: str,
+    *,
+    param: str = "$include_code_traceability",
+) -> str:
+    """Query-level exclusion for semantic CT subtypes.
+
+    Generic KG reads keep legacy nodes available when the caller lacks the
+    complete CT read authority.  Applying this predicate before ordering,
+    LIMIT and count keeps page boundaries and totals truthful.
+    """
+
+    exclusions = " AND ".join(
+        f"coalesce({var}.kind_of, '') <> '{subtype}'"
+        for subtype in CODE_TRACEABILITY_KG_SUBTYPES
+    )
+    return f"({param} = true OR ({exclusions}))"
+
 # ---------------------------------------------------------------------------
 # 1. get_decision_history — FR-11
 # Variable-length path on :supersedes up to depth 10.
@@ -143,14 +175,17 @@ MATCH (center)-[r1]-(hop1)
 WHERE center.source_artifact_ref = $artifact_id
   AND center.source_confidence >= $min_confidence
   AND {active_read_filter_clause('center')}
+  AND {code_traceability_visibility_clause('center')}
   AND {layer_filter_clause('hop1')}
   AND {superseded_filter_clause('hop1')}
   AND {active_read_filter_clause('hop1')}
+  AND {code_traceability_visibility_clause('hop1')}
 OPTIONAL MATCH (hop1)-[r2]-(hop2)
 WHERE (hop2 IS NULL
        OR ({layer_filter_clause('hop2')}
            AND {superseded_filter_clause('hop2')}
-           AND {active_read_filter_clause('hop2')}))
+           AND {active_read_filter_clause('hop2')}
+           AND {code_traceability_visibility_clause('hop2')}))
 RETURN center.id AS center_id, center.title AS center_title,
        hop1.id AS hop1_id, hop1.title AS hop1_title,
        hop2.id AS hop2_id, hop2.title AS hop2_title,
@@ -321,10 +356,11 @@ WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
+  AND {code_traceability_visibility_clause('n')}
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
-       n.maturity_status
+       n.maturity_status, {code_traceability_node_projection('n')}
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -335,11 +371,12 @@ WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
+  AND {code_traceability_visibility_clause('n')}
   AND label(n) = $node_type
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
-       n.maturity_status
+       n.maturity_status, {code_traceability_node_projection('n')}
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -354,12 +391,13 @@ WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
+  AND {code_traceability_visibility_clause('n')}
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
-       n.maturity_status
+       n.maturity_status, {code_traceability_node_projection('n')}
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -370,13 +408,14 @@ WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
+  AND {code_traceability_visibility_clause('n')}
   AND label(n) = $node_type
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
-       n.maturity_status
+       n.maturity_status, {code_traceability_node_projection('n')}
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -387,6 +426,7 @@ WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
+  AND {code_traceability_visibility_clause('n')}
 RETURN count(n)
 """
 
@@ -396,6 +436,7 @@ WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
+  AND {code_traceability_visibility_clause('n')}
   AND label(n) = $node_type
 RETURN count(n)
 """

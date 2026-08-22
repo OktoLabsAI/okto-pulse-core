@@ -7,13 +7,23 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import select
 
 from okto_pulse.core.application.use_cases.spec_crud import (
     _spec_update_permission_requirements,
 )
 from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 from okto_pulse.core.mcp import server as mcp_server
-from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import (
+    ActivityLog,
+    Board,
+    Card,
+    CardStatus,
+    CardType,
+    Spec,
+    SpecHistory,
+    SpecStatus,
+)
 from okto_pulse.core.models.schemas import SpecUpdate
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.main import CardService, SpecService
@@ -75,6 +85,63 @@ def test_ir_or_spec_update_permissions_do_not_treat_default_materialization_as_e
         "spec.observability_requirements.link_task",
         "card.link_to.or",
     }
+
+
+def test_code_evidence_coverage_skip_uses_spec_coverage_permission() -> None:
+    data = SpecUpdate(skip_code_evidence_coverage=True)
+
+    assert data.model_dump(exclude_unset=True) == {"skip_code_evidence_coverage": True}
+    assert _spec_update_permission_requirements(SimpleNamespace(), data) == {
+        "spec.entity.edit_coverage_flags"
+    }
+
+
+@pytest.mark.asyncio
+async def test_code_evidence_coverage_skip_is_persisted_and_audited(
+    db_factory,
+) -> None:
+    board_id = _id("code-evidence-skip-board")
+    spec_id = _id("code-evidence-skip-spec")
+    actor_id = _id("code-evidence-skip-user")
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Evidence Board", owner_id=actor_id))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Evidence Spec",
+                status=SpecStatus.DRAFT,
+                created_by=actor_id,
+            )
+        )
+        await db.commit()
+
+        updated = await SpecService(db).update_spec(
+            spec_id,
+            actor_id,
+            SpecUpdate(skip_code_evidence_coverage=True),
+        )
+        await db.flush()
+        history = (
+            await db.execute(select(SpecHistory).where(SpecHistory.spec_id == spec_id))
+        ).scalar_one()
+        activity = (
+            await db.execute(
+                select(ActivityLog).where(ActivityLog.action == "spec_updated")
+            )
+        ).scalar_one()
+
+    assert updated is not None
+    assert updated.skip_code_evidence_coverage is True
+    assert updated.version == 1
+    assert history.changes == [
+        {
+            "field": "skip_code_evidence_coverage",
+            "old": False,
+            "new": True,
+        }
+    ]
+    assert activity.details["fields"] == ["skip_code_evidence_coverage"]
 
 
 @pytest.mark.asyncio

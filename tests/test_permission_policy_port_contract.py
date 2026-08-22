@@ -62,6 +62,7 @@ def test_permission_domain_module_has_only_stdlib_and_canonical_domain_imports()
         "dataclasses",
         "json",
         "logging",
+        "okto_pulse.core.domain.code_traceability_kg",
         "okto_pulse.core.domain.mcp_permission_registry",
         "okto_pulse.core.domain.sdlc_registry",
         "typing",

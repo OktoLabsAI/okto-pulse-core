@@ -138,11 +138,20 @@ def canonical_debt_to_dict(row: Any) -> dict[str, Any]:
 
 
 async def summarize_canonical_debt(
-    db: object, board_id: str
+    db: object,
+    board_id: str,
+    *,
+    include_code_traceability: bool = True,
 ) -> dict[str, Any]:
-    by_state = await get_canonical_debt_store().counts_by_state(
-        db, board_id=board_id
-    )
+    store = get_canonical_debt_store()
+    if include_code_traceability:
+        by_state = await store.counts_by_state(db, board_id=board_id)
+    else:
+        by_state = await store.counts_by_state(
+            db,
+            board_id=board_id,
+            include_code_traceability=False,
+        )
     return {
         "open_count": sum(by_state.get(state, 0) for state in OPEN_STATES),
         "retryable_count": sum(
@@ -166,22 +175,35 @@ async def list_canonical_debt(
     state: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    include_code_traceability: bool = True,
 ) -> CanonicalDebtListResult:
     validate_canonical_debt_filters(
         artifact_type=artifact_type,
         state=state,
     )
-    total, rows = await get_canonical_debt_store().list_records(
-        db,
-        board_id=board_id,
-        artifact_type=artifact_type,
-        state=state,
-        limit=max(1, min(limit, 200)),
-        offset=max(0, offset),
-    )
+    store = get_canonical_debt_store()
+    kwargs = {
+        "board_id": board_id,
+        "artifact_type": artifact_type,
+        "state": state,
+        "limit": max(1, min(limit, 200)),
+        "offset": max(0, offset),
+    }
+    if include_code_traceability:
+        total, rows = await store.list_records(db, **kwargs)
+    else:
+        total, rows = await store.list_records(
+            db,
+            **kwargs,
+            include_code_traceability=False,
+        )
     return CanonicalDebtListResult(
         items=[canonical_debt_to_dict(row) for row in rows],
-        counts=await summarize_canonical_debt(db, board_id),
+        counts=await summarize_canonical_debt(
+            db,
+            board_id,
+            include_code_traceability=include_code_traceability,
+        ),
         total=total,
     )
 
@@ -267,7 +289,15 @@ async def schedule_canonical_debt_retry(
     kg_health_state: str,
 ) -> dict[str, Any]:
     store = get_canonical_debt_store()
-    row = await store.get(db, debt_id=debt_id)
+    # Canonical-debt retry is a generic operational recovery path. Code
+    # Traceability projections are recovered only by the deterministic rebuild
+    # worker, so an opaque debt id can never cause this path to load or mutate a
+    # CT record.
+    row = await store.get(
+        db,
+        debt_id=debt_id,
+        include_code_traceability=False,
+    )
     if row is None or row.board_id != board_id:
         return {
             "ok": False,

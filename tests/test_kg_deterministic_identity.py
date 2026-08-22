@@ -121,8 +121,7 @@ def _count_outgoing_belongs_to_sync(board_id: str, node_id: str) -> int:
 
     with open_board_connection(board_id) as (_db, conn):
         result = conn.execute(
-            "MATCH (n:Entity)-[:belongs_to]->() "
-            "WHERE n.id = $id RETURN count(*)",
+            "MATCH (n:Entity)-[:belongs_to]->() WHERE n.id = $id RETURN count(*)",
             {"id": node_id},
         )
         try:
@@ -159,9 +158,7 @@ async def test_nc8_reuse_keeps_existing_id(identity_tempdir, monkeypatch):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
 
-    await _drive_one_session(
-        session_factory, board_id, artifact_ref, "[MKG-A] Spec Y"
-    )
+    await _drive_one_session(session_factory, board_id, artifact_ref, "[MKG-A] Spec Y")
     first_id = (await _query_one_async(board_id, artifact_ref))["id"]
 
     commit2 = await _drive_one_session(
@@ -212,10 +209,13 @@ async def test_replay_reuses_already_materialized_deterministic_id(
     )
     assert (await _query_one_async(board_id, artifact_ref))["id"] == node_id
 
-    assert await run_blocking_graph_io(
-        lambda: _count_entity_id_sync(board_id, node_id),
-        task_name="tests.deterministic_identity.count_entity_id",
-    ) == 1
+    assert (
+        await run_blocking_graph_io(
+            lambda: _count_entity_id_sync(board_id, node_id),
+            task_name="tests.deterministic_identity.count_entity_id",
+        )
+        == 1
+    )
 
 
 async def test_supersede_mints_generation_plus_one_deterministically(
@@ -239,9 +239,7 @@ async def test_supersede_mints_generation_plus_one_deterministically(
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
 
-    await _drive_one_session(
-        session_factory, board_id, artifact_ref, "[MKG-A] Spec Z"
-    )
+    await _drive_one_session(session_factory, board_id, artifact_ref, "[MKG-A] Spec Z")
     old_id = (await _query_one_async(board_id, artifact_ref))["id"]
 
     cand_id = "mkga_supersede_cand"
@@ -303,10 +301,13 @@ async def test_supersede_mints_generation_plus_one_deterministically(
 
     old = await _node_attrs_async(board_id, old_id)
     assert old["superseded_by"] == expected_successor
-    assert await run_blocking_graph_io(
-        lambda: _count_outgoing_belongs_to_sync(board_id, expected_successor),
-        task_name="tests.deterministic_identity.count_successor_provenance",
-    ) == 1
+    assert (
+        await run_blocking_graph_io(
+            lambda: _count_outgoing_belongs_to_sync(board_id, expected_successor),
+            task_name="tests.deterministic_identity.count_successor_provenance",
+        )
+        == 1
+    )
 
     # At-least-once replay of the same explicit SUPERSEDE must acknowledge the
     # already materialized deterministic successor.  Before the replay guard,
@@ -347,16 +348,19 @@ async def test_supersede_mints_generation_plus_one_deterministically(
         )
     assert replay.nodes_superseded == 0
     assert replay.nodes_merged == 1
-    assert (await _node_attrs_async(board_id, old_id))["superseded_by"] == expected_successor
-    assert await run_blocking_graph_io(
-        lambda: _count_outgoing_belongs_to_sync(board_id, expected_successor),
-        task_name="tests.deterministic_identity.count_replayed_provenance",
-    ) == 1
+    assert (await _node_attrs_async(board_id, old_id))[
+        "superseded_by"
+    ] == expected_successor
+    assert (
+        await run_blocking_graph_io(
+            lambda: _count_outgoing_belongs_to_sync(board_id, expected_successor),
+            task_name="tests.deterministic_identity.count_replayed_provenance",
+        )
+        == 1
+    )
 
 
-async def test_supersede_missing_source_stays_blocked(
-    identity_tempdir, monkeypatch
-):
+async def test_supersede_missing_source_stays_blocked(identity_tempdir, monkeypatch):
     """A target id alone cannot launder an unresolved source into provenance."""
     from okto_pulse.core.kg.primitives import (
         KGPrimitiveError,
@@ -428,8 +432,11 @@ async def test_supersede_missing_source_stays_blocked(
                 db=db,
             )
 
-    assert excinfo.value.code == "kg_node_connectivity_violation"
-    violation = excinfo.value.details["connectivity"]["violations"][0]
-    assert violation["source_artifact_ref"] == missing_ref
-    assert violation["source_resolution_status"] == "unresolved_source_ref"
+    assert excinfo.value.code == "entity_source_identity_mismatch"
+    assert excinfo.value.details == {
+        "candidate_id": candidate_id,
+        "candidate_source_artifact_ref": missing_ref,
+        "target_node_id": old_id,
+        "target_source_artifact_ref": artifact_ref,
+    }
     assert (await _node_attrs_async(board_id, old_id))["superseded_by"] is None

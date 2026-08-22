@@ -189,11 +189,13 @@ async def list_dead_letter(
     board_id: str,
     *,
     limit: int = 100,
+    include_code_traceability: bool = False,
 ) -> list[Any]:
     """Return up to ``limit`` most recent DLQ rows for a board."""
     rows = await get_kg_worker_queue_port().list_dead_letter(
         context,
         board_id=board_id,
         limit=limit,
+        include_code_traceability=include_code_traceability,
     )
     return list(rows)

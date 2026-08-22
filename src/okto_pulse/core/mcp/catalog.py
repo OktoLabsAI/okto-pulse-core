@@ -14,6 +14,11 @@ from typing import Annotated, Any, Callable, get_args, get_origin, get_type_hint
 
 from pydantic import TypeAdapter
 
+from okto_pulse.core.domain.mcp_permission_registry import (
+    McpAdmissionClass,
+    resolve_mcp_tool_admission_class,
+)
+
 
 @dataclass(frozen=True)
 class CoreMcpTool:
@@ -25,6 +30,7 @@ class CoreMcpTool:
     parameters: dict[str, Any]
     title: str | None = None
     enabled: bool = True
+    admission_class: McpAdmissionClass = McpAdmissionClass.WRITER
 
 
 @dataclass(frozen=True)
@@ -88,7 +94,49 @@ def _json_schema_for(annotation: Any) -> dict[str, Any]:
         if annotation is dict:
             return {"type": "object"}
         return {}
-    return dict(schema) if isinstance(schema, dict) else {}
+    return _without_nonsemantic_titles(dict(schema)) if isinstance(schema, dict) else {}
+
+
+def _without_nonsemantic_titles(value: Any) -> Any:
+    """Drop generated JSON-Schema titles while preserving validation metadata.
+
+    Pydantic repeats class/field names as ``title`` throughout every tool
+    schema.  MCP already carries the command and property names, so those
+    labels consume the always-loaded metadata budget without adding type,
+    bounds, enum, required, union, or closed-object semantics.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _without_nonsemantic_titles(item)
+            for key, item in value.items()
+            if key != "title"
+        }
+    if isinstance(value, list):
+        return [_without_nonsemantic_titles(item) for item in value]
+    return value
+
+
+def _close_declared_object_schemas(value: Any) -> Any:
+    """Close every fixed-shape object in an opted-in governed schema.
+
+    Pydantic can emit nested standard-dataclass schemas without an
+    ``additionalProperties`` declaration.  A closed command must not become
+    open again at that nested boundary.  Typed mappings remain dynamic: they
+    have no fixed ``properties`` collection and retain their value schema.
+    """
+
+    if isinstance(value, dict):
+        closed = {
+            key: _close_declared_object_schemas(item)
+            for key, item in value.items()
+        }
+        if isinstance(closed.get("properties"), dict):
+            closed["additionalProperties"] = False
+        return closed
+    if isinstance(value, list):
+        return [_close_declared_object_schemas(item) for item in value]
+    return value
 
 
 def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
@@ -139,11 +187,11 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
 
     result: dict[str, Any] = {"type": "object", "properties": properties}
     if getattr(fn, "__mcp_closed_schema__", False):
-        # New governed surfaces opt in to an explicitly closed root object.
-        # Python would reject an unknown keyword at invocation time anyway,
-        # but publishing ``additionalProperties: false`` makes that contract
-        # discoverable before a client sends a request.
-        result["additionalProperties"] = False
+        # Governed surfaces opt in to a recursively closed fixed-object
+        # schema. Python would reject an unknown root keyword at invocation
+        # time, but nested dataclasses also need their contract published
+        # explicitly so clients cannot infer an open payload boundary.
+        result = _close_declared_object_schemas(result)
     if required:
         result["required"] = required
     return result
@@ -203,6 +251,7 @@ class CoreMcpCatalog:
             parameters=_parameters_for(fn),
             title=title,
             enabled=True if enabled is None else enabled,
+            admission_class=resolve_mcp_tool_admission_class(tool_name),
         )
         self._tool_manager._tools[tool_name] = tool
         return tool

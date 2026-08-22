@@ -22,6 +22,7 @@ METRIC_BOARD_MISSING_CONTEXT_WARNING = "board_missing_context_warning_total"
 METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION = (
     "policy_governance_authorization_decision_total"
 )
+METRIC_SEMANTIC_ASSESSMENT_WRITES = "pulse_semantic_assessment_writes_total"
 METRIC_GOVERNANCE_AUDIT_SAFE_LABEL_VIOLATION = (
     "governance_audit_safe_label_violation_total"
 )
@@ -35,6 +36,7 @@ GOVERNANCE_METRIC_NAMES = frozenset(
         METRIC_CRITICAL_CONTEXT_RESOLUTION_LATENCY_MS,
         METRIC_BOARD_MISSING_CONTEXT_WARNING,
         METRIC_POLICY_GOVERNANCE_AUTHORIZATION_DECISION,
+        METRIC_SEMANTIC_ASSESSMENT_WRITES,
         METRIC_GOVERNANCE_AUDIT_SAFE_LABEL_VIOLATION,
     }
 )
@@ -109,6 +111,15 @@ _METRIC_LABEL_KEYS: dict[str, frozenset[str]] = {
             "operation",
             "capability",
             "outcome",
+        }
+    ),
+    METRIC_SEMANTIC_ASSESSMENT_WRITES: frozenset(
+        {
+            "surface",
+            "contract_version",
+            "outcome",
+            "capability_state",
+            "reason_code",
         }
     ),
     METRIC_GOVERNANCE_AUDIT_SAFE_LABEL_VIOLATION: frozenset(
@@ -291,6 +302,70 @@ def emit_governance_metric(
     except GovernanceAuditPayloadError:
         if raise_on_violation:
             raise
+
+
+_SEMANTIC_WRITE_REASON_CODES = frozenset(
+    {
+        "none",
+        "authentication_required",
+        "permission_denied",
+        "semantic_assessment_contract_invalid",
+        "semantic_anchor_forbidden",
+        "semantic_anchor_missing",
+        "idempotency_conflict",
+        "unsupported_contract_version",
+        "v2_writer_not_ready",
+        "service_unavailable",
+    }
+)
+
+
+def emit_semantic_assessment_write_metric(
+    *,
+    surface: str,
+    contract_version: str,
+    outcome: str,
+    reason_code: str | None = None,
+    capability_state: str | None = None,
+) -> None:
+    """Emit one payload-free, closed-label semantic write outcome."""
+
+    if surface not in {"rest", "mcp"}:
+        raise ValueError("semantic_assessment_metric_surface_invalid")
+    if contract_version not in {"v1", "v2"}:
+        raise ValueError("semantic_assessment_metric_contract_version_invalid")
+    if outcome not in {"success", "error"}:
+        raise ValueError("semantic_assessment_metric_outcome_invalid")
+    normalized_reason = reason_code or "none"
+    if normalized_reason not in _SEMANTIC_WRITE_REASON_CODES:
+        normalized_reason = "service_unavailable"
+    resolved_capability_state = "legacy_v1"
+    if contract_version == "v2":
+        resolved_capability_state = capability_state or {
+            "unsupported_contract_version": "disabled",
+            "v2_writer_not_ready": "not_ready",
+        }.get(normalized_reason, "active" if outcome == "success" else "unchecked")
+        if resolved_capability_state not in {
+            "active",
+            "disabled",
+            "readers_not_ready",
+            "storage_not_ready",
+            "triggers_not_ready",
+            "transports_not_ready",
+            "not_ready",
+            "unchecked",
+        }:
+            raise ValueError("semantic_assessment_metric_capability_state_invalid")
+    emit_governance_metric(
+        {
+            "metric_name": METRIC_SEMANTIC_ASSESSMENT_WRITES,
+            "surface": surface,
+            "contract_version": contract_version,
+            "outcome": outcome,
+            "capability_state": resolved_capability_state,
+            "reason_code": normalized_reason,
+        }
+    )
 
 
 def validate_governance_audit_details(details: Mapping[str, Any]) -> dict[str, Any]:

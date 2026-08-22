@@ -166,6 +166,7 @@ async def test_entity_scoped_projection_uses_exact_guideline_service_decision(
     assert projected.policy_compliance_decision.policy_compliance_required is True
     assert projected.policy_compliance_decision.allowed is decision.allowed
     assert projected.policy_compliance_decision.state == decision.reason_code.value
+    assert projected.policy_compliance_decision.to_dict()["projection"] == "full"
     if blocking_metrics:
         assert not decision.allowed
         assert "spec_validation_required" in (projected.blocked_reason or "")
@@ -218,24 +219,10 @@ async def test_current_status_only_returns_structural_subject_required_state() -
 
     assert validated["policy_compliance"] is True
     assert validated["policy_compliance_decision"] == {
+        "projection": "redacted",
         "state": POLICY_SUBJECT_REQUIRED,
         "allowed": None,
         "policy_compliance_required": True,
-        "reason_codes": [POLICY_SUBJECT_REQUIRED],
-        "decision_digest": None,
-        "fence_digest": None,
-        "receipt_ids": [],
-        "currentness": None,
-        "currentness_reasons": [],
-        "applicable_metric_count": None,
-        "applicable_blocking_metric_count": None,
-        "failed_metric_count": None,
-        "blocking_metric_count": None,
-        "waived_metric_count": None,
-        "advisory_issue_count": None,
-        "skipped_binding_count": None,
-        "diagnostic_codes": [],
-        "binding_decisions": [],
     }
     assert POLICY_SUBJECT_REQUIRED in validated["blocked_reason"]
     assert recovery["policy_compliance"] is False

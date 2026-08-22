@@ -63,7 +63,15 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 test2 agent"
-        self.permissions = set()
+        # Full Spec context includes the read-only Code Traceability projection;
+        # grant that independent read permission so this test reaches the skip
+        # override projection it is intended to verify.
+        self.permissions = (
+            "code_traceability.investigation.read",
+            "code_traceability.evidence.read",
+            "code_traceability.target.read",
+            "code_traceability.overlap.read",
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -125,11 +133,19 @@ async def test_ts_62759ca4_ideation_context_exposes_ambiguity_skip_override(db_f
     # Human applies the skip through the REAL write path.
     async with db_factory() as db:
         await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="rest")
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
+        )
         await db.commit()
 
     ctx = await _call("okto_pulse_get_ideation_context", board_id=board_id,
                       ideation_id=ideation_id)
+    assert "skip_overrides" in ctx, ctx
     overrides = ctx["skip_overrides"]
     assert len(overrides) == 1, overrides
     o = overrides[0]
@@ -170,6 +186,7 @@ async def test_ts_62759ca4_spec_context_exposes_cognitive_skip_override(db_facto
 
     ctx = await _call("okto_pulse_get_spec_context", board_id=board_id,
                       spec_id=spec_id, profile="full")
+    assert "skip_overrides" in ctx, ctx
     overrides = ctx["skip_overrides"]
     assert len(overrides) == 1, overrides
     o = overrides[0]
@@ -209,6 +226,7 @@ async def test_ts_62759ca4_contexts_skip_overrides_empty_when_none(db_factory):
     spec_ctx = await _call("okto_pulse_get_spec_context", board_id=board_id,
                            spec_id=spec_id, profile="full")
     assert idea_ctx["skip_overrides"] == []
+    assert "skip_overrides" in spec_ctx, spec_ctx
     assert spec_ctx["skip_overrides"] == []
 
 
@@ -230,7 +248,14 @@ async def test_ts_af750802_override_is_read_only_and_agent_skip_refused(db_facto
         await db.commit()
     async with db_factory() as db:
         await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="rest")
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
+        )
         await db.commit()
 
     ctx = await _call("okto_pulse_get_ideation_context", board_id=board_id,

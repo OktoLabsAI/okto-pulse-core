@@ -11,6 +11,42 @@ SPEC_LINEAGE_RULE_PREFIXES: tuple[str, str] = (
     "belongs_to/spec_to_ideation@",
     "belongs_to/spec_to_refinement@",
 )
+SPEC_LINEAGE_RETRYABLE_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "spec_lineage_clear_failed",
+        "spec_lineage_clear_incomplete",
+        "spec_lineage_clear_restore_failed",
+        "spec_lineage_edge_delete_unconfirmed",
+        "spec_lineage_endpoint_not_found",
+        "spec_lineage_new_parent_create_failed",
+        "spec_lineage_old_parent_cleanup_failed",
+        "spec_lineage_old_parent_cleanup_incomplete",
+        "spec_lineage_old_parent_restore_failed",
+        "spec_lineage_partial_cleanup_restore_failed",
+        "spec_lineage_replacement_remove_failed",
+        "spec_lineage_source_not_found",
+    }
+)
+SPEC_LINEAGE_PROGRESS_PRESERVED_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        # The replacement-first saga deliberately leaves safe progress in the
+        # graph for the next retry.  Outer session compensation must preserve
+        # that state rather than recreating the original livelock.
+        "spec_lineage_clear_incomplete",
+        "spec_lineage_edge_delete_unconfirmed",
+        "spec_lineage_edge_metadata_inconsistent",
+        "spec_lineage_old_parent_cleanup_incomplete",
+    }
+)
+SPEC_LINEAGE_COMPENSATED_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        # These codes are emitted only after the adapter has restored the
+        # before-image.  The outer saga still preserves the receipt so generic
+        # session cleanup cannot delete the restored parent.
+        "spec_lineage_clear_failed",
+        "spec_lineage_old_parent_cleanup_failed",
+    }
+)
 SOURCE_PROJECTION_REMOVED_REASON = "source_projection_removed"
 
 
@@ -19,6 +55,12 @@ def is_spec_lineage_rule_id(rule_id: str) -> bool:
 
     normalized = str(rule_id or "")
     return any(normalized.startswith(prefix) for prefix in SPEC_LINEAGE_RULE_PREFIXES)
+
+
+def is_retryable_spec_lineage_error_code(code: str) -> bool:
+    """Return whether a reconciliation failure is safe to replay."""
+
+    return str(code or "") in SPEC_LINEAGE_RETRYABLE_ERROR_CODES
 
 
 class SpecLineageParentIntent(str, Enum):
@@ -60,10 +102,30 @@ class SpecLineageReconciliationError(RuntimeError):
         message: str,
         *,
         receipt: SpecLineageReconciliationReceipt | None = None,
+        retryable: bool | None = None,
+        compensation_applied: bool | None = None,
+        preserve_progress: bool | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.receipt = receipt
+        self.retryable = (
+            is_retryable_spec_lineage_error_code(code)
+            if retryable is None
+            else bool(retryable)
+        )
+        self.compensation_applied = (
+            code in SPEC_LINEAGE_COMPENSATED_ERROR_CODES
+            if compensation_applied is None
+            else bool(compensation_applied)
+        )
+        self.preserve_progress = (
+            code in SPEC_LINEAGE_PROGRESS_PRESERVED_ERROR_CODES
+            if preserve_progress is None
+            else bool(preserve_progress)
+        )
+        self.details = dict(details or {})
 
 
 @dataclass(frozen=True)
@@ -85,6 +147,18 @@ class ProjectionNodeRef:
 
 
 @dataclass(frozen=True)
+class ProjectionEdgeRef:
+    """One relationally-owned graph edge in a projection active set."""
+
+    edge_type: str
+    from_type: str
+    to_type: str
+    from_id: str
+    to_id: str
+    rule_id: str
+
+
+@dataclass(frozen=True)
 class ProjectionActiveSetIntent:
     """Bounded replacement intent for one exact relational projection namespace."""
 
@@ -93,6 +167,7 @@ class ProjectionActiveSetIntent:
     namespace: str
     owner_node_id: str | None = None
     active_nodes: tuple[ProjectionNodeRef, ...] = ()
+    active_edges: tuple[ProjectionEdgeRef, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -124,6 +199,7 @@ class ProjectionActiveSetReceipt:
 
     intent: ProjectionActiveSetIntent
     before_images: tuple[ProjectionNodeBeforeImage, ...] = ()
+    edge_before_images: tuple[ProjectionEdgeBeforeImage, ...] = ()
 
 
 class ProjectionActiveSetReconciliationError(RuntimeError):
@@ -226,6 +302,7 @@ class GraphTransactionScope(Protocol):
         to_type: str,
         from_id: str,
         to_id: str,
+        rule_id: str | None = None,
     ) -> bool: ...
 
     def create_edge(
@@ -330,13 +407,18 @@ __all__ = [
     "ProjectionActiveSetReceipt",
     "ProjectionActiveSetReconciliationError",
     "ProjectionEdgeBeforeImage",
+    "ProjectionEdgeRef",
     "ProjectionNodeBeforeImage",
     "ProjectionNodeRef",
     "SOURCE_PROJECTION_REMOVED_REASON",
+    "SPEC_LINEAGE_COMPENSATED_ERROR_CODES",
+    "SPEC_LINEAGE_PROGRESS_PRESERVED_ERROR_CODES",
+    "SPEC_LINEAGE_RETRYABLE_ERROR_CODES",
     "SPEC_LINEAGE_RULE_PREFIXES",
     "SpecLineageEdgeSnapshot",
     "SpecLineageParentIntent",
     "SpecLineageReconciliationError",
     "SpecLineageReconciliationReceipt",
+    "is_retryable_spec_lineage_error_code",
     "is_spec_lineage_rule_id",
 ]

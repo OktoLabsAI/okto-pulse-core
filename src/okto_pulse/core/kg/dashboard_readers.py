@@ -10,13 +10,27 @@ from okto_pulse.core.ports.kg_operational import (
 
 
 async def list_consolidation_audit(
-    context: Any, board_id: str, *, limit: int
+    context: Any,
+    board_id: str,
+    *,
+    limit: int,
+    include_code_traceability: bool = True,
 ) -> list[dict[str, Any]]:
     """Return committed consolidation-audit entries for a board, newest first."""
-    rows = await get_kg_operational_read_model_port().list_consolidation_audit(
-        context,
-        board_id=board_id,
-        limit=limit,
+    reader = get_kg_operational_read_model_port()
+    rows = (
+        await reader.list_consolidation_audit(
+            context,
+            board_id=board_id,
+            limit=limit,
+        )
+        if include_code_traceability
+        else await reader.list_consolidation_audit(
+            context,
+            board_id=board_id,
+            limit=limit,
+            include_code_traceability=False,
+        )
     )
     return [dict(row) for row in rows]
 
@@ -36,12 +50,24 @@ async def list_all_board_ids(context: Any, *, limit: int = 100) -> list[str]:
 
 
 async def list_pending_entries(
-    context: Any, board_id: str
+    context: Any,
+    board_id: str,
+    *,
+    include_code_traceability: bool = True,
 ) -> list[dict[str, Any]]:
     """Return the board's pending consolidation-queue entries, newest first."""
-    rows = await get_kg_operational_read_model_port().list_pending_entries(
-        context,
-        board_id=board_id,
+    reader = get_kg_operational_read_model_port()
+    rows = (
+        await reader.list_pending_entries(
+            context,
+            board_id=board_id,
+        )
+        if include_code_traceability
+        else await reader.list_pending_entries(
+            context,
+            board_id=board_id,
+            include_code_traceability=False,
+        )
     )
     return [dict(row) for row in rows]
 

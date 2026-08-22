@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 # Tool docs — `refinement`
@@ -68,6 +68,11 @@ Artifacts (mockups, KBs, Architecture Designs) from the ideation are
 automatically propagated. Use mockup_ids/kb_ids/architecture_design_ids
 to select specific ones (default: all).
 
+Choose `delivery_context` deliberately before authoring source conclusions.
+It is required and becomes the inherited value/provenance for Specs derived
+from the frozen Refinement snapshot. Repository contents and source access do
+not determine it automatically.
+
 Args:
     board_id: Board ID
     ideation_id: Ideation ID (must be in 'done' status)
@@ -85,6 +90,8 @@ Args:
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
         while reference_only/none keep only parent linkage.
+    delivery_context: Required implementation context — one of brownfield,
+        greenfield, or hybrid.
 
 Returns:
     JSON with created refinement details
@@ -161,7 +168,9 @@ Returns:
 
 Get the full immutable snapshot of a refinement at a specific version.
 Includes all fields as they were when the refinement was marked 'done',
-plus a snapshot of all Q&A at that point.
+plus a snapshot of all Q&A at that point. For contextual Code Evidence, the
+snapshot also freezes delivery-context provenance, receipt context versions,
+and the effective Evidence context origin/classification revision and digest.
 
 Args:
     board_id: Board ID
@@ -258,3 +267,31 @@ Args:
 
 Returns:
     JSON with updated refinement details
+
+## Code Evidence for Refinements
+
+Confirm the Refinement's explicit `delivery_context`, then use
+`okto_pulse_start_code_investigation`. Let the authenticated external agent
+perform the capability/access check and source investigation in its own
+environment, submit a contextual V2 receipt, and then submit contextual V2
+Evidence when applicable. A complete Greenfield investigation can instead
+record `no_relevant_existing_implementation`; this is not an access failure.
+
+Evidence is AS-IS only. Existing delivered behavior is
+`current_implementation`; a Greenfield starter/base is `existing_scaffold`;
+an existing platform or compatibility boundary is `existing_constraint`; and
+source used only as a model is `reference_pattern`. Scaffold/reference items
+require `interpretation_limit`. Planned modules, files, endpoints, schemas, and
+tests are TO-BE and belong in the Refinement/Spec, Architecture Design, or Card
+Implementation Target, never Evidence.
+
+Correct authored historical Evidence only through
+`okto_pulse_supersede_code_evidence`; never replace a snapshot in place. V1
+items project fail-closed as `uncategorized_legacy`. Only an authorized human
+may append a legacy classification through UI/REST; there is no MCP mutation,
+and classification does not upgrade the V1 receipt. Read effective
+`source_context` rather than inferring meaning from raw or bounded item lists.
+
+Pulse and Community do not open, clone, search, or resolve the repository.
+Full procedure and typed outcomes:
+`okto-pulse://reference/code-traceability`.

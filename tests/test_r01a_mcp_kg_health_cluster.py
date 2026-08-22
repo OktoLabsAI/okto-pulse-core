@@ -49,14 +49,24 @@ class _HealthSchedulerControl:
         )
 
 
-def _stub_ctx():
+def _stub_ctx(*, ct_read: bool = True):
+    permissions = ["board:read", "kg.admin.settings_read"]
+    if ct_read:
+        permissions.extend(
+            (
+                "code_traceability.investigation.read",
+                "code_traceability.evidence.read",
+                "code_traceability.target.read",
+                "code_traceability.overlap.read",
+            )
+        )
     return type(
         "Ctx",
         (),
         {
             "agent_id": "fu4-mcp-agent",
             "agent_name": "fu4-mcp-agent",
-            "permissions": ["board:read", "kg.admin.settings_read"],
+            "permissions": permissions,
         },
     )()
 
@@ -238,6 +248,52 @@ async def test_kg_health_readiness_invalid_profile_parity() -> None:
             profile="definitely-not-a-profile", artifact_ref="",
         )
     assert json.loads(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_kg_health_masks_graph_metrics_without_ct_authority() -> None:
+    board_id = f"fu4-health-masked-{uuid.uuid4().hex[:8]}"
+    await _seed_board(board_id)
+
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=_stub_ctx(ct_read=False)),
+    ):
+        raw = await _call(HEALTH_TOOL, board_id=board_id, profile="summary")
+    payload = json.loads(raw)
+
+    assert "error" not in payload
+    assert payload["metric_status"] == "unavailable"
+    assert "total_nodes" not in payload
+    assert "default_score_ratio" not in payload
+    assert "avg_relevance" not in payload
+    assert "graph_state" in payload
+    assert "discovery_state" in payload
+    assert (
+        payload["code_traceability_metric_visibility"]["reason"]
+        == "code_traceability_kg_read_permissions_missing"
+    )
+
+
+@pytest.mark.asyncio
+async def test_kg_health_readiness_denies_without_ct_authority() -> None:
+    board_id = f"fu4-readiness-denied-{uuid.uuid4().hex[:8]}"
+    await _seed_board(board_id)
+
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=_stub_ctx(ct_read=False)),
+    ):
+        raw = await _call(
+            READINESS_TOOL,
+            board_id=board_id,
+            profile="summary",
+            artifact_ref="",
+        )
+
+    assert json.loads(raw)["error"]["code"] == "permission_denied"
 
 
 # --- auth negative path ----------------------------------------------------

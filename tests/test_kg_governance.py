@@ -464,6 +464,33 @@ class TestACLViolations:
 
 
 class TestRightToErasure:
+    def test_erasure_lease_does_not_extend_writer_after_reservation_loss(self):
+        from okto_pulse.core.kg.governance import BoardErasureLease
+
+        calls: list[str] = []
+
+        class _Reservation:
+            def renew(self, **_kwargs):
+                calls.append("reservation")
+                return False
+
+        class _Writer:
+            def renew(self, **_kwargs):
+                calls.append("writer")
+                return True
+
+        lease = BoardErasureLease(
+            board_id="board-reservation-lost",
+            writer_lock=_Writer(),
+            owner_token="writer-token",
+            ttl_seconds=60,
+            operation_reservation=_Reservation(),
+            reservation_token="reservation-token",
+        )
+
+        assert lease.renew() is False
+        assert calls == ["reservation"]
+
     @pytest.mark.asyncio
     async def test_erasure_completes(self, db_factory):
         async with db_factory() as db:
@@ -500,7 +527,15 @@ class TestRightToErasure:
         from okto_pulse.core.kg import governance
         from okto_pulse.core.kg import single_writer_lock
 
+        released: list[tuple[str, str]] = []
+
         class _ContendedLock:
+            def __init__(self, **_kwargs):
+                pass
+
+            def bind_write_lock_port(self):
+                return object()
+
             def acquire(self, **_kwargs):
                 return SimpleNamespace(
                     acquired=False,
@@ -508,10 +543,30 @@ class TestRightToErasure:
                     current_owner="worker-1",
                 )
 
+        class _ReservationLock:
+            def __init__(self, **_kwargs):
+                pass
+
+            def acquire(self, **_kwargs):
+                return SimpleNamespace(
+                    acquired=True,
+                    owner_token="reservation-token",
+                    current_owner=None,
+                )
+
+            def release(self, *, board_id, owner_token):
+                released.append((board_id, owner_token))
+                return True
+
         monkeypatch.setattr(
             single_writer_lock,
             "KGSingleWriterLock",
             _ContendedLock,
+        )
+        monkeypatch.setattr(
+            single_writer_lock,
+            "KGAdministrativeOperationReservation",
+            _ReservationLock,
         )
         with pytest.raises(
             governance.BoardErasureLockContention,
@@ -522,6 +577,64 @@ class TestRightToErasure:
                 actor_id="owner",
             ):
                 pytest.fail("a contended erasure scope must never yield")
+        assert released == [("board-contended", "reservation-token")]
+
+    @pytest.mark.asyncio
+    async def test_board_erasure_contention_is_not_masked_by_release_crash(
+        self,
+        monkeypatch,
+    ):
+        from types import SimpleNamespace
+
+        from okto_pulse.core.kg import governance, single_writer_lock
+
+        class CleanupCrash(BaseException):
+            pass
+
+        class _ContendedLock:
+            def __init__(self, **_kwargs):
+                pass
+
+            def bind_write_lock_port(self):
+                return object()
+
+            def acquire(self, **_kwargs):
+                return SimpleNamespace(
+                    acquired=False,
+                    owner_token=None,
+                    current_owner="worker-1",
+                )
+
+        class _ReservationLock:
+            def __init__(self, **_kwargs):
+                pass
+
+            def acquire(self, **_kwargs):
+                return SimpleNamespace(
+                    acquired=True,
+                    owner_token="reservation-token",
+                    current_owner=None,
+                )
+
+            def release(self, **_kwargs):
+                raise CleanupCrash("cleanup failed")
+
+        monkeypatch.setattr(single_writer_lock, "KGSingleWriterLock", _ContendedLock)
+        monkeypatch.setattr(
+            single_writer_lock,
+            "KGAdministrativeOperationReservation",
+            _ReservationLock,
+        )
+
+        with pytest.raises(
+            governance.BoardErasureLockContention,
+            match="current_owner=worker-1",
+        ):
+            async with governance.board_erasure_scope(
+                "board-contended-cleanup",
+                actor_id="owner",
+            ):
+                pytest.fail("contended scope must not yield")
 
     @pytest.mark.asyncio
     async def test_board_erasure_scope_releases_lease_on_cancellation(
@@ -538,6 +651,12 @@ class TestRightToErasure:
         released: list[tuple[str, str]] = []
 
         class _Lock:
+            def __init__(self, **_kwargs):
+                pass
+
+            def bind_write_lock_port(self):
+                return object()
+
             def acquire(self, **_kwargs):
                 return SimpleNamespace(
                     acquired=True,
@@ -556,6 +675,11 @@ class TestRightToErasure:
                 return True
 
         monkeypatch.setattr(single_writer_lock, "KGSingleWriterLock", _Lock)
+        monkeypatch.setattr(
+            single_writer_lock,
+            "KGAdministrativeOperationReservation",
+            _Lock,
+        )
         monkeypatch.setattr(global_discovery_writer, "KGSingleWriterLock", _Lock)
         with pytest.raises(asyncio.CancelledError):
             async with governance.board_erasure_scope(
@@ -566,6 +690,7 @@ class TestRightToErasure:
 
         assert released == [
             ("_global", "lease-token"),
+            ("board-cancelled", "lease-token"),
             ("board-cancelled", "lease-token"),
         ]
 

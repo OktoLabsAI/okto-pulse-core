@@ -291,7 +291,14 @@ async def test_ambiguity_skip_does_not_mask_cognitive_technical_blocker(db_facto
         await db.commit()
         # Human applies the ambiguity skip (legitimate, separate domain).
         await IdeationService(db).set_ambiguity_gate_skip(
-            ideation_id, USER_ID, True, source="rest")
+            ideation_id,
+            USER_ID,
+            True,
+            reason="Accepted for this validation edition.",
+            expected_ideation_version=1,
+            expected_ideation_edition=1,
+            source="rest",
+        )
         await db.commit()
 
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
