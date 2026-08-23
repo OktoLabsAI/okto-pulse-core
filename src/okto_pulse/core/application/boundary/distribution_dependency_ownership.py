@@ -355,7 +355,13 @@ def _wheel_dependencies(path: Path) -> dict[str, tuple[str, ...]]:
     for line in metadata.splitlines():
         if not line.startswith("Requires-Dist:"):
             continue
-        name, extras = _parse_requirement(line.removeprefix("Requires-Dist:"))
+        requirement = line.removeprefix("Requires-Dist:").strip()
+        # Optional dependency groups are serialized into wheel metadata with an
+        # ``extra == ...`` marker.  They are install-time development/features
+        # surfaces, not unconditional runtime dependencies of the distribution.
+        if re.search(r"(?:^|;)\s*extra\s*==", requirement, flags=re.IGNORECASE):
+            continue
+        name, extras = _parse_requirement(requirement)
         if name:
             rows[name] = extras
     return rows

@@ -87,12 +87,12 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-**Current: 0.3.2** — Core defines actionable semantic evidence, agent-mediated
+**Current: 0.3.3** — Core defines actionable semantic evidence, agent-mediated
 Code Traceability, governed lifecycle validation, exact KG recovery, canonical
 delivery Analytics, immutable Sprint commitment and dependency-aware lineage as
 edition-neutral contracts.
 
-**→ [Full release notes](docs/RELEASE-NOTES.md)** — 0.3.2, 0.3.1 and 0.3.0 changesets, plus 0.2.6, 0.2.5,
+**→ [Full release notes](docs/RELEASE-NOTES.md)** — 0.3.3, 0.3.2, 0.3.1 and 0.3.0 changesets, plus 0.2.6, 0.2.5,
 0.2.3, 0.2.2, 0.2.1, 0.2.0 and the 0.1.x line.
 
 ## SaaS Closure Audit

@@ -8,6 +8,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-23
+
+### Added
+
+- A deterministic repository-local Markdown link and anchor checker integrated
+  with CI, plus a contributor test matrix and reproducible paired-repository
+  development setup.
+
+### Changed
+
+- Delivery Intelligence now validates a closed field/operator matrix and
+  reports the exact canonical filters, fingerprint and current-state
+  provenance applied by the projection.
+
+### Fixed
+
+- Negative Delivery Intelligence filters now apply consistently, and
+  contribution metrics include every card associated with a selected Sprint
+  even when the card predates the requested analytics window.
+- Package metadata now points to the maintained Okto Labs documentation site.
+- Distribution ownership checks now exclude dependencies guarded by optional
+  wheel extras instead of reporting development tools as runtime dependencies.
+
 ## [0.3.2] - 2026-08-22
 
 ### Added

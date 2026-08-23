@@ -3,7 +3,23 @@
 Changeset per version, newest first.
 
 
-### 0.3.2 — current
+### 0.3.3 — current
+
+Version 0.3.3 hardens Delivery Intelligence semantics and makes the contributor
+workflow deterministic across the paired Core and Community repositories.
+
+- Delivery Intelligence accepts only supported fields and operators, applies
+  negative filters explicitly and preserves canonical filters in its
+  fingerprint and current-state provenance.
+- Contribution metrics load the complete membership of selected Sprints rather
+  than dropping older cards solely because of their creation timestamp.
+- Historical `as_of` remains unsupported until a real snapshot reader exists;
+  Community rejects caller-supplied historical projections explicitly.
+- The documented `[dev]` setup, test matrix, package metadata and local Markdown
+  link checker are executable CI contracts.
+
+
+### 0.3.2
 
 Version 0.3.2 expands the edition-neutral contract from semantic evidence into
 governed implementation traceability, lifecycle readiness, exact recovery and

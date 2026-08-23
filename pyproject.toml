@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.3.2"
+version = "0.3.3"
 description = "Okto Pulse Core - transport-neutral domain and application engine"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -36,7 +36,7 @@ dev = [
     "build>=1.2.0,<2.0.0",
     # The standard Core fixtures exercise the Community-owned local persistence
     # and graph adapters. Keep that edition in the development path only.
-    "okto-pulse>=0.3.2,<1.0.0",
+    "okto-pulse>=0.3.3,<1.0.0",
     "pyright>=1.1.390,<2.0.0",
     "pytest>=8.0.0,<10.0.0",
     "pytest-asyncio>=0.24.0,<2.0.0",
