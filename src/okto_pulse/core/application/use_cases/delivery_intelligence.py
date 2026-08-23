@@ -18,6 +18,14 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 
 _CURSOR = re.compile(r"^offset:(0|[1-9][0-9]*)$")
+_FILTER_OPERATORS = {
+    "sprint_id": frozenset({"eq", "ne", "in", "not_in"}),
+    "lane": frozenset({"eq", "ne", "in", "not_in"}),
+    "role": frozenset({"eq", "ne", "in", "not_in"}),
+    # contribution_view configures one projection shape rather than filtering
+    # a population; negative/multi-value forms would be ambiguous.
+    "contribution_view": frozenset({"eq"}),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +52,20 @@ class DeliveryIntelligenceCommand:
             not isinstance(item, AnalyticsFilterClause) for item in self.filters
         ):
             raise ValueError("delivery_intelligence_filters_invalid")
+        contribution_view_count = 0
+        for clause in self.filters:
+            allowed_operators = _FILTER_OPERATORS.get(clause.field)
+            if allowed_operators is None:
+                raise ValueError("delivery_intelligence_filter_field_unsupported")
+            if clause.operator not in allowed_operators:
+                raise ValueError("delivery_intelligence_filter_operator_unsupported")
+            values = clause.value if isinstance(clause.value, tuple) else (clause.value,)
+            if any(not isinstance(value, str) or not value.strip() for value in values):
+                raise ValueError("delivery_intelligence_filter_value_invalid")
+            if clause.field == "contribution_view":
+                contribution_view_count += 1
+        if contribution_view_count > 1:
+            raise ValueError("delivery_intelligence_contribution_view_ambiguous")
         if self.cursor is not None and not _CURSOR.fullmatch(self.cursor):
             raise ValueError("delivery_intelligence_cursor_invalid")
         if isinstance(self.limit, bool) or not 1 <= self.limit <= 100:

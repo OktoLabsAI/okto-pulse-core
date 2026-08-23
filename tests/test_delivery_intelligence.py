@@ -48,6 +48,22 @@ def test_delivery_intelligence_command_uses_bounded_deterministic_cursor() -> No
         _command(limit=101)
 
 
+def test_delivery_intelligence_command_rejects_unknown_or_ambiguous_filters() -> None:
+    with pytest.raises(ValueError, match="filter_field_unsupported"):
+        _command(filters=(AnalyticsFilterClause("unknown", "eq", "value"),))
+    with pytest.raises(ValueError, match="filter_operator_unsupported"):
+        _command(
+            filters=(AnalyticsFilterClause("contribution_view", "ne", "self"),)
+        )
+    with pytest.raises(ValueError, match="contribution_view_ambiguous"):
+        _command(
+            filters=(
+                AnalyticsFilterClause("contribution_view", "eq", "self"),
+                AnalyticsFilterClause("contribution_view", "eq", "aggregates"),
+            )
+        )
+
+
 @pytest.mark.asyncio
 async def test_delivery_intelligence_use_case_preserves_actor_scope_and_filters() -> (
     None
@@ -274,6 +290,138 @@ async def test_delivery_intelligence_filters_before_role_aggregation(
 
     assert len(payload["contributions"]) == 1
     assert payload["contributions"][0]["role"] == expected_role
+
+
+@pytest.mark.asyncio
+async def test_delivery_intelligence_applies_negative_sprint_and_lane_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from okto_pulse.core.ports.analytics_foundation import AnalyticsFoundationQuery
+    from okto_pulse.core.services import analytics_service
+
+    def sprint_row(sprint_id: str, lane: str) -> dict[str, object]:
+        return {
+            "sprint_id": sprint_id,
+            "title": sprint_id,
+            "status": "active",
+            "lane_type": lane,
+            "done_cards": 0,
+            "commitment": {
+                "state": "available",
+                "original_member_count": 0,
+                "added_count": 0,
+                "removed_count": 0,
+            },
+            "completed_committed_count": 0,
+        }
+
+    async def fake_sprints(*_args, **_kwargs):
+        return {
+            "sprints": [
+                sprint_row("sprint-keep", "normal"),
+                sprint_row("sprint-hotfix", "hotfix"),
+                sprint_row("sprint-blocked", "normal"),
+            ]
+        }
+
+    async def fake_list(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(analytics_service, "compute_sprints_analytics", fake_sprints)
+    monkeypatch.setattr(analytics_service, "_analytics_list", fake_list)
+    query = AnalyticsFoundationQuery(
+        board_id="board-1",
+        actor_scope_ref="actor:owner-1",
+        window=AnalyticsUtcWindow(NOW - timedelta(days=30), NOW),
+        filters=(
+            AnalyticsFilterClause("sprint_id", "not_in", ("sprint-blocked",)),
+            AnalyticsFilterClause("lane", "ne", "hotfix"),
+        ),
+        as_of=NOW,
+    )
+
+    payload = await analytics_service.compute_delivery_intelligence(
+        object(),
+        query=query,
+        actor_id="owner-1",
+        operator_visibility=False,
+    )
+
+    assert [row["sprint_id"] for row in payload["sprints"]] == ["sprint-keep"]
+    assert payload["query_fingerprint"] == query.fingerprint
+    assert payload["filters"] == [
+        clause.canonical_dict() for clause in query.filters
+    ]
+    assert payload["provenance"]["currentness"] == "current"
+
+
+@pytest.mark.asyncio
+async def test_delivery_intelligence_loads_old_current_sprint_members(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from okto_pulse.core.domain.enums import CardStatus, CardType
+    from okto_pulse.core.ports.analytics_foundation import AnalyticsFoundationQuery
+    from okto_pulse.core.services import analytics_service
+
+    async def fake_sprints(*_args, **_kwargs):
+        return {
+            "sprints": [
+                {
+                    "sprint_id": "sprint-1",
+                    "title": "Sprint 1",
+                    "status": "active",
+                    "lane_type": "normal",
+                    "done_cards": 1,
+                    "commitment": {
+                        "state": "available",
+                        "original_member_count": 1,
+                        "added_count": 0,
+                        "removed_count": 0,
+                    },
+                    "completed_committed_count": 1,
+                }
+            ]
+        }
+
+    old_card = SimpleNamespace(
+        id="card-old",
+        sprint_id="sprint-1",
+        created_by="owner-1",
+        status=CardStatus.DONE,
+        card_type=CardType.NORMAL,
+        created_at=NOW - timedelta(days=365),
+        updated_at=NOW - timedelta(days=1),
+        validations=[],
+    )
+
+    async def fake_list(_db, entity: str, *, filters, **_kwargs):
+        assert entity == "card"
+        assert not [item for item in filters if item.field == "created_at"]
+        sprint_filter = next(item for item in filters if item.field == "sprint_id")
+        assert sprint_filter.operator == "in"
+        assert sprint_filter.value == ("sprint-1",)
+        return [old_card]
+
+    monkeypatch.setattr(analytics_service, "compute_sprints_analytics", fake_sprints)
+    monkeypatch.setattr(analytics_service, "_analytics_list", fake_list)
+    query = AnalyticsFoundationQuery(
+        board_id="board-1",
+        actor_scope_ref="actor:owner-1",
+        window=AnalyticsUtcWindow(NOW - timedelta(days=30), NOW),
+        filters=(AnalyticsFilterClause("contribution_view", "eq", "self"),),
+        as_of=NOW,
+    )
+
+    payload = await analytics_service.compute_delivery_intelligence(
+        object(),
+        query=query,
+        actor_id="owner-1",
+        operator_visibility=False,
+    )
+
+    assert payload["contributions"][0]["done_count"] == 1
+    assert payload["query_fingerprint"] == query.fingerprint
+    assert payload["provenance"]["currentness"] == "current"
 
 
 @pytest.mark.asyncio
