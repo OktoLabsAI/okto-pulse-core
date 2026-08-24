@@ -18,11 +18,15 @@ to choose when the answer is established:
 - `reference_scaffold`: an existing scaffold, base, template, or external
   reference that informs the design without claiming delivered behavior. It
   requires a non-blank `interpretation_limit` explaining what may and may not
-  be inferred.
+  be inferred. This is not a second human-facing field: author that boundary
+  as the node's single `note` / **Note / Description**, and send the same
+  normalized text in `interpretation_limit` for the governed transport fence.
 
 `state` is optional and, when useful, is one of `existing`, `planned`,
 `modified`, or `removed`. `kind` is exactly `folder`, `file`, or `artifact`.
-Each node has one editable `note`; keep it concise and useful to a human reader.
+Each node has exactly one human-editable `note`; keep it concise and useful to
+a human reader. Never create a separate "Reference boundary" comment in the
+human UI or export.
 
 ## Canonical write path
 
@@ -67,8 +71,11 @@ Full Spec context preserves `project_structure=null` (not authored) versus
 Task/Test projections report direct versus context-only nodes and affected
 references after revocation or reclassification. When the whole Spec is
 exported to HTML or Markdown, its active tree and node notes are included in
-deterministic preorder. UI collapse state is presentation-only and is never
-stored or exported.
+deterministic preorder under **Note / Description**. For a legacy
+`reference_scaffold` whose `note` and `interpretation_limit` differ, readers
+show the interpretation limit as the single description because it carries
+the stricter non-inference boundary; the next edit must converge both fields.
+UI collapse state is presentation-only and is never stored or exported.
 
 Code Evidence remains immutable AS-IS observation. A Project structure node is
 normative/contextual information; linking Evidence does not turn the node into
