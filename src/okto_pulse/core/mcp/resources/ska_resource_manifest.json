@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "5276cc784a2ef47150b8c5dece976de5349e28b905b72b3a9972cd09c6136476",
+    "content_sha256": "644e2d6c3b956aeaf8a690a04dfa7ee0cd9f08acb71aba3f4e07b9a633f894f0",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/code-traceability",
@@ -15,6 +15,7 @@
       "okto-pulse://reference/list_tools",
       "okto-pulse://reference/multivalue",
       "okto-pulse://reference/policy-compliance",
+      "okto-pulse://reference/project-structure",
       "okto-pulse://reference/projection-profiles",
       "okto-pulse://reference/quality-assessments",
       "okto-pulse://reference/spec_gates",
@@ -43,7 +44,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "cefde337b65480a2d8ada4e6fa378813cbce263312b81856ffd75cd385b17881",
+  "manifest_sha256": "22d744847550d595db599431013c116bc504f71e881db27185d524d2d2bec31f",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
@@ -287,10 +288,11 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "b9363e69bc42669c0156e6fde50a11f420446d58d5e8a94ae2cbf2d222f36406",
+      "content_sha256": "364cccc14bb1580caf95b0dee996b7c75c210e18ce18b2f5e640b0baeb8dbd39",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
+        "okto-pulse://reference/project-structure",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/spec_gates",
         "okto-pulse://reference/tool-families/spec_entity_remove",
@@ -489,11 +491,12 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "180271d4f12304a913ae769a86f45d5b6a7994590cd182510c738dc6bdff1e4e",
+      "content_sha256": "fd2430131c55a34c0c7e76e463147b823e8d070a56536e716a3166b78c519fb4",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
         "okto-pulse://reference/policy-compliance",
+        "okto-pulse://reference/project-structure",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/spec_gates",
         "okto-pulse://reference/tool-docs/quality",

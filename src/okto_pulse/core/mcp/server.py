@@ -536,6 +536,11 @@ _CORE_RESOURCE_TABLE = [
         "Agent-mediated Code Evidence, Target resolution, overlap, and receipt protocol.",
     ),
     (
+        "okto-pulse://reference/project-structure",
+        "reference/project_structure.md",
+        "Canonical Spec Project structure classification, mutation, projection, and export protocol.",
+    ),
+    (
         "okto-pulse://reference/tool-docs/code-traceability",
         "reference/tool-docs/code-traceability.md",
         "Long-form docs for the typed Code Traceability tool family.",
@@ -10758,9 +10763,7 @@ async def okto_pulse_create_spec(
             ideation_id=ideation_id or None,
             refinement_id=refinement_id or None,
             delivery_context=resolved_delivery_context,
-            delivery_context_override_reason=(
-                delivery_context_override_reason or None
-            ),
+            delivery_context_override_reason=(delivery_context_override_reason or None),
         )
 
         _r = await McpCreateSpecUseCase().execute(
@@ -10855,6 +10858,11 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             "functional_requirements": spec.functional_requirements,
             "technical_requirements": spec.technical_requirements,
             "acceptance_criteria": spec.acceptance_criteria,
+            "project_structure": getattr(spec, "project_structure", None),
+            "project_structure_revision": int(
+                getattr(spec, "project_structure_revision", 0) or 0
+            ),
+            "project_structure_digest": getattr(spec, "project_structure_digest", None),
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": _project_api_contracts(spec.api_contracts),
@@ -11061,6 +11069,12 @@ async def okto_pulse_get_spec_context(
             "functional_requirements": spec.functional_requirements or [],
             "technical_requirements": spec.technical_requirements or [],
             "acceptance_criteria": spec.acceptance_criteria or [],
+            # Optional aggregate: preserve not-authored (null) versus authored-empty ([]).
+            "project_structure": getattr(spec, "project_structure", None),
+            "project_structure_revision": int(
+                getattr(spec, "project_structure_revision", 0) or 0
+            ),
+            "project_structure_digest": getattr(spec, "project_structure_digest", None),
             # Structured sections — gated by their own granular read flags when available.
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
@@ -11471,6 +11485,13 @@ async def okto_pulse_update_spec(
                         "functional_requirements": spec.functional_requirements,
                         "technical_requirements": spec.technical_requirements,
                         "acceptance_criteria": spec.acceptance_criteria,
+                        "project_structure": getattr(spec, "project_structure", None),
+                        "project_structure_revision": int(
+                            getattr(spec, "project_structure_revision", 0) or 0
+                        ),
+                        "project_structure_digest": getattr(
+                            spec, "project_structure_digest", None
+                        ),
                         "delivery_context": getattr(
                             spec,
                             "delivery_context",
@@ -14168,6 +14189,7 @@ _STRUCTURED_SPEC_ENTITY_MCP_TYPES = {
     "acceptance_criterion",
     "integration_requirement",
     "observability_requirement",
+    "project_structure_node",
 }
 
 StructuredSpecEntityType = Literal[
@@ -14178,6 +14200,7 @@ StructuredSpecEntityType = Literal[
     "acceptance_criterion",
     "integration_requirement",
     "observability_requirement",
+    "project_structure_node",
 ]
 StructuredSpecOperation = Literal[
     "create",
@@ -14188,6 +14211,11 @@ StructuredSpecOperation = Literal[
     "reorder",
     "link_task",
     "unlink_task",
+    "batch",
+    "link_test",
+    "unlink_test",
+    "link_evidence",
+    "unlink_evidence",
 ]
 
 _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING = (
@@ -14209,6 +14237,15 @@ def _parse_expected_spec_version(raw: int | str | None) -> int | None:
     )
 
 
+def _parse_expected_structure_revision(raw: int | str | None) -> int | None:
+    try:
+        return _parse_expected_spec_version(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "expected_structure_revision must be a non-negative integer when provided."
+        ) from exc
+
+
 async def _mcp_apply_structured_spec_entity(
     *,
     board_id: str,
@@ -14218,7 +14255,13 @@ async def _mcp_apply_structured_spec_entity(
     entity_id: str = "",
     payload_json: dict[str, Any] | str = "",
     expected_spec_version: int | str | None = None,
+    expected_structure_revision: int | str | None = None,
     task_id: str = "",
+    task_role: str = "",
+    test_id: str = "",
+    test_role: str = "",
+    evidence_id: str = "",
+    idempotency_key: str = "",
     ack_token: str = "",
     allow_api_contract: bool = False,
 ) -> str:
@@ -14253,6 +14296,9 @@ async def _mcp_apply_structured_spec_entity(
         return json.dumps({"error": "payload_json must decode to an object."})
     try:
         expected = _parse_expected_spec_version(expected_spec_version)
+        expected_revision = _parse_expected_structure_revision(
+            expected_structure_revision
+        )
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
 
@@ -14282,7 +14328,13 @@ async def _mcp_apply_structured_spec_entity(
                     operation=operation,
                     payload=payload,
                     expected_spec_version=expected,
+                    expected_structure_revision=expected_revision,
                     task_id=task_id,
+                    task_role=task_role,
+                    test_id=test_id,
+                    test_role=test_role,
+                    evidence_id=evidence_id,
+                    idempotency_key=idempotency_key,
                     ack_token=ack_token,
                     permission_set=ctx.permissions,
                 ),
@@ -14303,11 +14355,20 @@ async def okto_pulse_update_spec_entity(
     entity_id: str = "",
     payload_json: dict[str, Any] | str = "",
     expected_spec_version: int | str | None = None,
+    expected_structure_revision: int | str | None = None,
     task_id: str = "",
+    task_role: str = "",
+    test_id: str = "",
+    test_role: str = "",
+    evidence_id: str = "",
+    idempotency_key: str = "",
     ack_token: str = "",
 ) -> str:
     """
-    Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC, IR and OR.
+    Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision,
+    AC, IR, OR and Project structure nodes. Project structure writes require
+    expected_spec_version, expected_structure_revision and idempotency_key;
+    batch operations are atomic.
 
     API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
     payload shape remains explicit while still delegating to StructuredSpecEntityService.
@@ -14320,7 +14381,13 @@ async def okto_pulse_update_spec_entity(
         entity_id=entity_id,
         payload_json=payload_json,
         expected_spec_version=expected_spec_version,
+        expected_structure_revision=expected_structure_revision,
         task_id=task_id,
+        task_role=task_role,
+        test_id=test_id,
+        test_role=test_role,
+        evidence_id=evidence_id,
+        idempotency_key=idempotency_key,
         ack_token=ack_token,
         allow_api_contract=False,
     )

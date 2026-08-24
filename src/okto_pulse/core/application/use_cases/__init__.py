@@ -992,6 +992,17 @@ from okto_pulse.core.application.use_cases.mcp_spec_crud import (
     McpMoveSpecResult,
     McpMoveSpecUseCase,
 )
+from okto_pulse.core.application.use_cases.project_structure import (
+    GetCardProjectStructureProjectionCommand,
+    GetCardProjectStructureProjectionResult,
+    GetCardProjectStructureProjectionUseCase,
+    GetProjectStructureCommand,
+    GetProjectStructureResult,
+    GetProjectStructureUseCase,
+    MutateProjectStructureCommand,
+    MutateProjectStructureResult,
+    MutateProjectStructureUseCase,
+)
 from okto_pulse.core.application.use_cases.spec_crud import (
     ListSpecKnowledgeCommand,
     ListSpecKnowledgeResult,
@@ -1455,6 +1466,15 @@ __all__ = [
     "RunStructuredSpecEntityCommand",
     "RunStructuredSpecEntityResult",
     "RunStructuredSpecEntityUseCase",
+    "GetCardProjectStructureProjectionCommand",
+    "GetCardProjectStructureProjectionResult",
+    "GetCardProjectStructureProjectionUseCase",
+    "GetProjectStructureCommand",
+    "GetProjectStructureResult",
+    "GetProjectStructureUseCase",
+    "MutateProjectStructureCommand",
+    "MutateProjectStructureResult",
+    "MutateProjectStructureUseCase",
     "UpdateSpecCommand",
     "UpdateSpecResult",
     "UpdateSpecUseCase",

@@ -630,8 +630,14 @@ class RunStructuredSpecEntityCommand:
         "payload",
         "entity_id",
         "expected_spec_version",
+        "expected_structure_revision",
         "expected_spec_edition",
         "task_id",
+        "task_role",
+        "test_id",
+        "test_role",
+        "evidence_id",
+        "idempotency_key",
         "ack_token",
         "preview_only",
     )
@@ -645,8 +651,14 @@ class RunStructuredSpecEntityCommand:
         payload: dict[str, Any] | None = None,
         entity_id: str | None = None,
         expected_spec_version: int | None = None,
+        expected_structure_revision: int | None = None,
         expected_spec_edition: int | None = None,
         task_id: str | None = None,
+        task_role: str | None = None,
+        test_id: str | None = None,
+        test_role: str | None = None,
+        evidence_id: str | None = None,
+        idempotency_key: str | None = None,
         ack_token: str | None = None,
         preview_only: bool = False,
     ) -> None:
@@ -656,8 +668,14 @@ class RunStructuredSpecEntityCommand:
         self.payload = payload
         self.entity_id = entity_id
         self.expected_spec_version = expected_spec_version
+        self.expected_structure_revision = expected_structure_revision
         self.expected_spec_edition = expected_spec_edition
         self.task_id = task_id
+        self.task_role = task_role
+        self.test_id = test_id
+        self.test_role = test_role
+        self.evidence_id = evidence_id
+        self.idempotency_key = idempotency_key
         self.ack_token = ack_token
         self.preview_only = preview_only
 
@@ -703,8 +721,14 @@ class RunStructuredSpecEntityUseCase:
                 operation=command.operation,
                 payload=command.payload or {},
                 expected_spec_version=command.expected_spec_version,
+                expected_structure_revision=command.expected_structure_revision,
                 expected_spec_edition=command.expected_spec_edition,
                 task_id=command.task_id,
+                task_role=command.task_role,
+                test_id=command.test_id,
+                test_role=command.test_role,
+                evidence_id=command.evidence_id,
+                idempotency_key=command.idempotency_key,
                 ack_token=command.ack_token,
                 preview_only=command.preview_only,
                 permission_set=permission_set,
@@ -712,7 +736,7 @@ class RunStructuredSpecEntityUseCase:
         )
         if not result.success:
             await uow.rollback()
-        elif result.changed_fields:
+        elif result.changed_fields or command.entity_type == "project_structure_node":
             await commit(uow)
         return RunStructuredSpecEntityResult(result)
 

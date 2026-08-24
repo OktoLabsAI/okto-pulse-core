@@ -25,6 +25,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Record/read Quality assessments or pinpoint findings | `okto-pulse://reference/quality-assessments` |
 | Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
 | Record Technical Evidence, Technical Anchors/Implementation Targets, Spec evidence links, or task target resolutions | `okto-pulse://reference/code-traceability` |
+| Author, classify, link, or interpret a Spec Project structure tree | `okto-pulse://reference/project-structure` |
 | Move a card / sprint / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |

@@ -162,7 +162,11 @@ class McpUpdateSpecUseCase:
     build the ``SpecUpdate`` payload (resolved in the adapter) before calling this."""
 
     async def execute(
-        self, command: McpUpdateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateSpecCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateSpecResult:
         await _require_actor_board_spec(uow.services.specs, command.spec_id, actor)
         spec = await uow.services.specs.update_spec(
@@ -179,9 +183,14 @@ class McpUpdateSpecUseCase:
 
 class McpDeriveSpecCommand:
     __slots__ = (
-        "source", "source_id", "mockup_ids", "kb_ids",
-        "architecture_design_ids", "architecture_propagation_mode",
-        "knowledge_propagation", "delivery_context",
+        "source",
+        "source_id",
+        "mockup_ids",
+        "kb_ids",
+        "architecture_design_ids",
+        "architecture_propagation_mode",
+        "knowledge_propagation",
+        "delivery_context",
     )
 
     def __init__(
@@ -236,7 +245,11 @@ class McpDeriveSpecUseCase:
     (matching the legacy MCP tool, unlike the REST DeriveSpecUseCase)."""
 
     async def execute(
-        self, command: McpDeriveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeriveSpecCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpDeriveSpecResult:
 
         if command.knowledge_propagation is not None:
@@ -286,7 +299,11 @@ class McpDeriveSpecUseCase:
             if command.source == "ideation"
             else await service.get_refinement(command.source_id)
         )
-        if parent is None or actor.board_id is None or parent.board_id != actor.board_id:
+        if (
+            parent is None
+            or actor.board_id is None
+            or parent.board_id != actor.board_id
+        ):
             raise EntityNotFoundError(command.source, command.source_id)
         derive_kwargs = {
             "skip_ownership_check": True,
@@ -364,7 +381,11 @@ class McpCreateSpecUseCase:
     (``to_error_dict``) and keeps the ``invalid status`` / multi-value coercion."""
 
     async def execute(
-        self, command: McpCreateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpCreateSpecCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpCreateSpecResult:
         from okto_pulse.core.services.effective_resource_propagation import (
             ResourceLineageResolutionError,
@@ -403,11 +424,11 @@ class McpCreateSpecUseCase:
             try:
                 resource_propagation = (
                     await uow.services.propagate_effective_resources_to_spec(
-                    board_id=command.board_id,
-                    spec=spec,
-                    refinement_id=command.refinement_id,
-                    user_id=actor.actor_id,
-                    resolved_lineage=resolved_lineage,
+                        board_id=command.board_id,
+                        spec=spec,
+                        refinement_id=command.refinement_id,
+                        user_id=actor.actor_id,
+                        resolved_lineage=resolved_lineage,
                     )
                 )
             except ResourceLineageResolutionError as exc:
@@ -446,7 +467,11 @@ class McpGetSpecContextUseCase:
     stays in the inbound presentation adapter and outside the use case."""
 
     async def execute(
-        self, command: McpGetSpecContextCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetSpecContextCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpGetSpecContextResult:
         spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
@@ -465,7 +490,13 @@ class McpGetSpecContextUseCase:
 
 class McpAddBusinessRuleCommand:
     __slots__ = (
-        "spec_id", "rule_id", "title", "rule", "when", "then", "notes",
+        "spec_id",
+        "rule_id",
+        "title",
+        "rule",
+        "when",
+        "then",
+        "notes",
         "linked_requirement_tokens",
     )
 
@@ -518,7 +549,11 @@ class McpAddBusinessRuleUseCase:
     → commit → core coverage. Missing and cross-board specs fail closed."""
 
     async def execute(
-        self, command: McpAddBusinessRuleCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddBusinessRuleCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpAddBusinessRuleResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -561,8 +596,16 @@ class McpAddBusinessRuleUseCase:
 
 class McpUpdateBusinessRuleCommand:
     __slots__ = (
-        "spec_id", "rule_id", "title", "rule", "when", "then",
-        "notes", "notes_clear", "linked_requirement_tokens", "linked_clear",
+        "spec_id",
+        "rule_id",
+        "title",
+        "rule",
+        "when",
+        "then",
+        "notes",
+        "notes_clear",
+        "linked_requirement_tokens",
+        "linked_clear",
     )
 
     def __init__(
@@ -619,7 +662,11 @@ class McpUpdateBusinessRuleUseCase:
     in the adapter."""
 
     async def execute(
-        self, command: McpUpdateBusinessRuleCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateBusinessRuleCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateBusinessRuleResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -715,7 +762,11 @@ class McpRemoveSpecEntityUseCase:
     envelopes (the target_type is validated BEFORE this call)."""
 
     async def execute(
-        self, command: McpRemoveSpecEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpRemoveSpecEntityCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpRemoveSpecEntityResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.traceability import spec_coverage_summary
@@ -756,9 +807,7 @@ class McpRemoveSpecEntityUseCase:
 
         # decision — SOFT-delete (status=revoked, restorable via update_decision).
         decisions = list(spec.decisions or [])
-        target = next(
-            (d for d in decisions if d.get("id") == command.entity_id), None
-        )
+        target = next((d for d in decisions if d.get("id") == command.entity_id), None)
         if target is None:
             return McpRemoveSpecEntityResult(not_found=True)
         target["status"] = "revoked"
@@ -795,7 +844,11 @@ class McpListBusinessRulesUseCase:
     projection + ``emit_compaction_metric`` stay in the adapter (transport)."""
 
     async def execute(
-        self, command: McpListBusinessRulesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListBusinessRulesCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListBusinessRulesResult:
         spec = await _require_actor_board_spec(
             uow.services.specs, command.spec_id, actor
@@ -816,9 +869,17 @@ class McpListBusinessRulesUseCase:
 
 class McpAddApiContractCommand:
     __slots__ = (
-        "spec_id", "contract_id", "method", "path", "description",
-        "request_body", "response_success", "response_errors",
-        "linked_requirement_tokens", "linked_rule_tokens", "notes",
+        "spec_id",
+        "contract_id",
+        "method",
+        "path",
+        "description",
+        "request_body",
+        "response_success",
+        "response_errors",
+        "linked_requirement_tokens",
+        "linked_rule_tokens",
+        "notes",
     )
 
     def __init__(
@@ -857,8 +918,14 @@ class McpAddApiContractResult:
     ``contract`` + core ``coverage``."""
 
     __slots__ = (
-        "contract", "coverage", "unresolved_tokens", "available_fr_ids",
-        "available_tr_ids", "fr_count", "bad_rule_token", "invalid_contract_exc",
+        "contract",
+        "coverage",
+        "unresolved_tokens",
+        "available_fr_ids",
+        "available_tr_ids",
+        "fr_count",
+        "bad_rule_token",
+        "invalid_contract_exc",
     )
 
     def __init__(
@@ -892,7 +959,11 @@ class McpAddApiContractUseCase:
     canonicalizes the ValidationError and renders the envelopes."""
 
     async def execute(
-        self, command: McpAddApiContractCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddApiContractCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpAddApiContractResult:
         from pydantic import ValidationError
 
@@ -978,9 +1049,15 @@ class McpUpdateApiContractCommand:
     clear flag + the pre-coerced token list."""
 
     __slots__ = (
-        "spec_id", "contract_id", "method", "path", "field_updates",
-        "linked_req_clear", "linked_requirement_tokens",
-        "linked_rule_clear", "linked_rule_tokens",
+        "spec_id",
+        "contract_id",
+        "method",
+        "path",
+        "field_updates",
+        "linked_req_clear",
+        "linked_requirement_tokens",
+        "linked_rule_clear",
+        "linked_rule_tokens",
     )
 
     def __init__(
@@ -1009,8 +1086,14 @@ class McpUpdateApiContractCommand:
 
 class McpUpdateApiContractResult:
     __slots__ = (
-        "contract", "not_found", "unresolved_tokens", "available_fr_ids",
-        "available_tr_ids", "fr_count", "bad_rule_token", "invalid_contract_exc",
+        "contract",
+        "not_found",
+        "unresolved_tokens",
+        "available_fr_ids",
+        "available_tr_ids",
+        "fr_count",
+        "bad_rule_token",
+        "invalid_contract_exc",
     )
 
     def __init__(
@@ -1043,7 +1126,11 @@ class McpUpdateApiContractUseCase:
     envelope (returns the contract + the adapter's deprecation_warning)."""
 
     async def execute(
-        self, command: McpUpdateApiContractCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateApiContractCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateApiContractResult:
         from pydantic import ValidationError
 
@@ -1123,7 +1210,9 @@ class McpListApiContractsCommand:
 class McpListApiContractsResult:
     __slots__ = ("contracts", "existing_rules", "frs", "trs")
 
-    def __init__(self, contracts: list, existing_rules: dict, frs: list, trs: list) -> None:
+    def __init__(
+        self, contracts: list, existing_rules: dict, frs: list, trs: list
+    ) -> None:
         self.contracts = contracts
         self.existing_rules = existing_rules
         self.frs = frs
@@ -1138,7 +1227,11 @@ class McpListApiContractsUseCase:
     in the adapter (transport)."""
 
     async def execute(
-        self, command: McpListApiContractsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListApiContractsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListApiContractsResult:
         spec = await _require_actor_board_spec(
             uow.services.specs, command.spec_id, actor
@@ -1165,8 +1258,15 @@ class McpListApiContractsUseCase:
 
 class McpAddDecisionCommand:
     __slots__ = (
-        "spec_id", "dec_id", "title", "rationale", "context", "alternatives",
-        "supersedes_decision_id", "linked_requirement_tokens", "notes",
+        "spec_id",
+        "dec_id",
+        "title",
+        "rationale",
+        "context",
+        "alternatives",
+        "supersedes_decision_id",
+        "linked_requirement_tokens",
+        "notes",
     )
 
     def __init__(
@@ -1195,8 +1295,13 @@ class McpAddDecisionCommand:
 
 class McpAddDecisionResult:
     __slots__ = (
-        "decision", "decisions_total", "unresolved_tokens", "available_fr_ids",
-        "available_tr_ids", "fr_count", "supersede_not_found",
+        "decision",
+        "decisions_total",
+        "unresolved_tokens",
+        "available_fr_ids",
+        "available_tr_ids",
+        "fr_count",
+        "supersede_not_found",
     )
 
     def __init__(
@@ -1226,7 +1331,11 @@ class McpAddDecisionUseCase:
     -> persist. The adapter coerces ``alternatives``/tokens and renders envelopes."""
 
     async def execute(
-        self, command: McpAddDecisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddDecisionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpAddDecisionResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1288,8 +1397,13 @@ class McpAddDecisionUseCase:
 
 class McpUpdateDecisionCommand:
     __slots__ = (
-        "spec_id", "decision_id", "field_updates", "supersedes_clear",
-        "supersedes_value", "status", "linked_requirement_tokens",
+        "spec_id",
+        "decision_id",
+        "field_updates",
+        "supersedes_clear",
+        "supersedes_value",
+        "status",
+        "linked_requirement_tokens",
     )
 
     def __init__(
@@ -1314,8 +1428,13 @@ class McpUpdateDecisionCommand:
 
 class McpUpdateDecisionResult:
     __slots__ = (
-        "decision", "not_found", "unresolved_tokens", "available_fr_ids",
-        "available_tr_ids", "fr_count", "invalid_status",
+        "decision",
+        "not_found",
+        "unresolved_tokens",
+        "available_fr_ids",
+        "available_tr_ids",
+        "fr_count",
+        "invalid_status",
     )
 
     def __init__(
@@ -1345,7 +1464,11 @@ class McpUpdateDecisionUseCase:
     (no CLEAR branch in the legacy) -> status validation -> persist."""
 
     async def execute(
-        self, command: McpUpdateDecisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateDecisionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateDecisionResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1406,9 +1529,21 @@ class McpUpdateDecisionUseCase:
 
 class McpAddIntegrationRequirementCommand:
     __slots__ = (
-        "spec_id", "board_id", "ir_id", "title", "integration_type", "description",
-        "provider", "consumer", "contract_ref", "endpoint", "method",
-        "data_contract", "linked_requirement_tokens", "linked_api_contracts", "notes",
+        "spec_id",
+        "board_id",
+        "ir_id",
+        "title",
+        "integration_type",
+        "description",
+        "provider",
+        "consumer",
+        "contract_ref",
+        "endpoint",
+        "method",
+        "data_contract",
+        "linked_requirement_tokens",
+        "linked_api_contracts",
+        "notes",
     )
 
     def __init__(
@@ -1449,8 +1584,12 @@ class McpAddIntegrationRequirementCommand:
 
 class McpAddIntegrationRequirementResult:
     __slots__ = (
-        "requirement", "coverage", "unresolved_tokens", "available_fr_ids",
-        "available_tr_ids", "fr_count",
+        "requirement",
+        "coverage",
+        "unresolved_tokens",
+        "available_fr_ids",
+        "available_tr_ids",
+        "fr_count",
     )
 
     def __init__(
@@ -1479,7 +1618,11 @@ class McpAddIntegrationRequirementUseCase:
     and renders envelopes."""
 
     async def execute(
-        self, command: McpAddIntegrationRequirementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddIntegrationRequirementCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpAddIntegrationRequirementResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1562,7 +1705,11 @@ class McpListIntegrationRequirementsUseCase:
     ``EntityNotFoundError`` -> "Spec not found"."""
 
     async def execute(
-        self, command: McpListIntegrationRequirementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListIntegrationRequirementsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListIntegrationRequirementsResult:
         spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
@@ -1583,9 +1730,20 @@ class McpListIntegrationRequirementsUseCase:
 
 class McpAddObservabilityRequirementCommand:
     __slots__ = (
-        "spec_id", "board_id", "or_id", "title", "signal_type", "description",
-        "target", "metric_name", "threshold", "severity", "owner",
-        "linked_requirement_tokens", "linked_integration_requirements", "notes",
+        "spec_id",
+        "board_id",
+        "or_id",
+        "title",
+        "signal_type",
+        "description",
+        "target",
+        "metric_name",
+        "threshold",
+        "severity",
+        "owner",
+        "linked_requirement_tokens",
+        "linked_integration_requirements",
+        "notes",
     )
 
     def __init__(
@@ -1624,8 +1782,12 @@ class McpAddObservabilityRequirementCommand:
 
 class McpAddObservabilityRequirementResult:
     __slots__ = (
-        "requirement", "coverage", "unresolved_tokens", "available_fr_ids",
-        "available_tr_ids", "fr_count",
+        "requirement",
+        "coverage",
+        "unresolved_tokens",
+        "available_fr_ids",
+        "available_tr_ids",
+        "fr_count",
     )
 
     def __init__(
@@ -1654,7 +1816,11 @@ class McpAddObservabilityRequirementUseCase:
     linked_integration_requirements and renders envelopes."""
 
     async def execute(
-        self, command: McpAddObservabilityRequirementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddObservabilityRequirementCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpAddObservabilityRequirementResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1710,7 +1876,9 @@ class McpAddObservabilityRequirementUseCase:
         await commit(uow)
         return McpAddObservabilityRequirementResult(
             requirement=requirement,
-            coverage=spec_coverage_summary(spec, observability_requirements=requirements),
+            coverage=spec_coverage_summary(
+                spec, observability_requirements=requirements
+            ),
         )
 
 
@@ -1736,7 +1904,11 @@ class McpListObservabilityRequirementsUseCase:
     ``EntityNotFoundError`` -> "Spec not found"."""
 
     async def execute(
-        self, command: McpListObservabilityRequirementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListObservabilityRequirementsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListObservabilityRequirementsResult:
         spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
@@ -1764,8 +1936,15 @@ class McpListObservabilityRequirementsUseCase:
 
 class McpAddTestScenarioCommand:
     __slots__ = (
-        "spec_id", "scenario_id", "title", "given", "when", "then",
-        "scenario_type", "linked_criteria_tokens", "notes",
+        "spec_id",
+        "scenario_id",
+        "title",
+        "given",
+        "when",
+        "then",
+        "scenario_type",
+        "linked_criteria_tokens",
+        "notes",
     )
 
     def __init__(
@@ -1794,8 +1973,12 @@ class McpAddTestScenarioCommand:
 
 class McpAddTestScenarioResult:
     __slots__ = (
-        "scenario", "coverage", "invalid_scenario_type",
-        "unresolved_criteria", "available_ac_ids", "criteria_count",
+        "scenario",
+        "coverage",
+        "invalid_scenario_type",
+        "unresolved_criteria",
+        "available_ac_ids",
+        "criteria_count",
     )
 
     def __init__(
@@ -1823,7 +2006,11 @@ class McpAddTestScenarioUseCase:
     commit -> core coverage. The adapter renders the typed envelopes."""
 
     async def execute(
-        self, command: McpAddTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddTestScenarioCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpAddTestScenarioResult:
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
@@ -1838,9 +2025,7 @@ class McpAddTestScenarioUseCase:
         spec = await _require_actor_board_spec(service, command.spec_id, actor)
 
         if not is_valid_scenario_type(command.scenario_type):
-            return McpAddTestScenarioResult(
-                invalid_scenario_type=command.scenario_type
-            )
+            return McpAddTestScenarioResult(invalid_scenario_type=command.scenario_type)
 
         criteria = spec.acceptance_criteria or []
         criteria_list = None
@@ -1903,7 +2088,11 @@ class McpListTestScenariosUseCase:
     coverage-map / summary projection stays in the adapter (presentation)."""
 
     async def execute(
-        self, command: McpListTestScenariosCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListTestScenariosCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListTestScenariosResult:
         spec = await _require_actor_board_spec(
             uow.services.specs, command.spec_id, actor
@@ -1915,8 +2104,16 @@ class McpListTestScenariosUseCase:
 
 class McpUpdateTestScenarioCommand:
     __slots__ = (
-        "spec_id", "scenario_id", "title", "given", "when", "then",
-        "scenario_type", "linked_criteria_tokens", "notes", "clear_fields",
+        "spec_id",
+        "scenario_id",
+        "title",
+        "given",
+        "when",
+        "then",
+        "scenario_type",
+        "linked_criteria_tokens",
+        "notes",
+        "clear_fields",
     )
 
     def __init__(
@@ -1959,7 +2156,11 @@ class McpUpdateTestScenarioUseCase:
     the adapter to map to the legacy envelopes."""
 
     async def execute(
-        self, command: McpUpdateTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateTestScenarioCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateTestScenarioResult:
         await require_authorization(
             actor,
@@ -2010,7 +2211,11 @@ class McpDeleteTestScenarioUseCase:
     adapter to map."""
 
     async def execute(
-        self, command: McpDeleteTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteTestScenarioCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpDeleteTestScenarioResult:
         await require_authorization(
             actor,
@@ -2036,8 +2241,22 @@ class McpDeleteTestScenarioUseCase:
 
 class McpApplyStructuredSpecEntityCommand:
     __slots__ = (
-        "board_id", "spec_id", "entity_type", "entity_id", "operation",
-        "payload", "expected_spec_version", "task_id", "ack_token", "permission_set",
+        "board_id",
+        "spec_id",
+        "entity_type",
+        "entity_id",
+        "operation",
+        "payload",
+        "expected_spec_version",
+        "expected_structure_revision",
+        "task_id",
+        "task_role",
+        "test_id",
+        "test_role",
+        "evidence_id",
+        "idempotency_key",
+        "ack_token",
+        "permission_set",
     )
 
     def __init__(
@@ -2050,9 +2269,15 @@ class McpApplyStructuredSpecEntityCommand:
         operation: str,
         payload: dict,
         expected_spec_version: Any,
+        expected_structure_revision: Any = None,
         task_id: str,
-        ack_token: str,
-        permission_set: Any,
+        task_role: str = "",
+        test_id: str = "",
+        test_role: str = "",
+        evidence_id: str = "",
+        idempotency_key: str = "",
+        ack_token: str = "",
+        permission_set: Any = None,
     ) -> None:
         self.board_id = board_id
         self.spec_id = spec_id
@@ -2061,7 +2286,13 @@ class McpApplyStructuredSpecEntityCommand:
         self.operation = operation
         self.payload = payload
         self.expected_spec_version = expected_spec_version
+        self.expected_structure_revision = expected_structure_revision
         self.task_id = task_id
+        self.task_role = task_role
+        self.test_id = test_id
+        self.test_role = test_role
+        self.evidence_id = evidence_id
+        self.idempotency_key = idempotency_key
         self.ack_token = ack_token
         self.permission_set = permission_set
 
@@ -2082,7 +2313,11 @@ class McpApplyStructuredSpecEntityUseCase:
     payload/expected-version parsing and renders ``result.as_dict()``."""
 
     async def execute(
-        self, command: McpApplyStructuredSpecEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpApplyStructuredSpecEntityCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpApplyStructuredSpecEntityResult:
         from okto_pulse.core.services.spec_structured_entities import (
             StructuredSpecEntityCommand,
@@ -2099,12 +2334,20 @@ class McpApplyStructuredSpecEntityUseCase:
                 operation=command.operation,
                 payload=command.payload,
                 expected_spec_version=command.expected_spec_version,
+                expected_structure_revision=command.expected_structure_revision,
                 task_id=command.task_id or None,
+                task_role=command.task_role or None,
+                test_id=command.test_id or None,
+                test_role=command.test_role or None,
+                evidence_id=command.evidence_id or None,
+                idempotency_key=command.idempotency_key or None,
                 ack_token=command.ack_token or None,
                 permission_set=command.permission_set,
             )
         )
-        if result.success and result.changed_fields:
+        if result.success and (
+            result.changed_fields or command.entity_type == "project_structure_node"
+        ):
             await commit(uow)
         else:
             await uow.rollback()
@@ -2146,7 +2389,11 @@ class McpMigrateSpecDecisionsUseCase:
     shell. ``no_block`` -> the adapter's "nothing to migrate" envelope."""
 
     async def execute(
-        self, command: McpMigrateSpecDecisionsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpMigrateSpecDecisionsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpMigrateSpecDecisionsResult:
         import re
         import uuid as _uuid
@@ -2168,7 +2415,9 @@ class McpMigrateSpecDecisionsUseCase:
 
         bullets_block = match.group(1)
         bullet_pat = re.compile(r"^[-*]\s+(.+?)\s*$", re.MULTILINE)
-        raw_bullets = [b.strip() for b in bullet_pat.findall(bullets_block) if b.strip()]
+        raw_bullets = [
+            b.strip() for b in bullet_pat.findall(bullets_block) if b.strip()
+        ]
 
         existing = list(spec.decisions or [])
         existing_titles = {d.get("title", "").strip() for d in existing}

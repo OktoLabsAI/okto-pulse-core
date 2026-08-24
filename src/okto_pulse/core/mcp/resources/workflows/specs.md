@@ -39,6 +39,26 @@ Semantic guideline assessment follows
    - **Technical requirements**: Constraints derived from actual codebase analysis — not generic "best practices" but specific to this project's stack, patterns, and architecture.
    - **Acceptance criteria**: Verifiable conditions that reference real test scenarios, endpoints, or user flows.
 
+### Optional Project structure
+
+When a tree materially helps a person understand this Spec, read
+`okto-pulse://reference/project-structure` and author it through the structured
+entity boundary. Do not force a tree for a project without a meaningful
+structure. Classify known baseline items as `as_is`, planned items as `to_be`,
+and scaffolds/templates/references as `reference_scaffold` with an explicit
+interpretation limit. Make the classification directly when the gathered
+context already answers it; human editing remains an equal UI path, not a
+mandatory approval step. Keep one concise note per node, link only relevant
+Task/Test cards, and never use TO-BE nodes as Code Evidence.
+
+All tree/note/classification/Evidence edits are Draft-only. After cards exist,
+Task/Test link/unlink operations (or a batch made exclusively of those
+relations) are traceability-only in `approved`, `validated`, `in_progress`, or
+`done`: send both the current Spec version and Project structure revision.
+These writes advance only the structure revision and do not stale the accepted
+Spec validation. Never mix a semantic tree edit into an operational relation
+batch.
+
 ## 2.3a Detail Saturation — DO NOT Push Forward With Gaps
 
 **This is a hard behavioral rule, not a suggestion.** Coverage gates (existing tests/rules/TRs/contracts counts) tell you that content *exists*, not that it is *good enough*. Your job as spec author is to iterate on detail until an evaluator can assess **confidence**, **clarity**, **assertiveness**, **decidability**, and **ambiguity** with concrete evidence — not to race to the next stage.

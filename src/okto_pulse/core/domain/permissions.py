@@ -1317,6 +1317,7 @@ STRUCTURED_SPEC_ENTITY_TYPES: tuple[str, ...] = (
     "api_contract",
     "integration_requirement",
     "observability_requirement",
+    "project_structure_node",
 )
 
 STRUCTURED_SPEC_ENTITY_OPERATIONS: tuple[str, ...] = (
@@ -1330,21 +1331,40 @@ STRUCTURED_SPEC_ENTITY_OPERATIONS: tuple[str, ...] = (
     "unlink_task",
 )
 
+PROJECT_STRUCTURE_ENTITY_OPERATIONS: tuple[str, ...] = (
+    "create",
+    "update",
+    "revoke",
+    "restore",
+    "reorder",
+    "link_task",
+    "unlink_task",
+    "link_test",
+    "unlink_test",
+    "link_evidence",
+    "unlink_evidence",
+)
+
 
 def _structured_spec_entity_registry() -> dict[str, dict[str, bool]]:
-    return {
+    registry = {
         entity_type: {
             operation: True for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS
         }
         for entity_type in STRUCTURED_SPEC_ENTITY_TYPES
+        if entity_type != "project_structure_node"
     }
+    registry["project_structure_node"] = {
+        operation: True for operation in PROJECT_STRUCTURE_ENTITY_OPERATIONS
+    }
+    return registry
 
 
 def structured_spec_entity_permission_flags() -> list[str]:
     return [
         f"spec.structured_entity.{entity_type}.{operation}"
-        for entity_type in STRUCTURED_SPEC_ENTITY_TYPES
-        for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS
+        for entity_type, operations in _structured_spec_entity_registry().items()
+        for operation in operations
     ]
 
 
@@ -4252,6 +4272,7 @@ __all__ = [
     "PermissionSet",
     "Permissions",
     "PERMISSION_INTRODUCTION_MANIFESTS",
+    "PROJECT_STRUCTURE_ENTITY_OPERATIONS",
     "SKA_PERMISSION_INTRODUCTION_V1",
     "SKB3_PERMISSION_INTRODUCTION_V1",
     "SKM_PERMISSION_INTRODUCTION_V1",

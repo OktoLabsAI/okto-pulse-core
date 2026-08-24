@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    require_runtime_value,
+    reset_runtime_values,
+)
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Protocol, Sequence
 
 
@@ -31,6 +36,32 @@ class StructuredSpecRecord:
     title: str | None = None
     description: str | None = None
     context: str | None = None
+    project_structure: list[Any] | None = None
+    project_structure_revision: int = 0
+    project_structure_digest: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectStructureMutationReceipt:
+    """Durable idempotency receipt saved in the same transaction as the tree."""
+
+    spec_id: str
+    idempotency_key: str
+    request_digest: str
+    result: dict[str, Any]
+
+
+class ProjectStructureMutationPersistenceState(str, Enum):
+    APPLIED = "applied"
+    REPLAYED = "replayed"
+    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    VERSION_CONFLICT = "version_conflict"
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectStructureMutationPersistenceResult:
+    state: ProjectStructureMutationPersistenceState
+    receipt: ProjectStructureMutationReceipt | None = None
 
 
 class StructuredSpecStore(Protocol):
@@ -47,7 +78,50 @@ class StructuredSpecStore(Protocol):
         record: StructuredSpecRecord,
         *,
         changed_fields: Sequence[str],
+        expected_version: int | None = None,
     ) -> None: ...
+
+    async def get_project_structure_receipt(
+        self,
+        context: Any,
+        *,
+        spec_id: str,
+        idempotency_key: str,
+    ) -> ProjectStructureMutationReceipt | None: ...
+
+    async def save_project_structure_mutation(
+        self,
+        context: Any,
+        record: StructuredSpecRecord,
+        *,
+        expected_spec_version: int,
+        expected_project_structure_revision: int,
+        bump_spec_version: bool,
+        changed_fields: Sequence[str],
+        receipt: ProjectStructureMutationReceipt,
+    ) -> ProjectStructureMutationPersistenceResult:
+        """Atomically fence Spec version + tree revision and claim the key.
+
+        The adapter must convert a unique-key race into ``replayed`` or
+        ``idempotency_conflict`` after comparing request digests.  It must not
+        leak an integrity exception or commit either half independently.
+        Relation-only writes set ``bump_spec_version=False`` and advance only
+        the Project structure revision so validation evidence remains current.
+        """
+        ...
+
+    async def validate_project_structure_references(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        spec_id: str,
+        task_ids: Sequence[str],
+        test_ids: Sequence[str],
+        evidence_ids: Sequence[str],
+    ) -> None:
+        """Fail closed when a reference is missing, wrong-type or cross-Spec."""
+        ...
 
 
 _RUNTIME_KEY = "ports.structured_spec.store"
@@ -66,6 +140,9 @@ def reset_structured_spec_store_for_tests() -> None:
 
 
 __all__ = [
+    "ProjectStructureMutationReceipt",
+    "ProjectStructureMutationPersistenceResult",
+    "ProjectStructureMutationPersistenceState",
     "StructuredSpecRecord",
     "StructuredSpecStore",
     "get_structured_spec_store",

@@ -166,6 +166,7 @@ Semantic guideline protocol:
 
 ## Code Traceability
 - `okto_pulse_acknowledge_implementation_overlap` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_classify_legacy_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_clear_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_create_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`

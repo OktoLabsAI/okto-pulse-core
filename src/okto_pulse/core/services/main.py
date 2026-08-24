@@ -83,6 +83,11 @@ from okto_pulse.core.domain.code_traceability import (
 from okto_pulse.core.domain.knowledge_governance import (
     normalize_knowledge_governance_metadata,
 )
+from okto_pulse.core.domain.project_structure import (
+    canonical_project_structure_digest,
+    project_structure_reference_ids,
+    validate_project_structure,
+)
 from okto_pulse.core.domain.human_validation_cycle import (
     LifecycleTransitionConflictError,
     is_current_edition,
@@ -8346,6 +8351,9 @@ async def _validate_spec_linked_refs(
             final_trs_structured.append(tr)
         elif hasattr(tr, "model_dump") and getattr(tr, "id", None):
             final_trs_structured.append(tr.model_dump())
+    final_project_structure = validate_project_structure(
+        _final("project_structure", None)
+    )
 
     valid_fr_indices = {str(i) for i in range(len(final_frs))}
     valid_ac_indices = {str(i) for i in range(len(final_acs))}
@@ -8556,6 +8564,34 @@ async def _validate_spec_linked_refs(
                 f"Referenced by: {owners}."
             )
 
+    project_task_ids, project_test_ids, project_evidence_ids = (
+        project_structure_reference_ids(final_project_structure)
+    )
+    if project_task_ids or project_test_ids or project_evidence_ids:
+        from okto_pulse.core.ports.structured_spec import (  # noqa: PLC0415
+            get_structured_spec_store,
+        )
+
+        reference_validator = getattr(
+            get_structured_spec_store(),
+            "validate_project_structure_references",
+            None,
+        )
+        if not callable(reference_validator):
+            errors.append("project_structure_reference_validator_not_configured")
+        else:
+            try:
+                await reference_validator(
+                    db,
+                    board_id=str(current_spec.board_id),
+                    spec_id=str(current_spec.id),
+                    task_ids=sorted(project_task_ids),
+                    test_ids=sorted(project_test_ids),
+                    evidence_ids=sorted(project_evidence_ids),
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+
     if errors:
         joined = "; ".join(errors[:10])
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
@@ -8658,11 +8694,7 @@ def _spec_context_from_snapshot(
 
 def _spec_context_provenance_or_none(
     record: object,
-) -> (
-    SpecDeliveryContextProvenance
-    | DirectSpecDeliveryContextProvenance
-    | None
-):
+) -> SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance | None:
     """Read persisted Spec provenance without deriving or live-backfilling it."""
 
     raw = getattr(record, "delivery_context_provenance", None)
@@ -8702,9 +8734,7 @@ def _spec_context_provenance_or_none(
 
 
 def _spec_context_provenance_payload(
-    provenance: (
-        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance
-    ),
+    provenance: (SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance),
 ) -> dict[str, object]:
     if isinstance(provenance, DirectSpecDeliveryContextProvenance):
         return {
@@ -8763,9 +8793,7 @@ def _direct_spec_source_context_manifest(
         "subject_id": spec_id,
         "subject_version": subject_version,
         "delivery_context": delivery_context.value,
-        "delivery_context_provenance": _spec_context_provenance_payload(
-            provenance
-        ),
+        "delivery_context_provenance": _spec_context_provenance_payload(provenance),
         "current_receipts": [],
         "investigation_outcome": None,
         "evidence_applicable": None,
@@ -8814,8 +8842,7 @@ def _spec_source_context_manifest_matches(
 
     if isinstance(provenance, DirectSpecDeliveryContextProvenance):
         return bool(
-            manifest.get("subject_type")
-            == CodeTraceabilitySubjectType.SPEC.value
+            manifest.get("subject_type") == CodeTraceabilitySubjectType.SPEC.value
             and manifest.get("subject_id") == getattr(record, "id", None)
             and manifest.get("subject_version") == provenance.source_spec_version
             and manifest.get("delivery_context") == delivery_context.value
@@ -8828,11 +8855,9 @@ def _spec_source_context_manifest_matches(
 
     manifest_provenance = manifest.get("delivery_context_provenance")
     return bool(
-        manifest.get("subject_type")
-        == CodeTraceabilitySubjectType.REFINEMENT.value
+        manifest.get("subject_type") == CodeTraceabilitySubjectType.REFINEMENT.value
         and manifest.get("subject_id") == provenance.source_refinement_id
-        and manifest.get("subject_version")
-        == provenance.source_refinement_version
+        and manifest.get("subject_version") == provenance.source_refinement_version
         and manifest.get("delivery_context") == provenance.inherited_value.value
         and isinstance(manifest_provenance, Mapping)
         and manifest_provenance.get("value") == provenance.inherited_value.value
@@ -8840,8 +8865,7 @@ def _spec_source_context_manifest_matches(
         == provenance.source_refinement_id
         and manifest_provenance.get("source_refinement_version")
         == provenance.source_refinement_version
-        and getattr(record, "refinement_id", None)
-        == provenance.source_refinement_id
+        and getattr(record, "refinement_id", None) == provenance.source_refinement_id
         and isinstance(
             getattr(record, "source_refinement_snapshot_id", None),
             str,
@@ -9312,11 +9336,9 @@ class SpecService:
                 )
             source_snapshot_id = snapshot.id
             source_snapshot_version = snapshot.version
-            delivery_context, delivery_context_provenance = (
-                _spec_context_from_snapshot(
-                    snapshot,
-                    refinement_id=data.refinement_id,
-                )
+            delivery_context, delivery_context_provenance = _spec_context_from_snapshot(
+                snapshot,
+                refinement_id=data.refinement_id,
             )
             if delivery_context is None or delivery_context_provenance is None:
                 raise CodeDeliveryContextRequired(
@@ -9391,6 +9413,17 @@ class SpecService:
                 "acceptance_criteria": data.acceptance_criteria,
             }
         )
+        initial_project_structure = validate_project_structure(
+            [node.model_dump(mode="json") for node in data.project_structure]
+            if data.project_structure is not None
+            else None
+        )
+        initial_project_structure_revision = (
+            1 if initial_project_structure is not None else 0
+        )
+        initial_project_structure_digest = canonical_project_structure_digest(
+            initial_project_structure
+        )
         spec = _new_application_record(
             "spec",
             id=spec_id,
@@ -9424,6 +9457,9 @@ class SpecService:
             decisions=[d.model_dump() for d in data.decisions]
             if data.decisions
             else None,
+            project_structure=initial_project_structure,
+            project_structure_revision=initial_project_structure_revision,
+            project_structure_digest=initial_project_structure_digest,
             status=data.status,
             edition=1,
             assignee_id=data.assignee_id,
@@ -9456,6 +9492,12 @@ class SpecService:
                 self.db, spec, _submitted_mockups, entity_type="spec"
             )
             spec.screen_mockups = _submitted_mockups
+        if initial_project_structure is not None:
+            await _validate_spec_linked_refs(
+                self.db,
+                spec,
+                {"project_structure": initial_project_structure},
+            )
         await _application_add(
             self.db,
             spec,
@@ -9555,6 +9597,25 @@ class SpecService:
                         }
                     ]
                     if data.acceptance_criteria
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "project_structure",
+                            "old": None,
+                            "new": {
+                                "revision": initial_project_structure_revision,
+                                "digest": initial_project_structure_digest,
+                                "node_ids": [
+                                    str(node["id"])
+                                    for node in initial_project_structure[:50]
+                                ],
+                                "node_count": len(initial_project_structure),
+                            },
+                        }
+                    ]
+                    if initial_project_structure is not None
                     else []
                 ),
                 *(
@@ -10303,8 +10364,7 @@ class SpecService:
         )
         refinement_link_changed = next_refinement_id != spec.refinement_id
         parent_link_changed = (
-            next_ideation_id != spec.ideation_id
-            or refinement_link_changed
+            next_ideation_id != spec.ideation_id or refinement_link_changed
         )
         lineage_is_pinned = any(
             value is not None
@@ -10444,8 +10504,8 @@ class SpecService:
                                 )
                             }
                         )
-                    manifest, manifest_sha256 = (
-                        _snapshot_source_context_manifest(bootstrap_snapshot)
+                    manifest, manifest_sha256 = _snapshot_source_context_manifest(
+                        bootstrap_snapshot
                     )
                     next_provenance = SpecDeliveryContextProvenance(
                         value=requested_context,
@@ -10488,16 +10548,13 @@ class SpecService:
                         },
                     ):
                         raise LifecycleTransitionConflictError("spec", spec.id)
-                    update_data["source_refinement_snapshot_id"] = (
-                        bootstrap_snapshot.id
-                    )
+                    update_data["source_refinement_snapshot_id"] = bootstrap_snapshot.id
                     update_data["source_refinement_version"] = (
                         bootstrap_snapshot.version
                     )
                 else:
                     if (
-                        getattr(spec, "source_refinement_snapshot_id", None)
-                        is not None
+                        getattr(spec, "source_refinement_snapshot_id", None) is not None
                         or getattr(spec, "source_refinement_version", None) is not None
                     ):
                         raise SpecLineagePreflightError(
@@ -10518,13 +10575,11 @@ class SpecService:
                         source_spec_id=spec.id,
                         source_spec_version=int(spec.version) + 1,
                     )
-                    manifest, manifest_sha256 = (
-                        _direct_spec_source_context_manifest(
-                            spec_id=spec.id,
-                            delivery_context=requested_context,
-                            provenance=next_provenance,
-                            subject_version=int(spec.version) + 1,
-                        )
+                    manifest, manifest_sha256 = _direct_spec_source_context_manifest(
+                        spec_id=spec.id,
+                        delivery_context=requested_context,
+                        provenance=next_provenance,
+                        subject_version=int(spec.version) + 1,
                     )
                 update_data["delivery_context"] = requested_context
                 update_data["delivery_context_provenance"] = (
@@ -10555,13 +10610,11 @@ class SpecService:
                         source_spec_id=spec.id,
                         source_spec_version=int(spec.version) + 1,
                     )
-                    manifest, manifest_sha256 = (
-                        _direct_spec_source_context_manifest(
-                            spec_id=spec.id,
-                            delivery_context=requested_context,
-                            provenance=next_provenance,
-                            subject_version=int(spec.version) + 1,
-                        )
+                    manifest, manifest_sha256 = _direct_spec_source_context_manifest(
+                        spec_id=spec.id,
+                        delivery_context=requested_context,
+                        provenance=next_provenance,
+                        subject_version=int(spec.version) + 1,
                     )
                     update_data["source_context_manifest"] = manifest
                     update_data["source_context_sha256"] = manifest_sha256
@@ -16706,17 +16759,13 @@ class RefinementService:
             )
             if active_evidence and not callable(classification_reader):
                 raise CodeInvestigationCurrentnessUnknown(
-                    details={
-                        "reason": "snapshot_classification_reader_unavailable"
-                    }
+                    details={"reason": "snapshot_classification_reader_unavailable"}
                 )
             if active_evidence:
                 latest_classifications = list(
                     await classification_reader(
                         board_id=refinement.board_id,
-                        evidence_ids=tuple(
-                            sorted(item.id for item in active_evidence)
-                        ),
+                        evidence_ids=tuple(sorted(item.id for item in active_evidence)),
                     )
                 )
 
@@ -16745,13 +16794,16 @@ class RefinementService:
                         board_id=refinement.board_id,
                         receipt_id=receipt.id,
                     )
-                    if code_investigation_receipt_currentness(
-                        receipt,
-                        head=head,
-                        at=evaluated_at,
-                        revocation=revocation,
-                        expected_delivery_context=expected_context,
-                    ) is not CodeInvestigationReceiptCurrentness.CURRENT:
+                    if (
+                        code_investigation_receipt_currentness(
+                            receipt,
+                            head=head,
+                            at=evaluated_at,
+                            revocation=revocation,
+                            expected_delivery_context=expected_context,
+                        )
+                        is not CodeInvestigationReceiptCurrentness.CURRENT
+                    ):
                         continue
                     if head is None:  # pragma: no cover - currentness proves it.
                         raise CodeInvestigationCurrentnessUnknown(
@@ -16766,9 +16818,7 @@ class RefinementService:
                             payload_sha256=receipt.payload_sha256,
                             delivery_context=receipt.delivery_context,
                             contextual_outcome=receipt.contextual_outcome,
-                            context_contract_version=(
-                                receipt.context_contract_version
-                            ),
+                            context_contract_version=(receipt.context_contract_version),
                         )
                     )
                 receipt_count += len(receipt_page.items)
@@ -16801,9 +16851,7 @@ class RefinementService:
                 evidence,
                 classification,
             )
-            contextual_payload = source_context_evidence_payload_v2(
-                effective_context
-            )
+            contextual_payload = source_context_evidence_payload_v2(effective_context)
             code_evidence_manifest.append(
                 {
                     "evidence_id": evidence.id,
@@ -16819,9 +16867,7 @@ class RefinementService:
                     "classification_revision": (
                         effective_context.classification_revision
                     ),
-                    "classification_sha256": (
-                        effective_context.classification_sha256
-                    ),
+                    "classification_sha256": (effective_context.classification_sha256),
                 }
             )
         code_evidence_manifest.sort(key=lambda item: item["evidence_id"])

@@ -652,10 +652,19 @@ Returns:
 
 ## `okto_pulse_update_spec_entity`
 
-Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC, IR and OR.
+Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC,
+IR, OR and Project structure nodes.
 
 API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
 payload shape remains explicit while still delegating to StructuredSpecEntityService.
+
+For `entity_type="project_structure_node"`, read
+`okto-pulse://reference/project-structure` first. Every write requires
+`expected_spec_version`, `expected_structure_revision`, and `idempotency_key`.
+Use `batch` for atomic multi-node intent; its `payload_json` contains an
+`operations` list. Whole-Spec update is not a Project structure write path.
+Pure Task/Test relation batches preserve Spec version while advancing the tree
+revision; semantic or mixed batches remain Draft-only.
 
 ## Code Evidence links and dispositions
 
