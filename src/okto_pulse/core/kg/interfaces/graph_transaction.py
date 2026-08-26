@@ -269,6 +269,25 @@ class GraphTransactionScope(Protocol):
         attrs: dict[str, Any],
     ) -> None: ...
 
+    def replace_node_payload(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        source_session_id: str,
+    ) -> bool:
+        """Atomically replace a node payload while preserving its identity/edges.
+
+        ``attrs`` is the complete replacement payload, excluding ``id`` and
+        ``source_session_id``. Implementations MUST preserve the node id and the
+        exact multiset (direction, endpoint types/ids and properties) of every
+        incident edge, and MUST confirm both payload and edges before reporting
+        success. Return ``False`` only when the target node is absent. A backend
+        that cannot provide this atomic capability must fail closed.
+        """
+        ...
+
     def snapshot_node_properties(
         self,
         node_type: str,

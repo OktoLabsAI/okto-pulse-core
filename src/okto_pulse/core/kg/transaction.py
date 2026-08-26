@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable
 from okto_pulse.core.kg.interfaces.graph_transaction import (
     GraphNodePropertyBeforeImage,
     ProjectionActiveSetIntent,
@@ -55,6 +56,33 @@ class _StoreBackedGraphScope:
 
     def update_node(self, node_type, node_id, attrs):
         self._store.update_node(self._board_id, node_type, node_id, attrs)
+
+    def replace_node_payload(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        source_session_id: str,
+    ) -> bool:
+        replace = getattr(self._store, "replace_node_payload", None)
+        if not callable(replace):
+            # A backend without the atomic replacement is refused by NAME rather than by a bare
+            # RuntimeError: the caller's alternative is a read-modify-write that would publish a
+            # half-replaced payload, so it has to be able to tell this apart from any other
+            # failure and never fall back to one.
+            raise GraphCapabilityUnavailable(
+                "graph_node_payload_replacement_capability_unavailable"
+            )
+        return bool(
+            replace(
+                self._board_id,
+                node_type,
+                node_id,
+                dict(attrs),
+                source_session_id=source_session_id,
+            )
+        )
 
     def snapshot_node_properties(self, node_type, node_id, property_names):
         if any(

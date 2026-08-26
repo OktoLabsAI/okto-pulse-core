@@ -636,6 +636,110 @@ class _InMemoryGraphTransactionScope:
         if node is not None and node.get("_type") == node_type:
             node.update(attrs)
 
+    def replace_node_payload(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        source_session_id: str,
+    ) -> bool:
+        nodes = self.store._board_nodes(self.board_id)
+        current = nodes.get(node_id)
+        if current is None or current.get("_type") != node_type:
+            return False
+        reserved = {"id", "source_session_id", "_type"}.intersection(attrs)
+        if reserved:
+            # ``_type`` belongs with the other two: it is the node's structural identity, not a
+            # property, and the replacement dict spreads ``attrs`` after it -- so without this a
+            # payload could quietly relabel the node it claims only to rewrite.
+            raise ValueError(
+                "replacement attrs must exclude id, source_session_id and _type; got "
+                f"{sorted(reserved)}"
+            )
+        # Replacing the dict is the in-memory backend's atomic publication point, and the edge
+        # collection is deliberately untouched. That is why the edges survive; it is NOT why the
+        # caller may believe they did. The contract says every implementation confirms the
+        # payload AND the incident multiset before reporting success, so both are read before the
+        # change and read again after it. "We do not touch it" is an argument about this code as
+        # it stands today; the confirmation is a fact about what happened.
+        before_node = dict(current)
+        before_edges = [dict(edge) for edge in self.store._board_edges(self.board_id)]
+        before = self._incident_edge_fingerprint(node_id)
+        replacement = {
+            "id": node_id,
+            "_type": node_type,
+            **dict(attrs),
+            "source_session_id": source_session_id,
+        }
+        # Publication and confirmation are one protected region, not a step followed by two
+        # checks. A publisher that mutates and THEN raises never reaches a check, so a repair
+        # that hangs off the checks would never run for the one failure that damages the board
+        # without being detected by anything.
+        try:
+            self._publish_node_replacement(nodes, node_id, replacement)
+            if nodes.get(node_id) != replacement:
+                raise RuntimeError("graph_node_payload_replacement_unconfirmed")
+            if self._incident_edge_fingerprint(node_id) != before:
+                raise RuntimeError("graph_node_payload_replacement_edges_unconfirmed")
+        except BaseException:
+            try:
+                self._restore(node_id, before_node, before_edges)
+            except BaseException as restore_failure:
+                # "The board is damaged and could not be put back" is a different sentence from
+                # "the replacement did not happen", and it must not be mistaken for one: the
+                # caller of the second may retry, and the caller of the first must not. The
+                # original failure stays reachable as this one's context.
+                raise RuntimeError(
+                    "graph_node_payload_replacement_restore_failed"
+                ) from restore_failure
+            # Bare, so the caller receives the original exception with its own traceback and
+            # identity rather than a copy this frame decided to hand over.
+            raise
+        return True
+
+    def _restore(
+        self,
+        node_id: str,
+        before_node: dict[str, Any],
+        before_edges: list[dict[str, Any]],
+    ) -> None:
+        """Put the board back exactly as this call found it, before refusing.
+
+        A refusal that detects damage and leaves it behind is worse than one that never looked:
+        the caller is told the replacement did not happen while the node carries the new payload
+        and an edge is gone. Nothing above rolls this back -- the scope has no undo for a
+        half-applied replacement -- so the repair belongs here, between finding the divergence
+        and reporting it.
+        """
+        self.store._board_nodes(self.board_id)[node_id] = dict(before_node)
+        self.store._edges[self.board_id] = [dict(edge) for edge in before_edges]
+
+    def _publish_node_replacement(
+        self,
+        nodes: dict[str, dict[str, Any]],
+        node_id: str,
+        replacement: dict[str, Any],
+    ) -> None:
+        """Make the replacement the node's current payload: the one mutating step."""
+        nodes[node_id] = replacement
+
+    def _incident_edge_fingerprint(self, node_id: str) -> tuple[str, ...]:
+        """Return a canonical rendering of every edge touching one node.
+
+        A multiset, not a set: two parallel edges differing only in a property are two edges.
+        Order-independent, because a reordering that changed nothing is not a change. Each edge
+        is rendered whole -- type, both endpoint types, both endpoints and every property -- so
+        direction and attributes are part of what is compared rather than assumed.
+        """
+        return tuple(
+            sorted(
+                repr(sorted(edge.items(), key=lambda item: str(item[0])))
+                for edge in self.store._board_edges(self.board_id)
+                if edge.get("_from") == node_id or edge.get("_to") == node_id
+            )
+        )
+
     def snapshot_node_properties(
         self,
         node_type: str,
