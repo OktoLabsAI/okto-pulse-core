@@ -379,8 +379,20 @@ class GraphTransactionScope(Protocol):
         self,
         session_id: str,
         preserved_edges: tuple[SpecLineageEdgeSnapshot, ...],
+        *,
+        preserved_projection_edges: tuple[ProjectionEdgeBeforeImage, ...] = (),
     ) -> None:
-        """Delete session-owned edges without deleting restored Spec parents."""
+        """Delete session-owned edges without deleting what compensation restored.
+
+        ``preserved_projection_edges`` are relational-projection relationships that
+        active-set compensation has just put back from a before-image.  They were created by
+        this session, so the generic session sweep would otherwise delete them again and undo
+        the compensation that had just succeeded.
+
+        The argument is keyword-only with an empty default so it is purely additive: every
+        existing caller and implementation keeps working unchanged, and a caller with nothing
+        to preserve makes exactly the call it made before.
+        """
         ...
 
     def delete_nodes_by_session(

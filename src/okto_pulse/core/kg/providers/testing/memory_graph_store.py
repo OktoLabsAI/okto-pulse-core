@@ -7,6 +7,7 @@ No Kuzu dependency.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -1516,25 +1517,79 @@ class _InMemoryGraphTransactionScope:
     def delete_edges_by_session(self, session_id: str) -> None:
         self.store.delete_edges_by_session(self.board_id, session_id)
 
+    @staticmethod
+    def _projection_preservation_key(
+        edge: ProjectionEdgeBeforeImage,
+    ) -> tuple[Any, ...]:
+        """The complete relationship, not merely its identity.
+
+        Keying on type, endpoints and rule alone makes two different relationships look like
+        one, so an edge written after the restore -- same identity, different payload --
+        would be preserved by a before-image that does not describe it.
+        """
+
+        return (
+            edge.edge_type,
+            edge.from_type,
+            edge.to_type,
+            edge.from_id,
+            edge.to_id,
+            tuple(sorted((str(key), repr(value)) for key, value in edge.attrs.items())),
+        )
+
+    @staticmethod
+    def _stored_preservation_key(edge: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            str(edge.get("_type") or ""),
+            str(edge.get("_from_type") or ""),
+            str(edge.get("_to_type") or ""),
+            str(edge.get("_from") or ""),
+            str(edge.get("_to") or ""),
+            tuple(
+                sorted(
+                    (str(key), repr(value))
+                    for key, value in edge.items()
+                    if not key.startswith("_")
+                )
+            ),
+        )
+
     def delete_edges_by_session_preserving_spec_lineage(
         self,
         session_id: str,
         preserved_edges: tuple[SpecLineageEdgeSnapshot, ...],
+        *,
+        preserved_projection_edges: tuple[ProjectionEdgeBeforeImage, ...] = (),
     ) -> None:
         protected = {
             (edge.source_id, edge.target_id, edge.rule_id)
             for edge in preserved_edges
         }
-        self.store._edges[self.board_id] = [
-            edge
-            for edge in self.store._board_edges(self.board_id)
-            if edge.get("created_by_session_id") != session_id
-            or (
+        # A multiset budget, not a membership test: a before-image that vouches for one copy
+        # of a relationship must not shelter a second copy the session added afterwards.
+        projection_budget = Counter(
+            self._projection_preservation_key(edge)
+            for edge in preserved_projection_edges
+        )
+
+        def _keep(edge: dict[str, Any]) -> bool:
+            if edge.get("created_by_session_id") != session_id:
+                return True
+            lineage_key = (
                 str(edge.get("_from") or ""),
                 str(edge.get("_to") or ""),
                 str(edge.get("rule_id") or ""),
             )
-            in protected
+            if lineage_key in protected:
+                return True
+            projection_key = self._stored_preservation_key(edge)
+            if projection_budget[projection_key] > 0:
+                projection_budget[projection_key] -= 1
+                return True
+            return False
+
+        self.store._edges[self.board_id] = [
+            edge for edge in self.store._board_edges(self.board_id) if _keep(edge)
         ]
 
     def delete_nodes_by_session(

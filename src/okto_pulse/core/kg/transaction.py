@@ -13,7 +13,9 @@ filters. Edges use a per-rel-type DELETE loop because some graph backends lack a
 
 from __future__ import annotations
 
+import inspect
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,12 +25,69 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     ProjectionActiveSetIntent,
     ProjectionActiveSetReceipt,
     ProjectionActiveSetReconciliationError,
+    ProjectionEdgeBeforeImage,
     SpecLineageEdgeSnapshot,
     SpecLineageReconciliationError,
     SpecLineageReconciliationReceipt,
     is_spec_lineage_rule_id,
 )
 from okto_pulse.core.kg.schema_contract import resolve_relationship_endpoint_pair
+
+_SPEC_DEPENDENCY_RULE_PREFIX = "precedes/spec_dependency/"
+
+
+def _projection_edge_identity(
+    edge_type: str,
+    from_type: str,
+    to_type: str,
+    from_id: str,
+    to_id: str,
+    rule_id: str,
+) -> tuple[str, str, str, str, str, str]:
+    """Name one relationship for netting, carrying the rule only where the rule identifies.
+
+    A Spec dependency edge is named by its rule as well as its endpoints, because one
+    prerequisite may precede one owner under more than one rule.  Leaving the rule out would
+    let a dependency the session just wrote cancel a completely different one that merely
+    shares endpoints -- and the one cancelled would be the one the before-image vouches for.
+    Every other relationship is identified by its endpoints, and demanding a rule it may not
+    declare would split identities that are actually the same.
+    """
+
+    dependency = (
+        edge_type == "precedes"
+        and from_type == "Entity"
+        and to_type == "Entity"
+        and rule_id.startswith(_SPEC_DEPENDENCY_RULE_PREFIX)
+    )
+    return (
+        edge_type,
+        from_type,
+        to_type,
+        from_id,
+        to_id,
+        rule_id if dependency else "",
+    )
+
+
+def _accepts_preserved_projection_edges(delete_preserving: Any) -> bool:
+    """Whether a cleanup implementation can be told which projection edges to keep.
+
+    Only an explicitly named parameter counts.  ``**kwargs`` would swallow the argument and
+    report nothing, so an implementation written before this contract would pass the probe,
+    run an ordinary sweep, delete the edges compensation had just restored, and return
+    success -- the exact silent failure this probe exists to prevent.
+    """
+
+    try:
+        parameters = inspect.signature(delete_preserving).parameters
+    except (TypeError, ValueError):
+        return False
+    parameter = parameters.get("preserved_projection_edges")
+    return parameter is not None and parameter.kind in {
+        inspect.Parameter.KEYWORD_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    }
 
 logger = logging.getLogger("okto_pulse.kg.transaction")
 
@@ -210,8 +269,19 @@ class _StoreBackedGraphScope:
         self,
         session_id,
         preserved_edges,
+        *,
+        preserved_projection_edges=(),
     ):
-        del session_id, preserved_edges
+        del session_id
+        # Refusing is the same either way; naming the right one is not cosmetic, because a
+        # caller preserving only projection edges would otherwise be told its Spec lineage
+        # could not be kept, and go looking in the wrong place.
+        if preserved_projection_edges and not preserved_edges:
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_compensation_capability_unavailable",
+                "The compatibility graph-store scope cannot preserve restored "
+                "relational projection edges while compensating session edges.",
+            )
         raise SpecLineageReconciliationError(
             "spec_lineage_compensation_capability_unavailable",
             "The compatibility graph-store scope cannot preserve restored "
@@ -256,6 +326,12 @@ class GraphWriteRecord:
     # Edge-only: anchors for MATCH DELETE pattern.
     from_id: str | None = None
     to_id: str | None = None
+    # Edge-only: enough of the written relationship to recognise it inside a projection
+    # before-image.  Compensation has to tell "this edge was here when the session started"
+    # apart from "this session put it there", and endpoints alone cannot say which.
+    from_type: str | None = None
+    to_type: str | None = None
+    edge_rule_id: str | None = None
     lineage_receipt: SpecLineageReconciliationReceipt | None = None
     lineage_compensation_applied: bool = False
     lineage_progress_preserved: bool = False
@@ -585,6 +661,9 @@ class TransactionOrchestrator:
                             entity_id=f"{from_id}->{to_id}",
                             from_id=from_id,
                             to_id=to_id,
+                            from_type=from_type,
+                            to_type=to_type,
+                            edge_rule_id=rule_id,
                             lineage_receipt=partial_receipt,
                             lineage_compensation_applied=bool(
                                 exc.compensation_applied
@@ -618,6 +697,9 @@ class TransactionOrchestrator:
                         entity_id=f"{from_id}->{to_id}",
                         from_id=from_id,
                         to_id=to_id,
+                        from_type=from_type,
+                        to_type=to_type,
+                        edge_rule_id=rule_id,
                         lineage_receipt=receipt,
                     )
                 )
@@ -660,6 +742,9 @@ class TransactionOrchestrator:
             entity_id=f"{from_id}->{to_id}",
             from_id=from_id,
             to_id=to_id,
+            from_type=from_type,
+            to_type=to_type,
+            edge_rule_id=rule_id,
         )
         # As with nodes, retain a provisional record across apply-then-raise.
         self.records.append(record)
@@ -848,6 +933,97 @@ class TransactionOrchestrator:
             )
         return before_image
 
+    def _session_written_edge_identities(
+        self,
+    ) -> Counter[tuple[str, str, str, str, str, str]]:
+        """How many edges of each identity THIS orchestrator wrote.
+
+        A multiset rather than a set: writing the same relationship twice is two effects to
+        undo, and collapsing them would leave one of them preserved.
+        """
+
+        return Counter(
+            _projection_edge_identity(
+                record.entity_type,
+                str(record.from_type or ""),
+                str(record.to_type or ""),
+                str(record.from_id or ""),
+                str(record.to_id or ""),
+                str(record.edge_rule_id or ""),
+            )
+            for record in self.records
+            if record.kind == "edge" and record.to_id is not None
+        )
+
+    def _net_preserved_projection_edges(
+        self,
+        restored: list[ProjectionEdgeBeforeImage],
+    ) -> list[ProjectionEdgeBeforeImage]:
+        """Everything the before-images vouch for, minus what this session wrote itself."""
+
+        written = self._session_written_edge_identities()
+        if not written:
+            return list(restored)
+        preserved: list[ProjectionEdgeBeforeImage] = []
+        for edge in restored:
+            identity = _projection_edge_identity(
+                edge.edge_type,
+                edge.from_type,
+                edge.to_type,
+                edge.from_id,
+                edge.to_id,
+                str(edge.attrs.get("rule_id") or ""),
+            )
+            if written[identity] > 0:
+                # One written edge cancels one restored copy, so a relationship that
+                # pre-dated the session still survives alongside one the session added.
+                written[identity] -= 1
+                continue
+            preserved.append(edge)
+        return preserved
+
+    def _resolve_preserving_cleanup(
+        self,
+        preserved_edges: list[SpecLineageEdgeSnapshot],
+        preserved_projection_edges: list[ProjectionEdgeBeforeImage],
+    ) -> Any:
+        """Resolve a cleanup that can keep what compensation restored, or refuse typed.
+
+        Both questions are asked BEFORE the call rather than discovered by making it: the
+        call IS the deletion, so a missing method or a signature that predates this contract
+        would otherwise be indistinguishable from a failure raised after the restored edges
+        had already been swept away.
+        """
+
+        delete_preserving = getattr(
+            self.graph_scope,
+            "delete_edges_by_session_preserving_spec_lineage",
+            None,
+        )
+        if not callable(delete_preserving):
+            # Naming the right one is not cosmetic: a caller preserving only projection
+            # edges would otherwise be told its Spec lineage could not be kept.
+            if preserved_projection_edges and not preserved_edges:
+                raise ProjectionActiveSetReconciliationError(
+                    "projection_active_set_compensation_capability_unavailable",
+                    "The configured GraphTransaction scope cannot preserve restored "
+                    "relational projection edges during session cleanup.",
+                )
+            raise SpecLineageReconciliationError(
+                "spec_lineage_compensation_capability_unavailable",
+                "The configured GraphTransaction scope cannot preserve "
+                "restored Spec lineage during session cleanup.",
+            )
+        if preserved_projection_edges and not _accepts_preserved_projection_edges(
+            delete_preserving
+        ):
+            raise ProjectionActiveSetReconciliationError(
+                "projection_active_set_compensation_capability_unavailable",
+                "The configured GraphTransaction scope cannot be told which restored "
+                "relational projection edges to keep during session cleanup.",
+            )
+        return delete_preserving
+
     async def compensate(self) -> None:
         """Reverse every graph write recorded so far.
 
@@ -869,6 +1045,13 @@ class TransactionOrchestrator:
             for record in reversed(self.records)
             if record.projection_receipt is not None
         ]
+        # Every before-image contributes, because reverse compensation restores all of them
+        # and any of those edges may be the state the session started from.  What must NOT be
+        # preserved is what this session itself wrote: an intermediate edge the session
+        # created has no older before-image vouching for it, and keeping it would let the
+        # session's own effect survive its compensation.  Union first, subtract second --
+        # picking one receipt cannot express either half.
+        restored_projection_edges: list[ProjectionEdgeBeforeImage] = []
         for receipt in projection_receipts:
             try:
                 self.graph_scope.compensate_projection_active_set(receipt)
@@ -891,6 +1074,15 @@ class TransactionOrchestrator:
                         if record.projection_receipt is receipt
                     ],
                 ) from exc
+            # Collected only once the restore for this receipt has actually succeeded: an
+            # edge that was never put back is not one the sweep has to be told to keep.
+            restored_projection_edges.extend(receipt.edge_before_images)
+            for node_before_image in receipt.before_images:
+                restored_projection_edges.extend(node_before_image.incident_edges)
+
+        preserved_projection_edges = self._net_preserved_projection_edges(
+            restored_projection_edges
+        )
 
         lineage_records = [
             record
@@ -967,19 +1159,22 @@ class TransactionOrchestrator:
                 ) from exc
 
         try:
-            if preserved_edges:
-                delete_preserving = getattr(
-                    self.graph_scope,
-                    "delete_edges_by_session_preserving_spec_lineage",
-                    None,
+            if preserved_edges or preserved_projection_edges:
+                delete_preserving = self._resolve_preserving_cleanup(
+                    preserved_edges,
+                    preserved_projection_edges,
                 )
-                if not callable(delete_preserving):
-                    raise SpecLineageReconciliationError(
-                        "spec_lineage_compensation_capability_unavailable",
-                        "The configured GraphTransaction scope cannot preserve "
-                        "restored Spec lineage during session cleanup.",
+                if preserved_projection_edges:
+                    delete_preserving(
+                        self.session_id,
+                        tuple(preserved_edges),
+                        preserved_projection_edges=tuple(preserved_projection_edges),
                     )
-                delete_preserving(self.session_id, tuple(preserved_edges))
+                else:
+                    # Nothing to preserve beyond lineage: make exactly the call this code
+                    # made before the argument existed, so an older implementation still
+                    # sees the signature it was written against.
+                    delete_preserving(self.session_id, tuple(preserved_edges))
             else:
                 self.graph_scope.delete_edges_by_session(self.session_id)
         except Exception as exc:
