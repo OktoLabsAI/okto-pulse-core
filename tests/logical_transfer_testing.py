@@ -1,10 +1,17 @@
 """Shared builders for the logical transfer suites.
 
-One sample graph, defined once, so the codec, the fingerprint and the service
-suites all reason about the same shape.  It deliberately contains every
-distinction the format promises to preserve: an empty string, an explicit null,
-an absent property, a timestamp, a vector, a self-loop and two byte-identical
-parallel relations.
+One small sample graph, defined once, so the codec, the fingerprint, the
+validation and the service suites all reason about the same shape.  It contains
+every distinction the format promises to preserve: an empty string, an explicit
+null, an absent property, a timestamp, a vector, a self-loop and two
+byte-identical parallel relations.
+
+Alongside it live reduced fixtures for the two real scopes.  They are literal
+rather than imported so the suite pins what the format must represent even if a
+schema module moves: eleven Board node types whose property is called
+``embedding`` in all eleven cases and belongs to a different space in each, and
+the four Global Discovery types with the same collision between ``Entity`` and
+``DecisionDigest``.
 """
 
 from __future__ import annotations
@@ -31,6 +38,127 @@ from okto_pulse.core.kg.logical_transfer import (
 
 SAMPLE_MICROS = 1717171717000000
 
+# The real embedding geometry, shared by every Board and Global space.
+EMBEDDING_DIMENSION = 384
+EMBEDDING_METRIC = "cosine"
+EMBEDDING_NORMALIZED = False
+EMBEDDING_STORAGE_DTYPE = "float64"
+
+# Board: eleven node types, each with a property literally named "embedding"
+# bound to its own space. This is the mapping a name-derived space would lose.
+BOARD_SPACE_BY_TYPE: dict[str, str] = {
+    "Decision": "decision_embedding_idx",
+    "Criterion": "criterion_embedding_idx",
+    "Constraint": "constraint_embedding_idx",
+    "Assumption": "assumption_embedding_idx",
+    "Requirement": "requirement_embedding_idx",
+    "Entity": "entity_embedding_idx",
+    "APIContract": "apicontract_embedding_idx",
+    "TestScenario": "testscenario_embedding_idx",
+    "Bug": "bug_embedding_idx",
+    "Learning": "learning_embedding_idx",
+    "Alternative": "alternative_embedding_idx",
+}
+
+# Global Discovery: four types, four spaces. Entity and DecisionDigest both
+# call the property "embedding" and land in different spaces.
+GLOBAL_SPACE_BY_PROPERTY: dict[str, tuple[str, str]] = {
+    "Board": ("summary_embedding", "board_summary_idx"),
+    "Topic": ("centroid_embedding", "topic_centroid_idx"),
+    "Entity": ("embedding", "entity_embedding_idx"),
+    "DecisionDigest": ("embedding", "digest_embedding_idx"),
+}
+
+GLOBAL_LAYOUTS: tuple[tuple[str, str, str], ...] = (
+    ("HAS_TOPIC", "Board", "Topic"),
+    ("MENTIONS_ENTITY", "Board", "Entity"),
+    ("CONTAINS_DECISION", "Board", "DecisionDigest"),
+    ("TOPIC_RELATES_TO", "Topic", "Topic"),
+    ("ENTITY_RELATES_TO", "Entity", "Entity"),
+    ("DECISION_MENTIONS_ENTITY", "DecisionDigest", "Entity"),
+    ("DECISION_DERIVES_FROM", "DecisionDigest", "DecisionDigest"),
+)
+
+GLOBAL_WEIGHTED = {("TOPIC_RELATES_TO", "Topic", "Topic"),
+                   ("ENTITY_RELATES_TO", "Entity", "Entity")}
+
+
+def embedding_space(name: str, dimension: int = EMBEDDING_DIMENSION):
+    return LogicalVectorSpace(
+        name=name,
+        storage_dtype=EMBEDDING_STORAGE_DTYPE,
+        dimension=dimension,
+        metric=EMBEDDING_METRIC,
+        normalized=EMBEDDING_NORMALIZED,
+    )
+
+
+def board_schema() -> LogicalSchema:
+    """Eleven node types, eleven spaces, and one ambiguous layout name."""
+
+    node_types = tuple(
+        LogicalNodeType(
+            name=node_type,
+            key="id",
+            properties=(
+                LogicalPropertyDef("id", "string", nullable=False),
+                LogicalPropertyDef("embedding", "vector", vector_space=space),
+            ),
+        )
+        for node_type, space in BOARD_SPACE_BY_TYPE.items()
+    )
+    # "supersedes" exists twice, between different endpoint types. Keying
+    # layouts by name alone would keep only one of them.
+    layouts = (
+        LogicalRelationLayout("supersedes", "Decision", "Decision"),
+        LogicalRelationLayout("supersedes", "Alternative", "Alternative"),
+    )
+    spaces = tuple(embedding_space(name) for name in BOARD_SPACE_BY_TYPE.values())
+    return LogicalSchema(
+        scope="board",
+        node_types=node_types,
+        relation_layouts=layouts,
+        vector_spaces=spaces,
+    )
+
+
+def global_schema() -> LogicalSchema:
+    """Four node types, four spaces, seven directed layouts."""
+
+    node_types = tuple(
+        LogicalNodeType(
+            name=node_type,
+            key="id",
+            properties=(
+                LogicalPropertyDef("id", "string", nullable=False),
+                LogicalPropertyDef(prop, "vector", vector_space=space),
+            ),
+        )
+        for node_type, (prop, space) in GLOBAL_SPACE_BY_PROPERTY.items()
+    )
+    layouts = tuple(
+        LogicalRelationLayout(
+            name=name,
+            source_type=source,
+            target_type=target,
+            properties=(
+                (LogicalPropertyDef("weight", "float64"),)
+                if (name, source, target) in GLOBAL_WEIGHTED
+                else ()
+            ),
+        )
+        for name, source, target in GLOBAL_LAYOUTS
+    )
+    spaces = tuple(
+        embedding_space(space) for _, space in GLOBAL_SPACE_BY_PROPERTY.values()
+    )
+    return LogicalSchema(
+        scope="global_discovery",
+        node_types=node_types,
+        relation_layouts=layouts,
+        vector_spaces=spaces,
+    )
+
 
 def sample_schema() -> LogicalSchema:
     return LogicalSchema(
@@ -46,7 +174,9 @@ def sample_schema() -> LogicalSchema:
                     LogicalPropertyDef("score", "float64"),
                     LogicalPropertyDef("done", "bool"),
                     LogicalPropertyDef("created_at", "timestamp_us"),
-                    LogicalPropertyDef("card_embedding", "vector"),
+                    LogicalPropertyDef(
+                        "embedding", "vector", vector_space="card_embedding_idx"
+                    ),
                 ),
             ),
         ),
@@ -58,7 +188,7 @@ def sample_schema() -> LogicalSchema:
                 properties=(LogicalPropertyDef("note", "string"),),
             ),
         ),
-        vector_spaces=(LogicalVectorSpace("card_embedding", "float32", 3),),
+        vector_spaces=(embedding_space("card_embedding_idx", dimension=3),),
     )
 
 
@@ -75,8 +205,10 @@ def sample_nodes() -> tuple[LogicalNode, ...]:
                 "score": 0.1,
                 "done": True,
                 "created_at": LogicalTimestamp(SAMPLE_MICROS),
-                "card_embedding": LogicalVector(
-                    "card_embedding", "float32", (1.0, 2.5, -0.25)
+                "embedding": LogicalVector(
+                    "card_embedding_idx",
+                    EMBEDDING_STORAGE_DTYPE,
+                    (1.0, 2.5, -0.25),
                 ),
             },
         ),
@@ -91,11 +223,11 @@ def sample_nodes() -> tuple[LogicalNode, ...]:
 
 def sample_relations() -> tuple[LogicalRelation, ...]:
     return (
-        LogicalRelation("blocks", "c1", "c2", {"note": "x"}),
+        LogicalRelation("blocks", "Card", "Card", "c1", "c2", {"note": "x"}),
         # byte-identical parallel occurrence: both must survive
-        LogicalRelation("blocks", "c1", "c2", {"note": "x"}),
+        LogicalRelation("blocks", "Card", "Card", "c1", "c2", {"note": "x"}),
         # self-loop
-        LogicalRelation("blocks", "c1", "c1", {}),
+        LogicalRelation("blocks", "Card", "Card", "c1", "c1", {}),
     )
 
 
@@ -213,17 +345,18 @@ class RecordingSink:
         self._step("certify")
         if self.certificate is not None:
             return self.certificate
+        schema = self.schema
         return CandidateCertificate(
             cold_reopen_completed=True,
             verify_succeeded=True,
-            schema=self.schema,
+            schema=schema,
             counts=count_graph(self.nodes, self.relations),
             vector_spaces=tuple(
-                space.name for space in (self.schema.vector_spaces if self.schema else ())
+                space.name for space in (schema.vector_spaces if schema else ())
             ),
             fingerprint=(
-                fingerprint_graph(self.schema, self.nodes, self.relations)
-                if self.schema is not None
+                fingerprint_graph(schema, self.nodes, self.relations)
+                if schema is not None
                 else ""
             ),
         )
@@ -236,10 +369,20 @@ class RecordingSink:
 
 
 __all__ = [
+    "BOARD_SPACE_BY_TYPE",
+    "EMBEDDING_DIMENSION",
+    "EMBEDDING_METRIC",
+    "EMBEDDING_NORMALIZED",
+    "EMBEDDING_STORAGE_DTYPE",
+    "GLOBAL_LAYOUTS",
+    "GLOBAL_SPACE_BY_PROPERTY",
     "SAMPLE_MICROS",
     "RecordingSink",
     "RecordingSnapshot",
     "RecordingSource",
+    "board_schema",
+    "embedding_space",
+    "global_schema",
     "sample_counts",
     "sample_fingerprint",
     "sample_nodes",

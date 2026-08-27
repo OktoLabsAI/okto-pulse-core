@@ -77,6 +77,56 @@ def canonical_bytes(payload: Any) -> bytes:
     return canonical_json(payload).encode("utf-8")
 
 
+class _DuplicateKey(ValueError):
+    """Raised through the JSON parser when one object repeats a key."""
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise _DuplicateKey(key)
+        seen[key] = value
+    return seen
+
+
+def loads_canonical(line: str) -> Mapping[str, Any]:
+    """Parse one record line, refusing anything that is not exactly canonical.
+
+    Two rules, and each closes a hole a plain ``json.loads`` leaves open.
+
+    Duplicate keys are refused because the parser silently keeps the last one,
+    so a record could carry two values for the same property and decode to
+    whichever the writer happened to put second.
+
+    The line must then re-serialize to itself byte for byte. Reordered keys,
+    added whitespace, a non-canonical float spelling and a differently escaped
+    string all parse to the same object, so without this a reader would accept
+    bytes no encoder of this format could have produced -- and the stream
+    checksum, which is a function of those bytes, would stop meaning anything.
+    """
+
+    try:
+        payload = json.loads(line, object_pairs_hook=_reject_duplicate_keys)
+    except _DuplicateKey as duplicate:
+        raise ArtifactMalformedError(
+            "record carries a duplicate key", detail=str(duplicate)
+        ) from duplicate
+    except ValueError as failure:
+        raise ArtifactMalformedError(
+            "record is not valid JSON", detail=line[:60]
+        ) from failure
+    if not isinstance(payload, Mapping):
+        raise ArtifactMalformedError(
+            "record must be a JSON object", detail=type(payload).__name__
+        )
+    if canonical_json(payload) != line:
+        raise ArtifactMalformedError(
+            "record is not in canonical form", detail=line[:60]
+        )
+    return payload
+
+
 def encode_value(value: LogicalValue) -> list[Any]:
     """Encode one logical value as its tagged, exactly-recoverable form."""
 
@@ -211,9 +261,24 @@ def _decode_float(body: Any) -> float:
         raise ArtifactMalformedError(
             "float64 is not an exact hexadecimal float", detail=body[:40]
         ) from failure
+    except OverflowError as failure:
+        # An extreme exponent raises OverflowError, not ValueError. Letting it
+        # escape would put an untyped builtin on a boundary that promises only
+        # typed refusals.
+        raise ArtifactMalformedError(
+            "float64 exponent is outside the representable range",
+            detail=body[:40],
+        ) from failure
     if math.isnan(value) or math.isinf(value):
         raise ArtifactMalformedError(
             "float64 decoded to NaN or infinity", detail=body[:40]
+        )
+    if value.hex() != body:
+        # Several spellings parse to the same float. Accepting them would let
+        # two artifacts with identical content have different bytes, so the
+        # checksum would stop being a function of the graph.
+        raise ArtifactMalformedError(
+            "float64 is not in canonical hexadecimal form", detail=body[:40]
         )
     return value
 
@@ -305,16 +370,22 @@ def encode_relation(relation: LogicalRelation) -> dict[str, Any]:
         "layout": relation.layout_name,
         "properties": encode_properties(relation.properties),
         "source": relation.source_key,
+        "source_type": relation.source_type,
         "target": relation.target_key,
+        "target_type": relation.target_type,
     }
 
 
 def decode_relation(payload: Mapping[str, Any]) -> LogicalRelation:
     _require_exact_keys(
-        payload, ("layout", "properties", "source", "target"), "relation"
+        payload,
+        ("layout", "properties", "source", "source_type", "target", "target_type"),
+        "relation",
     )
     return LogicalRelation(
         layout_name=_require_str(payload["layout"], "relation layout"),
+        source_type=_require_str(payload["source_type"], "relation source_type"),
+        target_type=_require_str(payload["target_type"], "relation target_type"),
         source_key=_require_str(payload["source"], "relation source"),
         target_key=_require_str(payload["target"], "relation target"),
         properties=decode_properties(payload["properties"]),
@@ -344,8 +415,10 @@ def encode_schema(schema: LogicalSchema) -> dict[str, Any]:
         "vector_spaces": [
             {
                 "dimension": space.dimension,
-                "dtype": space.dtype,
+                "metric": space.metric,
                 "name": space.name,
+                "normalized": space.normalized,
+                "storage_dtype": space.storage_dtype,
             }
             for space in schema.vector_spaces
         ],
@@ -353,7 +426,12 @@ def encode_schema(schema: LogicalSchema) -> dict[str, Any]:
 
 
 def _encode_property(prop: LogicalPropertyDef) -> dict[str, Any]:
-    return {"name": prop.name, "nullable": prop.nullable, "type": prop.type}
+    return {
+        "name": prop.name,
+        "nullable": prop.nullable,
+        "type": prop.type,
+        "vector_space": prop.vector_space,
+    }
 
 
 def decode_schema(payload: Any) -> LogicalSchema:
@@ -439,23 +517,47 @@ def _decode_relation_layout(entry: Any) -> LogicalRelationLayout:
 
 def _decode_vector_space(entry: Any) -> LogicalVectorSpace:
     payload = _require_mapping(entry, "vector space")
-    _require_exact_keys(payload, ("dimension", "dtype", "name"), "vector space")
+    _require_exact_keys(
+        payload,
+        ("dimension", "metric", "name", "normalized", "storage_dtype"),
+        "vector space",
+    )
     dimension = payload["dimension"]
     if type(dimension) is not int:
         raise ArtifactMalformedError(
             "vector space dimension must be an int",
             detail=type(dimension).__name__,
         )
+    normalized = payload["normalized"]
+    if normalized is not True and normalized is not False:
+        raise ArtifactMalformedError(
+            "vector space normalized must be a bool",
+            detail=repr(normalized)[:40],
+        )
     return LogicalVectorSpace(
         name=_require_str(payload["name"], "vector space name"),
-        dtype=_require_str(payload["dtype"], "vector space dtype"),
+        storage_dtype=_require_str(
+            payload["storage_dtype"], "vector space storage_dtype"
+        ),
         dimension=dimension,
+        metric=_require_str(payload["metric"], "vector space metric"),
+        normalized=normalized,
     )
 
 
 def _decode_property(entry: Any) -> LogicalPropertyDef:
     payload = _require_mapping(entry, "property")
-    _require_exact_keys(payload, ("name", "nullable", "type"), "property")
+    _require_exact_keys(
+        payload, ("name", "nullable", "type", "vector_space"), "property"
+    )
+    vector_space = payload["vector_space"]
+    if vector_space is not None and (
+        type(vector_space) is not str or not vector_space
+    ):
+        raise ArtifactMalformedError(
+            "property vector_space must be a non-empty string or null",
+            detail=repr(vector_space)[:40],
+        )
     nullable = payload["nullable"]
     if nullable is not True and nullable is not False:
         raise ArtifactMalformedError(
@@ -470,6 +572,7 @@ def _decode_property(entry: Any) -> LogicalPropertyDef:
         name=_require_str(payload["name"], "property name"),
         type=property_type,  # type: ignore[arg-type]
         nullable=nullable,
+        vector_space=vector_space,
     )
 
 
@@ -494,4 +597,5 @@ __all__ = [
     "encode_relation",
     "encode_schema",
     "encode_value",
+    "loads_canonical",
 ]

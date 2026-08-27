@@ -15,10 +15,13 @@ from logical_transfer_testing import (
     sample_schema,
 )
 from okto_pulse.core.kg.logical_transfer import (
+    TRANSFER_PHASES,
     CandidateCertificate,
     CertificationRefusedError,
     LogicalCounts,
+    LogicalNode,
     LogicalSchemaError,
+    PhasedTransferError,
     TransferFailedError,
     transfer_logical_graph,
 )
@@ -219,7 +222,7 @@ class TestCertification:
             "verify_succeeded": True,
             "schema": sample_schema(),
             "counts": sample_counts(),
-            "vector_spaces": ("card_embedding",),
+            "vector_spaces": ("card_embedding_idx",),
             "fingerprint": sample_fingerprint(),
         }
         base.update(overrides)
@@ -306,4 +309,86 @@ class TestCertification:
         sink = SilentSink()
         with pytest.raises(CertificationRefusedError):
             transfer_logical_graph(RecordingSource(snapshot), sink, batch_size=2)
+        assert "finalize" not in sink.calls
+
+
+class TestEveryFailureIsClassifiable:
+    """The matrix is finite, so every ending carries one of its four phases."""
+
+    def test_a_refused_certificate_is_a_reopen_failure(self) -> None:
+        source, sink, _ = build(
+            certificate=CandidateCertificate(
+                cold_reopen_completed=True,
+                verify_succeeded=True,
+                schema=sample_schema(),
+                counts=sample_counts(),
+                vector_spaces=("card_embedding_idx",),
+                fingerprint="0" * 64,
+            )
+        )
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+        assert isinstance(caught.value, PhasedTransferError)
+
+    @pytest.mark.parametrize(
+        "step", ["begin_candidate", "write_nodes", "checkpoint", "certify"]
+    )
+    def test_a_step_failure_carries_a_phase_from_the_matrix(self, step: str) -> None:
+        source, sink, _ = build(fail_on=step)
+        with pytest.raises(PhasedTransferError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase in TRANSFER_PHASES
+
+    def test_a_record_that_violates_the_schema_is_a_write_failure(self) -> None:
+        # Accounting for a record is source-side work, so a schema violation
+        # discovered there belongs to write rather than leaking unclassified.
+        bad = LogicalNode("Ghost", "g1", {"id": "g1"})
+        snapshot = RecordingSnapshot(
+            sample_schema(), (*sample_nodes(), bad), sample_relations()
+        )
+        source, sink = RecordingSource(snapshot), RecordingSink()
+        with pytest.raises(PhasedTransferError) as caught:
+            transfer_logical_graph(source, sink, batch_size=5)
+        assert caught.value.phase == "write"
+        assert "abort" in sink.calls
+
+    def test_a_batch_with_no_length_is_a_write_failure(self) -> None:
+        class LengthlessSnapshot(RecordingSnapshot):
+            def iter_nodes(self, *, batch_size: int):
+                yield object()  # no __len__
+
+        snapshot = LengthlessSnapshot(
+            sample_schema(), sample_nodes(), sample_relations()
+        )
+        source, sink = RecordingSource(snapshot), RecordingSink()
+        with pytest.raises(PhasedTransferError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "write"
+
+
+class TestCertificateClaimsMustBeRealBooleans:
+    """A truthy placeholder is not a claim."""
+
+    def certificate(self, **overrides) -> CandidateCertificate:
+        base = {
+            "cold_reopen_completed": True,
+            "verify_succeeded": True,
+            "schema": sample_schema(),
+            "counts": sample_counts(),
+            "vector_spaces": ("card_embedding_idx",),
+            "fingerprint": sample_fingerprint(),
+        }
+        base.update(overrides)
+        return CandidateCertificate(**base)
+
+    @pytest.mark.parametrize("field", ["cold_reopen_completed", "verify_succeeded"])
+    @pytest.mark.parametrize("truthy", [1, "yes", [1], 2.0])
+    def test_a_truthy_non_bool_does_not_certify(
+        self, field: str, truthy: object
+    ) -> None:
+        source, sink, _ = build(certificate=self.certificate(**{field: truthy}))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert field in str(caught.value)
         assert "finalize" not in sink.calls

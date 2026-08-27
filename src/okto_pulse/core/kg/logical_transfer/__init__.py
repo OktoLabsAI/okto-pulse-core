@@ -16,8 +16,11 @@ from __future__ import annotations
 from .canonical import (
     canonical_bytes,
     canonical_json,
+    decode_schema,
     decode_value,
+    encode_schema,
     encode_value,
+    loads_canonical,
 )
 from .codec import (
     FEATURE_VECTORS,
@@ -45,6 +48,7 @@ from .errors import (
     LogicalSchemaError,
     LogicalTransferError,
     LogicalValueError,
+    PhasedTransferError,
     TransferFailedError,
     TransferPhase,
     UnsupportedFeatureError,
@@ -58,6 +62,7 @@ from .fingerprint import (
 from .model import (
     INT64_MAX,
     INT64_MIN,
+    LayoutIdentity,
     LOGICAL_NULL,
     LOGICAL_PROPERTY_TYPES,
     LOGICAL_SCOPES,
@@ -77,6 +82,7 @@ from .model import (
     LogicalVectorSpace,
     count_graph,
 )
+from .validation import LogicalSchemaIndex
 from .ports import (
     CandidateCertificate,
     LogicalCandidateSink,
@@ -110,6 +116,7 @@ __all__ = [
     "LogicalArtifactHeader",
     "LogicalArtifactManifest",
     "LogicalCandidateSink",
+    "LayoutIdentity",
     "LogicalCounts",
     "LogicalFingerprintAccumulator",
     "LogicalFormatError",
@@ -122,6 +129,7 @@ __all__ = [
     "LogicalRelationLayout",
     "LogicalSchema",
     "LogicalSchemaError",
+    "LogicalSchemaIndex",
     "LogicalScope",
     "LogicalSnapshot",
     "LogicalSnapshotSource",
@@ -129,6 +137,7 @@ __all__ = [
     "LogicalTransferError",
     "LogicalValue",
     "LogicalValueError",
+    "PhasedTransferError",
     "LogicalVector",
     "LogicalVectorSpace",
     "TransferFailedError",
@@ -141,10 +150,13 @@ __all__ = [
     "count_graph",
     "decode_artifact",
     "decode_records",
+    "decode_schema",
     "decode_value",
     "encode_artifact",
+    "encode_schema",
     "encode_value",
     "fingerprint_graph",
+    "loads_canonical",
     "required_features_for",
     "schema_digest",
     "transfer_logical_graph",

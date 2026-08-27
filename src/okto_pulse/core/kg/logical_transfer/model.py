@@ -140,11 +140,19 @@ LogicalValue = Union[
 
 @dataclass(frozen=True, slots=True)
 class LogicalPropertyDef:
-    """One declared property of a node type or a relation layout."""
+    """One declared property of a node type or a relation layout.
+
+    A vector property names its space through ``vector_space`` rather than by
+    being called after it.  The real schema needs that: every Board node type
+    carries a property named ``embedding``, and each one belongs to a different
+    space.  Deriving the space from the property name would collapse eleven
+    spaces into one.
+    """
 
     name: str
     type: LogicalPropertyType
     nullable: bool = True
+    vector_space: str | None = None
 
     def __post_init__(self) -> None:
         _require_name(self.name, "property name")
@@ -153,23 +161,46 @@ class LogicalPropertyDef:
                 "unknown logical property type",
                 detail=f"{self.name}: {self.type!r}",
             )
+        if self.type == "vector":
+            _require_name(self.vector_space, f"vector_space of {self.name!r}")
+        elif self.vector_space is not None:
+            raise LogicalSchemaError(
+                "only a vector property may name a vector space",
+                detail=f"{self.name}: {self.type}",
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class LogicalVectorSpace:
-    """A logical embedding space: a portable name, a dtype and a width."""
+    """A logical embedding space, including what makes its distances mean something.
+
+    ``metric`` and ``normalized`` travel because they decide what a neighbour
+    IS.  A round trip that recreated a cosine space as L2, or flipped
+    normalization, would still match on names, counts and dimensions -- and
+    would answer every future search differently.  Carrying them means the
+    schema digest and the fingerprint refuse that transfer instead of
+    certifying it.
+    """
 
     name: str
-    dtype: str
+    storage_dtype: str
     dimension: int
+    metric: str
+    normalized: bool
 
     def __post_init__(self) -> None:
         _require_name(self.name, "vector space name")
-        _require_name(self.dtype, "vector space dtype")
+        _require_name(self.storage_dtype, "vector space storage_dtype")
+        _require_name(self.metric, "vector space metric")
         if type(self.dimension) is not int or self.dimension <= 0:
             raise LogicalSchemaError(
                 "vector space dimension must be a positive int",
                 detail=f"{self.name}: {self.dimension!r}",
+            )
+        if self.normalized is not True and self.normalized is not False:
+            raise LogicalSchemaError(
+                "vector space normalized must be a bool",
+                detail=f"{self.name}: {self.normalized!r}",
             )
 
 
@@ -204,14 +235,31 @@ class LogicalNodeType:
         )
 
 
+LayoutIdentity = tuple[str, str, str]
+
+
 @dataclass(frozen=True, slots=True)
 class LogicalRelationLayout:
-    """A directed relation layout between two node types."""
+    """A directed relation layout, identified by its name AND its endpoint types.
+
+    The name alone is not an identity.  The real Board schema has 69 concrete
+    endpoint triples sharing only 16 logical names -- ``supersedes`` exists
+    between Decision and Decision and again between Alternative and
+    Alternative.  Keying layouts by name would drop 53 of them, and merely
+    allowing duplicate names would leave an occurrence ambiguous whenever the
+    same key value exists under two different node types.
+
+    So identity is the triple, and every occurrence carries it.
+    """
 
     name: str
     source_type: str
     target_type: str
     properties: tuple[LogicalPropertyDef, ...] = ()
+
+    @property
+    def identity(self) -> LayoutIdentity:
+        return (self.name, self.source_type, self.target_type)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "properties", tuple(self.properties))
@@ -248,8 +296,8 @@ class LogicalSchema:
         if self.scope not in LOGICAL_SCOPES:
             raise LogicalSchemaError("unknown logical scope", detail=repr(self.scope))
         _require_unique((node.name for node in self.node_types), "node type")
-        _require_unique(
-            (layout.name for layout in self.relation_layouts), "relation layout"
+        _require_unique_identities(
+            tuple(layout.identity for layout in self.relation_layouts)
         )
         _require_unique((space.name for space in self.vector_spaces), "vector space")
         known_types = {node.name for node in self.node_types}
@@ -266,10 +314,10 @@ class LogicalSchema:
         known_spaces = {space.name for space in self.vector_spaces}
         for owner, properties in self._owned_properties():
             for prop in properties:
-                if prop.type == "vector" and prop.name not in known_spaces:
+                if prop.type == "vector" and prop.vector_space not in known_spaces:
                     raise LogicalSchemaError(
-                        "vector property has no declared space of the same name",
-                        detail=f"{owner}.{prop.name}",
+                        "vector property names an undeclared vector space",
+                        detail=f"{owner}.{prop.name} -> {prop.vector_space}",
                     )
 
     def _owned_properties(
@@ -286,11 +334,17 @@ class LogicalSchema:
                 return node_type
         raise LogicalSchemaError("undeclared node type", detail=name)
 
-    def relation_layout(self, name: str) -> LogicalRelationLayout:
+    def relation_layout(
+        self, name: str, source_type: str, target_type: str
+    ) -> LogicalRelationLayout:
+        wanted = (name, source_type, target_type)
         for layout in self.relation_layouts:
-            if layout.name == name:
+            if layout.identity == wanted:
                 return layout
-        raise LogicalSchemaError("undeclared relation layout", detail=name)
+        raise LogicalSchemaError(
+            "undeclared relation layout",
+            detail=f"{name}({source_type}->{target_type})",
+        )
 
     def vector_space(self, name: str) -> LogicalVectorSpace:
         for space in self.vector_spaces:
@@ -322,19 +376,32 @@ class LogicalRelation:
 
     A self-loop is ``source_key == target_key``.  Two of these that compare
     equal are two occurrences, not a duplicate to collapse.
+
+    The endpoint TYPES travel alongside the keys because the layout name does
+    not identify a layout on its own.  Without them, a ``supersedes`` between
+    two Decisions and a ``supersedes`` between two Alternatives would be
+    indistinguishable whenever the keys happened to coincide.
     """
 
     layout_name: str
+    source_type: str
+    target_type: str
     source_key: str
     target_key: str
     properties: Mapping[str, LogicalValue] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_name(self.layout_name, "relation layout_name")
+        _require_name(self.source_type, "relation source_type")
+        _require_name(self.target_type, "relation target_type")
         _require_name(self.source_key, "relation source_key")
         _require_name(self.target_key, "relation target_key")
         object.__setattr__(self, "properties", _frozen_properties(self.properties))
         _require_property_names(self.properties, f"relation {self.layout_name}")
+
+    @property
+    def layout_identity(self) -> LayoutIdentity:
+        return (self.layout_name, self.source_type, self.target_type)
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,6 +470,17 @@ def _require_unique(names: Iterable[str], what: str) -> None:
         if name in seen:
             raise LogicalSchemaError(f"duplicate {what}", detail=name)
         seen.add(name)
+
+
+def _require_unique_identities(identities: tuple[LayoutIdentity, ...]) -> None:
+    seen: set[LayoutIdentity] = set()
+    for identity in identities:
+        if identity in seen:
+            raise LogicalSchemaError(
+                "duplicate relation layout",
+                detail=f"{identity[0]}({identity[1]}->{identity[2]})",
+            )
+        seen.add(identity)
 
 
 def _require_unique_properties(
@@ -485,6 +563,7 @@ __all__ = [
     "LogicalValue",
     "LogicalVector",
     "LogicalVectorSpace",
+    "LayoutIdentity",
     "count_graph",
     "record_census",
 ]

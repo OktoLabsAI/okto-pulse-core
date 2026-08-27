@@ -24,7 +24,6 @@ it, and this codec must be able to stream a graph it never holds in memory.
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final
@@ -37,6 +36,7 @@ from .canonical import (
     encode_node,
     encode_relation,
     encode_schema,
+    loads_canonical,
 )
 from .errors import (
     ArtifactIntegrityError,
@@ -55,6 +55,7 @@ from .model import (
     LogicalSchema,
     LogicalScope,
 )
+from .validation import LogicalSchemaIndex
 
 
 LOGICAL_GRAPH_FORMAT: Final[str] = "okto-pulse-logical-graph/1"
@@ -66,6 +67,23 @@ RECORD_HEADER: Final[str] = "header"
 RECORD_NODE: Final[str] = "node"
 RECORD_RELATION: Final[str] = "relation"
 RECORD_MANIFEST: Final[str] = "manifest"
+
+HEADER_KEYS: Final[tuple[str, ...]] = (
+    "counts",
+    "features",
+    "format",
+    "record",
+    "schema",
+    "schema_digest",
+    "scope",
+)
+FEATURE_KEYS: Final[tuple[str, ...]] = ("optional", "required")
+MANIFEST_KEYS: Final[tuple[str, ...]] = (
+    "counts",
+    "fingerprint",
+    "record",
+    "stream_checksum",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +157,7 @@ def encode_artifact(
     otherwise become somebody else's corruption report.
     """
 
+    index = LogicalSchemaIndex.build(schema)
     digest = schema_digest(schema)
     header = {
         "counts": counts.as_mapping(),
@@ -160,6 +179,10 @@ def encode_artifact(
     yield line
 
     for node in nodes:
+        # Validated before it is written: an artifact whose records contradict
+        # its own header schema is internally consistent and semantically
+        # invalid, and every later check would agree with it.
+        index.validate_node(node)
         payload = {"record": RECORD_NODE, **encode_node(node)}
         line = canonical_json(payload)
         _absorb(checksum, line)
@@ -167,6 +190,7 @@ def encode_artifact(
         yield line
 
     for relation in relations:
+        index.validate_relation(relation)
         payload = {"record": RECORD_RELATION, **encode_relation(relation)}
         line = canonical_json(payload)
         _absorb(checksum, line)
@@ -198,6 +222,7 @@ class _DecodeState:
     header: LogicalArtifactHeader | None = None
     checksum: Any = field(default_factory=hashlib.sha256)
     accumulator: LogicalFingerprintAccumulator | None = None
+    index: LogicalSchemaIndex | None = None
     seen_relation: bool = False
     seen_manifest: bool = False
 
@@ -216,15 +241,23 @@ def decode_records(lines: Iterable[str]) -> Iterator[ArtifactEvent]:
             raise ArtifactMalformedError(
                 "artifact lines must be strings", detail=type(raw).__name__
             )
-        line = raw.strip()
-        if not line:
-            continue
         if state.seen_manifest:
+            # ANY further line, blank included. Stripping first and skipping
+            # blanks would let a writer append after the terminal record and
+            # still be read as a complete artifact.
             raise ArtifactTrailingDataError(
                 "the artifact continues past its terminal manifest",
-                detail=line[:60],
+                detail=raw[:60],
             )
-        payload = _load_record(line)
+        line = raw
+        if not line:
+            raise ArtifactMalformedError(
+                "the artifact carries an empty line", detail="empty line"
+            )
+        # loads_canonical refuses duplicate keys and any line whose bytes are
+        # not exactly what this format would have produced, so a reordered or
+        # re-spaced record is corruption rather than an accepted variant.
+        payload = loads_canonical(line)
         kind = payload.get("record")
         if kind == RECORD_HEADER:
             yield _consume_header(state, payload, line)
@@ -245,20 +278,6 @@ def decode_records(lines: Iterable[str]) -> Iterator[ArtifactEvent]:
         )
 
 
-def _load_record(line: str) -> Mapping[str, Any]:
-    try:
-        payload = json.loads(line)
-    except ValueError as failure:
-        raise ArtifactMalformedError(
-            "record is not valid JSON", detail=line[:60]
-        ) from failure
-    if not isinstance(payload, Mapping):
-        raise ArtifactMalformedError(
-            "record must be a JSON object", detail=type(payload).__name__
-        )
-    return payload
-
-
 def _consume_header(
     state: _DecodeState, payload: Mapping[str, Any], line: str
 ) -> ArtifactEvent:
@@ -266,6 +285,7 @@ def _consume_header(
         raise ArtifactSequenceError(
             "the artifact carries more than one header", detail="second header"
         )
+    _require_exact_keys(payload, HEADER_KEYS, "header")
     declared_format = payload.get("format")
     if declared_format != LOGICAL_GRAPH_FORMAT:
         raise UnsupportedFormatVersionError(
@@ -278,6 +298,7 @@ def _consume_header(
             "header features must be an object",
             detail=type(features).__name__,
         )
+    _require_exact_keys(features, FEATURE_KEYS, "header features")
     required = _feature_list(features.get("required"), "required")
     optional = _feature_list(features.get("optional"), "optional")
     unknown = sorted(set(required) - SUPPORTED_FEATURES)
@@ -290,10 +311,19 @@ def _consume_header(
             detail=",".join(unknown),
         )
     schema = decode_schema(payload.get("schema"))
+    expected_features = set(required_features_for(schema))
+    if not expected_features.issubset(required):
+        # A schema with vector spaces that does not require the vectors feature
+        # would let a reader without vector support accept it and silently
+        # import a graph whose embeddings it cannot represent.
+        raise ArtifactIntegrityError(
+            "the header omits a feature its own schema requires",
+            detail=",".join(sorted(expected_features - set(required))),
+        )
     counts = LogicalCounts.from_mapping(_require_mapping(payload.get("counts")))
     digest = schema_digest(schema)
     declared_digest = payload.get("schema_digest")
-    if declared_digest is not None and declared_digest != digest:
+    if declared_digest != digest:
         raise ArtifactIntegrityError(
             "the header schema digest does not match its own schema",
             detail=str(declared_digest)[:64],
@@ -314,6 +344,7 @@ def _consume_header(
     )
     state.header = header
     state.accumulator = LogicalFingerprintAccumulator(schema_hex=digest)
+    state.index = LogicalSchemaIndex.build(schema)
     _absorb(state.checksum, line)
     return ArtifactEvent(kind=RECORD_HEADER, header=header)
 
@@ -333,8 +364,32 @@ def _feature_list(value: Any, what: str) -> list[str]:
                 f"header {what} feature must be a non-empty string",
                 detail=repr(entry)[:40],
             )
+        if entry in names:
+            raise ArtifactMalformedError(
+                f"header {what} features repeat a name", detail=entry
+            )
         names.append(entry)
     return names
+
+
+def _require_exact_keys(
+    payload: Mapping[str, Any], expected: tuple[str, ...], what: str
+) -> None:
+    present = set(payload)
+    wanted = set(expected)
+    missing = wanted - present
+    if missing:
+        raise ArtifactMalformedError(
+            f"{what} is missing fields", detail=",".join(sorted(missing))
+        )
+    unknown = present - wanted
+    if unknown:
+        # Unknown fields are refused rather than ignored: this format has a
+        # frozen wire shape, so an unexpected key is either a different format
+        # or a corrupted record, and both deserve a refusal.
+        raise ArtifactMalformedError(
+            f"{what} carries unknown fields", detail=",".join(sorted(unknown))
+        )
 
 
 def _require_mapping(value: Any) -> Mapping[str, Any]:
@@ -346,7 +401,7 @@ def _require_mapping(value: Any) -> Mapping[str, Any]:
 
 
 def _require_started(state: _DecodeState, kind: str) -> LogicalFingerprintAccumulator:
-    if state.header is None or state.accumulator is None:
+    if state.header is None or state.accumulator is None or state.index is None:
         raise ArtifactSequenceError(
             f"a {kind} record arrived before the header", detail=kind
         )
@@ -365,6 +420,8 @@ def _consume_node(
             detail=RECORD_NODE,
         )
     node = decode_node(_without_record(payload))
+    assert state.index is not None  # narrowed by _require_started
+    state.index.validate_node(node)
     accumulator.add_node(node)
     _absorb(state.checksum, line)
     return ArtifactEvent(kind=RECORD_NODE, node=node)
@@ -375,6 +432,8 @@ def _consume_relation(
 ) -> ArtifactEvent:
     accumulator = _require_started(state, RECORD_RELATION)
     relation = decode_relation(_without_record(payload))
+    assert state.index is not None  # narrowed by _require_started
+    state.index.validate_relation(relation)
     accumulator.add_relation(relation)
     state.seen_relation = True
     _absorb(state.checksum, line)
@@ -389,6 +448,7 @@ def _consume_manifest(
     state: _DecodeState, payload: Mapping[str, Any]
 ) -> ArtifactEvent:
     accumulator = _require_started(state, RECORD_MANIFEST)
+    _require_exact_keys(payload, MANIFEST_KEYS, "manifest")
     header = state.header
     assert header is not None  # narrowed by _require_started
     declared = LogicalCounts.from_mapping(_manifest_counts(payload))

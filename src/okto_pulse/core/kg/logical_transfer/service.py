@@ -32,11 +32,13 @@ from typing import Any, Final, TypeVar
 from .errors import (
     CertificationRefusedError,
     LogicalSchemaError,
+    PhasedTransferError,
     TransferFailedError,
     TransferPhase,
 )
 from .fingerprint import LogicalFingerprintAccumulator, schema_digest
 from .model import LogicalCounts, LogicalSchema, LogicalScope
+from .validation import LogicalSchemaIndex
 from .ports import (
     CandidateCertificate,
     LogicalCandidateSink,
@@ -84,6 +86,20 @@ def transfer_logical_graph(
         schema = _guard("write", snapshot.schema)
         declared = _guard("write", snapshot.counts)
         accumulator = LogicalFingerprintAccumulator.for_schema(schema)
+        # A direct transfer never passes through the codec, so the codec's
+        # validation would not protect it. Without this, a source could hand the
+        # sink a node of an undeclared type and every later check -- counts,
+        # fingerprint, even the candidate's own certificate -- would agree with
+        # itself about a graph the schema does not describe.
+        index = LogicalSchemaIndex.build(schema)
+
+        def account_node(node: Any) -> None:
+            index.validate_node(node)
+            accumulator.add_node(node)
+
+        def account_relation(relation: Any) -> None:
+            index.validate_relation(relation)
+            accumulator.add_relation(relation)
 
         # Marked before the call, not after: a begin that raises part way may
         # already have allocated a candidate, and the only safe assumption is
@@ -96,14 +112,14 @@ def transfer_logical_graph(
             snapshot.iter_nodes,
             sink.write_nodes,
             batch_size,
-            accumulator.add_node,
+            account_node,
             "nodes",
         )
         relation_batches = _move(
             snapshot.iter_relations,
             sink.write_relations,
             batch_size,
-            accumulator.add_relation,
+            account_relation,
             "relations",
         )
 
@@ -167,21 +183,38 @@ def _move(
                 phase="write",
                 detail=str(failure),
             ) from failure
-        if len(batch) > batch_size:
-            # The bound is the contract, not a hint: a source that overshoots it
-            # has already put an unbounded amount of the graph in memory.
-            raise TransferFailedError(
-                f"the snapshot produced a {what} batch larger than the bound",
-                phase="write",
-                detail=f"limit={batch_size} got={len(batch)}",
-            )
-        if not batch:
+        # Measuring the batch, walking it and accounting for each record are
+        # all things the SOURCE can make fail -- a batch with no length, a
+        # record that violates the schema. They belong to the write phase, so
+        # they run under a guard rather than leaking unclassified.
+        if not _guard("write", _account_batch, batch, batch_size, account, what):
             continue
-        for record in batch:
-            account(record)
         _guard("import", consume, batch)
         batches += 1
     return batches
+
+
+def _account_batch(
+    batch: Sequence[Any],
+    batch_size: int,
+    account: Callable[[Any], None],
+    what: str,
+) -> bool:
+    """Check one batch against the bound and account for it. False if empty."""
+
+    if len(batch) > batch_size:
+        # The bound is the contract, not a hint: a source that overshoots it has
+        # already put an unbounded amount of the graph in memory.
+        raise TransferFailedError(
+            f"the snapshot produced a {what} batch larger than the bound",
+            phase="write",
+            detail=f"limit={batch_size} got={len(batch)}",
+        )
+    if not batch:
+        return False
+    for record in batch:
+        account(record)
+    return True
 
 
 def _guard(
@@ -191,6 +224,10 @@ def _guard(
 
     try:
         return call(*args, **kwargs)
+    except PhasedTransferError:
+        # Already classified, and by something closer to the failure than this
+        # frame is. Re-wrapping would bury the specific phase under a generic one.
+        raise
     except Exception as failure:
         raise TransferFailedError(
             f"{getattr(call, '__name__', 'step')} failed",
@@ -212,12 +249,15 @@ def _require_certified(
             "the sink did not return a certificate",
             detail=type(certificate).__name__,
         )
-    if not certificate.cold_reopen_completed:
+    # ``is not True`` rather than ``not ...``: a sink that answered with a
+    # non-empty string, a 1, or any other truthy placeholder has not made a
+    # claim, and accepting one would let a stub certify a real candidate.
+    if certificate.cold_reopen_completed is not True:
         raise CertificationRefusedError(
             "the candidate was not re-read from cold",
             detail="cold_reopen_completed",
         )
-    if not certificate.verify_succeeded:
+    if certificate.verify_succeeded is not True:
         raise CertificationRefusedError(
             "the candidate did not pass its own verification",
             detail="verify_succeeded",

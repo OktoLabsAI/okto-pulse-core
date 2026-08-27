@@ -9,6 +9,7 @@ import pytest
 
 from logical_transfer_testing import (
     SAMPLE_MICROS,
+    EMBEDDING_STORAGE_DTYPE,
     sample_counts,
     sample_nodes,
     sample_relations,
@@ -37,22 +38,25 @@ from okto_pulse.core.kg.logical_transfer import (
 
 
 GOLDEN_SCHEMA_DIGEST = (
-    "2a68eba0f42d43a0f6e25a18f9f7e4bc1c4b28d531534f3cb1ac1f954f6c15dd"
+    "c288bf0306d4f67f5517a051c7f322ed29293426d5323a006ba95b888acd3945"
 )
 GOLDEN_FINGERPRINT = (
-    "7ff81024c2891a235839ecfbff2d21ec5a7601d59d415cd5523d32cf8652837a"
+    "5c60feb1131600144121a744e586ddc7a8dac1bf637ef523ef9db820a23b3dfb"
 )
 GOLDEN_STREAM_CHECKSUM = (
-    "ac72548120ddbe1f2f152877b92246ea66838795adc5a94fe63338672311b9f3"
+    "434242f5b71634aae5d7aa89fa6ae660ffa1eb37ad706fe4448ec149b7d2861f"
 )
 GOLDEN_NODE_LINE = (
-    '{"key":"c1","properties":{"card_embedding":["vector",{"components":'
+    '{"key":"c1","properties":{"created_at":["timestamp_us","1717171717000000"],'
+    '"done":["bool",true],"embedding":["vector",{"components":'
     '["0x1.0000000000000p+0","0x1.4000000000000p+1","-0x1.0000000000000p-2"],'
-    '"dtype":"float32","space_name":"card_embedding"}],"created_at":'
-    '["timestamp_us","1717171717000000"],"done":["bool",true],"id":'
-    '["string","c1"],"rank":["int64","7"],"score":'
-    '["float64","0x1.999999999999ap-4"],"title":["string",""]},'
-    '"record":"node","type":"Card"}'
+    '"dtype":"float64","space_name":"card_embedding_idx"}],"id":["string","c1"],'
+    '"rank":["int64","7"],"score":["float64","0x1.999999999999ap-4"],'
+    '"title":["string",""]},"record":"node","type":"Card"}'
+)
+GOLDEN_RELATION_LINE = (
+    '{"layout":"blocks","properties":{"note":["string","x"]},"record":"relation",'
+    '"source":"c1","source_type":"Card","target":"c2","target_type":"Card"}'
 )
 
 
@@ -68,8 +72,11 @@ def encoded() -> list[str]:
 
 
 class TestGolden:
-    def test_the_wire_bytes_of_a_record_are_frozen(self) -> None:
+    def test_the_wire_bytes_of_a_node_are_frozen(self) -> None:
         assert encoded()[1] == GOLDEN_NODE_LINE
+
+    def test_the_wire_bytes_of_a_relation_are_frozen(self) -> None:
+        assert encoded()[3] == GOLDEN_RELATION_LINE
 
     def test_the_schema_digest_is_frozen(self) -> None:
         assert schema_digest(sample_schema()) == GOLDEN_SCHEMA_DIGEST
@@ -99,50 +106,48 @@ class TestRoundTrip:
         assert artifact.manifest.counts == sample_counts()
 
     def test_absent_and_null_stay_different(self) -> None:
-        artifact = decode_artifact(encoded())
-        absent_side = artifact.nodes[1].properties
-        assert absent_side["title"] is LOGICAL_NULL
-        assert "rank" not in absent_side
+        properties = decode_artifact(encoded()).nodes[1].properties
+        assert properties["title"] is LOGICAL_NULL
+        assert "rank" not in properties
 
     def test_the_empty_string_is_not_null(self) -> None:
-        artifact = decode_artifact(encoded())
-        assert artifact.nodes[0].properties["title"] == ""
-        assert artifact.nodes[0].properties["title"] is not LOGICAL_NULL
+        properties = decode_artifact(encoded()).nodes[0].properties
+        assert properties["title"] == ""
+        assert properties["title"] is not LOGICAL_NULL
 
     def test_a_timestamp_keeps_its_microseconds(self) -> None:
-        artifact = decode_artifact(encoded())
-        stamp = artifact.nodes[0].properties["created_at"]
+        stamp = decode_artifact(encoded()).nodes[0].properties["created_at"]
         assert stamp == LogicalTimestamp(SAMPLE_MICROS)
 
     def test_a_vector_travels_by_logical_space_name(self) -> None:
-        artifact = decode_artifact(encoded())
-        vector = artifact.nodes[0].properties["card_embedding"]
+        vector = decode_artifact(encoded()).nodes[0].properties["embedding"]
         assert isinstance(vector, LogicalVector)
-        assert vector.space_name == "card_embedding"
-        assert vector.dtype == "float32"
+        assert vector.space_name == "card_embedding_idx"
+        assert vector.dtype == EMBEDDING_STORAGE_DTYPE
         assert vector.components == (1.0, 2.5, -0.25)
 
     def test_identical_parallel_relations_both_survive(self) -> None:
-        artifact = decode_artifact(encoded())
+        relations = decode_artifact(encoded()).relations
         parallels = [
             relation
-            for relation in artifact.relations
+            for relation in relations
             if relation.source_key == "c1" and relation.target_key == "c2"
         ]
         assert len(parallels) == 2
         assert parallels[0] == parallels[1]
 
     def test_direction_and_self_loops_are_preserved(self) -> None:
-        artifact = decode_artifact(encoded())
-        loops = [
-            relation
-            for relation in artifact.relations
-            if relation.source_key == relation.target_key
-        ]
+        relations = decode_artifact(encoded()).relations
+        loops = [r for r in relations if r.source_key == r.target_key]
         assert len(loops) == 1
         assert loops[0].source_key == "c1"
-        directed = artifact.relations[0]
-        assert (directed.source_key, directed.target_key) == ("c1", "c2")
+        assert (relations[0].source_key, relations[0].target_key) == ("c1", "c2")
+
+    def test_a_relation_carries_its_endpoint_types(self) -> None:
+        relation = decode_artifact(encoded()).relations[0]
+        assert relation.source_type == "Card"
+        assert relation.target_type == "Card"
+        assert relation.layout_identity == ("blocks", "Card", "Card")
 
 
 class TestVersionAndFeatures:
@@ -150,7 +155,7 @@ class TestVersionAndFeatures:
         lines = encoded()
         header = json.loads(lines[0])
         header["format"] = "okto-pulse-logical-graph/2"
-        lines[0] = json.dumps(header)
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
         with pytest.raises(UnsupportedFormatVersionError):
             decode_artifact(lines)
 
@@ -158,15 +163,12 @@ class TestVersionAndFeatures:
         lines = encoded()
         header = json.loads(lines[0])
         header["features"]["required"] = ["vectors", "time_travel"]
-        lines[0] = json.dumps(header)
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
         with pytest.raises(UnsupportedFeatureError) as caught:
             decode_artifact(lines)
         assert "time_travel" in str(caught.value)
 
     def test_an_unknown_optional_feature_is_ignored(self) -> None:
-        # Declared through the encoder rather than patched into the header: the
-        # checksum covers the header, so a hand-edited one would be refused as
-        # corruption before the feature rule was ever reached.
         lines = list(
             encode_artifact(
                 sample_schema(),
@@ -176,8 +178,125 @@ class TestVersionAndFeatures:
                 optional_features=("annotations",),
             )
         )
-        artifact = decode_artifact(lines)
-        assert "annotations" in artifact.header.optional_features
+        assert "annotations" in decode_artifact(lines).header.optional_features
+
+    def test_a_vector_schema_that_omits_its_feature_is_refused(self) -> None:
+        # Otherwise a reader with no vector support would accept the artifact
+        # and silently import embeddings it cannot represent.
+        lines = encoded()
+        header = json.loads(lines[0])
+        header["features"]["required"] = []
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactIntegrityError) as caught:
+            decode_artifact(lines)
+        assert "vectors" in str(caught.value)
+
+    def test_a_repeated_feature_is_refused(self) -> None:
+        lines = encoded()
+        header = json.loads(lines[0])
+        header["features"]["required"] = ["vectors", "vectors"]
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+
+class TestStrictShapes:
+    """The wire shape is frozen: unknown, missing and repeated fields refuse."""
+
+    def test_an_unknown_header_field_is_refused(self) -> None:
+        lines = encoded()
+        header = json.loads(lines[0])
+        header["extra"] = 1
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_a_missing_header_field_is_refused(self) -> None:
+        lines = encoded()
+        header = json.loads(lines[0])
+        del header["schema_digest"]
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_an_unknown_features_field_is_refused(self) -> None:
+        lines = encoded()
+        header = json.loads(lines[0])
+        header["features"]["maybe"] = []
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_an_unknown_manifest_field_is_refused(self) -> None:
+        lines = encoded()
+        manifest = json.loads(lines[-1])
+        manifest["extra"] = "x"
+        lines[-1] = json.dumps(manifest, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_an_unknown_relation_field_is_refused(self) -> None:
+        lines = encoded()
+        payload = json.loads(lines[3])
+        payload["weight"] = 1
+        lines[3] = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_a_duplicate_key_is_refused(self) -> None:
+        # json keeps the last one silently, so a record could carry two values
+        # for one property and decode to whichever was written second.
+        lines = encoded()
+        lines[2] = lines[2].replace('{"id"', '{"id":["string","ghost"],"id"', 1)
+        with pytest.raises(ArtifactMalformedError) as caught:
+            decode_artifact(lines)
+        assert "duplicate" in str(caught.value)
+
+
+class TestCanonicalBytes:
+    """A record must be in THE canonical form, not merely parse to the same thing."""
+
+    def test_reordered_keys_are_refused(self) -> None:
+        lines = encoded()
+        payload = json.loads(lines[3])
+        reordered = dict(reversed(list(payload.items())))
+        lines[3] = json.dumps(reordered, separators=(",", ":"), sort_keys=False)
+        assert json.loads(lines[3]) == payload
+        with pytest.raises(ArtifactMalformedError) as caught:
+            decode_artifact(lines)
+        assert "canonical" in str(caught.value)
+
+    def test_added_whitespace_is_refused(self) -> None:
+        lines = encoded()
+        lines[3] = json.dumps(json.loads(lines[3]), sort_keys=True)  # spaced
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_a_padded_line_is_refused(self) -> None:
+        # Stripping first would accept bytes the checksum never covered.
+        lines = encoded()
+        lines[3] = "  " + lines[3] + "  "
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_an_empty_line_is_refused(self) -> None:
+        lines = encoded()
+        lines.insert(3, "")
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    def test_a_blank_line_after_the_manifest_is_trailing_data(self) -> None:
+        with pytest.raises(ArtifactTrailingDataError):
+            decode_artifact([*encoded(), ""])
+
+    def test_a_non_canonical_float_spelling_is_refused(self) -> None:
+        lines = encoded()
+        payload = json.loads(lines[1])
+        payload["properties"]["score"] = ["float64", "0x3.333333333334p-5"]
+        lines[1] = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        with pytest.raises(ArtifactMalformedError) as caught:
+            decode_artifact(lines)
+        assert "canonical" in str(caught.value)
 
 
 class TestStructuralRefusals:
@@ -186,13 +305,20 @@ class TestStructuralRefusals:
             decode_artifact(encoded()[:-1])
 
     def test_data_after_the_manifest_is_refused(self) -> None:
-        lines = [*encoded(), encoded()[3]]
         with pytest.raises(ArtifactTrailingDataError):
-            decode_artifact(lines)
+            decode_artifact([*encoded(), encoded()[3]])
 
     def test_a_node_after_the_relation_section_is_out_of_sequence(self) -> None:
         lines = encoded()
-        reordered = [lines[0], lines[1], lines[3], lines[2], lines[4], lines[5], lines[6]]
+        reordered = [
+            lines[0],
+            lines[1],
+            lines[3],
+            lines[2],
+            lines[4],
+            lines[5],
+            lines[6],
+        ]
         with pytest.raises(ArtifactSequenceError):
             decode_artifact(reordered)
 
@@ -218,7 +344,7 @@ class TestStructuralRefusals:
 
     def test_an_unknown_record_kind_is_malformed(self) -> None:
         lines = encoded()
-        lines.insert(2, json.dumps({"record": "footnote"}))
+        lines.insert(2, json.dumps({"record": "footnote"}, separators=(",", ":")))
         with pytest.raises(ArtifactMalformedError):
             decode_artifact(lines)
 
@@ -228,7 +354,7 @@ class TestIntegrityRefusals:
         lines = encoded()
         manifest = json.loads(lines[-1])
         manifest["counts"]["nodes"] = 99
-        lines[-1] = json.dumps(manifest)
+        lines[-1] = json.dumps(manifest, separators=(",", ":"), sort_keys=True)
         with pytest.raises(ArtifactIntegrityError):
             decode_artifact(lines)
 
@@ -236,7 +362,7 @@ class TestIntegrityRefusals:
         lines = encoded()
         header = json.loads(lines[0])
         header["counts"]["relations"] = 99
-        lines[0] = json.dumps(header)
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
         with pytest.raises(ArtifactIntegrityError):
             decode_artifact(lines)
 
@@ -246,19 +372,11 @@ class TestIntegrityRefusals:
         with pytest.raises(ArtifactIntegrityError):
             decode_artifact(lines)
 
-    def test_a_tampered_value_breaks_the_checksum(self) -> None:
-        lines = encoded()
-        payload = json.loads(lines[2])
-        payload["properties"]["id"] = ["string", "tampered"]
-        lines[2] = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-        with pytest.raises(ArtifactIntegrityError):
-            decode_artifact(lines)
-
     def test_a_tampered_manifest_fingerprint_is_refused(self) -> None:
         lines = encoded()
         manifest = json.loads(lines[-1])
         manifest["fingerprint"] = "0" * 64
-        lines[-1] = json.dumps(manifest)
+        lines[-1] = json.dumps(manifest, separators=(",", ":"), sort_keys=True)
         with pytest.raises(ArtifactIntegrityError):
             decode_artifact(lines)
 
@@ -266,7 +384,7 @@ class TestIntegrityRefusals:
         lines = encoded()
         header = json.loads(lines[0])
         header["schema_digest"] = "0" * 64
-        lines[0] = json.dumps(header)
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
         with pytest.raises(ArtifactIntegrityError):
             decode_artifact(lines)
 
@@ -288,7 +406,7 @@ class TestValueCodec:
             "text",
             LogicalTimestamp(0),
             LogicalTimestamp(SAMPLE_MICROS),
-            LogicalVector("space", "float32", (0.0, -1.5)),
+            LogicalVector("space", "float64", (0.0, -1.5)),
         ],
     )
     def test_every_supported_value_round_trips_exactly(self, value: object) -> None:
@@ -333,20 +451,28 @@ class TestValueCodec:
         with pytest.raises(ArtifactMalformedError):
             decode_value(["int64", "007"])
 
+    def test_a_non_canonical_float_is_malformed(self) -> None:
+        assert float.fromhex("0x2.0p+0") == 2.0
+        with pytest.raises(ArtifactMalformedError):
+            decode_value(["float64", "0x2.0p+0"])
+
+    def test_an_extreme_float_exponent_is_typed_not_leaked(self) -> None:
+        # float.fromhex raises OverflowError here, not ValueError; letting it
+        # escape would put an untyped builtin on a typed boundary.
+        with pytest.raises(ArtifactMalformedError):
+            decode_value(["float64", "0x1.0p+99999"])
+
 
 class TestStreaming:
     def test_decoding_yields_records_before_the_stream_ends(self) -> None:
         stream = decode_records(encoded())
-        first = next(stream)
-        assert first.kind == "header"
+        assert next(stream).kind == "header"
         second = next(stream)
         assert second.kind == "node"
         assert second.node is not None
         assert second.node.key == "c1"
 
     def test_a_reader_that_stops_early_verifies_nothing(self) -> None:
-        # Truncation is only observable at the end, so an abandoned read must
-        # not be mistaken for a validated one.
         stream = decode_records(encoded()[:-1])
         assert next(stream).kind == "header"
         with pytest.raises(ArtifactTruncatedError):

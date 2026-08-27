@@ -128,15 +128,38 @@ class LogicalSchemaError(LogicalTransferError):
 
 
 @dataclass(slots=True)
-class TransferFailedError(LogicalTransferError):
-    """A transfer stopped in a named phase; the candidate was abandoned.
+class PhasedTransferError(LogicalTransferError):
+    """A transfer failure that names the phase it happened in.
 
-    ``phase`` is what makes a failure actionable: the same underlying refusal
-    means something different when it happens while writing the source stream
-    than when it happens on the destination's cold reopen.
+    The phase is what makes a failure actionable: the same underlying refusal
+    means something different when it happens while reading the source than
+    when it happens on the destination's cold reopen.
+
+    Every failure a transfer can end on is one of these, so a caller classifies
+    an outcome with a single ``isinstance`` instead of enumerating error types
+    and hoping the list stayed complete.
     """
 
     phase: TransferPhase = "write"
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        phase: TransferPhase,
+        detail: str | None = None,
+    ) -> None:
+        LogicalTransferError.__init__(self, code, message, detail)
+        self.phase = phase
+
+    def __str__(self) -> str:
+        base = LogicalTransferError.__str__(self)
+        return f"{base} [phase={self.phase}]"
+
+
+class TransferFailedError(PhasedTransferError):
+    """A transfer stopped in a named phase; the candidate was abandoned."""
 
     def __init__(
         self,
@@ -145,24 +168,29 @@ class TransferFailedError(LogicalTransferError):
         phase: TransferPhase,
         detail: str | None = None,
     ) -> None:
-        LogicalTransferError.__init__(self, "transfer_failed", message, detail)
-        self.phase = phase
-
-    def __str__(self) -> str:
-        base = LogicalTransferError.__str__(self)
-        return f"{base} [phase={self.phase}]"
+        super().__init__("transfer_failed", message, phase=phase, detail=detail)
 
 
-class CertificationRefusedError(LogicalTransferError):
+class CertificationRefusedError(PhasedTransferError):
     """The candidate was not certified, so the transfer does not report success.
 
     A missing certificate field is refused exactly like a divergent one.  An
     unproved claim and a disproved claim are the same thing to a caller deciding
     whether to trust a destination.
+
+    It is a ``reopen`` failure: everything it judges is a claim about the
+    candidate as re-read from cold, so a caller reading the phase learns where
+    to look without having to special-case this type.
     """
 
-    def __init__(self, message: str, *, detail: str | None = None) -> None:
-        super().__init__("certification_refused", message, detail)
+    def __init__(
+        self,
+        message: str,
+        *,
+        detail: str | None = None,
+        phase: TransferPhase = "reopen",
+    ) -> None:
+        super().__init__("certification_refused", message, phase=phase, detail=detail)
 
 
 __all__ = [
@@ -178,6 +206,7 @@ __all__ = [
     "LogicalSchemaError",
     "LogicalTransferError",
     "LogicalValueError",
+    "PhasedTransferError",
     "TransferFailedError",
     "TransferPhase",
     "UnsupportedFeatureError",
