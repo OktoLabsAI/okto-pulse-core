@@ -8,6 +8,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from okto_pulse.core.kg.tier_power import (
+    _CYPHER_PUBLICLY_UNSUPPORTED_TOKENS,
     TierPowerError,
     _apply_canonical_projection,
     _auto_bound_var_length_path,
@@ -63,6 +64,126 @@ class TestCypherSafety:
 
     def test_injection_in_string_literal_safe(self):
         validate_cypher_read_only("MATCH (n) WHERE n.title = 'CREATE' RETURN n")
+
+
+class TestPubliclyUnsupportedTokens:
+    """CALL and YIELD are outside the subset wherever they stand, not only at the root.
+
+    They are not blacklisted words: a procedure call is not an attempted write, so it closes as
+    ``unsupported_operation`` and a client can correct the query rather than reading a security
+    accusation. Before this gate a supported root was enough to carry them past validation and
+    into the executor.
+    """
+
+    def test_authority_is_the_closed_ordered_tuple(self):
+        assert _CYPHER_PUBLICLY_UNSUPPORTED_TOKENS == ("CALL", "YIELD")
+        assert isinstance(_CYPHER_PUBLICLY_UNSUPPORTED_TOKENS, tuple)
+
+    @pytest.mark.parametrize(
+        "cypher",
+        [
+            "MATCH (n) CALL db.labels() YIELD label RETURN label",
+            "MATCH (n) YIELD x RETURN x",
+            "MATCH (n) call db.labels() yield label RETURN label",
+            "OPTIONAL MATCH (n:Decision) CALL db.labels() RETURN n.id",
+            "UNWIND $rows AS r CALL db.labels() RETURN r",
+        ],
+    )
+    def test_call_or_yield_after_a_supported_root_is_unsupported(self, cypher):
+        with pytest.raises(TierPowerError) as exc:
+            validate_cypher_read_only(cypher)
+        assert exc.value.code == "unsupported_operation"
+        assert exc.value.details["clause"] in _CYPHER_PUBLICLY_UNSUPPORTED_TOKENS
+
+    @pytest.mark.parametrize(
+        "cypher",
+        [
+            # Named, because the default id would carry the escapes into a log FILE
+            # name, and a backslash is a path separator on Windows.
+            pytest.param(
+                "MATCH (n) \uff23\uff21\uff2c\uff2c db.labels() RETURN n",
+                id="fullwidth-call",
+            ),
+            pytest.param(
+                "MATCH (n) \uff39\uff29\uff25\uff2c\uff24 x RETURN x",
+                id="fullwidth-yield",
+            ),
+        ],
+    )
+    def test_fullwidth_spelling_is_refused_after_normalisation(self, cypher):
+        # NFKC happens before the words are read, so a full-width C is a C by the time the
+        # authority is consulted. Without that order this gate would be one paste away from
+        # useless.
+        with pytest.raises(TierPowerError) as exc:
+            validate_cypher_read_only(cypher)
+        assert exc.value.code == "unsupported_operation"
+
+    @pytest.mark.parametrize(
+        "cypher",
+        [
+            # Named: a default id would carry an escaped newline into a log FILE name.
+            pytest.param(
+                "MATCH (n) // CALL db.labels() YIELD label\nRETURN n.id",
+                id="line-comment",
+            ),
+            pytest.param("MATCH (n) /* CALL YIELD */ RETURN n.id", id="block-comment"),
+            pytest.param(
+                "MATCH (n) WHERE n.id = 'CALL YIELD' RETURN n.id", id="single-quoted"
+            ),
+            pytest.param(
+                'MATCH (n) WHERE n.title = "YIELD" RETURN n.id', id="double-quoted"
+            ),
+        ],
+    )
+    def test_the_words_stay_invisible_inside_comments_and_literals(self, cypher):
+        validate_cypher_read_only(cypher)
+
+    def test_call_as_the_root_keeps_the_root_taxonomy(self):
+        # The root gate owns position zero, so this message is the one it always was: about a
+        # ROOT operation, listing the supported roots.
+        with pytest.raises(TierPowerError) as exc:
+            validate_cypher_read_only("CALL db.labels() YIELD label RETURN label")
+        assert exc.value.code == "unsupported_operation"
+        assert exc.value.details["operation"] == "CALL"
+        assert "supported_operations" in exc.value.details
+        assert "clause" not in exc.value.details
+
+    @pytest.mark.parametrize(
+        "cypher",
+        [
+            "MATCH (n) CREATE (:X) CALL db.labels() RETURN n",
+            "MATCH (n) CALL db.labels() CREATE (:X) RETURN n",
+            "MATCH (n) YIELD x DELETE n",
+        ],
+    )
+    def test_a_write_attempt_outranks_an_unsupported_clause(self, cypher):
+        # Both accusations fit; the security one is the one that must be made, in either order.
+        with pytest.raises(TierPowerError) as exc:
+            validate_cypher_read_only(cypher)
+        assert exc.value.code == "unsafe_cypher"
+
+    def test_the_refusal_happens_before_the_executor_is_asked(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        class SpyExecutor:
+            called = False
+
+            def execute_read_only(
+                self, board_id, cypher, params=None, *, max_rows=1000
+            ):
+                self.called = True
+                return {"rows": [], "row_count": 0}
+
+        spy = SpyExecutor()
+        configure_test_kg_registry(cypher_executor=spy)
+
+        with pytest.raises(TierPowerError) as exc:
+            execute_cypher_read_only(
+                "board-x", "MATCH (n) CALL db.labels() YIELD label RETURN label"
+            )
+
+        assert exc.value.code == "unsupported_operation"
+        assert spy.called is False
 
 
 class TestSafetyRails:

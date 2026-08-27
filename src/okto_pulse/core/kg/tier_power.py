@@ -62,6 +62,24 @@ CYPHER_BLACKLIST = frozenset({
     "REMOVE", "DROP", "ALTER", "LOAD", "CSV",
 })
 
+_CYPHER_PUBLICLY_UNSUPPORTED_TOKENS = ("CALL", "YIELD")
+"""Words the public subset does not support ANYWHERE, root or not.
+
+A blacklisted word is a security violation; these are not. ``CALL`` and ``YIELD`` reach
+procedures, and a procedure is outside the subset the query contract documents rather than an
+attempted write -- so they close as ``unsupported_operation`` and a client can correct the query
+instead of reading it as an attack.
+
+The root gate already refuses ``CALL`` when it BEGINS a statement, because it is not one of
+``CYPHER_SUPPORTED_ROOT_OPERATIONS``. What this authority adds is the same refusal for the same
+word AFTER a supported root, where the root gate cannot see it: ``MATCH (n) CALL ...`` used to
+pass validation and reach the executor.
+
+Declared as an ordered tuple rather than a set, and named rather than inlined, because it is
+read from outside this module as the authority on the question -- the order is part of what is
+frozen.
+"""
+
 
 def _strip_comments(cypher: str) -> str:
     """Remove // line comments and /* block comments */."""
@@ -185,6 +203,22 @@ def validate_cypher_read_only(cypher: str) -> None:
                 "query_contract_version": query_contract_document()["version"],
             },
         )
+
+    # After the root, and only after it: a word this authority names is unsupported wherever it
+    # stands, but the root gate owns position zero so that `CALL ...` keeps closing with the
+    # message about ROOT operations it has always closed with. The blacklist above still wins
+    # over both, because a write attempt is a different accusation from an unsupported clause.
+    for token in tokens[1:]:
+        if token in _CYPHER_PUBLICLY_UNSUPPORTED_TOKENS:
+            raise TierPowerError(
+                "unsupported_operation",
+                f"Unsupported Cypher clause: {token}",
+                details={
+                    "clause": token,
+                    "supported_clauses": list(CYPHER_SUPPORTED_CLAUSES),
+                    "query_contract_version": query_contract_document()["version"],
+                },
+            )
 
 
 def _auto_inject_limit(cypher: str, max_rows: int) -> str:
