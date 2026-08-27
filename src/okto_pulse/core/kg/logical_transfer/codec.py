@@ -301,6 +301,14 @@ def _consume_header(
     _require_exact_keys(features, FEATURE_KEYS, "header features")
     required = _feature_list(features.get("required"), "required")
     optional = _feature_list(features.get("optional"), "optional")
+    both = sorted(set(required) & set(optional))
+    if both:
+        # A feature cannot be mandatory and ignorable at once; a reader would
+        # have to pick one meaning, and either choice is somebody's corruption.
+        raise ArtifactMalformedError(
+            "a feature is declared both required and optional",
+            detail=",".join(both),
+        )
     unknown = sorted(set(required) - SUPPORTED_FEATURES)
     if unknown:
         # Unknown REQUIRED features are refused, never skipped: a reader that
@@ -350,8 +358,6 @@ def _consume_header(
 
 
 def _feature_list(value: Any, what: str) -> list[str]:
-    if value is None:
-        return []
     if not isinstance(value, list):
         raise ArtifactMalformedError(
             f"header {what} features must be an array",

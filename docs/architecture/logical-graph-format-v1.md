@@ -59,6 +59,12 @@ Duplicate object keys are refused for a related reason: `json` silently keeps
 the last one, so a record could carry two values for the same property and
 decode to whichever the writer happened to put second.
 
+Non-finite numbers are refused too. Python's `json` accepts the bare constants
+`NaN`, `Infinity` and `-Infinity` by default, and a literal like `1e999` parses
+to infinity without going through a constant hook at all. None of them are
+JSON, none has a portable logical meaning, and a graph carrying one would
+compare unequal to itself.
+
 Blank lines are not skipped. A blank line anywhere is malformed, and any line
 at all after the manifest — blank included — is trailing data.
 
@@ -87,9 +93,13 @@ rather than parsed optimistically.
 feature is refused, never skipped — a reader that ignored one would import a
 graph that means something other than what the writer recorded. An unknown
 **optional** feature is ignored, which is the entire point of the distinction.
-A repeated feature name is refused. A schema that declares vector spaces but
-omits the `vectors` required feature is refused too: otherwise a reader with no
-vector support would accept it and silently import embeddings it cannot hold.
+Both lists must be arrays — a `null` is not an empty list, because the wire
+shape is frozen. A repeated feature name is refused, and so is a feature that
+appears in both lists at once: a reader would have to pick one meaning, and
+either choice is somebody's corruption. A schema that declares vector spaces
+but omits the `vectors` required feature is refused too: otherwise a reader
+with no vector support would accept it and silently import embeddings it cannot
+hold.
 
 `counts` is the census the source already knows, declared up front so a reader
 can detect divergence early. The stream checksum is deliberately **not** here —
@@ -109,6 +119,10 @@ space from a property name would collapse eleven spaces into one.
 {"name": "embedding", "type": "vector", "nullable": true,
  "vector_space": "decision_embedding_idx"}
 ```
+
+`nullable` is a real boolean in the DTO as well as on the wire. Accepting a
+truthy `1` in the model would let the encoder produce a schema this very build
+refuses to read back.
 
 **A vector space carries its geometry**, not just its width:
 
@@ -286,6 +300,12 @@ batches, and:
 A certificate must make all six of these observable, and all six must match the
 snapshot: cold reopen completed, schema equality, counts, vector spaces,
 logical fingerprint, and a successful `verify()`.
+
+Each claim is type-checked before its value is used. A certificate carrying an
+`object()` where the census belongs would otherwise reach `counts.as_mapping()`
+and leave as an `AttributeError`, and a `vector_spaces` list mixing names with
+`None` would reach `sorted()` and leave as a `TypeError` — both outside the
+finite phase matrix this milestone promises.
 
 ### The failure matrix is finite and total
 

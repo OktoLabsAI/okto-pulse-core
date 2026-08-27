@@ -392,3 +392,128 @@ class TestCertificateClaimsMustBeRealBooleans:
             transfer_logical_graph(source, sink, batch_size=2)
         assert field in str(caught.value)
         assert "finalize" not in sink.calls
+
+
+class TestAMalformedCertificateStaysInTheMatrix:
+    """A bad certificate must refuse, never leak a builtin from deep inside."""
+
+    def certificate(self, **overrides) -> CandidateCertificate:
+        base = {
+            "cold_reopen_completed": True,
+            "verify_succeeded": True,
+            "schema": sample_schema(),
+            "counts": sample_counts(),
+            "vector_spaces": ("card_embedding_idx",),
+            "fingerprint": sample_fingerprint(),
+        }
+        base.update(overrides)
+        return CandidateCertificate(**base)
+
+    @pytest.mark.parametrize("counts", [object(), "3", 3, [1, 2], {"nodes": 2}])
+    def test_counts_that_are_not_a_census_are_refused(self, counts: object) -> None:
+        # Reached as_mapping() before, and left as an AttributeError.
+        source, sink, _ = build(certificate=self.certificate(counts=counts))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+
+    @pytest.mark.parametrize(
+        "spaces", [("card_embedding_idx", None), ("x", 1), (1, 2), ("", "y")]
+    )
+    def test_vector_spaces_with_non_names_are_refused(self, spaces: tuple) -> None:
+        # Reached sorted() before, and left as a TypeError.
+        source, sink, _ = build(certificate=self.certificate(vector_spaces=spaces))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+
+    @pytest.mark.parametrize("spaces", [object(), 5, "card_embedding_idx"])
+    def test_vector_spaces_that_are_not_a_collection_are_refused(
+        self, spaces: object
+    ) -> None:
+        source, sink, _ = build(certificate=self.certificate(vector_spaces=spaces))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+
+    @pytest.mark.parametrize("schema", [object(), "board", 7, {"scope": "board"}])
+    def test_a_schema_that_is_not_a_schema_is_refused(self, schema: object) -> None:
+        source, sink, _ = build(certificate=self.certificate(schema=schema))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+
+    @pytest.mark.parametrize("fingerprint", [object(), 5, ["hex"], b"hex"])
+    def test_a_fingerprint_that_is_not_a_digest_is_refused(
+        self, fingerprint: object
+    ) -> None:
+        source, sink, _ = build(certificate=self.certificate(fingerprint=fingerprint))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+
+    def test_every_malformed_certificate_abandons_the_candidate(self) -> None:
+        source, sink, _ = build(certificate=self.certificate(counts=object()))
+        with pytest.raises(CertificationRefusedError):
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert "abort" in sink.calls
+        assert "finalize" not in sink.calls
+
+
+class TestACertificateCannotRunCodeInsideTheService:
+    """Materializing an arbitrary iterable is a risk the matrix cannot describe."""
+
+    def certificate(self, spaces) -> CandidateCertificate:
+        return CandidateCertificate(
+            cold_reopen_completed=True,
+            verify_succeeded=True,
+            schema=sample_schema(),
+            counts=sample_counts(),
+            vector_spaces=spaces,
+            fingerprint=sample_fingerprint(),
+        )
+
+    def test_a_generator_of_names_is_refused_not_consumed(self) -> None:
+        consumed = []
+
+        def spaces():
+            consumed.append(1)
+            yield "card_embedding_idx"
+
+        source, sink, _ = build(certificate=self.certificate(spaces()))
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"
+        assert consumed == []
+
+    def test_an_exploding_iterable_is_refused_before_it_runs(self) -> None:
+        class Hostile:
+            def __iter__(self):
+                raise RuntimeError("boom")
+
+        source, sink, _ = build(certificate=self.certificate(Hostile()))
+        with pytest.raises(CertificationRefusedError):
+            transfer_logical_graph(source, sink, batch_size=2)
+
+    def test_a_list_is_refused_because_the_dto_declares_a_tuple(self) -> None:
+        source, sink, _ = build(certificate=self.certificate(["card_embedding_idx"]))
+        with pytest.raises(CertificationRefusedError):
+            transfer_logical_graph(source, sink, batch_size=2)
+
+    def test_a_fingerprint_that_explodes_on_bool_is_refused(self) -> None:
+        class Hostile:
+            def __bool__(self):
+                raise RuntimeError("boom")
+
+        certificate = CandidateCertificate(
+            cold_reopen_completed=True,
+            verify_succeeded=True,
+            schema=sample_schema(),
+            counts=sample_counts(),
+            vector_spaces=("card_embedding_idx",),
+            fingerprint=Hostile(),
+        )
+        source, sink, _ = build(certificate=certificate)
+        with pytest.raises(CertificationRefusedError) as caught:
+            transfer_logical_graph(source, sink, batch_size=2)
+        assert caught.value.phase == "reopen"

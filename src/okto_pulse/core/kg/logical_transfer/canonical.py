@@ -81,6 +81,17 @@ class _DuplicateKey(ValueError):
     """Raised through the JSON parser when one object repeats a key."""
 
 
+class _NonFinite(ValueError):
+    """Raised through the JSON parser for NaN, Infinity and -Infinity."""
+
+
+def _reject_constant(name: str) -> None:
+    # Python's json accepts these three by default. They are not JSON, they
+    # have no portable logical meaning, and a graph carrying one would compare
+    # unequal to itself.
+    raise _NonFinite(name)
+
+
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     seen: dict[str, Any] = {}
     for key, value in pairs:
@@ -107,11 +118,19 @@ def loads_canonical(line: str) -> Mapping[str, Any]:
     """
 
     try:
-        payload = json.loads(line, object_pairs_hook=_reject_duplicate_keys)
+        payload = json.loads(
+            line,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_constant,
+        )
     except _DuplicateKey as duplicate:
         raise ArtifactMalformedError(
             "record carries a duplicate key", detail=str(duplicate)
         ) from duplicate
+    except _NonFinite as constant:
+        raise ArtifactMalformedError(
+            "record carries a non-finite JSON constant", detail=str(constant)
+        ) from constant
     except ValueError as failure:
         raise ArtifactMalformedError(
             "record is not valid JSON", detail=line[:60]
@@ -120,7 +139,16 @@ def loads_canonical(line: str) -> Mapping[str, Any]:
         raise ArtifactMalformedError(
             "record must be a JSON object", detail=type(payload).__name__
         )
-    if canonical_json(payload) != line:
+    try:
+        rendered = canonical_json(payload)
+    except ValueError as failure:
+        # A literal like 1e999 parses to inf without going through
+        # parse_constant, and the canonicalizer refuses to render it. That
+        # refusal is a ValueError, and it must not leave this boundary untyped.
+        raise ArtifactMalformedError(
+            "record carries a non-finite number", detail=line[:60]
+        ) from failure
+    if rendered != line:
         raise ArtifactMalformedError(
             "record is not in canonical form", detail=line[:60]
         )

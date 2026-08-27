@@ -16,6 +16,7 @@ import pytest
 
 from logical_transfer_testing import (
     BOARD_SPACE_BY_TYPE,
+    GLOBAL_KEY_BY_TYPE,
     EMBEDDING_DIMENSION,
     EMBEDDING_METRIC,
     EMBEDDING_NORMALIZED,
@@ -123,6 +124,18 @@ class TestGlobalDiscoveryScope:
         schema = global_schema()
         for node_type, (prop, space) in GLOBAL_SPACE_BY_PROPERTY.items():
             assert schema.node_type(node_type).property_def(prop).vector_space == space
+
+    def test_each_type_is_keyed_the_way_the_real_schema_keys_it(self) -> None:
+        schema = global_schema()
+        for node_type, key in GLOBAL_KEY_BY_TYPE.items():
+            assert schema.node_type(node_type).key == key
+
+    def test_the_board_type_is_keyed_by_board_id(self) -> None:
+        # Not "id": keying every Global type alike would hide a key-name bug.
+        board = global_schema().node_type("Board")
+        assert board.key == "board_id"
+        assert "board_id" in board.property_names()
+        assert "id" not in board.property_names()
 
     def test_only_the_self_relations_carry_weight(self) -> None:
         weighted = {

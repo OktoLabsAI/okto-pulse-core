@@ -69,6 +69,15 @@ GLOBAL_SPACE_BY_PROPERTY: dict[str, tuple[str, str]] = {
     "DecisionDigest": ("embedding", "digest_embedding_idx"),
 }
 
+# The Global Board type is keyed by board_id; the others by id. A fixture that
+# keyed everything the same would let a key-name bug pass unseen.
+GLOBAL_KEY_BY_TYPE: dict[str, str] = {
+    "Board": "board_id",
+    "Topic": "id",
+    "Entity": "id",
+    "DecisionDigest": "id",
+}
+
 GLOBAL_LAYOUTS: tuple[tuple[str, str, str], ...] = (
     ("HAS_TOPIC", "Board", "Topic"),
     ("MENTIONS_ENTITY", "Board", "Entity"),
@@ -128,9 +137,11 @@ def global_schema() -> LogicalSchema:
     node_types = tuple(
         LogicalNodeType(
             name=node_type,
-            key="id",
+            key=GLOBAL_KEY_BY_TYPE[node_type],
             properties=(
-                LogicalPropertyDef("id", "string", nullable=False),
+                LogicalPropertyDef(
+                    GLOBAL_KEY_BY_TYPE[node_type], "string", nullable=False
+                ),
                 LogicalPropertyDef(prop, "vector", vector_space=space),
             ),
         )
@@ -374,6 +385,7 @@ __all__ = [
     "EMBEDDING_METRIC",
     "EMBEDDING_NORMALIZED",
     "EMBEDDING_STORAGE_DTYPE",
+    "GLOBAL_KEY_BY_TYPE",
     "GLOBAL_LAYOUTS",
     "GLOBAL_SPACE_BY_PROPERTY",
     "SAMPLE_MICROS",

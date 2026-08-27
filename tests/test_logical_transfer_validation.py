@@ -22,6 +22,7 @@ from logical_transfer_testing import (
 from okto_pulse.core.kg.logical_transfer import (
     LOGICAL_NULL,
     LogicalNode,
+    LogicalPropertyDef,
     LogicalRelation,
     LogicalSchemaError,
     LogicalSchemaIndex,
@@ -29,7 +30,9 @@ from okto_pulse.core.kg.logical_transfer import (
     LogicalVector,
     canonical_json,
     decode_artifact,
+    decode_schema,
     encode_artifact,
+    encode_schema,
 )
 from okto_pulse.core.kg.logical_transfer.canonical import encode_node
 
@@ -220,3 +223,19 @@ class TestValidationIsBounded:
         # Every lookup key is the layout's full identity, not its name.
         assert ("supersedes", "Decision", "Decision") in built.layouts
         assert ("supersedes", "Alternative", "Alternative") in built.layouts
+
+
+class TestStrictBooleansInTheSchema:
+    """A truthy nullable would let the encoder write what the decoder refuses."""
+
+    @pytest.mark.parametrize("truthy", [1, 0, "yes", None, []])
+    def test_nullable_must_be_a_real_bool(self, truthy: object) -> None:
+        with pytest.raises(LogicalSchemaError) as caught:
+            LogicalPropertyDef("title", "string", nullable=truthy)
+        assert "nullable" in str(caught.value)
+
+    def test_a_schema_built_with_real_bools_round_trips(self) -> None:
+        # The pairing that matters: whatever the DTO accepts, the wire must
+        # carry and the decoder must accept back.
+        schema = sample_schema()
+        assert decode_schema(encode_schema(schema)) == schema

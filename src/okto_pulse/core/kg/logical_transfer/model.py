@@ -161,6 +161,14 @@ class LogicalPropertyDef:
                 "unknown logical property type",
                 detail=f"{self.name}: {self.type!r}",
             )
+        if self.nullable is not True and self.nullable is not False:
+            # The wire carries a JSON bool and the decoder refuses anything
+            # else, so accepting a truthy 1 here would let the encoder produce
+            # a schema this very build cannot read back.
+            raise LogicalSchemaError(
+                "property nullable must be a bool",
+                detail=f"{self.name}: {self.nullable!r}",
+            )
         if self.type == "vector":
             _require_name(self.vector_space, f"vector_space of {self.name!r}")
         elif self.vector_space is not None:

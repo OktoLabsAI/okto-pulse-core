@@ -477,3 +477,57 @@ class TestStreaming:
         assert next(stream).kind == "header"
         with pytest.raises(ArtifactTruncatedError):
             list(stream)
+
+
+class TestNonFiniteJsonIsRefused:
+    """Python's json accepts NaN and Infinity by default; this format does not."""
+
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_a_non_finite_constant_is_refused(self, literal: str) -> None:
+        lines = encoded()
+        lines[-1] = lines[-1].replace('"record":"manifest"', f'"extra":{literal},"record":"manifest"')
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+    @pytest.mark.parametrize("literal", ["1e999", "-1e999"])
+    def test_an_exponent_that_overflows_to_infinity_is_refused(
+        self, literal: str
+    ) -> None:
+        # These parse to inf WITHOUT going through parse_constant, and the
+        # canonicalizer's refusal is a bare ValueError unless it is retyped.
+        lines = encoded()
+        lines[-1] = lines[-1].replace('"record":"manifest"', f'"extra":{literal},"record":"manifest"')
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(lines)
+
+
+class TestFeatureListsAreArrays:
+    def build_header(self, **features) -> list[str]:
+        lines = encoded()
+        header = json.loads(lines[0])
+        header["features"] = features
+        lines[0] = json.dumps(header, separators=(",", ":"), sort_keys=True)
+        return lines
+
+    @pytest.mark.parametrize("value", [None, "vectors", 1, {"a": 1}])
+    def test_a_required_list_that_is_not_an_array_is_refused(
+        self, value: object
+    ) -> None:
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(self.build_header(required=value, optional=[]))
+
+    @pytest.mark.parametrize("value", [None, "annotations", 1])
+    def test_an_optional_list_that_is_not_an_array_is_refused(
+        self, value: object
+    ) -> None:
+        with pytest.raises(ArtifactMalformedError):
+            decode_artifact(self.build_header(required=["vectors"], optional=value))
+
+    def test_a_feature_cannot_be_both_required_and_optional(self) -> None:
+        # A reader would have to pick one meaning, and either choice is
+        # somebody's corruption.
+        with pytest.raises(ArtifactMalformedError) as caught:
+            decode_artifact(
+                self.build_header(required=["vectors"], optional=["vectors"])
+            )
+        assert "vectors" in str(caught.value)

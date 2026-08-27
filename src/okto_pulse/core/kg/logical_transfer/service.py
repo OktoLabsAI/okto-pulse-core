@@ -266,6 +266,14 @@ def _require_certified(
         raise CertificationRefusedError(
             "the certificate reports no schema", detail="schema"
         )
+    # Types are checked before the values are used. Otherwise a certificate
+    # carrying an object() reaches counts.as_mapping() and leaves as an
+    # AttributeError, outside the finite phase matrix this milestone promises.
+    if not isinstance(certificate.schema, LogicalSchema):
+        raise CertificationRefusedError(
+            "the certificate schema is not a logical schema",
+            detail=f"schema: {type(certificate.schema).__name__}",
+        )
     if certificate.schema != schema:
         raise CertificationRefusedError(
             "the candidate schema differs from the snapshot schema",
@@ -274,6 +282,11 @@ def _require_certified(
     if certificate.counts is None:
         raise CertificationRefusedError(
             "the certificate reports no counts", detail="counts"
+        )
+    if not isinstance(certificate.counts, LogicalCounts):
+        raise CertificationRefusedError(
+            "the certificate counts are not a census",
+            detail=f"counts: {type(certificate.counts).__name__}",
         )
     if certificate.counts != counts:
         raise CertificationRefusedError(
@@ -287,11 +300,39 @@ def _require_certified(
         raise CertificationRefusedError(
             "the certificate reports no vector spaces", detail="vector_spaces"
         )
+    reported = certificate.vector_spaces
+    # A tuple exactly, as the DTO declares. Accepting any iterable and
+    # materializing it would hand an arbitrary generator the chance to raise
+    # from inside this frame, or never terminate at all -- neither of which the
+    # finite phase matrix can describe.
+    if type(reported) is not tuple:
+        raise CertificationRefusedError(
+            "the certificate vector spaces are not a tuple of names",
+            detail=f"vector_spaces: {type(reported).__name__}",
+        )
+    if any(type(name) is not str or not name for name in reported):
+        # Sorting a mixed tuple raises TypeError; refusing here keeps the
+        # failure inside the matrix instead of leaking a builtin.
+        raise CertificationRefusedError(
+            "the certificate names a vector space that is not a name",
+            detail="vector_spaces",
+        )
     expected_spaces = tuple(sorted(space.name for space in schema.vector_spaces))
-    if tuple(sorted(certificate.vector_spaces)) != expected_spaces:
+    if tuple(sorted(reported)) != expected_spaces:
         raise CertificationRefusedError(
             "the candidate vector spaces differ from the snapshot schema",
-            detail=f"expected={expected_spaces} got={certificate.vector_spaces}",
+            detail=f"expected={expected_spaces} got={reported}",
+        )
+    # Type before truthiness: a malformed object can raise from __bool__, and
+    # that exception would escape this frame unclassified.
+    if certificate.fingerprint is None:
+        raise CertificationRefusedError(
+            "the certificate reports no fingerprint", detail="fingerprint"
+        )
+    if type(certificate.fingerprint) is not str:
+        raise CertificationRefusedError(
+            "the certificate fingerprint is not a digest",
+            detail=f"fingerprint: {type(certificate.fingerprint).__name__}",
         )
     if not certificate.fingerprint:
         raise CertificationRefusedError(
