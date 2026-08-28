@@ -27,7 +27,6 @@ def test_dev_extra_contains_the_standard_contributor_tooling() -> None:
     dependencies = project["optional-dependencies"]["dev"]
 
     for package in (
-        "aiosqlite",
         "build",
         "okto-pulse",
         "pyright",
@@ -37,3 +36,7 @@ def test_dev_extra_contains_the_standard_contributor_tooling() -> None:
         "SQLAlchemy",
     ):
         assert any(item.startswith(package) for item in dependencies)
+
+    # Community owns the relational runtime and supplies aiosqlite transitively
+    # through the okto-pulse development dependency.
+    assert not any(item.startswith("aiosqlite") for item in dependencies)
