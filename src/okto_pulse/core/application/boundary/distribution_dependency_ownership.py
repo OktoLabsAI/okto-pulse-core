@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-
 CORE_DISTRIBUTION = "okto-pulse-core"
 COMMUNITY_DISTRIBUTION = "okto-pulse"
 LEDGER_VERSION = "F14.1"
@@ -289,6 +288,22 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/community/adapters/kg_runtime.py",),
             rationale="Community owns the embedded local-first graph implementation.",
             removal_criterion="Replace the embedded graph adapter.",
+        ),
+        _entry(
+            "okto-grafx",
+            community,
+            "community",
+            ("okto_grafx",),
+            "direct",
+            ("src/okto_pulse/community/adapters/grafx_board_operational.py",),
+            extras=("accel",),
+            rationale=(
+                "Community owns the accelerated embedded Grafx graph adapters and "
+                "their local storage lifecycle."
+            ),
+            removal_criterion=(
+                "Remove every Community Grafx adapter and the Grafx backend route."
+            ),
         ),
         _entry(
             "requests", community, "community", ("requests",), "direct",

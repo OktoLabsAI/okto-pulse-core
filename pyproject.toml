@@ -32,7 +32,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "aiosqlite>=0.19.0,<1.0.0",
     "build>=1.2.0,<2.0.0",
     # The standard Core fixtures exercise the Community-owned local persistence
     # and graph adapters. Keep that edition in the development path only.
