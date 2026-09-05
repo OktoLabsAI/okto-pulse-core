@@ -392,8 +392,8 @@ WHERE n.source_confidence >= $min_confidence
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
   AND {code_traceability_visibility_clause('n')}
-  AND (n.created_at < $cursor_ts
-       OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
+  AND (n.created_at < timestamp($cursor_ts)
+       OR (n.created_at = timestamp($cursor_ts) AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
@@ -410,8 +410,8 @@ WHERE n.source_confidence >= $min_confidence
   AND {active_read_filter_clause('n')}
   AND {code_traceability_visibility_clause('n')}
   AND label(n) = $node_type
-  AND (n.created_at < $cursor_ts
-       OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
+  AND (n.created_at < timestamp($cursor_ts)
+       OR (n.created_at = timestamp($cursor_ts) AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
