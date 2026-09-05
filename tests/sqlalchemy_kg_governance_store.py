@@ -197,7 +197,7 @@ class TestSqlAlchemyKGGovernanceStore:
             delete(ConsolidationQueue).where(
                 ConsolidationQueue.board_id == board_id,
                 ConsolidationQueue.source == "historical_backfill",
-                ConsolidationQueue.status.in_(("pending", "paused")),
+                ConsolidationQueue.status.in_(("pending", "claimed", "paused")),
             )
         )
         return int(result.rowcount or 0)

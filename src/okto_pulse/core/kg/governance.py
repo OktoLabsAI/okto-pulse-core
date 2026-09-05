@@ -594,9 +594,20 @@ async def resume_historical(db: Any, board_id: str) -> dict:
 
 
 async def cancel_historical(db: Any, board_id: str) -> dict:
-    """Delete pending low-priority entries. Already-consolidated preserved."""
+    """Fence and remove live historical work; committed graph data is preserved.
+
+    ``claimed`` rows must be removed together with ``pending``/``paused`` rows.
+    Leaving a claimed row behind made cancellation non-terminal and caused the
+    next start request to return ``already_in_progress`` forever when a legacy
+    worker had stalled.  Queue processing already treats a missing claimed row
+    as ownership loss and compensates any unacknowledged graph mutation, so the
+    delete is also the durable cancellation fence for an in-flight worker.
+    """
     store = get_kg_governance_store()
     board = await store.get_board(db, board_id=board_id)
+    # Keep the established port name for adapter compatibility. Its cancellation
+    # semantics include every live historical state, not only literal pending
+    # rows (see KGGovernanceStore.delete_historical_pending implementations).
     removed = await store.delete_historical_pending(db, board_id=board_id)
     current_total = int(_historical_progress_state(board).get("total") or 0)
     _set_historical_progress_state(board, total=current_total, status="cancelled")
