@@ -283,6 +283,11 @@ async def test_board_service_query_scope_filters_allowed_boards_and_realm() -> N
             owner_id,
             query_scope=scope.with_target_board(allowed_board),
         )
+        allowed_access = await service.get_board_access_record(
+            allowed_board,
+            owner_id,
+            query_scope=scope.with_target_board(allowed_board),
+        )
         forbidden = await service.get_board(
             forbidden_board,
             owner_id,
@@ -303,6 +308,8 @@ async def test_board_service_query_scope_filters_allowed_boards_and_realm() -> N
 
     assert allowed is not None
     assert allowed.id == allowed_board
+    assert allowed_access is not None
+    assert allowed_access.values == {"id": allowed_board}
     assert forbidden is None
     assert wrong_realm is None
     assert total == 1

@@ -839,6 +839,7 @@ async def _application_list(
     offset: int = 0,
     limit: int | None = None,
     includes: tuple[str, ...] = (),
+    select_fields: tuple[str, ...] = (),
 ) -> list[ApplicationRecord]:
     rows = await get_application_persistence_port().list(
         context,
@@ -851,6 +852,7 @@ async def _application_list(
             offset=offset,
             limit=limit,
             includes=includes,
+            select_fields=select_fields,
         ),
     )
     return list(rows)
@@ -2883,6 +2885,40 @@ class BoardService:
                 "cards.comments",
                 "cards.architecture_designs",
             ),
+            limit=1,
+        )
+        return rows[0] if rows else None
+
+    async def get_board_access_record(
+        self,
+        board_id: str,
+        user_id: str | None = None,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> ApplicationRecord | None:
+        """Return only board identity after applying the normal access scope.
+
+        Authorization needs existence, not the complete Board aggregate.  The
+        legacy ``get_board`` intentionally hydrates cards and their nested
+        relationships for detail screens; using it as an access probe made a
+        constant-size permission check grow with the whole board.
+        """
+
+        clauses = _board_scope_clauses(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=query_scope,
+            require_ownership=(
+                query_scope.require_ownership if query_scope is not None else True
+            ),
+        )
+        if clauses is None:
+            return None
+        rows = await _application_list(
+            self.db,
+            "board",
+            filters=tuple(clauses),
+            select_fields=("id",),
             limit=1,
         )
         return rows[0] if rows else None

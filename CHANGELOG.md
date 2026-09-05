@@ -13,7 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Cancelling historical KG consolidation now fences and removes claimed work as
   well as pending/paused rows. A stalled legacy claim can no longer leave the
   run permanently active or prevent a clean restart; already committed graph
-  data remains intact.
+  data remains intact. The cancellation releases its authorization snapshot,
+  boundedly quiesces the consolidation worker around the delete, and restores
+  the worker afterwards so SQLite lock contention cannot hang the request.
 
 ## [0.3.3] - 2026-08-23
 

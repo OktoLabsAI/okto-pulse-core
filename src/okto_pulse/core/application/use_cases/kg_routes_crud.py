@@ -55,7 +55,12 @@ async def _require_board_access(
     """Fail closed unless the actor can see the target board through QueryScope."""
     actor_scope = ActorScope.from_context(actor)
     query_scope = actor_scope.query_scope(target_board_id=board_id)
-    board = await services.boards.get_board(
+    access_reader = getattr(services.boards, "get_board_access_record", None)
+    if not callable(access_reader):
+        # Compatibility for edition/test service implementations that have not
+        # adopted the additive bounded access projection yet.
+        access_reader = services.boards.get_board
+    board = await access_reader(
         board_id,
         actor_scope.actor_id,
         query_scope=query_scope,
@@ -313,7 +318,17 @@ class CancelHistoricalUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        payload = await uow.services.kg.cancel_historical(command.board_id)
+        # Authorization opens a SQLite read snapshot.  Release it before the
+        # cancellation write, then quiesce the queue owner through its bounded
+        # drain protocol.  Without these two phases a legacy/in-flight claim
+        # can retain the writer lock and make the HTTP request wait forever.
+        await uow.rollback()
+        from okto_pulse.core.application.runtime_workers import (
+            temporarily_quiesce_runtime_worker,
+        )
+
+        async with temporarily_quiesce_runtime_worker("consolidation_worker"):
+            payload = await uow.services.kg.cancel_historical(command.board_id)
         return CancelHistoricalResult(payload)
 
 
