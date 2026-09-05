@@ -111,6 +111,39 @@ class TestHistoricalOptIn:
             assert result["status"] == "already_in_progress"
 
     @pytest.mark.asyncio
+    async def test_unrelated_stale_sweep_does_not_block_historical_start(
+        self, db_factory
+    ):
+        import uuid
+
+        from sqlalchemy_test_models import ConsolidationQueue
+
+        board_id = "board-hist-with-maintenance"
+        await _seed_board_with_spec(db_factory, board_id)
+        async with db_factory() as db:
+            db.add(
+                ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="board",
+                    artifact_id=board_id,
+                    priority="low",
+                    source="kg_tick",
+                    status="pending",
+                    work_kind="stale_sweep",
+                    generation=0,
+                    payload={"cursor": "", "budget": 50, "attempt": 0},
+                )
+            )
+            await db.commit()
+
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+
+        assert result["status"] == "queueing"
+        assert result["total_artifacts"] >= 1
+
+    @pytest.mark.asyncio
     async def test_pause_and_resume(self, db_factory):
         await _seed_board_with_spec(db_factory, "board-hist-3")
         async with db_factory() as db:

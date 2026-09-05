@@ -361,10 +361,17 @@ def _build_source_classification_map(
     for row in snapshot.rows:
         sid = str(row.get("id") or "")
         artifact_type = str(row.get("artifact_type") or "").strip().lower()
-        # Derived decision rows are children of a spec and do not own graph
-        # publication.  Indexing ``decision:{spec_id}:...`` would create an
-        # unknown classification and risks shadowing the actual spec owner.
-        if artifact_type == "decision":
+        # BoardSourceReader is intentionally broader than the stale-sweep
+        # domain: it also returns stories, derived decisions and code-
+        # traceability sources.  Those rows do not own any identity that the
+        # bounded graph query below is allowed to reconcile.  Ignore them by
+        # the same explicit allow-list used by StaleSweepCandidate instead of
+        # treating a valid non-governed source_ref as an incomplete realm.
+        #
+        # This is load-bearing for forward-compatible readers.  A newly added
+        # source family must not poison every board's daily sweep merely
+        # because this narrower reconciler has no policy for it yet.
+        if artifact_type and artifact_type not in GOVERNED_SWEEP_ARTIFACT_TYPES:
             continue
         if not sid or not artifact_type:
             logger.warning(

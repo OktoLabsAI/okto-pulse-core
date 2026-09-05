@@ -200,6 +200,45 @@ class _GraphRuntime:
         return True
 
 
+def test_source_inventory_ignores_valid_non_governed_source_families(
+    monkeypatch,
+) -> None:
+    class _Reader:
+        def fetch(self, _board_id: str):
+            return SimpleNamespace(
+                complete=True,
+                cause=None,
+                rows=(
+                    {
+                        "id": "receipt-1",
+                        "artifact_type": "code_investigation_receipt",
+                        "source_ref": "code_investigation_receipt:receipt-1",
+                    },
+                    {
+                        "id": "spec-1",
+                        "artifact_type": "spec",
+                        "source_ref": "spec:spec-1",
+                        "status": "done",
+                        "content_hash": "hash-1",
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(
+        reconciler,
+        "get_kg_registry",
+        lambda: SimpleNamespace(require_board_source_reader=lambda: _Reader()),
+    )
+
+    inventory, complete, cause = reconciler._build_source_classification_map(
+        "board-1"
+    )
+
+    assert complete is True
+    assert cause is None
+    assert set(inventory) == {("spec", "spec-1")}
+
+
 @pytest.mark.asyncio
 async def test_stale_sweep_page_is_globally_ordered_deduped_and_bounded(
     monkeypatch,
