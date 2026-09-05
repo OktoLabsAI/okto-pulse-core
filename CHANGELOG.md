@@ -15,7 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   run permanently active or prevent a clean restart; already committed graph
   data remains intact. The cancellation releases its authorization snapshot,
   boundedly quiesces the consolidation worker around the delete, and restores
-  the worker afterwards so SQLite lock contention cannot hang the request.
+  the worker afterwards so SQLite lock contention cannot hang the request. The
+  terminal snapshot now clears its active total (`enabled=false`) while keeping
+  the former run size only as audit metadata, and a later fresh run receives a
+  new start timestamp.
 
 ## [0.3.3] - 2026-08-23
 

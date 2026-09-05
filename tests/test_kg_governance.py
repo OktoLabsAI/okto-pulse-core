@@ -177,6 +177,9 @@ class TestHistoricalOptIn:
             }
             progress = await get_historical_progress(db, board_id)
             assert progress["status"] == "cancelled"
+            assert progress["enabled"] is False
+            assert progress["total"] == 0
+            assert progress["progress"] == 0
             assert progress["claimed"] == 0
             assert progress["pending"] == 0
 
@@ -184,6 +187,9 @@ class TestHistoricalOptIn:
             restarted = await start_historical_consolidation(db, board_id)
             assert restarted["status"] == "queueing"
             assert restarted["total_artifacts"] >= 1
+            progress = await get_historical_progress(db, board_id)
+            assert progress["enabled"] is True
+            assert progress["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_progress_tracking(self, db_factory):
