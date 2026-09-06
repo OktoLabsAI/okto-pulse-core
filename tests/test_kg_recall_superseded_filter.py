@@ -288,18 +288,13 @@ def test_filter_clause_shape():
         "source_projection_removed",
     }
     assert tpl.active_read_filter_clause("n") == (
-        "(coalesce(n.revocation_reason, '') <> "
-        "'policy_constraint_guideline_retired' "
-        "AND coalesce(n.revocation_reason, '') <> "
-        "'policy_constraint_guideline_superseded' "
-        "AND coalesce(n.revocation_reason, '') <> "
-        "'policy_constraint_rebuild_not_adopted' "
-        "AND coalesce(n.revocation_reason, '') <> "
-        "'policy_constraint_rule_removed' "
-        "AND coalesce(n.revocation_reason, '') <> "
-        "'policy_constraint_unlinked' "
-        "AND coalesce(n.revocation_reason, '') <> 'source_deleted' "
-        "AND coalesce(n.revocation_reason, '') <> 'source_projection_removed')"
+        "(NOT (coalesce(n.revocation_reason, '') IN "
+        "['policy_constraint_guideline_retired', "
+        "'policy_constraint_guideline_superseded', "
+        "'policy_constraint_rebuild_not_adopted', "
+        "'policy_constraint_rule_removed', "
+        "'policy_constraint_unlinked', 'source_deleted', "
+        "'source_projection_removed']))"
     )
     assert tpl.is_visible_in_active_reads("revision_superseded") is True
     for reason in tpl.ACTIVE_READ_TOMBSTONE_REASONS:
