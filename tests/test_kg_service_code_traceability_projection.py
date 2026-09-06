@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from okto_pulse.core.kg import cypher_templates as tpl
+from okto_pulse.core.kg.cursor_codec import encode_cursor
 from okto_pulse.core.kg.kg_service import KGService
 from okto_pulse.core.kg.schema_contract import (
     CODE_TRACEABILITY_READ_PROPERTIES,
@@ -29,15 +32,17 @@ class _Executor:
     def __init__(self, rows: list[list[object]]) -> None:
         self.rows = rows
         self.queries: list[str] = []
+        self.params: list[dict] = []
 
     def execute_read_only(
         self,
         _board_id: str,
         query: str,
-        _params: dict | None = None,
+        params: dict | None = None,
         **_kwargs,
     ) -> dict:
         self.queries.append(query)
+        self.params.append(dict(params or {}))
         return {"rows": self.rows}
 
 
@@ -84,6 +89,26 @@ def test_get_all_nodes_projects_subtype_and_traceability_metadata(monkeypatch):
     assert {
         name: node[name] for name in CODE_TRACEABILITY_READ_PROPERTIES
     } == dict(zip(CODE_TRACEABILITY_READ_PROPERTIES, TRACEABILITY_VALUES))
+
+
+def test_get_all_nodes_binds_cursor_timestamp_as_a_typed_utc_value(monkeypatch):
+    executor = _Executor([])
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.kg_service._get_cypher_executor",
+        lambda: executor,
+    )
+
+    KGService().get_all_nodes(
+        "board-cursor-parameter",
+        min_confidence=0.0,
+        min_relevance=0.0,
+        cursor=encode_cursor("2026-09-05T00:20:22.182147Z", "node-500"),
+    )
+
+    assert executor.params[0]["cursor_ts"] == datetime(
+        2026, 9, 5, 0, 20, 22, 182147, tzinfo=UTC
+    )
+    assert executor.params[0]["cursor_id"] == "node-500"
 
 
 def test_get_node_detail_projects_same_metadata(monkeypatch):

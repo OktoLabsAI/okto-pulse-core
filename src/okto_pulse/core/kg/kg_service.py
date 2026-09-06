@@ -74,6 +74,25 @@ def _as_iso_timestamp(value: Any) -> str | None:
     return isoformat() if callable(isoformat) else str(value)
 
 
+def _cursor_timestamp_parameter(value: str) -> datetime:
+    """Return the opaque cursor timestamp as a typed query parameter.
+
+    Cursor tokens remain transport-stable ISO text, but graph columns are
+    TIMESTAMP values.  Passing the decoded text through to an engine relies on
+    backend-specific implicit casts: Ladybug accepts that comparison while
+    Grafx correctly treats unlike value domains as non-equal/non-ordered.  A
+    typed UTC datetime gives both executors the same comparison boundary.
+    """
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cursor timestamp is not valid ISO-8601") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _optional_row_projection(
     row: list[Any] | tuple[Any, ...],
     *,
@@ -836,6 +855,8 @@ class KGService:
             params["node_type"] = node_type
         if cursor:
             cursor_ts, cursor_id = decode_cursor(cursor)
+            # Keep the cache identity transport-stable/JSON-serializable.  The
+            # graph executor receives the typed TIMESTAMP value below.
             params["cursor_ts"] = cursor_ts
             params["cursor_id"] = cursor_id
             template = (
@@ -847,8 +868,13 @@ class KGService:
             template = tpl.GET_ALL_NODES_BY_TYPE if node_type else tpl.GET_ALL_NODES
 
         def _query():
+            query_params = dict(params)
+            if cursor:
+                query_params["cursor_ts"] = _cursor_timestamp_parameter(
+                    str(params["cursor_ts"])
+                )
             result = _get_cypher_executor().execute_read_only(
-                board_id, template, params, max_rows=f.max_rows
+                board_id, template, query_params, max_rows=f.max_rows
             )
             return result.get("rows", [])
 
