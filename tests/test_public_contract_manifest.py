@@ -69,3 +69,19 @@ def test_public_contract_resolution_is_exact_or_descendant_only() -> None:
     assert not is_public_core_contract("okto_pulse.core.services.main")
     assert not is_public_core_contract("okto_pulse.core.models.db.Card")
     assert not is_public_core_contract("okto_pulse.community.app")
+
+
+def test_logical_transfer_is_an_explicit_public_edition_contract() -> None:
+    from okto_pulse.core.kg import logical_transfer
+
+    assert "okto_pulse.core.kg.logical_transfer" in PUBLIC_CORE_CONTRACT_SURFACES
+    assert is_public_core_contract(logical_transfer.__name__)
+    assert not is_public_core_contract("okto_pulse.core.kg.logical_transfer_private")
+
+
+def test_blocking_graph_bridge_is_public_without_exporting_its_implementation_module() -> None:
+    from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+
+    assert callable(run_blocking_graph_io)
+    assert is_public_core_contract("okto_pulse.core.kg.blocking_io.run_blocking_graph_io")
+    assert not is_public_core_contract("okto_pulse.core.kg.blocking_io")
