@@ -70,6 +70,10 @@ GLOBAL_OPEN_ERROR_CODES = (
 DIGESTED_NODE_TYPES: tuple[str, ...] = VECTOR_INDEX_TYPES
 BOARD_SOURCE_INVENTORY_PAGE_SIZE = 5000
 LEARNING_RELATION_GROUP_PAGE_SIZE = 5000
+# Bound application-side identity payloads independently of graph size or
+# backend. Each visibility assignment is idempotent; a failed batch aborts
+# delivery and the next attempt safely converges already-applied batches.
+DIGEST_VISIBILITY_BATCH_SIZE = 512
 
 # The normal outbox lane must not leave a one-hour writer tombstone when the
 # embedded graph process dies.  Sixty seconds is long enough for the renewal
@@ -1238,20 +1242,23 @@ class GlobalOutboxProcessor:
         ):
             if not source_ids:
                 continue
-            result = gconn.execute(
-                "MATCH (d:DecisionDigest) "
-                "WHERE d.board_id = $bid "
-                "AND d.original_node_id IN $ids "
-                "SET d.source_revoked = $revoked "
-                "RETURN count(d)",
-                {
-                    "bid": board_id,
-                    "ids": sorted(source_ids),
-                    "revoked": revoked,
-                },
-            )
-            if result.rows:
-                changed += int(result.rows[0][0] or 0)
+            ordered_ids = sorted(source_ids)
+            for offset in range(0, len(ordered_ids), DIGEST_VISIBILITY_BATCH_SIZE):
+                result = gconn.execute(
+                    "MATCH (d:DecisionDigest) "
+                    "WHERE d.board_id = $bid "
+                    "AND d.original_node_id IN $ids "
+                    "AND (d.source_revoked IS NULL OR d.source_revoked <> $revoked) "
+                    "SET d.source_revoked = $revoked "
+                    "RETURN count(d)",
+                    {
+                        "bid": board_id,
+                        "ids": ordered_ids[offset:offset + DIGEST_VISIBILITY_BATCH_SIZE],
+                        "revoked": revoked,
+                    },
+                )
+                if result.rows:
+                    changed += int(result.rows[0][0] or 0)
         return changed
 
     def _flush_global_discovery_storage_after_batch(self) -> None:
