@@ -1016,7 +1016,10 @@ async def _exec_contradictions(board_id: str) -> dict:
                 "id": f"{p['id_a']}__{p['id_b']}",
                 "type": "ContradictionPair",
                 "title": f"{p['title_a']}  ⟂  {p['title_b']}",
-                "summary": f"confidence {p.get('confidence', 0):.2f}",
+                "summary": (
+                    f"confidence {p['confidence']:.2f}"
+                    if p.get("confidence") is not None else "confidence n/a"
+                ),
                 "meta": {
                     "entity_type": "kg_node",
                     "entity_id": p.get("id_a"),
@@ -1099,6 +1102,7 @@ async def _exec_query_natural(board_id: str, params: dict) -> dict:
         columns=["Type", "Title", "Similarity"],
         tool_binding="okto_pulse_kg_query_natural",
         params_echo={"query": nl_query},
+        extra={"warning": result["warning"]} if result.get("warning") else None,
     )
 
 
@@ -1212,6 +1216,8 @@ def _criterion_matches_fr_label(value: str, selected: ValidatedSpecChildSelector
 def _linked_criteria_match_selected_fr(
     linked_criteria: list[Any],
     selected: ValidatedSpecChildSelector,
+    *,
+    allow_positions: bool = False,
 ) -> bool:
     """Exact FR selector match that avoids FR1↔FR10 substring collisions."""
 
@@ -1219,7 +1225,7 @@ def _linked_criteria_match_selected_fr(
         if isinstance(entry, bool):
             continue
         if isinstance(entry, int):
-            if selected.child_index == entry:
+            if allow_positions and selected.child_index == entry:
                 return True
             continue
         if isinstance(entry, dict):
@@ -1235,14 +1241,18 @@ def _linked_criteria_match_selected_fr(
         value = str(entry).strip()
         if not value:
             continue
-        if value in {selected.child_ref, selected.child_id}:
+        if value == selected.child_ref:
             return True
-        if selected.child_index is not None and value == str(selected.child_index):
+        if value == selected.child_id and (
+            allow_positions or re.match(r"^fr(?:[_-]|\d)", value, flags=re.IGNORECASE)
+        ):
+            return True
+        if allow_positions and selected.child_index is not None and value == str(selected.child_index):
             return True
         if _criterion_matches_fr_label(value, selected):
             return True
         text = selected.item.get("text") if isinstance(selected.item, dict) else None
-        if text and value == str(text).strip():
+        if allow_positions and text and value == str(text).strip():
             return True
     return False
 
@@ -1291,19 +1301,37 @@ async def _exec_test_scenarios(
         # leaking the transport object into generic renderers as "[object Object]".
         params_echo["fr_id"] = selected_fr.child_ref
     scenarios_without_tasks = intent.name == "scenarios_without_tasks"
+    card_links: dict[str, set[str]] = {}
+
+    def remember_cards(item: dict[str, Any], source_ref: str) -> None:
+        for card_id in item.get("linked_task_ids") or []:
+            if isinstance(card_id, str) and card_id:
+                card_links.setdefault(card_id, set()).add(source_ref)
+
+    if selected_fr is not None:
+        remember_cards(selected_fr.item, selected_fr.child_ref)
 
     for spec in specs:
         if selected_fr and str(spec.id) != selected_fr.spec_id:
             continue
         scenarios = getattr(spec, "test_scenarios", None) or []
         for sc in scenarios:
+            if not isinstance(sc, dict):
+                continue
             linked_tasks = sc.get("linked_task_ids") or []
             linked_criteria = sc.get("linked_criteria") or []
             if scenarios_without_tasks and linked_tasks:
                 continue
             if selected_fr:
-                if not _linked_criteria_match_selected_fr(linked_criteria, selected_fr):
+                if not (
+                    _linked_criteria_match_selected_fr(linked_criteria, selected_fr)
+                    or _linked_criteria_match_selected_fr(
+                        sc.get("linked_requirements") or [], selected_fr,
+                        allow_positions=True,
+                    )
+                ):
                     continue
+                remember_cards(sc, f"spec:{spec.id}:test_scenario:{sc.get('id')}")
             elif fr_id_filter:
                 # Spec 3d907a87 D4: linked_criteria stores resolved text
                 # (e.g. "FR1 — handler ..."), not short ids. Match the
@@ -1333,9 +1361,52 @@ async def _exec_test_scenarios(
                     },
                 }
             )
+        if selected_fr is not None:
+            for index, rule in enumerate(getattr(spec, "business_rules", None) or []):
+                if not isinstance(rule, dict) or rule.get("status", "active") != "active":
+                    continue
+                if not _linked_criteria_match_selected_fr(
+                    rule.get("linked_requirements") or [], selected_fr,
+                    allow_positions=True,
+                ):
+                    continue
+                rule_id = str(rule.get("id") or index)
+                rule_ref = f"spec:{spec.id}:business_rule:{rule_id}"
+                remember_cards(rule, rule_ref)
+                rows.append({
+                    "id": rule_ref,
+                    "type": "BusinessRule",
+                    "title": _item_title(rule, SPEC_CHILD_TYPE_BUSINESS_RULE) or "(untitled)",
+                    "summary": f"spec: {spec.title} · linked to selected FR",
+                    "meta": {
+                        "entity_type": "spec", "entity_id": spec.id,
+                        "entity_title": spec.title, "spec_id": spec.id,
+                        "rule_id": rule_id, "rule_ref": rule_ref,
+                        **_selected_child_meta(selected_fr),
+                    },
+                })
+    if selected_fr is not None and card_links:
+        cards = await get_discovery_execution_read_port().list_board_cards(db, board_id=board_id)
+        for card in cards:
+            card_id = str(card.id)
+            status = getattr(card.status, "value", card.status)
+            if (card_id not in card_links or str(card.board_id) != board_id
+                    or getattr(card, "archived", False) or status == "cancelled"):
+                continue
+            rows.append({
+                "id": card_id, "type": "Card", "title": card.title,
+                "summary": f"status: {status} · linked to selected FR coverage",
+                "meta": {
+                    "entity_type": "card", "entity_id": card_id,
+                    "entity_title": card.title, "card_id": card_id,
+                    "spec_id": selected_fr.spec_id,
+                    "coverage_via": sorted(card_links[card_id]),
+                    **_selected_child_meta(selected_fr),
+                },
+            })
     return _ok(
         rows,
-        columns=["Scenario", "Spec", "Linked tasks"],
+        columns=(["Type", "Coverage", "Spec"] if selected_fr else ["Scenario", "Spec", "Linked tasks"]),
         tool_binding="okto_pulse_list_test_scenarios",
         params_echo=params_echo,
     )
@@ -1470,7 +1541,7 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
     # evita N+1 dentro do loop e permite cancelled-card filter no
     # spec_coverage_summary (cards cancelled descobrem suas linkagens).
     from collections import defaultdict
-    all_cards = await reader.list_board_cards(db, board_id=board_id)
+    all_cards = await reader.list_board_cards(db, board_id=board_id, include_archived=True)
     cards_by_spec: dict[str, list] = defaultdict(list)
     for c in all_cards:
         if c.spec_id:
@@ -1480,7 +1551,7 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
         if not c.spec_id:
             continue
         status_value = getattr(c.status, "value", str(c.status) if c.status else "")
-        if status_value == "cancelled":
+        if status_value == "cancelled" or getattr(c, "archived", False):
             cancelled_by_spec[c.spec_id].add(str(c.id))
 
     rows: list[dict] = []
@@ -1675,25 +1746,47 @@ async def _exec_supersedence_chains(db: Any, board_id: str) -> dict:
         board_id=board_id,
     )
 
-    # Flatten all decisions across specs, indexed by id (same scope as the
-    # canonical supersedence constraint).
-    by_id: dict[str, dict] = {}
+    # Decision ids are spec-local. A chain must never resolve a coincidentally
+    # equal id in another spec, and damaged cycles must not monopolize the loop.
+    by_id: dict[tuple[str, str], dict] = {}
     for spec in specs:
         for dec in getattr(spec, "decisions", None) or []:
+            if not isinstance(dec, dict):
+                continue
             dec_id = dec.get("id")
             if dec_id:
-                by_id[dec_id] = {**dec, "_spec_id": spec.id, "_spec_title": spec.title}
+                by_id[(str(spec.id), str(dec_id))] = {
+                    **dec, "_spec_id": spec.id, "_spec_title": spec.title,
+                }
 
     chains: list[list[dict]] = []
-    seen_as_head: set[str] = set()
-    for dec_id, dec in by_id.items():
-        if dec_id in seen_as_head:
-            continue
-        if not dec.get("supersedes_decision_id"):
+    covered: set[tuple[str, str]] = set()
+    referenced = {
+        (spec_id, str(dec["supersedes_decision_id"]))
+        for (spec_id, _), dec in by_id.items()
+        if dec.get("supersedes_decision_id")
+    }
+    candidates = sorted(key for key, dec in by_id.items() if dec.get("supersedes_decision_id"))
+    heads = [key for key in candidates if key not in referenced]
+    cycle_count = 0
+    missing_count = 0
+    # Real heads first prevents suffix-only duplicates regardless of JSON order.
+    # Remaining components have no head (cycles) and still receive a finite report.
+    for head_key in heads + [key for key in candidates if key not in heads]:
+        if head_key in covered:
             continue
         chain: list[dict] = []
-        cur = dec
-        while cur:
+        visited: set[tuple[str, str]] = set()
+        current_key: tuple[str, str] | None = head_key
+        while current_key is not None:
+            if current_key in visited:
+                cycle_count += 1
+                break
+            cur = by_id.get(current_key)
+            if cur is None:
+                missing_count += 1
+                break
+            visited.add(current_key)
             chain.append(
                 {
                     "id": cur.get("id"),
@@ -1703,12 +1796,10 @@ async def _exec_supersedence_chains(db: Any, board_id: str) -> dict:
                     "spec_title": cur.get("_spec_title"),
                 }
             )
-            cur_id = cur.get("id")
-            if cur_id:
-                seen_as_head.add(cur_id)
             nxt_id = cur.get("supersedes_decision_id")
-            cur = by_id.get(nxt_id) if nxt_id else None
-        if len(chain) >= 2:
+            current_key = (current_key[0], str(nxt_id)) if nxt_id else None
+        covered.update(visited)
+        if chain:
             chains.append(chain)
 
     rows = []
@@ -1732,10 +1823,20 @@ async def _exec_supersedence_chains(db: Any, board_id: str) -> dict:
                 },
             }
         )
+    extra = None
+    if cycle_count or missing_count:
+        extra = {
+            "warning": (
+                "Supersedence chains are incomplete: "
+                f"{cycle_count} cycle(s), {missing_count} missing target(s)."
+            ),
+            "chain_diagnostics": {"cycles": cycle_count, "missing_targets": missing_count},
+        }
     return _ok(
         rows,
         columns=["Head", "Length", "Trail"],
         tool_binding="okto_pulse_list_supersedence_chains",
+        extra=extra,
     )
 
 

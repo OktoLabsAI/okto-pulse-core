@@ -233,7 +233,7 @@ async def test_valid_selector_executes_with_exact_fr_coverage(monkeypatch):
 
     monkeypatch.setattr(discovery_executor, "_load_spec_by_id", load_spec)
     monkeypatch.setattr(discovery_executor, "_can_read_selector_spec", can_read)
-    db = _SequenceSession([_ScalarResult(values=[spec])])
+    db = _SequenceSession([_ScalarResult(values=[spec]), _ScalarResult(values=[])])
 
     out = await discovery_executor.execute_intent(
         db=db,
