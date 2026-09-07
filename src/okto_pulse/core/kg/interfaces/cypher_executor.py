@@ -35,4 +35,3 @@ class ReadOnlyBatchCypherExecutor(Protocol):
         statements: Sequence[tuple[str, dict[str, Any] | None, int]],
     ) -> Sequence[dict[str, Any]]:
         ...
-
