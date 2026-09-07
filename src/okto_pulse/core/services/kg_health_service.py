@@ -4105,6 +4105,40 @@ def _build_kg_root_cause(
     }
 
 
+def _read_health_query_group(
+    cypher: object, board_id: str, statements: list[tuple[str, dict[str, Any] | None, int]],
+) -> list[dict[str, Any] | Exception]:
+    """Use an optional complete batch, retaining legacy per-query degradation.
+
+    A failed/incomplete batch contributes no prefix. Scalar retries still pass
+    through the executor's authorization/read-only boundary and expose each
+    original failure to the existing metric-specific policy. No health work is
+    disabled or cached, and unsupported backends retain their scalar reads.
+    """
+    if not statements:
+        return []
+    batch = getattr(cypher, "execute_read_only_batch", None)
+    if callable(batch):
+        try:
+            results = list(batch(board_id, statements))
+            if len(results) == len(statements) and all(isinstance(row, dict) for row in results):
+                return results
+        except Exception:
+            pass
+    results: list[dict[str, Any] | Exception] = []
+    for query, params, max_rows in statements:
+        try:
+            result = (
+                cypher.execute_read_only(board_id, query, max_rows=max_rows)
+                if params is None else
+                cypher.execute_read_only(board_id, query, params, max_rows=max_rows)
+            )
+            results.append(result)
+        except Exception as exc:
+            results.append(exc)
+    return results
+
+
 def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
     """Pull node-level aggregates from graph backend for ``board_id``.
 
@@ -4130,14 +4164,14 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
 
     try:
         cypher = get_kg_registry().cypher_executor
-        for node_type in NODE_TYPES:
+        results = _read_health_query_group(cypher, board_id, [
+            (f"MATCH (n:{node_type}) RETURN n.relevance_score", {}, 10000)
+            for node_type in NODE_TYPES
+        ])
+        for node_type, result in zip(NODE_TYPES, results, strict=True):
             try:
-                result = cypher.execute_read_only(
-                    board_id,
-                    f"MATCH (n:{node_type}) RETURN n.relevance_score",
-                    {},
-                    max_rows=10000,
-                )
+                if isinstance(result, Exception):
+                    raise result
             except Exception as exc:
                 logger.debug(
                     "kg.health.graph_query_failed board=%s type=%s err=%s",
@@ -4215,14 +4249,15 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
         cypher = get_kg_registry().cypher_executor
         successful_node_types = 0
         failed_node_types = 0
-        for node_type in NODE_TYPES:
+        results = _read_health_query_group(cypher, board_id, [
+            (f"MATCH (n:{node_type}) RETURN n.graph_layer, n.maturity_status, count(n)",
+             None, 10000)
+            for node_type in NODE_TYPES
+        ])
+        for result in results:
             try:
-                result = cypher.execute_read_only(
-                    board_id,
-                    f"MATCH (n:{node_type}) "
-                    f"RETURN n.graph_layer, n.maturity_status, count(n)",
-                    max_rows=10000,
-                )
+                if isinstance(result, Exception):
+                    raise result
                 for row in result.get("rows", []):
                     layer = str(row[0] or "unclassified")
                     maturity = str(row[1] or "unclassified")

@@ -786,8 +786,14 @@ async def test_service_layer_response_matches_pydantic_model(
 
     # Should construct without raising — proves shape parity.
     response = KGHealthResponse(**data)
-    # And the dump round-trips into the same set of keys.
-    assert set(response.model_dump().keys()) == set(data.keys())
+    # Community decorates the REST result with route identity after the Core
+    # service returns. Keep exact parity for all Core fields and pin this sole
+    # edition-owned extension rather than leaking physical storage into Core.
+    from okto_pulse.community.api.kg_health import GraphStorageSnapshot
+
+    assert "graph_storage" not in data
+    assert set(response.model_dump(exclude={"graph_storage"})) == set(data)
+    assert response.graph_storage == GraphStorageSnapshot()
 
 
 def test_rest_health_issue_preserves_unavailable_probe_names():
