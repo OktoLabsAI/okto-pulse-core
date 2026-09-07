@@ -261,6 +261,9 @@ async def test_valid_selector_executes_with_exact_fr_coverage(monkeypatch):
     assert meta["child_type"] == "functional_requirement"
     assert meta["child_id"] == "0"
     assert meta["child_index"] == 0
+    assert out["params_echo"] == {
+        "fr_id": "spec:spec-1:functional_requirement:0"
+    }
 
 
 @pytest.mark.asyncio
@@ -294,8 +297,20 @@ async def test_card_entity_selector_executes_dependency_lookup(monkeypatch):
 @pytest.mark.asyncio
 async def test_uncovered_requirements_include_first_class_structured_children():
     spec = _spec(
-        functional_requirements=[],
-        acceptance_criteria=[],
+        functional_requirements=[
+            {
+                "id": "fr-1",
+                "text": "Structured functional requirement",
+                "status": "active",
+            }
+        ],
+        acceptance_criteria=[
+            {
+                "id": "ac-1",
+                "text": "Structured acceptance criterion",
+                "status": "active",
+            }
+        ],
         technical_requirements=[],
         business_rules=[
             {"id": "br-1", "title": "Unlinked BR", "linked_task_ids": []},
@@ -329,12 +344,16 @@ async def test_uncovered_requirements_include_first_class_structured_children():
 
     by_type = {row["type"]: row for row in out["rows"]}
     assert set(by_type) == {
+        "UncoveredFR",
+        "UncoveredAC",
         "UncoveredBR",
         "UncoveredAPIContract",
         "UncoveredIR",
         "UncoveredOR",
         "UncoveredDecision",
     }
+    assert by_type["UncoveredFR"]["title"] == "Structured functional requirement"
+    assert by_type["UncoveredAC"]["title"] == "Structured acceptance criterion"
     assert by_type["UncoveredBR"]["meta"]["child_ref"] == (
         "spec:spec-1:business_rule:br-1"
     )

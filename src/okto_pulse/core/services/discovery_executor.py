@@ -1284,6 +1284,12 @@ async def _exec_test_scenarios(
     raw_fr_id_filter = params.get("fr_id")
     fr_id_filter = raw_fr_id_filter.strip() if isinstance(raw_fr_id_filter, str) else ""
     selected_fr = _selected_functional_requirement_selector(selector_values)
+    params_echo = dict(params)
+    if selected_fr is not None:
+        # The UI sends a structured selector object so authorization and exact
+        # identity remain fail-closed.  Echo its canonical reference instead of
+        # leaking the transport object into generic renderers as "[object Object]".
+        params_echo["fr_id"] = selected_fr.child_ref
     scenarios_without_tasks = intent.name == "scenarios_without_tasks"
 
     for spec in specs:
@@ -1331,7 +1337,7 @@ async def _exec_test_scenarios(
         rows,
         columns=["Scenario", "Spec", "Linked tasks"],
         tool_binding="okto_pulse_list_test_scenarios",
-        params_echo=params,
+        params_echo=params_echo,
     )
 
 
@@ -1364,6 +1370,18 @@ def _item_title(item: dict[str, Any], child_type: SpecChildType) -> str:
         if method or path:
             return f"{method} {path}".strip()[:160]
     return child_type.replace("_", " ").title()
+
+
+def _requirement_title(item: Any) -> str:
+    """Render legacy strings and current structured FR/AC values uniformly."""
+
+    if isinstance(item, dict):
+        for key in ("text", "title", "name", "label", "description"):
+            value = item.get(key)
+            if value not in (None, ""):
+                return str(value)[:160]
+        return ""
+    return str(item or "")[:160]
 
 
 def _uncovered_child_row(
@@ -1510,7 +1528,7 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
                 {
                     "id": f"{spec.id}:fr:{idx}",
                     "type": "UncoveredFR",
-                    "title": ((frs[idx] if idx < len(frs) else "") or "")[:160],
+                    "title": _requirement_title(frs[idx] if idx < len(frs) else ""),
                     "summary": (
                         f"spec: {spec.title} · status: {status_value}"
                         f" · FR #{idx}"
@@ -1542,7 +1560,7 @@ async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
                 {
                     "id": f"{spec.id}:ac:{idx}",
                     "type": "UncoveredAC",
-                    "title": ((acs[idx] if idx < len(acs) else "") or "")[:160],
+                    "title": _requirement_title(acs[idx] if idx < len(acs) else ""),
                     "summary": (
                         f"spec: {spec.title} · status: {status_value}"
                         f" · AC #{idx}"
