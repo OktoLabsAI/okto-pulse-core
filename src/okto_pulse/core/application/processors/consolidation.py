@@ -3377,6 +3377,22 @@ async def _classify_queue_entry_source_for_debt(
     )
 
 
+def _is_deferred_spec_endpoint(entry: ConsolidationQueueRecord) -> bool:
+    """Only an ordinary, typed prerequisite wait may yield board ordering.
+
+    Exact rebuild membership keeps its separate strict head/CAS protocol.
+    Unknown errors and work kinds never acquire this exception by substring.
+    """
+    error = getattr(entry, "last_error", None)
+    return (
+        _work_kind(entry) == "consolidate"
+        and getattr(entry, "artifact_type", None) == "spec"
+        and not _queue_source(entry).startswith("rebuild:")
+        and isinstance(error, str)
+        and error.startswith("relational_projection_endpoint_pending:")
+    )
+
+
 def _select_board_aware_entries(
     ready_entries: list[ConsolidationQueueRecord],
     *,
@@ -3398,9 +3414,40 @@ def _select_board_aware_entries(
     without stale-claim churn.
     """
 
+    # Queue UUID order is not dependency order. A typed missing-endpoint head
+    # must yield even AFTER its one-second delay has elapsed; otherwise it can
+    # continually reclaim ahead of the very prerequisite needed to unblock it.
+    # Preserve the first ordinary/error/rebuild barrier exactly. Reorder only
+    # the typed-wait prefix, within the same board, after reservation filtering.
+    by_board: dict[str, list[ConsolidationQueueRecord]] = {}
+    for entry in ready_entries:
+        if _work_kind(entry) in _CLAIMABLE_WORK_KINDS:
+            by_board.setdefault(entry.board_id, []).append(entry)
+    heads: list[ConsolidationQueueRecord] = []
+    for rows in by_board.values():
+        head = rows[0]
+        if _is_deferred_spec_endpoint(head) and not any(
+            _queue_source(row).startswith("rebuild:") for row in rows
+        ):
+            ordinary = next((row for row in rows if not _is_deferred_spec_endpoint(row)), None)
+            if ordinary is not None:
+                head = ordinary
+            else:
+                # Every row is waiting on an endpoint. Retry the least recently
+                # deferred one, not always the lowest UUID. A new defer advances
+                # next_retry_at, rotating the next pass without spending attempts.
+                head = min(
+                    rows,
+                    key=lambda row: _aware_utc(
+                        row.next_retry_at or row.triggered_at
+                        or datetime.min.replace(tzinfo=timezone.utc)
+                    ),
+                )
+        heads.append(head)
+
     selected: list[ConsolidationQueueRecord] = []
     unavailable_boards = set(claimed_board_ids)
-    for entry in ready_entries:
+    for entry in heads:
         # Card 8 owns sweep execution. Unknown/future kinds also remain
         # pending rather than being accidentally consumed by this worker.
         if _work_kind(entry) not in _CLAIMABLE_WORK_KINDS:

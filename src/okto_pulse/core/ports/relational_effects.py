@@ -116,6 +116,9 @@ class ConsolidationQueueUpsert:
     source: str
     triggered_by_event: str
     payload: dict[str, Any] | None = None
+    # A repair is not a new semantic event: never revoke an active claim or
+    # interfere with exact rebuild membership merely to replay the same source.
+    coalesce_active: bool = False
 
 
 @dataclass(frozen=True, slots=True)
