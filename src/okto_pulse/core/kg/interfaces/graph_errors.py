@@ -26,6 +26,12 @@ class GraphUnavailable(GraphError):
     retryable = True
 
 
+class GraphInvalidQuery(GraphError):
+    """A query cannot be parsed or planned by the active graph provider."""
+
+    code = "graph_invalid_query"
+
+
 class GraphCorruption(GraphError):
     code = "graph_corruption"
 
@@ -101,6 +107,7 @@ __all__ = [
     "GraphCorruption",
     "GraphError",
     "GraphIndexUnavailable",
+    "GraphInvalidQuery",
     "GraphLockContention",
     "GraphUnavailable",
     "graph_memory_pressure_retry_after_seconds",
