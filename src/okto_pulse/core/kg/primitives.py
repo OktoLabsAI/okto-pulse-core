@@ -1877,8 +1877,11 @@ def _auto_attach_provenance_edges(
     valid, auditable remediation path instead of asking the agent to do something
     the API rejects.
     """
+    if not node_candidates:
+        return
+    provenance_sources = _outgoing_edge_sources(edge_candidates, "belongs_to")
     for cand_id, cand in list(node_candidates.items()):
-        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+        if cand_id in provenance_sources:
             continue
         source_ref = str(getattr(cand, "source_artifact_ref", "") or "")
         if not source_ref:
@@ -1924,6 +1927,7 @@ def _auto_attach_provenance_edges(
             created_by="system:commit_consolidation",
             fallback_reason=(f"auto_attached_to_{root_node_type.lower()}_source_root"),
         )
+        provenance_sources.add(cand_id)
 
 
 def _inherit_supersede_provenance_edges(
@@ -1946,8 +1950,11 @@ def _inherit_supersede_provenance_edges(
     leaves the normal connectivity rejection in place.
     """
 
+    if not node_candidates:
+        return
+    provenance_sources = _outgoing_edge_sources(edge_candidates, "belongs_to")
     for cand_id, cand in list(node_candidates.items()):
-        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+        if cand_id in provenance_sources:
             continue
 
         hint = effective_hints.get(cand_id)
@@ -2027,6 +2034,7 @@ def _inherit_supersede_provenance_edges(
             continue
 
         edge_id = f"{cand_id}__inherit_supersede_belongs_to"
+        replaces_candidate = edge_id in edge_candidates
         edge_candidates[edge_id] = EdgeCandidate(
             candidate_id=edge_id,
             edge_type=KGEdgeType.BELONGS_TO,
@@ -2040,16 +2048,27 @@ def _inherit_supersede_provenance_edges(
                 "preserve_predecessor_provenance_on_deterministic_supersede"
             ),
         )
+        if replaces_candidate:
+            # Candidate IDs can collide with this deterministic key. The old
+            # edge may have been the only provenance edge of a later candidate;
+            # re-index this exceptional overwrite rather than retain stale credit.
+            provenance_sources = _outgoing_edge_sources(edge_candidates, "belongs_to")
+        else:
+            provenance_sources.add(cand_id)
 
 
-def _has_outgoing_edge(edge_candidates: dict, cand_id: str, edge_type: str) -> bool:
-    for edge in edge_candidates.values():
-        if (
-            str(getattr(edge, "from_candidate_id", "")) == cand_id
-            and _enum_value(getattr(edge, "edge_type", "")) == edge_type
-        ):
-            return True
-    return False
+def _outgoing_edge_sources(edge_candidates: dict, edge_type: str) -> set[str]:
+    """Index this phase's candidate edges, never graph authority or read results.
+
+    Re-scanning the growing edge batch for every node made provenance preparation
+    quadratic. Each caller rebuilds this local set so edges attached by an earlier
+    phase are visible; normal source/identity/connectivity checks are unchanged.
+    """
+    return {
+        str(getattr(edge, "from_candidate_id", ""))
+        for edge in edge_candidates.values()
+        if _enum_value(getattr(edge, "edge_type", "")) == edge_type
+    }
 
 
 def _resolve_provenance_root(graph_scope, source_ref: str) -> tuple[str, str] | None:
