@@ -32,8 +32,14 @@ a failure resolving the second candidate of the same source still propagates.
 The generated-ID collision test also proves displaced provenance is withdrawn.
 Ruff and whitespace checks passed.
 
-The change is prepared for accumulated source deployment, not yet loaded by the
-running Pulse PID 23228. No live consolidation/redrive/rebuild or deterministic
-repair replay was performed. The 21 pending specs remain reserved. Related native
-write attribution is recorded in Grafx `docs/SOURCE_REFERENCE_WRITE_COST_0_0_4.md`;
-its isolated commit samples are not full Pulse consolidation latency.
+Initially prepared for accumulated deployment without consuming the 21 reserved
+specs. Subsequently, the operator authorized exactly one real consolidation.
+Core `e1e9d08` is now loaded by Pulse 0.3.3 PID 2124 with installed Grafx 0.0.4
+`2db169d`. Session `kgses_43a75608efd34f80` committed 5 Alternatives and 10 edges
+in 22.981 s through the full MCP commit call; automatic provenance and explicit
+judgement pairs were read back. Global event `evt_07f41318afbf4fa7` acknowledged
+without retry after 131.489 s. The ledger is now 20 pending/20 consolidated,
+all remaining pending items unchanged. No redrive/rebuild or deterministic repair
+replay was performed. These end-to-end observations do not isolate this local
+membership change. Full evidence and remaining write-cost priorities are in Grafx
+`docs/PULSE_SINGLE_SPEC_INSTALLED_0_0_4.md`.
