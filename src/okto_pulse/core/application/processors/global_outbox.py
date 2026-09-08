@@ -1568,6 +1568,7 @@ class GlobalOutboxProcessor:
         edge_rows = await self._run_graph_io(
             lambda: self._read_board_digest_edge_rows(gconn, board_id)
         )
+        correct_edge_counts = self._correct_board_digest_edge_counts(edge_rows, board_id=board_id)
         inbound_edge_counts = await self._run_graph_io(
             lambda: self._read_digest_inbound_edge_counts(gconn, board_id)
         )
@@ -1766,12 +1767,7 @@ class GlobalOutboxProcessor:
                     layer_corrected += 1
                     mutated = True
 
-                correct_edge_count = self._correct_board_digest_edge_count(
-                    edge_rows,
-                    board_id=board_id,
-                    digest_id=digest_id,
-                    original_node_id=original_node_id,
-                )
+                correct_edge_count = correct_edge_counts.get((digest_id, original_node_id), 0)
                 total_inbound = inbound_edge_counts.get(digest_id, 0)
                 if correct_edge_count == 0 and total_inbound == 0:
                     await self._run_graph_io(
@@ -1914,21 +1910,24 @@ class GlobalOutboxProcessor:
         return counts
 
     @staticmethod
-    def _correct_board_digest_edge_count(
+    def _correct_board_digest_edge_counts(
         edge_rows: list[dict[str, str | int]],
         *,
         board_id: str,
-        digest_id: str,
-        original_node_id: str,
-    ) -> int:
-        return sum(
-            int(row["edge_count"])
-            for row in edge_rows
-            if row["source_board_id"] == board_id
-            and row["digest_board_id"] == board_id
-            and row["digest_id"] == digest_id
-            and row["original_node_id"] == original_node_id
-        )
+    ) -> dict[tuple[str | int, str | int], int]:
+        """Aggregate one observed inventory without collapsing duplicate multiplicity.
+
+        Both owners and both digest/source identities remain part of the predicate.
+        This call-local projection is rebuilt after every fresh graph read, including
+        post-flush verification. It is not a cached proof that writes succeeded.
+        """
+        counts: dict[tuple[str | int, str | int], int] = {}
+        for row in edge_rows:
+            if row["source_board_id"] != board_id or row["digest_board_id"] != board_id:
+                continue
+            key = (row["digest_id"], row["original_node_id"])
+            counts[key] = counts.get(key, 0) + int(row["edge_count"])
+        return counts
 
     def _verify_reconciled_digest_layers(
         self,
@@ -1986,6 +1985,7 @@ class GlobalOutboxProcessor:
                 )
 
         edge_rows = self._read_board_digest_edge_rows(gconn, board_id)
+        correct_edge_counts = self._correct_board_digest_edge_counts(edge_rows, board_id=board_id)
         inbound_edge_counts = self._read_digest_inbound_edge_counts(
             gconn,
             board_id,
@@ -2012,12 +2012,7 @@ class GlobalOutboxProcessor:
             violations.append(f"{digest_id}:unexpected_inbound_edge")
         for oid in sorted(expected_by_identity):
             stable_digest_id = f"dd_{board_id[:8]}_{oid}"
-            correct_edge_count = self._correct_board_digest_edge_count(
-                edge_rows,
-                board_id=board_id,
-                digest_id=stable_digest_id,
-                original_node_id=oid,
-            )
+            correct_edge_count = correct_edge_counts.get((stable_digest_id, oid), 0)
             if correct_edge_count != 1:
                 violations.append(f"{oid}:correct_contains_edges={correct_edge_count}")
             inbound_count = inbound_edge_counts.get(stable_digest_id, 0)
