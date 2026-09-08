@@ -53,8 +53,13 @@ new observation assertion expected two relational stages; inspection confirmed
 the existing cancellation fixture intentionally executes a third. The assertion
 was corrected to three without changing production retry or cancellation logic.
 
-Source-only until accumulated deployment. No live consolidation, DLQ redrive,
-reset, rebuild or reserved-spec consumption is required to install these
-observations. Pulse currently runs installed Grafx 0.0.4@807bce6; the previous
-real benchmark remains 22.981 s full commit and 131.489 s Global ACK. This change
-does not itself improve or remeasure those latencies.
+Accumulated deployment completed: Core 0a38312 is loaded by Pulse 0.3.3 PID 4212
+with installed Grafx 0.0.4@fa8f188 and Community 7158383. Previous PID 15940 exited
+before restart. HTTP root and authenticated canonical readback passed; all 40
+ledger entries are identical, including the 20 pending reserved specs. No live
+consolidation, DLQ redrive, reset or rebuild was used. The new observations have
+been exercised by tests, not by consuming another live spec. Full deployment
+evidence is in Grafx `docs/UNSTAGED_WRITE_PREFLIGHT_0_0_4.md`.
+
+The previous real benchmark remains 22.981 s full commit and 131.489 s Global ACK.
+This instrumentation does not itself improve or remeasure those latencies.
