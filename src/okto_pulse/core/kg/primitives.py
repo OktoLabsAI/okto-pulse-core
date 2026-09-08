@@ -42,6 +42,7 @@ from okto_pulse.core.domain.code_traceability_kg import (
 )
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.kg.consolidation_timing import observe_consolidation_phase
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.runtime_context import runtime_state
 from okto_pulse.core.kg.node_identity import (
@@ -4395,22 +4396,30 @@ async def commit_consolidation(
 
             # The graph was already applied by the first attempt.  Restage only
             # the relational ledger/audit/outbox in the fresh caller UOW.
-            await _append_cognitive_source_records(
-                session.board_id,
+            await observe_consolidation_phase(
+                "cognitive_source_append",
                 req.session_id,
-                list(pending.cognitive_source_records),
-                context=db,
-                store=cognitive_source_store,
+                _append_cognitive_source_records(
+                    session.board_id,
+                    req.session_id,
+                    list(pending.cognitive_source_records),
+                    context=db,
+                    store=cognitive_source_store,
+                ),
             )
-            await _commit_audit_records(
-                registry,
-                db,
-                list(pending.records),
-                pending.counters,
-                req,
-                session,
-                agent_id,
-                pending.response.committed_at,
+            await observe_consolidation_phase(
+                "audit_outbox_stage",
+                req.session_id,
+                _commit_audit_records(
+                    registry,
+                    db,
+                    list(pending.records),
+                    pending.counters,
+                    req,
+                    session,
+                    agent_id,
+                    pending.response.committed_at,
+                ),
             )
             pending.in_flight = True
             session.touch(registry.require_session_store().default_ttl_seconds)
@@ -4429,32 +4438,36 @@ async def commit_consolidation(
                 committed_at,
                 connectivity,
                 cognitive_source_records,
-            ) = await _run_graph_io(
-                _do_graph_commit,
-                session.board_id,
+            ) = await observe_consolidation_phase(
+                "graph_dispatch",
                 req.session_id,
-                dict(session.node_candidates),
-                dict(session.edge_candidates),
-                effective_hints,
-                agent_id,
-                registry.require_embedding_provider(),
-                kg_health_state,
-                session.content_hash,
-                session.artifact_id,
-                frozenset(req.agent_overrides),
-                session.artifact_type,
-                session.spec_lineage_parent_intent,
-                getattr(
-                    session,
-                    "relational_projection_candidate_ids",
-                    frozenset(),
+                _run_graph_io(
+                    _do_graph_commit,
+                    session.board_id,
+                    req.session_id,
+                    dict(session.node_candidates),
+                    dict(session.edge_candidates),
+                    effective_hints,
+                    agent_id,
+                    registry.require_embedding_provider(),
+                    kg_health_state,
+                    session.content_hash,
+                    session.artifact_id,
+                    frozenset(req.agent_overrides),
+                    session.artifact_type,
+                    session.spec_lineage_parent_intent,
+                    getattr(
+                        session,
+                        "relational_projection_candidate_ids",
+                        frozenset(),
+                    ),
+                    getattr(
+                        session,
+                        "relational_projection_active_set_intent",
+                        None,
+                    ),
+                    executor=blocking_execution,
                 ),
-                getattr(
-                    session,
-                    "relational_projection_active_set_intent",
-                    None,
-                ),
-                executor=blocking_execution,
             )
         except KGPrimitiveError:
             raise
@@ -4477,24 +4490,32 @@ async def commit_consolidation(
         # carry exact before-images in GraphWriteRecord.
         failure_stage = "cognitive_source_append"
         try:
-            await _append_cognitive_source_records(
-                session.board_id,
+            await observe_consolidation_phase(
+                "cognitive_source_append",
                 req.session_id,
-                cognitive_source_records,
-                context=db,
-                store=cognitive_source_store,
+                _append_cognitive_source_records(
+                    session.board_id,
+                    req.session_id,
+                    cognitive_source_records,
+                    context=db,
+                    store=cognitive_source_store,
+                ),
             )
 
             failure_stage = "audit_outbox_stage"
-            await _commit_audit_records(
-                registry,
-                db,
-                records,
-                counters,
-                req,
-                session,
-                agent_id,
-                committed_at,
+            await observe_consolidation_phase(
+                "audit_outbox_stage",
+                req.session_id,
+                _commit_audit_records(
+                    registry,
+                    db,
+                    records,
+                    counters,
+                    req,
+                    session,
+                    agent_id,
+                    committed_at,
+                ),
             )
         except Exception as staging_error:
             try:
@@ -4569,11 +4590,15 @@ async def commit_consolidation(
             session.touch(registry.require_session_store().default_ttl_seconds)
             return response
 
-        await _finalize_consolidation_session_unlocked(
-            registry,
-            session,
-            records,
-            session_id=req.session_id,
+        await observe_consolidation_phase(
+            "session_finalize",
+            req.session_id,
+            _finalize_consolidation_session_unlocked(
+                registry,
+                session,
+                records,
+                session_id=req.session_id,
+            ),
         )
         return response
 
@@ -4591,9 +4616,13 @@ async def commit_consolidation(
             agent_id=agent_id,
             session_id=req.session_id,
         )
-        kg_health_state = await _resolve_commit_kg_health_state(
-            session.board_id,
-            db,
+        kg_health_state = await observe_consolidation_phase(
+            "health_admission",
+            req.session_id,
+            _resolve_commit_kg_health_state(
+                session.board_id,
+                db,
+            ),
         )
         # A health-reader failure is normalized to ``recovery_needed``.
         # Reject it here, before dispatching the graph callback, so neither
