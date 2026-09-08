@@ -42,3 +42,11 @@ This checkpoint is source-only, after the one-spec measurement. Pulse PID 2124
 continues using the previously loaded Core implementation and installed Grafx
 0.0.4 at 2db169d. No live consolidation was replayed, no additional pending spec
 was consumed and no reset, rebuild or redrive was performed for this patch.
+
+Accumulated deployment update, 2026-09-08: Core **9e91ea9** is now loaded by
+Pulse 0.3.3 PID **34048**, with installed Grafx 0.0.4@a82d3bf and Community7158383.
+The old process became terminal and ports were free before restart. Twenty pending
+cognitive items are exactly unchanged; MCP readback of the preceding single-spec
+commit passed. Board/Global report healthy, while historical policy DLQ keeps the
+overall status at_risk. Detailed deployment evidence is in the Grafx repository's
+`docs/GLOBAL_DESTINATION_BATCHING_0_0_4.md`. No new consolidation was performed.
