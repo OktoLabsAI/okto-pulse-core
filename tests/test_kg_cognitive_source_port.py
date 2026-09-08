@@ -80,6 +80,48 @@ def test_fake_satisfies_protocol():
     assert isinstance(_FakeStore(), CognitiveSourceStore)
 
 
+@pytest.mark.parametrize("optimized", [False, True])
+def test_durable_digest_uses_optional_audited_reader_with_legacy_fallback(optimized):
+    from okto_pulse.core.kg.rebuild_sources import (
+        _cognitive_durable_digest, cognitive_durable_digest_from_rows,
+    )
+
+    record = CognitiveSourceRecord(
+        node_id="n", board_id="b", node_type="Decision", generation=0,
+        payload={"title": "verified"},
+    )
+    calls = []
+
+    class Legacy(_FakeStore):
+        async def enumerate(self, board_id):
+            calls.append(("full", board_id))
+            return (record,)
+
+    class Optimized(Legacy):
+        async def enumerate_latest_verified(self, board_id):
+            calls.append(("latest", board_id))
+            return (record,)
+
+    register_cognitive_source_store(Optimized() if optimized else Legacy())
+    assert _cognitive_durable_digest("b") == cognitive_durable_digest_from_rows((record,))
+    assert calls == [("latest" if optimized else "full", "b")]
+
+
+def test_audited_reader_failure_never_falls_back_to_full_enumeration():
+    from okto_pulse.core.kg.rebuild_sources import _cognitive_durable_digest
+
+    class Broken(_FakeStore):
+        async def enumerate_latest_verified(self, board_id):
+            raise CognitiveSourceConflict("historical_corruption", board_id=board_id)
+
+        async def enumerate(self, board_id):
+            pytest.fail("must not hide optimized reader failure")
+
+    register_cognitive_source_store(Broken())
+    with pytest.raises(CognitiveSourceConflict, match="historical_corruption"):
+        _cognitive_durable_digest("b")
+
+
 def test_record_is_frozen_and_defaults_are_safe():
     record = CognitiveSourceRecord(
         node_id="learning_abc",
