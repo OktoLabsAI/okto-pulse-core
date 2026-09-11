@@ -166,7 +166,9 @@ class _GraphScope:
         if self.fail:
             raise RuntimeError("injected graph read failure")
         assert "MATCH (n)" in query
-        assert "string_split(n.source_artifact_ref, ':')" in query
+        assert "split(n.source_artifact_ref, ':')" in query
+        assert "CASE parts[0]" in query
+        assert "END AS artifact_type, parts[1] AS artifact_id" in query
         assert "RETURN DISTINCT artifact_type, artifact_id" in query
         assert "ORDER BY artifact_type ASC, artifact_id ASC" in query
         assert "LIMIT $scan_limit" in query

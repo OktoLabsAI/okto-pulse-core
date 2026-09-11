@@ -492,7 +492,7 @@ async def enumerate_stale_sweep_page(
 
     scan_limit = budget + 1
     after_type, after_id = after or ("", "")
-    # Ladybug/Kuzu list indexes are one-based. Normalizing card subtypes in the
+    # Query list indexes are zero-based. Normalizing card subtypes in the
     # query makes DISTINCT and keyset ordering operate on the governed owner,
     # rather than on child source-ref strings such as ``test:{card_id}:...``.
     query = """
@@ -515,16 +515,16 @@ async def enumerate_stale_sweep_page(
             )
         )
           AND n.source_artifact_ref IS NOT NULL
-        WITH string_split(n.source_artifact_ref, ':') AS parts
+        WITH split(n.source_artifact_ref, ':') AS parts
         WHERE size(parts) >= 2
-        WITH CASE parts[1]
+        WITH CASE parts[0]
           WHEN 'card' THEN 'card'
           WHEN 'card_relationship_target' THEN 'card'
           WHEN 'task' THEN 'card'
           WHEN 'test' THEN 'card'
           WHEN 'bug' THEN 'card'
-          ELSE parts[1]
-        END AS artifact_type, parts[2] AS artifact_id
+          ELSE parts[0]
+        END AS artifact_type, parts[1] AS artifact_id
         WHERE artifact_type IN $governed_types
           AND artifact_id IS NOT NULL
           AND artifact_id <> ''
