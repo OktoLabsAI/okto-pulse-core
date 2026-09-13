@@ -129,6 +129,32 @@ or inspect the workspace. `observed_at` is a claim. Server `received_at`, the
 effective freshness policy, the global source head, and revocations determine
 currentness.
 
+### Sequential observations and conflicts
+
+A new preflight from the same authenticated attestor may advance a **current**
+head within the same frozen selector scope when source identity is unchanged and
+the observed state changes. Both observations must carry a declared revision and
+workspace fingerprint, with nondecreasing `observed_at`. A different revision is
+a sequential observation, not independent corroboration. At the same revision,
+a workspace transition requires a different workspace ID **and** manifest digest,
+with at least one state declared dirty. Renaming an unchanged workspace alone is
+not a transition, and incompatible clean observations of one revision still conflict.
+
+The new receipt has `single_attestation` trust; it does not inherit prior
+corroboration. Older receipts/resolutions become outdated without being rewritten.
+After implementation, submit the result-state preflight, refresh any resolution
+that must remain current, and submit the Target Execution Disposition against the
+new receipt. This works for a single agent without a second attestor, provided the
+board accepts single attestation. Policies requiring corroboration remain enforced.
+
+An already-conflicted head cannot be cleared by the same actor changing a revision
+or workspace ID. Independent corroboration remains required for that conflict.
+A different source identity, another actor's incompatible observation, or an
+observation timestamp going backwards is not treated as this sequential advance.
+Revisions are opaque agent claims: Pulse does not infer Git ancestry or compare
+commit hashes lexicographically. Challenge consumption, head CAS, expiry,
+revocation, committed-state requirements and exact idempotent replay are unchanged.
+
 ## Mandatory external preflight
 
 1. Read this resource and fetch the full current entity context.
