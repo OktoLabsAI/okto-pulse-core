@@ -28,6 +28,11 @@ Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okt
 
 ## Governance Gate Surface
 
+**Project Structure agent protocol:** Spec authors/evaluators must either author
+a relevant tree or explicitly persist a justified non-applicability statement
+in the Spec context before advancing. This is an agent-review obligation, not
+an additional server gate. See the [canonical protocol and tested examples](src/okto_pulse/core/mcp/resources/reference/project_structure.md).
+
 Okto Pulse currently documents and enforces **17 named governance gates**:
 
 | Gate family | Gates |

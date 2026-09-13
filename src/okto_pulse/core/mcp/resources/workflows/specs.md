@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -39,12 +39,21 @@ Semantic guideline assessment follows
    - **Technical requirements**: Constraints derived from actual codebase analysis — not generic "best practices" but specific to this project's stack, patterns, and architecture.
    - **Acceptance criteria**: Verifiable conditions that reference real test scenarios, endpoints, or user flows.
 
-### Optional Project structure
+### Mandatory Project structure applicability decision
 
-When a tree materially helps a person understand this Spec, read
-`okto-pulse://reference/project-structure` and author it through the structured
-entity boundary. Do not force a tree for a project without a meaningful
-structure. Classify known baseline items as `as_is`, planned items as `to_be`,
+For every Spec, read `okto-pulse://reference/project-structure` and explicitly
+decide applicability while still in `draft`. If files, modules, directories,
+schemas, configuration or deliverable artifacts materially locate the work,
+author the relevant tree through the structured entity boundary. The tree is
+not a repository dump. If no meaningful structure applies, record
+`Project Structure: not applicable` in this Spec's `context`, with a specific
+reason and the current edition/scope reviewed. Preserve the rest of the context
+and read it back after saving. Saying N/A only in a chat or silently leaving
+`project_structure=null` or `[]` does not satisfy this protocol.
+
+Do not create placeholder nodes or invent files to avoid deciding. Lack of
+investigation, missing access or lack of time is not non-applicability: report
+that unresolved assessment instead. Classify known baseline items as `as_is`, planned items as `to_be`,
 and scaffolds/templates/references as `reference_scaffold` with an explicit
 interpretation limit. Make the classification directly when the gathered
 context already answers it; human editing remains an equal UI path, not a
@@ -58,6 +67,13 @@ relations) are traceability-only in `approved`, `validated`, `in_progress`, or
 These writes advance only the structure revision and do not stale the accepted
 Spec validation. Never mix a semantic tree edit into an operational relation
 batch.
+
+Before proposing any forward transition or qualitative approval, the author
+and evaluator MUST check the tree or the persisted, scope-current N/A reason.
+Warn explicitly when neither exists and resolve that omission before the agent
+proceeds. The server's existing Resource Gate does not enforce this decision;
+a successful transition or green coverage report is not evidence of compliance.
+Do not reopen approved/terminal Specs automatically to retrofit this protocol.
 
 ## 2.3a Detail Saturation — DO NOT Push Forward With Gaps
 

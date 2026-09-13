@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Pre-Flight Checklist (READ FIRST)
@@ -68,6 +68,15 @@ identity when starting the execution. Submit every immutable item exactly once.
 `manual_checklist_ref` is legacy evidence only and never satisfies A3.
 
 ### Resource Gate pre-flight — mandatory before completion
+
+**Specs also require a Project Structure applicability decision before leaving
+`draft`.** Inspect the current tree and Spec `context`: author a meaningful tree
+or persist `Project Structure: not applicable` with a specific reason and the
+edition/scope reviewed. An absent/empty tree alone is unresolved, not N/A.
+Read `okto-pulse://reference/project-structure`. This is a separate agent
+protocol obligation; it is not included in the Resource Gate summary below.
+If omitted, warn and resolve it before proceeding; do not assume a green
+Resource Gate means this decision was made.
 
 Architecture, Mockup, and Knowledge Base are all tracked by Resource Gate, but
 their authority differs: **Architecture and Mockup are blocking**;

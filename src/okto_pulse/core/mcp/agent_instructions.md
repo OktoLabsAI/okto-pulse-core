@@ -25,7 +25,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Record/read Quality assessments or pinpoint findings | `okto-pulse://reference/quality-assessments` |
 | Revise/adopt guidelines, evaluate policy, or operate waivers | `okto-pulse://reference/policy-compliance` |
 | Record Technical Evidence, Technical Anchors/Implementation Targets, Spec evidence links, or task target resolutions | `okto-pulse://reference/code-traceability` |
-| Author, classify, link, or interpret a Spec Project structure tree | `okto-pulse://reference/project-structure` |
+| Author/evaluate a Spec, decide Project structure applicability, or edit its tree | `okto-pulse://reference/project-structure` |
 | Move a card / sprint / spec | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |
@@ -37,6 +37,8 @@ You MUST `resources/read` the matching URI below before operating on that entity
 
 ## Resource Fetching Protocol — MANDATORY
 
+Before a Spec leaves Draft, author Project Structure or justify `Project Structure: not applicable` in its `context` for the reviewed edition/scope. This mandatory agent protocol is not a server gate; see the reference above.
+
 Before operating on an entity you MUST `resources/read` its matching URI from the Quick Navigation table above — this is not optional. In particular: any status transition or entity move, spec saturation/validation, card execution (any move past `not_started`), sprint operation (any move), KG consolidation or query.
 
 Cache the resource within the session; re-fetch when you switch domains — resources are immutable for the lifetime of the server process. The MCP server does not prove that you read context — your audit trail and artifact quality do.
@@ -45,7 +47,7 @@ Cache the resource within the session; re-fetch when you switch domains — reso
 
 ## Pre-Flight Checklist (READ FIRST)
 
-**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation; cards use bounded `okto_pulse_get_task_context(profile="full", context_scope="gate")`), **card-execution pre-flight** (never skip steps 1 and 3), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
+**Before any board work, `resources/read okto-pulse://workflows/preflight`.** Follow: session pre-flight; entity-context pre-flight (`get_*_context(profile="full")` before moves/validation; cards: `okto_pulse_get_task_context(profile="full", context_scope="gate")`); card-execution pre-flight (including steps 1 and 3); Resource Gate pre-flight; Design System pre-flight (blocking `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`).
 
 ---
 

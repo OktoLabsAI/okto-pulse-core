@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 # Tool docs — `spec`
@@ -651,6 +651,14 @@ Returns:
     JSON with updated spec details
 
 ## `okto_pulse_update_spec_entity`
+
+Before a Spec leaves Draft, agents must populate applicable Project Structure
+or persist a justified `Project Structure: not applicable` declaration in the
+Spec `context` via `okto_pulse_update_spec`, preserving existing context. This
+does not require a fake tree or a Decision with artificial task coverage.
+See `okto-pulse://reference/project-structure` for complete batch examples and
+the scope/edition review protocol. The declaration is an agent-auditable
+context record, not a new Resource Gate N/A resource type.
 
 Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC,
 IR, OR and Project structure nodes.
