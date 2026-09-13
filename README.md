@@ -60,6 +60,10 @@ the executable AF-35 Core/edition ownership boundary and residual inventory.
 
 ## Ports & Adapter Interfaces
 
+See also [Optional graph observation ports](docs/GRAPH_OBSERVATION_PORTS.md) for
+ranked retrieval, retained history/diff and bounded analytics without an engine
+dependency in Core.
+
 Core defines **~100 `Protocol` contracts across 78 modules in `okto_pulse/core/ports/`** plus
 **30 Knowledge-Graph interfaces in `okto_pulse/core/kg/interfaces/`**. Each one is a seam: core
 declares *what* it needs; it never constructs a database, opens a file, resolves an environment

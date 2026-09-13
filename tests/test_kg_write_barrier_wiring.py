@@ -249,25 +249,20 @@ def test_global_guard_does_not_grant_board_access():
             require_write_token("some-board")
 
 
-def test_raw_global_discovery_bootstrap_blocked_without_durable_lease():
-    """The adapter still fails closed when a caller bypasses the safe helper."""
+@pytest.mark.parametrize("operation", ["bootstrap", "purge"])
+def test_transient_global_guard_cannot_replace_durable_writer_ownership(operation):
+    """A Core memory fake is not a native adapter; prove the neutral fence here.
+
+    Production routed bootstrap/purge refusal is qualified in Community, where
+    the physical adapter and route admission live.
+    """
     from okto_pulse.core.kg.global_discovery_writer import (
         GlobalDiscoveryWriterFenceLost,
+        assert_global_discovery_writer_fence,
     )
-    import global_graph_testing as schema
-
-    with pytest.raises(GlobalDiscoveryWriterFenceLost):
-        schema._runtime().bootstrap()
-
-
-def test_raw_global_discovery_purge_blocked_without_durable_lease():
-    from okto_pulse.core.kg.global_discovery_writer import (
-        GlobalDiscoveryWriterFenceLost,
-    )
-    import global_graph_testing as schema
-
-    with pytest.raises(GlobalDiscoveryWriterFenceLost):
-        schema._runtime().purge(reason="test")
+    with under_global_safe_write("transient-token", operation):
+        with pytest.raises(GlobalDiscoveryWriterFenceLost):
+            assert_global_discovery_writer_fence()
 
 
 @pytest.mark.parametrize(("dry_run", "expected_calls"), [(True, 2), (False, 4)])

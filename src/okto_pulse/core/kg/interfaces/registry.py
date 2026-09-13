@@ -37,6 +37,8 @@ from okto_pulse.core.kg.interfaces.graph_recovery import GraphRecovery
 from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
+from okto_pulse.core.kg.interfaces.ranked_graph_search import RankedGraphSearch
+from okto_pulse.core.kg.interfaces.graph_observations import GraphHistory, GraphAnalytics
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphTransaction
 from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
     GlobalDiscoveryRuntime,
@@ -77,6 +79,10 @@ class KGProviderRegistry:
 
     # Onda 3
     graph_store: SemanticGraphStore | None = None
+    # Optional advanced retrieval; unsupported editions may leave it unavailable.
+    ranked_graph_search: RankedGraphSearch | None = None
+    graph_history: GraphHistory | None = None
+    graph_analytics: GraphAnalytics | None = None
     cypher_executor: CypherExecutor | None = None
     event_bus: EventBus | None = None
 
