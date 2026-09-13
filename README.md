@@ -28,6 +28,9 @@ Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okt
 
 ## Governance Gate Surface
 
+See [Cognitive Action Center sections](docs/COGNITIVE_ACTION_CENTER_SECTIONS.md)
+for its read-only attention/history grouping and unchanged completion authority.
+
 **Project Structure agent protocol:** Spec authors/evaluators must either author
 a relevant tree or explicitly persist a justified non-applicability statement
 in the Spec context before advancing. This is an agent-review obligation, not
