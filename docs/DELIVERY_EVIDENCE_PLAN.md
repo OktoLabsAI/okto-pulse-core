@@ -119,3 +119,10 @@ closed MCP tools raise the explicitly reviewed inventory from 338 to 340.
 
 No real board/card/Spec records were changed, and the active Pulse was not stopped,
 reinstalled or restarted. Deploy Core and Community together when updating it.
+# Publication contract follow-up (2026-09-14)
+
+The Community import audit explicitly publishes only `delivery_digest` and
+`delivery_inventory` from the delivery service for adapter use. The paired
+Community contract expectation must match the Core manifest. Graph exploration
+also consumes the storage-neutral `application_kg` facade for guarded writes and
+registry access; no private-import exception or Grafx coupling is introduced.
