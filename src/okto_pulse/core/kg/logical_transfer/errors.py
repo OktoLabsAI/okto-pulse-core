@@ -1,7 +1,7 @@
 """Typed, backend-neutral failures for the logical transfer boundary.
 
 Every refusal in this package is one of these.  Concrete backend exceptions
-(Ladybug/Kùzu, Grafx, filesystem) must never reach a caller through the logical
+(database driver or filesystem) must never reach a caller through the logical
 transfer surface: an adapter that raises its own error type is expected to
 translate it here, so orchestration can classify a failure without importing
 the backend that produced it.

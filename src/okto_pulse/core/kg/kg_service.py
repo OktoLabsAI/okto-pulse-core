@@ -79,9 +79,9 @@ def _cursor_timestamp_parameter(value: str) -> datetime:
 
     Cursor tokens remain transport-stable ISO text, but graph columns are
     TIMESTAMP values.  Passing the decoded text through to an engine relies on
-    backend-specific implicit casts: Ladybug accepts that comparison while
-    Grafx correctly treats unlike value domains as non-equal/non-ordered.  A
-    typed UTC datetime gives both executors the same comparison boundary.
+    backend-specific implicit casts. Engines may treat unlike value domains
+    as non-equal/non-ordered. A typed UTC datetime gives adapters the same
+    comparison boundary.
     """
 
     try:

@@ -339,9 +339,11 @@ selector scope predates that Target.
 For Greenfield/Hybrid work, an existing starter/base can be Evidence only as
 `existing_scaffold` with an explicit `interpretation_limit`; source consulted
 only as a pattern is `reference_pattern`. Neither proves the requested behavior
-already exists. `unclassified_legacy` remains visible until an authorized
-human appends classification through UI/REST; agents have no MCP mutation for
-that governance action.
+already exists. `unclassified_legacy` remains visible until an authorized actor
+appends classification: agents use `okto_pulse_classify_legacy_code_evidence`
+with `code_traceability.evidence.classify_legacy`; humans may use UI/REST.
+Use defensible provenance and fresh CAS inputs, never guessed source meaning.
+Classification does not upgrade a V1 receipt or rewrite a frozen Spec snapshot.
 
 Run a new external preflight, re-evaluate the Targets, and submit a new receipt
 when a dependency finishes, the observed workspace fingerprint changes, a

@@ -686,8 +686,10 @@ and inherited Evidence from full Spec context. Summary role/classification
 counts cover the complete effective set even when item collections are
 bounded. Every item reports `context_origin` as `authored`,
 `human_legacy_classification`, or `unclassified_legacy`; never infer a legacy
-role from its path, type, or claim. Human legacy classification is an
-append-only UI/REST action and has no MCP mutation.
+role from its path, type, or claim. Legacy classification is append-only:
+authorized agents use `okto_pulse_classify_legacy_code_evidence` with
+`code_traceability.evidence.classify_legacy`; humans may use UI/REST. A
+classification neither upgrades V1 receipts nor rebases this Spec implicitly.
 
 Use
 `okto_pulse_link_code_evidence` and `okto_pulse_unlink_code_evidence` for

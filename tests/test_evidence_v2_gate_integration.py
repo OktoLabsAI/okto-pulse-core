@@ -69,6 +69,7 @@ def _evidence(
     scenario_id: str,
     *,
     runtime: bool = True,
+    outcome: str = "passed",
     receipt: str = "opaque-installation-receipt",
     scenario_sha256: str = "sha256:" + "c" * 64,
 ) -> dict:
@@ -79,15 +80,15 @@ def _evidence(
         "executed_at": "2026-07-14T15:00:00Z",
         "scenario_id": scenario_id,
         "scenario_sha256": scenario_sha256,
-        "outcome": "passed",
+        "outcome": outcome,
         "product_runtime_exercised": runtime,
         "manifest_sha256": "sha256:" + "b" * 64,
         "assertions": [
             {
                 "name": "runtime-output",
                 "expected": "v0.3.0",
-                "observed": "v0.3.0",
-                "status": "passed",
+                "observed": "v0.3.0" if outcome == "passed" else "unexpected",
+                "status": outcome,
             }
         ],
         "provenance": {
@@ -310,6 +311,48 @@ async def test_card_done_reauthenticates_persisted_v2(
         assert _trusted_edition_verifier.calls[-1]["scenario_sha256"].startswith(
             "sha256:"
         )
+
+
+@pytest.mark.asyncio
+async def test_failed_test_execution_can_finish_without_claiming_product_passed(
+    db_factory, _trusted_edition_verifier
+):
+    board_id, spec_id, scenario_id = await _seed(db_factory)
+    card_id = f"card-failed-{uuid.uuid4().hex}"
+    async with db_factory() as db:
+        db.add(Card(
+            id=card_id, board_id=board_id, spec_id=spec_id,
+            title="Report a real failure", status=CardStatus.IN_PROGRESS,
+            card_type=CardType.TEST, test_scenario_ids=[scenario_id], created_by=ACTOR,
+        ))
+        await db.commit()
+        gate = ResourceGateService(db)
+        for resource_type in ("architecture", "mockup"):
+            await gate.mark_not_applicable(
+                board_id, "card", card_id, resource_type, ACTOR,
+                justification="Isolated test of result reporting, no UI/design work.",
+                source_channel="ui",
+            )
+        await SpecService(db).set_test_scenario_status(
+            spec_id, ACTOR, scenario_id, "failed",
+            _evidence(scenario_id, outcome="failed"),
+        )
+        await CardService(db).move_card(
+            card_id, ACTOR, CardMove(
+                status=CardStatus.DONE,
+                conclusion="Execution finished; observed failure remains unresolved.",
+                completeness=100, completeness_justification="Test execution/report complete.",
+                drift=0, drift_justification="No change to the planned test scope.",
+            ),
+        )
+        await db.commit()
+    async with db_factory() as db:
+        assert (await db.get(Card, card_id)).status == CardStatus.DONE
+        spec = await db.get(Spec, spec_id)
+        assert spec.status == SpecStatus.IN_PROGRESS
+        assert spec.test_scenarios[0]["status"] == "failed"
+        assert spec.test_scenarios[0]["evidence"]["execution_attestation"]["outcome"] == "failed"
+    assert any(call["status"] == "failed" for call in _trusted_edition_verifier.calls)
 
 
 @pytest.mark.asyncio

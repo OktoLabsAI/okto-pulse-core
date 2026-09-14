@@ -51,7 +51,7 @@ class MetricStatus(str, Enum):
 class GraphTelemetry:
     """Minimum signal set classifier needs about board graph / global graph.
 
-    Any field set to None means the metric could not be read — the
+    Any applicable field set to None means the metric could not be read — the
     classifier turns this into `metric_status=unavailable` rather than
     silently treating it as zero (BR "Health unavailable is not zero").
     """
@@ -62,6 +62,13 @@ class GraphTelemetry:
     recent_buffer_errors: int | None
     recent_wal_errors: int | None
     recent_commit_errors: int | None
+    high_water_mark_applicable: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.high_water_mark_applicable) is not bool:
+            raise ValueError("high_water_mark_applicable must be a boolean")
+        if not self.high_water_mark_applicable and self.high_water_mark_pct is not None:
+            raise ValueError("inapplicable high-water mark cannot carry a value")
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,21 +98,24 @@ class HealthClassification:
 def _classify_metric_status(telemetries: Iterable[GraphTelemetry]) -> MetricStatus:
     """Compute the metric_status across board graph + global graph.
 
-    Rule (FR2): if every numeric field on every telemetry is None →
+    Rule (FR2): if every applicable numeric field on every telemetry is None →
     UNAVAILABLE; if SOME but not all → PARTIAL; otherwise AVAILABLE. This
     is what stops the service from degrading silently to zero on a
-    transient embedded graph backend open failure.
+    transient embedded graph backend open failure. An explicitly inapplicable
+    capacity percentage is excluded; it is not an observed zero.
     """
     has_any = False
     has_missing = False
     for telemetry in telemetries:
-        for value in (
+        values = (
             telemetry.buffer_utilization_pct,
-            telemetry.high_water_mark_pct,
             telemetry.recent_buffer_errors,
             telemetry.recent_wal_errors,
             telemetry.recent_commit_errors,
-        ):
+        )
+        if telemetry.high_water_mark_applicable:
+            values += (telemetry.high_water_mark_pct,)
+        for value in values:
             if value is None:
                 has_missing = True
             else:
@@ -193,11 +203,14 @@ class KGHealthStateClassifier:
             )
 
         buffer_pressure = any(
-            (t.high_water_mark_pct or 0) >= self.at_risk_buffer_pct
-            for t in telemetries
+            (t.high_water_mark_pct or 0) >= self.at_risk_buffer_pct for t in telemetries
         )
         buffer_errors = any((t.recent_buffer_errors or 0) > 0 for t in telemetries)
-        if buffer_pressure or buffer_errors or metric_status == MetricStatus.UNAVAILABLE:
+        if (
+            buffer_pressure
+            or buffer_errors
+            or metric_status == MetricStatus.UNAVAILABLE
+        ):
             if buffer_pressure:
                 reasons.append(f"buffer.high_water_mark>={self.at_risk_buffer_pct}")
             if buffer_errors:

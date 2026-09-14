@@ -182,8 +182,10 @@ receipts. See the Code Traceability reference for the exact citation-only rule.
   reports complete role counts and classification state independently from
   any bounded item list.
 - No new item is `uncategorized_legacy`. Any legacy item remains visibly
-  unclassified until an authorized human uses the UI/REST classification
-  workflow; agents never classify it through MCP.
+  unclassified until an authorized actor appends classification. Agents use
+  `okto_pulse_classify_legacy_code_evidence` with
+  `code_traceability.evidence.classify_legacy`; humans may use UI/REST. Neither
+  path permits guessed provenance or upgrades the V1 investigation receipt.
 - Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
 - There are zero unresolved Q&A items on the refinement.
 - New evidence discovered during investigation has been attached as a KE, mockup, or Architecture Design, not buried in prose.

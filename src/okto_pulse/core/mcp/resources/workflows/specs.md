@@ -302,9 +302,10 @@ own environment, then submits the bounded receipt and Evidence.
 
 Every effective item states its origin explicitly:
 `authored`, `human_legacy_classification`, or `unclassified_legacy`. Never
-infer legacy meaning from a path, evidence type, or claim. Human legacy
-classification is an append-only UI/REST batch guarded by
-`code_traceability.evidence.classify_legacy`; there is no MCP mutation. A V1
+infer legacy meaning from a path, evidence type, or claim. Legacy
+classification is an append-only batch guarded by
+`code_traceability.evidence.classify_legacy`: authorized agents use
+`okto_pulse_classify_legacy_code_evidence`, humans may use UI/REST. A V1
 receipt remains V1 after classification and may still require a fresh V2
 investigation for current gate authority.
 

@@ -5,6 +5,10 @@ version: "1.0"
 # Common Errors and How to Fix Them
 
 This table is the **single source of truth** for MCP-level errors. Before any ad hoc retry or workaround, consult this section and apply the canonical fix.
+First interpret the outer MCP V2 envelope using
+`okto-pulse://reference/projection-profiles`. The common retry/uncertainty/job
+protocol is in `okto-pulse://workflows/preflight`; domain error shapes below
+live inside `data` and do not replace the outer envelope.
 Guideline-policy error semantics and retry actions are governed by
 `okto-pulse://reference/policy-compliance`.
 
@@ -22,7 +26,7 @@ Guideline-policy error semantics and retry actions are governed by
 
 ## Selective Knowledge Propagation v2
 
-All v2 service errors use the MCP envelope
+These v2 service errors have the inner domain shape
 `{error, code, detail, details, retryable}`. Only
 `knowledge_creation_race` is retryable at this boundary. Validation errors for
 an incoherent tri-state envelope are rejected before any target or assignment
@@ -52,8 +56,8 @@ is created.
 | Error message | Cause | Fix |
 |---|---|---|
 | `"A conclusion is required when moving a card to Validation"` / `"A conclusion is required when moving a card to Done"` | Missing executor report: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification` | Add all 5 parameters to `okto_pulse_move_card`. |
-| `"Card type 'test' is not subject to validation gate"` | Called `okto_pulse_submit_task_validation` on a test card | Test cards skip the validation gate — move directly to `done` after scenarios are `passed`. |
-| `"N test scenario(s) still have status 'draft'"` / `"ready"` | Test card's linked scenarios not updated | Call `okto_pulse_update_test_scenario_status(status="passed")` for each linked scenario, then retry `okto_pulse_move_card`. If the spec is `validated` or `done`, make sure the scenario is already linked to this executable test card (`started`, `in_progress`, `validation`, or `done`); otherwise the scenario status call remains blocked by `status_not_mutable`. |
+| `"Card type 'test' is not subject to validation gate"` | Called `okto_pulse_submit_task_validation` on a test card | Test cards use scenario execution, not normal task validation. Record honest terminal results (`passed`, `failed`, or `automated`) with required evidence, then request `done` with the executor report. Completion is not product approval. |
+| `"N test scenario(s) still have status 'draft'"` / `"ready"` | Test card's linked scenarios not executed/reported | Execute the test and call `okto_pulse_update_test_scenario_status` with its actual result and required evidence, then retry `okto_pulse_move_card`. Never relabel a failure as passed. On a locked Spec, the scenario must already be linked to an executable test card; otherwise `status_not_mutable` still applies. |
 | `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `okto_pulse_move_spec` (requires `okto_pulse_submit_spec_evaluation` with `recommendation=approve` on a `validated` spec). |
 | `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation` with the executor report, then `okto_pulse_submit_task_validation`. |
 | `"Card is not in 'validation' status"` | Validation was requested before the implementor successfully moved the card out of `in_progress` | The implementor must call `okto_pulse_move_card(status="validation", ...)` with the complete executor report and confirm that it succeeded. Only then can a validator submit. |
@@ -214,7 +218,7 @@ repository themselves.
 | `code_traceability_waiver_required` | A not-applicable decision lacks an explicit waiver. | Ask an authorized human to record the bounded waiver. |
 | `code_traceability_locked` | A mutation targeted a locked entity/version. | Reopen through an advertised SDLC transition or create a new version. |
 
-Every Code Traceability error uses the closed semantic envelope
+Every Code Traceability error has the inner closed semantic shape
 `{code, message, details, remediation[]}`. Each remediation entry contains an
 `action` and, when an MCP action exists, its exact `tool`; clients must not
 replace typed blockers with a generic repository fallback.

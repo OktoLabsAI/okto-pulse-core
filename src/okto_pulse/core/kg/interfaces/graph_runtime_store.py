@@ -129,6 +129,16 @@ class GraphStorageFootprint:
     configured_max_bytes: int | None = None
     percentage: float | None = None
     unavailable_reason: str | None = None
+    # False is an explicit adapter assertion, not inferred from a missing value.
+    percentage_applicable: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.percentage_applicable) is not bool:
+            raise ValueError("percentage_applicable must be a boolean")
+        if not self.percentage_applicable and (
+            self.percentage is not None or self.configured_max_bytes is not None
+        ):
+            raise ValueError("inapplicable percentage cannot carry a quota or value")
 
 
 @dataclass(frozen=True)

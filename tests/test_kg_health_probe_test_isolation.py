@@ -61,6 +61,7 @@ def test_probe_then_sync_and_async_graph_tests_are_isolated() -> None:
         from __future__ import annotations
 
         import asyncio
+        from contextlib import contextmanager
         from contextvars import copy_context
         import os
         from pathlib import Path
@@ -69,15 +70,31 @@ def test_probe_then_sync_and_async_graph_tests_are_isolated() -> None:
 
         import pytest
 
-        from kg_schema_testing import (
-            bootstrap_board_graph,
-            open_materialized_board_connection,
-        )
+        import okto_grafx
         from okto_pulse.core.runtime_context import current_runtime_values
         from okto_pulse.core.services import kg_health_service as health
 
 
         _RECORD = Path(os.environ["OKTO_PROBE_ISOLATION_RECORD"])
+
+
+        @contextmanager
+        def open_materialized_board_connection(board_id: str):
+            # A real current-engine handle, confined to the nested test's
+            # temporary directory. No retired Ladybug helper or user data.
+            database = okto_grafx.connect(_RECORD.parent / board_id)
+            try:
+                yield database, database
+            finally:
+                database.close()
+
+
+        def bootstrap_board_graph(board_id: str) -> None:
+            with open_materialized_board_connection(board_id) as (_db, conn):
+                with conn.begin("write") as transaction:
+                    transaction.execute("CREATE NODE TABLE Probe (id STRING, PRIMARY KEY(id))")
+
+
         _POOL = health._DaemonHealthProbePool(
             max_workers=1,
             max_queue_size=4,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from dataclasses import replace
 
 import pytest
 
@@ -358,6 +359,92 @@ async def test_required_unavailable_health_component_cannot_serialize_healthy() 
     assert projection.result_state is BoardKgAnalyticsResultState.UNAVAILABLE
     assert projection.health_state is BoardKgClassificationState.UNAVAILABLE
     assert projection.canonical_dict()["health"]["state"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_pending_only_timing_is_empty_not_unavailable() -> None:
+    item = replace(
+        _items(1)[0],
+        status=BoardKgCognitiveStatus.PENDING,
+        outcome_materialized=False,
+        consolidated_at=None,
+    )
+    projection = await BoardKgEffectivenessService.project(
+        None,
+        query=_query(),
+        evidence_port=_EvidencePort(_evidence(items=(item,))),
+    )
+    timing = projection.effectiveness.timing
+    assert timing.state is BoardKgEffectivenessState.EMPTY
+    assert timing.sample_count == 0
+    assert timing.p50_hours is timing.p95_hours is None
+    assert timing.reason == "no_consolidation_timing_samples"
+    assert projection.result_state is BoardKgAnalyticsResultState.AVAILABLE
+
+
+def test_valid_sample_does_not_hide_missing_completed_timing() -> None:
+    first, second = _items(2)
+    timing = BoardKgEffectivenessService._timing(
+        (first, replace(second, consolidated_at=None))
+    )
+    assert timing.state is BoardKgEffectivenessState.UNAVAILABLE
+    assert timing.sample_count == 0
+    assert timing.reason == "insufficient_consolidation_timing_evidence"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "component_state",
+    (BoardKgAnalyticsResultState.PARTIAL, BoardKgAnalyticsResultState.UNAVAILABLE),
+)
+async def test_partial_health_keeps_available_cognitive_facts(component_state):
+    evidence = replace(
+        _evidence(health_result_state=BoardKgAnalyticsResultState.PARTIAL),
+        components=(
+            BoardKgHealthComponent(
+                "graph",
+                BoardKgHealthState.AT_RISK,
+                component_state,
+                "health_telemetry_incomplete",
+            ),
+        ),
+    )
+    projection = await BoardKgEffectivenessService.project(
+        None, query=_query(), evidence_port=_EvidencePort(evidence)
+    )
+    assert projection.result_state is BoardKgAnalyticsResultState.PARTIAL
+    assert projection.health_state is BoardKgClassificationState.AT_RISK
+    assert projection.cognitive_inventory.total == 50
+    assert projection.effectiveness.denominator == 50
+    assert projection.effectiveness.numerator == 34
+    assert projection.components[0].result_state is component_state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "health",
+    (
+        BoardKgHealthState.RECOVERY_NEEDED,
+        BoardKgHealthState.QUARANTINED,
+        BoardKgHealthState.BACKPRESSURE,
+    ),
+)
+@pytest.mark.parametrize(
+    "availability",
+    (BoardKgAnalyticsResultState.PARTIAL, BoardKgAnalyticsResultState.UNAVAILABLE),
+)
+async def test_real_blocking_health_is_never_hidden_by_missing_metrics(
+    health, availability
+):
+    projection = await BoardKgEffectivenessService.project(
+        None,
+        query=_query(),
+        evidence_port=_EvidencePort(
+            _evidence(health_state=health, health_result_state=availability)
+        ),
+    )
+    assert projection.result_state is availability
+    assert projection.health_state is BoardKgClassificationState.BLOCKING
 
 
 @pytest.mark.asyncio
