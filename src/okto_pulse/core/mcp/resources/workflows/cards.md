@@ -45,6 +45,23 @@ card; update the source ideation/refinement/spec resource and then run the
 matching copy tool to refresh the card snapshot while preserving the source
 identity used by the Resource Gate.
 
+**Copy versus reference:** a governed copy made by the official copy tool is
+valid resource coverage; the gate does NOT require a reference instead of that
+copy. It matches resource identity/provenance, not the title, HTML, screenshot,
+or a mention in the task description. Recreating identical content under an
+unrelated ID does not cover the original resource. Two identical-looking mockups
+with distinct origins may therefore be two separate coverage obligations.
+
+If a gate reports an uncovered resource although a mockup is visible on a task,
+inspect the reported `resource_id`, `unique_resource_id`, and `origin_evidence`
+and compare them with the task snapshot's ID and source metadata. Use the
+official copy tool for the required source and a non-cancelled task belonging
+to that Spec, then re-read full Spec context and retry the readiness check.
+Do not invent provenance, replace a valid copy with a textual reference, delete
+duplicates, or mark a resource N/A merely to bypass coverage. If the reported
+source cannot be selected by the tool, report the exact IDs as a lineage/copy
+problem rather than claiming that copying is forbidden.
+
 Read `okto-pulse://reference/knowledge-governance` before deciding that content
 belongs in a KB. When `knowledge_propagation` is absent from
 `okto_pulse_create_card`, the legacy v1 behavior remains unchanged:

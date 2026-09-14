@@ -175,6 +175,15 @@ Use this section for **status-to-action routing**. Result lifecycle rules live i
 
 ### The Spec Validation Gate
 
+For resource-to-task coverage, official governed copies count: the gate does
+not require references instead of copies. It checks source identity, not visual
+equality or mentions in task text. Identical mockups with different origins can
+remain separate obligations. Before retrying a resource coverage block, compare
+the reported IDs/origin with the task snapshots and follow the diagnostic/copy
+protocol in `okto-pulse://workflows/cards` and
+`okto-pulse://reference/tool-docs/mockup`; do not bypass it with N/A or invented
+provenance.
+
 When the board has `require_spec_validation=true`, advancing a spec from `approved` to `validated` is gated by `okto_pulse_submit_spec_validation`.
 
 **The order that actually works:**
