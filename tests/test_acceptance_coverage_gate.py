@@ -24,6 +24,13 @@ pytestmark = pytest.mark.asyncio
 USER_ID = "coverage-gate-agent"
 
 
+@pytest.fixture(autouse=True)
+def _completed_delivery_for_independent_acceptance_gate(monkeypatch):
+    from delivery_evidence_testing import install_complete_delivery_port
+
+    install_complete_delivery_port(monkeypatch)
+
+
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 

@@ -4,6 +4,37 @@ version: "1.2"
 
 # Agent-mediated Code Traceability
 
+## Delivery evidence
+
+**Mandatory before completing a Spec:** planning/context evidence is not proof of
+the delivered implementation. Call `okto_pulse_get_delivery_evidence(board_id,
+spec_id)` and use its current edition, version and exact obligation references.
+
+1. Tasks/bug cards provide code delivery: follow the existing Target investigation,
+   resolution and execution-receipt workflow; record the committed result revision,
+   actual file/symbol and explanation, then complete the card. Use
+   `okto_pulse_record_delivery_evidence` with kind `implementation` to associate the
+   accepted execution ID with all obligations it actually implements.
+2. **Test cards alone provide verification.** Execute their linked scenarios using
+   the authenticated Test Evidence runtime, record a passing result, and complete
+   the test card. Record kind `test`, identifying the scenario and the returned
+   implementation association IDs actually tested. The signed run must not predate
+   the implementation's source observation. All current implementations for an
+   obligation must be covered, possibly jointly by several test cards.
+3. Refresh the delivery projection before `move_spec(..., status="done")`. Missing,
+   stale, failed, revoked, cross-board or wrong-edition proof blocks completion.
+   The gate is separate from planning Skip flags, advisory mode and greenfield.
+
+An agent must not manufacture receipts, claim a task is a test, or self-authorize
+an exemption. Ask an authorized human when implementation or verification is not
+applicable; each phase needs its own exact-obligation justification and audit.
+For a non-code obligation with no implementation, explicitly resolve both phases.
+Existing done Specs are not reopened automatically; record missing proof
+retrospectively without editing locked requirements. Association is an authenticated
+claim about what was tested, not independent source-code verification by Pulse.
+
+See `okto-pulse://reference/tool-docs/code-traceability` for exact inputs and errors.
+
 Code Traceability records bounded observations made by an authenticated
 external agent. Pulse Core validates policy and immutable contracts; an
 edition may persist and project accepted records. Pulse, Community, SaaS, and

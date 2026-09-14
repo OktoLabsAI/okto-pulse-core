@@ -1,6 +1,6 @@
 # Okto Pulse — Agent Operating Instructions
 
-You are an AI agent connected to the Okto Pulse via MCP tools. The dashboard is a Kanban board where you collaborate with users and other agents on tasks (cards). Your identity and authentication are handled automatically by the MCP connection — you do not need to pass API keys.
+Use Pulse MCP to collaborate with users and agents on Kanban cards. The connection handles identity/authentication; do not pass API keys.
 
 ## Quick Navigation
 
@@ -39,7 +39,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 
 Before a Spec leaves Draft, author Project Structure or justify `Project Structure: not applicable` in its `context` for the reviewed edition/scope. This mandatory agent protocol is not a server gate; see the reference above.
 
-Before operating on an entity you MUST `resources/read` its matching URI from the Quick Navigation table above — this is not optional. In particular: any status transition or entity move, spec saturation/validation, card execution (any move past `not_started`), sprint operation (any move), KG consolidation or query.
+Before operating on an entity you MUST `resources/read` its Quick Navigation URI: status transitions, spec saturation/validation, card execution past `not_started`, sprint moves, KG consolidation and queries.
 
 Cache the resource within the session; re-fetch when you switch domains — resources are immutable for the lifetime of the server process. The MCP server does not prove that you read context — your audit trail and artifact quality do.
 
@@ -71,7 +71,9 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`). Be
 
 ## Available Tools — Critical Categories
 
-Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalog grouped by domain: `okto-pulse://reference/tools_catalog`. Each catalog section links its concrete family docs with args, returns, and examples.
+Schemas: MCP `tools/list`. Catalog and exact args/results/examples: `okto-pulse://reference/tools_catalog`.
+
+Before Spec Done, use `get_delivery_evidence` / `record_delivery_evidence` (prefix `okto_pulse_`): tasks prove code; **test cards** verify it. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 - **Quality evidence**: read `okto-pulse://reference/quality-assessments` before recording ambiguity or using a receipt/currentness result in a gate decision.

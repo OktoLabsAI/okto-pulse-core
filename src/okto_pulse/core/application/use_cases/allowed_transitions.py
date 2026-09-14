@@ -963,6 +963,7 @@ class ListAllowedTransitionsUseCase:
                     board,
                     read_only_preview=True,
                 )
+                await services.specs._validate_delivery_done(spec)
                 gate = services.resource_gate
                 await gate.validate_or_raise_spec_architecture_validation_resource(
                     spec.board_id,

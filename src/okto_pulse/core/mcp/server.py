@@ -984,6 +984,8 @@ _TOOL_DOCS_FAMILY_RULES = [
 
 _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
     {
+        "okto_pulse_get_delivery_evidence",
+        "okto_pulse_record_delivery_evidence",
         "okto_pulse_acknowledge_implementation_overlap",
         "okto_pulse_classify_legacy_code_evidence",
         "okto_pulse_clear_code_traceability_not_applicable",

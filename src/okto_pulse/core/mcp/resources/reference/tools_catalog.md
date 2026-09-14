@@ -171,11 +171,13 @@ Semantic guideline protocol:
 - `okto_pulse_create_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_code_investigation_receipt` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_get_delivery_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_get_implementation_overlaps` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_link_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_list_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_list_implementation_targets` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_mark_code_traceability_not_applicable` — docs: `okto-pulse://reference/tool-docs/code-traceability`
+- `okto_pulse_record_delivery_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_set_code_evidence_disposition` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_start_code_investigation` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_submit_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`

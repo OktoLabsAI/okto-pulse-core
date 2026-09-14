@@ -11479,6 +11479,11 @@ class SpecService:
                 details={"spec_edition": int(spec.edition)},
             )
 
+    async def _validate_delivery_done(self, spec) -> None:
+        from okto_pulse.core.services.delivery_evidence import require_spec_delivery
+
+        await require_spec_delivery(self.db, spec)
+
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
     ) -> Spec | None:
@@ -11878,6 +11883,10 @@ class SpecService:
             to_status=data.status.value,
         )
 
+        # Delivery proof is separate from planning coverage and cannot be skipped.
+        if data.status == SpecStatus.DONE:
+            await self._validate_delivery_done(spec)
+
         # Every Spec lifecycle write shares the board dependency-graph fence.
         # This prevents a prerequisite Done→Draft transition from racing a
         # dependent's readiness check. The caller-owned transaction keeps the
@@ -11919,6 +11928,10 @@ class SpecService:
         # a concurrent PASS -> FAIL replacement cannot be promoted.
         if data.status == SpecStatus.VALIDATED:
             await self._enforce_spec_checklist_gate(spec, surface="move_spec")
+        if data.status == SpecStatus.DONE:
+            from okto_pulse.core.services.delivery_evidence import require_spec_delivery
+
+            await require_spec_delivery(self.db, spec, for_update=True)
         await _record_critical_context_decision(
             self.db,
             decision=critical_context_decision,

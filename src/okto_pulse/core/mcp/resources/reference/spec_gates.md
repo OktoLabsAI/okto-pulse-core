@@ -4,6 +4,18 @@ version: "1.2"
 
 # Spec Validation Gate & Evaluation Gates
 
+## Delivery evidence gate at Done
+
+Allowed transitions and authoritative completion evaluate the same delivery proof.
+All active FR/TR/BR/AC/API/IR/OR/decision obligations need committed task/bug proof
+and authenticated passed TEST-card results for the implementation records actually
+tested. No structured obligations produces one explicit Spec-scope obligation, not
+vacuous 100% coverage. Waivers are human-authorized, exact-scope and phase-specific.
+Skip Code Evidence/Test Coverage/Test Evidence, advisory posture and greenfield do
+not bypass delivery. Existing done status is preserved, with missing proof exposed
+read-only for repair. See `okto-pulse://reference/code-traceability` and
+`okto-pulse://reference/tool-docs/code-traceability`.
+
 ## Spec Status Transitions
 
 Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed — see `okto-pulse://workflows/sprints`).

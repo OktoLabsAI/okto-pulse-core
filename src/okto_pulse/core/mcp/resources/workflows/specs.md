@@ -10,6 +10,17 @@ Semantic guideline assessment follows
 
 # Specs Workflow — Saturation, Gate, Evaluation & Coverage Progress
 
+## Mandatory delivery closeout
+
+Before moving to Done, call `okto_pulse_get_delivery_evidence`. Every active
+obligation needs committed implementation proof from a task/bug and authenticated
+passing verification from a **test card**, or separately audited human exemptions.
+Use `okto_pulse_record_delivery_evidence` to register the many-to-many associations.
+Planning Code Evidence links and Skip settings cannot satisfy this gate. Tests must
+cover the current implementation records, not a previous delivery. Do not reopen
+old done Specs merely to repair their evidence; retrospective associations are
+permitted. Follow `okto-pulse://reference/code-traceability` (Delivery evidence).
+
 ## 2.3 Specs — CRITICAL: Analysis Before Populating
 
 > **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `okto_pulse_kg_get_related_context(artifact_id="spec:<uuid>")` (the `spec:` discriminator is required; a raw UUID is rejected), board-wide `okto_pulse_kg_find_contradictions()`, per-major-FR/BR `okto_pulse_kg_find_similar_decisions`, and `okto_pulse_kg_explain_constraint` for every constraint cited. Its `constraint_id` is the canonical graph node id, not a TR/worker-candidate id; resolve it by `source_artifact_ref` with the parameterized `okto_pulse_kg_query_cypher(..., include_working=true)` recipe in `okto-pulse://workflows/kg`. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation.

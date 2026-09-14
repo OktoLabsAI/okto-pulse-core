@@ -4,6 +4,65 @@ version: "1.2"
 
 # Tool docs — Code Traceability
 
+## `okto_pulse_get_delivery_evidence`
+
+Inputs: `board_id`, `spec_id`. Requires `code_traceability.evidence.read` and board
+access. Returns current `edition`, `version`, complete obligation rows with semantic
+digests, implementation/test association IDs, separate waiver IDs, `allowed`,
+`blockers`, rejected IDs, eligible completed-card receipt candidates and audit
+history. Read-only: no test execution, implicit waiver, graph mutation or reopen.
+
+## `okto_pulse_record_delivery_evidence`
+
+Inputs: `board_id`, `spec_id`, and closed object `evidence`:
+
+```json
+{
+  "expected_edition": 1,
+  "expected_version": 7,
+  "idempotency_key": "delivery-task-42-v1",
+  "kind": "implementation",
+  "obligation_refs": ["fr:fr_42", "ac:ac_42"],
+  "card_id": "task-id",
+  "execution_id": "accepted-target-execution-id",
+  "justification": "The committed parser implements these input/output obligations."
+}
+```
+
+- `implementation`: done task/bug `card_id` + accepted `execution_id`, with clean,
+  immutable Git result revision and actual path. A planned Target is insufficient.
+- `test`: done TEST `card_id`, linked passed `scenario_id`, nonempty
+  `implementation_ids` returned from implementation associations. Uses the current
+  authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
+  select records this run actually tested. Multiple tests may jointly cover code.
+- `waiver`: authorized human only, `phase` = `implementation` or `test`, exact
+  obligation refs, justification. No card/receipt fields. Not a passing test.
+- `revoke`: authorized human only, `record_id`, empty `obligation_refs`,
+  justification. Appends a tombstone; cannot erase or restore revoked history.
+
+Every write requires edition/version and a nonempty audit explanation. At most
+1,000 refs/implementation IDs, 20,000 explanation characters; unknown fields and
+duplicate refs fail validation. Same actor/key/payload replays `{id,replayed:true}`;
+changing that payload yields `delivery_idempotency_conflict`. Normal acceptance
+returns `{id,replayed:false}`. Refresh after acceptance; read `allowed` separately.
+
+Implementation writes require `code_traceability.target.execution_submit`; test
+associations require `spec.tests.execute` (QA need not have implementation-write
+privileges). Human waiver/revoke require `code_traceability.waiver.create`/`.clear`.
+The MCP routing policy admits board readers, but the shared use case always checks
+the kind-specific mutation permission before touching persistence.
+Agents must ask the human rather than forge an actor or authorization receipt.
+
+Errors: `delivery_version_conflict`/`delivery_edition_conflict` → reread and review;
+`delivery_obligation_not_found` → use the current inventory;
+`delivery_accepted_committed_task_execution_required` → finish the task/receipt;
+`delivery_current_verified_test_and_implementation_required` → fix ownership or
+rerun against the current implementation; `delivery_evidence_incomplete` on Done
+→ address the projection's missing rows, not Skip settings. Corrected requests
+need a new idempotency key. REST equivalent: GET/POST
+`/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence`; POST body is exactly
+`evidence` (board/Spec IDs belong to the path).
+
 These tools accept bounded observations from an authenticated external agent.
 Pulse never clones, opens, searches, or resolves a repository. Read
 `okto-pulse://reference/code-traceability` first for the normative operational

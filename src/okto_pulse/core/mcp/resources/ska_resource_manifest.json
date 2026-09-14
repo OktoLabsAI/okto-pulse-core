@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "644e2d6c3b956aeaf8a690a04dfa7ee0cd9f08acb71aba3f4e07b9a633f894f0",
+    "content_sha256": "69c1b1eeec7c8c7a8fdebd4325707cb4483c808e2fd02ec7843fa28ac64f1f43",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/code-traceability",
@@ -44,15 +44,16 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "83f5a18f122299eca4f11b8434c9f167ddb07ba3363012cc64f833544acc324b",
+  "manifest_sha256": "a632e1900be485773f421a24be2524ac6e9ec41ad3f3721ff0076b8499594e72",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
     {
-      "content_sha256": "ad840894f9f4b2860fc25f748461bbf60ed31cdcb68e1e0e9fcc1c451f93c8e5",
+      "content_sha256": "fa32ddb2027b09d906211e73ada2a7113df16d88388365dab7bb0c8ab4961fda",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
+        "okto-pulse://reference/tool-docs/code-traceability",
         "okto-pulse://reference/transitions"
       ],
       "required_cross_links": [
@@ -62,6 +63,7 @@
       ],
       "required_headings": [
         "# Agent-mediated Code Traceability",
+        "## Delivery evidence",
         "## Technical Evidence and Technical Anchors",
         "## Evidence and Targets",
         "## When the agent must record",
@@ -196,9 +198,11 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "75b73ef88506c34038930fe276a7c30b91b6d750f98444c6e880f8c820ec5c4a",
+      "content_sha256": "a836a81ad96b9767794016858951ec6320495f6515d1da8d5f2763a712e67e36",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
+        "okto-pulse://reference/project-structure",
+        "okto-pulse://reference/tool-docs/code-traceability",
         "okto-pulse://reference/tool-docs/spec",
         "okto-pulse://reference/transitions",
         "okto-pulse://workflows/sprints"
@@ -218,7 +222,7 @@
       "uri": "okto-pulse://reference/spec_gates"
     },
     {
-      "content_sha256": "221a30ded5646f9d7e70bb81dbfa2738d85b5571f84e96933ea23e66bd638a7c",
+      "content_sha256": "affc58c5ceb104a5736dc1c2054a7d1cfecb1a610a5575bbb6f56f40a54fbe40",
       "cross_links": [
         "okto-pulse://reference/code-traceability"
       ],
@@ -227,6 +231,8 @@
       ],
       "required_headings": [
         "# Tool docs — Code Traceability",
+        "## `okto_pulse_get_delivery_evidence`",
+        "## `okto_pulse_record_delivery_evidence`",
         "## Technical Evidence versus Technical Anchors",
         "## Mandatory operation and fence order",
         "## `okto_pulse_submit_code_evidence`",
@@ -288,13 +294,14 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "364cccc14bb1580caf95b0dee996b7c75c210e18ce18b2f5e640b0baeb8dbd39",
+      "content_sha256": "1b1d1b34328825b74605701efa323cd7ca66c8c6e24250b65656a3623c53f146",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
         "okto-pulse://reference/project-structure",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/spec_gates",
+        "okto-pulse://reference/tool-docs/code-traceability",
         "okto-pulse://reference/tool-families/spec_entity_remove",
         "okto-pulse://workflows/specs"
       ],
@@ -311,9 +318,10 @@
       "uri": "okto-pulse://reference/tool-docs/spec"
     },
     {
-      "content_sha256": "e5c5bb641d04b2411ae7bb5ff82735367be6ec7a501e19c4010fcdd587405b6c",
+      "content_sha256": "e3542139ad62ad7a104ba449250ee5903a069f6884fda944af85d45c370cbeae",
       "cross_links": [
         "okto-pulse://reference/card_types",
+        "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
         "okto-pulse://reference/policy-compliance"
       ],
@@ -331,7 +339,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "8f91b8f9fca37c84db9274aa4b360f26f994e5024b05007bd28c529ac7b75151",
+      "content_sha256": "00f808a1c732cefbbcda1bc76052a18fdf5179bd61e78f4ac1379e16bdb96407",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",
@@ -398,7 +406,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "2ca44867658c3d7e14653d1f2ff11e84d5688c966c727370fd181c1b41bf4ec3",
+      "content_sha256": "3240c9a5734b9b246fb863431192eef0b37b13bb780c8754a729322559e11667",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -453,10 +461,11 @@
       "uri": "okto-pulse://workflows/kg"
     },
     {
-      "content_sha256": "c577e99362d5d3a30f14fae9a13ed1870752fa3538c48757c5b548a5d14f78bd",
+      "content_sha256": "00b69d0e6559870662330caf32825e92b65ff8ec7b018c4143c714dac97c354b",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/policy-compliance",
+        "okto-pulse://reference/project-structure",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://workflows/cards"
@@ -491,7 +500,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "fd2430131c55a34c0c7e76e463147b823e8d070a56536e716a3166b78c519fb4",
+      "content_sha256": "b28b2ad9df57b77d5ad802a272f2efcc7fe3f2cf229b4d7a66e453a4f85fcd0c",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",

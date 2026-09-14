@@ -4,6 +4,11 @@ version: "1.3"
 
 # Tool docs — `spec`
 
+Before `move_spec` to `done`, read `okto_pulse_get_delivery_evidence` and resolve
+every missing implementation/test row with `okto_pulse_record_delivery_evidence`.
+Only test cards provide verification; planning evidence and Skip flags do not waive
+delivery proof. See `okto-pulse://reference/tool-docs/code-traceability`.
+
 Validation and curated-checklist gate rules:
 `okto-pulse://reference/spec_gates`.
 

@@ -88,6 +88,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Guidelines", "guideline",
      r"guideline"),
     ("Code Traceability", "code-traceability",
+     r"^okto_pulse_(get|record)_delivery_evidence$"),
+    ("Code Traceability", "code-traceability",
      r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
      r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),
     # --- SDLC entities ------------------------------------------------------

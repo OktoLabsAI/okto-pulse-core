@@ -4,6 +4,18 @@ version: "1.2"
 
 # Cards Workflow — Implementation, Bug & Test Execution
 
+### Mandatory delivery handoff
+
+Tasks/bugs record implementation, **not test results**. After an accepted Target
+execution receipt and card completion, use `okto_pulse_record_delivery_evidence`
+(`implementation`) to bind delivered code to the Spec obligations. Test cards must
+execute their linked scenarios, record authenticated passing evidence and complete;
+then record `test` with the implementation association IDs actually tested.
+One record may cover multiple obligations. Read the current inventory first with
+`okto_pulse_get_delivery_evidence`; never invent IDs, hashes or verification flags.
+Details and human-only not-applicable handling:
+`okto-pulse://reference/code-traceability`, section **Delivery evidence**.
+
 Semantic guideline assessment follows
 `okto-pulse://reference/policy-compliance`.
 
