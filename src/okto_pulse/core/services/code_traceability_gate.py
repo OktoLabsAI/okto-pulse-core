@@ -1031,6 +1031,21 @@ def extract_code_evidence_references(value: object) -> tuple[str, ...]:
     return tuple(sorted(set(_EVIDENCE_REFERENCE_RE.findall(value))))
 
 
+def is_evidence_citation_only_change(before: object, after: object) -> bool:
+    """Recognize reference edits without exempting changes to the source prose.
+
+    Citation changes are audited metadata. They must still be evaluated by the
+    evidence gate, but must not invalidate the receipt they are linking.
+    """
+    if not isinstance(before, (str, type(None))) or not isinstance(after, str):
+        return False
+    if extract_code_evidence_references(before) == extract_code_evidence_references(after):
+        return False
+    old_prose = " ".join(_EVIDENCE_REFERENCE_RE.sub("", before or "").split())
+    new_prose = " ".join(_EVIDENCE_REFERENCE_RE.sub("", after).split())
+    return old_prose == new_prose
+
+
 def resolve_code_traceability_settings(
     raw_board_settings: object,
 ) -> CodeTraceabilitySettings:

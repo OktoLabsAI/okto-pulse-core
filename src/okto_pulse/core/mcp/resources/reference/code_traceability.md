@@ -4,6 +4,20 @@ version: "1.2"
 
 # Agent-mediated Code Traceability
 
+## Refinement citation updates and versions
+
+Finish the analysis narrative before requesting its version-bound investigation.
+Then append the returned `evidence:<id>` tokens to that existing narrative.
+Adding, removing or replacing only these tokens (and surrounding whitespace)
+does not bump the Refinement version or emit a semantic-change event. The edit
+still persists in activity/history, and the evidence gate re-evaluates the current
+references: nonexistent, stale or revoked evidence does not become valid.
+
+Any concurrent change to the prose, title, scope, decisions or delivery context
+retains normal version invalidation. Adding explanations or headings is a prose
+change, not a citation-only edit. This exemption does not unlock editing outside
+Draft or relax receipt/subject version matching.
+
 ## Delivery evidence
 
 **Mandatory before completing a Spec:** planning/context evidence is not proof of

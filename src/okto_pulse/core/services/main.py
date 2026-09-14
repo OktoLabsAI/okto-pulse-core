@@ -245,6 +245,7 @@ from okto_pulse.core.services.code_traceability_gate import (
     EvidenceDispositionCoverage,
     TargetEntityCoverage,
     extract_code_evidence_references,
+    is_evidence_citation_only_change,
     phases_for_transition,
     resolve_code_evidence_coverage_skip,
     resolve_code_traceability_settings,
@@ -16262,11 +16263,15 @@ class RefinementService:
             "decisions",
             "delivery_context",
         }
-        # Spec eaf78891 (Ideação #2): refinement_semantic_fields cover all
-        # update_data keys that affect KG extraction. Refinements have a much
-        # smaller surface than specs, so any update is treated as semantic.
-        bumps_version = bool(content_fields & update_data.keys())
-        bumps_semantic = bool(update_data)
+        # Citation-only edits bind evidence to the current narrative without
+        # invalidating its receipt. All other updates retain semantic handling.
+        semantic_update = dict(update_data)
+        if "analysis" in semantic_update and is_evidence_citation_only_change(
+            refinement.analysis, semantic_update["analysis"]
+        ):
+            semantic_update.pop("analysis")
+        bumps_version = bool(content_fields & semantic_update.keys())
+        bumps_semantic = bool(semantic_update)
 
         old_data = {k: getattr(refinement, k) for k in update_data.keys()}
 
