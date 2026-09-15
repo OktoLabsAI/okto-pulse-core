@@ -44,10 +44,35 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # The dev extra pins okto-pulse (Community) at the same minor as this
+      # Core, but Core is always published to PyPI *before* Community, so
+      # `pip install -e ".[dev]"` cannot resolve that pin from PyPI during a
+      # release promotion. Resolve Community from git instead, mirroring the
+      # sibling-branch policy okto-pulse's CI uses for Core: prefer a Community
+      # branch with the same name as this PR/branch, fall back to main.
+      - name: Determine matching okto-pulse branch
+        id: community_ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass branch name through env var instead of inline interpolation
+          # to avoid script-injection via attacker-controlled branch names.
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if gh api "repos/OktoLabsAI/okto-pulse/branches/${BRANCH}" --silent 2>/dev/null; then
+            echo "Using matching okto-pulse branch: ${BRANCH}"
+            echo "ref=${BRANCH}" >> "$GITHUB_OUTPUT"
+          else
+            echo "No matching okto-pulse branch (${BRANCH}), falling back to main"
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install package + tooling
+        env:
+          COMMUNITY_REF: ${{ steps.community_ref.outputs.ref }}
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" \
+            "okto-pulse @ git+https://github.com/OktoLabsAI/okto-pulse.git@${COMMUNITY_REF}"
 
       - name: Check local Markdown links
         run: python scripts/check_markdown_links.py
