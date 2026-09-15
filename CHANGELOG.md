@@ -10,6 +10,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- Core 0.3.3 promotion keeps the manifest, package version and lock aligned.
+  The cross-edition dependency audit now assigns `okto-grafx[accel]` to the
+  Community adapter instead of requiring the removed Ladybug runtime; Grafx
+  remains absent from Core runtime dependencies. Merge reconciliation avoids
+  duplicating the requirement-lint MCP permission policy.
+- The dependency audit recognizes requested compatibility extras retained in
+  `uv.lock` metadata when uv omits their empty resolved edge, while still
+  rejecting explicit extra mismatches. The development lock now resolves the
+  current Community wheel and published Grafx 0.0.7; the SQLite driver remains
+  owned and supplied by Community, not directly declared by Core.
+
 - Cancelling historical KG consolidation now fences and removes claimed work as
   well as pending/paused rows. A stalled legacy claim can no longer leave the
   run permanently active or prevent a clean restart; already committed graph

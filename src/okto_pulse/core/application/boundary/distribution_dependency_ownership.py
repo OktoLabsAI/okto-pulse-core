@@ -285,8 +285,9 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             removal_criterion="Replace the Community scheduler adapter.",
         ),
         _entry(
-            "ladybug", community, "community", ("ladybug",), "direct",
-            ("src/okto_pulse/community/adapters/kg_runtime.py",),
+            "okto-grafx", community, "community", ("okto_grafx",), "direct",
+            ("src/okto_pulse/community/adapters/grafx_graph_store.py",),
+            extras=("accel",),
             rationale="Community owns the embedded local-first graph implementation.",
             removal_criterion="Replace the embedded graph adapter.",
         ),
@@ -338,10 +339,20 @@ def _lock_dependencies(path: Path, package_name: str) -> dict[str, tuple[str, ..
     )
     if package is None:
         return {}
+    # uv omits empty compatibility extras from resolved dependency edges, but
+    # preserves the requested extra in this package's requires-dist metadata.
+    requested_extras: dict[str, tuple[str, ...]] = {}
+    for requirement in package.get("metadata", {}).get("requires-dist", ()):
+        if re.search(r"\bextra\s*==", requirement.get("marker", "")):
+            continue
+        requested_extras[normalize_distribution(requirement["name"])] = tuple(
+            sorted(requirement.get("extras", ()) or ())
+        )
     rows: dict[str, tuple[str, ...]] = {}
     for dependency in package.get("dependencies", ()) or ():
         extras = dependency.get("extra", dependency.get("extras", ())) or ()
-        rows[normalize_distribution(dependency["name"])] = tuple(sorted(extras))
+        name = normalize_distribution(dependency["name"])
+        rows[name] = tuple(sorted(extras)) or requested_extras.get(name, ())
     return rows
 
 

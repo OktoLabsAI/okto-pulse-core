@@ -76,6 +76,39 @@ def test_f14_wheel_surface_excludes_optional_dependency_groups(tmp_path: Path) -
     )
 
 
+@pytest.mark.parametrize("resolved_extra, expected", [("", ("accel",)), (', extra = ["other"]', ("other",))])
+def test_f14_lock_preserves_requested_empty_extras_without_hiding_resolved_drift(
+    tmp_path: Path, resolved_extra: str, expected: tuple[str, ...],
+) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        '[[package]]\nname = "consumer"\n'
+        f'dependencies = [{{ name = "engine"{resolved_extra} }}]\n'
+        '[package.metadata]\nrequires-dist = [\n'
+        '{ name = "engine", extras = ["accel"] },\n'
+        '{ name = "engine", extras = ["dev-only"], marker = "extra == \'dev\'" },\n'
+        '{ name = "unresolved", extras = ["ignored"] },\n]\n',
+        encoding="utf-8",
+    )
+    assert dependency_ownership._lock_dependencies(lock, "consumer") == {"engine": expected}
+
+
+def test_f14_graph_dependency_is_owned_only_by_community() -> None:
+    ledger = build_distribution_dependency_ledger()
+    graph_entries = [
+        entry for entry in ledger
+        if entry.normalized_distribution in {"okto-grafx", "ladybug", "kuzu"}
+    ]
+    assert len(graph_entries) == 1
+    graph = graph_entries[0]
+    assert graph.normalized_distribution == "okto-grafx"
+    assert graph.declared_by == COMMUNITY_DISTRIBUTION
+    assert graph.source_owner == "community"
+    assert graph.import_tokens == ("okto_grafx",)
+    assert graph.required_extras == ("accel",)
+    assert all(path.startswith("src/okto_pulse/community/") for path in graph.source_paths)
+
+
 def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
     assert EditionPort is not None
     report = audit_distribution_dependencies(
