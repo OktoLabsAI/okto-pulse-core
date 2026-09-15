@@ -21,7 +21,7 @@ from okto_pulse.core.kg.tier_power import (
     reset_rate_limiter_for_tests,
     validate_cypher_read_only,
 )
-from kg_registry_testing import RealBoardCypherExecutorForTests, configure_test_kg_registry
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +31,7 @@ def _reset_rate():
     # (this autouse fixture runs after the conftest one, so it must restore a
     # configured registry for the tests that read get_kg_registry()).
     reset_rate_limiter_for_tests()
-    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
+    configure_test_kg_registry(graph_provider="inmemory")
 
 
 class TestCypherSafety:
@@ -447,28 +447,51 @@ class TestSchemaInfo:
 
 
 class TestNLQuery:
-    def test_query_returns_dict(self):
-        import tempfile
-        os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
-        from kg_schema_testing import bootstrap_board_graph
-        bootstrap_board_graph("board-nl-test")
-        result = execute_natural_query("board-nl-test", "test query")
+    @pytest.fixture
+    def real_board(self, tmp_path):
+        from okto_pulse.community.adapters.routed_graph_composition import (
+            build_community_routed_graph_composition,
+        )
+        from okto_pulse.community.config import CommunitySettings
+        from okto_pulse.core.kg.async_bridge import run_async_blocking
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+        bundle = build_community_routed_graph_composition(settings=CommunitySettings(
+            data_dir=str(tmp_path), kg_base_dir=str(tmp_path / "boards"),
+            kg_embedding_mode="stub",
+        ))
+        # Disable implicit discovery; explicitly install the real edition ports.
+        configure_test_kg_registry(graph_provider="inmemory", **bundle.registry_providers())
+        board_id = "board-nl-test"
+        run_async_blocking(get_kg_registry().graph_schema_manager.ensure_bootstrapped(board_id))
+        try:
+            yield board_id
+        finally:
+            bundle.grafx_pool.close_all()
+
+    def test_query_returns_dict(self, real_board):
+        result = execute_natural_query(real_board, "test query")
         assert "nodes" in result
         assert "total_matches" in result
 
-    def test_query_exact_fallback_finds_bug_without_vector_index_hit(self):
-        import tempfile
-        os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
-        from kg_schema_testing import bootstrap_board_graph, open_board_connection
+    def test_query_exact_fallback_finds_bug_without_vector_index_hit(self, real_board):
+        from okto_pulse.core.kg.async_bridge import run_async_blocking
+        from okto_pulse.core.kg.guarded_write import guarded_board_write
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-        board_id = "board-nl-bug-test"
-        bootstrap_board_graph(board_id)
-        with open_board_connection(board_id) as (_db, conn):
-            conn.execute(
-                "CREATE (n:Bug {id: 'bug_exact_1', title: 'Exact bug title', "
-                "content: 'Observed failure', source_artifact_ref: 'bug:exact-1', "
-                "source_confidence: 1.0, relevance_score: 0.5})"
-            )
+        board_id = real_board
+
+        async def seed():
+            async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+                scope.execute(
+                    "CREATE (n:Bug {id: 'bug_exact_1', title: 'Exact bug title', "
+                    "content: 'Observed failure', source_artifact_ref: 'bug:exact-1', "
+                    "source_confidence: 1.0, relevance_score: 0.5})"
+                )
+
+        with guarded_board_write(board_id, operation="test.seed", owner_id="test:nl", mutation_ref="bug:exact-1") as lease:
+            run_async_blocking(seed())
+            lease.ensure_durable()
 
         # This case exercises the exact-match fallback retrieval, not the layer
         # filter. The fixture Bug is created without a graph_layer (legacy/

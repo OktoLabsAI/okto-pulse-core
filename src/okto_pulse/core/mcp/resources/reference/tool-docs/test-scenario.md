@@ -4,6 +4,13 @@ version: "2.0"
 
 # Tool docs — `test-scenario`
 
+Delivery closeout requires this scenario to belong to a completed **test card**,
+have a current authenticated `passed` receipt, and be explicitly associated with
+the implementation it tested via `okto_pulse_record_delivery_evidence` with
+`evidence.kind="test"`.
+`automated`, task completion and self-reported result text do not qualify. A new
+failed run invalidates old coverage. See `okto-pulse://reference/code-traceability`.
+
 Card-type and test-governance rules:
 `okto-pulse://reference/card_types`.
 Executable guideline evaluation of `test_scenario` follows

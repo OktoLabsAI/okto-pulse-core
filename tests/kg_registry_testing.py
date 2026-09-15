@@ -96,7 +96,7 @@ def configure_test_kg_registry(
     test intent is literal and greppable.
 
     By default, when the Community repo is on ``sys.path``, graph providers use
-    the real Community Ladybug adapters. When it is not available, the default
+    the configured Community graph adapters. When it is not available, the default
     mode stays in explicit core contract-fake mode through ``_build_defaults``.
     Tests that truly exercise the Community runtime must pass
     ``graph_provider="real"`` (or use ``configure_real_graph_test_kg_registry``);

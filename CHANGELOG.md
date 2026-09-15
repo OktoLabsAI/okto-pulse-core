@@ -8,6 +8,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- Expose the retryable board-erasure lock-contention exception through the
+  public `core.ports.board_erasure_control` contract so editions do not need
+  to import the private KG governance implementation when mapping it to their
+  transport error surface.
+
+- Core 0.3.3 promotion keeps the manifest, package version and lock aligned.
+  The cross-edition dependency audit now assigns `okto-grafx[accel]` to the
+  Community adapter instead of requiring the removed Ladybug runtime; Grafx
+  remains absent from Core runtime dependencies. Merge reconciliation avoids
+  duplicating the requirement-lint MCP permission policy.
+- The dependency audit recognizes requested compatibility extras retained in
+  `uv.lock` metadata when uv omits their empty resolved edge, while still
+  rejecting explicit extra mismatches. The development lock now resolves the
+  current Community wheel and published Grafx 0.0.7; the SQLite driver remains
+  owned and supplied by Community, not directly declared by Core.
+
+- Cancelling historical KG consolidation now fences and removes claimed work as
+  well as pending/paused rows. A stalled legacy claim can no longer leave the
+  run permanently active or prevent a clean restart; already committed graph
+  data remains intact. The cancellation releases its authorization snapshot,
+  boundedly quiesces the consolidation worker around the delete, and restores
+  the worker afterwards so SQLite lock contention cannot hang the request. The
+  terminal snapshot now clears its active total (`enabled=false`) while keeping
+  the former run size only as audit metadata, and a later fresh run receives a
+  new start timestamp.
+
+## [0.3.3] - 2026-08-23
+
+### Added
+
+- A deterministic repository-local Markdown link and anchor checker integrated
+  with CI, plus a contributor test matrix and reproducible paired-repository
+  development setup.
+
+### Changed
+
+- Delivery Intelligence now validates a closed field/operator matrix and
+  reports the exact canonical filters, fingerprint and current-state
+  provenance applied by the projection.
+
+### Fixed
+
+- Negative Delivery Intelligence filters now apply consistently, and
+  contribution metrics include every card associated with a selected Sprint
+  even when the card predates the requested analytics window.
+- Package metadata now points to the maintained Okto Labs documentation site.
+- Distribution ownership checks now exclude dependencies guarded by optional
+  wheel extras instead of reporting development tools as runtime dependencies.
+
 ## [0.3.2] - 2026-08-22
 
 ### Added

@@ -38,6 +38,7 @@ from okto_pulse.core.kg.cognitive_readiness import (
     CognitiveReadinessService,
     CognitiveReadinessVerdict,
     ReadinessTier,
+    _parse_dt,
 )
 from okto_pulse.core.kg.rebuild_audit import (
     ACTIVE_ITEM_STATUSES,
@@ -58,6 +59,7 @@ SIGNAL_TERMINAL_HISTORY = "terminal_history"
 SIGNAL_DLQ = "dlq"
 
 VALID_SIGNAL_FILTERS: frozenset[str] = frozenset({
+    "attention", "deferred",
     SIGNAL_ALL,
     SIGNAL_COGNITIVE_PENDING,
     SIGNAL_SKIPPED,
@@ -104,6 +106,8 @@ class ActionCenterSignal:
     readiness_effect: str
     blocking: bool
     precedence_explanation: dict[str, Any] = field(default_factory=dict)
+    justification: str | None = None
+    actor: str | None = None
 
     def to_api(self) -> dict[str, Any]:
         return {
@@ -121,6 +125,8 @@ class ActionCenterSignal:
             "readiness_effect": self.readiness_effect,
             "blocking": self.blocking,
             "precedence_explanation": dict(self.precedence_explanation),
+            "justification": self.justification,
+            "actor": self.actor,
         }
 
 
@@ -139,6 +145,8 @@ class _RawSignal:
     error_cause: str | None
     revisit_at: str | None
     recorded_at: str | None = None
+    justification: str | None = None
+    actor: str | None = None
 
 
 def _cognitive_item_signal(item: Any) -> str:
@@ -207,6 +215,7 @@ class CognitiveActionCenterReadModel:
         filtered = self._apply_filters(
             raw, signal=signal, artifact_id=artifact_id, source_ref=source_ref,
             reason_code=reason_code, status=status, search=search,
+            now=self._service._now(),
         )
         total = len(filtered)
         page = filtered[bounded_offset:bounded_offset + bounded_limit]
@@ -244,6 +253,8 @@ class CognitiveActionCenterReadModel:
                 readiness_effect=verdict.readiness_effect,
                 blocking=verdict.blocking,
                 precedence_explanation=verdict.precedence_explanation,
+                justification=r.justification,
+                actor=r.actor,
             ).to_api())
 
         summary["total"] = total
@@ -271,6 +282,8 @@ class CognitiveActionCenterReadModel:
                     error_cause=None,
                     revisit_at=item.revisit_at,
                     recorded_at=getattr(item, "recorded_at", None),
+                    justification=getattr(item, "justification", None),
+                    actor=getattr(item, "actor", None),
                 ))
 
         port = get_kg_operational_read_model_port()
@@ -324,9 +337,21 @@ class CognitiveActionCenterReadModel:
         reason_code: str | None,
         status: str | None,
         search: str | None,
+        now: datetime | None = None,
     ) -> list[_RawSignal]:
         out = list(raw)
-        if signal != SIGNAL_ALL:
+        if signal in ("attention", "deferred"):
+            clock = now or datetime.now(timezone.utc)
+            def needs_attention(row: _RawSignal) -> bool:
+                if row.signal == SIGNAL_REVISIT_REQUIRED:
+                    due = _parse_dt(row.revisit_at)
+                    return due is None or due <= clock
+                return row.signal in (SIGNAL_COGNITIVE_PENDING, SIGNAL_DLQ, SIGNAL_OPEN_CANONICAL_DEBT)
+            out = [r for r in out if (
+                needs_attention(r) if signal == "attention"
+                else r.signal in (SIGNAL_SKIPPED, SIGNAL_REVISIT_REQUIRED) and not needs_attention(r)
+            )]
+        elif signal != SIGNAL_ALL:
             out = [r for r in out if r.signal == signal]
         if artifact_id:
             target = normalize_cognitive_artifact_id(artifact_id)

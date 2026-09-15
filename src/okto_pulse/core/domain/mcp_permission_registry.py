@@ -444,6 +444,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "okto_pulse_get_current_semantic_guideline_assessment",
         "guidelines.assessments.read",
     ),
+    _policy("okto_pulse_get_delivery_evidence", "code_traceability.evidence.read"),
     _policy("okto_pulse_get_design_system", "design_system.entity.read"),
     _policy("okto_pulse_get_guideline_impact", "guidelines.impact.preview"),
     _policy("okto_pulse_get_guideline_revision", "guidelines.revisions.read"),
@@ -820,6 +821,8 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.quality.assess",
         "refinement.quality.assess",
     ),
+    # Kind-specific write authority is enforced by the shared use case.
+    _policy("okto_pulse_record_delivery_evidence", "board.read"),
     _policy(
         "okto_pulse_record_requirement_lint",
         "spec.quality.assess",

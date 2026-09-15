@@ -22,16 +22,16 @@ from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
 )
-from okto_pulse.core.domain.code_traceability import (
-    CodeTraceabilityEnforcement,
-    DirectSpecDeliveryContextProvenance,
-    DeliveryContext,
-    SpecDeliveryContextProvenance,
-)
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
     REJECTION_ID_MAX_LENGTH,
     REJECTION_SUMMARY_MAX_LENGTH,
+)
+from okto_pulse.core.domain.code_traceability import (
+    CodeTraceabilityEnforcement,
+    DeliveryContext,
+    DirectSpecDeliveryContextProvenance,
+    SpecDeliveryContextProvenance,
 )
 from okto_pulse.core.domain.enums import (
     BugSeverity,
@@ -53,6 +53,10 @@ from okto_pulse.core.domain.knowledge_governance import (
 from okto_pulse.core.domain.permissions import (
     PermissionContractViolation,
     validate_strict_permission_flags,
+)
+from okto_pulse.core.domain.project_structure import (
+    ProjectStructureNode,
+    validate_project_structure,
 )
 from okto_pulse.core.domain.quality_assessment import (
     AssessmentKind,
@@ -2234,6 +2238,13 @@ class SpecCreate(BaseModel):
     decisions: list[Decision] | None = Field(
         None, description="Decisoes de design formalizadas nesta spec."
     )
+    project_structure: list[ProjectStructureNode] | None = Field(
+        None,
+        description=(
+            "Optional canonical project tree. null means not authored; [] means "
+            "explicitly authored empty."
+        ),
+    )
     status: SpecStatus = Field(SpecStatus.DRAFT, description="Status inicial da spec.")
     assignee_id: str | None = Field(None, description="ID do responsavel pela spec.")
     labels: list[str] | None = Field(
@@ -2261,6 +2272,11 @@ class SpecCreate(BaseModel):
             "snapshot do Refinement."
         ),
     )
+
+    @field_validator("project_structure", mode="before")
+    @classmethod
+    def _project_structure(cls, value: Any) -> Any:
+        return validate_project_structure(value)
 
 
 class SpecUpdate(BaseModel):
@@ -2311,6 +2327,13 @@ class SpecUpdate(BaseModel):
     decisions: list[Decision] | None = Field(
         None,
         description="Novas decisoes de design formalizadas (substitui a lista existente).",
+    )
+    project_structure: Any | None = Field(
+        None,
+        description=(
+            "Read-only on bulk Spec updates. Use the governed Project structure "
+            "structured-entity batch boundary."
+        ),
     )
     skip_test_coverage: bool | None = Field(
         None, description="Se True, o gate de cobertura de test scenarios e ignorado."
@@ -2392,6 +2415,12 @@ class SpecUpdate(BaseModel):
             "snapshot herdado. Envie null ao reconciliar com o valor herdado."
         ),
     )
+
+    @field_validator("project_structure", mode="before")
+    @classmethod
+    def _project_structure(cls, value: Any) -> Any:
+        del value
+        raise ValueError("project_structure_requires_structured_entity_boundary")
 
 
 class SpecMove(BaseModel):
@@ -2502,9 +2531,7 @@ class SpecSummary(BaseSchema):
     source_refinement_version: int | None = Field(default=None, ge=1)
     delivery_context: DeliveryContext | None = None
     delivery_context_provenance: (
-        SpecDeliveryContextProvenance
-        | DirectSpecDeliveryContextProvenance
-        | None
+        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance | None
     ) = None
     source_context_manifest: dict[str, Any] | None = None
     source_context_sha256: str | None = Field(
@@ -2807,6 +2834,12 @@ class SpecResponse(BaseSchema):
     integration_requirements: list[IntegrationRequirement] | None = None
     observability_requirements: list[ObservabilityRequirement] | None = None
     decisions: list[Decision] | None = None
+    project_structure: list[ProjectStructureNode] | None = None
+    project_structure_revision: int = Field(default=0, ge=0)
+    project_structure_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
     skip_decisions_coverage: bool = False  # default False (ideação #10 Fase 1 parity)
@@ -2852,9 +2885,7 @@ class SpecResponse(BaseSchema):
     source_refinement_version: int | None = Field(default=None, ge=1)
     delivery_context: DeliveryContext | None = None
     delivery_context_provenance: (
-        SpecDeliveryContextProvenance
-        | DirectSpecDeliveryContextProvenance
-        | None
+        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance | None
     ) = None
     source_context_manifest: dict[str, Any] | None = None
     source_context_sha256: str | None = Field(
@@ -2862,9 +2893,17 @@ class SpecResponse(BaseSchema):
         pattern=r"^[0-9a-f]{64}$",
     )
     cards: list[CardSummaryForSpec] = []
+
     knowledge_bases: list[SpecKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[SpecQAResponse] = []
+
+    @field_validator("project_structure_revision", mode="before")
+    @classmethod
+    def _legacy_project_structure_revision(cls, value: Any) -> Any:
+        """Expose legacy SQL NULL revisions through the public zero baseline."""
+
+        return 0 if value is None else value
 
 
 # Keep the legacy response model untouched while allowing the refinement

@@ -222,18 +222,21 @@ def _update_test_scenario_next_action(
             "board_id": board_id,
             "spec_id": spec_id,
             "scenario_id": "<pending_scenario_id>",
-            "status": "passed",
+            "status": "<observed_terminal_status>",
             "evidence": "<required when marking passed/failed/automated>",
         },
         "scenario_ids": list(pending_scenario_ids),
+        "status_choices": ["passed", "failed", "automated"],
         "follow_up": {
             "tool": "okto_pulse_move_card",
             "params": {"board_id": board_id, "card_id": card_id, "status": "done"},
         },
         "hint": (
             "Call okto_pulse_update_test_scenario_status once per pending scenario_id "
-            "(status='passed'/'automated' with evidence), then "
-            "okto_pulse_move_card(status='done')."
+            "with the observed terminal status (passed, failed, or automated) "
+            "and required evidence, then okto_pulse_move_card(status='done'). "
+            "Replace template placeholders before calling. Never relabel a "
+            "failure as passed; execution completion is not product approval."
         ),
     }
 
@@ -333,12 +336,13 @@ def incomplete_test_card_completion_error(
         message = (
             f"Cannot complete this test card: {total} linked scenario(s) are not "
             f"completion-ready ({shown}{suffix}). Update scenario statuses to "
-            "'automated' or 'passed' using okto_pulse_update_test_scenario_status "
-            "before completing the card."
+            "the observed terminal result (passed, failed, or automated) with "
+            "required evidence using okto_pulse_update_test_scenario_status "
+            "before completing the card. Never relabel a failure as passed."
         )
         required_tool = "okto_pulse_update_test_scenario_status"
         operator_action = (
-            f"Move {total} pending scenario(s) to automated/passed with evidence, "
+            f"Report {total} pending scenario(s) as passed/failed/automated with evidence, "
             "then move the test card to done."
         )
         next_action = _update_test_scenario_next_action(
@@ -519,8 +523,9 @@ def operational_flow_for_test_card(
             )
         else:
             operator_action = (
-                f"Update {len(pending)} pending scenario(s) to automated/passed "
-                "with evidence, then move the test card to done."
+                f"Report {len(pending)} pending scenario(s) as passed/failed/automated "
+                "with required evidence, then move the test card to done. "
+                "Never relabel a failure as passed."
             )
             required_tool = "okto_pulse_update_test_scenario_status"
             # R4-IMP3: shared test-card next_action (params_template fiel à
@@ -535,8 +540,9 @@ def operational_flow_for_test_card(
             )
     else:
         operator_action = (
-            "The resolved linked scenarios are automated/passed; move the test "
-            "card to done."
+            "The resolved linked scenarios have terminal results and required "
+            "evidence; move the test card to done. Execution completion is not "
+            "product approval; failed results remain failed."
         )
         required_tool = "okto_pulse_update_test_scenario_status"
         next_action = {

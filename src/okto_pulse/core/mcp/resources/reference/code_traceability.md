@@ -4,6 +4,51 @@ version: "1.2"
 
 # Agent-mediated Code Traceability
 
+## Refinement citation updates and versions
+
+Finish the analysis narrative before requesting its version-bound investigation.
+Then append the returned `evidence:<id>` tokens to that existing narrative.
+Adding, removing or replacing only these tokens (and surrounding whitespace)
+does not bump the Refinement version or emit a semantic-change event. The edit
+still persists in activity/history, and the evidence gate re-evaluates the current
+references: nonexistent, stale or revoked evidence does not become valid.
+
+Any concurrent change to the prose, title, scope, decisions or delivery context
+retains normal version invalidation. Adding explanations or headings is a prose
+change, not a citation-only edit. This exemption does not unlock editing outside
+Draft or relax receipt/subject version matching.
+
+## Delivery evidence
+
+**Mandatory before completing a Spec:** planning/context evidence is not proof of
+the delivered implementation. Call `okto_pulse_get_delivery_evidence(board_id,
+spec_id)` and use its current edition, version and exact obligation references.
+
+1. Tasks/bug cards provide code delivery: follow the existing Target investigation,
+   resolution and execution-receipt workflow; record the committed result revision,
+   actual file/symbol and explanation, then complete the card. Use
+   `okto_pulse_record_delivery_evidence` with kind `implementation` to associate the
+   accepted execution ID with all obligations it actually implements.
+2. **Test cards alone provide verification.** Execute their linked scenarios using
+   the authenticated Test Evidence runtime, record a passing result, and complete
+   the test card. Record kind `test`, identifying the scenario and the returned
+   implementation association IDs actually tested. The signed run must not predate
+   the implementation's source observation. All current implementations for an
+   obligation must be covered, possibly jointly by several test cards.
+3. Refresh the delivery projection before `move_spec(..., status="done")`. Missing,
+   stale, failed, revoked, cross-board or wrong-edition proof blocks completion.
+   The gate is separate from planning Skip flags, advisory mode and greenfield.
+
+An agent must not manufacture receipts, claim a task is a test, or self-authorize
+an exemption. Ask an authorized human when implementation or verification is not
+applicable; each phase needs its own exact-obligation justification and audit.
+For a non-code obligation with no implementation, explicitly resolve both phases.
+Existing done Specs are not reopened automatically; record missing proof
+retrospectively without editing locked requirements. Association is an authenticated
+claim about what was tested, not independent source-code verification by Pulse.
+
+See `okto-pulse://reference/tool-docs/code-traceability` for exact inputs and errors.
+
 Code Traceability records bounded observations made by an authenticated
 external agent. Pulse Core validates policy and immutable contracts; an
 edition may persist and project accepted records. Pulse, Community, SaaS, and
@@ -128,6 +173,32 @@ workspace fingerprint. Pulse compares accepted receipts; it does not call Git
 or inspect the workspace. `observed_at` is a claim. Server `received_at`, the
 effective freshness policy, the global source head, and revocations determine
 currentness.
+
+### Sequential observations and conflicts
+
+A new preflight from the same authenticated attestor may advance a **current**
+head within the same frozen selector scope when source identity is unchanged and
+the observed state changes. Both observations must carry a declared revision and
+workspace fingerprint, with nondecreasing `observed_at`. A different revision is
+a sequential observation, not independent corroboration. At the same revision,
+a workspace transition requires a different workspace ID **and** manifest digest,
+with at least one state declared dirty. Renaming an unchanged workspace alone is
+not a transition, and incompatible clean observations of one revision still conflict.
+
+The new receipt has `single_attestation` trust; it does not inherit prior
+corroboration. Older receipts/resolutions become outdated without being rewritten.
+After implementation, submit the result-state preflight, refresh any resolution
+that must remain current, and submit the Target Execution Disposition against the
+new receipt. This works for a single agent without a second attestor, provided the
+board accepts single attestation. Policies requiring corroboration remain enforced.
+
+An already-conflicted head cannot be cleared by the same actor changing a revision
+or workspace ID. Independent corroboration remains required for that conflict.
+A different source identity, another actor's incompatible observation, or an
+observation timestamp going backwards is not treated as this sequential advance.
+Revisions are opaque agent claims: Pulse does not infer Git ancestry or compare
+commit hashes lexicographically. Challenge consumption, head CAS, expiry,
+revocation, committed-state requirements and exact idempotent replay are unchanged.
 
 ## Mandatory external preflight
 

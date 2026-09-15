@@ -237,3 +237,121 @@ def test_transport_payload_keeps_result_state_outside_health_enum():
     assert payload["result_state"] == "unavailable"
     assert payload["health"]["state"] == "recovery_needed"
     assert "availability" not in payload["health"]
+
+
+def _readable_health():
+    return {
+        **_health("at_risk", metric_status="unavailable"),
+        "discovery_state": "healthy",
+        "board_graph_queryable": True,
+        "board_graph_recovery_required": False,
+        "discovery_recovery_required": False,
+        "probe_diagnostics": {
+            name: {"status": "available"}
+            for name in (
+                "graph_snapshot",
+                "graph_metrics",
+                "discovery_snapshot",
+                "discovery_telemetry",
+            )
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_partial_telemetry_preserves_independent_component_evidence(monkeypatch):
+    from okto_pulse.core.services import kg_health_service
+
+    async def health(_board_id, _context):
+        return _readable_health()
+
+    monkeypatch.setattr(kg_health_service, "get_kg_health", health)
+    evidence = await read_board_kg_health_evidence(None, board_id="board-1")
+    assert evidence.result_state is BoardKgAnalyticsResultState.PARTIAL
+    assert evidence.health_state is BoardKgHealthState.AT_RISK
+    components = {item.component: item for item in evidence.components}
+    assert components["discovery"].result_state is BoardKgAnalyticsResultState.AVAILABLE
+    assert components["graph"].result_state is BoardKgAnalyticsResultState.PARTIAL
+    assert components["graph"].classification_reason == "health_telemetry_incomplete"
+
+
+@pytest.mark.parametrize("probe", ("graph_snapshot", "discovery_snapshot"))
+def test_stale_component_stays_partial_even_when_legacy_metrics_are_available(probe):
+    payload = _readable_health()
+    payload["metric_status"] = "available"
+    payload["probe_diagnostics"][probe]["status"] = "stale"
+    assert (
+        BoardKgAnalyticsService._health_result_state(payload)
+        is BoardKgAnalyticsResultState.PARTIAL
+    )
+
+
+@pytest.mark.parametrize("state", ("restricted", "error"))
+@pytest.mark.parametrize(
+    "source", ("metric_status", "graph_snapshot", "discovery_telemetry")
+)
+def test_access_and_error_signals_are_not_downgraded_to_partial(state, source):
+    payload = _readable_health()
+    if source == "metric_status":
+        payload[source] = state
+    else:
+        payload["probe_diagnostics"][source]["status"] = state
+    assert BoardKgAnalyticsService._health_result_state(payload).value == state
+
+
+@pytest.mark.parametrize("status", ("unavailable", "future_status", None))
+def test_absent_or_unknown_probes_do_not_manufacture_authority(status):
+    payload = _readable_health()
+    for probe in payload["probe_diagnostics"].values():
+        probe["status"] = status
+    assert (
+        BoardKgAnalyticsService._health_result_state(payload)
+        is BoardKgAnalyticsResultState.UNAVAILABLE
+    )
+
+
+@pytest.mark.parametrize("queryable", (False, None, "true", 1))
+def test_graph_queryability_must_be_explicit_not_truthy(queryable):
+    payload = _readable_health()
+    payload["board_graph_queryable"] = queryable
+    components = {
+        item.component: item for item in BoardKgAnalyticsService._components(payload)
+    }
+    assert components["graph"].result_state is BoardKgAnalyticsResultState.UNAVAILABLE
+    assert components["discovery"].result_state is BoardKgAnalyticsResultState.AVAILABLE
+    assert (
+        BoardKgAnalyticsService._health_result_state(payload)
+        is BoardKgAnalyticsResultState.PARTIAL
+    )
+
+
+def test_confirmed_empty_board_does_not_require_a_materialized_graph():
+    payload = _readable_health()
+    payload.update(
+        metric_status="available",
+        board_graph_queryable=False,
+        materialization_state="not_materialized",
+    )
+    assert (
+        BoardKgAnalyticsService._health_result_state(payload)
+        is BoardKgAnalyticsResultState.AVAILABLE
+    )
+
+
+def test_legacy_payload_without_probe_evidence_remains_unavailable():
+    assert (
+        BoardKgAnalyticsService._health_result_state(
+            _health(metric_status="unavailable")
+        )
+        is BoardKgAnalyticsResultState.UNAVAILABLE
+    )
+
+
+def test_recovery_overrides_cached_readable_evidence():
+    payload = _readable_health()
+    payload["board_graph_recovery_required"] = True
+    components = {
+        item.component: item for item in BoardKgAnalyticsService._components(payload)
+    }
+    assert components["graph"].result_state is BoardKgAnalyticsResultState.UNAVAILABLE
+    assert components["graph"].classification_reason == "board_graph_recovery_required"

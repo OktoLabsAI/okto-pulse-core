@@ -1762,6 +1762,8 @@ def _unavailable_storage_footprint_proxy(
         "source": "runtime_capability",
         "status": "unavailable",
         "percentage": None,
+        "percentage_status": "unavailable",
+        "percentage_reason": reason,
         "high_water_mark_pct": None,
         "graph_primary_bytes": None,
         "primary_bytes": None,
@@ -1790,16 +1792,30 @@ def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
         footprint = get_kg_registry().graph_runtime_store.footprint(board_id)
     except Exception:
         base["unavailable_reason"] = "footprint_unavailable"
+        base["percentage_reason"] = "footprint_unavailable"
         return base
 
     configured_max_gb = None
     if footprint.configured_max_bytes is not None:
         configured_max_gb = int(footprint.configured_max_bytes / (1024**3))
+    percentage_status = "unavailable"
+    percentage_reason = (
+        footprint.unavailable_reason or "capacity_percentage_unavailable"
+    )
+    if footprint.status == "available":
+        if not footprint.percentage_applicable:
+            percentage_status = "not_applicable"
+            percentage_reason = "no_capacity_limit_configured"
+        elif footprint.percentage is not None:
+            percentage_status = "available"
+            percentage_reason = None
     base.update(
         {
             "source": footprint.source,
             "status": footprint.status,
             "percentage": footprint.percentage,
+            "percentage_status": percentage_status,
+            "percentage_reason": percentage_reason,
             "high_water_mark_pct": footprint.percentage,
             "graph_primary_bytes": footprint.primary_bytes,
             "primary_bytes": footprint.primary_bytes,
@@ -1885,12 +1901,17 @@ def _probe_board_graph_telemetry(
     if graph_schema_version or total_nodes > 0:
         # FR2: compute real high_water_mark_pct from on-disk sizes and feed
         # the collector ring-buffer for the correlator.
-        hwm_pct = _compute_board_graph_high_water_mark_pct(board_id)
+        footprint = _build_storage_footprint_proxy(board_id)
+        hwm_pct = (
+            footprint["percentage"] if footprint["status"] == "available" else None
+        )
         _record_board_hwm_sample(board_id, hwm_pct)
         return GraphTelemetry(
             graph_type="board",
             buffer_utilization_pct=0.0,
             high_water_mark_pct=hwm_pct,
+            high_water_mark_applicable=footprint["percentage_status"]
+            != "not_applicable",
             recent_buffer_errors=0,
             recent_wal_errors=0,
             recent_commit_errors=0,
@@ -4105,6 +4126,46 @@ def _build_kg_root_cause(
     }
 
 
+def _read_health_query_group(
+    cypher: object,
+    board_id: str,
+    statements: list[tuple[str, dict[str, Any] | None, int]],
+) -> list[dict[str, Any] | Exception]:
+    """Use an optional complete batch, retaining legacy per-query degradation.
+
+    A failed/incomplete batch contributes no prefix. Scalar retries still pass
+    through the executor's authorization/read-only boundary and expose each
+    original failure to the existing metric-specific policy. No health work is
+    disabled or cached, and unsupported backends retain their scalar reads.
+    """
+    if not statements:
+        return []
+    batch = getattr(cypher, "execute_read_only_batch", None)
+    if callable(batch):
+        try:
+            results = list(batch(board_id, statements))
+            if len(results) == len(statements) and all(
+                isinstance(row, dict) for row in results
+            ):
+                return results
+        except Exception:
+            pass
+    results: list[dict[str, Any] | Exception] = []
+    for query, params, max_rows in statements:
+        try:
+            result = (
+                cypher.execute_read_only(board_id, query, max_rows=max_rows)
+                if params is None
+                else cypher.execute_read_only(
+                    board_id, query, params, max_rows=max_rows
+                )
+            )
+            results.append(result)
+        except Exception as exc:
+            results.append(exc)
+    return results
+
+
 def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
     """Pull node-level aggregates from graph backend for ``board_id``.
 
@@ -4130,14 +4191,18 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
 
     try:
         cypher = get_kg_registry().cypher_executor
-        for node_type in NODE_TYPES:
+        results = _read_health_query_group(
+            cypher,
+            board_id,
+            [
+                (f"MATCH (n:{node_type}) RETURN n.relevance_score", {}, 10000)
+                for node_type in NODE_TYPES
+            ],
+        )
+        for node_type, result in zip(NODE_TYPES, results, strict=True):
             try:
-                result = cypher.execute_read_only(
-                    board_id,
-                    f"MATCH (n:{node_type}) RETURN n.relevance_score",
-                    {},
-                    max_rows=10000,
-                )
+                if isinstance(result, Exception):
+                    raise result
             except Exception as exc:
                 logger.debug(
                     "kg.health.graph_query_failed board=%s type=%s err=%s",
@@ -4215,14 +4280,22 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
         cypher = get_kg_registry().cypher_executor
         successful_node_types = 0
         failed_node_types = 0
-        for node_type in NODE_TYPES:
-            try:
-                result = cypher.execute_read_only(
-                    board_id,
-                    f"MATCH (n:{node_type}) "
-                    f"RETURN n.graph_layer, n.maturity_status, count(n)",
-                    max_rows=10000,
+        results = _read_health_query_group(
+            cypher,
+            board_id,
+            [
+                (
+                    f"MATCH (n:{node_type}) RETURN n.graph_layer, n.maturity_status, count(n)",
+                    None,
+                    10000,
                 )
+                for node_type in NODE_TYPES
+            ],
+        )
+        for result in results:
+            try:
+                if isinstance(result, Exception):
+                    raise result
                 for row in result.get("rows", []):
                     layer = str(row[0] or "unclassified")
                     maturity = str(row[1] or "unclassified")

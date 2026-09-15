@@ -1102,6 +1102,15 @@ class Spec(Base):
     # [{id, title, rationale, context, alternatives_considered, supersedes_decision_id,
     #   linked_requirements, linked_task_ids, status, notes}]
     decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Optional, authored Project Structure aggregate. ``None`` means the
+    # feature was never authored while ``[]`` is an explicitly empty tree.
+    project_structure: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    project_structure_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    project_structure_digest: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     # If true, spec can move to Done without full test coverage — set by user only
     skip_test_coverage: Mapped[bool] = mapped_column(
         nullable=False, server_default=text("false")

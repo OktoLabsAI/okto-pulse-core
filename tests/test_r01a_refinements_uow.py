@@ -253,6 +253,38 @@ async def test_get_refinement_200_and_404(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_refinement_citations_preserve_version_but_prose_changes_do_not(client):
+    _, ideation_id = await _seed_ideation(status="done")
+    rid = await _seed_refinement(ideation_id)
+    url = f"{PREFIX}/refinements/{rid}"
+    base = client.patch(url, json={"analysis": "Existing editor preserves input."})
+    assert base.status_code == 200, base.text
+    version = base.json()["version"]
+    for analysis in (
+        "Existing editor preserves input.\n\nevidence:code_evidence_one",
+        "Existing editor preserves input.\n\nevidence:code_evidence_two",
+        "Existing editor preserves input.",
+    ):
+        result = client.patch(url, json={"analysis": analysis})
+        assert result.status_code == 200, result.text
+        assert result.json()["version"] == version
+        persisted = client.get(url).json()
+        assert persisted["analysis"] == analysis
+        assert persisted["version"] == version
+    changed = client.patch(url, json={
+        "analysis": "Existing editor discards input. evidence:code_evidence_two",
+    })
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["version"] == version + 1
+    mixed = client.patch(url, json={
+        "analysis": "Existing editor discards input. evidence:code_evidence_three",
+        "title": "A different delivery scope",
+    })
+    assert mixed.status_code == 200, mixed.text
+    assert mixed.json()["version"] == version + 2
+
+
+@pytest.mark.asyncio
 async def test_update_refinement_200_persists_and_404(client) -> None:
     _, ideation_id = await _seed_ideation(status="done")
     rid = await _seed_refinement(ideation_id)

@@ -107,7 +107,7 @@ def test_fake_failure_maps_to_blocked_and_failed_command():
 # KEY anti-requirement: prerequisites absent -> skipped-honest, NEVER success.
 # --------------------------------------------------------------------------- #
 def test_prereqs_absent_emits_skipped_honest_never_fake_success():
-    reason = "wheel artifact not built: dist/okto_pulse_core-0.3.2-py3-none-any.whl"
+    reason = "wheel artifact not built: dist/okto_pulse_core-0.3.3-py3-none-any.whl"
     adapters = [
         _FakeAdapter("core_smoke_install", "passed"),
         _FakeAdapter("community_rebuild_reinstall_smoke", "passed"),
@@ -277,7 +277,7 @@ def test_detect_prereqs_no_wheel_declared_is_unavailable(tmp_path):
 
 
 def test_detect_prereqs_available_when_wheel_present(tmp_path):
-    wheel = tmp_path / "okto_pulse_core-0.3.2-py3-none-any.whl"
+    wheel = tmp_path / "okto_pulse_core-0.3.3-py3-none-any.whl"
     wheel.write_bytes(b"PK\x03\x04")  # a present (dummy) wheel artifact
     check = detect_full_prerequisites(
         FullModePrerequisites(required_wheels=(wheel,)),

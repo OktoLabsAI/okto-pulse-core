@@ -28,19 +28,19 @@ _COMMUNITY_CHECKOUT = resolve_repository_checkout(
 )
 assert _COMMUNITY_CHECKOUT is not None
 COMMUNITY_REPO = _COMMUNITY_CHECKOUT.repo_root
-CORE_WHEEL = CORE_REPO / "dist" / "okto_pulse_core-0.3.2-py3-none-any.whl"
+CORE_WHEEL = CORE_REPO / "dist" / "okto_pulse_core-0.3.3-py3-none-any.whl"
 COMMUNITY_WHEEL = (
-    COMMUNITY_REPO / "dist" / "okto_pulse-0.3.2-py3-none-any.whl"
+    COMMUNITY_REPO / "dist" / "okto_pulse-0.3.3-py3-none-any.whl"
 )
 
 
 def _write_core_wheel(path: Path, members: dict[str, str]) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
-            "okto_pulse_core-0.3.2.dist-info/METADATA",
+            "okto_pulse_core-0.3.3.dist-info/METADATA",
             "Metadata-Version: 2.3\n"
             "Name: okto-pulse-core\n"
-            "Version: 0.3.2\n"
+            "Version: 0.3.3\n"
             "Requires-Dist: pydantic>=2.12,<2.14\n"
             "Requires-Dist: pydantic-core>=2.14.1,<3\n"
             "Requires-Dist: typing-extensions>=4.14.1,<5\n"
@@ -48,6 +48,65 @@ def _write_core_wheel(path: Path, members: dict[str, str]) -> None:
         )
         for member, content in members.items():
             archive.writestr(member, content)
+
+
+def test_f14_wheel_surface_excludes_optional_dependency_groups(tmp_path: Path) -> None:
+    wheel = tmp_path / "okto_pulse_core-0.3.3-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "okto_pulse_core-0.3.3.dist-info/METADATA",
+            "Metadata-Version: 2.3\n"
+            "Name: okto-pulse-core\n"
+            "Version: 0.3.3\n"
+            "Requires-Dist: pydantic>=2.12,<2.14\n"
+            "Requires-Dist: pydantic-core>=2.14.1,<3\n"
+            "Requires-Dist: typing-extensions>=4.14.1,<5\n"
+            "Requires-Dist: PyYAML>=6,<7\n"
+            "Requires-Dist: pytest>=8; extra == 'dev'\n",
+        )
+
+    dependencies = dependency_ownership._wheel_dependencies(wheel)
+
+    assert "pytest" not in dependencies
+    assert tuple(sorted(dependencies)) == (
+        "pydantic",
+        "pydantic-core",
+        "pyyaml",
+        "typing-extensions",
+    )
+
+
+@pytest.mark.parametrize("resolved_extra, expected", [("", ("accel",)), (', extra = ["other"]', ("other",))])
+def test_f14_lock_preserves_requested_empty_extras_without_hiding_resolved_drift(
+    tmp_path: Path, resolved_extra: str, expected: tuple[str, ...],
+) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        '[[package]]\nname = "consumer"\n'
+        f'dependencies = [{{ name = "engine"{resolved_extra} }}]\n'
+        '[package.metadata]\nrequires-dist = [\n'
+        '{ name = "engine", extras = ["accel"] },\n'
+        '{ name = "engine", extras = ["dev-only"], marker = "extra == \'dev\'" },\n'
+        '{ name = "unresolved", extras = ["ignored"] },\n]\n',
+        encoding="utf-8",
+    )
+    assert dependency_ownership._lock_dependencies(lock, "consumer") == {"engine": expected}
+
+
+def test_f14_graph_dependency_is_owned_only_by_community() -> None:
+    ledger = build_distribution_dependency_ledger()
+    graph_entries = [
+        entry for entry in ledger
+        if entry.normalized_distribution in {"okto-grafx", "ladybug", "kuzu"}
+    ]
+    assert len(graph_entries) == 1
+    graph = graph_entries[0]
+    assert graph.normalized_distribution == "okto-grafx"
+    assert graph.declared_by == COMMUNITY_DISTRIBUTION
+    assert graph.source_owner == "community"
+    assert graph.import_tokens == ("okto_grafx",)
+    assert graph.required_extras == ("accel",)
+    assert all(path.startswith("src/okto_pulse/community/") for path in graph.source_paths)
 
 
 def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
@@ -164,7 +223,7 @@ def test_f14_dependency_graph_rejects_core_to_community_edge(
 def test_f14_tampered_core_wheel_rejects_community_package_member(
     tmp_path: Path,
 ) -> None:
-    wheel = tmp_path / "okto_pulse_core-0.3.2-py3-none-any.whl"
+    wheel = tmp_path / "okto_pulse_core-0.3.3-py3-none-any.whl"
     _write_core_wheel(
         wheel,
         {
@@ -195,7 +254,7 @@ def test_f14_tampered_core_wheel_rejects_community_package_member(
 def test_f14_tampered_core_wheel_ast_rejects_imports_but_not_literals(
     tmp_path: Path,
 ) -> None:
-    wheel = tmp_path / "okto_pulse_core-0.3.2-py3-none-any.whl"
+    wheel = tmp_path / "okto_pulse_core-0.3.3-py3-none-any.whl"
     _write_core_wheel(
         wheel,
         {

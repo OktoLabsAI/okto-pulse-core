@@ -6,13 +6,19 @@ version: "1.0"
 Executable guideline gate/currentness rules are defined in
 `okto-pulse://reference/policy-compliance`.
 
-**When unsure, call `okto_pulse_get_allowed_transitions`** — it returns the valid next statuses (and blocking gates) for the entity's current state. It is always correct, even when a board overrides defaults.
+**Before choosing an edge, call `okto_pulse_get_allowed_transitions`** — it
+reports next statuses and blocking gates for the current state/configuration.
+It is a readiness snapshot, not a durable authorization: the mutation checks
+permissions and gates again. On a conflict, re-read context and reconsider the
+operation. Tables below describe common paths, not permission grants or every
+board-specific alternative.
 
 ## Normal cards (`card_type = "normal"`)
 
 | From | To | Pre-requisites |
 |------|-----|---------------|
 | `not_started` | `started` | Spec must be `in_progress` or later |
+| `not_started` | `in_progress` | Direct start only when current permissions and readiness allow it; same execution gates apply |
 | `started` | `in_progress` | — |
 | `in_progress` | `validation` | — |
 | `validation` | `done` | Internal consequence of a successful `okto_pulse_submit_task_validation` and all completion gates |
@@ -33,7 +39,12 @@ Executable guideline gate/currentness rules are defined in
 | `not_started` | `in_progress` | Spec must be `validated` or later (direct start is accepted by the API for executable test cards) |
 | `started` | `in_progress` | Spec must be `validated` or later |
 | `validation` | `in_progress` | Test-only rework; Spec dependencies must still be ready |
-| `started`/`in_progress`/`validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift |
+| `started`/`in_progress`/`validation` | `done` | Linked scenarios have an honest terminal result (`passed`, `failed`, or `automated`) and required evidence, plus `conclusion` + completeness/drift; other completion gates still apply |
+
+A Test Card being `done` means its execution/report is complete, not that the
+product passed. Preserve `failed`; do not relabel it to unblock a move. Sprint
+review, bug regression and delivery approval have their own success/evidence
+requirements. See `okto-pulse://reference/card_types`.
 
 Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validation-gate skip, scenario updates on locked specs: see `okto-pulse://reference/card_types`.
 

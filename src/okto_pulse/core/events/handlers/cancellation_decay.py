@@ -75,16 +75,16 @@ def _source_owner_match_clause(source_ref: str) -> tuple[str, dict[str, str]]:
         raise ValueError(f"ungoverned source_artifact_ref: {source_ref!r}")
     owner_type, owner_id = identity
     clause = (
-        "WITH n, string_split(n.source_artifact_ref, ':') AS parts "
+        "WITH n, split(n.source_artifact_ref, ':') AS parts "
         "WHERE size(parts) >= 2 "
-        "WITH n, CASE parts[1] "
+        "WITH n, CASE parts[0] "
         "  WHEN 'card' THEN 'card' "
         "  WHEN 'card_relationship_target' THEN 'card' "
         "  WHEN 'task' THEN 'card' "
         "  WHEN 'test' THEN 'card' "
         "  WHEN 'bug' THEN 'card' "
-        "  ELSE parts[1] "
-        "END AS owner_type, parts[2] AS owner_id "
+        "  ELSE parts[0] "
+        "END AS owner_type, parts[1] AS owner_id "
         "WHERE owner_type = $owner_type AND owner_id = $owner_id "
     )
     return clause, {"owner_type": owner_type, "owner_id": owner_id}

@@ -56,7 +56,7 @@ def test_core_smoke_install_passes_with_clean_runner() -> None:
     runner = _FakeRunner()
     report = CoreSmokeInstallGate().run(
         SmokeInstallInput(
-            wheel_path=Path("dist/okto_pulse_core-0.3.2-py3-none-any.whl"),
+            wheel_path=Path("dist/okto_pulse_core-0.3.3-py3-none-any.whl"),
             expected_imports=("okto_pulse.core.application.boundary",),
             commands=("python -c \"import okto_pulse\"",),
         ),
@@ -113,7 +113,7 @@ def test_core_smoke_install_installs_core_wheel_without_community() -> None:
     # ts_e4f4c2ac: a core-pure wheel installs + imports in isolation WITHOUT any
     # Community artifact.
     runner = _FakeRunner()
-    wheel = Path("dist/okto_pulse_core-0.3.2-py3-none-any.whl")
+    wheel = Path("dist/okto_pulse_core-0.3.3-py3-none-any.whl")
     report = CoreSmokeInstallGate().run(
         SmokeInstallInput(
             wheel_path=wheel,

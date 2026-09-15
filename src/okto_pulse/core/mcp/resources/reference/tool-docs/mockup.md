@@ -56,6 +56,20 @@ Returns:
 Copy screen mockups from a spec to a card. Use this when creating implementation
 cards to carry the relevant mockups into the card for the implementer's context.
 
+This official copy preserves source identity and is valid for Resource Gate
+coverage. You do NOT need to replace it with a reference. Copying HTML manually,
+recreating a mockup with a new unrelated ID, or mentioning it in task text does
+not establish coverage of the original. Matching titles or content hashes alone
+do not merge distinct resource origins.
+
+For an uncovered-resource error, compare its `resource_id`, `unique_resource_id`,
+and `origin_evidence` with the card snapshot's ID/source metadata. Select the
+required source with this tool for a non-cancelled task of the Spec and re-check
+full Spec context/readiness. A successful copy count alone does not prove that
+every required resource is covered. If the required ID cannot be selected,
+report the lineage/copy mismatch; do not fabricate source metadata or use N/A
+as a workaround. See `okto-pulse://workflows/cards` for the coverage protocol.
+
 Args:
     board_id: Board ID
     spec_id: Source spec ID

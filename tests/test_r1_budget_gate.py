@@ -144,7 +144,7 @@ def test_callable_names_and_schema_keys_stable():
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
     # 2026-08-22: reviewed surface is 338 tools after adding governed agent
     # legacy-Evidence classification.
-    assert len(tools) == 338
+    assert len(tools) == 340
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

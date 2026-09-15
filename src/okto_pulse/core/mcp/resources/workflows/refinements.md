@@ -154,6 +154,11 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 
 **Mandatory deliverables in the refinement body** — once the investigation is done, the refinement MUST cite the evidence:
 
+Prepare the final narrative first, then request the version-bound receipt and
+append `evidence:<id>` tokens. Citation-only changes preserve the version and
+remain audited; changes to narrative, scope or decisions still invalidate older
+receipts. See the Code Traceability reference for the exact citation-only rule.
+
 1. **`analysis`** — written narrative of what you found in each applicable source above. For code claims cite `evidence:<id>`, its AS-IS `source_role`, relevance/interpretation boundary, logical source ref, normalized relative path, symbol, agent receipt, declared revision/workspace claim, and snapshot coordinates. A bare `path:line` is not source truth. For a complete Greenfield absence, cite the V2 `no_relevant_existing_implementation` receipt; for access failure cite `partial|unavailable` and the explicit waiver/N/A decision. Silent omission is never acceptable.
 2. **`in_scope`** / **`out_of_scope`** — the boundary MUST be derived from the investigation, not from intuition. Each scope item should be traceable back to a source or decision.
 3. **`decisions`** — every architectural choice the refinement locks in. Each decision must reference (a) the alternatives considered, (b) the source that informed the pick, (c) the prior art it extends or supersedes (KG node id when applicable).
@@ -177,8 +182,10 @@ parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
   reports complete role counts and classification state independently from
   any bounded item list.
 - No new item is `uncategorized_legacy`. Any legacy item remains visibly
-  unclassified until an authorized human uses the UI/REST classification
-  workflow; agents never classify it through MCP.
+  unclassified until an authorized actor appends classification. Agents use
+  `okto_pulse_classify_legacy_code_evidence` with
+  `code_traceability.evidence.classify_legacy`; humans may use UI/REST. Neither
+  path permits guessed provenance or upgrades the V1 investigation receipt.
 - Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
 - There are zero unresolved Q&A items on the refinement.
 - New evidence discovered during investigation has been attached as a KE, mockup, or Architecture Design, not buried in prose.

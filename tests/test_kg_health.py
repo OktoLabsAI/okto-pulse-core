@@ -329,6 +329,7 @@ async def test_native_budget_failure_stays_available_as_health_response(
         "global_buffer_pool_mb": None,
         "max_db_size_gb": None,
         "connection_pool_size": None,
+        "read_participants": None,
     }
     assert "private" not in str(response.native_runtime_budget.model_dump()).lower()
 
@@ -786,8 +787,14 @@ async def test_service_layer_response_matches_pydantic_model(
 
     # Should construct without raising — proves shape parity.
     response = KGHealthResponse(**data)
-    # And the dump round-trips into the same set of keys.
-    assert set(response.model_dump().keys()) == set(data.keys())
+    # Community decorates the REST result with route identity after the Core
+    # service returns. Keep exact parity for all Core fields and pin this sole
+    # edition-owned extension rather than leaking physical storage into Core.
+    from okto_pulse.community.api.kg_health import GraphStorageSnapshot
+
+    assert "graph_storage" not in data
+    assert set(response.model_dump(exclude={"graph_storage"})) == set(data)
+    assert response.graph_storage == GraphStorageSnapshot()
 
 
 def test_rest_health_issue_preserves_unavailable_probe_names():
@@ -1219,26 +1226,25 @@ def test_pool_multiplier_constant_is_three():
 
 
 def test_cypher_templates_order_by_relevance_score_unchanged():
-    """The literal ORDER BY clauses in cypher_templates.py and
-    kuzu_graph_store.py are preserved (BR4)."""
+    """The relevance ordering contract survives the backend migration (BR4)."""
     repo_root = Path(__file__).parent.parent
 
     cypher_templates = (
         repo_root / "src" / "okto_pulse" / "core" / "kg" / "cypher_templates.py"
     ).read_text(encoding="utf-8")
     community_repo = community_repo_for(repo_root)
-    kuzu_store = (
+    graph_store = (
         community_repo
         / "src"
         / "okto_pulse"
         / "community"
         / "adapters"
-        / "kuzu_graph_store.py"
+        / "grafx_graph_store.py"
     ).read_text(encoding="utf-8")
 
     assert "ORDER BY d.relevance_score DESC" in cypher_templates
     assert "ORDER BY l.relevance_score DESC" in cypher_templates
-    assert "ORDER BY n.relevance_score DESC" in kuzu_store
+    assert "ORDER BY n.relevance_score DESC" in graph_store
 
 
 # --- TS8 / AC8: default-score distribution alarm ---

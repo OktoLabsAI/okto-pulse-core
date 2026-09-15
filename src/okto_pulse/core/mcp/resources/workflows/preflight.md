@@ -1,5 +1,5 @@
 ---
-version: "1.1"
+version: "1.3"
 ---
 
 # Pre-Flight Checklist (READ FIRST)
@@ -7,6 +7,36 @@ version: "1.1"
 Every time you start a session or pick up a new task, follow the matching sequence below.
 Before authoring, assessing, or relying on semantic board guidelines, read
 `okto-pulse://reference/policy-compliance`.
+
+## Action map — choose one route, then read its required detail
+
+| Action | Read/prepare | Act and verify | Stop condition |
+|---|---|---|---|
+| Explore a board | Session pre-flight; bounded lists/summary | Fetch only relevant detail and follow pagination | Missing access or incomplete required context |
+| Author Ideation/Refinement/Spec | Matching workflow; current context, relevant source artifacts and required KG queries | Edit in an allowed state; read back IDs/version | Unresolved user intent, frozen content or conflicting provenance |
+| Start/rework a card | Card execution pre-flight below | Choose a currently allowed edge; verify `in_progress` before work | Refusal, missing authority or required context |
+| Validate/complete | Full gate context; current evidence/head/binding; independent reviewer where required | Submit the type-specific gate; re-read status and blockers | An accepted submission is not automatically an approved delivery |
+| Handle error/background work | Outer V2 outcome and domain state; retry protocol below | Follow the owned handle/next action; verify terminal result | Unknown outcome, unavailable authority, repeated non-progress or exhausted budget |
+
+These routes do not replace the mandatory domain resources. Reuse unchanged
+instruction resources already read in this session; do not reload every domain
+for an unrelated operation. Fetch artifact bodies only when needed for actual
+implementation/review, using the manifest/drilldowns. Refresh mutable context
+before a gated move and after a write that changes its version/head.
+
+## Rule categories — authority and proof
+
+| Category | Meaning | Where to verify |
+|---|---|---|
+| Server gate | Deterministically enforced when enabled for this actor/board/state | Full gate context, effective settings, allowed transitions, mutation response |
+| Agent protocol | Required agent behavior, not certified by a successful server move | Audit trail and actual work: context reads, prescribed KG queries, Project Structure decision, meaningful progress comments |
+| Advisory | Review for usefulness; absence alone does not block | Advisory fields in the current summary; KB context must not become filler |
+| Human/independent authority | Only the authorized actor can take the action | Effective permissions and typed remediation; no automatic skip or self-approval |
+
+Architecture/Mockup presence and coverage are server gates where applicable;
+Project Structure applicability is an agent protocol. Code Traceability and
+guideline enforcement depend on effective policy. A comment cannot waive a
+server gate, and a green Resource Gate does not prove all protocol obligations.
 
 ### Session pre-flight — before any board work
 
@@ -32,11 +62,16 @@ status-changing work (see
 ```
 1. okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
 2. Attach applicable artifacts — follow the Card-Level Artifact Attachment path in §2.8 of okto-pulse://workflows/cards (the single source: copy tools per artifact, decide per KE/mockup/Architecture Design, and any skip requires a one-line justifying comment)
-3. okto_pulse_move_card(status="in_progress")
-4. BEGIN WORK
+3. Read okto_pulse_get_allowed_transitions; enter in_progress only through an allowed edge for the current type, status, permissions and gates (use started first when required). If already in_progress, do not repeat a move merely to satisfy this checklist.
+4. Verify the move succeeded and re-read the card state, then BEGIN WORK. A refusal is a blocker, not permission to start anyway.
 ```
 
 **Never skip card execution steps 1 and 3.**
+
+The transition read is a snapshot, not a durable authorization: the mutation
+revalidates current state. For `rejected`, inspect its Current sealed cause and
+use the sole rework exit to `in_progress`. Test cards have a separate lifecycle;
+see `okto-pulse://reference/transitions` and `okto-pulse://reference/card_types`.
 
 Use `profile="detail"` and follow its drilldowns when implementation/review
 needs artifact or requirement bodies. Do not replace the gate-scope call with a
@@ -68,6 +103,15 @@ identity when starting the execution. Submit every immutable item exactly once.
 `manual_checklist_ref` is legacy evidence only and never satisfies A3.
 
 ### Resource Gate pre-flight — mandatory before completion
+
+**Specs also require a Project Structure applicability decision before leaving
+`draft`.** Inspect the current tree and Spec `context`: author a meaningful tree
+or persist `Project Structure: not applicable` with a specific reason and the
+edition/scope reviewed. An absent/empty tree alone is unresolved, not N/A.
+Read `okto-pulse://reference/project-structure`. This is a separate agent
+protocol obligation; it is not included in the Resource Gate summary below.
+If omitted, warn and resolve it before proceeding; do not assume a green
+Resource Gate means this decision was made.
 
 Architecture, Mockup, and Knowledge Base are all tracked by Resource Gate, but
 their authority differs: **Architecture and Mockup are blocking**;
@@ -166,9 +210,12 @@ contextually unclassified and cannot be inferred into V2 authority. If the
 live inbound surface exposes only V1, stop and report the missing V2
 capability.
 
-If `source_context_items` reports `unclassified_legacy`, surface the IDs. Only
-an authorized human may append a classification through UI/REST; there is no
-MCP classification mutation, and the original Evidence remains immutable.
+If `source_context_items` reports `unclassified_legacy`, inspect the exact IDs.
+An authorized agent may append classification with
+`okto_pulse_classify_legacy_code_evidence`; an authorized human may use UI/REST.
+Both require `code_traceability.evidence.classify_legacy`, defensible provenance
+and current CAS inputs. Without authority or evidence, report the blocker.
+The original Evidence remains immutable; classification does not upgrade V1.
 Read the effective `source_context` summary even when item collections are
 bounded. Treat a derived Spec's source-context manifest as frozen until an
 explicit, preview-fenced rebase.
@@ -179,3 +226,41 @@ blocker or human-waiver path advertised by policy; never invent
 blocking gate.
 
 Canonical protocol: `okto-pulse://reference/code-traceability`.
+
+## Version and identity glossary
+
+| Identity | Use | Not interchangeable with |
+|---|---|---|
+| Product release | Installed implementation/capabilities | Entity version or instruction revision |
+| Resource/catalog identity or content hash | Cache official instruction content; when unavailable, invalidate on reconnect/restart | Mutable board guidelines/context |
+| Entity edition | Lifecycle/review cycle | Content version within that edition |
+| Subject/content version | CAS fence for the exact reviewed entity | Receipt ID or head revision |
+| Head/assignment/classification revision | CAS fence for that particular ledger/scope | Another resource's revision |
+| Receipt ID/digest and currentness | Evidence of a specific accepted operation | Permanent approval or automatic adoption by a frozen descendant |
+
+Use exact server-returned fields; never substitute an edition for a version,
+guess a digest, or reuse one stale fence across a sequence of mutations.
+
+## Retry, uncertainty and background work
+
+| Situation | Next action |
+|---|---|
+| Invalid payload/unsupported argument | Read the current schema and safe validation details; correct input before retrying |
+| CAS/version/head conflict | Re-read current context/head, reconsider intent, submit changed input with a new idempotency key |
+| Exact replay of the same operation | Reuse its key and identical payload only where the tool supports idempotency |
+| Permission or independent-review requirement | Ask the authorized actor; `retryable=true` is not permission to bypass it |
+| Timeout/disconnect with unknown write outcome | Read the receipt/entity/job status first; do not duplicate an unconfirmed mutation |
+| `accepted`/`pending`/`running` | Keep the returned handle, poll its documented status tool, and inspect the domain result until terminal |
+| Cancel requested | Verify terminal cancellation; request acceptance does not prove work stopped |
+| Graph unavailable/recovery needed | Diagnose the component and use `okto-pulse://reference/kg-health`; do not infer a rebuild from generic overall state |
+
+Follow server retry-after/backoff/deadline when provided. Otherwise use bounded
+backoff for transient retries; do not busy-poll. Stop automatic mutation retries
+after repeated unchanged failure and report the blocker. For monitoring, agree
+a time budget (or follow the user's explicit monitoring instruction), give
+progress updates and retain the handle across reconnects. No progress alone
+does not authorize cancelling, restarting or launching a duplicate job.
+
+When escalating, include board/entity ID, operation, error code, current state,
+version/edition, safe blocker details, receipt/job ID, attempts and the exact
+missing authority/action. Never include tokens, challenges or sensitive bodies.

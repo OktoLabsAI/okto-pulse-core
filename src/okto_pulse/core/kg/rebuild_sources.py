@@ -927,6 +927,7 @@ def _cognitive_durable_digest(board_id: str) -> dict[str, Any]:
     """
 
     from okto_pulse.core.ports.kg_cognitive_source import (
+        LatestVerifiedCognitiveSourceReader,
         resolve_cognitive_source_store,
     )
 
@@ -935,7 +936,12 @@ def _cognitive_durable_digest(board_id: str) -> dict[str, Any]:
         return {}
     from okto_pulse.core.kg.async_bridge import run_async_blocking
 
-    records = run_async_blocking(store.enumerate(board_id))
+    operation = (
+        store.enumerate_latest_verified
+        if isinstance(store, LatestVerifiedCognitiveSourceReader)
+        else store.enumerate
+    )
+    records = run_async_blocking(operation(board_id))
     return cognitive_durable_digest_from_rows(records)
 
 

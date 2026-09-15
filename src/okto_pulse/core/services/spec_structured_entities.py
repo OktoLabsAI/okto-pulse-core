@@ -26,6 +26,16 @@ from okto_pulse.core.events.types import (
     StructuredSpecEntityRevoked,
     StructuredSpecEntityUpdated,
 )
+from okto_pulse.core.domain.project_structure import (
+    ProjectStructureBatch,
+    ProjectStructureError,
+    ProjectStructureMutation,
+    ProjectStructureRemovalBlocked,
+    ProjectStructureValidationError,
+    apply_project_structure_batch,
+    canonical_project_structure_digest,
+    project_structure_management_nodes,
+)
 from okto_pulse.core.infra.permissions import PermissionSet
 from okto_pulse.core.models.schemas import (
     ApiContract,
@@ -35,6 +45,8 @@ from okto_pulse.core.models.schemas import (
     ObservabilityRequirement,
 )
 from okto_pulse.core.ports.structured_spec import (
+    ProjectStructureMutationReceipt,
+    ProjectStructureMutationPersistenceState,
     StructuredSpecRecord,
     get_structured_spec_store,
 )
@@ -46,6 +58,7 @@ from okto_pulse.core.services.main import (
     _validate_spec_linked_refs,
     resolve_actor_name,
 )
+
 # spec_child_text / spec_child_id now live in the leaf canonicalization module
 # (spec 9d66847f) so SpecService.create_spec/update_spec can import the
 # canonicalizer without an import cycle. Re-exported here for existing callers.
@@ -67,6 +80,7 @@ STRUCTURED_SPEC_ENTITY_FIELDS: dict[str, str] = {
     "api_contract": "api_contracts",
     "integration_requirement": "integration_requirements",
     "observability_requirement": "observability_requirements",
+    "project_structure_node": "project_structure",
 }
 
 STRUCTURED_SPEC_ENTITY_OPERATIONS: set[str] = {
@@ -78,6 +92,46 @@ STRUCTURED_SPEC_ENTITY_OPERATIONS: set[str] = {
     "reorder",
     "link_task",
     "unlink_task",
+    "batch",
+    "link_test",
+    "unlink_test",
+    "link_evidence",
+    "unlink_evidence",
+}
+
+_PROJECT_STRUCTURE_OPERATIONS = {
+    "create",
+    "update",
+    "revoke",
+    "restore",
+    "reorder",
+    "batch",
+    "link_task",
+    "unlink_task",
+    "link_test",
+    "unlink_test",
+    "link_evidence",
+    "unlink_evidence",
+}
+_PROJECT_STRUCTURE_ONLY_OPERATIONS = {
+    "batch",
+    "link_test",
+    "unlink_test",
+    "link_evidence",
+    "unlink_evidence",
+}
+_PROJECT_STRUCTURE_RELATION_OPERATIONS = {
+    "link_task",
+    "unlink_task",
+    "link_test",
+    "unlink_test",
+}
+_PROJECT_STRUCTURE_RELATION_STATUSES = {
+    "draft",
+    "approved",
+    "validated",
+    "in_progress",
+    "done",
 }
 
 _TEXT_ENTITY_TYPES = {"functional_requirement", "acceptance_criterion"}
@@ -109,6 +163,8 @@ def _api_contract_validation_message(exc: ValidationError) -> str:
         msg = err.get("msg", "invalid value")
         parts.append(f"{loc}: {msg}" if loc else str(msg))
     return "invalid_api_contract: " + "; ".join(parts)
+
+
 _ID_PREFIX_BY_TYPE = {
     "functional_requirement": "fr",
     "business_rule": "br",
@@ -118,6 +174,7 @@ _ID_PREFIX_BY_TYPE = {
     "api_contract": "api",
     "integration_requirement": "ir",
     "observability_requirement": "or",
+    "project_structure_node": "psn",
 }
 _TECHNICAL_REQUIREMENT_FIELDS = {
     "id",
@@ -141,6 +198,7 @@ _SEMANTIC_FIELDS = {
     "api_contracts",
     "integration_requirements",
     "observability_requirements",
+    "project_structure",
 }
 
 
@@ -158,7 +216,9 @@ def is_active_spec_child(item: Any) -> bool:
     return str(item.get("status") or "active") == "active"
 
 
-def filter_active_spec_children(items: list[Any] | None, *, include_inactive: bool = False) -> list[Any]:
+def filter_active_spec_children(
+    items: list[Any] | None, *, include_inactive: bool = False
+) -> list[Any]:
     values = list(items or [])
     if include_inactive:
         return values
@@ -280,7 +340,9 @@ def migrate_legacy_fr_refs(
             replacements[m["text"]] = m["id"]
     updates: dict[str, list[Any]] = {}
     for field_name, collection in collections.items():
-        updated, changed = _apply_ref_replacement(collection, replacements, "linked_requirements")
+        updated, changed = _apply_ref_replacement(
+            collection, replacements, "linked_requirements"
+        )
         if changed:
             updates[field_name] = updated
     return updates
@@ -305,7 +367,9 @@ def migrate_legacy_ac_refs(
         replacements[m["index"]] = m["id"]
         if m["text"]:
             replacements[m["text"]] = m["id"]
-    updated, changed = _apply_ref_replacement(scenarios, replacements, "linked_criteria")
+    updated, changed = _apply_ref_replacement(
+        scenarios, replacements, "linked_criteria"
+    )
     return updated if changed else None
 
 
@@ -326,6 +390,12 @@ class StructuredSpecEntityErrorCode:
     SPEC_LOCKED = "spec_locked"
     SPEC_NOT_FOUND = "spec_not_found"
     SUBJECT_EDIT_REQUIRES_DRAFT = "subject_edit_requires_draft"
+    IDEMPOTENCY_KEY_REQUIRED = "idempotency_key_required"
+    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    IDEMPOTENCY_STORE_NOT_CONFIGURED = "idempotency_store_not_configured"
+    PROJECT_STRUCTURE_RELATION_STATUS_CONFLICT = (
+        "project_structure_relation_status_conflict"
+    )
 
 
 @dataclass(slots=True)
@@ -445,9 +515,15 @@ class StructuredSpecEntityCommand:
     board_id: str | None = None
     entity_id: str | None = None
     expected_spec_version: int | None = None
+    expected_structure_revision: int | None = None
     expected_spec_edition: int | None = None
     position: int | None = None
     task_id: str | None = None
+    task_role: str | None = None
+    test_id: str | None = None
+    test_role: str | None = None
+    evidence_id: str | None = None
+    idempotency_key: str | None = None
     ack_token: str | None = None
     preview_only: bool = False
     permission_set: PermissionSet | None = None
@@ -469,6 +545,12 @@ class StructuredSpecEntityResult:
     impact_report: dict[str, Any] | None = None
     ack_token: str | None = None
     expires_at: str | None = None
+    entity_ids: list[str] = field(default_factory=list)
+    structure_revision: int | None = None
+    structure_digest: str | None = None
+    idempotency_key: str | None = None
+    replayed: bool = False
+    details: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -486,6 +568,12 @@ class StructuredSpecEntityResult:
             "impact_report": self.impact_report,
             "ack_token": self.ack_token,
             "expires_at": self.expires_at,
+            "entity_ids": self.entity_ids,
+            "structure_revision": self.structure_revision,
+            "structure_digest": self.structure_digest,
+            "idempotency_key": self.idempotency_key,
+            "replayed": self.replayed,
+            "details": self.details,
         }
 
 
@@ -503,12 +591,17 @@ class StructuredSpecEntityService:
         self.metrics_sink = metrics_sink
         self.ack_store = ack_store or _DEFAULT_ACK_STORE
 
-    async def mutate(self, command: StructuredSpecEntityCommand) -> StructuredSpecEntityResult:
+    async def mutate(
+        self, command: StructuredSpecEntityCommand
+    ) -> StructuredSpecEntityResult:
         if command.entity_type not in STRUCTURED_SPEC_ENTITY_FIELDS:
-            return self._failure(command, StructuredSpecEntityErrorCode.UNSUPPORTED_ENTITY_TYPE)
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.UNSUPPORTED_ENTITY_TYPE
+            )
         if command.operation not in STRUCTURED_SPEC_ENTITY_OPERATIONS:
-            return self._failure(command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION)
-
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION
+            )
         spec = await get_structured_spec_store().get(
             self.db,
             spec_id=command.spec_id,
@@ -529,23 +622,49 @@ class StructuredSpecEntityService:
                 StructuredSpecEntityErrorCode.VALIDATION_FAILED,
                 "This spec is archived. Restore it first before making changes.",
             )
-        require_draft_mutation(spec, subject_type="spec")
-
-        permission = self._required_permission(command)
+        permissions = self._required_permissions(command)
         if command.permission_set is not None:
             status = getattr(spec.status, "value", spec.status)
-            err = command.permission_set.check_with_state(
-                permission,
-                entity="spec",
-                status=str(status),
+            for permission in permissions:
+                err = command.permission_set.check_with_state(
+                    permission,
+                    entity="spec",
+                    status=str(status),
+                )
+                if err is not None:
+                    return self._failure(
+                        command,
+                        StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED,
+                        err,
+                        required_permission=permission,
+                    )
+
+        if (
+            command.entity_type == "project_structure_node"
+            and command.operation not in _PROJECT_STRUCTURE_OPERATIONS
+        ) or (
+            command.entity_type != "project_structure_node"
+            and command.operation in _PROJECT_STRUCTURE_ONLY_OPERATIONS
+        ):
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION
             )
-            if err is not None:
+
+        relation_only = self._is_project_structure_relation_only(command)
+        if relation_only:
+            status = str(getattr(spec.status, "value", spec.status))
+            if status not in _PROJECT_STRUCTURE_RELATION_STATUSES:
                 return self._failure(
                     command,
-                    StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED,
-                    err,
-                    required_permission=permission,
+                    StructuredSpecEntityErrorCode.PROJECT_STRUCTURE_RELATION_STATUS_CONFLICT,
+                    "Task/Test Project structure links are allowed only while the "
+                    "Spec is draft, approved, validated, in_progress, or done.",
                 )
+        else:
+            require_draft_mutation(spec, subject_type="spec")
+
+        if command.entity_type == "project_structure_node":
+            return await self._mutate_project_structure(spec, command)
 
         if (
             command.expected_spec_version is not None
@@ -570,9 +689,14 @@ class StructuredSpecEntityService:
         try:
             await _require_spec_unlocked(self.db, spec.id)
         except SpecLockedError as exc:
-            return self._failure(command, StructuredSpecEntityErrorCode.SPEC_LOCKED, str(exc))
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.SPEC_LOCKED, str(exc)
+            )
 
-        if command.preview_only and command.operation not in _DESTRUCTIVE_LIKE_OPERATIONS:
+        if (
+            command.preview_only
+            and command.operation not in _DESTRUCTIVE_LIKE_OPERATIONS
+        ):
             return self._failure(
                 command,
                 StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION,
@@ -582,7 +706,9 @@ class StructuredSpecEntityService:
         field_name = STRUCTURED_SPEC_ENTITY_FIELDS[command.entity_type]
         current_items = copy.deepcopy(getattr(spec, field_name, None) or [])
         related_updates: dict[str, Any] = {}
-        ack_record = self.ack_store.peek(command.ack_token) if command.ack_token else None
+        ack_record = (
+            self.ack_store.peek(command.ack_token) if command.ack_token else None
+        )
         if command.entity_type in _LEGACY_MATERIALIZED_ENTITY_TYPES:
             if (
                 ack_record is not None
@@ -597,7 +723,9 @@ class StructuredSpecEntityService:
                     current_items,
                 )
                 related_updates.update(
-                    self._migrate_materialized_legacy_refs(spec, command.entity_type, materialized)
+                    self._migrate_materialized_legacy_refs(
+                        spec, command.entity_type, materialized
+                    )
                 )
         try:
             if command.operation in _DESTRUCTIVE_LIKE_OPERATIONS:
@@ -625,9 +753,7 @@ class StructuredSpecEntityService:
             # also lazily materializes untouched legacy collections and
             # validates cross-collection ID uniqueness before any mutation.
             requirement_fields_before = {
-                requirement_field: copy.deepcopy(
-                    getattr(spec, requirement_field, None)
-                )
+                requirement_field: copy.deepcopy(getattr(spec, requirement_field, None))
                 for requirement_field, _ in SPEC_REQUIREMENT_FIELDS
             }
             requirement_fields_final = {
@@ -645,13 +771,10 @@ class StructuredSpecEntityService:
                 requirement_fields_final,
                 existing_fields=requirement_fields_before,
             )
-            for requirement_field, canonical_value in (
-                canonical_requirements.items()
-            ):
+            for requirement_field, canonical_value in canonical_requirements.items():
                 if (
                     requirement_field in update_data
-                    or canonical_value
-                    != requirement_fields_before[requirement_field]
+                    or canonical_value != requirement_fields_before[requirement_field]
                 ):
                     update_data[requirement_field] = canonical_value
 
@@ -659,12 +782,8 @@ class StructuredSpecEntityService:
                 created = canonical_requirements[field_name] or []
                 entity_id = spec_child_id(created[-1]) if created else entity_id
 
-            old_frs = list(
-                requirement_fields_before["functional_requirements"] or []
-            )
-            new_frs = list(
-                canonical_requirements["functional_requirements"] or []
-            )
+            old_frs = list(requirement_fields_before["functional_requirements"] or [])
+            new_frs = list(canonical_requirements["functional_requirements"] or [])
             if old_frs != new_frs:
                 fr_dependencies = {
                     dependent_field: list(
@@ -690,9 +809,7 @@ class StructuredSpecEntityService:
                     )
                 )
 
-            old_acs = list(
-                requirement_fields_before["acceptance_criteria"] or []
-            )
+            old_acs = list(requirement_fields_before["acceptance_criteria"] or [])
             new_acs = list(canonical_requirements["acceptance_criteria"] or [])
             if old_acs != new_acs:
                 migrated_scenarios = migrate_legacy_ac_refs(
@@ -710,9 +827,13 @@ class StructuredSpecEntityService:
                     update_data["test_scenarios"] = migrated_scenarios
             await _validate_spec_linked_refs(self.db, spec, update_data)
         except UnsupportedSpecEntityOperation as exc:
-            return self._failure(command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION, str(exc))
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION, str(exc)
+            )
         except StructuredSpecEntityNotFound as exc:
-            return self._failure(command, StructuredSpecEntityErrorCode.ENTITY_NOT_FOUND, str(exc))
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.ENTITY_NOT_FOUND, str(exc)
+            )
         except ValueError as exc:
             code = (
                 StructuredSpecEntityErrorCode.LINK_TARGET_INVALID
@@ -724,7 +845,9 @@ class StructuredSpecEntityService:
         old_version = spec.version
         old_values = {field_name: copy.deepcopy(getattr(spec, field_name, None) or [])}
         for changed_field, value in update_data.items():
-            old_values.setdefault(changed_field, copy.deepcopy(getattr(spec, changed_field, None) or []))
+            old_values.setdefault(
+                changed_field, copy.deepcopy(getattr(spec, changed_field, None) or [])
+            )
             setattr(spec, changed_field, value)
         spec.version = old_version + 1
 
@@ -740,7 +863,11 @@ class StructuredSpecEntityService:
             ),
             session=self.db,
         )
-        semantic_changed = [changed_field for changed_field in changed_fields if changed_field in _SEMANTIC_FIELDS]
+        semantic_changed = [
+            changed_field
+            for changed_field in changed_fields
+            if changed_field in _SEMANTIC_FIELDS
+        ]
         if semantic_changed:
             await event_publish(
                 SpecSemanticChanged(
@@ -751,7 +878,11 @@ class StructuredSpecEntityService:
                 ),
                 session=self.db,
             )
-        child_ref = canonical_spec_child_ref(spec.id, command.entity_type, entity_id) if entity_id else None
+        child_ref = (
+            canonical_spec_child_ref(spec.id, command.entity_type, entity_id)
+            if entity_id
+            else None
+        )
         if child_ref and entity_id:
             structured_event_cls = self._structured_event_class(command.operation)
             event_changed_fields = self._event_changed_fields(
@@ -825,7 +956,363 @@ class StructuredSpecEntityService:
         self._emit(command, "success", None)
         return result
 
-    async def apply(self, command: StructuredSpecEntityCommand) -> StructuredSpecEntityResult:
+    async def _mutate_project_structure(
+        self,
+        spec: StructuredSpecRecord,
+        command: StructuredSpecEntityCommand,
+    ) -> StructuredSpecEntityResult:
+        """Single governed write path for human, REST and MCP tree mutations."""
+
+        def failure(
+            code: str,
+            message: str | None = None,
+            *,
+            details: dict[str, Any] | None = None,
+            impact_report: dict[str, Any] | None = None,
+        ) -> StructuredSpecEntityResult:
+            self._emit(command, "failure", code)
+            return StructuredSpecEntityResult(
+                success=False,
+                entity_type=command.entity_type,
+                operation=command.operation,
+                spec_id=command.spec_id,
+                entity_id=command.entity_id,
+                spec_version=spec.version,
+                structure_revision=int(
+                    getattr(spec, "project_structure_revision", 0) or 0
+                ),
+                structure_digest=getattr(spec, "project_structure_digest", None),
+                idempotency_key=command.idempotency_key,
+                error_code=code,
+                error_message=message or code,
+                details=details,
+                impact_report=impact_report,
+            )
+
+        if command.preview_only:
+            return failure(
+                StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION,
+                "Project structure mutations do not use acknowledgement previews.",
+            )
+        if (
+            not isinstance(command.expected_spec_version, int)
+            or isinstance(command.expected_spec_version, bool)
+            or command.expected_spec_version < 0
+        ):
+            return failure(
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                "expected_spec_version is required and must be a non-negative integer.",
+            )
+        if (
+            not isinstance(command.expected_structure_revision, int)
+            or isinstance(command.expected_structure_revision, bool)
+            or command.expected_structure_revision < 0
+        ):
+            return failure(
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                "expected_structure_revision is required and must be a non-negative integer.",
+            )
+        if (
+            command.expected_spec_edition is not None
+            and command.expected_spec_edition != getattr(spec, "edition", None)
+        ):
+            return failure(
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                f"Expected spec edition {command.expected_spec_edition}, "
+                f"found {getattr(spec, 'edition', None)}.",
+            )
+        idempotency_key = str(command.idempotency_key or "").strip()
+        if not idempotency_key or len(idempotency_key) > 255:
+            return failure(
+                StructuredSpecEntityErrorCode.IDEMPOTENCY_KEY_REQUIRED,
+                "A non-blank idempotency_key of at most 255 characters is required.",
+            )
+        command.idempotency_key = idempotency_key
+        request_payload = {
+            "spec_id": command.spec_id,
+            "entity_type": command.entity_type,
+            "operation": command.operation,
+            "entity_id": command.entity_id,
+            "payload": command.payload,
+            "position": command.position,
+            "task_id": command.task_id,
+            "task_role": command.task_role,
+            "test_id": command.test_id,
+            "test_role": command.test_role,
+            "evidence_id": command.evidence_id,
+            "expected_spec_version": command.expected_spec_version,
+            "expected_structure_revision": command.expected_structure_revision,
+            "expected_spec_edition": command.expected_spec_edition,
+        }
+        request_digest = hashlib.sha256(
+            json.dumps(
+                request_payload,
+                default=str,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        store = get_structured_spec_store()
+        get_receipt = getattr(store, "get_project_structure_receipt", None)
+        save_mutation = getattr(store, "save_project_structure_mutation", None)
+        if not callable(get_receipt) or not callable(save_mutation):
+            return failure(
+                StructuredSpecEntityErrorCode.IDEMPOTENCY_STORE_NOT_CONFIGURED,
+                "The atomic Project structure persistence boundary is not configured.",
+            )
+        existing_receipt = await get_receipt(
+            self.db,
+            spec_id=spec.id,
+            idempotency_key=idempotency_key,
+        )
+        if existing_receipt is not None:
+            if existing_receipt.request_digest != request_digest:
+                return failure(
+                    StructuredSpecEntityErrorCode.IDEMPOTENCY_CONFLICT,
+                    "The idempotency_key was already used with a different request.",
+                )
+            replay_payload = copy.deepcopy(existing_receipt.result)
+            replay_payload["replayed"] = True
+            replay_payload["idempotency_key"] = idempotency_key
+            return StructuredSpecEntityResult(**replay_payload)
+
+        if command.expected_spec_version != spec.version:
+            return failure(
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                f"Expected spec version {command.expected_spec_version}, found {spec.version}.",
+            )
+        current_revision = int(
+            getattr(spec, "project_structure_revision", 0) or 0
+        )
+        if command.expected_structure_revision != current_revision:
+            return failure(
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                "Expected Project structure revision "
+                f"{command.expected_structure_revision}, found {current_revision}.",
+            )
+        try:
+            await _require_spec_unlocked(self.db, spec.id)
+        except SpecLockedError as exc:
+            return failure(StructuredSpecEntityErrorCode.SPEC_LOCKED, str(exc))
+
+        try:
+            if command.operation == "batch":
+                batch = ProjectStructureBatch.model_validate(command.payload)
+            else:
+                batch = ProjectStructureBatch(
+                    operations=[
+                        ProjectStructureMutation(
+                            operation=command.operation,
+                            entity_id=command.entity_id,
+                            payload=command.payload,
+                            position=command.position,
+                            task_id=command.task_id,
+                            task_role=command.task_role,
+                            test_id=command.test_id,
+                            test_role=command.test_role,
+                            evidence_id=command.evidence_id,
+                        )
+                    ]
+                )
+            current_structure = copy.deepcopy(getattr(spec, "project_structure", None))
+            next_structure, entity_ids, changed = apply_project_structure_batch(
+                current_structure,
+                batch,
+            )
+            await _validate_spec_linked_refs(
+                self.db,
+                spec,
+                {"project_structure": next_structure},
+            )
+        except ProjectStructureRemovalBlocked as exc:
+            return failure(
+                exc.code,
+                "A non-empty folder cannot be removed or revoked without explicit child changes.",
+                details=exc.details,
+                impact_report=exc.impact,
+            )
+        except ProjectStructureValidationError as exc:
+            return failure(
+                StructuredSpecEntityErrorCode.VALIDATION_FAILED,
+                exc.code,
+                details=exc.details,
+            )
+        except (ProjectStructureError, ValidationError, ValueError) as exc:
+            details = getattr(exc, "details", None)
+            return failure(
+                StructuredSpecEntityErrorCode.VALIDATION_FAILED,
+                str(exc),
+                details=details,
+            )
+
+        structure_revision = current_revision
+        structure_digest = canonical_project_structure_digest(next_structure)
+        result_entity_id = (
+            "__collection__"
+            if command.operation == "batch"
+            else (entity_ids[-1] if entity_ids else command.entity_id)
+        )
+        child_ref = canonical_spec_child_ref(
+            spec.id,
+            command.entity_type,
+            result_entity_id or "__collection__",
+        )
+        old_version = spec.version
+        old_revision = structure_revision
+        old_digest = getattr(spec, "project_structure_digest", None)
+        relation_only = self._is_project_structure_relation_only(command)
+        changed_fields: list[str] = []
+        if changed:
+            structure_revision += 1
+            spec.project_structure = next_structure
+            spec.project_structure_revision = structure_revision
+            spec.project_structure_digest = structure_digest
+            spec.version = old_version if relation_only else old_version + 1
+            changed_fields = [
+                "project_structure",
+                "project_structure_revision",
+                "project_structure_digest",
+            ]
+
+        result = StructuredSpecEntityResult(
+            success=True,
+            entity_type=command.entity_type,
+            operation=command.operation,
+            spec_id=spec.id,
+            entity_id=result_entity_id,
+            entity_ids=entity_ids,
+            child_ref=child_ref,
+            spec_version=spec.version,
+            structure_revision=structure_revision,
+            structure_digest=structure_digest,
+            idempotency_key=idempotency_key,
+            changed_fields=changed_fields,
+            details={
+                "nodes": copy.deepcopy(
+                    project_structure_management_nodes(next_structure)
+                ),
+                "traceability_only": relation_only,
+            },
+        )
+        receipt = ProjectStructureMutationReceipt(
+            spec_id=spec.id,
+            idempotency_key=idempotency_key,
+            request_digest=request_digest,
+            result=result.as_dict(),
+        )
+        persistence = await save_mutation(
+            self.db,
+            spec,
+            expected_spec_version=old_version,
+            expected_project_structure_revision=old_revision,
+            bump_spec_version=bool(changed and not relation_only),
+            changed_fields=changed_fields,
+            receipt=receipt,
+        )
+        if persistence.state != ProjectStructureMutationPersistenceState.APPLIED:
+            if changed:
+                spec.project_structure = current_structure
+                spec.project_structure_revision = old_revision
+                spec.project_structure_digest = old_digest
+                spec.version = old_version
+            if persistence.state == ProjectStructureMutationPersistenceState.REPLAYED:
+                if persistence.receipt is None:
+                    return failure(
+                        StructuredSpecEntityErrorCode.IDEMPOTENCY_CONFLICT,
+                        "The idempotent replay receipt is unavailable.",
+                    )
+                replay_payload = copy.deepcopy(persistence.receipt.result)
+                replay_payload["replayed"] = True
+                replay_payload["idempotency_key"] = idempotency_key
+                return StructuredSpecEntityResult(**replay_payload)
+            if (
+                persistence.state
+                == ProjectStructureMutationPersistenceState.IDEMPOTENCY_CONFLICT
+            ):
+                return failure(
+                    StructuredSpecEntityErrorCode.IDEMPOTENCY_CONFLICT,
+                    "The idempotency_key was concurrently used with a different request.",
+                )
+            return failure(
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                "The Spec changed concurrently; refresh it and retry with a new key.",
+            )
+
+        if not changed:
+            self._emit(command, "success", "idempotent_noop")
+            return result
+
+        if not relation_only:
+            await event_publish(
+                SpecVersionBumped(
+                    board_id=spec.board_id,
+                    actor_id=command.actor_id,
+                    spec_id=spec.id,
+                    old_version=old_version,
+                    new_version=spec.version,
+                    changed_fields=changed_fields,
+                ),
+                session=self.db,
+            )
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=command.actor_id,
+                    spec_id=spec.id,
+                    changed_fields=["project_structure"],
+                ),
+                session=self.db,
+            )
+        structured_event_cls = self._structured_event_class(command.operation)
+        await event_publish(
+            structured_event_cls(
+                board_id=spec.board_id,
+                actor_id=command.actor_id,
+                spec_id=spec.id,
+                entity_type=command.entity_type,
+                entity_id=result_entity_id or "__collection__",
+                child_ref=child_ref,
+                operation=command.operation,
+                changed_fields=["project_structure"],
+                spec_version=spec.version,
+            ),
+            session=self.db,
+        )
+
+        actor_name = await resolve_actor_name(self.db, command.actor_id, spec.board_id)
+        service = SpecService(self.db)
+        changes = [
+            {
+                "field": "project_structure",
+                "old": {"revision": old_revision, "digest": old_digest},
+                "new": {
+                    "revision": structure_revision,
+                    "digest": structure_digest,
+                    "affected_node_ids": entity_ids[:50],
+                    "affected_count": len(entity_ids),
+                    "traceability_only": relation_only,
+                },
+            }
+        ]
+        await service._record_history(
+            spec_id=spec.id,
+            action=f"structured_{command.operation}",
+            actor_id=command.actor_id,
+            actor_name=actor_name,
+            changes=changes,
+            version=spec.version,
+            summary=(
+                f"{command.operation} project_structure_node "
+                f"{result_entity_id or ''}".strip()
+            ),
+        )
+        self._emit(command, "success", None)
+        return result
+
+    async def apply(
+        self, command: StructuredSpecEntityCommand
+    ) -> StructuredSpecEntityResult:
         """Compatibility alias for API/MCP callers named in the spec contract."""
         return await self.mutate(command)
 
@@ -856,14 +1343,20 @@ class StructuredSpecEntityService:
                     operation=command.operation,
                     spec_id=spec.id,
                     entity_id=entity_id,
-                    child_ref=canonical_spec_child_ref(spec.id, command.entity_type, entity_id),
+                    child_ref=canonical_spec_child_ref(
+                        spec.id, command.entity_type, entity_id
+                    ),
                     spec_version=spec.version,
                     impact_report=impact.as_dict(),
                 )
             return None
 
         fingerprint = self._impact_fingerprint(impact)
-        expected_version = command.expected_spec_version if command.expected_spec_version is not None else spec.version
+        expected_version = (
+            command.expected_spec_version
+            if command.expected_spec_version is not None
+            else spec.version
+        )
         board_id = command.board_id or spec.board_id
 
         if not command.ack_token:
@@ -877,26 +1370,40 @@ class StructuredSpecEntityService:
                 expected_spec_version=expected_version,
                 impact_fingerprint=fingerprint,
                 expires_at=expires_at,
-                materialized_field_name=field_name if command.entity_type in _TEXT_ENTITY_TYPES else None,
-                materialized_items=copy.deepcopy(current_items) if command.entity_type in _TEXT_ENTITY_TYPES else None,
+                materialized_field_name=field_name
+                if command.entity_type in _TEXT_ENTITY_TYPES
+                else None,
+                materialized_items=copy.deepcopy(current_items)
+                if command.entity_type in _TEXT_ENTITY_TYPES
+                else None,
                 related_updates=copy.deepcopy(related_updates),
             )
             token = self.ack_store.issue(record)
             impact.ack_token = token
             impact.expires_at = expires_at.isoformat()
-            self._emit(command, "impact_ack_required", StructuredSpecEntityErrorCode.IMPACT_ACK_REQUIRED)
+            self._emit(
+                command,
+                "impact_ack_required",
+                StructuredSpecEntityErrorCode.IMPACT_ACK_REQUIRED,
+            )
             return StructuredSpecEntityResult(
                 success=bool(command.preview_only),
                 entity_type=command.entity_type,
                 operation=command.operation,
                 spec_id=spec.id,
                 entity_id=entity_id,
-                child_ref=canonical_spec_child_ref(spec.id, command.entity_type, entity_id)
+                child_ref=canonical_spec_child_ref(
+                    spec.id, command.entity_type, entity_id
+                )
                 if entity_id != "__collection__"
                 else canonical_spec_child_ref(spec.id, command.entity_type, entity_id),
                 spec_version=spec.version,
-                error_code=None if command.preview_only else StructuredSpecEntityErrorCode.IMPACT_ACK_REQUIRED,
-                error_message=None if command.preview_only else "Impact acknowledgement is required before applying this operation.",
+                error_code=None
+                if command.preview_only
+                else StructuredSpecEntityErrorCode.IMPACT_ACK_REQUIRED,
+                error_message=None
+                if command.preview_only
+                else "Impact acknowledgement is required before applying this operation.",
                 impact_report=impact.as_dict(),
                 ack_token=token,
                 expires_at=impact.expires_at,
@@ -958,7 +1465,13 @@ class StructuredSpecEntityService:
         refs: list[StructuredSpecEntityImpactRef] = []
         impacted_keys: set[tuple[str, str, str]] = set()
 
-        def add_ref(target_type: str, target_id: str, target_ref: str, reason: str, severity: str = "high") -> None:
+        def add_ref(
+            target_type: str,
+            target_id: str,
+            target_ref: str,
+            reason: str,
+            severity: str = "high",
+        ) -> None:
             key = (target_type, target_id, reason)
             if key in impacted_keys:
                 return
@@ -974,9 +1487,15 @@ class StructuredSpecEntityService:
                 )
             )
 
-        target_ids = self._reorder_target_ids(command, current_items) if command.operation == "reorder" else [entity_id]
+        target_ids = (
+            self._reorder_target_ids(command, current_items)
+            if command.operation == "reorder"
+            else [entity_id]
+        )
         target_id_set = set(target_ids)
-        target_ref_set = self._target_ref_aliases(command.entity_type, current_items, target_id_set)
+        target_ref_set = self._target_ref_aliases(
+            command.entity_type, current_items, target_id_set
+        )
 
         for item in current_items:
             item_id = self._entity_id(command.entity_type, item)
@@ -991,8 +1510,14 @@ class StructuredSpecEntityService:
                     "medium",
                 )
 
-        for target_field, target_type, link_field in self._downstream_link_specs(command.entity_type):
-            collection = copy.deepcopy(related_updates.get(target_field, getattr(spec, target_field, None) or []))
+        for target_field, target_type, link_field in self._downstream_link_specs(
+            command.entity_type
+        ):
+            collection = copy.deepcopy(
+                related_updates.get(
+                    target_field, getattr(spec, target_field, None) or []
+                )
+            )
             for item in collection:
                 if not isinstance(item, dict):
                     continue
@@ -1006,7 +1531,12 @@ class StructuredSpecEntityService:
                 matched = sorted(target_ref_set.intersection(links))
                 if not matched:
                     continue
-                target_id = spec_child_id(item) or item.get("title") or item.get("path") or "unknown"
+                target_id = (
+                    spec_child_id(item)
+                    or item.get("title")
+                    or item.get("path")
+                    or "unknown"
+                )
                 add_ref(
                     target_type,
                     str(target_id),
@@ -1017,7 +1547,9 @@ class StructuredSpecEntityService:
         counts: dict[str, int] = {}
         for ref in refs:
             counts[ref.target_type] = counts.get(ref.target_type, 0) + 1
-        return StructuredSpecEntityImpactReport(impacted_refs=refs, counts_by_type=counts)
+        return StructuredSpecEntityImpactReport(
+            impacted_refs=refs, counts_by_type=counts
+        )
 
     def _target_ref_aliases(
         self,
@@ -1051,8 +1583,16 @@ class StructuredSpecEntityService:
             "functional_requirement": [
                 ("business_rules", "business_rule", "linked_requirements"),
                 ("api_contracts", "api_contract", "linked_requirements"),
-                ("integration_requirements", "integration_requirement", "linked_requirements"),
-                ("observability_requirements", "observability_requirement", "linked_requirements"),
+                (
+                    "integration_requirements",
+                    "integration_requirement",
+                    "linked_requirements",
+                ),
+                (
+                    "observability_requirements",
+                    "observability_requirement",
+                    "linked_requirements",
+                ),
                 ("decisions", "decision", "linked_requirements"),
             ],
             "acceptance_criterion": [
@@ -1062,10 +1602,18 @@ class StructuredSpecEntityService:
                 ("api_contracts", "api_contract", "linked_rules"),
             ],
             "api_contract": [
-                ("integration_requirements", "integration_requirement", "linked_api_contracts"),
+                (
+                    "integration_requirements",
+                    "integration_requirement",
+                    "linked_api_contracts",
+                ),
             ],
             "integration_requirement": [
-                ("observability_requirements", "observability_requirement", "linked_integration_requirements"),
+                (
+                    "observability_requirements",
+                    "observability_requirement",
+                    "linked_integration_requirements",
+                ),
             ],
             "decision": [
                 ("decisions", "decision", "supersedes_decision_id"),
@@ -1080,12 +1628,18 @@ class StructuredSpecEntityService:
             return []
         return [str(task_id) for task_id in linked if str(task_id)]
 
-    def _reorder_target_ids(self, command: StructuredSpecEntityCommand, current_items: list[Any]) -> list[str]:
+    def _reorder_target_ids(
+        self, command: StructuredSpecEntityCommand, current_items: list[Any]
+    ) -> list[str]:
         ordered = command.payload.get("ordered_entity_ids")
         if not isinstance(ordered, list) or not ordered:
-            raise ValueError("ordered_entity_ids must be a non-empty full ordered entity id list.")
+            raise ValueError(
+                "ordered_entity_ids must be a non-empty full ordered entity id list."
+            )
         ordered_ids = [str(entity_id) for entity_id in ordered]
-        current_ids = [self._entity_id(command.entity_type, item) for item in current_items]
+        current_ids = [
+            self._entity_id(command.entity_type, item) for item in current_items
+        ]
         if any(entity_id in (None, "") for entity_id in current_ids):
             raise ValueError("All entities must have stable ids before reorder.")
         current_id_set = {str(entity_id) for entity_id in current_ids}
@@ -1095,7 +1649,9 @@ class StructuredSpecEntityService:
         if ordered_id_set != current_id_set:
             missing = sorted(current_id_set - ordered_id_set)
             unknown = sorted(ordered_id_set - current_id_set)
-            raise ValueError(f"ordered_entity_ids must contain exactly all entity ids; missing={missing}, unknown={unknown}.")
+            raise ValueError(
+                f"ordered_entity_ids must contain exactly all entity ids; missing={missing}, unknown={unknown}."
+            )
         return ordered_ids
 
     async def _apply_operation(
@@ -1108,7 +1664,9 @@ class StructuredSpecEntityService:
     ) -> tuple[list[Any], str | None]:
         operation = command.operation
         if operation == "create":
-            item = self._validate_payload_for_create(command.entity_type, command.payload)
+            item = self._validate_payload_for_create(
+                command.entity_type, command.payload
+            )
             if command.entity_type in _LEGACY_MATERIALIZED_ENTITY_TYPES:
                 canonical = canonicalize_spec_children(
                     command.entity_type,
@@ -1133,7 +1691,9 @@ class StructuredSpecEntityService:
         item = copy.deepcopy(current_items[index])
 
         if operation == "update":
-            item = self._validate_payload_for_update(command.entity_type, item, command.payload)
+            item = self._validate_payload_for_update(
+                command.entity_type, item, command.payload
+            )
         elif operation in {"link_task", "unlink_task"}:
             item = self._apply_task_link(command, item)
         elif operation in _LIFECYCLE_OPERATION_STATUS:
@@ -1145,7 +1705,9 @@ class StructuredSpecEntityService:
         entity_id = self._entity_id(command.entity_type, item) or command.entity_id
         return current_items, entity_id
 
-    def _validate_payload_for_create(self, entity_type: str, payload: dict[str, Any]) -> Any:
+    def _validate_payload_for_create(
+        self, entity_type: str, payload: dict[str, Any]
+    ) -> Any:
         payload = copy.deepcopy(payload or {})
         if entity_type in _TEXT_ENTITY_TYPES:
             self._ensure_only_keys(
@@ -1172,8 +1734,16 @@ class StructuredSpecEntityService:
                     if payload.get("locale") is not None
                     else {}
                 ),
-                **({"notes": payload["notes"]} if payload.get("notes") is not None else {}),
-                **({"linked_task_ids": payload["linked_task_ids"]} if payload.get("linked_task_ids") is not None else {}),
+                **(
+                    {"notes": payload["notes"]}
+                    if payload.get("notes") is not None
+                    else {}
+                ),
+                **(
+                    {"linked_task_ids": payload["linked_task_ids"]}
+                    if payload.get("linked_task_ids") is not None
+                    else {}
+                ),
             }
         if entity_type == "technical_requirement":
             self._validate_technical_requirement_payload(payload, creating=True)
@@ -1192,7 +1762,9 @@ class StructuredSpecEntityService:
                 raise ValueError(_api_contract_validation_message(exc)) from exc
             raise ValueError(str(exc)) from exc
 
-    def _validate_payload_for_update(self, entity_type: str, item: Any, payload: dict[str, Any]) -> Any:
+    def _validate_payload_for_update(
+        self, entity_type: str, item: Any, payload: dict[str, Any]
+    ) -> Any:
         payload = copy.deepcopy(payload or {})
         if not payload:
             raise ValueError("payload must contain at least one field for update.")
@@ -1218,7 +1790,10 @@ class StructuredSpecEntityService:
             for key in ("locale", "status", "notes", "linked_task_ids"):
                 if key in payload:
                     item_dict[key] = payload[key]
-            if "linked_task_ids" in item_dict and item_dict["linked_task_ids"] is not None:
+            if (
+                "linked_task_ids" in item_dict
+                and item_dict["linked_task_ids"] is not None
+            ):
                 if not isinstance(item_dict["linked_task_ids"], list):
                     raise ValueError("linked_task_ids must be a list.")
             return item_dict
@@ -1266,7 +1841,9 @@ class StructuredSpecEntityService:
                 item_dict["supersedes_decision_id"] = supersedes
         return self._validate_payload_for_update(command.entity_type, item, item_dict)
 
-    def _find_index(self, entity_type: str, items: list[Any], entity_id: str | None) -> int:
+    def _find_index(
+        self, entity_type: str, items: list[Any], entity_id: str | None
+    ) -> int:
         if not entity_id:
             raise ValueError("entity_id is required.")
         if entity_type in _TEXT_ENTITY_TYPES and entity_id.isdigit():
@@ -1329,7 +1906,9 @@ class StructuredSpecEntityService:
             for item in collection:
                 if not isinstance(item, dict):
                     continue
-                refs, did_change = self._replace_refs(item.get("linked_requirements") or [], replacements)
+                refs, did_change = self._replace_refs(
+                    item.get("linked_requirements") or [], replacements
+                )
                 if did_change:
                     item["linked_requirements"] = refs
                     changed = True
@@ -1348,7 +1927,9 @@ class StructuredSpecEntityService:
         for item in scenarios:
             if not isinstance(item, dict):
                 continue
-            refs, did_change = self._replace_refs(item.get("linked_criteria") or [], replacements)
+            refs, did_change = self._replace_refs(
+                item.get("linked_criteria") or [], replacements
+            )
             if did_change:
                 item["linked_criteria"] = refs
                 changed = True
@@ -1362,7 +1943,9 @@ class StructuredSpecEntityService:
                 replacements[item["text"]] = item["id"]
         return replacements
 
-    def _replace_refs(self, refs: list[Any], replacements: dict[str, str]) -> tuple[list[str], bool]:
+    def _replace_refs(
+        self, refs: list[Any], replacements: dict[str, str]
+    ) -> tuple[list[str], bool]:
         changed = False
         next_refs: list[str] = []
         for ref in refs:
@@ -1374,13 +1957,17 @@ class StructuredSpecEntityService:
                 next_refs.append(replacement)
         return next_refs, changed
 
-    def _reject_duplicate_id(self, entity_type: str, items: list[Any], entity_id: str | None) -> None:
+    def _reject_duplicate_id(
+        self, entity_type: str, items: list[Any], entity_id: str | None
+    ) -> None:
         if not entity_id:
             return
         if any(self._entity_id(entity_type, item) == entity_id for item in items):
             raise ValueError(f"Duplicate {entity_type} id: {entity_id}")
 
-    def _validate_technical_requirement_payload(self, payload: dict[str, Any], *, creating: bool) -> None:
+    def _validate_technical_requirement_payload(
+        self, payload: dict[str, Any], *, creating: bool
+    ) -> None:
         self._ensure_only_keys(payload, _TECHNICAL_REQUIREMENT_FIELDS)
         if not creating and not str(payload.get("id") or "").strip():
             raise ValueError("id is required.")
@@ -1406,8 +1993,52 @@ class StructuredSpecEntityService:
     def _new_id(self, entity_type: str) -> str:
         return f"{_ID_PREFIX_BY_TYPE[entity_type]}_{uuid.uuid4().hex[:8]}"
 
-    def _required_permission(self, command: StructuredSpecEntityCommand) -> str:
-        return f"spec.structured_entity.{command.entity_type}.{command.operation}"
+    def _required_permissions(self, command: StructuredSpecEntityCommand) -> list[str]:
+        operations = [command.operation]
+        if (
+            command.entity_type == "project_structure_node"
+            and command.operation == "batch"
+        ):
+            raw_operations = command.payload.get("operations")
+            if not isinstance(raw_operations, list) or not raw_operations:
+                operations = ["batch"]
+            else:
+                operations = sorted(
+                    {
+                        str(item.get("operation") or "")
+                        for item in raw_operations
+                        if isinstance(item, dict)
+                    }
+                )
+                if not operations or any(
+                    operation not in _PROJECT_STRUCTURE_OPERATIONS - {"batch"}
+                    for operation in operations
+                ):
+                    operations = ["batch"]
+        return [
+            f"spec.structured_entity.{command.entity_type}.{operation}"
+            for operation in operations
+        ]
+
+    def _is_project_structure_relation_only(
+        self, command: StructuredSpecEntityCommand
+    ) -> bool:
+        if command.entity_type != "project_structure_node":
+            return False
+        if command.operation != "batch":
+            return command.operation in _PROJECT_STRUCTURE_RELATION_OPERATIONS
+        raw_operations = command.payload.get("operations")
+        if not isinstance(raw_operations, list) or not raw_operations:
+            return False
+        operations = [
+            str(item.get("operation") or "")
+            for item in raw_operations
+            if isinstance(item, dict)
+        ]
+        return len(operations) == len(raw_operations) and all(
+            operation in _PROJECT_STRUCTURE_RELATION_OPERATIONS
+            for operation in operations
+        )
 
     def _structured_event_class(self, operation: str):
         if operation == "create":
@@ -1476,9 +2107,13 @@ class StructuredSpecEntityService:
         self._record_metric("spec_structured_entity_operation_total", labels)
         self._record_metric("spec_structured_entity_mutation_total", labels)
         if reason == StructuredSpecEntityErrorCode.VALIDATION_FAILED:
-            self._record_metric("spec_structured_entity_validation_failure_total", labels)
+            self._record_metric(
+                "spec_structured_entity_validation_failure_total", labels
+            )
         elif reason == StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED:
-            self._record_metric("spec_structured_entity_authorization_denied_total", labels)
+            self._record_metric(
+                "spec_structured_entity_authorization_denied_total", labels
+            )
         elif reason == StructuredSpecEntityErrorCode.VERSION_CONFLICT:
             self._record_metric("spec_structured_entity_version_conflict_total", labels)
         elif reason in {

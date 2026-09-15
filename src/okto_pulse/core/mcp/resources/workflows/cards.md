@@ -4,6 +4,18 @@ version: "1.2"
 
 # Cards Workflow — Implementation, Bug & Test Execution
 
+### Mandatory delivery handoff
+
+Tasks/bugs record implementation, **not test results**. After an accepted Target
+execution receipt and card completion, use `okto_pulse_record_delivery_evidence`
+(`implementation`) to bind delivered code to the Spec obligations. Test cards must
+execute their linked scenarios, record authenticated passing evidence and complete;
+then record `test` with the implementation association IDs actually tested.
+One record may cover multiple obligations. Read the current inventory first with
+`okto_pulse_get_delivery_evidence`; never invent IDs, hashes or verification flags.
+Details and human-only not-applicable handling:
+`okto-pulse://reference/code-traceability`, section **Delivery evidence**.
+
 Semantic guideline assessment follows
 `okto-pulse://reference/policy-compliance`.
 
@@ -32,6 +44,23 @@ import, or delete Knowledge Base, Mockup, or Architecture resources directly on 
 card; update the source ideation/refinement/spec resource and then run the
 matching copy tool to refresh the card snapshot while preserving the source
 identity used by the Resource Gate.
+
+**Copy versus reference:** a governed copy made by the official copy tool is
+valid resource coverage; the gate does NOT require a reference instead of that
+copy. It matches resource identity/provenance, not the title, HTML, screenshot,
+or a mention in the task description. Recreating identical content under an
+unrelated ID does not cover the original resource. Two identical-looking mockups
+with distinct origins may therefore be two separate coverage obligations.
+
+If a gate reports an uncovered resource although a mockup is visible on a task,
+inspect the reported `resource_id`, `unique_resource_id`, and `origin_evidence`
+and compare them with the task snapshot's ID and source metadata. Use the
+official copy tool for the required source and a non-cancelled task belonging
+to that Spec, then re-read full Spec context and retry the readiness check.
+Do not invent provenance, replace a valid copy with a textual reference, delete
+duplicates, or mark a resource N/A merely to bypass coverage. If the reported
+source cannot be selected by the tool, report the exact IDs as a lineage/copy
+problem rather than claiming that copying is forbidden.
 
 Read `okto-pulse://reference/knowledge-governance` before deciding that content
 belongs in a KB. When `knowledge_propagation` is absent from
@@ -310,9 +339,11 @@ selector scope predates that Target.
 For Greenfield/Hybrid work, an existing starter/base can be Evidence only as
 `existing_scaffold` with an explicit `interpretation_limit`; source consulted
 only as a pattern is `reference_pattern`. Neither proves the requested behavior
-already exists. `unclassified_legacy` remains visible until an authorized
-human appends classification through UI/REST; agents have no MCP mutation for
-that governance action.
+already exists. `unclassified_legacy` remains visible until an authorized actor
+appends classification: agents use `okto_pulse_classify_legacy_code_evidence`
+with `code_traceability.evidence.classify_legacy`; humans may use UI/REST.
+Use defensible provenance and fresh CAS inputs, never guessed source meaning.
+Classification does not upgrade a V1 receipt or rewrite a frozen Spec snapshot.
 
 Run a new external preflight, re-evaluate the Targets, and submit a new receipt
 when a dependency finishes, the observed workspace fingerprint changes, a

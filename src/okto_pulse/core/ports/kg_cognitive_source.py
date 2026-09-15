@@ -49,6 +49,7 @@ __all__ = [
     "CognitiveSourcePersistedRevision",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
+    "LatestVerifiedCognitiveSourceReader",
     "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
     "cognitive_source_semantic_key",
@@ -522,6 +523,23 @@ def latest_cognitive_source_records(
         )
     )
     return tuple(selected)
+
+
+@runtime_checkable
+class LatestVerifiedCognitiveSourceReader(Protocol):
+    """Optional current-head read; every historical revision must still be audited.
+
+    Implementations verify canonical fingerprints and duplicate revision identity
+    across the complete scoped ledger before returning the same ordered selection
+    as ``latest_cognitive_source_records(await store.enumerate(board_id))``.
+    Corruption in an older, unselected revision must fail the whole operation.
+    This capability is not permission to query only MAX(revision), trust stored
+    hashes, reuse previous-call authority, or silently return a partial ledger.
+    """
+
+    async def enumerate_latest_verified(
+        self, board_id: str
+    ) -> tuple[CognitiveSourceRecord, ...]: ...
 
 
 @runtime_checkable

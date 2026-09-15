@@ -118,7 +118,7 @@ def test_workflows_and_tool_docs_carry_the_contextual_contract() -> None:
             "contextual V2 Code Traceability investigation",
             "no_relevant_existing_implementation",
             "TO-BE paths",
-            "authorized human uses the UI/REST classification",
+            "okto_pulse_classify_legacy_code_evidence",
         ),
         "workflows/specs.md": (
             "Establish delivery context, then investigate AS-IS source",
@@ -131,20 +131,20 @@ def test_workflows_and_tool_docs_carry_the_contextual_contract() -> None:
             "effective `source_context`",
             "TO-BE Target intent",
             "existing_scaffold",
-            "agents have no MCP mutation",
+            "code_traceability.evidence.classify_legacy",
         ),
         "reference/tool-docs/refinement.md": (
             "delivery_context",
             "contextual V2 receipt",
             "Evidence is AS-IS only",
             "no_relevant_existing_implementation",
-            "there is no MCP mutation",
+            "okto_pulse_classify_legacy_code_evidence",
         ),
         "reference/tool-docs/spec.md": (
             "delivery_context_override_reason",
             "inherits and pins the exact delivery-context provenance",
             "effective `source_context`",
-            "append-only UI/REST action",
+            "classification is append-only",
             "preview_sha256",
         ),
     }
@@ -163,7 +163,8 @@ def test_agent_bootstrap_contains_the_clean_context_safety_summary() -> None:
         "contextual V2 and AS-IS only",
         "Greenfield scaffold/base/reference",
         "planned TO-BE structure",
-        "append-only human UI/REST governance with no MCP mutation",
+        "okto_pulse_classify_legacy_code_evidence",
+        "code_traceability.evidence.classify_legacy",
         "derived Spec remains frozen",
     ):
         assert fragment in instructions

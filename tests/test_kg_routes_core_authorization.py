@@ -97,6 +97,7 @@ class _Uow:
     ) -> None:
         self.services = _Services(events, resolved_permissions)
         self.commit = AsyncMock(side_effect=lambda: events.append("commit"))
+        self.rollback = AsyncMock(side_effect=lambda: events.append("rollback"))
 
 
 _WRITERS = (
@@ -224,11 +225,14 @@ async def test_kg_writer_uses_rest_permissions_resolved_for_target_board(
         uow=uow,
     )
 
-    assert events == [
+    expected = [
         f"lookup:{BOARD_ID}",
         f"resolve:actor-kg:{BOARD_ID}",
-        f"writer:{writer_name}:{BOARD_ID}",
     ]
+    if writer_name == "cancel":
+        expected.append("rollback")
+    expected.append(f"writer:{writer_name}:{BOARD_ID}")
+    assert events == expected
     uow.commit.assert_not_awaited()
 
 
@@ -311,8 +315,82 @@ async def test_kg_writer_accepts_flat_historical_authority_during_migration(
         uow=uow,
     )
 
-    assert events == [f"lookup:{BOARD_ID}", f"writer:{writer_name}:{BOARD_ID}"]
+    expected = [f"lookup:{BOARD_ID}"]
+    if writer_name == "cancel":
+        expected.append("rollback")
+    expected.append(f"writer:{writer_name}:{BOARD_ID}")
+    assert events == expected
     uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cancel_releases_snapshot_and_quiesces_worker_around_delete() -> None:
+    from okto_pulse.core.composition import (
+        RuntimeComposition,
+        runtime_composition_scope,
+    )
+    from okto_pulse.core.ports.runtime_workers import (
+        RuntimeWorkerRegistry,
+        RuntimeWorkerSpec,
+    )
+
+    events: list[str] = []
+    handle = SimpleNamespace(is_running=True)
+
+    async def start_worker() -> object:
+        handle.is_running = True
+        events.append("worker:start")
+        return handle
+
+    async def stop_worker(active: object) -> None:
+        assert active is handle
+        handle.is_running = False
+        events.append("worker:stop")
+
+    registry = RuntimeWorkerRegistry(
+        (
+            RuntimeWorkerSpec(
+                family="consolidation_worker",
+                start=start_worker,
+                stop=stop_worker,
+            ),
+        )
+    )
+    await registry.start_family("consolidation_worker")
+    events.clear()
+    uow = _Uow(events)
+    actor = ActorContext(
+        "actor-kg",
+        "rest",
+        board_id=BOARD_ID,
+        realm_id=LOCAL_REALM_ID,
+        permissions=["kg.admin.historical_consolidation"],
+    )
+    composition = RuntimeComposition(
+        settings_provider=object(),
+        auth_provider=object(),
+        storage_provider=object(),
+        event_bus=object(),
+        uow_factory=object(),
+        worker_registry=registry,
+    )
+
+    with runtime_composition_scope(composition):
+        result = await CancelHistoricalUseCase().execute(
+            CancelHistoricalCommand(BOARD_ID),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert result.payload == {"status": "cancelled"}
+    assert events == [
+        f"lookup:{BOARD_ID}",
+        "rollback",
+        "worker:stop",
+        f"writer:cancel:{BOARD_ID}",
+        "worker:start",
+    ]
+    assert registry.is_running("consolidation_worker") is True
 
 
 @pytest.mark.asyncio

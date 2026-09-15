@@ -269,6 +269,25 @@ class GraphTransactionScope(Protocol):
         attrs: dict[str, Any],
     ) -> None: ...
 
+    def replace_node_payload(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        source_session_id: str,
+    ) -> bool:
+        """Atomically replace a node payload while preserving its identity/edges.
+
+        ``attrs`` is the complete replacement payload, excluding ``id`` and
+        ``source_session_id``. Implementations MUST preserve the node id and the
+        exact multiset (direction, endpoint types/ids and properties) of every
+        incident edge, and MUST confirm both payload and edges before reporting
+        success. Return ``False`` only when the target node is absent. A backend
+        that cannot provide this atomic capability must fail closed.
+        """
+        ...
+
     def snapshot_node_properties(
         self,
         node_type: str,
@@ -360,8 +379,20 @@ class GraphTransactionScope(Protocol):
         self,
         session_id: str,
         preserved_edges: tuple[SpecLineageEdgeSnapshot, ...],
+        *,
+        preserved_projection_edges: tuple[ProjectionEdgeBeforeImage, ...] = (),
     ) -> None:
-        """Delete session-owned edges without deleting restored Spec parents."""
+        """Delete session-owned edges without deleting what compensation restored.
+
+        ``preserved_projection_edges`` are relational-projection relationships that
+        active-set compensation has just put back from a before-image.  They were created by
+        this session, so the generic session sweep would otherwise delete them again and undo
+        the compensation that had just succeeded.
+
+        The argument is keyword-only with an empty default so it is purely additive: every
+        existing caller and implementation keeps working unchanged, and a caller with nothing
+        to preserve makes exactly the call it made before.
+        """
         ...
 
     def delete_nodes_by_session(

@@ -385,7 +385,7 @@ async def test_existing_mcp_handlers_route_all_three_v2_commands(monkeypatch) ->
 
 def test_mcp_inventory_includes_governed_legacy_classification_mutation() -> None:
     names = set(server._CODE_TRACEABILITY_TOOL_NAMES)
-    assert len(names) == 20
+    assert len(names) == 22
     assert "okto_pulse_classify_legacy_code_evidence" in {
         tool.name for tool in server.mcp.iter_tools()
     }
