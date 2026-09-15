@@ -84,7 +84,7 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`). Be
 
 Schemas: MCP `tools/list`. Catalog and exact args/results/examples: `okto-pulse://reference/tools_catalog`.
 
-Before Spec Done, use `get_delivery_evidence` / `record_delivery_evidence` (prefix `okto_pulse_`): tasks prove code; **test cards** verify it. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
+Before Spec Done, use `okto_pulse_get_delivery_evidence` / `okto_pulse_record_delivery_evidence`: tasks prove code; **test cards** verify it. No implicit exemption. Protocol: `okto-pulse://reference/code-traceability`.
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 - **Quality evidence**: read `okto-pulse://reference/quality-assessments` before recording ambiguity or using a receipt/currentness result in a gate decision.
@@ -93,9 +93,10 @@ Before Spec Done, use `get_delivery_evidence` / `record_delivery_evidence` (pref
 ### Response projection profiles — summary-first reads
 Use `summary` for exploration, `detail`/drilldowns for bodies, `full` for gate
 context, and `legacy` only for compatibility. **Summary-first is for exploration
-ONLY.** Before a card move use
+ONLY.** It never replaces the mandatory full gate read before any
+status-changing move: for cards use
 `okto_pulse_get_task_context(profile="full", context_scope="gate")`; other
-entity-context tools use `profile="full"`. Filter/paginate lists; do not assume
+`get_*_context` tools use `profile="full"`. Filter/paginate lists; do not assume
 every list/copy tool accepts the same profiles. Exact envelopes, defaults and
 limits: `okto-pulse://reference/projection-profiles`; list filters:
 `okto-pulse://reference/list_tools`.
@@ -105,13 +106,15 @@ limits: `okto-pulse://reference/projection-profiles`; list filters:
 ## KG health and operational signals (stop-rule)
 
 Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**.
-Quarantined → stop writes and surface the blocker. `metric_status=unavailable`
-does not prove health. For recovery, read **`okto-pulse://reference/kg-health`**
-and the effective `okto-pulse://workflows/kg`: diagnose the component, never
-infer a rebuild from generic `overall_state`. Board recovery requires its
-authorized offline/rehearsed path; online confirm/run refusals are not retries.
-Discovery recovery has a separate owned job flow. Do not stop processes,
-replace storage or bypass a fence without authority for that operation.
+`overall_state == quarantined` → you MUST stop: do not write; surface the blocker.
+`metric_status=unavailable` does not prove health. On `recovery_needed`, read
+**`okto-pulse://reference/kg-health`** and the effective `okto-pulse://workflows/kg`:
+diagnose the component, never infer a rebuild from generic `overall_state`.
+`okto_pulse_kg_rebuild_preflight` is diagnostic only; `okto_pulse_kg_rebuild_confirm`
+and `okto_pulse_kg_rebuild_run` are denied online — never retry a refusal.
+`recovery_execution_required` means the governed offline one-shot on its
+authorized, rehearsed path. Discovery recovery has a separate owned job flow.
+Do not stop processes, replace storage or bypass a fence without authority.
 
 ---
 
