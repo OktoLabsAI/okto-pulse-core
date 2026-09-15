@@ -1,5 +1,5 @@
 ---
-version: "1.0"
+version: "1.1"
 ---
 
 # Projection Profiles & the Response Envelope
@@ -11,17 +11,41 @@ semantics; tool descriptions link here instead of repeating it inline.
 The governed policy lists intentionally support only `summary|detail`; see
 `okto-pulse://reference/policy-compliance`.
 
-## Canonical success key: `outcome`
+## Canonical MCP result versus inner projection
 
-The envelope's canonical success key is **`outcome`**, with values `ok` or
-`error`. `status` may appear only as optional compatibility metadata.
+Read the outer `okto-pulse.mcp-tool-outcome` V2 envelope first:
 
-- Success → `outcome: "ok"`.
-- Failure → `outcome: "error"` plus standard `error` and `error_code`.
+- `outcome="success"`: the tool returned successfully; inspect `data` for its
+  domain result. `data.status="accepted"` is not job completion and a readiness
+  read can succeed while reporting blockers.
+- `outcome="action_required"`: follow `next_action` and the domain blocker;
+  do not interpret `retryable=true` as permission to repeat unchanged or bypass
+  an independent reviewer/human approval.
+- `outcome="error"`: inspect `error_code`, `message`, `retryable` and
+  `next_action`; apply the retry protocol in `okto-pulse://workflows/preflight`.
 
-Do **not** rely on `result.get("success")` truthiness in `summary`/`detail`
-mode — positive `success` is intentionally omitted there. `success: true` and
-`success: false` remain available in `full`/`legacy` mode for existing callers.
+Inside `data`, an older projection may use `outcome="ok"` or `"error"` and a
+nested `projection` object. These are **inner projection** values, not the outer
+MCP outcome. Legacy `success`/`status` fields may also exist in domain bodies;
+do not use their truthiness as a substitute for the outer envelope.
+
+Illustrative V2 shape (domain payloads and optional projection fields vary):
+
+```json
+{
+  "outcome": "success",
+  "data": {"outcome": "ok", "projection": {"profile": "summary", "outcome": "ok"}},
+  "error_code": null,
+  "message": null,
+  "retryable": false,
+  "next_action": null,
+  "meta": {"contract": "okto-pulse.mcp-tool-outcome", "contract_version": "2.0", "tool": "okto_pulse_get_spec_context"}
+}
+```
+
+`profile="legacy"` explicitly preserves the older response shape; identify that
+contract before interpreting it. Do not unwrap `data` repeatedly or confuse a
+domain's own `outcome` with the transport result.
 
 ## The four profiles
 
@@ -53,7 +77,7 @@ returns `unsupported_projection` with the 3-value `supported_profiles` list.
 `summary` and `detail` responses carry a nested `projection` object with:
 
 - `profile` — the profile that produced this shape.
-- `outcome` — `ok` or `error` (canonical success key).
+- `outcome` — `ok` or `error` (inner projection result, not the outer MCP outcome).
 - `payload_bytes` — deterministic byte size of the returned body.
 - `truncated` — whether a hard safety cap trimmed the body.
 - `omitted_count` / `deduped_count` — how many fields/items were dropped or

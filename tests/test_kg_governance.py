@@ -111,6 +111,39 @@ class TestHistoricalOptIn:
             assert result["status"] == "already_in_progress"
 
     @pytest.mark.asyncio
+    async def test_unrelated_stale_sweep_does_not_block_historical_start(
+        self, db_factory
+    ):
+        import uuid
+
+        from sqlalchemy_test_models import ConsolidationQueue
+
+        board_id = "board-hist-with-maintenance"
+        await _seed_board_with_spec(db_factory, board_id)
+        async with db_factory() as db:
+            db.add(
+                ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="board",
+                    artifact_id=board_id,
+                    priority="low",
+                    source="kg_tick",
+                    status="pending",
+                    work_kind="stale_sweep",
+                    generation=0,
+                    payload={"cursor": "", "budget": 50, "attempt": 0},
+                )
+            )
+            await db.commit()
+
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+
+        assert result["status"] == "queueing"
+        assert result["total_artifacts"] >= 1
+
+    @pytest.mark.asyncio
     async def test_pause_and_resume(self, db_factory):
         await _seed_board_with_spec(db_factory, "board-hist-3")
         async with db_factory() as db:
@@ -131,6 +164,65 @@ class TestHistoricalOptIn:
             c = await cancel_historical(db, "board-hist-4")
             assert c["status"] == "cancelled"
             assert c["removed"] >= 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("claim_timeout_delta_minutes", (-5, 5))
+    async def test_cancel_fences_claimed_work_and_allows_clean_restart(
+        self, db_factory, claim_timeout_delta_minutes
+    ):
+        """Expired and active claims must not survive cancel or block restart."""
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy_test_models import ConsolidationQueue
+
+        board_id = f"board-hist-cancel-claimed-{claim_timeout_delta_minutes}"
+        await _seed_board_with_spec(db_factory, board_id)
+        async with db_factory() as db:
+            await start_historical_consolidation(db, board_id)
+            row = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.source == "historical_backfill",
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            row.status = "claimed"
+            row.claimed_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+            row.claim_timeout_at = datetime.now(timezone.utc) + timedelta(
+                minutes=claim_timeout_delta_minutes
+            )
+            row.worker_id = "legacy-worker"
+            row.claimed_by_session_id = "legacy-worker"
+            row.claim_token = "legacy-claim-token"
+            await db.commit()
+
+        async with db_factory() as db:
+            cancelled = await cancel_historical(db, board_id)
+            assert cancelled == {
+                "status": "cancelled",
+                "board_id": board_id,
+                "removed": 1,
+            }
+            progress = await get_historical_progress(db, board_id)
+            assert progress["status"] == "cancelled"
+            assert progress["enabled"] is False
+            assert progress["total"] == 0
+            assert progress["progress"] == 0
+            assert progress["claimed"] == 0
+            assert progress["pending"] == 0
+
+        async with db_factory() as db:
+            restarted = await start_historical_consolidation(db, board_id)
+            assert restarted["status"] == "queueing"
+            assert restarted["total_artifacts"] >= 1
+            progress = await get_historical_progress(db, board_id)
+            assert progress["enabled"] is True
+            assert progress["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_progress_tracking(self, db_factory):

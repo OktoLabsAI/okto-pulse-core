@@ -99,7 +99,7 @@ class BoardKgAnalyticsService:
     """Keep health classification orthogonal to evidence availability."""
 
     @staticmethod
-    def _health_result_state(payload: Mapping[str, Any]) -> BoardKgAnalyticsResultState:
+    def _metric_result_state(payload: Mapping[str, Any]) -> BoardKgAnalyticsResultState:
         raw = str(payload.get("metric_status") or "").lower()
         if raw in {"available", "ok"}:
             return BoardKgAnalyticsResultState.AVAILABLE
@@ -107,15 +107,115 @@ class BoardKgAnalyticsService:
             return BoardKgAnalyticsResultState.RESTRICTED
         if raw == "error":
             return BoardKgAnalyticsResultState.ERROR
+        if raw == "partial":
+            return BoardKgAnalyticsResultState.PARTIAL
         return BoardKgAnalyticsResultState.UNAVAILABLE
 
     @staticmethod
-    def _components(
-        payload: Mapping[str, Any], result_state: BoardKgAnalyticsResultState
-    ) -> tuple[BoardKgHealthComponent, ...]:
+    def _component_evidence(
+        payload: Mapping[str, Any], name: str
+    ) -> tuple[BoardKgAnalyticsResultState, str]:
+        """Use explicit public probes, never a backend name or an inferred count.
+
+        KG Health's legacy metric_status collapses partial telemetry to
+        unavailable. That flag alone cannot describe graph/discovery authority.
+        Older payloads without probes retain their conservative legacy result.
+        """
+        fallback = BoardKgAnalyticsService._metric_result_state(payload)
         reason = str(
             payload.get("classification_reason") or "classification_unavailable"
         )
+        if fallback in {
+            BoardKgAnalyticsResultState.ERROR,
+            BoardKgAnalyticsResultState.RESTRICTED,
+        }:
+            return fallback, reason
+        diagnostics = payload.get("probe_diagnostics")
+        if not isinstance(diagnostics, Mapping):
+            return fallback, reason
+        recovery_field = (
+            "board_graph_recovery_required"
+            if name == "graph"
+            else "discovery_recovery_required"
+        )
+        if payload.get(recovery_field) is True:
+            return BoardKgAnalyticsResultState.UNAVAILABLE, recovery_field
+        probe_names = (
+            ("graph_snapshot", "graph_metrics")
+            if name == "graph"
+            else ("discovery_snapshot", "discovery_telemetry")
+        )
+        states: list[BoardKgAnalyticsResultState] = []
+        reasons: list[str] = []
+        for probe_name in probe_names:
+            probe = diagnostics.get(probe_name)
+            status = probe.get("status") if isinstance(probe, Mapping) else None
+            if not isinstance(status, str):
+                status = None
+            state = {
+                "available": BoardKgAnalyticsResultState.AVAILABLE,
+                "ok": BoardKgAnalyticsResultState.AVAILABLE,
+                "stale": BoardKgAnalyticsResultState.PARTIAL,
+                "restricted": BoardKgAnalyticsResultState.RESTRICTED,
+                "error": BoardKgAnalyticsResultState.ERROR,
+            }.get(status, BoardKgAnalyticsResultState.UNAVAILABLE)
+            states.append(state)
+            if state is not BoardKgAnalyticsResultState.AVAILABLE:
+                detail = "stale" if status == "stale" else state.value
+                reasons.append(f"{probe_name}:{detail}")
+        state = max(states, key=_RESULT_SEVERITY.__getitem__)
+        if state in {
+            BoardKgAnalyticsResultState.AVAILABLE,
+            BoardKgAnalyticsResultState.PARTIAL,
+        }:
+            confirmed_empty = (
+                payload.get("materialization_state") == "not_materialized"
+                and fallback is BoardKgAnalyticsResultState.AVAILABLE
+            )
+            if (
+                name == "graph"
+                and payload.get("board_graph_queryable") is not True
+                and not confirmed_empty
+            ):
+                return (
+                    BoardKgAnalyticsResultState.UNAVAILABLE,
+                    "board_graph_queryability_unconfirmed",
+                )
+            if (
+                name == "graph"
+                and fallback is not BoardKgAnalyticsResultState.AVAILABLE
+            ):
+                state = BoardKgAnalyticsResultState.PARTIAL
+                reasons.append("health_telemetry_incomplete")
+        return state, ";".join(reasons) if reasons else reason
+
+    @staticmethod
+    def _health_result_state(payload: Mapping[str, Any]) -> BoardKgAnalyticsResultState:
+        metric = BoardKgAnalyticsService._metric_result_state(payload)
+        states = [
+            BoardKgAnalyticsService._component_evidence(payload, name)[0]
+            for name in ("graph", "discovery")
+        ]
+        for fatal in (
+            BoardKgAnalyticsResultState.ERROR,
+            BoardKgAnalyticsResultState.RESTRICTED,
+        ):
+            if metric is fatal or fatal in states:
+                return fatal
+        usable = {
+            BoardKgAnalyticsResultState.AVAILABLE,
+            BoardKgAnalyticsResultState.PARTIAL,
+        }
+        if not any(state in usable for state in states):
+            return BoardKgAnalyticsResultState.UNAVAILABLE
+        if metric is BoardKgAnalyticsResultState.AVAILABLE and all(
+            state is BoardKgAnalyticsResultState.AVAILABLE for state in states
+        ):
+            return BoardKgAnalyticsResultState.AVAILABLE
+        return BoardKgAnalyticsResultState.PARTIAL
+
+    @staticmethod
+    def _components(payload: Mapping[str, Any]) -> tuple[BoardKgHealthComponent, ...]:
         components: list[BoardKgHealthComponent] = []
         for name, field in (
             ("discovery", "discovery_state"),
@@ -123,11 +223,14 @@ class BoardKgAnalyticsService:
         ):
             if field not in payload:
                 continue
+            component_result, reason = BoardKgAnalyticsService._component_evidence(
+                payload, name
+            )
             components.append(
                 BoardKgHealthComponent(
                     component=name,
                     health_state=_health_state(payload[field], field=field),
-                    result_state=result_state,
+                    result_state=component_result,
                     classification_reason=reason,
                 )
             )
@@ -246,7 +349,7 @@ class BoardKgAnalyticsService:
             health_state=health_state,
             classification_reason=classification_reason,
             reason_codes=reasons,
-            components=BoardKgAnalyticsService._components(health, health_result),
+            components=BoardKgAnalyticsService._components(health),
             debt_domains=BoardKgAnalyticsService._debt_domains(health, health_result),
             cognitive_effectiveness=cognitive,
             population_scope=population_scope,
@@ -316,7 +419,7 @@ async def read_board_kg_health_evidence(
         result_state=result_state,
         classification_reason=reason,
         reason_codes=reasons,
-        components=BoardKgAnalyticsService._components(payload, result_state),
+        components=BoardKgAnalyticsService._components(payload),
     )
 
 
@@ -426,8 +529,10 @@ class BoardKgEffectivenessService:
     @staticmethod
     def _timing(items: tuple) -> BoardKgTiming:
         durations_by_artifact: dict[str, list[float]] = {}
+        missing_materialized_timing = False
         for item in items:
             if item.consolidated_at is None:
+                missing_materialized_timing |= item.outcome_materialized
                 continue
             durations_by_artifact.setdefault(item.artifact_id, []).append(
                 (item.consolidated_at - item.opened_at).total_seconds() / 3600
@@ -438,13 +543,21 @@ class BoardKgEffectivenessService:
             min(durations_by_artifact[artifact_id])
             for artifact_id in sorted(durations_by_artifact)
         )
-        if not durations:
+        if missing_materialized_timing:
             return BoardKgTiming(
                 BoardKgEffectivenessState.UNAVAILABLE,
                 0,
                 None,
                 None,
                 "insufficient_consolidation_timing_evidence",
+            )
+        if not durations:
+            return BoardKgTiming(
+                BoardKgEffectivenessState.EMPTY,
+                0,
+                None,
+                None,
+                "no_consolidation_timing_samples",
             )
         return BoardKgTiming(
             BoardKgEffectivenessState.AVAILABLE,
@@ -565,24 +678,22 @@ class BoardKgEffectivenessService:
             return BoardKgAnalyticsResultState.ERROR
         if BoardKgAnalyticsResultState.RESTRICTED in health_states:
             return BoardKgAnalyticsResultState.RESTRICTED
-        if BoardKgAnalyticsResultState.UNAVAILABLE in health_states:
+        if evidence.health_result_state is BoardKgAnalyticsResultState.UNAVAILABLE:
             return BoardKgAnalyticsResultState.UNAVAILABLE
-        if evidence.health_result_state in {
-            BoardKgAnalyticsResultState.ERROR,
-            BoardKgAnalyticsResultState.RESTRICTED,
-            BoardKgAnalyticsResultState.UNAVAILABLE,
-        }:
-            return evidence.health_result_state
         if evidence.currentness is AnalyticsProjectionCurrentness.UNAVAILABLE:
             return BoardKgAnalyticsResultState.UNAVAILABLE
         partial = evidence.currentness in {
             AnalyticsProjectionCurrentness.PARTIAL,
             AnalyticsProjectionCurrentness.STALE,
         }
-        partial = partial or evidence.health_result_state in {
-            BoardKgAnalyticsResultState.PARTIAL,
-            BoardKgAnalyticsResultState.EMPTY,
-        }
+        partial = partial or bool(
+            health_states
+            & {
+                BoardKgAnalyticsResultState.PARTIAL,
+                BoardKgAnalyticsResultState.EMPTY,
+                BoardKgAnalyticsResultState.UNAVAILABLE,
+            }
+        )
         partial = partial or any(
             item.result_state
             not in {
@@ -619,14 +730,14 @@ class BoardKgEffectivenessService:
             return BoardKgClassificationState.ERROR
         if result_state is BoardKgAnalyticsResultState.RESTRICTED:
             return BoardKgClassificationState.RESTRICTED
-        if result_state is BoardKgAnalyticsResultState.UNAVAILABLE:
-            return BoardKgClassificationState.UNAVAILABLE
         if evidence.health_state in {
             BoardKgHealthState.BACKPRESSURE,
             BoardKgHealthState.RECOVERY_NEEDED,
             BoardKgHealthState.QUARANTINED,
         }:
             return BoardKgClassificationState.BLOCKING
+        if result_state is BoardKgAnalyticsResultState.UNAVAILABLE:
+            return BoardKgClassificationState.UNAVAILABLE
         if (
             result_state is BoardKgAnalyticsResultState.PARTIAL
             or evidence.health_state is BoardKgHealthState.AT_RISK

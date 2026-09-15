@@ -138,6 +138,9 @@ class ApplicationServiceCatalog(Protocol):
     def code_traceability(self) -> "CodeTraceabilityStore": ...
 
     @property
+    def delivery_evidence(self): ...
+
+    @property
     def code_traceability_read(self) -> "CodeTraceabilityReadPort": ...
 
     @property
@@ -660,6 +663,10 @@ class KnowledgeGraphOperations(Protocol):
         limit: int,
         include_code_traceability: bool = True,
     ) -> object: ...
+
+    async def stage_spec_projection_repair(
+        self, *, board_id: str, spec_ids: tuple[str, ...], actor_id: str, reason: str,
+    ) -> dict[str, object]: ...
 
     async def start_historical_consolidation(self, board_id: str) -> object: ...
 

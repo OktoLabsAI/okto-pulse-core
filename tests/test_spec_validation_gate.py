@@ -25,6 +25,8 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+
+
 from sqlalchemy import func, select
 
 from sqlalchemy_test_models import (
@@ -71,6 +73,13 @@ from okto_pulse.core.services import main as main_service
 BOARD_ID = "validation-board-001"
 SPEC_ID = "validation-spec-001"
 USER_ID = "user-test-001"
+
+
+@pytest.fixture(autouse=True)
+def _completed_delivery_for_independent_validation_gate(monkeypatch):
+    from delivery_evidence_testing import install_complete_delivery_port
+
+    install_complete_delivery_port(monkeypatch)
 
 
 @pytest.fixture(autouse=True)

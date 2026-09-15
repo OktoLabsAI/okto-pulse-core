@@ -83,6 +83,9 @@ _tmpdb = tempfile.mktemp(suffix=".db")
 _kg_dir = tempfile.mkdtemp(prefix="okto_kg_test_")
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_tmpdb}"
 os.environ["KG_BASE_DIR"] = _kg_dir
+# Current Community graph adapters resolve paths from DATA_DIR. KG_BASE_DIR is
+# not their runtime identity; never let a real-adapter test reach the user's home.
+os.environ["DATA_DIR"] = _kg_dir
 os.environ["KG_CLEANUP_INTERVAL_SECONDS"] = "1"
 os.environ["KG_CLEANUP_ENABLED"] = "false"
 # Force the deterministic stub embedding provider for unit tests so we
@@ -154,7 +157,6 @@ from okto_pulse.core.infra.database import create_database, get_session_factory,
 from okto_pulse.core.infra import database as _database_mod  # noqa: E402
 from okto_pulse.core.ports import schema_lifecycle as _schema_lifecycle  # noqa: E402
 from okto_pulse.core.kg.embedding import reset_embedding_provider_cache  # noqa: E402
-from kg_schema_testing import bootstrap_board_graph  # noqa: E402
 from okto_pulse.core.kg.session_manager import reset_session_manager_for_tests  # noqa: E402
 import sqlalchemy_test_models as _models  # noqa: E402, F401
 from sqlalchemy_test_models import (  # noqa: E402
@@ -3010,9 +3012,12 @@ def kg_events_reader():
     return _CoreTestKGEventsReader(get_session_factory())
 
 
-@pytest.fixture
-def board_handle():
-    return bootstrap_board_graph(BOARD_ID)
+@pytest_asyncio.fixture
+async def board_handle(board_id):
+    """Bootstrap the configured graph through its neutral port, without a native handle."""
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    await get_kg_registry().graph_schema_manager.ensure_bootstrapped(board_id)
 
 
 # ============================================================================

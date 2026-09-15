@@ -12,6 +12,10 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from okto_pulse.core.infra.permissions import get_builtin_presets, resolve_permissions
+from okto_pulse.core.domain.permissions import (
+    PROJECT_STRUCTURE_ENTITY_OPERATIONS,
+    STRUCTURED_SPEC_ENTITY_OPERATIONS as PERMISSIONED_STRUCTURED_SPEC_ENTITY_OPERATIONS,
+)
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -39,7 +43,6 @@ from okto_pulse.core.services.discovery_selector_catalog import (
 from okto_pulse.core.services.spec_structured_entities import (
     InMemoryStructuredSpecEntityMetricsSink,
     STRUCTURED_SPEC_ENTITY_FIELDS,
-    STRUCTURED_SPEC_ENTITY_OPERATIONS,
     StructuredSpecEntityCommand,
     StructuredSpecEntityErrorCode,
     StructuredSpecEntityService,
@@ -1057,8 +1060,16 @@ async def test_viewer_preset_fails_every_structured_entity_mutation_before_paylo
         before_side_effects = await _side_effect_counts(db, board_id=board_id, spec_id=spec_id)
         service = StructuredSpecEntityService(db, metrics_sink=sink)
 
-        for entity_type in STRUCTURED_SPEC_ENTITY_FIELDS:
-            for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS:
+        permissioned_operations_by_type = {
+            entity_type: (
+                PROJECT_STRUCTURE_ENTITY_OPERATIONS
+                if entity_type == "project_structure_node"
+                else PERMISSIONED_STRUCTURED_SPEC_ENTITY_OPERATIONS
+            )
+            for entity_type in STRUCTURED_SPEC_ENTITY_FIELDS
+        }
+        for entity_type, operations in permissioned_operations_by_type.items():
+            for operation in operations:
                 result = await service.mutate(
                     StructuredSpecEntityCommand(
                         board_id=board_id,
@@ -1083,7 +1094,9 @@ async def test_viewer_preset_fails_every_structured_entity_mutation_before_paylo
             for event in sink.events
             if event.name == "spec_structured_entity_authorization_denied_total"
         ]
-        assert len(deny_metrics) == len(STRUCTURED_SPEC_ENTITY_FIELDS) * len(STRUCTURED_SPEC_ENTITY_OPERATIONS)
+        assert len(deny_metrics) == sum(
+            len(operations) for operations in permissioned_operations_by_type.values()
+        )
         assert all(event.labels["outcome"] == "failure" for event in deny_metrics)
         assert all(
             event.labels["reason"] == StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED

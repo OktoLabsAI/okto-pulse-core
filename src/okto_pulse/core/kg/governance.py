@@ -363,13 +363,22 @@ def _set_historical_progress_state(
     settings = dict(board.settings or {})
     current = settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
     current_state = current if isinstance(current, dict) else {}
+    now = datetime.now(timezone.utc).isoformat()
+    previous_status = str(current_state.get("status") or "")
+    starts_fresh_run = (
+        status == "in_progress"
+        and previous_status in {"cancelled", "completed", "completed_with_errors"}
+    )
     settings[HISTORICAL_PROGRESS_SETTINGS_KEY] = {
         **current_state,
         "total": max(0, int(total)),
         "status": status,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "started_at": current_state.get("started_at")
-        or datetime.now(timezone.utc).isoformat(),
+        "updated_at": now,
+        "started_at": (
+            now
+            if starts_fresh_run
+            else current_state.get("started_at") or now
+        ),
     }
     board.settings = settings
 
@@ -594,12 +603,34 @@ async def resume_historical(db: Any, board_id: str) -> dict:
 
 
 async def cancel_historical(db: Any, board_id: str) -> dict:
-    """Delete pending low-priority entries. Already-consolidated preserved."""
+    """Fence and remove live historical work; committed graph data is preserved.
+
+    ``claimed`` rows must be removed together with ``pending``/``paused`` rows.
+    Leaving a claimed row behind made cancellation non-terminal and caused the
+    next start request to return ``already_in_progress`` forever when a legacy
+    worker had stalled.  Queue processing already treats a missing claimed row
+    as ownership loss and compensates any unacknowledged graph mutation, so the
+    delete is also the durable cancellation fence for an in-flight worker.
+    """
     store = get_kg_governance_store()
     board = await store.get_board(db, board_id=board_id)
+    # Keep the established port name for adapter compatibility. Its cancellation
+    # semantics include every live historical state, not only literal pending
+    # rows (see KGGovernanceStore.delete_historical_pending implementations).
     removed = await store.delete_historical_pending(db, board_id=board_id)
+    # Cancellation is terminal operational state, not a completed run.  Keep
+    # the prior size only as audit context and clear the active total so every
+    # consumer sees ``enabled=False`` immediately after the live queue is
+    # fenced.  Retaining ``total`` made a cancelled 453-item run look enabled
+    # forever even though pending/claimed/paused were all zero.
     current_total = int(_historical_progress_state(board).get("total") or 0)
-    _set_historical_progress_state(board, total=current_total, status="cancelled")
+    _set_historical_progress_state(board, total=0, status="cancelled")
+    if board is not None:
+        settings = dict(board.settings or {})
+        state = dict(settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY) or {})
+        state["cancelled_total"] = max(0, current_total)
+        settings[HISTORICAL_PROGRESS_SETTINGS_KEY] = state
+        board.settings = settings
     if board is not None:
         await store.save_board(db, board)
     await store.commit(db)

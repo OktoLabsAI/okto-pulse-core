@@ -1,8 +1,13 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 # Tool docs — `spec`
+
+Before `move_spec` to `done`, read `okto_pulse_get_delivery_evidence` and resolve
+every missing implementation/test row with `okto_pulse_record_delivery_evidence`.
+Only test cards provide verification; planning evidence and Skip flags do not waive
+delivery proof. See `okto-pulse://reference/tool-docs/code-traceability`.
 
 Validation and curated-checklist gate rules:
 `okto-pulse://reference/spec_gates`.
@@ -652,10 +657,27 @@ Returns:
 
 ## `okto_pulse_update_spec_entity`
 
-Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC, IR and OR.
+Before a Spec leaves Draft, agents must populate applicable Project Structure
+or persist a justified `Project Structure: not applicable` declaration in the
+Spec `context` via `okto_pulse_update_spec`, preserving existing context. This
+does not require a fake tree or a Decision with artificial task coverage.
+See `okto-pulse://reference/project-structure` for complete batch examples and
+the scope/edition review protocol. The declaration is an agent-auditable
+context record, not a new Resource Gate N/A resource type.
+
+Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC,
+IR, OR and Project structure nodes.
 
 API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
 payload shape remains explicit while still delegating to StructuredSpecEntityService.
+
+For `entity_type="project_structure_node"`, read
+`okto-pulse://reference/project-structure` first. Every write requires
+`expected_spec_version`, `expected_structure_revision`, and `idempotency_key`.
+Use `batch` for atomic multi-node intent; its `payload_json` contains an
+`operations` list. Whole-Spec update is not a Project structure write path.
+Pure Task/Test relation batches preserve Spec version while advancing the tree
+revision; semantic or mixed batches remain Draft-only.
 
 ## Code Evidence links and dispositions
 
@@ -664,8 +686,10 @@ and inherited Evidence from full Spec context. Summary role/classification
 counts cover the complete effective set even when item collections are
 bounded. Every item reports `context_origin` as `authored`,
 `human_legacy_classification`, or `unclassified_legacy`; never infer a legacy
-role from its path, type, or claim. Human legacy classification is an
-append-only UI/REST action and has no MCP mutation.
+role from its path, type, or claim. Legacy classification is append-only:
+authorized agents use `okto_pulse_classify_legacy_code_evidence` with
+`code_traceability.evidence.classify_legacy`; humans may use UI/REST. A
+classification neither upgrades V1 receipts nor rebases this Spec implicitly.
 
 Use
 `okto_pulse_link_code_evidence` and `okto_pulse_unlink_code_evidence` for

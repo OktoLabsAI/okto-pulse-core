@@ -47,8 +47,10 @@ jobs:
       - name: Install package + tooling
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          pip install ruff pyright build pytest pytest-asyncio
+          pip install -e ".[dev]"
+
+      - name: Check local Markdown links
+        run: python scripts/check_markdown_links.py
 
       - name: Import smoke test
         run: |

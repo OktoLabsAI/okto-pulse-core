@@ -42,6 +42,7 @@ from okto_pulse.core.domain.code_traceability_kg import (
 )
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.kg.consolidation_timing import observe_consolidation_phase
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.runtime_context import runtime_state
 from okto_pulse.core.kg.node_identity import (
@@ -1877,8 +1878,11 @@ def _auto_attach_provenance_edges(
     valid, auditable remediation path instead of asking the agent to do something
     the API rejects.
     """
+    if not node_candidates:
+        return
+    provenance_sources = _outgoing_edge_sources(edge_candidates, "belongs_to")
     for cand_id, cand in list(node_candidates.items()):
-        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+        if cand_id in provenance_sources:
             continue
         source_ref = str(getattr(cand, "source_artifact_ref", "") or "")
         if not source_ref:
@@ -1924,6 +1928,7 @@ def _auto_attach_provenance_edges(
             created_by="system:commit_consolidation",
             fallback_reason=(f"auto_attached_to_{root_node_type.lower()}_source_root"),
         )
+        provenance_sources.add(cand_id)
 
 
 def _inherit_supersede_provenance_edges(
@@ -1946,8 +1951,11 @@ def _inherit_supersede_provenance_edges(
     leaves the normal connectivity rejection in place.
     """
 
+    if not node_candidates:
+        return
+    provenance_sources = _outgoing_edge_sources(edge_candidates, "belongs_to")
     for cand_id, cand in list(node_candidates.items()):
-        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+        if cand_id in provenance_sources:
             continue
 
         hint = effective_hints.get(cand_id)
@@ -2027,6 +2035,7 @@ def _inherit_supersede_provenance_edges(
             continue
 
         edge_id = f"{cand_id}__inherit_supersede_belongs_to"
+        replaces_candidate = edge_id in edge_candidates
         edge_candidates[edge_id] = EdgeCandidate(
             candidate_id=edge_id,
             edge_type=KGEdgeType.BELONGS_TO,
@@ -2040,16 +2049,27 @@ def _inherit_supersede_provenance_edges(
                 "preserve_predecessor_provenance_on_deterministic_supersede"
             ),
         )
+        if replaces_candidate:
+            # Candidate IDs can collide with this deterministic key. The old
+            # edge may have been the only provenance edge of a later candidate;
+            # re-index this exceptional overwrite rather than retain stale credit.
+            provenance_sources = _outgoing_edge_sources(edge_candidates, "belongs_to")
+        else:
+            provenance_sources.add(cand_id)
 
 
-def _has_outgoing_edge(edge_candidates: dict, cand_id: str, edge_type: str) -> bool:
-    for edge in edge_candidates.values():
-        if (
-            str(getattr(edge, "from_candidate_id", "")) == cand_id
-            and _enum_value(getattr(edge, "edge_type", "")) == edge_type
-        ):
-            return True
-    return False
+def _outgoing_edge_sources(edge_candidates: dict, edge_type: str) -> set[str]:
+    """Index this phase's candidate edges, never graph authority or read results.
+
+    Re-scanning the growing edge batch for every node made provenance preparation
+    quadratic. Each caller rebuilds this local set so edges attached by an earlier
+    phase are visible; normal source/identity/connectivity checks are unchanged.
+    """
+    return {
+        str(getattr(edge, "from_candidate_id", ""))
+        for edge in edge_candidates.values()
+        if _enum_value(getattr(edge, "edge_type", "")) == edge_type
+    }
 
 
 def _resolve_provenance_root(graph_scope, source_ref: str) -> tuple[str, str] | None:
@@ -4376,22 +4396,30 @@ async def commit_consolidation(
 
             # The graph was already applied by the first attempt.  Restage only
             # the relational ledger/audit/outbox in the fresh caller UOW.
-            await _append_cognitive_source_records(
-                session.board_id,
+            await observe_consolidation_phase(
+                "cognitive_source_append",
                 req.session_id,
-                list(pending.cognitive_source_records),
-                context=db,
-                store=cognitive_source_store,
+                _append_cognitive_source_records(
+                    session.board_id,
+                    req.session_id,
+                    list(pending.cognitive_source_records),
+                    context=db,
+                    store=cognitive_source_store,
+                ),
             )
-            await _commit_audit_records(
-                registry,
-                db,
-                list(pending.records),
-                pending.counters,
-                req,
-                session,
-                agent_id,
-                pending.response.committed_at,
+            await observe_consolidation_phase(
+                "audit_outbox_stage",
+                req.session_id,
+                _commit_audit_records(
+                    registry,
+                    db,
+                    list(pending.records),
+                    pending.counters,
+                    req,
+                    session,
+                    agent_id,
+                    pending.response.committed_at,
+                ),
             )
             pending.in_flight = True
             session.touch(registry.require_session_store().default_ttl_seconds)
@@ -4410,32 +4438,36 @@ async def commit_consolidation(
                 committed_at,
                 connectivity,
                 cognitive_source_records,
-            ) = await _run_graph_io(
-                _do_graph_commit,
-                session.board_id,
+            ) = await observe_consolidation_phase(
+                "graph_dispatch",
                 req.session_id,
-                dict(session.node_candidates),
-                dict(session.edge_candidates),
-                effective_hints,
-                agent_id,
-                registry.require_embedding_provider(),
-                kg_health_state,
-                session.content_hash,
-                session.artifact_id,
-                frozenset(req.agent_overrides),
-                session.artifact_type,
-                session.spec_lineage_parent_intent,
-                getattr(
-                    session,
-                    "relational_projection_candidate_ids",
-                    frozenset(),
+                _run_graph_io(
+                    _do_graph_commit,
+                    session.board_id,
+                    req.session_id,
+                    dict(session.node_candidates),
+                    dict(session.edge_candidates),
+                    effective_hints,
+                    agent_id,
+                    registry.require_embedding_provider(),
+                    kg_health_state,
+                    session.content_hash,
+                    session.artifact_id,
+                    frozenset(req.agent_overrides),
+                    session.artifact_type,
+                    session.spec_lineage_parent_intent,
+                    getattr(
+                        session,
+                        "relational_projection_candidate_ids",
+                        frozenset(),
+                    ),
+                    getattr(
+                        session,
+                        "relational_projection_active_set_intent",
+                        None,
+                    ),
+                    executor=blocking_execution,
                 ),
-                getattr(
-                    session,
-                    "relational_projection_active_set_intent",
-                    None,
-                ),
-                executor=blocking_execution,
             )
         except KGPrimitiveError:
             raise
@@ -4458,24 +4490,32 @@ async def commit_consolidation(
         # carry exact before-images in GraphWriteRecord.
         failure_stage = "cognitive_source_append"
         try:
-            await _append_cognitive_source_records(
-                session.board_id,
+            await observe_consolidation_phase(
+                "cognitive_source_append",
                 req.session_id,
-                cognitive_source_records,
-                context=db,
-                store=cognitive_source_store,
+                _append_cognitive_source_records(
+                    session.board_id,
+                    req.session_id,
+                    cognitive_source_records,
+                    context=db,
+                    store=cognitive_source_store,
+                ),
             )
 
             failure_stage = "audit_outbox_stage"
-            await _commit_audit_records(
-                registry,
-                db,
-                records,
-                counters,
-                req,
-                session,
-                agent_id,
-                committed_at,
+            await observe_consolidation_phase(
+                "audit_outbox_stage",
+                req.session_id,
+                _commit_audit_records(
+                    registry,
+                    db,
+                    records,
+                    counters,
+                    req,
+                    session,
+                    agent_id,
+                    committed_at,
+                ),
             )
         except Exception as staging_error:
             try:
@@ -4550,11 +4590,15 @@ async def commit_consolidation(
             session.touch(registry.require_session_store().default_ttl_seconds)
             return response
 
-        await _finalize_consolidation_session_unlocked(
-            registry,
-            session,
-            records,
-            session_id=req.session_id,
+        await observe_consolidation_phase(
+            "session_finalize",
+            req.session_id,
+            _finalize_consolidation_session_unlocked(
+                registry,
+                session,
+                records,
+                session_id=req.session_id,
+            ),
         )
         return response
 
@@ -4572,9 +4616,13 @@ async def commit_consolidation(
             agent_id=agent_id,
             session_id=req.session_id,
         )
-        kg_health_state = await _resolve_commit_kg_health_state(
-            session.board_id,
-            db,
+        kg_health_state = await observe_consolidation_phase(
+            "health_admission",
+            req.session_id,
+            _resolve_commit_kg_health_state(
+                session.board_id,
+                db,
+            ),
         )
         # A health-reader failure is normalized to ``recovery_needed``.
         # Reject it here, before dispatching the graph callback, so neither

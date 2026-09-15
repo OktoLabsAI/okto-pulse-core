@@ -155,7 +155,7 @@ class DiscoveryExecutionReadPort(Protocol):
     ) -> dict[str, Any]: ...
 
     async def list_board_cards(
-        self, context: Any, *, board_id: str
+        self, context: Any, *, board_id: str, include_archived: bool = False
     ) -> tuple[DiscoveryCardFact, ...]: ...
 
 

@@ -3347,16 +3347,32 @@ async def compute_delivery_intelligence(
             "unit": unit,
         }
 
-    def _filter_values(field: str) -> tuple[str, ...]:
-        values: list[str] = []
-        for clause in query.filters:
-            if clause.field != field:
-                continue
-            raw = clause.value
-            values.extend(str(item) for item in raw) if isinstance(
-                raw, tuple
-            ) else values.append(str(raw))
-        return tuple(values)
+    def _field_clauses(field: str) -> tuple[Any, ...]:
+        return tuple(clause for clause in query.filters if clause.field == field)
+
+    def _matches_filter(field: str, actual: object) -> bool:
+        candidate = str(actual)
+        if field != "sprint_id":
+            candidate = candidate.strip().casefold()
+        for clause in _field_clauses(field):
+            raw_values = (
+                clause.value if isinstance(clause.value, tuple) else (clause.value,)
+            )
+            values = tuple(
+                str(value)
+                if field == "sprint_id"
+                else str(value).strip().casefold()
+                for value in raw_values
+            )
+            if clause.operator == "eq" and candidate != values[0]:
+                return False
+            if clause.operator == "ne" and candidate == values[0]:
+                return False
+            if clause.operator == "in" and candidate not in values:
+                return False
+            if clause.operator == "not_in" and candidate in values:
+                return False
+        return True
 
     dt_from = query.window.from_inclusive
     dt_to = query.window.to_exclusive
@@ -3367,12 +3383,12 @@ async def compute_delivery_intelligence(
         dt_to=dt_to,
     )
     raw_sprints = list(sprint_payload["sprints"])
-    sprint_ids = set(_filter_values("sprint_id"))
-    lanes = set(_filter_values("lane"))
-    if sprint_ids:
-        raw_sprints = [item for item in raw_sprints if item["sprint_id"] in sprint_ids]
-    if lanes and "all" not in lanes:
-        raw_sprints = [item for item in raw_sprints if item["lane_type"] in lanes]
+    raw_sprints = [
+        item
+        for item in raw_sprints
+        if _matches_filter("sprint_id", item["sprint_id"])
+        and _matches_filter("lane", item["lane_type"])
+    ]
     raw_sprints.sort(
         key=lambda item: (str(item["title"]).casefold(), item["sprint_id"])
     )
@@ -3451,17 +3467,24 @@ async def compute_delivery_intelligence(
         )
     )
 
-    all_cards = await _analytics_list(
-        db,
-        "card",
-        filters=_artifact_filters(
-            query.board_id,
-            include_archived=False,
-            dt_from=dt_from,
-            dt_to=dt_to,
-        ),
-    )
     selected_sprint_ids = {item["sprint_id"] for item in raw_sprints}
+    all_cards = (
+        await _analytics_list(
+            db,
+            "card",
+            filters=_artifact_filters(
+                query.board_id,
+                include_archived=False,
+                dt_from=None,
+                dt_to=None,
+                extra=(
+                    _af("sprint_id", "in", tuple(sorted(selected_sprint_ids))),
+                ),
+            ),
+        )
+        if selected_sprint_ids
+        else []
+    )
     scoped_cards = [
         card
         for card in all_cards
@@ -3549,10 +3572,12 @@ async def compute_delivery_intelligence(
             if outcome in {"success", "pass"}:
                 reviewer_fact["validation_success"] += 1
 
+    contribution_clause = next(iter(_field_clauses("contribution_view")), None)
     contribution_view = (
-        _filter_values("contribution_view") or ("self_and_aggregates",)
-    )[0]
-    role_filter = set(_filter_values("role"))
+        str(contribution_clause.value).strip().casefold()
+        if contribution_clause is not None
+        else "self_and_aggregates"
+    )
 
     def _role(fact: dict[str, Any]) -> str:
         if fact["done"] and fact["validation_total"]:
@@ -3565,7 +3590,7 @@ async def compute_delivery_intelligence(
         return _role(fact).casefold().replace(" ", "_")
 
     def _role_allowed(fact: dict[str, Any]) -> bool:
-        return not role_filter or "all" in role_filter or _role_slug(fact) in role_filter
+        return _matches_filter("role", _role_slug(fact))
 
     def _rate(
         numerator: int, denominator: int, *, restricted: bool = False

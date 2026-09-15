@@ -19,6 +19,7 @@ _JSON_FIELDS = (
     "integration_requirements",
     "observability_requirements",
     "test_scenarios",
+    "project_structure",
 )
 
 
@@ -39,6 +40,10 @@ def _record(row: Any) -> StructuredSpecRecord:
         title=row.title,
         description=row.description,
         context=row.context,
+        project_structure_revision=int(
+            getattr(row, "project_structure_revision", 0) or 0
+        ),
+        project_structure_digest=getattr(row, "project_structure_digest", None),
         **values,
     )
 
@@ -56,6 +61,7 @@ class TestSqlAlchemyStructuredSpecStore:
         record: StructuredSpecRecord,
         *,
         changed_fields: Sequence[str],
+        expected_version: int | None = None,
     ) -> None:
         row = await context.get(Spec, record.id)
         if row is None:

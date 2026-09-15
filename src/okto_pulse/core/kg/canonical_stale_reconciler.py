@@ -361,10 +361,17 @@ def _build_source_classification_map(
     for row in snapshot.rows:
         sid = str(row.get("id") or "")
         artifact_type = str(row.get("artifact_type") or "").strip().lower()
-        # Derived decision rows are children of a spec and do not own graph
-        # publication.  Indexing ``decision:{spec_id}:...`` would create an
-        # unknown classification and risks shadowing the actual spec owner.
-        if artifact_type == "decision":
+        # BoardSourceReader is intentionally broader than the stale-sweep
+        # domain: it also returns stories, derived decisions and code-
+        # traceability sources.  Those rows do not own any identity that the
+        # bounded graph query below is allowed to reconcile.  Ignore them by
+        # the same explicit allow-list used by StaleSweepCandidate instead of
+        # treating a valid non-governed source_ref as an incomplete realm.
+        #
+        # This is load-bearing for forward-compatible readers.  A newly added
+        # source family must not poison every board's daily sweep merely
+        # because this narrower reconciler has no policy for it yet.
+        if artifact_type and artifact_type not in GOVERNED_SWEEP_ARTIFACT_TYPES:
             continue
         if not sid or not artifact_type:
             logger.warning(
@@ -485,7 +492,7 @@ async def enumerate_stale_sweep_page(
 
     scan_limit = budget + 1
     after_type, after_id = after or ("", "")
-    # Ladybug/Kuzu list indexes are one-based. Normalizing card subtypes in the
+    # Query list indexes are zero-based. Normalizing card subtypes in the
     # query makes DISTINCT and keyset ordering operate on the governed owner,
     # rather than on child source-ref strings such as ``test:{card_id}:...``.
     query = """
@@ -508,16 +515,16 @@ async def enumerate_stale_sweep_page(
             )
         )
           AND n.source_artifact_ref IS NOT NULL
-        WITH string_split(n.source_artifact_ref, ':') AS parts
+        WITH split(n.source_artifact_ref, ':') AS parts
         WHERE size(parts) >= 2
-        WITH CASE parts[1]
+        WITH CASE parts[0]
           WHEN 'card' THEN 'card'
           WHEN 'card_relationship_target' THEN 'card'
           WHEN 'task' THEN 'card'
           WHEN 'test' THEN 'card'
           WHEN 'bug' THEN 'card'
-          ELSE parts[1]
-        END AS artifact_type, parts[2] AS artifact_id
+          ELSE parts[0]
+        END AS artifact_type, parts[1] AS artifact_id
         WHERE artifact_type IN $governed_types
           AND artifact_id IS NOT NULL
           AND artifact_id <> ''

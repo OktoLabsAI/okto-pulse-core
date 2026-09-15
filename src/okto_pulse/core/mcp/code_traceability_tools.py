@@ -18,6 +18,7 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
+from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -210,6 +211,8 @@ def _error_outcome(error: Exception) -> McpToolOutcome:
             },
             "remediation": [],
         }
+    elif isinstance(error, ValueError) and str(error).startswith("delivery_"):
+        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": {}, "remediation": [{"action": "review_delivery_evidence", "tool": "okto_pulse_get_delivery_evidence"}]}
     elif isinstance(error, PermissionDeniedError):
         projected = {
             "code": "forbidden",
@@ -490,7 +493,7 @@ def register_code_traceability_tools(
     get_uow: Callable[[], Any],
     get_settings: Callable[[], object],
 ) -> None:
-    """Register the reviewed 20-tool Code Traceability inventory."""
+    """Register the reviewed 22-tool Code Traceability/delivery inventory."""
 
     async def _execute(board_id: str, command: object, use_case: object) -> McpToolOutcome:
         context = await get_board_agent(board_id)
@@ -909,7 +912,12 @@ def register_code_traceability_tools(
         actual_qualified_symbol: OptionalBoundedText = None,
         replacement_target_id: BoundedId | None = None,
     ) -> McpToolOutcome:
-        """Submit an authenticated agent Execution Disposition for one Target."""
+        """Submit an authenticated agent Execution Disposition for one Target.
+
+        After completing the task/bug, bind this accepted committed execution to
+        the Spec with okto_pulse_record_delivery_evidence, evidence.kind="implementation".
+        It is implementation proof, not test verification; that requires a test card.
+        """
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase
 
         command = _closed_input(ImplementationTargetExecutionSubmission, locals())
@@ -940,7 +948,37 @@ def register_code_traceability_tools(
         command = _closed_input(CodeTraceabilityWaiverClearInput, locals())
         return await _execute(board_id, command, ClearCodeTraceabilityNotApplicableUseCase())
 
+    async def okto_pulse_get_delivery_evidence(board_id: BoundedId, spec_id: BoundedId) -> McpToolOutcome:
+        """Read delivery obligations/current proof before completing a Spec.
+
+        Planning Code Evidence is not delivery. Tasks/bugs record code; only TEST
+        cards with authenticated passing scenarios verify it. Read
+        okto-pulse://reference/code-traceability, section Delivery evidence.
+        """
+        from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryEvidenceUseCase
+
+        return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
+
+    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, spec_id: BoundedId, evidence: DeliveryEvidenceInput) -> McpToolOutcome:
+        """Bind accepted task execution or an authenticated TEST-card result.
+
+        Read get_delivery_evidence first for current edition/version/obligation_refs.
+        implementation: done task/bug card_id + accepted committed execution_id.
+        test: done TEST card_id + passed scenario_id + implementation binding IDs
+        actually tested. Never claim a task is a test or fabricate receipt fields.
+        Justify each mapping; reuse idempotency_key only for the identical request.
+        Waiver/revoke require an authorized human; agents must ask the user.
+        Missing/stale proof blocks done even when planning/test Skip flags are set.
+        """
+        from okto_pulse.core.application.use_cases.delivery_evidence import RecordDeliveryEvidenceUseCase
+
+        evidence = DeliveryEvidenceInput.model_validate(evidence)
+        command = DeliveryEvidenceCommand(board_id=board_id, spec_id=spec_id, **evidence.model_dump())
+        return await _execute(board_id, command, RecordDeliveryEvidenceUseCase())
+
     for handler in (
+        okto_pulse_get_delivery_evidence,
+        okto_pulse_record_delivery_evidence,
         okto_pulse_start_code_investigation,
         okto_pulse_submit_code_investigation_receipt,
         okto_pulse_get_code_investigation_receipt,

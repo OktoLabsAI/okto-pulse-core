@@ -46,7 +46,7 @@ CAPSTONE_FORBIDDEN_CORE_IMPORT_ROOTS: tuple[str, ...] = (
 
 REQUIRED_SWAP_TARGETS: tuple[str, ...] = (
     "SQLite -> Aurora/Postgres",
-    "LadybugDB/Kuzu -> Neptune",
+    "edition graph adapters -> remote graph provider",
     "filesystem -> S3",
     "local telemetry files/API -> AWS telemetry API",
     "APScheduler local runtime -> runtime scheduler adapter",
@@ -141,10 +141,9 @@ CAPSTONE_OWNERSHIP_MATRIX: tuple[CapstoneOwnershipRow, ...] = (
             "KG interfaces, policies and adapter-neutral schema compatibility helpers"
         ),
         community_adapter=(
-            "LadybugDB/Kuzu adapters in community.adapters.kuzu_* and "
-            "global_discovery_runtime"
+            "edition-owned graph adapters behind Community routed composition"
         ),
-        saas_swap_target="LadybugDB/Kuzu -> Neptune",
+        saas_swap_target="edition graph adapters -> remote graph provider",
         gate_refs=(
             "audit_dependency_conformance",
             "ImportBoundaryGate",

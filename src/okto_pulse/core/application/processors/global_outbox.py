@@ -70,6 +70,10 @@ GLOBAL_OPEN_ERROR_CODES = (
 DIGESTED_NODE_TYPES: tuple[str, ...] = VECTOR_INDEX_TYPES
 BOARD_SOURCE_INVENTORY_PAGE_SIZE = 5000
 LEARNING_RELATION_GROUP_PAGE_SIZE = 5000
+# Bound application-side identity payloads independently of graph size or
+# backend. Each visibility assignment is idempotent; a failed batch aborts
+# delivery and the next attempt safely converges already-applied batches.
+DIGEST_VISIBILITY_BATCH_SIZE = 512
 
 # The normal outbox lane must not leave a one-hour writer tombstone when the
 # embedded graph process dies.  Sixty seconds is long enough for the renewal
@@ -1238,20 +1242,23 @@ class GlobalOutboxProcessor:
         ):
             if not source_ids:
                 continue
-            result = gconn.execute(
-                "MATCH (d:DecisionDigest) "
-                "WHERE d.board_id = $bid "
-                "AND d.original_node_id IN $ids "
-                "SET d.source_revoked = $revoked "
-                "RETURN count(d)",
-                {
-                    "bid": board_id,
-                    "ids": sorted(source_ids),
-                    "revoked": revoked,
-                },
-            )
-            if result.rows:
-                changed += int(result.rows[0][0] or 0)
+            ordered_ids = sorted(source_ids)
+            for offset in range(0, len(ordered_ids), DIGEST_VISIBILITY_BATCH_SIZE):
+                result = gconn.execute(
+                    "MATCH (d:DecisionDigest) "
+                    "WHERE d.board_id = $bid "
+                    "AND d.original_node_id IN $ids "
+                    "AND (d.source_revoked IS NULL OR d.source_revoked <> $revoked) "
+                    "SET d.source_revoked = $revoked "
+                    "RETURN count(d)",
+                    {
+                        "bid": board_id,
+                        "ids": ordered_ids[offset:offset + DIGEST_VISIBILITY_BATCH_SIZE],
+                        "revoked": revoked,
+                    },
+                )
+                if result.rows:
+                    changed += int(result.rows[0][0] or 0)
         return changed
 
     def _flush_global_discovery_storage_after_batch(self) -> None:
@@ -1561,6 +1568,7 @@ class GlobalOutboxProcessor:
         edge_rows = await self._run_graph_io(
             lambda: self._read_board_digest_edge_rows(gconn, board_id)
         )
+        correct_edge_counts = self._correct_board_digest_edge_counts(edge_rows, board_id=board_id)
         inbound_edge_counts = await self._run_graph_io(
             lambda: self._read_digest_inbound_edge_counts(gconn, board_id)
         )
@@ -1759,12 +1767,7 @@ class GlobalOutboxProcessor:
                     layer_corrected += 1
                     mutated = True
 
-                correct_edge_count = self._correct_board_digest_edge_count(
-                    edge_rows,
-                    board_id=board_id,
-                    digest_id=digest_id,
-                    original_node_id=original_node_id,
-                )
+                correct_edge_count = correct_edge_counts.get((digest_id, original_node_id), 0)
                 total_inbound = inbound_edge_counts.get(digest_id, 0)
                 if correct_edge_count == 0 and total_inbound == 0:
                     await self._run_graph_io(
@@ -1907,21 +1910,24 @@ class GlobalOutboxProcessor:
         return counts
 
     @staticmethod
-    def _correct_board_digest_edge_count(
+    def _correct_board_digest_edge_counts(
         edge_rows: list[dict[str, str | int]],
         *,
         board_id: str,
-        digest_id: str,
-        original_node_id: str,
-    ) -> int:
-        return sum(
-            int(row["edge_count"])
-            for row in edge_rows
-            if row["source_board_id"] == board_id
-            and row["digest_board_id"] == board_id
-            and row["digest_id"] == digest_id
-            and row["original_node_id"] == original_node_id
-        )
+    ) -> dict[tuple[str | int, str | int], int]:
+        """Aggregate one observed inventory without collapsing duplicate multiplicity.
+
+        Both owners and both digest/source identities remain part of the predicate.
+        This call-local projection is rebuilt after every fresh graph read, including
+        post-flush verification. It is not a cached proof that writes succeeded.
+        """
+        counts: dict[tuple[str | int, str | int], int] = {}
+        for row in edge_rows:
+            if row["source_board_id"] != board_id or row["digest_board_id"] != board_id:
+                continue
+            key = (row["digest_id"], row["original_node_id"])
+            counts[key] = counts.get(key, 0) + int(row["edge_count"])
+        return counts
 
     def _verify_reconciled_digest_layers(
         self,
@@ -1979,6 +1985,7 @@ class GlobalOutboxProcessor:
                 )
 
         edge_rows = self._read_board_digest_edge_rows(gconn, board_id)
+        correct_edge_counts = self._correct_board_digest_edge_counts(edge_rows, board_id=board_id)
         inbound_edge_counts = self._read_digest_inbound_edge_counts(
             gconn,
             board_id,
@@ -2005,12 +2012,7 @@ class GlobalOutboxProcessor:
             violations.append(f"{digest_id}:unexpected_inbound_edge")
         for oid in sorted(expected_by_identity):
             stable_digest_id = f"dd_{board_id[:8]}_{oid}"
-            correct_edge_count = self._correct_board_digest_edge_count(
-                edge_rows,
-                board_id=board_id,
-                digest_id=stable_digest_id,
-                original_node_id=oid,
-            )
+            correct_edge_count = correct_edge_counts.get((stable_digest_id, oid), 0)
             if correct_edge_count != 1:
                 violations.append(f"{oid}:correct_contains_edges={correct_edge_count}")
             inbound_count = inbound_edge_counts.get(stable_digest_id, 0)

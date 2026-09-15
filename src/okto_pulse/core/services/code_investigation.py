@@ -106,6 +106,45 @@ def require_code_attestor(actor_id: str, actor_kind: str) -> str:
     return actor_id.strip()
 
 
+def _is_sequential_source_observation(
+    *,
+    predecessor: CodeInvestigationReceipt,
+    head: CodeInvestigationHead | None,
+    actor_id: str,
+    source_identity_digest: str,
+    workspace_state: ObservedWorkspaceStateRef | None,
+    observed_at: datetime,
+) -> bool:
+    """Advance one attestor's current state; never self-resolve a conflict.
+
+    Revisions are opaque assertions, not ordered Git hashes. A changed revision
+    or an explicitly distinct dirty workspace can represent sequential work.
+    Corroboration never carries across that state transition.
+    """
+    previous = predecessor.workspace_state
+    if (
+        head is None
+        or head.state is not CodeInvestigationHeadState.CURRENT
+        or head.current_receipt_id != predecessor.id
+        or predecessor.attestor_actor_id != actor_id
+        or predecessor.source_identity_digest != source_identity_digest
+        or predecessor.trust_level is CodeInvestigationTrustLevel.CONFLICTED
+        or observed_at < predecessor.observed_at
+        or previous is None
+        or workspace_state is None
+        or not previous.declared_revision
+        or not workspace_state.declared_revision
+    ):
+        return False
+    if previous.declared_revision != workspace_state.declared_revision:
+        return True
+    return (
+        (previous.declared_dirty or workspace_state.declared_dirty)
+        and previous.workspace_state_id != workspace_state.workspace_state_id
+        and previous.manifest_digest != workspace_state.manifest_digest
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CodeInvestigationChallengeMaterial:
     key_id: str
@@ -845,7 +884,15 @@ class CodeInvestigationService:
             # would poison the global head and prevent the next dependent Task
             # from refreshing its own resolutions.
             if predecessor.observation_sha256 != observation_sha256:
-                trust_level = CodeInvestigationTrustLevel.CONFLICTED
+                if not _is_sequential_source_observation(
+                    predecessor=predecessor,
+                    head=head,
+                    actor_id=actor,
+                    source_identity_digest=submission.source_identity_digest,
+                    workspace_state=workspace_state,
+                    observed_at=observed_at,
+                ):
+                    trust_level = CodeInvestigationTrustLevel.CONFLICTED
             elif (
                 predecessor.attestor_actor_id != actor
                 or predecessor.trust_level is CodeInvestigationTrustLevel.CORROBORATED

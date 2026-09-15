@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 Knowledge Base placement, authority, and safe promotion are governed by
@@ -9,6 +9,17 @@ Semantic guideline assessment follows
 `okto-pulse://reference/policy-compliance`.
 
 # Specs Workflow — Saturation, Gate, Evaluation & Coverage Progress
+
+## Mandatory delivery closeout
+
+Before moving to Done, call `okto_pulse_get_delivery_evidence`. Every active
+obligation needs committed implementation proof from a task/bug and authenticated
+passing verification from a **test card**, or separately audited human exemptions.
+Use `okto_pulse_record_delivery_evidence` to register the many-to-many associations.
+Planning Code Evidence links and Skip settings cannot satisfy this gate. Tests must
+cover the current implementation records, not a previous delivery. Do not reopen
+old done Specs merely to repair their evidence; retrospective associations are
+permitted. Follow `okto-pulse://reference/code-traceability` (Delivery evidence).
 
 ## 2.3 Specs — CRITICAL: Analysis Before Populating
 
@@ -38,6 +49,42 @@ Semantic guideline assessment follows
    - **Functional requirements**: Specific, testable behaviors. Reference real components, endpoints, or modules from the codebase when applicable.
    - **Technical requirements**: Constraints derived from actual codebase analysis — not generic "best practices" but specific to this project's stack, patterns, and architecture.
    - **Acceptance criteria**: Verifiable conditions that reference real test scenarios, endpoints, or user flows.
+
+### Mandatory Project structure applicability decision
+
+For every Spec, read `okto-pulse://reference/project-structure` and explicitly
+decide applicability while still in `draft`. If files, modules, directories,
+schemas, configuration or deliverable artifacts materially locate the work,
+author the relevant tree through the structured entity boundary. The tree is
+not a repository dump. If no meaningful structure applies, record
+`Project Structure: not applicable` in this Spec's `context`, with a specific
+reason and the current edition/scope reviewed. Preserve the rest of the context
+and read it back after saving. Saying N/A only in a chat or silently leaving
+`project_structure=null` or `[]` does not satisfy this protocol.
+
+Do not create placeholder nodes or invent files to avoid deciding. Lack of
+investigation, missing access or lack of time is not non-applicability: report
+that unresolved assessment instead. Classify known baseline items as `as_is`, planned items as `to_be`,
+and scaffolds/templates/references as `reference_scaffold` with an explicit
+interpretation limit. Make the classification directly when the gathered
+context already answers it; human editing remains an equal UI path, not a
+mandatory approval step. Keep one concise note per node, link only relevant
+Task/Test cards, and never use TO-BE nodes as Code Evidence.
+
+All tree/note/classification/Evidence edits are Draft-only. After cards exist,
+Task/Test link/unlink operations (or a batch made exclusively of those
+relations) are traceability-only in `approved`, `validated`, `in_progress`, or
+`done`: send both the current Spec version and Project structure revision.
+These writes advance only the structure revision and do not stale the accepted
+Spec validation. Never mix a semantic tree edit into an operational relation
+batch.
+
+Before proposing any forward transition or qualitative approval, the author
+and evaluator MUST check the tree or the persisted, scope-current N/A reason.
+Warn explicitly when neither exists and resolve that omission before the agent
+proceeds. The server's existing Resource Gate does not enforce this decision;
+a successful transition or green coverage report is not evidence of compliance.
+Do not reopen approved/terminal Specs automatically to retrofit this protocol.
 
 ## 2.3a Detail Saturation — DO NOT Push Forward With Gaps
 
@@ -127,6 +174,15 @@ Use this section for **status-to-action routing**. Result lifecycle rules live i
    live Validation and the current Spec context.
 
 ### The Spec Validation Gate
+
+For resource-to-task coverage, official governed copies count: the gate does
+not require references instead of copies. It checks source identity, not visual
+equality or mentions in task text. Identical mockups with different origins can
+remain separate obligations. Before retrying a resource coverage block, compare
+the reported IDs/origin with the task snapshots and follow the diagnostic/copy
+protocol in `okto-pulse://workflows/cards` and
+`okto-pulse://reference/tool-docs/mockup`; do not bypass it with N/A or invented
+provenance.
 
 When the board has `require_spec_validation=true`, advancing a spec from `approved` to `validated` is gated by `okto_pulse_submit_spec_validation`.
 
@@ -246,9 +302,10 @@ own environment, then submits the bounded receipt and Evidence.
 
 Every effective item states its origin explicitly:
 `authored`, `human_legacy_classification`, or `unclassified_legacy`. Never
-infer legacy meaning from a path, evidence type, or claim. Human legacy
-classification is an append-only UI/REST batch guarded by
-`code_traceability.evidence.classify_legacy`; there is no MCP mutation. A V1
+infer legacy meaning from a path, evidence type, or claim. Legacy
+classification is an append-only batch guarded by
+`code_traceability.evidence.classify_legacy`: authorized agents use
+`okto_pulse_classify_legacy_code_evidence`, humans may use UI/REST. A V1
 receipt remains V1 after classification and may still require a fresh V2
 investigation for current gate authority.
 

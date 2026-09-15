@@ -94,16 +94,15 @@ def active_read_filter_clause(var: str) -> str:
     """Exclude permanent source/projection tombstones from active reads.
 
     The values are trusted constants rather than caller parameters so every
-    template and adapter applies the exact same closed set.  Explicit
-    comparisons keep the predicate compatible with Kùzu while ``coalesce``
-    preserves legacy rows that have no revocation reason.
+    template and adapter applies the exact same closed set. One membership
+    expression avoids evaluating the same property/coalesce once per reason;
+    ``coalesce`` still preserves legacy rows that have no revocation reason.
     """
 
-    clauses = " AND ".join(
-        f"coalesce({var}.revocation_reason, '') <> '{reason}'"
-        for reason in sorted(ACTIVE_READ_TOMBSTONE_REASONS)
+    reasons = ", ".join(
+        f"'{reason}'" for reason in sorted(ACTIVE_READ_TOMBSTONE_REASONS)
     )
-    return f"({clauses})"
+    return f"(NOT (coalesce({var}.revocation_reason, '') IN [{reasons}]))"
 
 
 def layer_label_projection(var: str, *, alias: str = "graph_layer") -> str:
@@ -392,8 +391,8 @@ WHERE n.source_confidence >= $min_confidence
   AND {layer_filter_clause('n')}
   AND {active_read_filter_clause('n')}
   AND {code_traceability_visibility_clause('n')}
-  AND (n.created_at < $cursor_ts
-       OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
+  AND (n.created_at < timestamp($cursor_ts)
+       OR (n.created_at = timestamp($cursor_ts) AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},
@@ -410,8 +409,8 @@ WHERE n.source_confidence >= $min_confidence
   AND {active_read_filter_clause('n')}
   AND {code_traceability_visibility_clause('n')}
   AND label(n) = $node_type
-  AND (n.created_at < $cursor_ts
-       OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
+  AND (n.created_at < timestamp($cursor_ts)
+       OR (n.created_at = timestamp($cursor_ts) AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref, {layer_label_projection('n')},

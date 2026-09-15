@@ -10,6 +10,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+# Public edition contract: preserve the neutral write lifecycle and its error
+# type without requiring adapters to import private implementation modules.
+from okto_pulse.core.kg.guarded_write import (
+    GuardedWriteError as GuardedWriteError,
+    guarded_board_write as guarded_board_write,
+)
+
 
 def create_provider_registry(**providers: Any) -> Any:
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry

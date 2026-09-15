@@ -287,9 +287,10 @@ Implementation Target, never Evidence.
 
 Correct authored historical Evidence only through
 `okto_pulse_supersede_code_evidence`; never replace a snapshot in place. V1
-items project fail-closed as `uncategorized_legacy`. Only an authorized human
-may append a legacy classification through UI/REST; there is no MCP mutation,
-and classification does not upgrade the V1 receipt. Read effective
+items project fail-closed as `uncategorized_legacy`. Authorized agents may use
+`okto_pulse_classify_legacy_code_evidence` with
+`code_traceability.evidence.classify_legacy`; authorized humans may use UI/REST.
+Classification is append-only and does not upgrade the V1 receipt. Read effective
 `source_context` rather than inferring meaning from raw or bounded item lists.
 
 Pulse and Community do not open, clone, search, or resolve the repository.

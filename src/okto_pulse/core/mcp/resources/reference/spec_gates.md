@@ -1,8 +1,20 @@
 ---
-version: "1.1"
+version: "1.2"
 ---
 
 # Spec Validation Gate & Evaluation Gates
+
+## Delivery evidence gate at Done
+
+Allowed transitions and authoritative completion evaluate the same delivery proof.
+All active FR/TR/BR/AC/API/IR/OR/decision obligations need committed task/bug proof
+and authenticated passed TEST-card results for the implementation records actually
+tested. No structured obligations produces one explicit Spec-scope obligation, not
+vacuous 100% coverage. Waivers are human-authorized, exact-scope and phase-specific.
+Skip Code Evidence/Test Coverage/Test Evidence, advisory posture and greenfield do
+not bypass delivery. Existing done status is preserved, with missing proof exposed
+read-only for repair. See `okto-pulse://reference/code-traceability` and
+`okto-pulse://reference/tool-docs/code-traceability`.
 
 ## Spec Status Transitions
 
@@ -25,6 +37,17 @@ advance both counters independently. Restoring an archived Spec is not a new
 edition.
 
 ## Spec Validation Gate — `okto_pulse_submit_spec_validation`
+
+Before recommending approval, explicitly review Project Structure applicability
+under `okto-pulse://reference/project-structure`. Require a relevant authored
+tree or a justified `Project Structure: not applicable` declaration in the
+current Spec context, matching the current edition and scope. Empty/absent
+trees, uninvestigated scope, and statements confined to chat are not a decision.
+Surface omissions instead of silently approving them. This is an agent-review
+requirement, not a new deterministic server gate or an automatic score penalty.
+If already outside Draft, report the missing authoring decision and use the
+governed revision process only with the needed authorization; do not bypass
+content locks or reopen completed work automatically.
 
 When the board has `require_spec_validation=true`, advancing from `approved` to `validated` is gated.
 

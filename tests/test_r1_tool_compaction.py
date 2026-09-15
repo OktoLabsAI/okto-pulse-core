@@ -78,7 +78,7 @@ def test_tool_names_stable_after_compaction():
     # test_mcp_tools_catalog_drift.py.
     # 2026-08-22: reviewed surface is 338 tools after adding governed agent
     # legacy-Evidence classification.
-    assert len(names) == 338
+    assert len(names) == 340
     assert all(n.startswith("okto_pulse_") for n in names)
 
 
@@ -210,7 +210,7 @@ def test_tool_docs_resources_registered_and_nonempty(family):
     content = mcp_server._load_resource_file(f"reference/tool-docs/{family}.md")
     assert content.startswith("---")  # frontmatter
     expected_version = {
-        "spec": "1.2",
+        "spec": "1.3",
         "test-scenario": "2.0",
     }.get(family, "1.0")
     assert f'version: "{expected_version}"' in content

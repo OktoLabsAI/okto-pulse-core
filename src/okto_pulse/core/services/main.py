@@ -83,6 +83,11 @@ from okto_pulse.core.domain.code_traceability import (
 from okto_pulse.core.domain.knowledge_governance import (
     normalize_knowledge_governance_metadata,
 )
+from okto_pulse.core.domain.project_structure import (
+    canonical_project_structure_digest,
+    project_structure_reference_ids,
+    validate_project_structure,
+)
 from okto_pulse.core.domain.human_validation_cycle import (
     LifecycleTransitionConflictError,
     is_current_edition,
@@ -240,6 +245,7 @@ from okto_pulse.core.services.code_traceability_gate import (
     EvidenceDispositionCoverage,
     TargetEntityCoverage,
     extract_code_evidence_references,
+    is_evidence_citation_only_change,
     phases_for_transition,
     resolve_code_evidence_coverage_skip,
     resolve_code_traceability_settings,
@@ -834,6 +840,7 @@ async def _application_list(
     offset: int = 0,
     limit: int | None = None,
     includes: tuple[str, ...] = (),
+    select_fields: tuple[str, ...] = (),
 ) -> list[ApplicationRecord]:
     rows = await get_application_persistence_port().list(
         context,
@@ -846,6 +853,7 @@ async def _application_list(
             offset=offset,
             limit=limit,
             includes=includes,
+            select_fields=select_fields,
         ),
     )
     return list(rows)
@@ -2878,6 +2886,40 @@ class BoardService:
                 "cards.comments",
                 "cards.architecture_designs",
             ),
+            limit=1,
+        )
+        return rows[0] if rows else None
+
+    async def get_board_access_record(
+        self,
+        board_id: str,
+        user_id: str | None = None,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> ApplicationRecord | None:
+        """Return only board identity after applying the normal access scope.
+
+        Authorization needs existence, not the complete Board aggregate.  The
+        legacy ``get_board`` intentionally hydrates cards and their nested
+        relationships for detail screens; using it as an access probe made a
+        constant-size permission check grow with the whole board.
+        """
+
+        clauses = _board_scope_clauses(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=query_scope,
+            require_ownership=(
+                query_scope.require_ownership if query_scope is not None else True
+            ),
+        )
+        if clauses is None:
+            return None
+        rows = await _application_list(
+            self.db,
+            "board",
+            filters=tuple(clauses),
+            select_fields=("id",),
             limit=1,
         )
         return rows[0] if rows else None
@@ -8346,6 +8388,9 @@ async def _validate_spec_linked_refs(
             final_trs_structured.append(tr)
         elif hasattr(tr, "model_dump") and getattr(tr, "id", None):
             final_trs_structured.append(tr.model_dump())
+    final_project_structure = validate_project_structure(
+        _final("project_structure", None)
+    )
 
     valid_fr_indices = {str(i) for i in range(len(final_frs))}
     valid_ac_indices = {str(i) for i in range(len(final_acs))}
@@ -8556,6 +8601,34 @@ async def _validate_spec_linked_refs(
                 f"Referenced by: {owners}."
             )
 
+    project_task_ids, project_test_ids, project_evidence_ids = (
+        project_structure_reference_ids(final_project_structure)
+    )
+    if project_task_ids or project_test_ids or project_evidence_ids:
+        from okto_pulse.core.ports.structured_spec import (  # noqa: PLC0415
+            get_structured_spec_store,
+        )
+
+        reference_validator = getattr(
+            get_structured_spec_store(),
+            "validate_project_structure_references",
+            None,
+        )
+        if not callable(reference_validator):
+            errors.append("project_structure_reference_validator_not_configured")
+        else:
+            try:
+                await reference_validator(
+                    db,
+                    board_id=str(current_spec.board_id),
+                    spec_id=str(current_spec.id),
+                    task_ids=sorted(project_task_ids),
+                    test_ids=sorted(project_test_ids),
+                    evidence_ids=sorted(project_evidence_ids),
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+
     if errors:
         joined = "; ".join(errors[:10])
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
@@ -8658,11 +8731,7 @@ def _spec_context_from_snapshot(
 
 def _spec_context_provenance_or_none(
     record: object,
-) -> (
-    SpecDeliveryContextProvenance
-    | DirectSpecDeliveryContextProvenance
-    | None
-):
+) -> SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance | None:
     """Read persisted Spec provenance without deriving or live-backfilling it."""
 
     raw = getattr(record, "delivery_context_provenance", None)
@@ -8702,9 +8771,7 @@ def _spec_context_provenance_or_none(
 
 
 def _spec_context_provenance_payload(
-    provenance: (
-        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance
-    ),
+    provenance: (SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance),
 ) -> dict[str, object]:
     if isinstance(provenance, DirectSpecDeliveryContextProvenance):
         return {
@@ -8763,9 +8830,7 @@ def _direct_spec_source_context_manifest(
         "subject_id": spec_id,
         "subject_version": subject_version,
         "delivery_context": delivery_context.value,
-        "delivery_context_provenance": _spec_context_provenance_payload(
-            provenance
-        ),
+        "delivery_context_provenance": _spec_context_provenance_payload(provenance),
         "current_receipts": [],
         "investigation_outcome": None,
         "evidence_applicable": None,
@@ -8814,8 +8879,7 @@ def _spec_source_context_manifest_matches(
 
     if isinstance(provenance, DirectSpecDeliveryContextProvenance):
         return bool(
-            manifest.get("subject_type")
-            == CodeTraceabilitySubjectType.SPEC.value
+            manifest.get("subject_type") == CodeTraceabilitySubjectType.SPEC.value
             and manifest.get("subject_id") == getattr(record, "id", None)
             and manifest.get("subject_version") == provenance.source_spec_version
             and manifest.get("delivery_context") == delivery_context.value
@@ -8828,11 +8892,9 @@ def _spec_source_context_manifest_matches(
 
     manifest_provenance = manifest.get("delivery_context_provenance")
     return bool(
-        manifest.get("subject_type")
-        == CodeTraceabilitySubjectType.REFINEMENT.value
+        manifest.get("subject_type") == CodeTraceabilitySubjectType.REFINEMENT.value
         and manifest.get("subject_id") == provenance.source_refinement_id
-        and manifest.get("subject_version")
-        == provenance.source_refinement_version
+        and manifest.get("subject_version") == provenance.source_refinement_version
         and manifest.get("delivery_context") == provenance.inherited_value.value
         and isinstance(manifest_provenance, Mapping)
         and manifest_provenance.get("value") == provenance.inherited_value.value
@@ -8840,8 +8902,7 @@ def _spec_source_context_manifest_matches(
         == provenance.source_refinement_id
         and manifest_provenance.get("source_refinement_version")
         == provenance.source_refinement_version
-        and getattr(record, "refinement_id", None)
-        == provenance.source_refinement_id
+        and getattr(record, "refinement_id", None) == provenance.source_refinement_id
         and isinstance(
             getattr(record, "source_refinement_snapshot_id", None),
             str,
@@ -9312,11 +9373,9 @@ class SpecService:
                 )
             source_snapshot_id = snapshot.id
             source_snapshot_version = snapshot.version
-            delivery_context, delivery_context_provenance = (
-                _spec_context_from_snapshot(
-                    snapshot,
-                    refinement_id=data.refinement_id,
-                )
+            delivery_context, delivery_context_provenance = _spec_context_from_snapshot(
+                snapshot,
+                refinement_id=data.refinement_id,
             )
             if delivery_context is None or delivery_context_provenance is None:
                 raise CodeDeliveryContextRequired(
@@ -9391,6 +9450,17 @@ class SpecService:
                 "acceptance_criteria": data.acceptance_criteria,
             }
         )
+        initial_project_structure = validate_project_structure(
+            [node.model_dump(mode="json") for node in data.project_structure]
+            if data.project_structure is not None
+            else None
+        )
+        initial_project_structure_revision = (
+            1 if initial_project_structure is not None else 0
+        )
+        initial_project_structure_digest = canonical_project_structure_digest(
+            initial_project_structure
+        )
         spec = _new_application_record(
             "spec",
             id=spec_id,
@@ -9424,6 +9494,9 @@ class SpecService:
             decisions=[d.model_dump() for d in data.decisions]
             if data.decisions
             else None,
+            project_structure=initial_project_structure,
+            project_structure_revision=initial_project_structure_revision,
+            project_structure_digest=initial_project_structure_digest,
             status=data.status,
             edition=1,
             assignee_id=data.assignee_id,
@@ -9456,6 +9529,12 @@ class SpecService:
                 self.db, spec, _submitted_mockups, entity_type="spec"
             )
             spec.screen_mockups = _submitted_mockups
+        if initial_project_structure is not None:
+            await _validate_spec_linked_refs(
+                self.db,
+                spec,
+                {"project_structure": initial_project_structure},
+            )
         await _application_add(
             self.db,
             spec,
@@ -9555,6 +9634,25 @@ class SpecService:
                         }
                     ]
                     if data.acceptance_criteria
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "project_structure",
+                            "old": None,
+                            "new": {
+                                "revision": initial_project_structure_revision,
+                                "digest": initial_project_structure_digest,
+                                "node_ids": [
+                                    str(node["id"])
+                                    for node in initial_project_structure[:50]
+                                ],
+                                "node_count": len(initial_project_structure),
+                            },
+                        }
+                    ]
+                    if initial_project_structure is not None
                     else []
                 ),
                 *(
@@ -10303,8 +10401,7 @@ class SpecService:
         )
         refinement_link_changed = next_refinement_id != spec.refinement_id
         parent_link_changed = (
-            next_ideation_id != spec.ideation_id
-            or refinement_link_changed
+            next_ideation_id != spec.ideation_id or refinement_link_changed
         )
         lineage_is_pinned = any(
             value is not None
@@ -10444,8 +10541,8 @@ class SpecService:
                                 )
                             }
                         )
-                    manifest, manifest_sha256 = (
-                        _snapshot_source_context_manifest(bootstrap_snapshot)
+                    manifest, manifest_sha256 = _snapshot_source_context_manifest(
+                        bootstrap_snapshot
                     )
                     next_provenance = SpecDeliveryContextProvenance(
                         value=requested_context,
@@ -10488,16 +10585,13 @@ class SpecService:
                         },
                     ):
                         raise LifecycleTransitionConflictError("spec", spec.id)
-                    update_data["source_refinement_snapshot_id"] = (
-                        bootstrap_snapshot.id
-                    )
+                    update_data["source_refinement_snapshot_id"] = bootstrap_snapshot.id
                     update_data["source_refinement_version"] = (
                         bootstrap_snapshot.version
                     )
                 else:
                     if (
-                        getattr(spec, "source_refinement_snapshot_id", None)
-                        is not None
+                        getattr(spec, "source_refinement_snapshot_id", None) is not None
                         or getattr(spec, "source_refinement_version", None) is not None
                     ):
                         raise SpecLineagePreflightError(
@@ -10518,13 +10612,11 @@ class SpecService:
                         source_spec_id=spec.id,
                         source_spec_version=int(spec.version) + 1,
                     )
-                    manifest, manifest_sha256 = (
-                        _direct_spec_source_context_manifest(
-                            spec_id=spec.id,
-                            delivery_context=requested_context,
-                            provenance=next_provenance,
-                            subject_version=int(spec.version) + 1,
-                        )
+                    manifest, manifest_sha256 = _direct_spec_source_context_manifest(
+                        spec_id=spec.id,
+                        delivery_context=requested_context,
+                        provenance=next_provenance,
+                        subject_version=int(spec.version) + 1,
                     )
                 update_data["delivery_context"] = requested_context
                 update_data["delivery_context_provenance"] = (
@@ -10555,13 +10647,11 @@ class SpecService:
                         source_spec_id=spec.id,
                         source_spec_version=int(spec.version) + 1,
                     )
-                    manifest, manifest_sha256 = (
-                        _direct_spec_source_context_manifest(
-                            spec_id=spec.id,
-                            delivery_context=requested_context,
-                            provenance=next_provenance,
-                            subject_version=int(spec.version) + 1,
-                        )
+                    manifest, manifest_sha256 = _direct_spec_source_context_manifest(
+                        spec_id=spec.id,
+                        delivery_context=requested_context,
+                        provenance=next_provenance,
+                        subject_version=int(spec.version) + 1,
                     )
                     update_data["source_context_manifest"] = manifest
                     update_data["source_context_sha256"] = manifest_sha256
@@ -11390,6 +11480,11 @@ class SpecService:
                 details={"spec_edition": int(spec.edition)},
             )
 
+    async def _validate_delivery_done(self, spec) -> None:
+        from okto_pulse.core.services.delivery_evidence import require_spec_delivery
+
+        await require_spec_delivery(self.db, spec)
+
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
     ) -> Spec | None:
@@ -11789,6 +11884,10 @@ class SpecService:
             to_status=data.status.value,
         )
 
+        # Delivery proof is separate from planning coverage and cannot be skipped.
+        if data.status == SpecStatus.DONE:
+            await self._validate_delivery_done(spec)
+
         # Every Spec lifecycle write shares the board dependency-graph fence.
         # This prevents a prerequisite Done→Draft transition from racing a
         # dependent's readiness check. The caller-owned transaction keeps the
@@ -11830,6 +11929,10 @@ class SpecService:
         # a concurrent PASS -> FAIL replacement cannot be promoted.
         if data.status == SpecStatus.VALIDATED:
             await self._enforce_spec_checklist_gate(spec, surface="move_spec")
+        if data.status == SpecStatus.DONE:
+            from okto_pulse.core.services.delivery_evidence import require_spec_delivery
+
+            await require_spec_delivery(self.db, spec, for_update=True)
         await _record_critical_context_decision(
             self.db,
             decision=critical_context_decision,
@@ -16160,11 +16263,15 @@ class RefinementService:
             "decisions",
             "delivery_context",
         }
-        # Spec eaf78891 (Ideação #2): refinement_semantic_fields cover all
-        # update_data keys that affect KG extraction. Refinements have a much
-        # smaller surface than specs, so any update is treated as semantic.
-        bumps_version = bool(content_fields & update_data.keys())
-        bumps_semantic = bool(update_data)
+        # Citation-only edits bind evidence to the current narrative without
+        # invalidating its receipt. All other updates retain semantic handling.
+        semantic_update = dict(update_data)
+        if "analysis" in semantic_update and is_evidence_citation_only_change(
+            refinement.analysis, semantic_update["analysis"]
+        ):
+            semantic_update.pop("analysis")
+        bumps_version = bool(content_fields & semantic_update.keys())
+        bumps_semantic = bool(semantic_update)
 
         old_data = {k: getattr(refinement, k) for k in update_data.keys()}
 
@@ -16706,17 +16813,13 @@ class RefinementService:
             )
             if active_evidence and not callable(classification_reader):
                 raise CodeInvestigationCurrentnessUnknown(
-                    details={
-                        "reason": "snapshot_classification_reader_unavailable"
-                    }
+                    details={"reason": "snapshot_classification_reader_unavailable"}
                 )
             if active_evidence:
                 latest_classifications = list(
                     await classification_reader(
                         board_id=refinement.board_id,
-                        evidence_ids=tuple(
-                            sorted(item.id for item in active_evidence)
-                        ),
+                        evidence_ids=tuple(sorted(item.id for item in active_evidence)),
                     )
                 )
 
@@ -16745,13 +16848,16 @@ class RefinementService:
                         board_id=refinement.board_id,
                         receipt_id=receipt.id,
                     )
-                    if code_investigation_receipt_currentness(
-                        receipt,
-                        head=head,
-                        at=evaluated_at,
-                        revocation=revocation,
-                        expected_delivery_context=expected_context,
-                    ) is not CodeInvestigationReceiptCurrentness.CURRENT:
+                    if (
+                        code_investigation_receipt_currentness(
+                            receipt,
+                            head=head,
+                            at=evaluated_at,
+                            revocation=revocation,
+                            expected_delivery_context=expected_context,
+                        )
+                        is not CodeInvestigationReceiptCurrentness.CURRENT
+                    ):
                         continue
                     if head is None:  # pragma: no cover - currentness proves it.
                         raise CodeInvestigationCurrentnessUnknown(
@@ -16766,9 +16872,7 @@ class RefinementService:
                             payload_sha256=receipt.payload_sha256,
                             delivery_context=receipt.delivery_context,
                             contextual_outcome=receipt.contextual_outcome,
-                            context_contract_version=(
-                                receipt.context_contract_version
-                            ),
+                            context_contract_version=(receipt.context_contract_version),
                         )
                     )
                 receipt_count += len(receipt_page.items)
@@ -16801,9 +16905,7 @@ class RefinementService:
                 evidence,
                 classification,
             )
-            contextual_payload = source_context_evidence_payload_v2(
-                effective_context
-            )
+            contextual_payload = source_context_evidence_payload_v2(effective_context)
             code_evidence_manifest.append(
                 {
                     "evidence_id": evidence.id,
@@ -16819,9 +16921,7 @@ class RefinementService:
                     "classification_revision": (
                         effective_context.classification_revision
                     ),
-                    "classification_sha256": (
-                        effective_context.classification_sha256
-                    ),
+                    "classification_sha256": (effective_context.classification_sha256),
                 }
             )
         code_evidence_manifest.sort(key=lambda item: item["evidence_id"])

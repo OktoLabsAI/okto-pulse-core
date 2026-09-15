@@ -194,6 +194,10 @@ class RelationalApplicationAdapter(Protocol):
 
         ...
 
+    def delivery_evidence(self, session: Any):
+        """Return transaction-scoped delivery proof persistence and projection."""
+        ...
+
     def delivery_forecast_read(self, session: Any) -> "DeliveryForecastEvidencePort":
         """Return authorized Phase 1 evidence for governed forecasting."""
 

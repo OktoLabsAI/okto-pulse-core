@@ -7,7 +7,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 # Public names are resolved LAZILY (PEP 562 module ``__getattr__``) so importing
 # ``okto_pulse.core`` — or any submodule, which runs this ``__init__`` first —

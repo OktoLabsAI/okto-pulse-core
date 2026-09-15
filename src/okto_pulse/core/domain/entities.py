@@ -92,9 +92,7 @@ class Spec:
     source_refinement_version: int | None = None
     delivery_context: DeliveryContext | None = None
     delivery_context_provenance: (
-        SpecDeliveryContextProvenance
-        | DirectSpecDeliveryContextProvenance
-        | None
+        SpecDeliveryContextProvenance | DirectSpecDeliveryContextProvenance | None
     ) = None
     source_context_manifest: dict[str, Any] | None = None
     source_context_sha256: str | None = None
@@ -110,6 +108,9 @@ class Spec:
     integration_requirements: list[Any] | None = None
     observability_requirements: list[Any] | None = None
     decisions: list[Any] | None = None
+    project_structure: list[Any] | None = None
+    project_structure_revision: int = 0
+    project_structure_digest: str | None = None
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
     skip_trs_coverage: bool = False

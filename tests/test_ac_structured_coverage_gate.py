@@ -48,6 +48,13 @@ from okto_pulse.core.services.main import CardService, SpecService
 USER_ID = "ac-structured-gate-agent"
 
 
+@pytest.fixture(autouse=True)
+def _completed_delivery_for_independent_acceptance_gate(monkeypatch):
+    from delivery_evidence_testing import install_complete_delivery_port
+
+    install_complete_delivery_port(monkeypatch)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------

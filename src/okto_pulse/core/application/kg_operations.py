@@ -422,6 +422,16 @@ class CoreKnowledgeGraphOperations:
             include_code_traceability=include_code_traceability,
         )
 
+    async def stage_spec_projection_repair(
+        self, *, board_id: str, spec_ids: tuple[str, ...], actor_id: str, reason: str,
+    ) -> dict[str, object]:
+        from okto_pulse.core.kg.deterministic_projection_repair import stage_spec_projection_repair
+
+        return await stage_spec_projection_repair(
+            self.__relational_context, board_id=board_id, spec_ids=spec_ids,
+            actor_id=actor_id, reason=reason,
+        )
+
     async def start_historical_consolidation(self, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import (
             start_historical_consolidation,

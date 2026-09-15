@@ -166,7 +166,9 @@ class _GraphScope:
         if self.fail:
             raise RuntimeError("injected graph read failure")
         assert "MATCH (n)" in query
-        assert "string_split(n.source_artifact_ref, ':')" in query
+        assert "split(n.source_artifact_ref, ':')" in query
+        assert "CASE parts[0]" in query
+        assert "END AS artifact_type, parts[1] AS artifact_id" in query
         assert "RETURN DISTINCT artifact_type, artifact_id" in query
         assert "ORDER BY artifact_type ASC, artifact_id ASC" in query
         assert "LIMIT $scan_limit" in query
@@ -198,6 +200,45 @@ class _GraphTransaction:
 class _GraphRuntime:
     def exists(self, _board_id: str) -> bool:
         return True
+
+
+def test_source_inventory_ignores_valid_non_governed_source_families(
+    monkeypatch,
+) -> None:
+    class _Reader:
+        def fetch(self, _board_id: str):
+            return SimpleNamespace(
+                complete=True,
+                cause=None,
+                rows=(
+                    {
+                        "id": "receipt-1",
+                        "artifact_type": "code_investigation_receipt",
+                        "source_ref": "code_investigation_receipt:receipt-1",
+                    },
+                    {
+                        "id": "spec-1",
+                        "artifact_type": "spec",
+                        "source_ref": "spec:spec-1",
+                        "status": "done",
+                        "content_hash": "hash-1",
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(
+        reconciler,
+        "get_kg_registry",
+        lambda: SimpleNamespace(require_board_source_reader=lambda: _Reader()),
+    )
+
+    inventory, complete, cause = reconciler._build_source_classification_map(
+        "board-1"
+    )
+
+    assert complete is True
+    assert cause is None
+    assert set(inventory) == {("spec", "spec-1")}
 
 
 @pytest.mark.asyncio
