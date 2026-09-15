@@ -3364,6 +3364,15 @@ async def compute_delivery_intelligence(
                 else str(value).strip().casefold()
                 for value in raw_values
             )
+            # ``all`` remains the wildcard for positive lane/role filters:
+            # ``lane=all`` / ``role=all`` never narrow the projection. Negative
+            # operators keep their literal semantics.
+            if (
+                field != "sprint_id"
+                and clause.operator in ("eq", "in")
+                and "all" in values
+            ):
+                continue
             if clause.operator == "eq" and candidate != values[0]:
                 return False
             if clause.operator == "ne" and candidate == values[0]:
