@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "0bd300590448e9d71756c965a3202bf4047d2da6ff4a589213eb3a4bb2549b86",
+    "content_sha256": "67c5886973b7004f34d520bcb58d4822b0de1305da4a58ce20b6f65392702732",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/code-traceability",
@@ -43,7 +43,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "7bd8bd3bd8ecdc151922dba733725279cf43de8bda0fca30f5d402d9731bc1f9",
+  "manifest_sha256": "cf37ee6317e701a8723cb2234daa6b73b882b85831c123c08615b25a30720a7a",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
