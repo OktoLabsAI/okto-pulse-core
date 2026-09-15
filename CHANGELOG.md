@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- Expose the retryable board-erasure lock-contention exception through the
+  public `core.ports.board_erasure_control` contract so editions do not need
+  to import the private KG governance implementation when mapping it to their
+  transport error surface.
+
 - Core 0.3.3 promotion keeps the manifest, package version and lock aligned.
   The cross-edition dependency audit now assigns `okto-grafx[accel]` to the
   Community adapter instead of requiring the removed Ladybug runtime; Grafx
