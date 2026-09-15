@@ -4,7 +4,7 @@
     "allowed_template_links": [
       "okto-pulse://workflows/"
     ],
-    "content_sha256": "69c1b1eeec7c8c7a8fdebd4325707cb4483c808e2fd02ec7843fa28ac64f1f43",
+    "content_sha256": "0bd300590448e9d71756c965a3202bf4047d2da6ff4a589213eb3a4bb2549b86",
     "cross_links": [
       "okto-pulse://reference/card_types",
       "okto-pulse://reference/code-traceability",
@@ -23,7 +23,6 @@
       "okto-pulse://reference/tool-families/spec_entity_remove",
       "okto-pulse://reference/tools_catalog",
       "okto-pulse://reference/transitions",
-      "okto-pulse://workflows/",
       "okto-pulse://workflows/cards",
       "okto-pulse://workflows/ideations",
       "okto-pulse://workflows/kg",
@@ -44,12 +43,12 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "a632e1900be485773f421a24be2524ac6e9ec41ad3f3721ff0076b8499594e72",
+  "manifest_sha256": "7bd8bd3bd8ecdc151922dba733725279cf43de8bda0fca30f5d402d9731bc1f9",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
     {
-      "content_sha256": "fa32ddb2027b09d906211e73ada2a7113df16d88388365dab7bb0c8ab4961fda",
+      "content_sha256": "f62c2a8275b59774527c83c73ed9ebcd2e793c3b7083dfb2c8a725030bb3a295",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
@@ -93,7 +92,7 @@
       "uri": "okto-pulse://reference/destructive_ops"
     },
     {
-      "content_sha256": "ba06195137be1dad4c21ed40dc7af826546cce9cad80798103546070b35dd42f",
+      "content_sha256": "96c83505da6c3104891695bbfb3f13b009c3252b7d180cbc12ac4ca4f8f4cb43",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/kg-health",
@@ -103,7 +102,8 @@
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/quality-assessments",
-        "okto-pulse://workflows/kg"
+        "okto-pulse://workflows/kg",
+        "okto-pulse://workflows/preflight"
       ],
       "required_cross_links": [
         "okto-pulse://reference/quality-assessments"
@@ -151,11 +151,12 @@
       "uri": "okto-pulse://reference/policy-compliance"
     },
     {
-      "content_sha256": "7b66e232612631fc23c5f09e16ae7ef8dfb36aba742220f4888971c9f19f8862",
+      "content_sha256": "c6f345504417512daac143db1e392b23e0d23a7e257dfb158797369fc7df2134",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/policy-compliance",
-        "okto-pulse://reference/quality-assessments"
+        "okto-pulse://reference/quality-assessments",
+        "okto-pulse://workflows/preflight"
       ],
       "required_cross_links": [
         "okto-pulse://reference/quality-assessments"
@@ -278,7 +279,7 @@
       "uri": "okto-pulse://reference/tool-docs/quality"
     },
     {
-      "content_sha256": "db7ad8b46dceb70a0c42da140328199aea31db4fa00c1e27ebf7408120d31710",
+      "content_sha256": "53d116ff2006ac990f3e1200a1c26e9962dad8c06ee4f09f1aa3bbcf58a312bd",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
@@ -294,7 +295,7 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "1b1d1b34328825b74605701efa323cd7ca66c8c6e24250b65656a3623c53f146",
+      "content_sha256": "4dabfbfbf871eee11e7e699882c82c7dcf8a98c3eaa05f12b2a86790322257c2",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
@@ -387,7 +388,7 @@
       "uri": "okto-pulse://reference/tools_catalog"
     },
     {
-      "content_sha256": "ffc5b51a4a223271e24977831ea673d4e1fac73b0fabbb837c29aafa9e0ef306",
+      "content_sha256": "d33090bbb3e1f4ba645b44a1ab8e8d1059cf75d098e7c88bd4d2649da1ef78e7",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -406,7 +407,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "3240c9a5734b9b246fb863431192eef0b37b13bb780c8754a729322559e11667",
+      "content_sha256": "7f04e969a38f81a1fe4162d74bbd16ce460fb6b0d1c0c5965ac1f9ca9edd733f",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -461,13 +462,16 @@
       "uri": "okto-pulse://workflows/kg"
     },
     {
-      "content_sha256": "00b69d0e6559870662330caf32825e92b65ff8ec7b018c4143c714dac97c354b",
+      "content_sha256": "392f42914321614a49084e6d88a778dcef26d55cb0f6f3cc2b4ff27344c71ac2",
       "cross_links": [
+        "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
+        "okto-pulse://reference/kg-health",
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/project-structure",
         "okto-pulse://reference/projection-profiles",
         "okto-pulse://reference/quality-assessments",
+        "okto-pulse://reference/transitions",
         "okto-pulse://workflows/cards"
       ],
       "required_cross_links": [
@@ -480,7 +484,7 @@
       "uri": "okto-pulse://workflows/preflight"
     },
     {
-      "content_sha256": "3eaed17cfc920407c935dd643a6b9de2e49ce04ae24ffe1153ee843371dd343e",
+      "content_sha256": "a5699335030631872a7513ef47fc757c8311f138c991debe5022850dec5648ac",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
@@ -500,7 +504,7 @@
       "uri": "okto-pulse://workflows/refinements"
     },
     {
-      "content_sha256": "b28b2ad9df57b77d5ad802a272f2efcc7fe3f2cf229b4d7a66e453a4f85fcd0c",
+      "content_sha256": "2f36edc70f3687eb97aec341dcd88da5250b30a94ef4f9531cfa1b7e01034320",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",
@@ -508,7 +512,9 @@
         "okto-pulse://reference/project-structure",
         "okto-pulse://reference/quality-assessments",
         "okto-pulse://reference/spec_gates",
+        "okto-pulse://reference/tool-docs/mockup",
         "okto-pulse://reference/tool-docs/quality",
+        "okto-pulse://workflows/cards",
         "okto-pulse://workflows/kg"
       ],
       "required_cross_links": [
