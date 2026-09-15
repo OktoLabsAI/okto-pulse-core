@@ -498,3 +498,100 @@ async def test_sprint_commitment_counts_done_baseline_member_after_scope_removal
     assert row["total_cards"] == 0
     assert row["commitment"]["removed_count"] == 1
     assert row["completed_committed_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "wildcard_filters",
+    (
+        (AnalyticsFilterClause("lane", "in", ("all",)),),
+        (AnalyticsFilterClause("role", "in", ("all",)),),
+        (
+            AnalyticsFilterClause("lane", "eq", "all"),
+            AnalyticsFilterClause("role", "eq", "ALL"),
+        ),
+    ),
+)
+async def test_delivery_intelligence_keeps_all_as_positive_filter_wildcard(
+    monkeypatch: pytest.MonkeyPatch,
+    wildcard_filters: tuple[AnalyticsFilterClause, ...],
+) -> None:
+    """``lane=all`` / ``role=all`` must match every row, not the literal text."""
+
+    from okto_pulse.core.domain.enums import CardStatus, CardType
+    from okto_pulse.core.ports.analytics_foundation import AnalyticsFoundationQuery
+    from okto_pulse.core.services import analytics_service
+
+    async def fake_sprints(*_args, **_kwargs):
+        return {
+            "sprints": [
+                {
+                    "sprint_id": "sprint-1",
+                    "title": "Sprint 1",
+                    "status": "active",
+                    "lane_type": "normal",
+                    "done_cards": 5,
+                    "commitment": {
+                        "state": "available",
+                        "original_member_count": 5,
+                        "added_count": 0,
+                        "removed_count": 0,
+                    },
+                    "completed_committed_count": 5,
+                }
+            ]
+        }
+
+    cards = [
+        SimpleNamespace(
+            id=f"card-{index}",
+            sprint_id="sprint-1",
+            created_by="implementation-agent",
+            status=CardStatus.DONE,
+            card_type=CardType.NORMAL,
+            created_at=NOW - timedelta(hours=2),
+            updated_at=NOW,
+            validations=[
+                {"outcome": "success", "reviewer_id": "validation-agent"}
+            ],
+        )
+        for index in range(5)
+    ]
+
+    async def fake_list(_db, entity: str, **_kwargs):
+        assert entity == "card"
+        return cards
+
+    monkeypatch.setattr(analytics_service, "compute_sprints_analytics", fake_sprints)
+    monkeypatch.setattr(analytics_service, "_analytics_list", fake_list)
+
+    async def _payload(filters: tuple[AnalyticsFilterClause, ...]):
+        query = AnalyticsFoundationQuery(
+            board_id="board-1",
+            actor_scope_ref="actor:owner-1",
+            window=AnalyticsUtcWindow(NOW - timedelta(days=30), NOW),
+            filters=(
+                *filters,
+                AnalyticsFilterClause("contribution_view", "eq", "aggregates"),
+            ),
+            as_of=NOW,
+        )
+        return await analytics_service.compute_delivery_intelligence(
+            object(),
+            query=query,
+            actor_id="owner-1",
+            operator_visibility=False,
+            minimum_sample_size=5,
+        )
+
+    unfiltered = await _payload(())
+    wildcard = await _payload(wildcard_filters)
+
+    # Only the echoed query metadata may differ; every projected value must be
+    # identical to the unfiltered read.
+    query_echo = {"filters", "query_fingerprint"}
+    assert unfiltered["contributions"]
+    assert {k: v for k, v in wildcard.items() if k not in query_echo} == {
+        k: v for k, v in unfiltered.items() if k not in query_echo
+    }
+
