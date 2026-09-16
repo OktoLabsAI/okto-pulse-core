@@ -2,7 +2,10 @@
 
 Status: **plan agreed on 2026-09-16, no code landed yet.** Branch `feature/v0.3.4`
 in both repos. Community-side items live in
-`okto-pulse/docs/KG_TRACEABILITY_GAPS_COMMUNITY.md`.
+`okto-pulse/docs/KG_TRACEABILITY_GAPS_COMMUNITY.md`. Tracked in Pulse as ideation
+`dfbdc0f4-9428-4f10-afd6-30dd39edda4d` on board Okto Pulse; decisions D1-D7 are
+recorded in its Q&A (D3, D4, D5 and D7 decided by the user on 2026-09-16, see
+section 8).
 
 ## 1. Why
 
@@ -128,13 +131,13 @@ surface, **D** docs, **S** schema evolution.
 | Id | Class | Gap | Source of truth | Target | Notes |
 |---|---|---|---|---|---|
 | G1 | E | `tests` TestScenario->Criterion never emitted: resolver lacks the `ac_<id>` branch | `test_scenarios[].linked_criteria` -> `acceptance_criteria[].id` | `tests/ac_match@v2.0` (existing slot) | One resolver branch plus a regression test with id-form links; the only existing test uses text-form links. Highest-leverage fix in the whole plan. |
-| G2 | E | Card -> spec child links never projected | spec child `linked_task_ids` on FR, TR, AC, TS, BR, API, IR, OR, Decision | `supports` Entity(card) -> Requirement / Constraint / Criterion / TestScenario / APIContract / Decision, rule `supports/spec_child_task_link@v2.0` | All seven pairs exist. Emit **card-side** (see design note below). Bug cards cannot carry `supports` (no `(Bug, X)` pair): skip and log until phase 5. |
+| G2 | E | Card -> spec child links never projected | spec child `linked_task_ids` on FR, TR, AC, TS, BR, API, IR, OR, Decision | `supports` Entity(card) -> Requirement / Constraint / Criterion / TestScenario / APIContract / Decision, rule `supports/spec_child_task_link@v2.0` | All seven pairs exist. Emit **card-side** (see design note below). Bug cards cannot carry `supports` until the `(Bug, X)` pairs land in phase 5 (same release, decision D4): log them in the ledger in phase 1, project them in phase 5b with the same emitter. |
 | G3 | E | Card dependencies never projected | `card_dependencies(card_id, depends_on_id)` | `precedes` Entity(card) -> Entity(card), rule `precedes/card_dependency/<dep_id>@v2.0` | Mirrors `precedes/spec_dependency`; direction prerequisite -> dependent. Enables cycle and execution-order queries. |
 | G4 | E | Card's own `test_scenario_ids` never projected | `cards.test_scenario_ids` | `supports` Entity(card) -> TestScenario | Merged into the card-side emitter of G2 so one owner asserts card->scenario from both sources. |
-| G5 | E | `violates` Bug->Constraint has zero producers; `explain_constraint.violations` is always `[]` | `cards.origin_task_id` -> origin card -> its spec -> TR/BR whose `linked_task_ids` contain the origin card | `violates/origin_task_constraint@v2.0`, confidence 0.8 | Resolve in `_resolve_missing_link_candidates` (already loads cards; add the spec load). Heuristic by construction; the rule slot says so. |
+| G5 | E | `violates` Bug->Constraint has zero producers; `explain_constraint.violations` is always `[]` | `cards.origin_task_id` -> origin card -> its spec -> TR/BR whose `linked_task_ids` contain the origin card | `violates/origin_task_constraint@v2.0`, confidence 0.8 | Resolve in `_resolve_missing_link_candidates` (already loads cards; add the spec load). Heuristic by construction; the rule slot says so. Decision D3 extends the same path in phase 5b to `violates (Bug, Requirement)` and `violates (Bug, Criterion)`. |
 | G6 | E | Decision supersedence never projected; superseded decisions dropped from the projection | `decisions[].supersedes_decision_id`, `decisions[].status` | `supersedes` Decision->Decision, rule `supersedes/spec_decision@v2.0`; stamp `superseded_by`/`superseded_at` on the predecessor | `supersedes` is cognitive-owned; use the existing `system:` exemption (precedent `supersedes/code_traceability`). Keep superseded nodes as tombstoned-but-walkable. |
 | G7 | E | `api_contracts[].linked_rules` ignored | `api_contracts[].linked_rules` | `implements` APIContract->Constraint (pair exists), rule `implements/api_rule_link@v2.0` | Sits beside the existing `implements/fr_match` loop. |
-| G8 | S | BR->FR, OR->IR, IR->FR have no endpoint pair | `business_rules[].linked_requirements` etc. | needs `derives_from (Constraint, Requirement)` and `(Requirement, Requirement)` | Phase 5. This is the authoritative FR-coverage source in the relational gate. |
+| G8 | S | BR->FR, OR->IR, IR->FR have no endpoint pair | `business_rules[].linked_requirements` etc. | needs `derives_from (Constraint, Requirement)` and `(Requirement, Requirement)` | Phase 5b (in 0.3.4 by decision D5). This is the authoritative FR-coverage source in the relational gate. |
 | G9 | E | `kind_of` is NULL on every projected node, so bare labels are over-broad (Entity = board/spec/sprint/card/story/...; Constraint = TR/BR/OR; Requirement = FR/IR; APIContract = spec contract / architecture interface) | artifact type dispatched by `process_artifact`; `cards.card_type`; spec collection name | system-declared subtypes in `NodeSubtypeRegistry`, e.g. Entity: `board`, `spec`, `sprint`, `card_task`, `card_test`, `story`, `ideation`, `refinement`, `amendment`, `architecture_design`, `architecture_entity`; Constraint: `technical_requirement`, `business_rule`, `observability_requirement`; Requirement: `functional_requirement`, `integration_requirement`; APIContract: `spec_contract`, `architecture_interface` | Data-only, no SCHEMA_VERSION bump. Do **not** put severity or status in `kind_of`; it is a single slot reserved for artifact kind. Verify `kind_of` is in `_NODE_UPDATEABLE_ATTRS` so existing nodes refresh. |
 | G10 | E | Node `created_at` is projection time and is re-stamped by rebuild/DLQ replay; no relational timestamp reaches the graph | `cards.created_at`, `specs.created_at`, ... | stamp `created_at` from the source row at CREATE | Zero DDL, hash-neutral (`created_at` is in `EXCLUDED_HASH_FIELDS`). Semantic change for keyset ordering; documented. Phase 5 adds dedicated `source_*` columns if the overload proves confusing. |
 | G11 | E | Amendment lineage flattened into content text; no enqueue on amendment events | `amendment_hotfix_revisions.regression_scenario_ids`, `revision_spec_id`, `original_spec_id` | `supports` Entity(amendment)->TestScenario; `supersedes` Entity(revision spec)->Entity(original spec); `kind_of=amendment` | Also add the `amendment.*` events to the consolidation enqueuer. |
@@ -218,20 +221,31 @@ Fixes (phase 4):
 
 ## 6. Delivery plan
 
-Order matters: emitters first (they make the graph true), then the read surface
-(it makes the graph useful), then lifecycle. Each phase lands as its own PR pair
-(core first, then community) targeting `develop`.
+Order matters: emitters first (they make the graph true), then the schema
+evolution (decision D5 puts it inside 0.3.4), then the emitters that depend on
+it, then the read surface (it makes the graph useful), then lifecycle.
+Execution order: 0 -> 1 -> 2 -> 5 -> 5b -> 3 -> 4 -> 6. Each phase lands as its
+own PR pair (core first, then community) targeting `develop`. Every phase that
+touches projection exits with `okto_pulse_kg_orphan_report = 0` (decision D4:
+no node may be loose in the graph).
 
 ### Phase 0: prerequisites (core)
 
 - P0.1 Port `tests/kg_schema_testing.py` and `kg_registry_testing.py` off the
   removed `kg_runtime` / `kuzu_graph_transaction` modules onto the Grafx
   adapters. ~89 core test files depend on it; without it no real-graph
-  projection test runs. (Also unblocks the deferred replay-only cognitive commit
-  WIP branch `feature/v0.3.4-kg-replay-only-cognitive-commit`.)
+  projection test runs, and phase 5 changes the schema, which must not be
+  validated with in-memory fakes only.
 - P0.2 Baseline census on the three local boards (counts per edge type, per
-  rule_id) saved under `docs/evidence/` so every later phase has a before/after.
-- P0.3 Decide the open items in section 8.
+  rule_id, orphan report) saved under `docs/evidence/` so every later phase has
+  a before/after.
+- P0.3 Sequencing (decision D7, user): this initiative runs first (phases 1-3);
+  the WIP branch `feature/v0.3.4-kg-replay-only-cognitive-commit` is rebased
+  afterwards on the result, and its conflicts in `primitives.py` /
+  `consolidation.py` are resolved in that rebase.
+- P0.4 Confirm that `kgref:` resolves a working-layer target (condition of D1);
+  if it is canonical-only, extend the resolver with a layer hint for `system:`
+  writers.
 
 ### Phase 1: projection emitters (core), zero DDL
 
@@ -303,17 +317,55 @@ these shapes and say so in their docs.
 L-A through L-H above. Order: L-E and L-A (docs, cheap, immediate effect),
 L-C, L-D, L-F, L-G, L-B, L-H.
 
-### Phase 5: schema evolution 0.5.0 -> 0.6.0 (deferred by default)
+### Phase 5: schema evolution 0.5.0 -> 0.6.0 (inside 0.3.4, decision D5)
 
-Columns: `severity`, `source_status`, `source_created_at`, `source_updated_at`,
-`resolved_at`. Pairs: `derives_from (Constraint, Requirement)`,
-`derives_from (Requirement, Requirement)`, `derives_from (Decision, Constraint)`,
-`violates (Bug, Requirement)`, `violates (Bug, Criterion)`,
-`supports (Bug, Requirement | Constraint | Criterion | TestScenario | APIContract | Decision)`.
-Requires a new `grafx_schema_evolution` step with candidate rebuild, fingerprint
-re-pins, frontend type lockstep, README counters, and a migration doc under
-`docs/migrations/`. Recommendation: **ship 0.3.4 without it** and schedule it
-for 0.3.5 once phases 1-4 have proven the zero-DDL edges in production.
+Runs after phase 2 and before phase 3, so the 0.6.0-dependent emitters and the
+new read tools are built on the final schema.
+
+Columns (core `STABLE_NODE_PROPERTIES` + community `COMMON_NODE_COLUMNS`,
+`embedding` last): `severity STRING`, `source_status STRING`,
+`source_created_at TIMESTAMP`, `source_updated_at TIMESTAMP`,
+`resolved_at TIMESTAMP`; added to `_NODE_UPDATEABLE_ATTRS` and
+`_SEMANTIC_PROJECTION_NODE_ATTRS`, treated as semantic payload by the tombstone.
+
+Pairs (`MULTI_REL_TYPES`, no new relationship *name*): `supports (Bug,
+Requirement | Constraint | Criterion | TestScenario | APIContract | Decision)`
+(D4, 6 tables); `violates (Bug, Requirement)`, `violates (Bug, Criterion)` (D3,
+2 tables); `derives_from (Constraint, Requirement)`, `derives_from (Requirement,
+Requirement)` (G8); `derives_from (Decision, Constraint)` (origins for
+`explain_constraint`). 69 -> 80 pairs, 44 -> 49 columns.
+
+Mechanics: `SCHEMA_VERSION = "0.6.0"`; a new `grafx_schema_evolution` step
+(generalise the module into a 0.3.12 -> 0.5.0 -> 0.6.0 chain or add
+`grafx_schema_evolution_0_6_0.py`) with candidate rebuild and the introduced
+columns/pairs declared; manifest fingerprint recomputed; pins updated in
+`test_grafx_schema_bootstrap.py` (49 columns), `test_grafx_relationship_layout.py`
+(16 types / 80 pairs), `test_grafx_auxiliary_indexes.py`, and the
+`SCHEMA_VERSION` allowlists in core tests; structural hash flips once with
+`SCHEMA_VERSION_CHANGED` (one documented operator override on promotion);
+`BoardMeta.schema_version` migrates at cutover; frontend `constants/kg.ts`;
+README/GLOSSARY counters; `docs/grafx-schema-evolution-0.5.0-to-0.6.0.md` and
+`docs/migrations/v0.6.0.md`.
+
+Exit criteria: the three local boards migrated; `okto_pulse_kg_schema_info`
+reports 0.6.0 with 80 pairs; `okto_pulse_kg_orphan_report = 0`;
+`okto_pulse_kg_health` without connectivity issues; edge census unchanged for
+the pre-existing families.
+
+### Phase 5b: emitters that depend on 0.6.0 (core)
+
+| Item | Edge / property | Source | rule_id |
+|---|---|---|---|
+| G2-bug | `supports` Bug(card) -> spec child (D4) | `linked_task_ids` + `test_scenario_ids` of bug cards | same card-side emitter, `supports/spec_child_task_link@v2.0`; only the source node type differs |
+| G5-ext | `violates` Bug -> Requirement, Bug -> Criterion (D3) | same origin path: FR/IR whose `linked_task_ids` contain the origin card; AC reached through the scenarios linked to the origin card | `violates/origin_task_requirement@v2.0`, `violates/origin_task_criterion@v2.0`, confidence 0.8, active set `(bug, bug, violations)` |
+| G8 | `derives_from` Constraint(BR) -> Requirement(FR), Constraint(OR) -> Requirement(IR), Requirement(IR) -> Requirement(FR) | `business_rules[].linked_requirements`, `observability_requirements[].linked_integration_requirements`, `integration_requirements[].linked_requirements` | `derives_from/br_requirement_link@v2.0` and siblings; active set `(spec, spec, requirement_links)` |
+| G-origins | `derives_from` Decision -> Constraint | `decisions[].linked_requirements` resolving to a TR | `derives_from/explicit_link@v2.0` (same slot, new pair); `explain_constraint.origins` stops being hard-coded `[]` |
+| G-cols | `severity`, `source_status`, `source_created_at`, `source_updated_at`, `resolved_at` on every projected node | `cards.severity/status/created_at/updated_at`, `specs.*`, activity log for the move to `done` (`resolved_at`) | worker dicts carry the fields outside `raw_parts` |
+
+Zero-orphan invariant (D4): `supports`, `violates`, `tests`, `precedes` and
+`derives_from` never count as connectivity; every Bug/Entity keeps its
+`belongs_to` to spec/sprint/board root; the connectivity guard and the orphan
+report run in the exit census of 5b.
 
 ### Phase 6: documentation and release hygiene
 
@@ -323,8 +375,12 @@ G17 plus `CHANGELOG.md` entries in both repos (Keep a Changelog, prose bullets),
 
 ## 7. Invariants every change must respect
 
-- `SCHEMA_VERSION` stays `0.5.0` through phases 0-4; no new columns, no new
-  pairs, no new relationship names.
+- `SCHEMA_VERSION` stays `0.5.0` through phases 0-2 and becomes `0.6.0` at the
+  phase 5 cutover (a single bump); no new relationship *names* anywhere in the
+  initiative.
+- No node may be loose in the graph (decision D4): every node passes the
+  connectivity guard and every projection phase exits with
+  `okto_pulse_kg_orphan_report = 0`.
 - New `rule_id`s follow `<edge_type>/<slot>@v2.0`; existing literals are pinned
   by tests and by the active-set scope matchers. Never rename an existing rule.
 - Every emitted edge carries `layer=deterministic`, `created_by=worker_layer1`,
@@ -346,22 +402,17 @@ G17 plus `CHANGELOG.md` entries in both repos (Keep a Changelog, prose bullets),
 - Core never imports `okto_pulse.community`; traversals go through the graph
   store ports and are implemented in the Grafx adapter.
 
-## 8. Decisions needed before phase 1
+## 8. Decisions (recorded in the Pulse ideation Q&A, 2026-09-16)
 
-1. **Card-side vs spec-side ownership** of card->spec-child edges (section 4
-   design note). Recommended: card-side.
-2. **`created_at` overload (G10) vs waiting for `source_created_at` in 0.6.0.**
-   Recommended: overload now; the column is hash-excluded and the semantic
-   ("when the source was created") is the one every consumer wants.
-3. **`violates` semantics (G5).** Proxy through the origin card's constraints at
-   confidence 0.8, or wait for an explicit relational field. Recommended: proxy
-   now, rule slot names it, phase 5 may add a direct field.
-4. **Bug cards in `linked_task_ids`.** Skip until 0.6.0 pairs exist, or project
-   them as a `belongs_to` to the spec child (pair `(Bug, Entity)` exists but the
-   children are not Entities). Recommended: skip and count them in the
-   missing-link ledger.
-5. **Phase 5 in 0.3.4 or 0.3.5.** Recommended: 0.3.5.
-6. **Learning gate default (L-B).** Recommended: `advisory`.
+| # | Decision | Recorded choice | Origin |
+|---|---|---|---|
+| D1 | Ownership of card -> spec-child edges | card-side (`process_card` + `load_projection_inputs`, `kgref:` to children, one active set per card) | agent recommendation, user confirmation pending |
+| D2 | Source timestamp | overload `created_at` in phase 1; `source_created_at` becomes canonical in phase 5 | agent recommendation, user confirmation pending |
+| D3 | `violates` semantics | origin proxy now (Bug -> Constraint) and, in 0.6.0, also Bug -> Requirement and Bug -> Criterion by the same path | **user decision** |
+| D4 | Bug cards in `linked_task_ids` | bring `supports (Bug, X)` into 0.3.4 through 0.6.0; no node may be loose in the graph | **user decision** |
+| D5 | Schema evolution 0.6.0 | inside 0.3.4, between phases 2 and 3 | **user decision** (agent had recommended 0.3.5) |
+| D6 | Learning gate default | `advisory`, `blocking` opt-in per board | agent recommendation, user confirmation pending |
+| D7 | Sequencing | this initiative first (phases 1-3), WIP replay-only rebased afterwards | **user decision** (agent had recommended harness -> WIP -> initiative) |
 
 ## 9. Out of scope (deliberately)
 
