@@ -3,9 +3,10 @@
 Status: **plan agreed on 2026-09-16, no code landed yet.** Branch `feature/v0.3.4`
 in both repos. Community-side items live in
 `okto-pulse/docs/KG_TRACEABILITY_GAPS_COMMUNITY.md`. Tracked in Pulse as ideation
-`dfbdc0f4-9428-4f10-afd6-30dd39edda4d` on board Okto Pulse; decisions D1-D7 are
-recorded in its Q&A (D3, D4, D5 and D7 decided by the user on 2026-09-16, see
-section 8).
+`dfbdc0f4-9428-4f10-afd6-30dd39edda4d` on board Okto Pulse (Architecture Design
+`2afc46e8`); the twenty decisions D1-D20 are recorded in its Q&A and closed on
+2026-09-16 (section 8). This document mirrors the ideation; where an older
+recommendation survives in sections 2-5, section 8 prevails.
 
 ## 1. Why
 
@@ -86,8 +87,8 @@ in `grafx_schema_manifest.py`, trips the import-time assertion in
 `grafx_schema_evolution.py`, and has no in-place ALTER path; existing boards fail
 `table_shape_mismatch` / `versioned_partial_schema`. The only migration
 machinery is the 0.3.12 -> 0.5.0 candidate rebuild. Schema changes are therefore
-a separate, expensive class of work (section 6, phase 5). Everything else in this
-plan is **zero DDL**.
+an expensive class of work; decision D5 puts them inside 0.3.4 as the first
+technical phase, so every emitter is written once against the final schema.
 
 ## 3. Question catalog and verdicts
 
@@ -131,21 +132,21 @@ surface, **D** docs, **S** schema evolution.
 | Id | Class | Gap | Source of truth | Target | Notes |
 |---|---|---|---|---|---|
 | G1 | E | `tests` TestScenario->Criterion never emitted: resolver lacks the `ac_<id>` branch | `test_scenarios[].linked_criteria` -> `acceptance_criteria[].id` | `tests/ac_match@v2.0` (existing slot) | One resolver branch plus a regression test with id-form links; the only existing test uses text-form links. Highest-leverage fix in the whole plan. |
-| G2 | E | Card -> spec child links never projected | spec child `linked_task_ids` on FR, TR, AC, TS, BR, API, IR, OR, Decision | `supports` Entity(card) -> Requirement / Constraint / Criterion / TestScenario / APIContract / Decision, rule `supports/spec_child_task_link@v2.0` | All seven pairs exist. Emit **card-side** (see design note below). Bug cards cannot carry `supports` until the `(Bug, X)` pairs land in phase 5 (same release, decision D4): log them in the ledger in phase 1, project them in phase 5b with the same emitter. |
+| G2 | E | Card -> spec child links never projected | spec child `linked_task_ids` on FR, TR, AC, TS, BR, API, IR, OR, Decision | `supports` Entity(card) -> Requirement / Constraint / Criterion / TestScenario / APIContract / Decision, rule `supports/spec_child_task_link@v2.0` | All seven Entity pairs exist; the six `(Bug, X)` pairs arrive with the 0.6.0 evolution (D4), so bug cards are projected by the same card-side emitter in phase 2. |
 | G3 | E | Card dependencies never projected | `card_dependencies(card_id, depends_on_id)` | `precedes` Entity(card) -> Entity(card), rule `precedes/card_dependency/<dep_id>@v2.0` | Mirrors `precedes/spec_dependency`; direction prerequisite -> dependent. Enables cycle and execution-order queries. |
 | G4 | E | Card's own `test_scenario_ids` never projected | `cards.test_scenario_ids` | `supports` Entity(card) -> TestScenario | Merged into the card-side emitter of G2 so one owner asserts card->scenario from both sources. |
-| G5 | E | `violates` Bug->Constraint has zero producers; `explain_constraint.violations` is always `[]` | `cards.origin_task_id` -> origin card -> its spec -> TR/BR whose `linked_task_ids` contain the origin card | `violates/origin_task_constraint@v2.0`, confidence 0.8 | Resolve in `_resolve_missing_link_candidates` (already loads cards; add the spec load). Heuristic by construction; the rule slot says so. Decision D3 extends the same path in phase 5b to `violates (Bug, Requirement)` and `violates (Bug, Criterion)`. |
+| G5 | E | `violates` Bug->Constraint has zero producers; `explain_constraint.violations` is always `[]` | `cards.origin_task_id` -> origin card -> its spec -> TR/BR whose `linked_task_ids` contain the origin card | `violates/origin_task_constraint@v2.0`, confidence 0.8 | Resolve in `_resolve_missing_link_candidates` (already loads cards; add the spec load). Heuristic by construction; the rule slot says so. Decision D3 extends the same path to `violates (Bug, Requirement)` and `violates (Bug, Criterion)` on the 0.6.0 pairs. |
 | G6 | E | Decision supersedence never projected; superseded decisions dropped from the projection | `decisions[].supersedes_decision_id`, `decisions[].status` | `supersedes` Decision->Decision, rule `supersedes/spec_decision@v2.0`; stamp `superseded_by`/`superseded_at` on the predecessor | `supersedes` is cognitive-owned; use the existing `system:` exemption (precedent `supersedes/code_traceability`). Keep superseded nodes as tombstoned-but-walkable. |
 | G7 | E | `api_contracts[].linked_rules` ignored | `api_contracts[].linked_rules` | `implements` APIContract->Constraint (pair exists), rule `implements/api_rule_link@v2.0` | Sits beside the existing `implements/fr_match` loop. |
-| G8 | S | BR->FR, OR->IR, IR->FR have no endpoint pair | `business_rules[].linked_requirements` etc. | needs `derives_from (Constraint, Requirement)` and `(Requirement, Requirement)` | Phase 5b (in 0.3.4 by decision D5). This is the authoritative FR-coverage source in the relational gate. |
+| G8 | S | BR->FR, OR->IR, IR->FR have no endpoint pair | `business_rules[].linked_requirements` etc. | `derives_from (Constraint, Requirement)` and `(Requirement, Requirement)`, added by the 0.6.0 evolution | Phase 2 on the final schema. This is the authoritative FR-coverage source in the relational gate. |
 | G9 | E | `kind_of` is NULL on every projected node, so bare labels are over-broad (Entity = board/spec/sprint/card/story/...; Constraint = TR/BR/OR; Requirement = FR/IR; APIContract = spec contract / architecture interface) | artifact type dispatched by `process_artifact`; `cards.card_type`; spec collection name | system-declared subtypes in `NodeSubtypeRegistry`, e.g. Entity: `board`, `spec`, `sprint`, `card_task`, `card_test`, `story`, `ideation`, `refinement`, `amendment`, `architecture_design`, `architecture_entity`; Constraint: `technical_requirement`, `business_rule`, `observability_requirement`; Requirement: `functional_requirement`, `integration_requirement`; APIContract: `spec_contract`, `architecture_interface` | Data-only, no SCHEMA_VERSION bump. Do **not** put severity or status in `kind_of`; it is a single slot reserved for artifact kind. Verify `kind_of` is in `_NODE_UPDATEABLE_ATTRS` so existing nodes refresh. |
-| G10 | E | Node `created_at` is projection time and is re-stamped by rebuild/DLQ replay; no relational timestamp reaches the graph | `cards.created_at`, `specs.created_at`, ... | stamp `created_at` from the source row at CREATE | Zero DDL, hash-neutral (`created_at` is in `EXCLUDED_HASH_FIELDS`). Semantic change for keyset ordering; documented. Phase 5 adds dedicated `source_*` columns if the overload proves confusing. |
+| G10 | S | Node `created_at` is projection time and is re-stamped by rebuild/DLQ replay; no relational timestamp reaches the graph | `cards.created_at/updated_at`, `specs.*`, activity log (last move to `done`) | dedicated columns `source_created_at`, `source_updated_at`, `resolved_at` (0.6.0); `created_at` keeps its projection-time semantics | Decision D2 (revised): no overload of `created_at`; `resolved_at` = last transition to `done`, cleared on reopen (D11). |
 | G11 | E | Amendment lineage flattened into content text; no enqueue on amendment events | `amendment_hotfix_revisions.regression_scenario_ids`, `revision_spec_id`, `original_spec_id` | `supports` Entity(amendment)->TestScenario; `supersedes` Entity(revision spec)->Entity(original spec); `kind_of=amendment` | Also add the `amendment.*` events to the consolidation enqueuer. |
-| G12 | A | Unresolved `MissingLinkCandidate`s are dropped | worker output | persist per `(board, artifact, edge_type, reason)` in a small ledger and surface a KG Health `health_issues[]` row (`missing_link_backlog`) | Makes "no edge" distinguishable from "unresolvable reference". |
+| G12 | A | Unresolved `MissingLinkCandidate`s are dropped | worker output (every unresolvable reference: `derives_from`, `tests`, `implements`, `violates`, `supports`, missing `kgref:`) | durable ledger keyed `(board, artifact, edge_type, from_ref, reason)` with `suggested_candidates` and `next_action`; KG Health row `missing_link_backlog`; tools `okto_pulse_kg_list_missing_links` and `okto_pulse_kg_resolve_missing_link` (writes a `layer=fallback` edge, confidence <= 0.85, `rule_id <edge>/agent_fallback@v2.0`, audited); board policy `missing_link_gate` = `advisory` (default) or `blocking` | Decisions D12 and D20: the ledger is the agent's work queue; fixing the relational source is the preferred path and closes the item; a later deterministic edge wins and tombstones the fallback; a removed link reopens the item; `blocking` refuses `done` with `missing_links_open`. |
 | G13 | A | No stale-edge removal for any new family (or for `tests`) | relational link removal | generalise `RelationalProjectionActiveSetIntent`: `WorkerResult` carries a **list** of intents; `supported_scope` gains `(spec, spec, ac_coverage)`, `(card, card, spec_links)`, `(card, card, dependencies)`, `(spec, spec, decision_supersedence)`, `(bug, bug, violations)` | Edges-only namespaces (precedent: `dependencies`): hard delete with before-images and post-delete confirmation. Rebuild must produce the same active set. |
 | G14 | A | Enqueue coverage: `link_task` / traceability events re-enqueue only the spec; `card_dependencies` and `cards.test_scenario_ids` changes re-enqueue nothing | domain events | `consolidation_enqueuer._map_targets` routes link events to **both** endpoints (spec and card); dependency and scenario-link events to the card | Also fix the existing `card.linked_to_spec` branch that re-enqueues only the spec. |
 | G15 | A | Edge identity ignores `rule_id`: two rules over the same `(type, from, to)` collapse and active-set cleanup by one rule can delete the other's edge | n/a | one owner per edge family: all card->spec-child edges are owned by the card-side emitter; `supports` from code evidence keeps its own from-nodes | Design rule, enforced by test. |
-| G16 | R | Read surface cannot express the new shapes | graph | (a) `get_related_context`: center by prefix (`spec:<uuid>` includes children) or `include_children=true`; (b) `ContextHop` gains `node_type`, `kind_of`, `source_artifact_ref`, `direction`, `rule_id`, `confidence`; (c) `RELATED_CONTEXT_DEPTHS` += 3 in its three enforcement points; (d) `TYPED_ARTIFACT_KINDS` accepts spec-child refs; (e) new curated tools: `okto_pulse_kg_get_decision_impact`, `okto_pulse_kg_get_spec_coverage`, `okto_pulse_kg_get_bug_clusters(board_id, since_days, group_by)`, `okto_pulse_kg_get_lineage`; (f) `since`/`until` on `get_decision_history`; (g) `get_supersedence_chain(direction=ancestors\|successors)`; (h) `explain_constraint` reports lane emptiness instead of `[]`; (i) rate-limit parity for the recall family; (j) wire or remove the dead `timeout_ms` and `min_confidence` params | Each new tool: permission registry entry, `tools_catalog.md` regeneration, tool-count gates in `okto-pulse/scripts/release_artifact_gate.py`. |
+| G16 | R | Read surface cannot express the new shapes | graph | (a) `get_related_context`: center by prefix (`spec:<uuid>` includes children) or `include_children=true`; (b) `ContextHop` gains `node_type`, `kind_of`, `source_artifact_ref`, `direction`, `rule_id`, `confidence`; (c) `RELATED_CONTEXT_DEPTHS` += 3 in its three enforcement points; (d) `TYPED_ARTIFACT_KINDS` accepts spec-child refs; (e) new curated tools: `okto_pulse_kg_get_decision_impact`, `okto_pulse_kg_get_spec_coverage`, `okto_pulse_kg_get_bug_clusters(board_id, since_days, group_by)`, `okto_pulse_kg_get_lineage`, plus `okto_pulse_kg_list_missing_links` / `okto_pulse_kg_resolve_missing_link`; (f) `since`/`until` on `get_decision_history` over `source_created_at`; (g) `get_supersedence_chain(direction=ancestors\|successors)`; (h) `explain_constraint` reports lane emptiness and marks proxy/fallback edges; (i) **no count-based rate limit anywhere** (D15/D18): the 30/min tier-power bucket is removed, the `RateLimiter` port stays with the Community default off, and cost/usage guidance replaces it; (j) per-query timeout enforced from the board setting `kg_query_timeout_seconds` (default 15s, max 30s) with a contextual `kg_query_timeout` error; row caps 200 default / 1000 hard with pagination; (k) `projection_freshness` block on every traversal response (D14) | Each new tool: permission registry entry, `tools_catalog.md` regeneration, tool-count gates in `okto-pulse/scripts/release_artifact_gate.py`. |
 | G17 | D | Docs drift | n/a | `workflows/kg.md` (both edge-ownership tables), `tool-docs/kg.md` (`relates_to` lists only Decision->Alternative; the 21 cognitive pairs are missing), Learning ref grammar, Bug-id discovery recipe, temporal recipe (`timestamp($since)`), lineage and coverage recipes, `reference/errors.md` KG codes, README counters, `ska_resource_manifest.json` regeneration | Ships with each phase. |
 
 ### Design note for G2/G3/G4 (card-side ownership)
@@ -191,8 +192,9 @@ Fixes (phase 4):
 - **L-A** Reach: add the bug-closeout obligation and a pointer to
   `okto-pulse://workflows/kg` to `agent_instructions.md` Quick Navigation, to the
   bug section of `workflows/cards.md`, and to `reference/transitions.md`.
-- **L-B** Honest gate: board policy key `bug_learning_closeout` with values
-  `advisory` (default: KG Health `health_issues[]` row `bugs_without_learning`)
+- **L-B** Honest gate: board settings key `bug_learning_closeout` (human-written,
+  mirrored in the default board config, decision D17) with values `advisory`
+  (default, decision D6: KG Health `health_issues[]` row `bugs_without_learning`)
   and `blocking` (bug->done requires a canonical `Learning -validates-> Bug`).
   Downgrade "Mandatory" wording to match the effective policy.
 - **L-C** Two-step trigger in `kg.md`: move to `done`; call
@@ -210,10 +212,12 @@ Fixes (phase 4):
   became canonical (likely the `validates` edge points at the superseded
   working Bug node id); add a reconcile pass on Bug promotion that re-points or
   re-validates, then close the debt.
-- **L-G** Fan-in: the closeout (manual and automatic) must call
-  `get_similar_nodes` against canonical Learnings and attach `validates` to an
-  existing Learning at >= 0.85 instead of minting a duplicate, so a Learning can
-  cluster bugs (feeds Q05 `group_by=learning`).
+- **L-G** Fan-in (decision D13): the closeout (manual and automatic) calls
+  `get_similar_nodes` against canonical Learnings and reuses the reconciliation
+  bands: >= 0.95 attaches `validates` to the existing Learning; 0.85-0.95 mints
+  a new Learning that `supersedes` the old one and inherits its `validates`;
+  < 0.85 mints an independent one. The supersedence chain is the cluster key
+  for Q05 `group_by=learning`.
 - **L-H** Community: register `cognitive_closeout_worker` behind a setting that
   defaults to enabled only when `cognitive_llm_config` is present; emit a
   startup warning and a health signal when closeout items terminate as
@@ -221,112 +225,41 @@ Fixes (phase 4):
 
 ## 6. Delivery plan
 
-Order matters: emitters first (they make the graph true), then the schema
-evolution (decision D5 puts it inside 0.3.4), then the emitters that depend on
-it, then the read surface (it makes the graph useful), then lifecycle.
-Execution order: 0 -> 1 -> 2 -> 5 -> 5b -> 3 -> 4 -> 6. Each phase lands as its
-own PR pair (core first, then community) targeting `develop`. Every phase that
-touches projection exits with `okto_pulse_kg_orphan_report = 0` (decision D4:
-no node may be loose in the graph).
+The schema evolution is the first technical phase (decision D5), right after the
+test harness. Every emitter is written **once** against the final schema: no
+interim zero-DDL phase, no provisional ledger for bug cards, no `created_at`
+overload, one rebuild-affecting cutover. Execution order:
+0 -> 1 (schema) -> 2 (emitters, active sets, enqueue, missing-link queue) ->
+3 (rebuild/repair) -> 4 (read surface: MCP, REST, full UI) -> 5 (Learnings) ->
+6 (docs). Each phase lands as its own PR pair (core first, then community)
+targeting `develop`, with a census before/after on the three local boards; every
+phase that touches projection exits with `okto_pulse_kg_orphan_report = 0`
+(decision D4). No KG query tool counts calls (D15/D18); the analytical tools are
+usage suggestions and remove no read step from the protocol (D14).
 
 ### Phase 0: prerequisites (core)
 
 - P0.1 Port `tests/kg_schema_testing.py` and `kg_registry_testing.py` off the
   removed `kg_runtime` / `kuzu_graph_transaction` modules onto the Grafx
-  adapters. ~89 core test files depend on it; without it no real-graph
-  projection test runs, and phase 5 changes the schema, which must not be
-  validated with in-memory fakes only.
-- P0.2 Baseline census on the three local boards (counts per edge type, per
-  rule_id, orphan report) saved under `docs/evidence/` so every later phase has
-  a before/after.
-- P0.3 Sequencing (decision D7, user): this initiative runs first (phases 1-3);
-  the WIP branch `feature/v0.3.4-kg-replay-only-cognitive-commit` is rebased
-  afterwards on the result, and its conflicts in `primitives.py` /
-  `consolidation.py` are resolved in that rebase.
+  adapters. ~89 core test files depend on it, and phase 1 changes the schema,
+  which must not be validated with in-memory fakes only.
+- P0.2 Baseline census on the three local boards (edge counts per type and
+  rule_id, orphan report) under `docs/evidence/`.
+- P0.3 Sequencing (D7): this initiative runs first; the WIP branch
+  `feature/v0.3.4-kg-replay-only-cognitive-commit` is rebased afterwards and its
+  conflicts in `primitives.py` / `consolidation.py` are resolved in that rebase.
 - P0.4 Confirm that `kgref:` resolves a working-layer target (condition of D1);
-  if it is canonical-only, extend the resolver with a layer hint for `system:`
-  writers.
+  otherwise extend the resolver with a layer hint for `system:` writers.
 
-### Phase 1: projection emitters (core), zero DDL
-
-| Item | Files | Done when |
-|---|---|---|
-| G1 `tests` resolver | `application/processors/deterministic_kg.py` (AC loop, TS loop) | id-form, text-form and index-form links all resolve; `tests` edge count on Okto Neuron = 30 |
-| G2+G4 card->spec-child `supports` | `deterministic_kg.py:process_card`, `consolidation.py:load_projection_inputs`, `_resolve_missing_link_candidates` | one edge per `(card, child)` from either source; bug cards logged, not emitted |
-| G3 card `precedes` | `process_card` + projection inputs | 278 edges on the local DB; direction prerequisite -> dependent |
-| G5 `violates` | `consolidation.py:_resolve_missing_link_candidates` | the 6 local bugs get `violates` edges; `explain_constraint.violations` non-empty |
-| G6 decision `supersedes` | `process_spec` decisions loop; keep superseded nodes | chain walkable in both directions |
-| G7 `implements` from `linked_rules` | `process_spec` api loop | |
-| G9 `kind_of` | `process_*` emitters, registry seed in `code_traceability_kg.py`-style declaration module | every projected node carries `kind_of`; existing nodes refreshed on re-consolidation |
-| G10 source `created_at` | `_card_to_dict` and siblings, `EmittedNode`, `primitives` CREATE path | rebuild/replay preserve the source time |
-| G11 amendment lineage | `process_amendment`, enqueuer | |
-| G13 active sets | `deterministic_kg.py:WorkerResult`, `primitives.py:585-698`, `grafx_graph_transaction.py` cleanup | removing a link removes the edge; rebuild reproduces the same active set |
-| G14 enqueue | `consolidation_enqueuer.py:_map_targets` | link events reach both endpoints |
-| G12 missing-link ledger | new small store + KG Health row | |
-| G15 ownership rule | test in `test_kg_deterministic_worker.py` | |
-
-Tests to extend: `test_kg_deterministic_worker.py` (edge counts, rule literals),
-`test_kg_deterministic_identity.py`, `test_kg_rebuild_deterministic.py`,
-`test_ska_kg_projection_active_set.py`, `test_c8_relational_projection_worker.py`,
-`test_skm_spec_dependency_kg_projection.py`, `test_projection_active_set_session_cleanup.py`,
-plus new `test_kg_card_link_projection.py` and `test_kg_bug_violates_projection.py`.
-
-### Phase 2: rebuild and repair parity (core + community)
-
-- Rebuild manifest: the source fields the new rules consume must be inside the
-  content-hash column tuples (`CARD_CONTENT_COLUMNS`, `SPEC_CONTENT_COLUMNS_V*`) or
-  a link change never re-enqueues. `card_dependencies` and `test_scenario_ids`
-  join the card content hash. This changes every board's `content_hash` once;
-  document it.
-- `deterministic_projection_repair` accepts cards and bugs, not only specs
-  (use case, REST DTO, admission tests).
-- Structural hash: keep edges out of the hash in 0.3.4 (unchanged behaviour);
-  record the decision.
-
-### Phase 3: read surface (core MCP + community REST/UI)
-
-- G16 (a)-(j). Templates in `cypher_templates.py`, tool DTOs in
-  `tool_schemas.py`, tools in `kg_query_tools.py`, permission registry, catalog
-  regeneration, tool-count gates.
-- Acceptance queries (must return the expected rows on the local boards):
-
-```cypher
-// Q01: impact of a decision, one call
-MATCH (d:Decision) WHERE d.source_artifact_ref = $decision_ref AND d.superseded_by IS NULL
-OPTIONAL MATCH (d)-[:derives_from]->(r:Requirement)
-OPTIONAL MATCH (card:Entity)-[:supports]->(r)
-OPTIONAL MATCH (card)-[:supports]->(ts:TestScenario)
-RETURN r.id AS requirement, collect(DISTINCT card.id) AS cards, collect(DISTINCT ts.id) AS scenarios
-```
-
-```cypher
-// Q05: bugs in the last N days grouped by violated constraint
-MATCH (b:Bug) WHERE b.created_at >= timestamp($since)
-OPTIONAL MATCH (b)-[:violates]->(c:Constraint)
-OPTIONAL MATCH (l:Learning)-[:validates]->(b)
-RETURN c.id AS constraint, c.kind_of AS kind, collect(DISTINCT b.id) AS bugs, collect(DISTINCT l.id) AS learnings
-ORDER BY size(bugs) DESC
-```
-
-Both must run with `include_working=true` because open bugs and in-progress
-specs are working-layer; the curated tools default to `graph_layer="all"` for
-these shapes and say so in their docs.
-
-### Phase 4: Learning lifecycle (core + community)
-
-L-A through L-H above. Order: L-E and L-A (docs, cheap, immediate effect),
-L-C, L-D, L-F, L-G, L-B, L-H.
-
-### Phase 5: schema evolution 0.5.0 -> 0.6.0 (inside 0.3.4, decision D5)
-
-Runs after phase 2 and before phase 3, so the 0.6.0-dependent emitters and the
-new read tools are built on the final schema.
+### Phase 1: schema evolution 0.5.0 -> 0.6.0 (core + community, D5)
 
 Columns (core `STABLE_NODE_PROPERTIES` + community `COMMON_NODE_COLUMNS`,
-`embedding` last): `severity STRING`, `source_status STRING`,
-`source_created_at TIMESTAMP`, `source_updated_at TIMESTAMP`,
-`resolved_at TIMESTAMP`; added to `_NODE_UPDATEABLE_ATTRS` and
-`_SEMANTIC_PROJECTION_NODE_ATTRS`, treated as semantic payload by the tombstone.
+`embedding` last): `severity STRING`, `source_status STRING` (raw relational
+status, D10), `source_created_at TIMESTAMP`, `source_updated_at TIMESTAMP`,
+`resolved_at TIMESTAMP` (last transition to `done` from the activity log, NULL
+outside `done`, cleared on reopen, D11). Added to `_NODE_UPDATEABLE_ATTRS` and
+`_SEMANTIC_PROJECTION_NODE_ATTRS`; treated as semantic payload by the tombstone.
+`created_at` keeps its projection-time semantics (D2).
 
 Pairs (`MULTI_REL_TYPES`, no new relationship *name*): `supports (Bug,
 Requirement | Constraint | Criterion | TestScenario | APIContract | Decision)`
@@ -335,84 +268,242 @@ Requirement | Constraint | Criterion | TestScenario | APIContract | Decision)`
 Requirement)` (G8); `derives_from (Decision, Constraint)` (origins for
 `explain_constraint`). 69 -> 80 pairs, 44 -> 49 columns.
 
-Mechanics: `SCHEMA_VERSION = "0.6.0"`; a new `grafx_schema_evolution` step
-(generalise the module into a 0.3.12 -> 0.5.0 -> 0.6.0 chain or add
-`grafx_schema_evolution_0_6_0.py`) with candidate rebuild and the introduced
-columns/pairs declared; manifest fingerprint recomputed; pins updated in
-`test_grafx_schema_bootstrap.py` (49 columns), `test_grafx_relationship_layout.py`
-(16 types / 80 pairs), `test_grafx_auxiliary_indexes.py`, and the
-`SCHEMA_VERSION` allowlists in core tests; structural hash flips once with
-`SCHEMA_VERSION_CHANGED` (one documented operator override on promotion);
-`BoardMeta.schema_version` migrates at cutover; frontend `constants/kg.ts`;
-README/GLOSSARY counters; `docs/grafx-schema-evolution-0.5.0-to-0.6.0.md` and
-`docs/migrations/v0.6.0.md`.
+Mechanics: `SCHEMA_VERSION = "0.6.0"`; `grafx_schema_evolution` generalised into
+a 0.3.12 -> 0.5.0 -> 0.6.0 chain (or `grafx_schema_evolution_0_6_0.py`) with
+candidate rebuild and the introduced columns/pairs declared; manifest fingerprint
+recomputed; pins updated in `test_grafx_schema_bootstrap.py` (49 columns),
+`test_grafx_relationship_layout.py` (16 types / 80 pairs),
+`test_grafx_auxiliary_indexes.py` and the core `SCHEMA_VERSION` allowlists;
+structural hash flips once with `SCHEMA_VERSION_CHANGED` (one documented operator
+override on promotion); `BoardMeta.schema_version` migrates at cutover; frontend
+`constants/kg.ts`; README/GLOSSARY counters;
+`docs/grafx-schema-evolution-0.5.0-to-0.6.0.md` and `docs/migrations/v0.6.0.md`.
+
+Board migration (D8, D9): explicit per-board trigger by the operator
+(`okto_pulse_kg_migrate_schema` / REST / CLI) with preflight and backup; a board
+that has not been migrated fails closed with an actionable error. After the
+candidate-rebuild cutover, a full deterministic re-consolidation of every board
+source runs through the normal queue, preserving cognitive nodes, until
+`orphan_report = 0`.
 
 Exit criteria: the three local boards migrated; `okto_pulse_kg_schema_info`
 reports 0.6.0 with 80 pairs; `okto_pulse_kg_orphan_report = 0`;
 `okto_pulse_kg_health` without connectivity issues; edge census unchanged for
 the pre-existing families.
 
-### Phase 5b: emitters that depend on 0.6.0 (core)
+### Phase 2: emitters on 0.6.0, active sets, enqueue and the missing-link queue (core)
 
-| Item | Edge / property | Source | rule_id |
+| Id | Gap | Source | Edge / property / rule_id |
 |---|---|---|---|
-| G2-bug | `supports` Bug(card) -> spec child (D4) | `linked_task_ids` + `test_scenario_ids` of bug cards | same card-side emitter, `supports/spec_child_task_link@v2.0`; only the source node type differs |
-| G5-ext | `violates` Bug -> Requirement, Bug -> Criterion (D3) | same origin path: FR/IR whose `linked_task_ids` contain the origin card; AC reached through the scenarios linked to the origin card | `violates/origin_task_requirement@v2.0`, `violates/origin_task_criterion@v2.0`, confidence 0.8, active set `(bug, bug, violations)` |
-| G8 | `derives_from` Constraint(BR) -> Requirement(FR), Constraint(OR) -> Requirement(IR), Requirement(IR) -> Requirement(FR) | `business_rules[].linked_requirements`, `observability_requirements[].linked_integration_requirements`, `integration_requirements[].linked_requirements` | `derives_from/br_requirement_link@v2.0` and siblings; active set `(spec, spec, requirement_links)` |
-| G-origins | `derives_from` Decision -> Constraint | `decisions[].linked_requirements` resolving to a TR | `derives_from/explicit_link@v2.0` (same slot, new pair); `explain_constraint.origins` stops being hard-coded `[]` |
-| G-cols | `severity`, `source_status`, `source_created_at`, `source_updated_at`, `resolved_at` on every projected node | `cards.severity/status/created_at/updated_at`, `specs.*`, activity log for the move to `done` (`resolved_at`) | worker dicts carry the fields outside `raw_parts` |
+| G1 | `tests` never emitted | `test_scenarios[].linked_criteria` -> `acceptance_criteria[].id` | `ac_<id>` branch in the resolver; existing slot `tests/ac_match@v2.0` |
+| G2+G4 | card -> spec children for task, test and bug cards | `linked_task_ids` on the 8 collections + `cards.test_scenario_ids` (+ `ImpactEvidenceTest.scenario_id`, dec_477af268) | `supports` Entity(card) -> X and Bug(card) -> X (D4), `supports/spec_child_task_link@v2.0`; card-side emission (D1) with `kgref:<Type>:spec:<spec_id>:<section>:<child_id>` endpoints; one active set per card `(card, card, spec_links)` |
+| G3 | card dependencies | `card_dependencies` | `precedes` Entity -> Entity, `precedes/card_dependency/<dep_id>@v2.0`, prerequisite -> dependent, per-board fence (dec_16b56285); active set `(card, card, dependencies)` |
+| G5 | `violates` has no producer | `origin_task_id` -> origin card -> spec -> TR/BR, FR/IR and AC (through scenarios) linked to the origin card | `violates/origin_task_constraint@v2.0`, `violates/origin_task_requirement@v2.0`, `violates/origin_task_criterion@v2.0` (D3), confidence 0.8, resolved in `_resolve_missing_link_candidates`; active set `(bug, bug, violations)` |
+| G6 | decision supersedence | `decisions[].supersedes_decision_id`, `status` | `supersedes/spec_decision@v2.0` via the `system:` exemption; predecessor kept and stamped `superseded_by/at`; active set `(spec, spec, decision_supersedence)` |
+| G7 | `linked_rules` ignored | `api_contracts[].linked_rules` | `implements` APIContract -> Constraint, `implements/api_rule_link@v2.0` |
+| G8 | BR -> FR, OR -> IR, IR -> FR | `business_rules[].linked_requirements`, `observability_requirements[].linked_integration_requirements`, `integration_requirements[].linked_requirements` | `derives_from/br_requirement_link@v2.0` and siblings; active set `(spec, spec, requirement_links)` |
+| G-origins | constraint origins and end of the fan-out (D12) | `decisions[].linked_requirements` resolving to FR or TR | `derives_from/explicit_link@v2.0` (new Decision -> Constraint pair included); `derives_from/cooccurrence` is no longer emitted: a decision without a resolved `linked_requirements` becomes a missing-link item; `explain_constraint.origins` stops being hard-coded `[]` |
+| G9 | `kind_of` NULL on every node | artifact type + `card_type` + collection | subtypes in `NodeSubtypeRegistry` (Entity: board/spec/sprint/card_task/card_test/story/ideation/refinement/amendment/architecture_*; Bug: card_bug; Constraint: technical_requirement/business_rule/observability_requirement; Requirement: functional_requirement/integration_requirement; APIContract: spec_contract/architecture_interface). Never severity/status in `kind_of` |
+| G-cols | `severity`, `source_status`, `source_created_at`, `source_updated_at`, `resolved_at` on every projected node | `cards.severity/status/created_at/updated_at`, `specs.*`, activity log of the last move to `done` | worker dicts carry the fields outside `raw_parts` (no `content_hash` change); `source_status` raw (D10); `resolved_at` = last `done`, cleared on reopen (D11) |
+| G11 | amendment lineage flattened into text | `regression_scenario_ids`, `revision_spec_id`, `original_spec_id` | `supports` Entity(amendment) -> TestScenario; `supersedes` revision spec -> original; `kind_of=amendment`; `amendment.*` events in the enqueuer |
+| G12 | missing links dropped -> **agent work queue** (D12, D20) | every reference the worker cannot resolve | durable ledger keyed `(board, artifact, edge_type, from_ref, reason)` with `suggested_candidates` and `next_action`; KG Health row `missing_link_backlog` with drill-down; tools `okto_pulse_kg_list_missing_links` and `okto_pulse_kg_resolve_missing_link(item_id, target_ref, justification)` (writes a `layer=fallback` edge, agent authorship, confidence <= 0.85, `rule_id <edge>/agent_fallback@v2.0`, audited); fixing the relational source is the preferred path and closes the item on re-consolidation; a later deterministic edge wins and tombstones the fallback; a removed link reopens the item; board policy `missing_link_gate` = `advisory` (default) or `blocking` (refuses `done` with `missing_links_open`), human-written, evaluated by the common transition evaluator, never switched on by rebuild/migration |
+| G13 | stale edges | link removal | generalise `RelationalProjectionActiveSetIntent` (list of intents; `supported_scope` gains the namespaces above plus `(spec, spec, ac_coverage)`); edges-only namespaces with before-image, compensation and post-delete confirmation |
+| G14 | one-sided enqueue | domain events | `_map_targets` routes `link_task`/traceability to spec AND card; dependency and scenario-link events to the card; fixes `card.linked_to_spec` |
+| G15 | edge identity ignores `rule_id` | - | one owner per family: card-side for every card -> spec-child edge; `supports` from code evidence keeps its own from-nodes (guard test) |
 
 Zero-orphan invariant (D4): `supports`, `violates`, `tests`, `precedes` and
-`derives_from` never count as connectivity; every Bug/Entity keeps its
-`belongs_to` to spec/sprint/board root; the connectivity guard and the orphan
-report run in the exit census of 5b.
+`derives_from` never count as connectivity; every Bug/Entity keeps `belongs_to`
+to spec/sprint/board root; the connectivity guard and the orphan report run in
+the exit census.
+
+### Phase 3: rebuild and repair (core + community)
+
+`card_dependencies` and `test_scenario_ids` join `CARD_CONTENT_COLUMNS` (one-time
+`content_hash` change, documented); `deterministic_projection_repair` accepts
+cards and bugs; the structural hash keeps excluding edges (recorded decision);
+rebuild and incremental reconciliation produce the same active sets and the same
+missing-link queue; `orphan_report = 0` after a full rebuild of the three boards.
+
+### Phase 4: read surface: MCP, REST and full UI (core + community)
+
+API/MCP (core): (a) `get_related_context` with a prefix center (`spec:<uuid>`
+includes children) or `include_children`; (b) `ContextHop` with `node_type`,
+`kind_of`, `source_artifact_ref`, direction, `rule_id`, `confidence`;
+(c) `RELATED_CONTEXT_DEPTHS` += 3 in its three enforcement points;
+(d) `TYPED_ARTIFACT_KINDS` accepts child refs; (e) new curated, paginated tools
+`okto_pulse_kg_get_decision_impact`, `okto_pulse_kg_get_spec_coverage`,
+`okto_pulse_kg_get_bug_clusters(board_id, since_days, group_by=constraint|requirement|criterion|origin_spec|learning|severity)`,
+`okto_pulse_kg_get_lineage`, `okto_pulse_kg_list_missing_links`,
+`okto_pulse_kg_resolve_missing_link`; (f) `since`/`until` over
+`source_created_at` on `get_decision_history`; (g) `get_supersedence_chain(direction)`;
+(h) `explain_constraint` reports lane emptiness, returns real `origins` and marks
+proxy/fallback edges; (i) **cost guidance instead of rate limits (D15/D18)**: the
+30/min bucket leaves `kg_query_cypher` / `kg_query_natural` / `kg_query_reflective`
+and no tool counts calls; the `RateLimiter` port stays with the Community default
+off; expensive tools declare cost class, when to prefer a curated tool over raw
+Cypher, how to narrow a query and what to do with an empty result;
+`workflows/kg.md` gains a "cost and tool choice" section; (j) **per-query timeout
+enforced (D18)**: setting `kg_query_timeout_seconds` (default 15, max 30) mirrored
+in the default board config, applied with `asyncio.wait_for` to the power tools
+and the new traversals, per-call `timeout_ms` clamped to it, contextual
+`kg_query_timeout` error naming the current limit, that it can be raised in
+Menu > Settings > Knowledge Graph (up to 30s) and how to narrow the query;
+`min_confidence` of `query_natural` applied or removed; (k) **row caps (D18)**:
+default 200, hard cap 1000, pagination; (l) usage and timeout telemetry per agent
+in KG Health; (m) **`projection_freshness` block (D14)** on every traversal
+response: board queue depth, `last_consolidated_at` of the touched artifacts,
+`graph_layer` per node. Each new tool: permission registry entry,
+`tools_catalog.md` regeneration, tool-count gates in `release_artifact_gate.py`;
+`graph_layer` defaults to `all` for impact/coverage/lineage shapes.
+
+Usage rule for the analytical tools (D14, confirmed): they are suggestions, not
+gates; no read step is removed and no read is blocked. For the artifact under
+construction (the spec in the `specs.md` saturation loop) the relational side
+stays authoritative: `get_spec_context(profile="full")` and `coverage_summary`
+decide saturation, because the projection is asynchronous and spec children are
+canonical only at `done`. For already-consolidated external knowledge (other
+specs, decisions elsewhere, bugs, Learnings, impact, clusters) the graph tools are
+the recommended path instead of full re-reads. The full read before critical
+transitions stays in both existing layers (server guard
+`require_full_context_for_critical_actions` and the agent gate read). Promotion
+to mandatory protocol steps is deferred to a later release, after measuring.
+
+REST (community): paginated twins of the new tools (`kg_traceability.py`),
+`since/until`, `direction`, and the `kg_query_timeout_seconds` /
+`missing_link_gate` / `bug_learning_closeout` settings in the board-settings
+contract and default board config.
+
+Full UI (D16, D19), Community frontend, contextual screens in the existing modals:
+
+- **"Impact" tab on each Decision inside the Spec modal**: derived requirements
+  (`derives_from` with `rule_id`/`confidence`/`layer`), cards implementing them
+  (`supports`, Entity and Bug), scenarios testing them, supersedence chain both
+  ways; filters by `graph_layer`, `rule_id`, `confidence`; drill-down to card and
+  scenario.
+- **"Coverage" tab on the Spec modal**: every coverage gate in one view
+  (AC -> scenario, FR -> BR, scenario -> test card, BR/TR/API/IR/OR/decision ->
+  card), anti-joins highlighted with exact ids, counters aligned with the
+  relational `coverage_summary`, graph-vs-relational divergences made explicit
+  (stale edge or missing link), the spec's missing links listed and actionable;
+  shows projection freshness and states that saturation authority is relational.
+- **"Bug Clusters" panel in KG Health / Analytics** (board-wide): window over
+  `source_created_at` (default 15 days), selectable grouping (constraint,
+  requirement, criterion, origin spec, Learning, severity), `rule_id`/`confidence`
+  visible, `resolved_at` and status for MTTR.
+- **Settings**: `kg_query_timeout_seconds` (1-30, help text quoted by the
+  `kg_query_timeout` error), `missing_link_gate` and `bug_learning_closeout`
+  (advisory|blocking) under Menu > Settings > Knowledge Graph.
+- **Cross-cutting**: `kind_of`/`rule_id`/`confidence`/`layer` badges on the
+  existing relationship panels, `kind_of` filter on the graph page,
+  `missing_link_backlog` and `bugs_without_learning` rows in KG Health with
+  drill-down.
+- **Process**: mockups authored in this phase's refinement/spec under the board's
+  effective Design System (`MockupDesignSystemGate`) with prior Q&A on the still
+  ambiguous visual points; vitest per component; lint ratchet respected;
+  `frontend_dist` synchronised at release; `KG_SOURCE_NAVIGATION.md` and
+  `KG_HEALTH_DASHBOARD.md` updated.
+
+Acceptance queries (run with `include_working=true`; the local boards must return rows):
+
+```cypher
+MATCH (d:Decision) WHERE d.source_artifact_ref = $decision_ref AND d.superseded_by IS NULL
+OPTIONAL MATCH (d)-[:derives_from]->(r:Requirement)
+OPTIONAL MATCH (card)-[:supports]->(r)            // Entity or Bug
+OPTIONAL MATCH (card)-[:supports]->(ts:TestScenario)
+RETURN r.id AS requirement, collect(DISTINCT card.id) AS cards, collect(DISTINCT ts.id) AS scenarios
+```
+
+```cypher
+MATCH (b:Bug) WHERE b.source_created_at >= timestamp($since)
+OPTIONAL MATCH (b)-[v:violates]->(c)              // Constraint, Requirement or Criterion
+OPTIONAL MATCH (l:Learning)-[:validates]->(b)
+RETURN label(c) AS target_type, c.id AS target, c.kind_of AS kind, b.severity AS severity,
+       collect(DISTINCT b.id) AS bugs, collect(DISTINCT l.id) AS learnings, collect(DISTINCT v.rule_id) AS rules
+ORDER BY size(bugs) DESC
+```
+
+### Phase 5: Learning lifecycle (core + community)
+
+L-A through L-H from section 5, with decisions D6 (advisory default), D13
+(reconciliation bands for fan-in) and D17 (`board.settings` key). Order: L-E and
+L-A (docs), L-C, L-D, L-F, L-G, L-B, L-H.
 
 ### Phase 6: documentation and release hygiene
 
-G17 plus `CHANGELOG.md` entries in both repos (Keep a Changelog, prose bullets),
-`ska_resource_manifest.json` regeneration for every touched resource, and a
-`docs/evidence/` after-census comparing edge counts with the phase 0 baseline.
+`workflows/kg.md` (both edge-ownership tables, pair count, "cost and tool
+choice" section, the rule "artifact under construction: relational; external
+knowledge: graph; with projection lag: relational read", the "resolve the
+missing links" step in the spec and bug sweeps, safety rails updated: configurable
+timeout, no rate limit), `workflows/specs.md` (same rule in the saturation loop),
+`tool-docs/kg.md`, recipes (Bug-id, temporal, lineage, coverage),
+`reference/errors.md` (`kg_query_timeout`, `missing_links_open`), README/GLOSSARY,
+`CHANGELOG.md` in both repos, `ska_resource_manifest.json` regeneration for every
+touched resource, post-phase census against the baseline, 0.6.0 migration docs,
+documentation of the three screens.
 
 ## 7. Invariants every change must respect
 
-- `SCHEMA_VERSION` stays `0.5.0` through phases 0-2 and becomes `0.6.0` at the
-  phase 5 cutover (a single bump); no new relationship *names* anywhere in the
-  initiative.
-- No node may be loose in the graph (decision D4): every node passes the
-  connectivity guard and every projection phase exits with
-  `okto_pulse_kg_orphan_report = 0`.
+- `SCHEMA_VERSION` moves once, from `0.5.0` to `0.6.0`, at the phase 1 cutover;
+  no new relationship *name* anywhere in the initiative.
+- `created_at` keeps its projection-time semantics; `source_*` and `resolved_at`
+  are the temporal authority.
+- No KG query tool counts calls (D15/D18); the per-query timeout comes from a
+  setting, never from a constant in core.
+- The analytical tools remove no read step from the protocol (D14).
 - New `rule_id`s follow `<edge_type>/<slot>@v2.0`; existing literals are pinned
   by tests and by the active-set scope matchers. Never rename an existing rule.
-- Every emitted edge carries `layer=deterministic`, `created_by=worker_layer1`,
-  non-empty `rule_id`, empty `fallback_reason`.
-- Every emitted node must pass the connectivity guard (`belongs_to` to an
-  Entity/Bug); `supports`, `tests`, `precedes` do not count as connectivity.
+- Every deterministic edge carries `layer=deterministic`, `created_by=worker_layer1`,
+  a non-empty `rule_id` and an empty `fallback_reason`; agent resolution edges
+  always carry `layer=fallback`, confidence <= 0.85 and an audit record, never
+  through raw `add_edge_candidate`.
+- Every node passes the connectivity guard and **no node may be loose in the
+  graph** (decision D4): `belongs_to` to an Entity/Bug; `supports`, `tests`,
+  `precedes`, `violates` and `derives_from` do not count as connectivity; every
+  projection phase exits with `okto_pulse_kg_orphan_report = 0`.
 - Reference-only endpoints use `kgref:` so no partial root node is created.
 - Deterministic writers are `system:`-prefixed agents; cognitive-owned names
   (`supersedes`) are emitted only through that exemption.
 - Active-set removal ships with before-images, compensation and post-delete
   confirmation; rebuild and incremental reconciliation produce the same active
-  set.
+  set and the same missing-link queue.
+- Retired columns never come back.
 - Editing `agent_instructions.md` or anything under `mcp/resources/` regenerates
   `ska_resource_manifest.json` in the same commit; `workflows/kg.md` keeps its
-  required headings, cross-links and the strings pinned by `test_mcp_resources.py`;
-  `agent_instructions.md` stays under 500 lines and 10K tokens.
+  required headings, cross-links and pinned strings; `agent_instructions.md`
+  stays under 500 lines and 10K tokens.
 - New MCP tools update the tool-count gates in `okto-pulse/scripts/release_artifact_gate.py`
   and `tools_catalog.md`.
 - Core never imports `okto_pulse.community`; traversals go through the graph
-  store ports and are implemented in the Grafx adapter.
+  store ports and are implemented in the Grafx adapter; the schema evolution
+  follows the `grafx-schema-evolution-0.3.12-to-0.5.0.md` document format.
+- Every new screen is born from a mockup approved under the board's effective
+  Design System; new gates (`missing_link_gate`, `bug_learning_closeout`) are
+  human-written board settings defaulting to `advisory`.
 
-## 8. Decisions (recorded in the Pulse ideation Q&A, 2026-09-16)
+## 8. Decisions (recorded in the Pulse ideation Q&A, all closed on 2026-09-16)
 
 | # | Decision | Recorded choice | Origin |
 |---|---|---|---|
-| D1 | Ownership of card -> spec-child edges | card-side (`process_card` + `load_projection_inputs`, `kgref:` to children, one active set per card) | agent recommendation, user confirmation pending |
-| D2 | Source timestamp | overload `created_at` in phase 1; `source_created_at` becomes canonical in phase 5 | agent recommendation, user confirmation pending |
-| D3 | `violates` semantics | origin proxy now (Bug -> Constraint) and, in 0.6.0, also Bug -> Requirement and Bug -> Criterion by the same path | **user decision** |
-| D4 | Bug cards in `linked_task_ids` | bring `supports (Bug, X)` into 0.3.4 through 0.6.0; no node may be loose in the graph | **user decision** |
-| D5 | Schema evolution 0.6.0 | inside 0.3.4, between phases 2 and 3 | **user decision** (agent had recommended 0.3.5) |
-| D6 | Learning gate default | `advisory`, `blocking` opt-in per board | agent recommendation, user confirmation pending |
-| D7 | Sequencing | this initiative first (phases 1-3), WIP replay-only rebased afterwards | **user decision** (agent had recommended harness -> WIP -> initiative) |
+| D1 | Ownership of card -> spec-child edges | card-side (`process_card` + `load_projection_inputs`, `kgref:` to children, one active set per card) | agent recommendation, confirmed by the user |
+| D2 | Source timestamp | dedicated `source_created_at` (+ `source_updated_at`, `resolved_at`) in 0.6.0; `created_at` not overloaded | revised agent recommendation, confirmed by the user |
+| D3 | `violates` semantics | origin proxy for Bug -> Constraint, Bug -> Requirement and Bug -> Criterion, confidence 0.8 | user decision |
+| D4 | Bug cards in `linked_task_ids` | `supports (Bug, X)` in 0.3.4 through 0.6.0; no loose node in the graph | user decision |
+| D5 | Schema evolution 0.6.0 | inside 0.3.4, as the first technical phase | user decision |
+| D6 | Learning gate default | `advisory`, `blocking` opt-in per board | agent recommendation, confirmed by the user |
+| D7 | Sequencing | this initiative first, WIP replay-only rebased afterwards | user decision |
+| D8 | 0.6.0 migration trigger | explicit per board, with preflight and backup | user decision |
+| D9 | Post-cutover backfill | candidate rebuild + full deterministic re-consolidation | user decision |
+| D10 | `source_status` | raw relational status value | user decision |
+| D11 | `resolved_at` | last transition to `done`, cleared on reopen | user decision |
+| D12 | `derives_from/cooccurrence` fan-out | stop emitting; a missing link becomes a durable item the agent analyses and resolves | user decision |
+| D13 | Learning fan-in | reconciliation bands (>= 0.95 attach; 0.85-0.95 supersede; < 0.85 new) | user decision |
+| D14 | Analytical tools in the protocol | usage suggestions, not mandatory; artifact under construction stays relational, external knowledge on the graph; freshness block | refined agent recommendation, confirmed by the user |
+| D15 | Rate limit for the recall family | no new rate limit; usage guidance on the expensive tools | user decision |
+| D16 | Frontend scope | API/REST + full UI: Decision Impact, Spec Coverage, Bug Clusters, Settings and badges | user decision |
+| D17 | Where `bug_learning_closeout` lives | `board.settings` key, human-written, default advisory | user decision |
+| D18 | Existing tier-power limit | rate limit removed from every flow (port kept, off by default); per-query timeout via Settings, default 15s, max 30s, contextual error; row caps 200/1000 with pagination | user decision |
+| D19 | Placement of the new screens | contextual tabs in the existing modals (Decision -> Impact, Spec -> Coverage, KG Health/Analytics -> Clusters) | user decision |
+| D20 | Does a pending missing link block `done`? | board policy `missing_link_gate` = `advisory` (default) or `blocking`, human-written, common transition evaluator | user decision |
 
 ## 9. Out of scope (deliberately)
 
