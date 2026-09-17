@@ -4953,7 +4953,9 @@ class CardService:
         # implementation proof for every obligation its links derive; test
         # cards are exempt (BR-5) and advisory mode never blocks.
         if getattr(card, "spec_id", None):
-            delivery_spec = await self.get_spec(card.spec_id)
+            delivery_spec = await _application_get(
+                self.db, "spec", card.spec_id
+            )
             if delivery_spec is not None:
                 from okto_pulse.core.services.delivery_evidence import (
                     require_card_delivery,
