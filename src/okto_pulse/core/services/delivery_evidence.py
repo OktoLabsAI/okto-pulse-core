@@ -181,6 +181,11 @@ async def require_spec_delivery(
     """
     if resolve_delivery_gate_mode(board) != "blocking":
         return
+    if getattr(spec, "skip_delivery_evidence", False):
+        # Spec-level override following the Tests-tab skip-flag pattern:
+        # the transition is allowed while the rollup projection keeps
+        # showing the truthful coverage verdict. The evaluator is untouched.
+        return
     store = delivery_store(session)
     scope = DeliveryScope(spec.board_id, spec.id, int(spec.edition))
     if for_update:

@@ -2365,6 +2365,14 @@ class SpecUpdate(BaseModel):
             "Se True, o gate de cobertura da Code Evidence Matrix e ignorado."
         ),
     )
+    skip_delivery_evidence: bool | None = Field(
+        None,
+        description=(
+            "Se True, o gate de delivery evidence do spec→done e ignorado "
+            "(override auditavel no padrao dos demais skip flags; o veredito "
+            "continua visivel na projecao)."
+        ),
+    )
     require_task_validation: bool | None = Field(
         None,
         description="Override da spec para exigir Task Validation; None herda do board.",
@@ -2848,6 +2856,7 @@ class SpecResponse(BaseSchema):
     skip_ir_coverage: bool = False
     skip_or_coverage: bool = False
     skip_code_evidence_coverage: bool = False
+    skip_delivery_evidence: bool = False
     require_task_validation: bool | None = None
     validation_min_confidence: int | None = None
     validation_min_completeness: int | None = None
