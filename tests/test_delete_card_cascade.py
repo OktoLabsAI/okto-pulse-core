@@ -553,3 +553,87 @@ async def test_hard_delete_discards_legacy_work_and_persists_intent(db_session, 
         "delete_event_id": tombstone.delete_event_id,
         "source_refs": [f"card:{card.id}"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Audit finding (board E2E, 2026-09-17) — FR/AC containers were missing from
+# the cascade cleanup, and dead card refs deadlocked every later spec edit
+# behind the fail-closed orphan gate.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fr_and_ac_linked_task_ids_cleaned(db_session, board):
+    card_id = str(uuid.uuid4())
+    spec = _spec_factory(
+        board.id,
+        functional_requirements=[
+            {"id": "fr_1", "text": "fr", "linked_task_ids": [card_id]}
+        ],
+        acceptance_criteria=[
+            {"id": "ac_1", "text": "ac", "linked_task_ids": [card_id]}
+        ],
+    )
+    db_session.add(spec)
+    card = Card(
+        id=card_id,
+        board_id=board.id,
+        spec_id=spec.id,
+        title="impl",
+        status="not_started",
+        priority="none",
+        position=0,
+        created_by=USER_ID,
+        card_type=CardType.NORMAL,
+        labels=[],
+        linked_test_task_ids=[],
+    )
+    db_session.add(card)
+    await db_session.commit()
+
+    svc = CardService(db_session)
+    assert await svc.delete_card(card_id, USER_ID)
+    await db_session.commit()
+
+    await db_session.refresh(spec)
+    assert spec.functional_requirements[0]["linked_task_ids"] == []
+    assert spec.acceptance_criteria[0]["linked_task_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_dead_task_refs_pruned_not_blocking(db_session, board):
+    """A dead card ref predating the cascade fix must not deadlock the spec.
+
+    _validate_spec_linked_refs prunes ids of nonexistent cards from the
+    incoming payload instead of raising, so legacy specs stay editable.
+    """
+    dead_id = str(uuid.uuid4())  # card never inserted / hard-deleted earlier
+    spec = _spec_factory(
+        board.id,
+        functional_requirements=[
+            {"id": "fr_1", "text": "fr", "linked_task_ids": [dead_id]}
+        ],
+        decisions=[],
+    )
+    db_session.add(spec)
+    await db_session.commit()
+
+    update_data = {
+        "functional_requirements": [
+            {"id": "fr_1", "text": "fr", "linked_task_ids": [dead_id]}
+        ],
+        "decisions": [
+            {
+                "id": "d_new",
+                "title": "t",
+                "rationale": "r",
+                "status": "active",
+                "linked_requirements": [],
+                "linked_task_ids": [dead_id],
+            }
+        ],
+    }
+    # Must not raise despite the dead refs on both containers.
+    await services_main._validate_spec_linked_refs(db_session, spec, update_data)
+    assert update_data["functional_requirements"][0]["linked_task_ids"] == []
+    assert update_data["decisions"][0]["linked_task_ids"] == []

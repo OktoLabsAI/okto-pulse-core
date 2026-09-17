@@ -7614,9 +7614,13 @@ class CardService:
 
         Cascade-cleans orphan references before the row delete so the next
         update_spec/create_card on the same spec doesn't trip
-        _validate_spec_linked_refs. Cleans 5 JSON containers on the parent
-        spec and the linked_test_task_ids column on any bug card that pointed
-        at this one. Same transaction as the delete.
+        _validate_spec_linked_refs. Cleans every JSON container on the parent
+        spec that carries linked_task_ids — including functional_requirements
+        and acceptance_criteria (audit finding on board E2E, 2026-09-17: FR/AC
+        links were missing from the cleanup, deadlocking every later spec edit
+        behind the fail-closed orphan gate) — and the linked_test_task_ids
+        column on any bug card that pointed at this one. Same transaction as
+        the delete.
         """
         card = await self.get_card(card_id)
         if not card:
@@ -7685,6 +7689,8 @@ class CardService:
             spec = await _application_get(self.db, "spec", card.spec_id)
             if spec is not None:
                 _SPEC_LINK_CONTAINERS = (
+                    "functional_requirements",
+                    "acceptance_criteria",
                     "test_scenarios",
                     "business_rules",
                     "api_contracts",
@@ -8354,9 +8360,12 @@ async def _validate_spec_linked_refs(
     - linked_integration_requirements (OR → IR):
         Must match an existing integration_requirement.id in the same spec.
 
-    - linked_task_ids (test_scenarios + business_rules + api_contracts +
-      IR + OR + structured_trs → Card):
-        Each id must resolve to an existing Card row in the DB.
+    - linked_task_ids (functional_requirements + test_scenarios +
+      business_rules + api_contracts + IR + OR + structured_trs → Card):
+        Each id must resolve to an existing Card row in the DB. Ids of
+        hard-deleted cards are pruned instead of rejected (irrecoverable
+        legacy garbage — delete_card cascade-cleans these containers since
+        0.3.4).
 
     Raises ValueError with all offenders enumerated so the caller can fix
     them in one round-trip instead of one-by-one.
@@ -8621,12 +8630,37 @@ async def _validate_spec_linked_refs(
             filters=(_apf("id", "in", all_task_ids),),
         )
         existing_ids.update(card.id for card in cards)
-        for missing in all_task_ids - existing_ids:
-            owners = ", ".join(task_owners.get(missing, []))
-            errors.append(
-                f"linked_task_ids reference card '{missing}' that does not exist in the database. "
-                f"Referenced by: {owners}."
-            )
+        missing_task_ids = all_task_ids - existing_ids
+        if missing_task_ids:
+            # linked_task_ids referencing hard-deleted cards is irrecoverable
+            # legacy garbage: delete_card has cascade-cleaned every container
+            # since 0.3.4, so a dead id can only predate that fix. Prune it
+            # instead of deadlocking the spec behind the fail-closed orphan
+            # gate (audit finding, board E2E 2026-09-17) — every other orphan
+            # class below still rejects the update.
+            for collection in (
+                final_scenarios,
+                final_brs,
+                final_contracts,
+                final_irs,
+                final_ors,
+                final_trs_structured,
+                final_decisions,
+            ):
+                for item in collection:
+                    if isinstance(item, dict) and item.get("linked_task_ids"):
+                        item["linked_task_ids"] = [
+                            tid
+                            for tid in item["linked_task_ids"]
+                            if tid not in missing_task_ids
+                        ]
+            for item in (*final_frs_raw, *final_acs_raw):
+                if isinstance(item, dict) and item.get("linked_task_ids"):
+                    item["linked_task_ids"] = [
+                        tid
+                        for tid in item["linked_task_ids"]
+                        if tid not in missing_task_ids
+                    ]
 
     project_task_ids, project_test_ids, project_evidence_ids = (
         project_structure_reference_ids(final_project_structure)
