@@ -33,6 +33,31 @@ class DeliveryScope:
 
 
 @dataclass(frozen=True, slots=True)
+class CardDeliveryScope:
+    """Card-scoped addressing for the per-task delivery ledger.
+
+    The snapshot scope itself remains ``DeliveryScope`` so the deterministic
+    evaluator keeps comparing like with like; this type addresses the store
+    surface (one task's bindings) without changing proof semantics.
+    """
+
+    board_id: str
+    card_id: str
+    spec_id: str
+    spec_edition: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.board_id.strip()
+            or not self.card_id.strip()
+            or not self.spec_id.strip()
+        ):
+            raise ValueError("delivery_scope_identity_required")
+        if type(self.spec_edition) is not int or self.spec_edition < 1:
+            raise ValueError("delivery_scope_edition_invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryBinding:
     obligation_ref: str
     semantic_sha256: str
