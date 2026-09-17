@@ -234,6 +234,13 @@ async def require_card_delivery(
     (cross-card ``verified_implementation_ids``) lives at the spec rollup
     (BR-5), and test cards are never gated by this seam. ``advisory`` mode
     never raises: the verdict stays visible through the card snapshot.
+
+    ``evaluate_delivery_coverage`` only credits implementation facts whose
+    card is already DONE — a status the completing card cannot have while
+    this gate runs (AC ac_c41b1fa3: record proof, then move). The gate
+    therefore accepts chain-valid proof (``current_accepted_execution``)
+    bound to the obligation; the evaluator itself stays pure and unchanged
+    and re-runs with the final status at the spec rollup.
     """
     if resolve_delivery_gate_mode(board) != "blocking":
         return
@@ -254,10 +261,20 @@ async def require_card_delivery(
             "delivery_evidence_incomplete: delivery_projection_incomplete"
         )
     evaluation = evaluate_delivery_coverage(snapshot)
+    # The card DoD covers the implementation phase only — the evaluator's
+    # test-phase blockers (delivery_test_result_missing) are rollup concerns
+    # (BR-5). Evaluator-valid proof always satisfies; beyond that, chain-valid
+    # proof (accepted committed execution) bound to the obligation satisfies
+    # the DoD even before the DONE status lands (see docstring).
     missing = [
         row.obligation.binding.obligation_ref
         for row in evaluation.rows
         if not row.implementation_satisfied
+        and not any(
+            fact.current_accepted_execution
+            and row.obligation.binding in fact.bindings
+            for fact in snapshot.implementations
+        )
     ]
     if missing:
         raise ValueError(
