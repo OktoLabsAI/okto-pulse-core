@@ -4,6 +4,7 @@ import hashlib
 import json
 
 from okto_pulse.core.domain.delivery_evidence import (
+    CardDeliveryScope,
     DeliveryBinding,
     DeliveryObligation,
     DeliveryScope,
@@ -164,13 +165,31 @@ def card_delivery_store(session: object):
 
 
 async def require_spec_delivery(
-    session: object, spec: object, *, for_update: bool = False
+    session: object,
+    spec: object,
+    *,
+    for_update: bool = False,
+    board: object | None = None,
 ) -> None:
+    """Spec→done delivery gate (FR-4).
+
+    The gate consumes the card-ledger ROLLUP when the adapter exposes it —
+    the spec-level projection becomes a derivation, not a recording surface.
+    The same board setting (delivery_evidence_gate) governs this seam: in
+    ``advisory`` the aggregated verdict is surfaced through the rollup read
+    without blocking the transition.
+    """
+    if resolve_delivery_gate_mode(board) != "blocking":
+        return
     store = delivery_store(session)
     scope = DeliveryScope(spec.board_id, spec.id, int(spec.edition))
     if for_update:
         await store.lock_scope(scope)
-    snapshot = await store.load_snapshot(scope)
+    load_rollup = getattr(store, "load_rollup_snapshot", None)
+    if load_rollup is not None:
+        snapshot = (await load_rollup(spec.board_id, spec.id))[0]
+    else:
+        snapshot = await store.load_snapshot(scope)
     result = evaluate_delivery_coverage(snapshot)
     if not result.allowed:
         missing = [
@@ -183,4 +202,64 @@ async def require_spec_delivery(
             + ", ".join(result.blockers)
             + "; obligations="
             + ", ".join(missing[:20])
+        )
+
+
+def resolve_delivery_gate_mode(board: object | None) -> str:
+    """Resolve the board's delivery-evidence gate mode.
+
+    Default (and any persisted out-of-enum value) resolves to ``blocking``:
+    the 0.3.3 spec-side gate was unconditional, so legacy boards keep their
+    existing protection level (BR-8 — default blocking, fail-closed read).
+    """
+    settings = (getattr(board, "settings", None) or {}) if board is not None else {}
+    if not isinstance(settings, dict):
+        return "blocking"
+    value = settings.get("delivery_evidence_gate")
+    return value if value in {"advisory", "blocking"} else "blocking"
+
+
+async def require_card_delivery(
+    session: object,
+    card: object,
+    spec: object,
+    *,
+    board: object | None = None,
+) -> None:
+    """Card→done delivery gate (FR-3).
+
+    In ``blocking`` mode, a normal/bug card cannot complete while any
+    obligation derived from its links lacks accepted implementation proof.
+    The task DoD covers the implementation phase only — the test-phase join
+    (cross-card ``verified_implementation_ids``) lives at the spec rollup
+    (BR-5), and test cards are never gated by this seam. ``advisory`` mode
+    never raises: the verdict stays visible through the card snapshot.
+    """
+    if resolve_delivery_gate_mode(board) != "blocking":
+        return
+    raw_type = getattr(card, "card_type", None)
+    card_type = str(getattr(raw_type, "value", raw_type or "normal"))
+    if card_type not in {"normal", "bug"}:
+        return
+    spec_id = getattr(card, "spec_id", None)
+    if not spec_id or spec_id != getattr(spec, "id", None):
+        return
+    store = card_delivery_store(session)
+    scope = CardDeliveryScope(
+        card.board_id, card.id, spec_id, int(spec.edition)
+    )
+    snapshot = await store.load_card_snapshot(scope)
+    if snapshot.complete is not True or not snapshot.obligations:
+        raise ValueError(
+            "delivery_evidence_incomplete: delivery_projection_incomplete"
+        )
+    evaluation = evaluate_delivery_coverage(snapshot)
+    missing = [
+        row.obligation.binding.obligation_ref
+        for row in evaluation.rows
+        if not row.implementation_satisfied
+    ]
+    if missing:
+        raise ValueError(
+            "delivery_evidence_incomplete: obligations=" + ", ".join(missing[:20])
         )

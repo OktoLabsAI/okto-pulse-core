@@ -4947,6 +4947,31 @@ class CardService:
                 )
             )
 
+        # Card-scoped delivery gate (spec 793c43d0 / FR-3). One board setting
+        # (delivery_evidence_gate) governs both card→done and spec→done. In
+        # blocking mode a normal/bug card cannot complete without accepted
+        # implementation proof for every obligation its links derive; test
+        # cards are exempt (BR-5) and advisory mode never blocks.
+        if getattr(card, "spec_id", None):
+            delivery_spec = await self.get_spec(card.spec_id)
+            if delivery_spec is not None:
+                from okto_pulse.core.services.delivery_evidence import (
+                    require_card_delivery,
+                )
+
+                try:
+                    await require_card_delivery(
+                        self.db, card=card, spec=delivery_spec, board=board
+                    )
+                except ValueError as exc:
+                    failures.append(
+                        CompletionGateFailure(
+                            code="delivery_evidence_incomplete",
+                            summary=str(exc),
+                            reason_codes=("delivery_evidence_incomplete",),
+                        )
+                    )
+
         from okto_pulse.core.domain.guideline_semantic_transition import (
             PolicyTransitionRejected,
         )
@@ -11483,7 +11508,8 @@ class SpecService:
     async def _validate_delivery_done(self, spec) -> None:
         from okto_pulse.core.services.delivery_evidence import require_spec_delivery
 
-        await require_spec_delivery(self.db, spec)
+        board = await _application_get(self.db, "board", spec.board_id)
+        await require_spec_delivery(self.db, spec, board=board)
 
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
@@ -11932,7 +11958,12 @@ class SpecService:
         if data.status == SpecStatus.DONE:
             from okto_pulse.core.services.delivery_evidence import require_spec_delivery
 
-            await require_spec_delivery(self.db, spec, for_update=True)
+            _delivery_board = await _application_get(
+                self.db, "board", spec.board_id
+            )
+            await require_spec_delivery(
+                self.db, spec, for_update=True, board=_delivery_board
+            )
         await _record_critical_context_decision(
             self.db,
             decision=critical_context_decision,

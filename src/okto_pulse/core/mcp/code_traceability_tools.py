@@ -18,7 +18,7 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
+from okto_pulse.core.models.delivery_evidence import CardDeliveryEvidenceCommand, CardDeliveryEvidenceInput, DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -959,22 +959,23 @@ def register_code_traceability_tools(
 
         return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
 
-    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, spec_id: BoundedId, evidence: DeliveryEvidenceInput) -> McpToolOutcome:
-        """Bind accepted task execution or an authenticated TEST-card result.
+    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryEvidenceInput) -> McpToolOutcome:
+        """Bind accepted task execution or an authenticated TEST-card result to the CARD ledger.
 
-        Read get_delivery_evidence first for current edition/version/obligation_refs.
-        implementation: done task/bug card_id + accepted committed execution_id.
-        test: done TEST card_id + passed scenario_id + implementation binding IDs
-        actually tested. Never claim a task is a test or fabricate receipt fields.
-        Justify each mapping; reuse idempotency_key only for the identical request.
-        Waiver/revoke require an authorized human; agents must ask the user.
-        Missing/stale proof blocks done even when planning/test Skip flags are set.
+        Card-scoped since 0.3.4 (spec 793c43d0 / FR-7): the task owns its
+        bindings. implementation: accepted committed execution_id. test: passed
+        scenario_id + implementation binding IDs actually tested. The command
+        carries the card CAS fence (expected_card_version) and the spec edition
+        (expected_spec_edition). Read get_delivery_evidence(spec_id) first for the
+        rollup and per_card obligations. Waivers are NOT accepted here — they
+        stay on the spec rollup and require an authorized human. Revoke is
+        human-only. Never claim a task is a test or fabricate receipt fields.
         """
-        from okto_pulse.core.application.use_cases.delivery_evidence import RecordDeliveryEvidenceUseCase
+        from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
 
-        evidence = DeliveryEvidenceInput.model_validate(evidence)
-        command = DeliveryEvidenceCommand(board_id=board_id, spec_id=spec_id, **evidence.model_dump())
-        return await _execute(board_id, command, RecordDeliveryEvidenceUseCase())
+        evidence = CardDeliveryEvidenceInput.model_validate(evidence)
+        command = CardDeliveryEvidenceCommand(board_id=board_id, card_id=card_id, spec_id=spec_id, **evidence.model_dump())
+        return await _execute(board_id, command, RecordCardDeliveryEvidenceUseCase())
 
     for handler in (
         okto_pulse_get_delivery_evidence,

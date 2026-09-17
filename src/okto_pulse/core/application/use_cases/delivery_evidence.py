@@ -6,6 +6,7 @@ from okto_pulse.core.application.use_cases.authorization import (
 )
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError, commit
 from okto_pulse.core.models.delivery_evidence import (
+    CardDeliveryEvidenceCommand,
     DeliveryEvidenceCommand,
     DeliveryEvidenceQuery,
 )
@@ -25,6 +26,8 @@ class GetDeliveryEvidenceUseCase:
 
 
 class RecordDeliveryEvidenceUseCase:
+    """Legacy spec-scoped recording surface (waivers/revoke human-only)."""
+
     async def execute(self, command: DeliveryEvidenceCommand, *, actor, uow):
         operation = {
             "implementation": "code_traceability.target.execution_submit",
@@ -43,6 +46,41 @@ class RecordDeliveryEvidenceUseCase:
                 "delivery_evidence_human_authorization_required"
             )
         result = await uow.services.delivery_evidence.record(
+            command, actor_id=actor.actor_id, actor_kind=actor.actor_kind
+        )
+        await commit(uow)
+        return result
+
+
+class RecordCardDeliveryEvidenceUseCase:
+    """Card-scoped recording surface (spec 793c43d0 / FR-7).
+
+    The task owns its implementation/test bindings; the command carries the
+    card CAS fence (expected_card_version) and the spec edition. Waivers are
+    deliberately absent — they stay on the legacy spec-rollup surface and are
+    human-only (BR-3). Revoke keeps the human-only rule.
+    """
+
+    async def execute(self, command: CardDeliveryEvidenceCommand, *, actor, uow):
+        operation = {
+            "implementation": "code_traceability.target.execution_submit",
+            "test": "spec.tests.execute",
+            "revoke": "code_traceability.waiver.clear",
+        }[command.kind]
+        await require_authorization(
+            actor, PermissionRequirement(operation), uow=uow, board_id=command.board_id
+        )
+        if command.kind == "revoke" and actor.actor_kind not in {"human", "user"}:
+            raise PermissionDeniedError(
+                "delivery_evidence_human_authorization_required"
+            )
+        store = uow.services.delivery_evidence
+        record_card = getattr(store, "record_card", None)
+        if record_card is None:
+            raise PermissionDeniedError(
+                "card_delivery_evidence_adapter_unavailable"
+            )
+        result = await record_card(
             command, actor_id=actor.actor_id, actor_kind=actor.actor_kind
         )
         await commit(uow)

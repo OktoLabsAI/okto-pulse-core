@@ -22,22 +22,32 @@ Draft or relax receipt/subject version matching.
 
 **Mandatory before completing a Spec:** planning/context evidence is not proof of
 the delivered implementation. Call `okto_pulse_get_delivery_evidence(board_id,
-spec_id)` and use its current edition, version and exact obligation references.
+spec_id)` and use its rollup projection: exact obligation references plus the
+per_card block (each linked card's derived obligations and satisfaction).
+
+**Card-scoped since 0.3.4 (spec 793c43d0):** `okto_pulse_record_delivery_evidence`
+anchors on the CARD — pass `board_id, card_id, spec_id` and a command carrying
+`expected_card_version` (the card CAS fence) and `expected_spec_edition`. The
+obligation universe of a normal/bug card derives from its own spec links; a card
+without links carries exactly the `card:<card_id>` fallback obligation. Waivers
+are NOT accepted on the card surface — they remain a human-only, spec-rollup
+exception on the legacy ledger; revoke stays human-only everywhere.
 
 1. Tasks/bug cards provide code delivery: follow the existing Target investigation,
    resolution and execution-receipt workflow; record the committed result revision,
    actual file/symbol and explanation, then complete the card. Use
    `okto_pulse_record_delivery_evidence` with kind `implementation` to associate the
-   accepted execution ID with all obligations it actually implements.
+   accepted execution ID with all obligations the card's links derive.
 2. **Test cards alone provide verification.** Execute their linked scenarios using
    the authenticated Test Evidence runtime, record a passing result, and complete
    the test card. Record kind `test`, identifying the scenario and the returned
    implementation association IDs actually tested. The signed run must not predate
    the implementation's source observation. All current implementations for an
    obligation must be covered, possibly jointly by several test cards.
-3. Refresh the delivery projection before `move_spec(..., status="done")`. Missing,
-   stale, failed, revoked, cross-board or wrong-edition proof blocks completion.
-   The gate is separate from planning Skip flags, advisory mode and greenfield.
+3. Refresh the rollup before `move_spec(..., status="done")`. Missing,
+   stale, failed, revoked, cross-board or wrong-edition proof blocks completion
+   (board `delivery_evidence_gate=blocking`; advisory surfaces the verdict without
+   blocking). The gate is separate from planning Skip flags and greenfield.
 
 An agent must not manufacture receipts, claim a task is a test, or self-authorize
 an exemption. Ask an authorized human when implementation or verification is not

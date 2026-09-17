@@ -4456,6 +4456,13 @@ class BoardSettings(BaseModel):
     code_traceability: CodeTraceabilitySettings = Field(
         default_factory=CodeTraceabilitySettings
     )
+    # Card-scoped Delivery Evidence gate (spec 793c43d0 / FR-3, FR-5).
+    # One setting governs BOTH card→done and spec→done: blocking rejects
+    # completion without accepted implementation proof; advisory surfaces the
+    # verdict without blocking. Legacy boards without the field resolve as
+    # blocking — the 0.3.3 spec-side gate was unconditional, so the default
+    # preserves the existing protection level (BR-8).
+    delivery_evidence_gate: Literal["advisory", "blocking"] = "blocking"
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = (
         True  # if True, cards must pass validation before moving to done
