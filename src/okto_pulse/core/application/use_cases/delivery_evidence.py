@@ -66,7 +66,9 @@ class RecordCardDeliveryEvidenceUseCase:
     human-only (BR-3). Revoke keeps the human-only rule.
     """
 
-    async def execute(self, command: CardDeliveryEvidenceCommand, *, actor, uow):
+    async def execute(
+        self, command: CardDeliveryEvidenceCommand, *, actor, uow: PulseUnitOfWork
+    ):
         operation = {
             "implementation": "code_traceability.target.execution_submit",
             "test": "spec.tests.execute",
