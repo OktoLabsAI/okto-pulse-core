@@ -89,6 +89,12 @@ def test_query_contract_covers_layers_related_context_and_edge_endpoints():
 
 
 def test_schema_info_exposes_the_same_machine_readable_contract():
+    # The registry's graph store is the routed Community adapter; materialize
+    # the board graph so live introspection has a bootstrapped graph to read
+    # (the retired in-memory fake answered any board id without one).
+    from kg_schema_testing import bootstrap_board_graph
+
+    bootstrap_board_graph("contract-board")
     result = get_schema_info("contract-board")
 
     assert result["query_contract"] == query_contract_document()
