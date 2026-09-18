@@ -857,12 +857,12 @@ async def _commit_lineage_clear(*, board_id: str):
 
 
 def _real_lineage_rows(
-    kg_runtime,
+    graph_testing,
     board_id: str,
     *,
     spec_id: str = SPEC_ID,
 ) -> list[tuple[str, str]]:
-    with kg_runtime.open_board_connection(board_id) as (_db, conn):
+    with graph_testing.open_board_connection(board_id) as (_db, conn):
         result = conn.execute(
             "MATCH (source:Entity)-[r:belongs_to]->(target:Entity) "
             "WHERE source.source_artifact_ref = $source_ref "
@@ -881,19 +881,19 @@ def _real_lineage_rows(
 
 
 async def _real_lineage_rows_async(
-    kg_runtime,
+    graph_testing,
     board_id: str,
     *,
     spec_id: str = SPEC_ID,
 ) -> list[tuple[str, str]]:
     return await run_blocking_graph_io(
-        lambda: _real_lineage_rows(kg_runtime, board_id, spec_id=spec_id),
+        lambda: _real_lineage_rows(graph_testing, board_id, spec_id=spec_id),
         task_name="tests.spec_lineage_graph_reconciliation.lineage_rows",
     )
 
 
 def _real_edge_exists(
-    kg_runtime,
+    graph_testing,
     board_id: str,
     *,
     from_type: str,
@@ -902,7 +902,7 @@ def _real_edge_exists(
     to_id: str,
     rule_id: str,
 ) -> bool:
-    with kg_runtime.open_board_connection(board_id) as (_db, conn):
+    with graph_testing.open_board_connection(board_id) as (_db, conn):
         result = conn.execute(
             f"MATCH (source:{from_type} {{id: $from_id}})"
             f"-[r:belongs_to]->(target:{to_type} {{id: $to_id}}) "
@@ -920,13 +920,13 @@ def _real_edge_exists(
 
 
 def _real_node_id_by_source_ref(
-    kg_runtime,
+    graph_testing,
     board_id: str,
     *,
     node_type: str,
     source_ref: str,
 ) -> str:
-    with kg_runtime.open_board_connection(board_id) as (_db, conn):
+    with graph_testing.open_board_connection(board_id) as (_db, conn):
         result = conn.execute(
             f"MATCH (node:{node_type}) "
             "WHERE node.source_artifact_ref = $source_ref "
@@ -947,13 +947,12 @@ async def test_commit_audit_failure_restores_old_parent_before_removing_new(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from kg_registry_testing import configure_real_graph_test_kg_registry
-    from okto_pulse.community.adapters import kg_runtime
+    import kg_schema_testing as graph_testing
     from okto_pulse.core.kg import primitives
 
     board_id = "lineage-uow-compensation"
     audit = _ToggleAuditRepository()
-    monkeypatch.setattr(kg_runtime, "_kg_base_dir", lambda: tmp_path / "kg")
-    kg_runtime.reset_bootstrap_cache_for_tests()
+    graph_testing.reset_bootstrap_cache_for_tests()
     configure_real_graph_test_kg_registry(audit_repo=audit)
 
     async def _healthy(*_args, **_kwargs) -> str:
@@ -962,13 +961,13 @@ async def test_commit_audit_failure_restores_old_parent_before_removing_new(
     monkeypatch.setattr(primitives, "_resolve_commit_kg_health_state", _healthy)
 
     try:
-        kg_runtime.bootstrap_board_graph(board_id)
+        graph_testing.bootstrap_board_graph(board_id)
         await _commit_lineage_candidates(
             board_id=board_id,
             parent_kind="ideation",
             parent_id=IDEATION_ID,
         )
-        assert await _real_lineage_rows_async(kg_runtime, board_id) == [
+        assert await _real_lineage_rows_async(graph_testing, board_id) == [
             (f"board:{board_id}", BOARD_RULE),
             (f"ideation:{IDEATION_ID}", IDEATION_RULE),
         ]
@@ -984,7 +983,7 @@ async def test_commit_audit_failure_restores_old_parent_before_removing_new(
                 parent_id=REFINEMENT_ID,
             )
 
-        assert await _real_lineage_rows_async(kg_runtime, board_id) == [
+        assert await _real_lineage_rows_async(graph_testing, board_id) == [
             (f"board:{board_id}", BOARD_RULE),
             (f"ideation:{IDEATION_ID}", IDEATION_RULE),
         ]
@@ -995,12 +994,12 @@ async def test_commit_audit_failure_restores_old_parent_before_removing_new(
             parent_kind="refinement",
             parent_id=REFINEMENT_ID,
         )
-        assert await _real_lineage_rows_async(kg_runtime, board_id) == [
+        assert await _real_lineage_rows_async(graph_testing, board_id) == [
             (f"board:{board_id}", BOARD_RULE),
             (f"refinement:{REFINEMENT_ID}", REFINEMENT_RULE),
         ]
     finally:
-        kg_runtime.close_all_connections(board_id)
+        graph_testing.close_all_connections()
 
 
 @pytest.mark.asyncio
@@ -1009,13 +1008,12 @@ async def test_clear_audit_failure_restores_old_parent_and_retry_converges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from kg_registry_testing import configure_real_graph_test_kg_registry
-    from okto_pulse.community.adapters import kg_runtime
+    import kg_schema_testing as graph_testing
     from okto_pulse.core.kg import primitives
 
     board_id = "lineage-clear-uow-compensation"
     audit = _ToggleAuditRepository()
-    monkeypatch.setattr(kg_runtime, "_kg_base_dir", lambda: tmp_path / "kg")
-    kg_runtime.reset_bootstrap_cache_for_tests()
+    graph_testing.reset_bootstrap_cache_for_tests()
     configure_real_graph_test_kg_registry(audit_repo=audit)
 
     async def _healthy(*_args, **_kwargs) -> str:
@@ -1024,7 +1022,7 @@ async def test_clear_audit_failure_restores_old_parent_and_retry_converges(
     monkeypatch.setattr(primitives, "_resolve_commit_kg_health_state", _healthy)
 
     try:
-        kg_runtime.bootstrap_board_graph(board_id)
+        graph_testing.bootstrap_board_graph(board_id)
         await _commit_lineage_candidates(
             board_id=board_id,
             parent_kind="ideation",
@@ -1035,7 +1033,7 @@ async def test_clear_audit_failure_restores_old_parent_and_retry_converges(
             (f"ideation:{IDEATION_ID}", IDEATION_RULE),
         ]
         assert (
-            await _real_lineage_rows_async(kg_runtime, board_id)
+            await _real_lineage_rows_async(graph_testing, board_id)
             == expected_with_parent
         )
 
@@ -1046,7 +1044,7 @@ async def test_clear_audit_failure_restores_old_parent_and_retry_converges(
         ):
             await _commit_lineage_clear(board_id=board_id)
         assert (
-            await _real_lineage_rows_async(kg_runtime, board_id)
+            await _real_lineage_rows_async(graph_testing, board_id)
             == expected_with_parent
         )
 
@@ -1054,17 +1052,17 @@ async def test_clear_audit_failure_restores_old_parent_and_retry_converges(
         await _commit_lineage_clear(board_id=board_id)
         expected_without_parent = [(f"board:{board_id}", BOARD_RULE)]
         assert (
-            await _real_lineage_rows_async(kg_runtime, board_id)
+            await _real_lineage_rows_async(graph_testing, board_id)
             == expected_without_parent
         )
 
         await _commit_lineage_clear(board_id=board_id)
         assert (
-            await _real_lineage_rows_async(kg_runtime, board_id)
+            await _real_lineage_rows_async(graph_testing, board_id)
             == expected_without_parent
         )
     finally:
-        kg_runtime.close_all_connections(board_id)
+        graph_testing.close_all_connections()
 
 
 @pytest.mark.asyncio
@@ -1073,14 +1071,13 @@ async def test_commit_restore_failure_aborts_generic_cleanup_and_keeps_new_paren
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from kg_registry_testing import configure_real_graph_test_kg_registry
-    from okto_pulse.community.adapters import kg_runtime
+    import kg_schema_testing as graph_testing
     from okto_pulse.core.kg import primitives
     from okto_pulse.core.kg.interfaces import get_kg_registry
 
     board_id = "lineage-restore-failure"
     audit = _ToggleAuditRepository()
-    monkeypatch.setattr(kg_runtime, "_kg_base_dir", lambda: tmp_path / "kg")
-    kg_runtime.reset_bootstrap_cache_for_tests()
+    graph_testing.reset_bootstrap_cache_for_tests()
     configure_real_graph_test_kg_registry(audit_repo=audit)
 
     async def _healthy(*_args, **_kwargs) -> str:
@@ -1089,7 +1086,7 @@ async def test_commit_restore_failure_aborts_generic_cleanup_and_keeps_new_paren
     monkeypatch.setattr(primitives, "_resolve_commit_kg_health_state", _healthy)
 
     try:
-        kg_runtime.bootstrap_board_graph(board_id)
+        graph_testing.bootstrap_board_graph(board_id)
         await _commit_lineage_candidates(
             board_id=board_id,
             parent_kind="ideation",
@@ -1138,7 +1135,7 @@ async def test_commit_restore_failure_aborts_generic_cleanup_and_keeps_new_paren
         # The old edge was already deleted by the successful graph phase.
         # Restore then failed, so compensation must retain the replacement and
         # abort generic session cleanup instead of producing zero parents.
-        assert await _real_lineage_rows_async(kg_runtime, board_id) == [
+        assert await _real_lineage_rows_async(graph_testing, board_id) == [
             (f"board:{board_id}", BOARD_RULE),
             (f"refinement:{REFINEMENT_ID}", REFINEMENT_RULE),
         ]
@@ -1150,12 +1147,12 @@ async def test_commit_restore_failure_aborts_generic_cleanup_and_keeps_new_paren
             parent_kind="refinement",
             parent_id=REFINEMENT_ID,
         )
-        assert await _real_lineage_rows_async(kg_runtime, board_id) == [
+        assert await _real_lineage_rows_async(graph_testing, board_id) == [
             (f"board:{board_id}", BOARD_RULE),
             (f"refinement:{REFINEMENT_ID}", REFINEMENT_RULE),
         ]
     finally:
-        kg_runtime.close_all_connections(board_id)
+        graph_testing.close_all_connections()
 
 
 @pytest.mark.asyncio
@@ -1169,7 +1166,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
     from kg_registry_testing import (
         configure_real_graph_and_data_test_kg_registry,
     )
-    from okto_pulse.community.adapters import kg_runtime
+    import kg_schema_testing as graph_testing
     from okto_pulse.core.application.processors import consolidation
     from okto_pulse.core.application.processors.consolidation import (
         ConsolidationProcessor,
@@ -1192,8 +1189,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
     ideation_id = str(uuid.uuid4())
     refinement_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
-    monkeypatch.setattr(kg_runtime, "_kg_base_dir", lambda: tmp_path / "kg")
-    kg_runtime.reset_bootstrap_cache_for_tests()
+    graph_testing.reset_bootstrap_cache_for_tests()
     configure_real_graph_and_data_test_kg_registry(db_factory)
     lifecycle_mutations: list[str] = []
     original_lifecycle = consolidation._apply_board_graph_lifecycle_after_commit
@@ -1209,7 +1205,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
     )
 
     try:
-        kg_runtime.bootstrap_board_graph(board_id)
+        graph_testing.bootstrap_board_graph(board_id)
         async with db_factory() as db:
             await db.execute(ConsolidationQueue.__table__.delete())
             db.add(Board(id=board_id, name="Lineage worker", owner_id="owner"))
@@ -1264,7 +1260,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
         worker = ConsolidationProcessor(db_factory, batch_size=1)
         assert await worker.process_batch() == 1
         initial_rows = _real_lineage_rows(
-            kg_runtime,
+            graph_testing,
             board_id,
             spec_id=spec_id,
         )
@@ -1277,7 +1273,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
         assert any(target == f"board:{board_id}" for target, _rule in initial_rows)
 
         spec_graph_id = _real_node_id_by_source_ref(
-            kg_runtime,
+            graph_testing,
             board_id,
             node_type="Entity",
             source_ref=f"spec:{spec_id}",
@@ -1340,7 +1336,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
 
         assert await worker.process_batch() == 1
         cleared_rows = _real_lineage_rows(
-            kg_runtime,
+            graph_testing,
             board_id,
             spec_id=spec_id,
         )
@@ -1356,7 +1352,7 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
             "legacy_pre_v2",
         ) in cleared_rows
         assert _real_edge_exists(
-            kg_runtime,
+            graph_testing,
             board_id,
             from_type="Requirement",
             from_id=child_id,
@@ -1382,11 +1378,11 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
         assert await worker.process_batch() == 1
         assert len(lifecycle_mutations) == 3
         assert (
-            _real_lineage_rows(kg_runtime, board_id, spec_id=spec_id)
+            _real_lineage_rows(graph_testing, board_id, spec_id=spec_id)
             == cleared_rows
         )
         assert _real_edge_exists(
-            kg_runtime,
+            graph_testing,
             board_id,
             from_type="Requirement",
             from_id=child_id,
@@ -1395,4 +1391,4 @@ async def test_real_worker_lifecycle_explicit_clear_removes_only_spec_parent(
             rule_id=CHILD_RULE,
         )
     finally:
-        kg_runtime.close_all_connections(board_id)
+        graph_testing.close_all_connections()

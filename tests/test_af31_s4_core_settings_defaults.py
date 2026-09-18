@@ -60,7 +60,7 @@ def test_af31_s4_operational_settings_are_absent_from_core_contract(
         "cors_origins",
         "kg_base_dir",
         "kg_embedding_model",
-        "kg_kuzu_buffer_pool_mb",
+        "kg_grafx_buffer_pool_mb",
     }
     assert operational.isdisjoint(CoreSettings.model_fields)
     assert set(inventory) == set(CoreSettings.model_fields)

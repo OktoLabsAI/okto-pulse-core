@@ -2,7 +2,7 @@
 
 Scenarios:
   ts_05d93d48 — AuthContext resolves boards via factory
-  ts_0db5378a — E2E primitives with InMemory providers (no Kuzu/SQLite)
+  ts_0db5378a — E2E primitives with InMemory providers (no graph runtime/SQLite)
 """
 
 from __future__ import annotations
@@ -115,12 +115,12 @@ class TestAuthContextFactory:
 
 
 # -----------------------------------------------------------------------
-# ts_0db5378a — E2E primitives with InMemory providers (no Kuzu/SQLite)
+# ts_0db5378a — E2E primitives with InMemory providers (no graph runtime/SQLite)
 # -----------------------------------------------------------------------
 
 
 class TestE2EInMemoryProviders:
-    """ts_0db5378a — AC-10: full primitive flow without Kuzu/SQLite."""
+    """ts_0db5378a — AC-10: full primitive flow without the graph runtime/SQLite."""
 
     @pytest.mark.asyncio
     async def test_begin_and_session_lifecycle(self):

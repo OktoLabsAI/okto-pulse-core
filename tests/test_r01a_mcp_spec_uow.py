@@ -1221,7 +1221,7 @@ async def test_decision_remove_is_soft_delete(_seed):
         "okto_pulse_add_decision",
         board_id=BOARD_ID,
         spec_id=_seed,
-        title="Pick LadybugDB",
+        title="Pick the graph runtime",
         rationale="embedded + single-writer",
     )
     dec_id = added["decision"]["id"]

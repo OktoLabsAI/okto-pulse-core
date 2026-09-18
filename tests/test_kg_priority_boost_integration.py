@@ -1,9 +1,10 @@
-"""Integration tests for priority_boost persistence in Kùzu (spec 0eb51d3e).
+"""Integration tests for priority_boost persistence in the board graph
+(spec 0eb51d3e).
 
 Covers TS8 / TS9 / TS10:
 
 - TS8 / AC1+AC3: commit-persist + recompute preserves frozen boost
-- TS9 / AC7: ALTER TABLE ADD migration is idempotent across re-bootstraps
+- TS9 / AC7: a fresh bootstrap carries the column on every node type
 - TS10 / AC10: _recompute_relevance_batch reads the persisted boost per node
 """
 
@@ -13,9 +14,9 @@ import os
 
 import pytest
 
-from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
 from kg_schema_testing import (
     NODE_TYPES,
+    board_graph_columns,
     PRIORITY_BOOST_COLUMNS,
     bootstrap_board_graph,
     close_all_connections,
@@ -30,10 +31,6 @@ from okto_pulse.core.kg.scoring import (
     reset_histogram,
 )
 
-kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
-_ensure_priority_boost_columns = kg_runtime._ensure_priority_boost_columns
-apply_schema_to_connection = kg_runtime.apply_schema_to_connection
-
 
 @pytest.fixture
 def fresh_board():
@@ -42,7 +39,6 @@ def fresh_board():
     reset_histogram()
     yield bid
     close_all_connections()
-    reset_connection_pool_for_tests()
 
 
 def _insert_entity(conn, node_id: str, *, source_conf: float, boost: float) -> None:
@@ -77,54 +73,8 @@ def test_priority_boost_columns_declared():
 
 def test_ts9_fresh_board_has_priority_boost_column(fresh_board):
     """Fresh bootstrap includes priority_boost on every node type."""
-    with open_board_connection(fresh_board) as (_db, conn):
-        for ntype in NODE_TYPES:
-            res = conn.execute(f"CALL TABLE_INFO('{ntype}') RETURN *")
-            cols: set[str] = set()
-            while res.has_next():
-                for item in res.get_next():
-                    if isinstance(item, str):
-                        cols.add(item)
-            assert "priority_boost" in cols, f"{ntype} missing priority_boost"
-
-
-def test_ts9_ensure_priority_boost_columns_is_idempotent(fresh_board):
-    """ALTER TABLE ADD priority_boost twice in a row is a safe no-op."""
-    with open_board_connection(fresh_board) as (_db, conn):
-        first = _ensure_priority_boost_columns(conn, "Entity")
-        second = _ensure_priority_boost_columns(conn, "Entity")
-    # Fresh board already has the column (DDL created it), so both passes
-    # report zero additions — no exception bubbles up either way.
-    assert first == []
-    assert second == []
-
-
-def test_ts9_apply_schema_to_connection_is_idempotent(fresh_board):
-    """Running the full schema application twice doesn't error."""
-    import gc
-
-    bc = open_board_connection(fresh_board)
-    try:
-        apply_schema_to_connection(bc.conn)
-        apply_schema_to_connection(bc.conn)
-        # Verify column still present in the same session — avoids Kùzu
-        # re-acquiring the file lock on Windows.
-        res = bc.conn.execute("CALL TABLE_INFO('Entity') RETURN *")
-        cols: set[str] = set()
-        while res.has_next():
-            for item in res.get_next():
-                if isinstance(item, str):
-                    cols.add(item)
-        assert "priority_boost" in cols
-    finally:
-        bc.close()
-        del bc
-        gc.collect()
-
-
-# ---------------------------------------------------------------------------
-# TS8 (AC1 + AC3): commit persists priority_boost, recompute preserves it
-# ---------------------------------------------------------------------------
+    for ntype in NODE_TYPES:
+        assert "priority_boost" in board_graph_columns(fresh_board, ntype), ntype
 
 
 def test_ts8_insert_persists_priority_boost(fresh_board):

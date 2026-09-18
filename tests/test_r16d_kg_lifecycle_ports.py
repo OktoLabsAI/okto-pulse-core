@@ -19,7 +19,7 @@ Authoritative scenario mapping (1:1 with the spec/card titles):
                 no unexpected delta and the default-only exclusions are unchanged
                 (tr_06adc038 / tr_ae79d1f2).
   ts_f83ad3db — Scope / register-before-remove: startup helpers and the core
-                registry do not import kg.schema / embedded Kuzu runtime, while
+                registry do not import kg.schema / the retired embedded graph runtime, while
                 test-only graph fakes remain available.
 
 Async port calls are driven via ``asyncio.run`` in sync tests (no pytest-asyncio
@@ -289,7 +289,18 @@ def test_ts_f967116f_shutdown_uses_graph_lifecycle_close():
     assert "close_all_connections" not in _kg_schema_named_imports(ast.parse(src))
 
 
-def test_ts_f967116f_happy_path_closes_kg_then_db():
+def test_ts_f967116f_happy_path_closes_kg_then_db(monkeypatch):
+    # This is a Board-lifecycle unit test: pretend no routed Global bundle is
+    # composed (legacy test shell), otherwise the registry attached by the
+    # shared test registry setup would attempt a real Global shutdown here.
+    import okto_pulse.community.adapters.composition as composition_mod
+
+    def _no_routed_bundle():
+        raise RuntimeError("community_routed_graph_composition_unavailable")
+
+    monkeypatch.setattr(
+        composition_mod, "require_community_routed_graph_composition", _no_routed_bundle
+    )
     calls = {"close_arg": "UNSET", "db": 0}
 
     class _OkLifecycle:
@@ -429,7 +440,7 @@ def test_ts_f83ad3db_scope_limited_register_before_remove():
         f"startup_schema_sweep must not import kg.schema; saw {sorted(sweep_imports)}"
     )
 
-    # 2) The core registry no longer imports the runtime schema/Kuzu providers.
+    # 2) The core registry no longer imports the runtime schema/embedded providers.
     from okto_pulse.core.kg.interfaces import registry as _registry_mod
 
     registry_imports = _module_imports(

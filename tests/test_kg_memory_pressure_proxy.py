@@ -188,9 +188,8 @@ def test_hwm_pct_none_on_runtime_error(monkeypatch):
     Confirms TR2: the health endpoint must never 500 on an IO failure when
     reading telemetry data.
 
-    Strategy: create the graph file (so .exists() passes), then replace
-    the board_kuzu_path return value with a MagicMock whose .exists() returns
-    True and whose .stat() raises OSError. This avoids the complication of
+    Strategy: replace the registered ``graph_runtime_store.footprint`` with a
+    callable that raises OSError. This avoids the complication of
     monkeypatching Path.stat globally (which would also break .exists() in
     Python 3.13+ where .exists() calls .stat() internally).
     """

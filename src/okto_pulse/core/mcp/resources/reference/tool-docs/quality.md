@@ -74,9 +74,12 @@ independently blocking; the current score and board gate policy decide the
 transition.
 
 Up to five proposed questions may accompany the assessment as immutable result
-evidence. They never create or mutate the subject's Q&A board. Prefer
-one focused question per ambiguity and use `question_type="choice"` only with
-mutually exclusive choices.
+evidence, and they are also materialized as Q&A items on the subject's Q&A
+board (ids `qa_<hex>`) by the same write, asked by the recording agent. They
+remain pending until answered or deleted, and one pending item blocks the human
+close-out of the subject; omit `proposed_questions` when you do not want pending
+Q&A. Prefer one focused question per ambiguity and use `question_type="choice"`
+only with mutually exclusive choices.
 
 Args:
     board_id: Board ID

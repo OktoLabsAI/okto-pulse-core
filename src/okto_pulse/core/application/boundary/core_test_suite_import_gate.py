@@ -154,7 +154,7 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
         "tests/kg_registry_testing.py",
         "from",
         "okto_pulse.community.adapters.board_source_reader",
-        2,
+        1,
         "community_integration_marker",
         justification=(
             "Helper must distinguish contract-fake mode from Community integration mode."
@@ -173,37 +173,7 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
     _cls(
         "tests/kg_registry_testing.py",
         "from",
-        "okto_pulse.community.adapters.board_graph_runtime",
-        2,
-        "community_integration_marker",
-        justification=(
-            "Helper must distinguish contract-fake mode from Community integration mode."
-        ),
-    ),
-    _cls(
-        "tests/kg_registry_testing.py",
-        "from",
-        "okto_pulse.community.adapters.kg",
-        1,
-        "community_integration_marker",
-        justification=(
-            "Helper must distinguish contract-fake mode from Community integration mode."
-        ),
-    ),
-    _cls(
-        "tests/kg_registry_testing.py",
-        "from",
-        "okto_pulse.community.adapters.kg_runtime",
-        4,
-        "community_integration_marker",
-        justification=(
-            "Helper must distinguish contract-fake mode from Community integration mode."
-        ),
-    ),
-    _cls(
-        "tests/kg_registry_testing.py",
-        "from",
-        "okto_pulse.community.adapters.global_discovery_runtime",
+        "okto_pulse.community.adapters.rebuild_audit_storage",
         1,
         "community_integration_marker",
         justification=(
@@ -223,7 +193,7 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
     _cls(
         "tests/kg_registry_testing.py",
         "from",
-        "okto_pulse.community.adapters.kuzu_graph_lifecycle",
+        "okto_pulse.community.adapters.reflective_query",
         1,
         "community_integration_marker",
         justification=(
@@ -392,13 +362,6 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
         "move_to_community",
     ),
     _cls(
-        "tests/test_kuzu_memory_config.py",
-        "import",
-        "okto_pulse.community.adapters.kg_runtime",
-        2,
-        "move_to_community",
-    ),
-    _cls(
         "tests/test_r08b_auth_context_bridge.py",
         "importorskip",
         "okto_pulse.community.adapters.mcp_auth",
@@ -497,7 +460,7 @@ DEFAULT_CORE_TEST_COMMUNITY_RUNTIME_DEPENDENCIES: tuple[
     _rt("tests/test_kg_r7_imp4.py"),
     _rt("tests/test_kg_r7_imp5.py"),
     _rt("tests/test_kg_rebuild_preflight.py"),
-    _rt("tests/test_kg_rebuild_service.py", adapter="okto_pulse.community.adapters.kuzu_graph_lifecycle"),
+    _rt("tests/test_kg_rebuild_service.py", adapter="okto_pulse.community.api.kg_rebuild"),
     _rt("tests/test_kg_s_kg_02_canonical_learning.py"),
     _rt("tests/test_kg_schema_lifecycle.py"),
     _rt("tests/test_kg_schema_vector_extension.py"),
@@ -517,7 +480,6 @@ DEFAULT_CORE_TEST_COMMUNITY_RUNTIME_DEPENDENCIES: tuple[
         "tests/test_kg_tier_power.py::TestNLQuery::test_query_exact_fallback_finds_bug_without_vector_index_hit",
         "node",
     ),
-    _rt("tests/test_kuzu_memory_config.py"),
     _rt(
         "tests/test_r09_global_discovery_runtime.py::test_community_global_discovery_bootstrap_with_token_runs_schema_ddl",
         "node",

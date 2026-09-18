@@ -8,7 +8,7 @@ KG maturity rule for the amendment partition.
 KG checkpoints here are the DETERMINISTIC source-maturity / rebuild rule
 (``classify_source_for_kg`` + ``_expected_layers_from_sources`` +
 ``_verify_materialized_layers``) — the rule a rebuild WOULD apply — NOT a live
-read of a board's LadybugDB graph (that is heavy/flaky and exercised elsewhere).
+read of a board's graph (that is heavy/flaky and exercised elsewhere).
 
   TS1 (ts_64a2d5aa): complete Path B positive flow + KG checkpoints.
   TS2 (ts_38dc9e19): false Path B variants stay blocked, never closure-ready,

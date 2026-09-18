@@ -741,7 +741,7 @@ async def test_explicit_supersede_replay_repairs_missing_durable_record(
 ):
     """A graph-ahead replay must restore the MKG-A source ledger.
 
-    This models interruption after Ladybug materialized the deterministic
+    This models interruption after Grafx materialized the deterministic
     successor but before its durable append/ACK survived.  The explicit
     SUPERSEDE replay takes the ``existing_successor`` branch; success is valid
     only when that branch re-appends the generation-1 source record.

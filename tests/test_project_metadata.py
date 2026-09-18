@@ -26,8 +26,10 @@ def test_dev_extra_contains_the_standard_contributor_tooling() -> None:
     ]
     dependencies = project["optional-dependencies"]["dev"]
 
+    # aiosqlite is no longer a Core dev-extra: the Grafx distribution
+    # closure moved the SQLite driver to the Community edition, which the
+    # dev extra already pulls in through "okto-pulse".
     for package in (
-        "aiosqlite",
         "build",
         "okto-pulse",
         "pyright",

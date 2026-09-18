@@ -10,7 +10,7 @@ e rotula a ausência como ``legacy_unknown`` (nunca canonical implícito).
   * TS1 (ts_772ec35d) — canonical-only EXCLUI o node sem classificação, em TODAS
     as superfícies reais de leitura: get_all_nodes, count_all_nodes,
     get_related_context (GET_RELATED_CONTEXT) e o /subgraph?center
-    (kuzu_graph_store).
+    (grafx_graph_store).
   * TS6 (ts_323672ab) — include_working/all ROTULA o node sem classificação como
     ``legacy_unknown`` (não 'canonical', não raw null).
 
@@ -65,7 +65,7 @@ def _seed_layered_board() -> str:
     with open_board_connection(board_id) as (_db, conn):
         for nid, ref, title, layer in _NODES:
             if layer is None:
-                # Sem a propriedade graph_layer → NULL/ausente no Kuzu.
+                # Sem a propriedade graph_layer → NULL/ausente no Grafx.
                 conn.execute(
                     "CREATE (n:Decision {id:$id, title:$t, source_artifact_ref:$r, "
                     "source_confidence:1.0, relevance_score:0.9, "

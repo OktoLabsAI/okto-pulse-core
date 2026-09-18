@@ -31,7 +31,7 @@ from okto_pulse.core.models.schemas import Decision, DecisionStatus
 
 
 def test_ts5_decision_defaults():
-    d = Decision(id="dec_abc12345", title="Use Kùzu", rationale="embedded graph DB")
+    d = Decision(id="dec_abc12345", title="Use Grafx", rationale="embedded graph DB")
     assert d.status == "active"
     assert d.context is None
     assert d.alternatives_considered is None
@@ -90,14 +90,14 @@ def test_ts7_migration_extracts_bullets_and_removes_block():
         "A\n"
         "\n"
         "## Decisions\n"
-        "- Use Kùzu\n"
+        "- Use Grafx\n"
         "- Cache em Redis\n"
         "\n"
         "## Other\n"
         "B\n"
     )
     bullets, cleaned = _extract_and_clean(context)
-    assert bullets == ["Use Kùzu", "Cache em Redis"]
+    assert bullets == ["Use Grafx", "Cache em Redis"]
     assert "## Decisions" not in cleaned
     assert "## Intro" in cleaned
     assert "## Other" in cleaned
@@ -152,7 +152,7 @@ def _spec_with_formalized_decisions() -> dict:
         "decisions": [
             {
                 "id": "dec_ts9_one",
-                "title": "Use Kùzu",
+                "title": "Use Grafx",
                 "rationale": "embedded graph DB fits our use case",
                 "status": "active",
                 "linked_requirements": ["0"],
@@ -177,14 +177,14 @@ def test_ts9_process_spec_emits_formalized_decisions():
     result = DeterministicWorker().process_spec(_spec_with_formalized_decisions())
     decision_nodes = [n for n in result.nodes if n.node_type == "Decision"]
     titles = {n.title for n in decision_nodes}
-    assert "Use Kùzu" in titles
+    assert "Use Grafx" in titles
     assert "Cache em Redis" in titles
     # Revoked decisions are NOT emitted (superseded/revoked are excluded).
     assert "Use DuckDB" not in titles
     refs = {n.title: n.source_artifact_ref for n in decision_nodes}
     spec_ref = "spec:11111111-aaaa-4444-bbbb-222222222222"
     assert refs == {
-        "Use Kùzu": f"{spec_ref}:decision:dec_ts9_one",
+        "Use Grafx": f"{spec_ref}:decision:dec_ts9_one",
         "Cache em Redis": f"{spec_ref}:decision:dec_ts9_two",
     }
     for n in decision_nodes:
@@ -200,17 +200,17 @@ def test_ts9_explicit_linked_requirements_use_high_confidence_edge():
     derives = [e for e in result.edges if e.edge_type == "derives_from"]
     assert derives  # sanity
 
-    # 'Use Kùzu' has linked_requirements=["0"] → exactly one derives_from edge
+    # 'Use Grafx' has linked_requirements=["0"] → exactly one derives_from edge
     # with confidence=1.0 to FR index 0.
-    kuzu_cids = [
+    grafx_cids = [
         n.candidate_id for n in result.nodes
-        if n.node_type == "Decision" and n.title == "Use Kùzu"
+        if n.node_type == "Decision" and n.title == "Use Grafx"
     ]
-    assert len(kuzu_cids) == 1
-    kuzu_cid = kuzu_cids[0]
-    kuzu_edges = [e for e in derives if e.from_candidate_id == kuzu_cid]
-    assert len(kuzu_edges) == 1
-    assert kuzu_edges[0].confidence == 1.0
+    assert len(grafx_cids) == 1
+    grafx_cid = grafx_cids[0]
+    grafx_edges = [e for e in derives if e.from_candidate_id == grafx_cid]
+    assert len(grafx_edges) == 1
+    assert grafx_edges[0].confidence == 1.0
 
     # 'Cache em Redis' has no linked_requirements → co-occurrence edges to
     # every FR, each with confidence=0.6.
@@ -231,13 +231,13 @@ def test_ts9_formalized_shadows_legacy_markdown_by_title():
     spec = _spec_with_formalized_decisions()
     spec["context"] = (
         "## Decisions\n"
-        "- Use Kùzu\n"  # same title as formal dec_ts9_one → skipped
+        "- Use Grafx\n"  # same title as formal dec_ts9_one → skipped
         "- Legacy only\n"  # unique → still emitted via legacy path
     )
     result = DeterministicWorker().process_spec(spec)
     decision_nodes = [n for n in result.nodes if n.node_type == "Decision"]
     titles = [n.title for n in decision_nodes]
-    # 'Use Kùzu' appears exactly once (from the formalized path).
-    assert titles.count("Use Kùzu") == 1
+    # 'Use Grafx' appears exactly once (from the formalized path).
+    assert titles.count("Use Grafx") == 1
     # 'Legacy only' still makes it through via the backward-compat path.
     assert "Legacy only" in titles

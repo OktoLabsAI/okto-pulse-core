@@ -34,21 +34,21 @@ from okto_pulse.core.kg.config_guard import (
 
 TEST_GRAPH_SETTING_POLICY = GraphSettingPolicy(
     setting_groups={
-        "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
-        "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
+        "kg_grafx_buffer_pool_mb": SETTING_GROUP_BUFFER,
+        "kg_grafx_max_db_size_gb": SETTING_GROUP_STORAGE,
         "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
-        "kg_kuzu_wal_mode": SETTING_GROUP_WAL,
-        "kg_kuzu_cache_threshold_pct": SETTING_GROUP_CACHE,
-        "kg_kuzu_index_rebuild_on_open": SETTING_GROUP_INDEX,
-        "ladybug_buffer_pool_mb": SETTING_GROUP_BUFFER,
-        "ladybug_max_db_size_gb": SETTING_GROUP_STORAGE,
-        "ladybug_wal_mode": SETTING_GROUP_WAL,
+        "kg_grafx_wal_mode": SETTING_GROUP_WAL,
+        "kg_grafx_cache_threshold_pct": SETTING_GROUP_CACHE,
+        "kg_grafx_index_rebuild_on_open": SETTING_GROUP_INDEX,
+        "graph_buffer_pool_mb": SETTING_GROUP_BUFFER,
+        "graph_max_db_size_gb": SETTING_GROUP_STORAGE,
+        "graph_wal_mode": SETTING_GROUP_WAL,
     },
     governed_prefixes=(
-        "kg_kuzu_",
-        "kg_ladybug_",
+        "kg_grafx_",
+        "kg_graph_",
         "kg_connection_",
-        "ladybug_",
+        "graph_",
     ),
     public_contract="legacy_runtime_settings_api",
 )
@@ -72,8 +72,8 @@ def test_noop_change_is_allowed_with_value_not_changed_reason():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_buffer_pool_mb": 512},
-        requested_settings={"kg_kuzu_buffer_pool_mb": 512},
+        current_settings={"kg_grafx_buffer_pool_mb": 512},
+        requested_settings={"kg_grafx_buffer_pool_mb": 512},
         actor_id="actor-1",
     )
     assert decision.allowed is True
@@ -90,7 +90,7 @@ def test_unrelated_setting_changes_are_ignored():
         requested_settings={"random_app_flag": "on"},
         actor_id="actor-1",
     )
-    # No KG/ladybug settings changed → treated as noop.
+    # No KG/graph settings changed → treated as noop.
     assert decision.allowed is True
     assert decision.reason == ConfigBlockReason.VALUE_NOT_CHANGED.value
 
@@ -101,8 +101,8 @@ def test_cache_setting_change_with_no_extras_is_allowed():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_cache_threshold_pct": 70},
-        requested_settings={"kg_kuzu_cache_threshold_pct": 80},
+        current_settings={"kg_grafx_cache_threshold_pct": 70},
+        requested_settings={"kg_grafx_cache_threshold_pct": 80},
         actor_id="actor-1",
     )
     assert decision.allowed is True
@@ -115,8 +115,8 @@ def test_public_graph_runtime_knobs_have_groups_and_metadata():
     metadata = get_graph_runtime_setting_metadata(TEST_GRAPH_SETTING_POLICY)
 
     expected = {
-        "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
-        "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
+        "kg_grafx_buffer_pool_mb": SETTING_GROUP_BUFFER,
+        "kg_grafx_max_db_size_gb": SETTING_GROUP_STORAGE,
         "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
     }
     for setting_name, setting_group in expected.items():
@@ -132,8 +132,8 @@ def test_buffer_change_with_restart_required_is_allowed_with_requires_restart():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_buffer_pool_mb": 512},
-        requested_settings={"kg_kuzu_buffer_pool_mb": 1024},
+        current_settings={"kg_grafx_buffer_pool_mb": 512},
+        requested_settings={"kg_grafx_buffer_pool_mb": 1024},
         actor_id="actor-1",
         restart_policy=RestartPolicy.REQUIRED.value,
     )
@@ -160,8 +160,8 @@ def test_storage_grow_with_migration_plan_and_restart_is_allowed():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_max_db_size_gb": 4},
-        requested_settings={"kg_kuzu_max_db_size_gb": 8},
+        current_settings={"kg_grafx_max_db_size_gb": 4},
+        requested_settings={"kg_grafx_max_db_size_gb": 8},
         actor_id="actor-1",
         migration_plan_ref="MP-2026-05-26-001",
         restart_policy=RestartPolicy.SCHEDULED.value,
@@ -178,8 +178,8 @@ def test_storage_shrink_below_current_is_blocked():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_max_db_size_gb": 8},
-        requested_settings={"kg_kuzu_max_db_size_gb": 4},
+        current_settings={"kg_grafx_max_db_size_gb": 8},
+        requested_settings={"kg_grafx_max_db_size_gb": 4},
         actor_id="actor-1",
         migration_plan_ref="MP-1",
         restart_policy=RestartPolicy.SCHEDULED.value,
@@ -200,7 +200,7 @@ def test_storage_shrink_below_probe_footprint_is_blocked():
     """Even when current_settings omits the size, the probe-supplied
     footprint blocks a shrink."""
     def probe(name):
-        if name == "kg_kuzu_max_db_size_gb":
+        if name == "kg_grafx_max_db_size_gb":
             return 12  # actual on-disk footprint
         return None
 
@@ -208,7 +208,7 @@ def test_storage_shrink_below_probe_footprint_is_blocked():
     decision = guard.validate(
         board_id="b1",
         current_settings={},
-        requested_settings={"kg_kuzu_max_db_size_gb": 8},
+        requested_settings={"kg_grafx_max_db_size_gb": 8},
         actor_id="actor-1",
         migration_plan_ref="MP-1",
         restart_policy=RestartPolicy.SCHEDULED.value,
@@ -221,8 +221,8 @@ def test_storage_change_without_migration_plan_is_blocked():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_max_db_size_gb": 4},
-        requested_settings={"kg_kuzu_max_db_size_gb": 8},  # grow but no MP
+        current_settings={"kg_grafx_max_db_size_gb": 4},
+        requested_settings={"kg_grafx_max_db_size_gb": 8},  # grow but no MP
         actor_id="actor-1",
         restart_policy=RestartPolicy.REQUIRED.value,
     )
@@ -234,8 +234,8 @@ def test_wal_change_without_migration_plan_is_blocked():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_wal_mode": "default"},
-        requested_settings={"kg_kuzu_wal_mode": "aggressive"},
+        current_settings={"kg_grafx_wal_mode": "default"},
+        requested_settings={"kg_grafx_wal_mode": "aggressive"},
         actor_id="actor-1",
         restart_policy=RestartPolicy.SCHEDULED.value,
     )
@@ -248,8 +248,8 @@ def test_buffer_change_without_restart_policy_is_blocked():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_buffer_pool_mb": 512},
-        requested_settings={"kg_kuzu_buffer_pool_mb": 1024},
+        current_settings={"kg_grafx_buffer_pool_mb": 512},
+        requested_settings={"kg_grafx_buffer_pool_mb": 1024},
         actor_id="actor-1",
         restart_policy=RestartPolicy.NONE.value,
     )
@@ -275,15 +275,15 @@ def test_connection_pool_change_without_restart_policy_is_blocked():
 
 
 def test_unsupported_kg_setting_raises():
-    """A setting matching kg_/ladybug_ prefix but absent from the
-    allow-list raises ``unsupported_ladybug_setting`` so callers can't
+    """A setting matching a governed kg_/graph_ prefix but absent from the
+    allow-list raises ``unsupported_graph_setting`` so callers can't
     sneak unknown keys past the guard."""
     guard = _guard()
     with pytest.raises(ConfigGuardError) as excinfo:
         guard.validate(
             board_id="b1",
             current_settings={},
-            requested_settings={"kg_kuzu_dangerous_undocumented_flag": True},
+            requested_settings={"kg_grafx_dangerous_undocumented_flag": True},
             actor_id="actor-1",
         )
     assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_GRAPH_SETTING
@@ -308,8 +308,8 @@ def test_invalid_restart_policy_raises_unsupported():
     with pytest.raises(ConfigGuardError) as excinfo:
         guard.validate(
             board_id="b1",
-            current_settings={"kg_kuzu_buffer_pool_mb": 512},
-            requested_settings={"kg_kuzu_buffer_pool_mb": 1024},
+            current_settings={"kg_grafx_buffer_pool_mb": 512},
+            requested_settings={"kg_grafx_buffer_pool_mb": 1024},
             actor_id="actor-1",
             restart_policy="bogus_value",
         )
@@ -323,8 +323,8 @@ def test_atomic_validation_unavailable_raises():
     with pytest.raises(ConfigGuardError) as excinfo:
         guard.validate(
             board_id="b1",
-            current_settings={"kg_kuzu_buffer_pool_mb": 512},
-            requested_settings={"kg_kuzu_buffer_pool_mb": 1024},
+            current_settings={"kg_grafx_buffer_pool_mb": 512},
+            requested_settings={"kg_grafx_buffer_pool_mb": 1024},
             actor_id="actor-1",
             restart_policy=RestartPolicy.REQUIRED.value,
         )
@@ -342,16 +342,16 @@ def test_counter_carries_required_or_labels():
     # Migration-required block
     guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_max_db_size_gb": 4},
-        requested_settings={"kg_kuzu_max_db_size_gb": 8},
+        current_settings={"kg_grafx_max_db_size_gb": 4},
+        requested_settings={"kg_grafx_max_db_size_gb": 8},
         actor_id="a1",
         restart_policy=RestartPolicy.REQUIRED.value,
     )
     # Shrink block
     guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_max_db_size_gb": 8},
-        requested_settings={"kg_kuzu_max_db_size_gb": 4},
+        current_settings={"kg_grafx_max_db_size_gb": 8},
+        requested_settings={"kg_grafx_max_db_size_gb": 4},
         actor_id="a1",
         migration_plan_ref="MP-1",
         restart_policy=RestartPolicy.REQUIRED.value,
@@ -359,8 +359,8 @@ def test_counter_carries_required_or_labels():
     # Restart-required block
     guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_buffer_pool_mb": 512},
-        requested_settings={"kg_kuzu_buffer_pool_mb": 1024},
+        current_settings={"kg_grafx_buffer_pool_mb": 512},
+        requested_settings={"kg_grafx_buffer_pool_mb": 1024},
         actor_id="a1",
         restart_policy=RestartPolicy.NONE.value,
     )
@@ -393,8 +393,8 @@ def test_audit_event_format_is_safe_and_bounded():
     guard = _guard()
     decision = guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_buffer_pool_mb": 512},
-        requested_settings={"kg_kuzu_buffer_pool_mb": 999999999},
+        current_settings={"kg_grafx_buffer_pool_mb": 512},
+        requested_settings={"kg_grafx_buffer_pool_mb": 999999999},
         actor_id="actor-1",
         restart_policy=RestartPolicy.REQUIRED.value,
     )
@@ -422,8 +422,8 @@ def test_counter_never_includes_raw_values():
     guard = _guard()
     guard.validate(
         board_id="b1",
-        current_settings={"kg_kuzu_buffer_pool_mb": 512},
-        requested_settings={"kg_kuzu_buffer_pool_mb": 9999},
+        current_settings={"kg_grafx_buffer_pool_mb": 512},
+        requested_settings={"kg_grafx_buffer_pool_mb": 9999},
         actor_id="actor-1",
         restart_policy=RestartPolicy.NONE.value,
     )

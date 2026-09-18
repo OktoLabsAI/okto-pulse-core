@@ -7,7 +7,7 @@ Covers:
 - TS9: report formats (table + JSON structure)
 
 Strategy: inject duplicates directly via Cypher CREATE on an in-memory
-test Kuzu graph, then run migrate_dedup_entities and assert via Cypher
+test Grafx graph, then run migrate_dedup_entities and assert via Cypher
 counts + report shape.
 """
 
@@ -53,7 +53,7 @@ def dedup_migration_tempdir(monkeypatch):
 
 
 def _bootstrap_board() -> str:
-    """Create an empty per-board Kuzu graph and return its id."""
+    """Create an empty per-board Grafx graph and return its id."""
     from kg_schema_testing import bootstrap_board_graph
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)

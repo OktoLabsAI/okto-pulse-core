@@ -151,20 +151,27 @@ async def test_ts3_put_outside_range_rejected_by_pydantic():
         RuntimeSettingsPayload(kg_decay_tick_interval_minutes=10081)
 
 
-async def test_ts6_reset_last_recomputed_at_handles_empty_scope():
-    """TS6 — `reset_last_recomputed_at` não quebra quando o board-alvo não
-    tem grafo local. Exercita o caminho de iteração + try/except por board
-    sem depender do estado global acumulado pela suíte monolítica.
+async def test_ts6_reset_last_recomputed_at_reports_typed_failure_for_empty_scope():
+    """TS6 — `reset_last_recomputed_at` fecha o escopo por board com um erro
+    TIPADO quando o board-alvo não tem grafo local, em vez de vazar o erro
+    cru do runtime de grafo. Exercita o caminho de iteração + o registro de
+    falha por board sem depender do estado global acumulado pela suíte.
 
-    Validação completa do comportamento force_full_rebuild=true requer
-    Kuzu fixture com nodes pré-existentes — deferred para integration
-    test em sessão futura.
+    Validação completa do comportamento force_full_rebuild=true requer uma
+    fixture do runtime de grafo da Community (Grafx) com nodes pré-existentes
+    — deferred para integration test em sessão futura.
     """
-    from okto_pulse.core.application.kg_tick import reset_last_recomputed_at
+    from okto_pulse.core.application.kg_tick import (
+        KGTickFullRebuildResetFailed,
+        reset_last_recomputed_at,
+    )
 
-    # Per-board scope com board inexistente tenta o GraphTransaction composto,
-    # que falha de forma best-effort no bloco interno.
-    await reset_last_recomputed_at(board_id="board-does-not-exist-uuid")
+    # Per-board scope com board inexistente tenta o GraphTransaction composto;
+    # a falha é agregada num erro tipado que nomeia o board afetado.
+    with pytest.raises(KGTickFullRebuildResetFailed) as excinfo:
+        await reset_last_recomputed_at(board_id="board-does-not-exist-uuid")
+
+    assert "board-does-not-exist-uuid" in str(excinfo.value)
 
 
 async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch):

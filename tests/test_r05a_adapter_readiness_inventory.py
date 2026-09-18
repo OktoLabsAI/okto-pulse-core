@@ -381,7 +381,7 @@ def test_ts_9dbe515a_module_imports_in_isolation(tmp_path):
 # ts_088ab292 — gate reproves a future removal without ready.
 # ===========================================================================
 def test_ts_088ab292_removal_blocked_without_ready():
-    entry = _by_key("kuzu_graph_store")
+    entry = _by_key("grafx_graph_store")
 
     # synthetic removal with partial evidence -> blocked (never removed).
     partial = AdapterEvidence(port_closed=True, community_registered=True)

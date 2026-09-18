@@ -1311,6 +1311,10 @@ async def test_refinement_artifact_materializes_lineage_in_worker(
     )
 
     configure_real_graph_test_kg_registry()
+    # The routed Community graph runtime is fail-closed: a board whose route
+    # was never initialized has no binding, so the consolidation pipeline must
+    # materialize the board graph before the worker commit durability steps.
+    bootstrap_board_graph(BOARD_ID)
     ideation_id = "idea-ref-lineage"
     refinement_id = "ref-lineage"
     async with db_factory() as session:
@@ -1775,38 +1779,14 @@ def test_human_curated_column_declared_in_schema():
     }
 
 
-def test_human_curated_migration_helper_exists_and_is_called():
-    """TS6: _ensure_human_curated_columns is wired into apply_schema.
-
-    Verifies the helper exists with the expected signature (conn, node_type)
-    and is referenced in the apply_schema body so legacy boards get the
-    column added on next bootstrap. Uses source-text inspection to avoid
-    instantiating a real Kùzu connection in this unit test.
-    """
-    import inspect
-    import okto_pulse.community.adapters.kg_runtime as schema_mod
-
-    helper = getattr(schema_mod, "_ensure_human_curated_columns", None)
-    assert helper is not None, "migration helper missing"
-    sig = inspect.signature(helper)
-    assert list(sig.parameters) == ["conn", "node_type"]
-
-    # Guarantee the helper is invoked from apply_schema for every node type.
-    apply_src = (
-        inspect.getsource(schema_mod._apply_schema_to_open_conn)
-        if hasattr(schema_mod, "_apply_schema_to_open_conn")
-        else inspect.getsource(schema_mod)
-    )
-    assert "_ensure_human_curated_columns" in apply_src
-
 
 def test_node_is_human_curated_treats_null_as_false():
     """TS7 (read path unit): _node_is_human_curated returns False on NULL.
 
     Legacy nodes from before v0.3.2 have no human_curated value set; the
     UPDATE preservation path must default to FALSE so retrocompat is
-    automatic. Uses a tiny stub for the kuzu connection to avoid spinning
-    up a real Kùzu database in this unit test.
+    automatic. Uses a tiny stub for the grafx connection to avoid spinning
+    up a real Grafx database in this unit test.
     """
     from okto_pulse.core.kg.primitives import _node_is_human_curated
     from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
@@ -1835,7 +1815,7 @@ def test_update_branch_preserves_curated_node_without_override(caplog):
     branch is in place: it must read human_curated, check explicit membership
     in agent_overrides, emit kg.consolidation.manual_edit_preserved on
     skip and kg.consolidation.reset_manual_flag when the override fires.
-    Source-level assertion avoids a full Kùzu commit cycle for a unit test.
+    Source-level assertion avoids a full Grafx commit cycle for a unit test.
     """
     import inspect
     from okto_pulse.core.kg import primitives
@@ -1854,7 +1834,7 @@ def test_begin_consolidation_has_nothing_changed_log_site():
     Source-level assertion confirms the log site introduced for spec
     4007e4a3 (Ideação #3, FR6) is present and includes the `event=`
     field used by observability tooling for parsing. A full integration
-    test exercising the path would need a fully bootstrapped Kùzu graph
+    test exercising the path would need a fully bootstrapped Grafx graph
     + audit row + matching content_hash; this unit test focuses on the
     log surface to keep the suite fast and deterministic.
     """
@@ -1932,7 +1912,7 @@ async def test_card_moved_publish_latency_under_5ms_p99(db_factory, clean_tables
 # ---------------------------------------------------------------------------
 
 
-def _seed_kuzu_node(
+def _seed_graph_node(
     board_id: str,
     node_type: str,
     node_id: str,
@@ -1943,20 +1923,16 @@ def _seed_kuzu_node(
     *,
     source_artifact_ref: str | None = None,
 ) -> None:
-    """Insert one Kùzu node derived from a card (source_artifact_ref='card:{id}').
+    """Insert one Grafx node derived from a card (source_artifact_ref='card:{id}').
 
     Uses the deterministic stub embedding (384 zeros) so we don't depend on
     sentence-transformers in unit tests. Explicitly releases the Python-side
-    kuzu handles + runs gc so the handler running inside the dispatcher can
+    grafx handles + runs gc so the handler running inside the dispatcher can
     acquire the Windows exclusive file lock.
     """
-    import gc as _gc
-
     bootstrap_board_graph(board_id)
-    _gc.collect()
-    bc = open_board_connection(board_id)
-    try:
-        bc.conn.execute(
+    with open_board_connection(board_id) as (_db, conn):
+        conn.execute(
             f"CREATE (n:{node_type} "
             "{id: $id, title: $title, content: '', context: '', "
             "justification: '', source_artifact_ref: $ref, source_session_id: '', "
@@ -1977,19 +1953,13 @@ def _seed_kuzu_node(
                 "emb": [0.0] * 384,
             },
         )
-    finally:
-        bc.close()
-        del bc
-        _gc.collect()
 
 
 def _fetch_node_fields(board_id: str, node_type: str, node_id: str) -> dict:
     """Read a node's mutable fields — returns empty dict if node missing."""
-    import gc as _gc
 
-    bc = open_board_connection(board_id)
-    try:
-        result = bc.conn.execute(
+    with open_board_connection(board_id) as (_db, conn):
+        result = conn.execute(
             f"MATCH (n:{node_type}) WHERE n.id = $id "
             "RETURN n.relevance_score, n.revocation_reason, n.superseded_at, "
             "n.pre_cancellation_relevance_score, n.superseded_by",
@@ -2006,35 +1976,23 @@ def _fetch_node_fields(board_id: str, node_type: str, node_id: str) -> dict:
                 "pre_cancellation_relevance_score": row[3],
                 "superseded_by": row[4],
             }
-    finally:
-        bc.close()
-        del bc
-        _gc.collect()
     return fields
 
 
 @pytest_asyncio.fixture
 async def decay_board(event_board):
-    """Ensure the Kùzu graph exists and is cleaned between tests."""
-    import gc as _gc
+    """Ensure the Grafx graph exists and is cleaned between tests."""
 
     configure_real_graph_test_kg_registry()
     bootstrap_board_graph(event_board)
-    _gc.collect()
-    bc = open_board_connection(event_board)
-    try:
+    with open_board_connection(event_board) as (_db, conn):
         for nt in ("Entity", "Decision"):
             try:
-                bc.conn.execute(f"MATCH (n:{nt}) DELETE n")
+                conn.execute(f"MATCH (n:{nt}) DELETE n")
             except Exception:  # noqa: BLE001 — best-effort cleanup
                 pass
-    finally:
-        bc.close()
-        del bc
-        _gc.collect()
     yield event_board
-    close_all_connections(event_board)
-    _gc.collect()
+    close_all_connections()
 
 
 def test_decay_handlers_registered():
@@ -2055,8 +2013,8 @@ async def test_decay_applied(db_factory, clean_tables, decay_board, caplog):
         logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay"
     )
     card_id = "card-decay-1"
-    _seed_kuzu_node(decay_board, "Entity", "node-e1", card_id, 0.8)
-    _seed_kuzu_node(decay_board, "Decision", "node-d1", card_id, 0.8)
+    _seed_graph_node(decay_board, "Entity", "node-e1", card_id, 0.8)
+    _seed_graph_node(decay_board, "Decision", "node-d1", card_id, 0.8)
 
     async with db_factory() as session:
         await publish(
@@ -2121,7 +2079,7 @@ async def test_decay_applied(db_factory, clean_tables, decay_board, caplog):
 async def test_decay_clamp_floor(db_factory, clean_tables, decay_board):
     """Score cannot go below 0 even if penalty exceeds current value."""
     card_id = "card-decay-floor"
-    _seed_kuzu_node(decay_board, "Entity", "node-floor", card_id, 0.3)
+    _seed_graph_node(decay_board, "Entity", "node-floor", card_id, 0.3)
 
     async with db_factory() as session:
         await publish(
@@ -2157,7 +2115,7 @@ async def test_decay_restore_round_trip_preserves_score_below_penalty(
     """A clamped score is restored bit-for-bit from its persisted snapshot."""
     card_id = "card-decay-round-trip"
     original_score = 0.4716
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-round-trip",
@@ -2213,7 +2171,7 @@ async def test_source_lifecycle_covers_owner_family_children_and_aliases(
     owner_type = source_ref.split(":", 1)[0]
     for index, projected_ref in enumerate(projected_refs):
         node_type = "Decision" if "decision" in projected_ref else "Entity"
-        _seed_kuzu_node(
+        _seed_graph_node(
             decay_board,
             node_type,
             f"node-owner-family-{owner_type}-{index}",
@@ -2257,7 +2215,7 @@ async def test_archive_restore_keeps_cancelled_source_revoked(
     from okto_pulse.core.events.handlers import cancellation_decay
 
     card_id = "card-cancel-archive-restore"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-cancel-archive-restore",
@@ -2324,7 +2282,7 @@ async def test_cancellation_restore_keeps_archived_source_revoked(
     from okto_pulse.core.events.handlers import cancellation_decay
 
     card_id = "card-archive-cancel-restore"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-archive-cancel-restore",
@@ -2380,7 +2338,7 @@ async def test_late_cancel_retry_converges_to_current_restored_state(
     from okto_pulse.core.events.handlers import cancellation_decay
 
     card_id = "card-late-cancel-after-restore"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-late-cancel-after-restore",
@@ -2431,7 +2389,7 @@ async def test_late_restore_retry_converges_to_current_recancelled_state(
     from okto_pulse.core.events.handlers import cancellation_decay
 
     card_id = "card-late-restore-after-recancel"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-late-restore-after-recancel",
@@ -2485,7 +2443,7 @@ async def test_late_restore_after_hard_delete_stays_revoked(
     from okto_pulse.core.events.handlers import cancellation_decay
 
     card_id = "card-late-restore-after-delete"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-late-restore-after-delete",
@@ -2529,7 +2487,7 @@ async def test_late_restore_after_hard_delete_stays_revoked(
 async def test_decay_does_not_overwrite_another_revocation_reason(decay_board):
     """Cancellation must not replace supersedence/deletion ownership markers."""
     card_id = "card-decay-other-reason"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-other-reason",
@@ -2549,7 +2507,7 @@ async def test_decay_does_not_overwrite_another_revocation_reason(decay_board):
 async def test_decay_idempotent(db_factory, clean_tables, decay_board):
     """Second CardCancelled for the same card does not re-apply penalty."""
     card_id = "card-decay-idem"
-    _seed_kuzu_node(decay_board, "Entity", "node-idem", card_id, 0.9)
+    _seed_graph_node(decay_board, "Entity", "node-idem", card_id, 0.9)
 
     async def _publish_and_drain():
         async with db_factory() as session:
@@ -2623,7 +2581,7 @@ async def test_decay_reverted(
     )
     card_id = "card-decay-revert"
     # Start in a decayed state to exercise only the restore leg.
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-revert",
@@ -2689,7 +2647,7 @@ async def test_restore_selective_by_reason(
     )
 
     card_id = "card-selective"
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-match",
@@ -2697,7 +2655,7 @@ async def test_restore_selective_by_reason(
         0.3,
         revocation_reason=REVOCATION_REASON,
     )
-    _seed_kuzu_node(
+    _seed_graph_node(
         decay_board,
         "Entity",
         "node-other",

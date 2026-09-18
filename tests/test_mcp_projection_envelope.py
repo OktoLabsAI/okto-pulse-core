@@ -324,7 +324,7 @@ def test_projection_profiles_resource_registered_and_readable():
 
     content = _srv._load_resource_file("reference/projection_profiles.md")
     assert content.startswith("---")  # frontmatter
-    assert 'version: "1.0"' in content
+    assert 'version: "1.1"' in content
     # Documents the canonical key + the four profiles + the safety invariant.
     assert "outcome" in content
     for profile in SUPPORTED_PROFILES:

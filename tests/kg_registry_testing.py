@@ -65,13 +65,48 @@ def _community_rebuild_artifact_scope_resolver() -> dict[str, Any]:
 
 
 def _community_graph_providers() -> dict[str, Any]:
-    from okto_pulse.community.adapters.kg import build_community_graph_providers
+    """Return the live Community Grafx graph providers for the test registry.
+
+    These are the exact adapters the Community composition root installs: one
+    routed Board+Global Grafx composition shared with ``kg_schema_testing`` so a
+    test that seeds a board through the helper and a test that drives the
+    registry reach the same binding store, route resolver and database pool.
+    """
+
     from okto_pulse.community.adapters.data import CommunityKGConfig
     from okto_pulse.community.config import CommunitySettings
+    from kg_schema_testing import graph_composition
 
-    providers = build_community_graph_providers()
+    composition = graph_composition()
+    providers: dict[str, Any] = dict(composition.registry_providers())
     providers["config"] = CommunityKGConfig(CommunitySettings())
     return providers
+
+
+def _apply_community_reflective_providers(registry: Any) -> None:
+    """Fill the reflective slots the Community composition derives from graph."""
+
+    from okto_pulse.community.adapters.reflective_query import (
+        build_community_reflective_providers,
+    )
+
+    for key, value in build_community_reflective_providers(
+        graph_store=registry.graph_store,
+        embedding_provider=registry.embedding_provider,
+        cypher_executor=registry.cypher_executor,
+    ).items():
+        setattr(registry, key, value)
+
+
+def _attach_community_routed_graph_composition() -> None:
+    """Expose the shared routed bundle the Community adapters ask for."""
+
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+    from kg_schema_testing import graph_composition
+
+    registry = get_kg_registry()
+    registry._community_routed_graph_composition = graph_composition()
+    _apply_community_reflective_providers(registry)
 
 
 def _skip_missing_community_integration(exc: ModuleNotFoundError) -> None:
@@ -148,6 +183,9 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
 
     defaults.update(overrides)
     configure_kg_registry(defaults_factory=build_testing_kg_registry, **defaults)
+
+    if graph_provider != "inmemory" and "graph_store" in defaults:
+        _attach_community_routed_graph_composition()
 
     from okto_pulse.core.services.application_kg import (
         configure_commit_coordinator,
@@ -399,7 +437,7 @@ class _InMemoryCognitiveSourceStore:
 def configure_real_graph_test_kg_registry(**overrides: Any) -> None:
     """Configure test registry fakes plus real Community graph providers.
 
-    Use this only in integration tests that seed/read a real Ladybug board graph.
+    Use this only in integration tests that seed/read a real Grafx board graph.
     The default autouse test registry stays in-memory so pure unit tests keep
     isolation and speed.
     """
@@ -439,7 +477,7 @@ def configure_real_graph_and_data_test_kg_registry(
 
 
 class RealBoardCypherExecutorForTests:
-    """Test-only bridge for legacy integration tests that seed Ladybug directly.
+    """Test-only bridge for integration tests that seed a board graph directly.
 
     Production code must receive the board-graph executor from the composition
     root. Some older core integration tests still call ``bootstrap_board_graph``
@@ -455,21 +493,15 @@ class RealBoardCypherExecutorForTests:
         *,
         max_rows: int = 1000,
     ) -> dict:
-        from okto_pulse.community.adapters.kg_runtime import open_board_connection
+        from kg_schema_testing import open_materialized_board_connection
 
-        rows: list[list[Any]] = []
-        with open_board_connection(board_id) as (_db, conn):
+        with open_materialized_board_connection(board_id) as (_db, conn):
             result = conn.execute(cypher, params or {})
-            try:
-                while result.has_next() and len(rows) < max_rows:
-                    rows.append(list(result.get_next()))
-            finally:
-                if hasattr(result, "close"):
-                    result.close()
+        rows = [list(row) for row in result.rows[:max_rows]]
         return {
             "rows": rows,
             "row_count": len(rows),
-            "truncated": len(rows) >= max_rows,
+            "truncated": len(result.rows) > max_rows,
         }
 
     def is_supported(self) -> bool:
@@ -477,12 +509,16 @@ class RealBoardCypherExecutorForTests:
 
 
 class _RealBoardGraphTransactionScopeForTests:
-    def __init__(self, board_id: str) -> None:
-        from okto_pulse.community.adapters.kuzu_graph_transaction import (
-            _KuzuTransactionScope,
-        )
+    """One staged Grafx write transaction, driven from test code."""
 
-        self._delegate = _KuzuTransactionScope(board_id)
+    def __init__(self, board_id: str) -> None:
+        from kg_schema_testing import open_materialized_board_connection
+
+        self._context = open_materialized_board_connection(board_id)
+        _database, connection = self._context.__enter__()
+        self._connection = connection
+        self._delegate = connection._scope
+        self._closed = False
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._delegate, name)
@@ -490,11 +526,20 @@ class _RealBoardGraphTransactionScopeForTests:
     def execute(self, cypher: str, params: dict[str, Any] | None = None) -> Any:
         return self._delegate.execute(cypher, params)
 
+    def _exit(self, exc: BaseException | None) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if exc is None:
+            self._context.__exit__(None, None, None)
+        else:
+            self._context.__exit__(type(exc), exc, exc.__traceback__)
+
     async def commit(self) -> None:
-        await self._delegate.commit()
+        self._exit(None)
 
     async def rollback(self) -> None:
-        await self._delegate.rollback()
+        self._exit(RuntimeError("test graph transaction rolled back"))
 
     async def __aenter__(self) -> "_RealBoardGraphTransactionScopeForTests":
         return self
@@ -507,21 +552,19 @@ class _RealBoardGraphTransactionScopeForTests:
 
 
 class RealBoardGraphTransactionForTests:
-    """Test-only GraphTransaction bridge over the legacy real board graph."""
+    """Test-only GraphTransaction bridge over the real board graph."""
 
     async def begin(self, board_id: str) -> _RealBoardGraphTransactionScopeForTests:
         return _RealBoardGraphTransactionScopeForTests(board_id)
 
 
 class RealBoardGraphLifecycleForTests:
-    """Test-only GraphLifecycle bridge over the Community Ladybug adapter."""
+    """Test-only GraphLifecycle bridge over the routed Community Grafx adapter."""
 
     def __init__(self) -> None:
-        from okto_pulse.community.adapters.kuzu_graph_lifecycle import (
-            CommunityKuzuGraphLifecycle,
-        )
+        from kg_schema_testing import graph_composition
 
-        self._delegate = CommunityKuzuGraphLifecycle()
+        self._delegate = graph_composition().board.graph_lifecycle
 
     async def open(self, board_id: str):
         return await self._delegate.open(board_id)

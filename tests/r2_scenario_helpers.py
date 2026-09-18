@@ -4,7 +4,7 @@ NOT a test module (no ``test_`` prefix -> pytest does not collect it). Every
 canonical-current starting state these helpers build goes through the REAL
 pipeline (``DeterministicWorker`` + ``begin/propose/commit_consolidation`` for
 deterministic nodes, the consolidation orchestrator for cognitive nodes, and the
-Global Discovery outbox worker for DecisionDigests) — never a raw Kuzu /
+Global Discovery outbox worker for DecisionDigests) — never a raw Grafx /
 DecisionDigest seed of a demotion/sync proof target. This is the anti-test-theater
 contract the R2 brief requires for AC1/AC2/AC6/AC7/AC11/TR12.
 """

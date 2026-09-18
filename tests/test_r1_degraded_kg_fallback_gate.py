@@ -264,6 +264,75 @@ def test_ts_69b4ee2b_f16_f17_suite_is_green(tmp_path):
 # ── ts_dd9452a5: spec→done succeeds end-to-end on a degraded board ────────────
 
 
+def _install_waived_delivery_evidence(monkeypatch) -> None:
+    """Give the spec→done transition an EXPLICITLY waived delivery scope.
+
+    The delivery-evidence gate is a separate, fail-closed authority: it never
+    treats an empty inventory as vacuous coverage, so a Core scenario that does
+    not seed receipts cannot reach ``done`` at all. This scenario's subject is
+    the degraded-KG fallback, not delivery proof, so the obligations are
+    satisfied through the first-class waiver path with an authorized receipt —
+    not by weakening the gate.
+    """
+
+    from okto_pulse.core.domain.delivery_evidence import (
+        DeliveryEvidenceSnapshot,
+        DeliveryPhase,
+        DeliveryWaiverFact,
+    )
+    from okto_pulse.core.services import delivery_evidence as delivery_module
+
+    original = delivery_module.delivery_store
+
+    def _store(session):
+        class _WaivedDeliveryStore:
+            async def lock_scope(self, _scope) -> None:
+                return None
+
+            async def load_snapshot(self, scope):
+                # A single scope-level obligation, waived for both phases.
+                obligations = delivery_module.delivery_inventory(
+                    _store.spec  # type: ignore[attr-defined]
+                )
+                waivers = tuple(
+                    DeliveryWaiverFact(
+                        id=f"waiver-{phase.value}-{index}",
+                        scope=scope,
+                        binding=obligation.binding,
+                        phase=phase,
+                        justification="degraded-KG fallback scenario",
+                        actor_id="r1-agent",
+                        authorization_receipt_id=f"receipt-{phase.value}-{index}",
+                        current_authorized=True,
+                    )
+                    for index, obligation in enumerate(obligations)
+                    for phase in (DeliveryPhase.IMPLEMENTATION, DeliveryPhase.TEST)
+                )
+                return DeliveryEvidenceSnapshot(
+                    scope=scope,
+                    obligations=obligations,
+                    waivers=waivers,
+                    complete=True,
+                )
+
+        _ = session, original
+        return _WaivedDeliveryStore()
+
+    async def _require(session, spec, *, for_update: bool = False) -> None:
+        _store.spec = spec  # type: ignore[attr-defined]
+        store = _store(session)
+        if for_update:
+            await store.lock_scope(None)
+        snapshot = await store.load_snapshot(
+            delivery_module.DeliveryScope(spec.board_id, spec.id, int(spec.edition))
+        )
+        result = delivery_module.evaluate_delivery_coverage(snapshot)
+        assert result.allowed, result.blockers
+
+    monkeypatch.setattr(delivery_module, "require_spec_delivery", _require)
+
+
+
 @pytest.mark.asyncio
 async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
     """TC-J (AC14): a spec→done transition on a board whose KG is in
@@ -328,6 +397,7 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
         await db.commit()
 
     reset_closeout_gate_samples()
+    _install_waived_delivery_evidence(monkeypatch)
 
     from okto_pulse.core.models.schemas import SpecMove
     from okto_pulse.core.services.main import SpecService

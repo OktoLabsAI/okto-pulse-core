@@ -41,7 +41,7 @@ from okto_pulse.core.application.boundary.removal_evidence_binding import (
 )
 
 CORE_KEY = "filesystem_storage_provider"
-COMMUNITY_KEY = "kuzu_graph_store"
+COMMUNITY_KEY = "grafx_graph_store"
 
 TR6_FIELDS = {
     "adapter_key",
@@ -300,7 +300,7 @@ def test_dependency_audit_passed_is_consumed_from_c_input():
         evidence=ev,
         declared_removal_ref="R-P2-05 done",
         source_module=entry.current_module,
-        source_test_or_oracle="test_kuzu_graph_store_removed",
+        source_test_or_oracle="test_grafx_graph_store_removed",
     )
 
     # FCC-07C says PASS -> the merged field flips the adapter to ready.
@@ -335,7 +335,7 @@ def test_c_value_overrides_binding_declared_dependency_audit():
         evidence=ev,
         declared_removal_ref="R-P2-05 done",
         source_module=entry.current_module,
-        source_test_or_oracle="test_kuzu_graph_store_removed",
+        source_test_or_oracle="test_grafx_graph_store_removed",
     )
     # ...but FCC-07C authoritatively says FALSE -> the merge overrides to blocked.
     c_fail = {COMMUNITY_KEY: AdapterEvidence(dependency_audit_passed=False)}
@@ -407,7 +407,7 @@ def test_real_fcc07c_projection_feeds_the_binder(tmp_path):
         evidence=AdapterEvidence(**base_evidence),
         declared_removal_ref="R-P2-05 done",
         source_module=entry.current_module,
-        source_test_or_oracle="test_kuzu_graph_store_removed",
+        source_test_or_oracle="test_grafx_graph_store_removed",
     )
     clean_core = _clean_core_ownership_report(tmp_path / "core")
 

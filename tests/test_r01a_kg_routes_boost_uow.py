@@ -102,16 +102,12 @@ def client():
 
 @pytest.fixture(autouse=True)
 def _kg_teardown():
-    """Release per-board Kùzu handles + the pool between tests so Windows file
-    locks (single-writer embedded store) do not bleed across cases."""
+    """Release pooled board graph handles between tests so Windows file locks
+    (single-writer embedded store) do not bleed across cases."""
     yield
-    from okto_pulse.community.adapters.graph_connection_pool import (
-        reset_connection_pool_for_tests,
-    )
     from kg_schema_testing import close_all_connections
 
     close_all_connections()
-    reset_connection_pool_for_tests()
 
 
 async def _seed_board(name: str = "fu5s4") -> str:
@@ -137,7 +133,7 @@ def _bootstrap_empty_graph(board_id: str) -> None:
     from kg_schema_testing import bootstrap_board_graph, close_all_connections
 
     bootstrap_board_graph(board_id)
-    close_all_connections(board_id)
+    close_all_connections()
 
 
 def _seed_kg_node(
@@ -182,7 +178,7 @@ def _seed_kg_node(
                 "emb": [0.1] * 384,
             },
         )
-    close_all_connections(board_id)
+    close_all_connections()
 
 
 async def _audit_rows(board_id: str):
@@ -257,7 +253,7 @@ async def test_boost_on_cancelled_node_preserves_penalty_and_restore_base(
 
     from kg_schema_testing import close_all_connections, open_board_connection
 
-    close_all_connections(board_id)
+    close_all_connections()
     with open_board_connection(board_id) as (_db, conn):
         row = conn.execute(
             "MATCH (n:Entity {id: $id}) "
@@ -676,14 +672,14 @@ async def test_boost_audit_commit_failure_preserves_kg_mutation(
     # proving the audit rollback did NOT undo the successful graph SET.
     from kg_schema_testing import close_all_connections, open_board_connection
 
-    close_all_connections(board_id)
+    close_all_connections()
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             "MATCH (n:Entity {id: $id}) RETURN n.relevance_score", {"id": node_id}
         )
         assert res.has_next()
         assert float(res.get_next()[0]) == pytest.approx(0.8)
-    close_all_connections(board_id)
+    close_all_connections()
 
 
 @pytest.mark.asyncio
@@ -702,7 +698,7 @@ async def test_boost_persist_error_maps_to_legacy_500(client, monkeypatch) -> No
 
     class _BoomUseCase:
         async def execute(self, *_a, **_k):
-            raise BoostPersistError("Failed to persist boost: kuzu down")
+            raise BoostPersistError("Failed to persist boost: grafx down")
 
     monkeypatch.setattr(kg_routes_api, "BoostNodeUseCase", _BoomUseCase)
 

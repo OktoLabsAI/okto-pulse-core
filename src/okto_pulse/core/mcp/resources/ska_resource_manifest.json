@@ -43,7 +43,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "d7ae1d65bb8a003291aeb64dd5410d9a4a6a80bb494ccfa308aa89796bf964bc",
+  "manifest_sha256": "9b654d382ce1801bf924019bcca84273695b8b7d7d7aaf367bcbd1df62f63d99",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
@@ -167,7 +167,7 @@
       "uri": "okto-pulse://reference/projection-profiles"
     },
     {
-      "content_sha256": "ec9a9a19ceacb2523374b57c591d2d81eb8862752672c3250f5e06f380a0d888",
+      "content_sha256": "ebd68fa7cbbb351efdd2b4de357febc3d5442b5839b85404abeee66df8a5d68a",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/policy-compliance",
@@ -260,7 +260,7 @@
       "uri": "okto-pulse://reference/tool-docs/guideline"
     },
     {
-      "content_sha256": "d2221e13a23e9d1183671d5054760d8e5db301714f480a7377a41a18cd5aafb8",
+      "content_sha256": "396f44ba1428a0a5c73fb50d81b3ff3f878b49b52ca16ee42cc3033169b580e7",
       "cross_links": [
         "okto-pulse://reference/quality-assessments"
       ],

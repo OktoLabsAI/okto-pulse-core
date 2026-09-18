@@ -363,8 +363,11 @@ async def test_confirm_and_run_only_fence_snapshot_and_dispatch(
     )
 
     assert confirmed["run_id"] == "run-prepared"
+    # The tools must NOT evaluate the snapshot fingerprint eagerly: the
+    # service computes it lazily, only when a fresh confirmation or start
+    # actually needs it. Eager evaluation deadlocked idempotent replays on
+    # the global operation gate held by the in-flight recovery worker.
     assert service_calls == [
-        ("current_snapshot_fingerprint", {}),
         (
             "confirm",
             {
@@ -372,10 +375,8 @@ async def test_confirm_and_run_only_fence_snapshot_and_dispatch(
                 "run_id": "run-prepared",
                 "manifest_ref": "manifest-1",
                 "preflight_hash": "hash-1",
-                "current_snapshot_fingerprint": "snapshot-fingerprint",
             },
         ),
-        ("current_snapshot_fingerprint", {}),
         (
             "prepare_durable_start",
             {
@@ -384,7 +385,6 @@ async def test_confirm_and_run_only_fence_snapshot_and_dispatch(
                 "manifest_ref": "manifest-1",
                 "preflight_hash": "hash-1",
                 "reason": "operator-approved",
-                "current_snapshot_fingerprint": "snapshot-fingerprint",
             },
         ),
     ]

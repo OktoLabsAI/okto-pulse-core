@@ -5,6 +5,7 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
 )
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError, commit
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.models.delivery_evidence import (
     CardDeliveryEvidenceCommand,
     DeliveryEvidenceCommand,
@@ -13,7 +14,9 @@ from okto_pulse.core.models.delivery_evidence import (
 
 
 class GetDeliveryEvidenceUseCase:
-    async def execute(self, command: DeliveryEvidenceQuery, *, actor, uow):
+    async def execute(
+        self, command: DeliveryEvidenceQuery, *, actor, uow: PulseUnitOfWork
+    ):
         await require_authorization(
             actor,
             PermissionRequirement("code_traceability.evidence.read"),
@@ -28,7 +31,9 @@ class GetDeliveryEvidenceUseCase:
 class RecordDeliveryEvidenceUseCase:
     """Legacy spec-scoped recording surface (waivers/revoke human-only)."""
 
-    async def execute(self, command: DeliveryEvidenceCommand, *, actor, uow):
+    async def execute(
+        self, command: DeliveryEvidenceCommand, *, actor, uow: PulseUnitOfWork
+    ):
         operation = {
             "implementation": "code_traceability.target.execution_submit",
             "test": "spec.tests.execute",
