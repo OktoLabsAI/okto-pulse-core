@@ -6,9 +6,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
-## [Unreleased]
+- The KG stale reconciler dropped live card rows again: production source
+  readers emit `task`/`test`/`bug` artifact types for cards, and the sweep's
+  governed-type filter treated them as foreign, classifying every live card as
+  source-absent. Card-family subtypes now resolve through the card owner
+  family while the classifier still receives the original artifact type.
 
-### Fixed
+- `okto_pulse_kg_find_similar_decisions` lost its typed
+  `graph_unavailable` envelope on the vector path after the Grafx migration:
+  routed adapters raise the fail-closed `GraphUnavailable` directly and the
+  old store-level wrapping was gone. The vector read now classifies through
+  the shared `open_or_classify` seam, restoring the uniform error code and
+  `graph_state` projection.
+
+- Idempotent replay of `okto_pulse_kg_global_discovery_recovery_run` (and
+  `confirm`) deadlocked while a recovery was in flight: the MCP tools
+  evaluated the snapshot fingerprint eagerly on every call, contending for
+  the global operation gate the productive worker holds. The service now
+  computes the fingerprint lazily, exactly when a fresh confirmation or start
+  actually needs it.
+
+- Core use-case type hygiene: the delivery-evidence use cases annotate their
+  unit-of-work parameter, and the SaaS relational test fake gains the
+  fail-closed `delivery_evidence` stub required by the updated protocol.
+
+- MCP tools no longer let a `GuidelinePolicyPersistenceError` escape as a raw
+  protocol error. The single tool-registration boundary now projects every
+  guideline-policy persistence failure through the canonical mapper, so a
+  subject/version conflict such as `semantic_subject_mutation_conflict` reaches
+  agents as a retryable `conflict` outcome envelope carrying `reason_code` and
+  a `refresh_and_retry` next action.
+
+- The quality MCP resources described `proposed_questions` incorrectly. They do
+  materialize real Q&A items on the subject at write time, stay pending until
+  answered or deleted, and one pending item blocks the human close-out; the
+  reference and tool docs now say so and tell agents to omit the field when
+  they do not want pending Q&A.
 
 - Expose the retryable board-erasure lock-contention exception through the
   public `core.ports.board_erasure_control` contract so editions do not need

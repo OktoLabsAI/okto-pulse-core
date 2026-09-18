@@ -75,6 +75,9 @@ from okto_pulse.core.mcp.helpers import (
 )
 from okto_pulse.core.mcp.kg_authorization import kg_permission_error
 from okto_pulse.core.mcp.outcome import McpToolOutcome
+from okto_pulse.core.ports.guideline_policy import (
+    GuidelinePolicyPersistenceError,
+)
 from okto_pulse.core.ports.application_persistence import (
     ApplicationFilter,
     ApplicationQuery,
@@ -2254,6 +2257,45 @@ def _detect_nested_parameter_xml(value: Any) -> bool:
     return bool(_SUSPICIOUS_XML_PATTERNS.search(value))
 
 
+def _guideline_policy_persistence_outcome(
+    error: GuidelinePolicyPersistenceError,
+) -> McpToolOutcome:
+    """Project a guideline-policy persistence failure into the MCP envelope.
+
+    Single boundary projection shared by every registered tool: the canonical
+    mapper owns code/retryability/next action, and the bounded ``reason_code``
+    is surfaced in the message so agents can act without parsing details.
+    """
+
+    from okto_pulse.core.inbound.guideline_policy_error import (
+        UnsupportedGuidelinePolicyError,
+        project_guideline_policy_error,
+    )
+
+    try:
+        projected = project_guideline_policy_error(error)
+    except UnsupportedGuidelinePolicyError:
+        return McpToolOutcome.error(
+            code="internal_error",
+            message="The guideline policy operation could not be completed.",
+            retryable=False,
+            next_action="report_error",
+        )
+
+    details = dict(projected.get("details") or {})
+    reason = str(details.get("reason_code") or error).strip()
+    message = str(projected["message"])
+    if reason and reason not in message:
+        message = f"{message} (reason_code: {reason})"
+    return McpToolOutcome.error(
+        code=str(projected["code"]),
+        message=message,
+        retryable=bool(projected["retryable"]),
+        next_action=projected.get("next_action"),
+        details=details,
+    )
+
+
 def _xml_safety_log_decorator(func):
     """Apply the common MCP boundary checks and error projection to one tool."""
 
@@ -2277,6 +2319,12 @@ def _xml_safety_log_decorator(func):
             # projects its transport-neutral denial into the historical tool
             # envelope, including state-aware denials raised after lookup.
             return _perm_error(str(exc))
+        except GuidelinePolicyPersistenceError as exc:
+            # Guideline-policy persistence failures (CAS/subject/version
+            # conflicts) are domain outcomes, not protocol faults.  Project
+            # them once, here, so every tool answers with the canonical
+            # retryable envelope instead of raising through the transport.
+            return _guideline_policy_persistence_outcome(exc)
 
     wrapper._xml_safety_wrapped = True  # type: ignore[attr-defined]
     return wrapper
@@ -23203,7 +23251,6 @@ async def okto_pulse_kg_global_discovery_recovery_confirm(
                 run_id=run_id,
                 manifest_ref=manifest_ref,
                 preflight_hash=preflight_hash,
-                current_snapshot_fingerprint=service.current_snapshot_fingerprint(),
             ),
             task_name="mcp.global_discovery_recovery.confirm",
         )
@@ -23389,7 +23436,6 @@ async def okto_pulse_kg_global_discovery_recovery_run(
                 manifest_ref=manifest_ref,
                 preflight_hash=preflight_hash,
                 reason=reason,
-                current_snapshot_fingerprint=service.current_snapshot_fingerprint(),
             ),
             task_name="mcp.global_discovery_recovery.start.fence",
         )

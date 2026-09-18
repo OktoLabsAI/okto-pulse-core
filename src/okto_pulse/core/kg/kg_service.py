@@ -1320,24 +1320,32 @@ class KGService:
         embedder = get_kg_registry().require_embedding_provider()
         query_vec = embedder.encode(topic)
 
-        # The vector path bypasses _cached_call. search.find_similar_nodes_by_type
-        # now re-raises a fail-closed graph-open failure as a typed
-        # KGToolError(code="graph_unavailable") instead of swallowing it into a
-        # silent [] (FR4/FR5); emit the open-failure metric here (OR or_0a8b78be)
-        # before that typed error propagates to the MCP handler.
+        # The vector path bypasses _cached_call, so it classifies graph-open
+        # failures itself: a routed/Grafx adapter raises the fail-closed
+        # GraphUnavailable and ``open_or_classify`` re-raises it as the typed
+        # KGToolError(code="graph_unavailable") instead of letting a raw
+        # exception escape the MCP handler (F4 uniform envelope, FR4/FR5).  A
+        # healthy graph with zero matching rows still returns [] unchanged
+        # (FR8).  Emit the open-failure metric (OR or_0a8b78be) below before
+        # the typed error propagates.
+        from okto_pulse.core.kg.graph_availability import open_or_classify
+
         _t0 = _time.monotonic()
         try:
-            raw = store.vector_search(
+            raw = open_or_classify(
+                lambda: store.vector_search(
+                    board_id=board_id,
+                    node_type="Decision",
+                    query_vec=query_vec,
+                    top_k=top_k * 2,  # fetch extra for re-ranking
+                    min_similarity=min_similarity,
+                    # Find Similar is a canonical knowledge surface.  Working
+                    # nodes remain available through the separately governed
+                    # diagnostic graph-layer paths, but must never leak through
+                    # this default decision-reuse query.
+                    graph_layer="canonical",
+                ),
                 board_id=board_id,
-                node_type="Decision",
-                query_vec=query_vec,
-                top_k=top_k * 2,  # fetch extra for re-ranking
-                min_similarity=min_similarity,
-                # Find Similar is a canonical knowledge surface.  Working
-                # nodes remain available through the separately governed
-                # diagnostic graph-layer paths, but must never leak through
-                # this default decision-reuse query.
-                graph_layer="canonical",
             )
         except KGToolError as exc:
             if exc.code == "graph_unavailable":

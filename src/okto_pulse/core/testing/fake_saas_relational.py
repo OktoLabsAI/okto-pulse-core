@@ -479,6 +479,12 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model Spec-dependency persistence."
         )
 
+    def delivery_evidence(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model delivery-evidence persistence."
+        )
+
     def checklists(self, session: Any) -> Any:
         _ = session
         from okto_pulse.core.ports.checklist import ChecklistAdapterMissing

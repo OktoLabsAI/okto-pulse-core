@@ -68,9 +68,13 @@ one accepted Requirement Lint result for the Current Spec edition is still a
 mandatory lifecycle step; “advisory findings” does not mean “optional result.”
 
 An ambiguity assessment may propose at most five questions as immutable result
-evidence. They never materialize or mutate Q&A. Requirement Lint does not
-accept proposed questions. Any failure leaves no partial result, finding,
-head, history, event, or outbox mutation.
+evidence, and those questions are also materialized as Q&A items on the subject
+(ids `qa_<hex>`) created by the same write and asked by the recording agent.
+They stay pending until they are answered or deleted, and one pending item
+blocks the human close-out of the subject. Omit `proposed_questions` when you
+do not want pending Q&A. Requirement Lint does not accept proposed questions.
+Any failure leaves no partial result, finding, head, history, event, or outbox
+mutation.
 
 ## Lifecycle state and technical audit
 
