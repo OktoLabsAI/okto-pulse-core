@@ -72,6 +72,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()
@@ -222,6 +241,34 @@ async def _make_stale_canonical_digest(db_factory, board_id) -> str:
 
 def _issues_by_code(health, code):
     return [i for i in health.get("health_issues", []) if i.get("code") == code]
+
+
+async def _health_with_parity_probe_ready(db_factory, board_id):
+    """Cold health probes run in a bounded single-flight pool; on the real
+    Grafx runtime the first call can exceed the probe budget (0.35s) and the
+    endpoint returns fail-safe projections. Kick the probes, drain the pool
+    through the public lifecycle facade, then read the completed results so
+    the asserts below judge the parity logic, not probe warm-up."""
+    from okto_pulse.core.services.application_kg import drain_kg_health_probes
+
+    async with db_factory() as db:
+        await get_kg_health(board_id, db)
+    drain_kg_health_probes(timeout_s=10)
+    async with db_factory() as db:
+        return await get_kg_health(board_id, db)
+
+
+async def _health_until_mismatch_cleared(db_factory, board_id):
+    """Re-read health after a reconcile: kick the probes again (the global
+    write advanced the materialization generation, bypassing stale caches),
+    drain, then read."""
+    from okto_pulse.core.services.application_kg import drain_kg_health_probes
+
+    async with db_factory() as db:
+        await get_kg_health(board_id, db)
+    drain_kg_health_probes(timeout_s=10)
+    async with db_factory() as db:
+        return await get_kg_health(board_id, db)
 
 
 # ===========================================================================
@@ -438,8 +485,7 @@ async def test_health_surfaces_mismatch_with_fields_then_clears(db_factory):
     board_id = await _new_board(db_factory)
     nid = await _make_stale_canonical_digest(db_factory, board_id)
 
-    async with db_factory() as db:
-        health = await get_kg_health(board_id, db)
+    health = await _health_with_parity_probe_ready(db_factory, board_id)
     issues = _issues_by_code(health, MISMATCH_CODE)
     assert len(issues) == 1, issues
     issue = issues[0]
@@ -455,8 +501,7 @@ async def test_health_surfaces_mismatch_with_fields_then_clears(db_factory):
 
     # After reconcile/drain the mismatch disappears from Health.
     assert await _run_outbox_no_refs(db_factory, board_id) == 1
-    async with db_factory() as db:
-        health2 = await get_kg_health(board_id, db)
+    health2 = await _health_until_mismatch_cleared(db_factory, board_id)
     assert _issues_by_code(health2, MISMATCH_CODE) == []
 
 
@@ -485,7 +530,7 @@ async def test_mismatch_does_not_override_canonical_debt(db_factory):
             failure_reason="some_reason",
         )
         await db.commit()
-        health = await get_kg_health(board_id, db)
+    health = await _health_with_parity_probe_ready(db_factory, board_id)
 
     # TR4 invariant: with a stronger cause present (canonical_debt_open ranks
     # above digest_vs_board_layer_mismatch), the mismatch NEVER claims primary —

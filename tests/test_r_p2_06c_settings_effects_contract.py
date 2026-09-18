@@ -5,8 +5,9 @@ composition-injected ``SchedulerControl``. 06C consolidates the GENERAL contract
 a settings change triggers a runtime effect ONLY through an injected port, the
 core never constructs a concrete effect provider, and the effect->port mapping is
 an EXECUTABLE inventory (``SETTINGS_RUNTIME_EFFECT_PORTS``) backing the conformance
-gate. GRAPH_DB_KEYS go through persistence + ``KGConfigChangeGuard`` and trigger NO
-local runtime effect — even when a SchedulerControl is available.
+gate. GRAPH_DB_KEYS are restart-required Grafx constructor options: they go through
+persistence and trigger NO local runtime effect — even when a SchedulerControl is
+available.
 
 Covers spec R-P2-06C (FR fr_89a5da6c, TR tr_0f6cfd46, AC ac_c99958f1).
 """
@@ -95,44 +96,41 @@ def test_effect_port_inventory_is_canonical_and_executable():
 def test_graph_db_key_only_change_triggers_no_effect_with_fake_available():
     fake = _FakeScheduler(available=True)
     results = asyncio.run(
-        apply_tick_runtime_effects({"kg_kuzu_max_db_size_gb": 8}, fake)
+        apply_tick_runtime_effects({"kg_grafx_read_participants": 4}, fake)
     )
     assert results == []
     assert fake.calls == []  # the scheduler was NEVER reached
 
 
-# --- GRAPH_DB_KEYS persist through the guard with no effect (integration) -----
-def test_graph_db_key_change_persists_via_guard_without_runtime_effect():
+# --- GRAPH_DB_KEYS persist with no runtime effect (integration) ---------------
+def test_graph_db_key_change_persists_without_runtime_effect():
     async def _run():
-        from okto_pulse.community.config import GRAPH_DB_MAX_SIZE_GB_VALUES
         from okto_pulse.core.infra.database import get_session_factory
         from sqlalchemy_test_models import AppSetting
 
         factory = get_session_factory()
         async with factory() as db:
             current = await get_runtime_settings(db)
-            current_val = int(current["kg_kuzu_max_db_size_gb"])
-            # A guard-allowed change clamped inside the schema: the next valid
-            # power-of-two grow when possible, else a same-value no-op (already at
-            # the max). Both exercise the guard + persistence path with no effect.
-            higher = [v for v in GRAPH_DB_MAX_SIZE_GB_VALUES if v > current_val]
-            target = higher[0] if higher else current_val
+            current_val = int(current["kg_grafx_read_participants"])
+            # A bounded change inside the schema (1..8): the next value up when
+            # possible, else a same-value no-op (already at the max). Both
+            # exercise the persistence path with no runtime effect.
+            target = current_val + 1 if current_val < 8 else current_val
             fake = _FakeScheduler(available=True)
-            # GRAPH_DB_KEYS go through KGConfigChangeGuard + persistence; they are
-            # restart-required (NOT hot-applied), so the live view is unchanged.
+            # GRAPH_DB_KEYS are Grafx constructor options: restart-required
+            # (NOT hot-applied), so the live view is unchanged.
             await put_runtime_settings(
                 db,
-                {"kg_kuzu_max_db_size_gb": target},
-                migration_plan_ref="MP-06C-TEST",
+                {"kg_grafx_read_participants": target},
                 restart_policy="scheduled",
                 scheduler_control=fake,
             )
-            row = await db.get(AppSetting, "kg_kuzu_max_db_size_gb")
+            row = await db.get(AppSetting, "kg_grafx_read_participants")
             persisted = int(row.value) if row is not None else None
         return target, fake, persisted
 
     target, fake, persisted = asyncio.run(_run())
-    # Persisted through the guard to the app_settings table...
+    # Persisted to the app_settings table...
     assert persisted == target
     # ...and the SchedulerControl was NEVER called: a GRAPH_DB_KEY change triggers
     # NO runtime effect, even with the port available (06C condition 3).

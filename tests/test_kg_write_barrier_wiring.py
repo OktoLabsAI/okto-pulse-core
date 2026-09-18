@@ -12,7 +12,7 @@ Each call site is exercised in STRICT mode without a guard active: the
 test passes when the barrier raises `WriteLifecycleViolation` before any
 storage mutation begins. This is a static-style proof (the barrier is
 the first thing each path does) — full end-to-end execution with real
-LadybugDB is out of scope for these tests.
+The concrete graph database is out of scope for these tests.
 """
 
 from __future__ import annotations

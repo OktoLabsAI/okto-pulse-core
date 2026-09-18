@@ -36,11 +36,11 @@ from okto_pulse.core.application.boundary.packaging_ownership_gate import (
 
 # Community-owned adapters that need the `ladybug` family.
 _LADYBUG_ADAPTERS = {
-    "kuzu_graph_store",
-    "kuzu_cypher_executor",
-    "kuzu_graph_schema_manager",
-    "kuzu_graph_lifecycle",
-    "kuzu_graph_transaction",
+    "grafx_graph_store",
+    "grafx_cypher_executor",
+    "grafx_graph_schema_manager",
+    "grafx_graph_lifecycle",
+    "grafx_graph_transaction",
 }
 # Community-owned adapters that need the `sentence_transformers` family.
 _SENTENCE_ADAPTERS = {
@@ -132,7 +132,7 @@ def test_ac3_missing_ladybug_blocks_with_family_adapter_and_remediation(tmp_path
     blocking_by_key = {f.adapter_key: f for f in report.blocking}
     # every ladybug-backed Community adapter is flagged...
     assert _LADYBUG_ADAPTERS <= set(blocking_by_key)
-    finding = blocking_by_key["kuzu_graph_store"]
+    finding = blocking_by_key["grafx_graph_store"]
     assert finding.dependency_family == "ladybug"
     assert finding.declared is False
     assert finding.scope == "absent"
@@ -170,7 +170,7 @@ def test_ac3_missing_dep_fails_dependency_audit_passed_for_that_adapter(tmp_path
         assert evidence[key] is True
     assert projection.ok is False
     # the row carries the actionable reason.
-    row = next(r for r in projection.rows if r.adapter_key == "kuzu_graph_store")
+    row = next(r for r in projection.rows if r.adapter_key == "grafx_graph_store")
     assert row.community_blocking_families == ("ladybug",)
     assert any("community_dependency_not_declared:ladybug" in r for r in row.reasons)
 
@@ -212,7 +212,7 @@ def test_ac7_evidence_consumable_as_adapter_evidence_for_fcc07b(tmp_path):
     )
 
     evidence = projection.as_adapter_evidence()
-    sample = evidence["kuzu_graph_store"]
+    sample = evidence["grafx_graph_store"]
     assert isinstance(sample, AdapterEvidence)
     # C is the ONLY authorized source of dependency_audit_passed: it sets that
     # field and leaves every other evidence field untouched (None).
@@ -225,7 +225,7 @@ def test_ac7_evidence_consumable_as_adapter_evidence_for_fcc07b(tmp_path):
 def test_dependency_audit_passed_drives_fcc07b_readiness(tmp_path):
     """The projected field actually flips FCC-07B's readiness verdict."""
     inventory = build_adapter_inventory()
-    entry = next(e for e in inventory if e.adapter_key == "kuzu_graph_store")
+    entry = next(e for e in inventory if e.adapter_key == "grafx_graph_store")
     clean_core = _core_ownership_report(tmp_path / "core", dependencies=[])
 
     good = _community_pyproject(tmp_path / "good", dependencies=_FULL_COMMUNITY_DEPS)
@@ -251,12 +251,12 @@ def test_dependency_audit_passed_drives_fcc07b_readiness(tmp_path):
         community_registered=True,
         oracle_passed=True,
         import_audit_passed=True,
-        dependency_audit_passed=proj_good.passed("kuzu_graph_store"),
+        dependency_audit_passed=proj_good.passed("grafx_graph_store"),
         register_before_remove_passed=True,
     )
     assert evaluate_adapter_readiness(entry, base).status == "ready"
 
-    failing = replace(base, dependency_audit_passed=proj_bad.passed("kuzu_graph_store"))
+    failing = replace(base, dependency_audit_passed=proj_bad.passed("grafx_graph_store"))
     verdict = evaluate_adapter_readiness(entry, failing)
     assert verdict.status == "blocked"
     assert "dependency_audit_passed" in verdict.failed_evidence
@@ -283,11 +283,11 @@ def test_core_leak_fails_audit_even_when_community_declares(tmp_path):
     evidence = projection.evidence_map()
     for key in _LADYBUG_ADAPTERS:
         assert evidence[key] is False
-    row = next(r for r in projection.rows if r.adapter_key == "kuzu_graph_store")
+    row = next(r for r in projection.rows if r.adapter_key == "grafx_graph_store")
     assert "ladybug" in row.core_ownership_blocking_symbols
     assert any("core_ownership_blocking:ladybug" in r for r in row.reasons)
     # an adapter NOT backed by the leaked family is unaffected.
-    assert evidence["kuzu_graph_path_resolver"] is True
+    assert evidence["graph_storage_ref_resolver"] is True
 
 
 # ===========================================================================
@@ -313,7 +313,7 @@ def test_fr7_optional_only_family_is_warning_not_blocking(tmp_path):
     assert report.blocking == ()
     warn_by_key = {f.adapter_key: f for f in report.warnings}
     assert _LADYBUG_ADAPTERS <= set(warn_by_key)
-    finding = warn_by_key["kuzu_graph_store"]
+    finding = warn_by_key["grafx_graph_store"]
     assert finding.declared is True
     assert finding.scope == "optional"
     assert finding.diagnostic_code == DIAG_COMMUNITY_DEPENDENCY_OPTIONAL_ONLY
@@ -323,8 +323,8 @@ def test_fr7_optional_only_family_is_warning_not_blocking(tmp_path):
         ownership_report=clean_core, community_audit=report
     )
     # optional-only is surfaced but the dependency_audit still passes.
-    assert projection.evidence_map()["kuzu_graph_store"] is True
-    row = next(r for r in projection.rows if r.adapter_key == "kuzu_graph_store")
+    assert projection.evidence_map()["grafx_graph_store"] is True
+    row = next(r for r in projection.rows if r.adapter_key == "grafx_graph_store")
     assert row.community_optional_only_families == ("ladybug",)
 
 
@@ -357,8 +357,8 @@ def test_required_families_exclude_transitive_and_stdlib(tmp_path):
     assert report.ok is True
     embed = [f for f in report.findings if f.adapter_key == "sentence_transformer_embedding_provider"]
     assert {f.dependency_family for f in embed} == {"sentence_transformers"}
-    # kuzu_graph_path_resolver is stdlib-only -> no required family, no finding.
-    assert not any(f.adapter_key == "kuzu_graph_path_resolver" for f in report.findings)
+    # graph_storage_ref_resolver is stdlib-only -> no required family, no finding.
+    assert not any(f.adapter_key == "graph_storage_ref_resolver" for f in report.findings)
 
 
 # ===========================================================================

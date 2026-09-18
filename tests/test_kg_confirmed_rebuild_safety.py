@@ -114,7 +114,7 @@ def test_confirmed_rebuild_fails_when_safe_write_lifecycle_does_not_apply(tmp_pa
 
 def test_confirmed_rebuild_quarantines_existing_graph_not_delete():
     from kg_schema_testing import (
-        board_kuzu_path,
+        board_graph_path,
         bootstrap_board_graph,
         open_board_connection,
         purge_board_graph_storage,
@@ -128,10 +128,11 @@ def test_confirmed_rebuild_quarantines_existing_graph_not_delete():
             "source_confidence:1.0})"
         )
 
-    graph_path = board_kuzu_path(board_id)
+    graph_path = board_graph_path(board_id)
     assert graph_path.exists(), "expected a materialized board graph store"
-    # boards/<id>/graph.lbug -> parents[2] is the kg root holding boards/ + quarantine/.
-    quarantine_root = graph_path.parents[2] / "quarantine"
+    # boards/<id>/grafx/<generation> -> parents[3] is the kg root holding
+    # boards/ next to the quarantine/ area the purge moves storage into.
+    quarantine_root = graph_path.parents[3] / "quarantine"
     quar_before = (
         sum(1 for _ in quarantine_root.rglob("*")) if quarantine_root.exists() else 0
     )

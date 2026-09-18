@@ -291,9 +291,12 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["canonical_debt"], dict)
     assert isinstance(result["rebuild_diagnostics"], dict)
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
-    assert result["storage_footprint_proxy"]["source"] == "runtime_capability"
+    # Source label depends on composition: the routed Community facade reports
+    # "community_graph_routed", a core-registered runtime reports "runtime_capability".
+    _SOURCES = {"runtime_capability", "community_graph_routed"}
+    assert result["storage_footprint_proxy"]["source"] in _SOURCES
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
-    assert result["native_runtime_budget"]["source"] == "runtime_capability"
+    assert result["native_runtime_budget"]["source"] in _SOURCES
     assert result["native_runtime_budget"]["is_direct_memory_telemetry"] is False
 
 
@@ -450,7 +453,7 @@ async def test_default_response_is_conservative_never_healthy(
 async def test_empty_graph_after_materialized_history_requires_recovery(
     monkeypatch, db_factory, kg_health_board
 ):
-    """If SQLite audit proves prior KG materialization but Ladybug reports
+    """If SQLite audit proves prior KG materialization but the Community graph runtime (Grafx) reports
     zero nodes, Health must surface recovery_needed instead of a generic
     at_risk/empty state.
     """
@@ -1099,7 +1102,7 @@ async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
         result = await get_kg_health(kg_health_board, session)
 
     proxy = result["storage_footprint_proxy"]
-    assert proxy["source"] == "runtime_capability"
+    assert proxy["source"] in {"runtime_capability", "community_graph_routed"}
     assert proxy["is_direct_memory_telemetry"] is False
     copy = f"{proxy['description']} {proxy['tooltip']}".lower()
     assert "storage footprint" in copy

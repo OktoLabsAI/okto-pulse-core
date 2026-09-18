@@ -4,7 +4,7 @@ Covers all 6 test cards:
 - 4a2d6fd7: Bootstrap schema + SQLite migration + Abandon
 - 725c6d12: Happy path + SHA256 dedup + Reconciliation ADD
 - bc3a99c4: Reconciliation UPDATE/SUPERSEDE/NOOP
-- f029108d: TTL expiry + Kuzu failure + invalid candidate
+- f029108d: TTL expiry + Grafx failure + invalid candidate
 - 3d393277: Ownership + HNSW + Idempotency
 - 79eb2e55: Audit row schema completo
 """
@@ -38,8 +38,10 @@ from kg_schema_testing import (
     SCHEMA_VERSION,
     VECTOR_INDEX_TYPES,
     bootstrap_board_graph,
-    board_kuzu_path,
+    board_graph_path,
+    board_graph_tables,
     open_board_connection,
+    physical_relationship_table,
 )
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
@@ -218,39 +220,38 @@ class TestBootstrapSchema:
         belongs_to = dict(MULTI_REL_TYPES)["belongs_to"]
         assert ("Assumption", "Entity") in belongs_to
 
-    def test_bootstrap_creates_kuzu_dir(self, board_id):
-        handle = bootstrap_board_graph(board_id)
-        assert handle.path.exists()
-        assert handle.board_id == board_id
-        assert handle.schema_version == SCHEMA_VERSION
+    def test_bootstrap_creates_graph_storage(self, board_id):
+        bootstrap_board_graph(board_id)
+        assert board_graph_path(board_id).exists()
+        with open_board_connection(board_id) as (_db, conn):
+            r = conn.execute(
+                "MATCH (m:BoardMeta {board_id: $b}) RETURN m.schema_version",
+                {"b": board_id},
+            )
+            assert r.has_next()
+            assert r.get_next()[0] == SCHEMA_VERSION
 
     def test_bootstrap_idempotent(self, board_id):
-        h1 = bootstrap_board_graph(board_id)
-        h2 = bootstrap_board_graph(board_id)
-        assert h1.path == h2.path
+        bootstrap_board_graph(board_id)
+        first = board_graph_path(board_id)
+        bootstrap_board_graph(board_id)
+        assert board_graph_path(board_id) == first
 
-    def test_kuzu_has_all_node_tables(self, board_id):
-        with open_board_connection(board_id) as (_db, conn):
-            r = conn.execute("CALL SHOW_TABLES() RETURN *")
-            tables = {}
-            while r.has_next():
-                row = r.get_next()
-                tables[row[1]] = row[2]
-            for nt in NODE_TYPES:
-                assert nt in tables, f"Missing node table: {nt}"
-                assert tables[nt] == "NODE"
-            assert "BoardMeta" in tables
+    def test_graph_has_all_node_tables(self, board_id):
+        bootstrap_board_graph(board_id)
+        tables = board_graph_tables(board_id)
+        for nt in NODE_TYPES:
+            assert nt in tables, f"Missing node table: {nt}"
+            assert tables[nt] == "NODE"
+        assert "BoardMeta" in tables
 
-    def test_kuzu_has_all_rel_tables(self, board_id):
-        with open_board_connection(board_id) as (_db, conn):
-            r = conn.execute("CALL SHOW_TABLES() RETURN *")
-            tables = {}
-            while r.has_next():
-                row = r.get_next()
-                tables[row[1]] = row[2]
-            for rel_name, _, _ in REL_TYPES:
-                assert rel_name in tables, f"Missing rel table: {rel_name}"
-                assert tables[rel_name] == "REL"
+    def test_graph_has_all_rel_tables(self, board_id):
+        bootstrap_board_graph(board_id)
+        tables = board_graph_tables(board_id)
+        for rel_name, from_type, to_type in REL_TYPES:
+            physical = physical_relationship_table(rel_name, from_type, to_type)
+            assert physical in tables, f"Missing rel table: {physical}"
+            assert tables[physical] == "REL"
 
     def test_board_meta_recorded(self, board_id):
         with open_board_connection(board_id) as (_db, conn):
@@ -734,7 +735,7 @@ class TestReconciliationRules:
 
 
 # ============================================================================
-# Card f029108d: TTL expiry + Kuzu failure + invalid candidate
+# Card f029108d: TTL expiry + Grafx failure + invalid candidate
 # ============================================================================
 
 
@@ -913,8 +914,8 @@ class TestOwnershipHNSWIdempotency:
             artifact_type="spec",
             artifact_id="spec-hnsw-seed",
             raw_content="hnsw seed",
-            learning_title="Use Kuzu for vector search",
-            learning_content="Native HNSW in Kuzu",
+            learning_title="Use Grafx for vector search",
+            learning_content="Native HNSW in Grafx",
         )
 
         # New session with identical candidate
@@ -935,8 +936,8 @@ class TestOwnershipHNSWIdempotency:
                 candidate=NodeCandidate(
                     candidate_id="query_c",
                     node_type=KGNodeType.LEARNING,
-                    title="Use Kuzu for vector search",
-                    content="Native HNSW in Kuzu",
+                    title="Use Grafx for vector search",
+                    content="Native HNSW in Grafx",
                     source_confidence=0.9,
                 ),
             ),
@@ -964,11 +965,11 @@ class TestOwnershipHNSWIdempotency:
 
     def test_board_path_rejects_traversal(self):
         with pytest.raises(ValueError):
-            board_kuzu_path("../../etc/passwd")
+            board_graph_path("../../etc/passwd")
         with pytest.raises(ValueError):
-            board_kuzu_path("")
+            board_graph_path("")
         with pytest.raises(ValueError):
-            board_kuzu_path("a/b")
+            board_graph_path("a/b")
 
 
 # ============================================================================

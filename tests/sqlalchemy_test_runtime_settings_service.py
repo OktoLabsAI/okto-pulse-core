@@ -1,8 +1,8 @@
 """Runtime settings persistence for operator-tunable values (0.1.4).
 
-Exposes the graph-runtime knobs through the public field names
-(``kg_kuzu_buffer_pool_mb``, ``kg_kuzu_max_db_size_gb``,
-``kg_connection_pool_size``, ``kg_wal_salvage_enabled``) via a key-value
+Exposes the Grafx graph-runtime knobs (``kg_grafx_page_size``,
+``kg_grafx_descriptor_revalidation``, ``kg_grafx_buffer_pool_mb``,
+``kg_grafx_read_participants``, ``kg_grafx_options``) via a key-value
 table in the main app SQLite DB,
 read by the UI (``Settings`` menu) and by the backend at boot to override
 :class:`CoreSettings` defaults.
@@ -17,6 +17,7 @@ Precedence at boot (documented in BR2 ``Precedencia de config``):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import warnings
@@ -29,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.ports.relational_runtime import get_session_factory
 from sqlalchemy_test_models import AppSetting
 from okto_pulse.core.infra.config import (
-    CoreSettings,
     configure_settings,
     get_settings,
 )
@@ -47,34 +47,73 @@ from okto_pulse.core.ports.runtime_settings import (
 from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
 from okto_pulse.core.services.settings_service import ConfigChangeBlocked
 
-GRAPH_DB_MAX_SIZE_GB_VALUES = (2, 4, 8, 16, 32, 64)
+# Grafx constructor-knob validators. Mirrored from the live Community
+# adapter (``okto_pulse.community.config`` +
+# ``okto_pulse.community.adapters.grafx_settings_catalog``) and reimplemented
+# here so the Core test suite keeps NO executable Community import.
+PULSE_GRAFX_MIN_PAGE_SIZE = 4096
+PULSE_GRAFX_MAX_PAGE_SIZE = 32768
 
 
-def validate_graph_db_max_size_gb(value: int) -> int:
-    if value not in GRAPH_DB_MAX_SIZE_GB_VALUES:
-        raise ValueError("invalid graph max database size")
+def validate_grafx_page_size(value: object) -> int:
+    if type(value) is not int:
+        raise ValueError("kg_grafx_page_size must be an integer")
+    if not PULSE_GRAFX_MIN_PAGE_SIZE <= value <= PULSE_GRAFX_MAX_PAGE_SIZE:
+        raise ValueError("kg_grafx_page_size must be between 4096 and 32768 bytes")
+    if value & (value - 1):
+        raise ValueError("kg_grafx_page_size must be a power of two")
     return value
+
+
+def validate_grafx_descriptor_revalidation(value: object) -> str:
+    if type(value) is not str or value not in {"strict", "generation"}:
+        raise ValueError(
+            "kg_grafx_descriptor_revalidation must be 'strict' or 'generation'"
+        )
+    return value
+
+
+def validate_grafx_buffer_pool_mb(value: object) -> int:
+    if type(value) is not int or value < 1:
+        raise ValueError("kg_grafx_buffer_pool_mb must be a positive integer")
+    return value
+
+
+def validate_grafx_read_participants(value: object) -> int:
+    if type(value) is not int or not 1 <= value <= 8:
+        raise ValueError(
+            "kg_grafx_read_participants must be an integer between 1 and 8"
+        )
+    return value
+
+
+def validate_grafx_options(value: object) -> dict[str, Any]:
+    """Shape-only stand-in for the Community catalog validator.
+
+    The real validator rebuilds an ``okto_grafx`` ``DatabaseConfig`` to reject
+    unsupported constructor keys; the Core test double only needs the mapping
+    shape so the persistence/restart contract can be exercised.
+    """
+    if type(value) is not dict:
+        raise ValueError("kg_grafx_options must be a mapping")
+    return dict(value)
 
 logger = logging.getLogger("okto_pulse.services.settings")
 
-# Graph runtime keys exposed under legacy public names. Changing any of these
-# requires a full process restart because the active graph backend and its pool
-# consume them at construction time. The frontend amber banner is triggered iff
-# one of these diverges from the boot snapshot.
-# kg_wal_salvage_enabled (KGD-01 FR1/TR3) e kg_wal_only_recovery_enabled
-# (KGD-01 FR3/BR2) são bools persistidos como 0/1 — o open factory do adapter
-# lê os valores de CoreSettings, que só é re-hidratado do app_settings no
-# boot, logo o contrato restart-required das GRAPH_DB_KEYS se aplica. O
-# KGConfigChangeGuard não governa as chaves (fora do allow-list
-# kg_kuzu_*/ladybug_*): são toggles de comportamento de open/recovery, não
-# mudanças que invalidam storage.
-GRAPH_DB_KEYS: tuple[str, ...] = (
-    "kg_kuzu_buffer_pool_mb",
-    "kg_kuzu_max_db_size_gb",
-    "kg_connection_pool_size",
-    "kg_wal_salvage_enabled",
-    "kg_wal_only_recovery_enabled",
+# Grafx constructor options require a full process restart: the active graph
+# backend and its read lanes consume them at construction time. The frontend
+# amber banner is triggered iff one of these diverges from the boot snapshot.
+# Existing storage geometry is immutable, so there is no in-place migration
+# group any more (the retired engine's max-db-size knob has no Grafx
+# equivalent and was dropped with it).
+GRAFX_GRAPH_DB_KEYS: tuple[str, ...] = (
+    "kg_grafx_page_size",
+    "kg_grafx_descriptor_revalidation",
+    "kg_grafx_buffer_pool_mb",
+    "kg_grafx_read_participants",
+    "kg_grafx_options",
 )
+GRAPH_DB_KEYS: tuple[str, ...] = GRAFX_GRAPH_DB_KEYS
 
 # Event Queue keys (spec bdcda842) — hot-reload, no restart required.
 # The worker pool re-reads CoreSettings on every claim (5s cache TTL).
@@ -109,7 +148,7 @@ RUNTIME_KEYS: tuple[str, ...] = GRAPH_DB_KEYS + EVENT_QUEUE_KEYS + DECAY_TICK_KE
 # single mapped effect is the KG decay-tick reschedule
 # (``kg_decay_tick_interval_minutes`` -> ``SchedulerControl.reschedule_job`` via
 # the ``scheduler_control`` provider). GRAPH_DB_KEYS are guarded
-# (``KGConfigChangeGuard``, restart-required) and DELIBERATELY trigger no local
+# (restart-required) and DELIBERATELY trigger no local
 # runtime effect — they are absent from this map (the absence-of-unintended-effect
 # invariant). A new settings-effect MUST add an entry here AND flow through an
 # injected port, never a core-constructed concrete.
@@ -126,32 +165,35 @@ _LEGACY_ENV_ALIASES: tuple[tuple[str, str], ...] = (
 
 
 # Snapshot of the values loaded at boot. Used to compute restart_required.
-_boot_snapshot: dict[str, int] = {}
+_boot_snapshot: dict[str, Any] = {}
 
 
-def _validate_runtime_setting_value(key: str, value: int) -> int:
+def _validate_runtime_setting_value(key: str, value: Any) -> Any:
     """Validate persisted/runtime values that bypass the FastAPI schema."""
-    if key == "kg_kuzu_buffer_pool_mb":
-        if not 128 <= value <= 512:
-            raise ValueError(
-                "kg_kuzu_buffer_pool_mb must be between 128 and 512 MB. "
-                "Values below 128 MB can exhaust the current Community graph "
-                "backend during HNSW commits."
-            )
-    elif key == "kg_kuzu_max_db_size_gb":
-        validate_graph_db_max_size_gb(value)
-    elif key in ("kg_wal_salvage_enabled", "kg_wal_only_recovery_enabled"):
-        # Bools persistidos como 0/1 (KGD-01 TR3 / FR3). Rejeitar outros ints
-        # aqui impede que uma linha inválida na tabela quebre o boot quando
-        # CoreSettings(**merged) coagir o valor para bool.
-        if value not in (0, 1):
-            raise ValueError(
-                f"{key} must be 0 or 1 (persisted boolean)."
-            )
-    return value
+    if key == "kg_grafx_descriptor_revalidation":
+        return validate_grafx_descriptor_revalidation(value)
+    if key == "kg_grafx_options":
+        return validate_grafx_options(
+            json.loads(value) if isinstance(value, str) else value
+        )
+    if key == "kg_grafx_buffer_pool_mb":
+        return validate_grafx_buffer_pool_mb(
+            int(value) if isinstance(value, str) else value
+        )
+    if key == "kg_grafx_read_participants":
+        return validate_grafx_read_participants(
+            int(value) if isinstance(value, str) else value
+        )
+    if key == "kg_grafx_page_size":
+        return validate_grafx_page_size(int(value) if isinstance(value, str) else value)
+
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be an integer") from exc
 
 
-def _read_boot_snapshot() -> dict[str, int]:
+def _read_boot_snapshot() -> dict[str, Any]:
     """Return a copy of the settings that were active at boot.
 
     If the app started before :func:`apply_persisted_settings_to_core_settings`
@@ -161,10 +203,10 @@ def _read_boot_snapshot() -> dict[str, int]:
     if _boot_snapshot:
         return dict(_boot_snapshot)
     s = get_settings()
-    return {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
+    return {k: _validate_runtime_setting_value(k, getattr(s, k)) for k in RUNTIME_KEYS}
 
 
-async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
+async def _load_persisted_rows(db: AsyncSession) -> dict[str, Any]:
     """Load every row from ``app_settings`` and coerce values to int.
 
     Returns an empty dict on any error so a broken table never blocks boot.
@@ -174,11 +216,10 @@ async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
             select(AppSetting).where(AppSetting.key.in_(RUNTIME_KEYS))
         )
         rows = result.scalars().all()
-        out: dict[str, int] = {}
+        out: dict[str, Any] = {}
         for row in rows:
             try:
-                parsed = int(row.value)
-                out[row.key] = _validate_runtime_setting_value(row.key, parsed)
+                out[row.key] = _validate_runtime_setting_value(row.key, row.value)
             except (TypeError, ValueError) as exc:
                 logger.warning(
                     "settings.invalid_persisted_value key=%s value=%r err=%s",
@@ -196,11 +237,13 @@ async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
         return {}
 
 
-async def _read_effective_runtime_settings() -> dict[str, int]:
+async def _read_effective_runtime_settings() -> dict[str, Any]:
     """Read effective settings through the edition port when available."""
 
     s = get_settings()
-    effective = {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
+    effective = {
+        k: _validate_runtime_setting_value(k, getattr(s, k)) for k in RUNTIME_KEYS
+    }
     try:
         provider = get_runtime_settings_provider()
     except CoordinationProviderMissing:
@@ -209,11 +252,11 @@ async def _read_effective_runtime_settings() -> dict[str, int]:
     provided = await provider.read_runtime_settings("global")
     for key in RUNTIME_KEYS:
         if key in provided:
-            effective[key] = _validate_runtime_setting_value(key, int(provided[key]))
+            effective[key] = _validate_runtime_setting_value(key, provided[key])
     return effective
 
 
-def _validate_runtime_settings_via_port(values: dict[str, int]) -> None:
+def _validate_runtime_settings_via_port(values: dict[str, Any]) -> None:
     """Let the edition validate runtime settings when it registered a port."""
 
     try:
@@ -287,10 +330,10 @@ def _resolve_legacy_env_aliases() -> dict[str, int]:
     return resolved
 
 
-async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
+async def apply_persisted_settings_to_core_settings() -> dict[str, Any]:
     """Read the ``app_settings`` table and override :class:`CoreSettings`.
 
-    Called once at app startup **before** any module imports Kùzu. Logs the
+    Called once at app startup **before** the graph runtime is built. Logs the
     resolved values in a single structured line for audit.
     Returns the snapshot that was applied (for caller bookkeeping).
     """
@@ -313,26 +356,29 @@ async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
         elif key in legacy:
             merged[key] = legacy[key]
 
-    new_settings = CoreSettings(**merged)
+    new_settings = type(base)(**merged)
     configure_settings(new_settings)
 
     # Take the boot snapshot *after* CoreSettings was updated so restart_required
     # is computed against the values the current process actually observes.
-    snapshot = {k: int(getattr(new_settings, k)) for k in RUNTIME_KEYS}
+    snapshot = {
+        k: _validate_runtime_setting_value(k, getattr(new_settings, k))
+        for k in RUNTIME_KEYS
+    }
     _boot_snapshot.clear()
     _boot_snapshot.update(snapshot)
 
     logger.info(
-        "kg.kuzu.config_applied buffer_pool_mb=%d max_db_size_gb=%d pool_size=%d "
-        "queue_workers=%d queue_min_interval_ms=%d queue_alert_threshold=%d",
-        snapshot["kg_kuzu_buffer_pool_mb"],
-        snapshot["kg_kuzu_max_db_size_gb"],
-        snapshot["kg_connection_pool_size"],
+        "kg.runtime.config_applied grafx_page_size=%d "
+        "grafx_descriptor_revalidation=%s queue_workers=%d "
+        "queue_min_interval_ms=%d queue_alert_threshold=%d",
+        snapshot["kg_grafx_page_size"],
+        snapshot["kg_grafx_descriptor_revalidation"],
         snapshot["kg_queue_max_concurrent_workers"],
         snapshot["kg_queue_min_interval_ms"],
         snapshot["kg_queue_alert_threshold"],
         extra={
-            "event": "kg.kuzu.config_applied",
+            "event": "kg.runtime.config_applied",
             **snapshot,
         },
     )
@@ -356,6 +402,13 @@ async def get_runtime_settings(db: AsyncSession) -> dict[str, Any]:
     persisting them never marks restart_required (spec bdcda842, BR8/TR11).
     """
     effective = await _read_effective_runtime_settings()
+    settings = get_settings()
+    active_providers = {
+        "kg_graph_backend": str(getattr(settings, "kg_graph_backend", "grafx")),
+        "kg_global_graph_backend": str(
+            getattr(settings, "kg_global_graph_backend", "grafx")
+        ),
+    }
 
     persisted = await _load_persisted_rows(db)
     boot = _read_boot_snapshot()
@@ -367,13 +420,14 @@ async def get_runtime_settings(db: AsyncSession) -> dict[str, Any]:
     desired.update(persisted)
 
     return {
+        **active_providers,
         **effective,
         "desired_values": desired,
         "restart_required": restart_required,
     }
 
 
-def _apply_live_tick_settings(values: dict[str, int]) -> None:
+def _apply_live_tick_settings(values: dict[str, Any]) -> None:
     """Persist the decay-tick knobs into live CoreSettings — NO scheduler.
 
     Behaviour-preserving split of the former ``_maybe_reschedule_tick``
@@ -394,7 +448,7 @@ def _apply_live_tick_settings(values: dict[str, int]) -> None:
 
 
 async def apply_tick_runtime_effects(
-    values: dict[str, int],
+    values: dict[str, Any],
     scheduler_control: SchedulerControl | None,
     *,
     actor_id: str = "unknown",
@@ -536,129 +590,56 @@ class _LegacyConfigChangeBlocked(Exception):
 
 async def put_runtime_settings(
     db: AsyncSession,
-    values: dict[str, int],
+    values: dict[str, Any],
     *,
     actor_id: str = "unknown",
     migration_plan_ref: str | None = None,
     restart_policy: str | None = None,
     scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
-    """Upsert runtime settings into the table. Caller validates ranges first.
+    """Persist validated options and report differences from the boot snapshot.
 
-    KG-01.5 (val_06cd6809 rework): any graph-runtime key exposed through the
-    legacy public settings names (kg_kuzu_buffer_pool_mb,
-    kg_kuzu_max_db_size_gb, kg_connection_pool_size, etc.)
-    MUST pass through ``KGConfigChangeGuard`` BEFORE the persist. The
-    guard enforces FR10/TR14: hot config changes that could invalidate
-    storage are blocked, storage shrink below current footprint is
-    blocked, migration-required groups (storage/wal/index) need a
-    ``migration_plan_ref``. Non-graph-runtime keys (event queue, decay tick)
-    skip the guard — those are hot-reloadable by design.
+    Grafx constructor options require restart, not in-place storage migration,
+    so there is no ``KGConfigChangeGuard`` hop any more: the retired engine's
+    storage-grow/shrink and migration-plan groups have no Grafx equivalent.
+    ``migration_plan_ref`` / ``restart_policy`` stay in the signature because
+    the REST payload still accepts them for wire compatibility.
 
-    On block: raises ``ConfigChangeBlocked`` with bounded reason +
-    setting_group + audit_event. Caller MUST translate to HTTP 400
-    without leaking raw values. Counter
-    ``kg_config_change_blocked_total{setting_group, reason}`` is bumped
-    by the guard.
-
-    ``restart_policy`` defaults to ``"required"`` whenever any graph-runtime
-    key is in the diff (because GRAPH_DB_KEYS are constructor-time for the
-    active backend/pool) and ``"none"`` otherwise. Caller may override
-    explicitly.
+    Queue and decay settings retain their engine-neutral hot-reload effects
+    through injected Core ports.
 
     Returns the GET-style view (effective + restart_required). The lock
     serialises concurrent PUTs so the last-writer-wins semantic is
     deterministic.
-
-    Spec 54399628 (Wave 2 NC f9732afc) — when `kg_decay_tick_interval_minutes`
-    changes, also hot-reloads the active scheduler adapter so the new interval
-    takes effect immediately (no restart_required for tick keys).
     """
-    # Local imports to avoid cycles + keep KG-01.5 dependency optional
-    # for callers that only use legacy keys.
-    from okto_pulse.core.kg.config_guard import (
-        ConfigGuardError,
-        GraphSettingPolicy,
-        KGConfigChangeGuard,
-        RestartPolicy,
-        SETTING_GROUP_BUFFER,
-        SETTING_GROUP_CONNECTION_POOL,
-        SETTING_GROUP_STORAGE,
-    )
-
-    # Identify the graph-runtime subset of the request — only those flow
-    # through the guard. Other RUNTIME_KEYS (event queue, decay tick)
-    # are hot-reloadable by contract.
-    graph_db_changes = {
-        k: v for k, v in values.items() if k in GRAPH_DB_KEYS
-    }
-
-    if graph_db_changes:
-        effective_policy = restart_policy or RestartPolicy.REQUIRED.value
-        # Read current settings for the guard's diff. We read directly
-        # from the rows (not the GET-style view) to feed the guard a
-        # clean dict — the guard only cares about pre/post values for
-        # keys it knows about.
-        current: dict[str, Any] = {}
-        for key in graph_db_changes:
-            row = await db.get(AppSetting, key)
-            if row is not None:
-                try:
-                    current[key] = int(row.value)
-                except (TypeError, ValueError):
-                    current[key] = row.value
-
-        guard = KGConfigChangeGuard(
-            policy=GraphSettingPolicy(
-                setting_groups={
-                    "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
-                    "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
-                    "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
-                },
-                governed_prefixes=("kg_kuzu_", "kg_connection_"),
-            )
-        )
-        try:
-            decision = guard.validate(
-                board_id="_runtime",
-                current_settings=current,
-                requested_settings=graph_db_changes,
-                actor_id=actor_id,
-                migration_plan_ref=migration_plan_ref,
-                restart_policy=effective_policy,
-            )
-        except ConfigGuardError as exc:
-            # Map typed guard errors to ConfigChangeBlocked so the API
-            # layer can return a single safe 400 shape.
-            raise ConfigChangeBlocked(
-                reason=exc.code.value,
-                setting_group="unknown",
-                audit_event="kg.config_change.unknown.blocked",
-            ) from exc
-
-        if not decision.allowed:
-            raise ConfigChangeBlocked(
-                reason=decision.reason,
-                setting_group=decision.setting_group or "unknown",
-                audit_event=decision.audit_event,
-            )
-
-    parsed_values: dict[str, int] = {}
+    parsed_values: dict[str, Any] = {}
     for key, value in values.items():
         if key not in RUNTIME_KEYS:
             continue
-        parsed_values[key] = _validate_runtime_setting_value(key, int(value))
+        parsed_values[key] = _validate_runtime_setting_value(key, value)
 
     if parsed_values:
         _validate_runtime_settings_via_port(parsed_values)
 
     async with _settings_write_guard():
+        # Validate the desired combination, not only the current boot snapshot.
+        # This also serializes two partial PUTs against a previous pending edit.
+        if any(key in parsed_values for key in GRAFX_GRAPH_DB_KEYS):
+            desired = dict(_read_boot_snapshot())
+            desired.update(await _load_persisted_rows(db))
+            desired.update(parsed_values)
+            validate_grafx_options(desired["kg_grafx_options"])
         for key, parsed in parsed_values.items():
+            serialized = (
+                json.dumps(parsed, allow_nan=False)
+                if key == "kg_grafx_options"
+                else str(parsed)
+            )
             row = await db.get(AppSetting, key)
             if row is None:
-                db.add(AppSetting(key=key, value=str(parsed)))
+                db.add(AppSetting(key=key, value=serialized))
             else:
-                row.value = str(parsed)
+                row.value = serialized
         await db.commit()
 
     # Spec 54399628 / spec #15 (fr_93c9af44, fr_2ae7de62) — hot-reload tick

@@ -5,7 +5,7 @@ Spec 9aedfe78 / card affd0444 (FR1/FR2/FR3/FR8, TR1/TR2/TR7/TR8, AC1/AC2/AC8/AC9
 Anti-test-theater: the STARTING canonical state is materialized by the REAL
 deterministic worker + commit_consolidation pipeline (for deterministic nodes)
 and the consolidation orchestrator (for cognitive nodes) — never by a raw
-DecisionDigest/Kuzu seed of the demotion target. The source status regression is
+DecisionDigest/Grafx seed of the demotion target. The source status regression is
 driven through the SQL source-of-truth (the real maturity signal).
 """
 

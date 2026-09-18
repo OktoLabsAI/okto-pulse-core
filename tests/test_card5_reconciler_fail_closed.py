@@ -251,9 +251,8 @@ async def test_graph_write_callback_runs_once_immediately_before_scan(
             "id": "source-id",
             "source_ref": "spec:different-id",
         },
-        {"artifact_type": "unknown", "id": "source-id"},
     ],
-    ids=("missing-id", "missing-type", "mismatched-ref", "unknown-type"),
+    ids=("missing-id", "missing-type", "mismatched-ref"),
 )
 async def test_malformed_row_in_complete_snapshot_fails_closed_before_graph(
     monkeypatch: pytest.MonkeyPatch,
@@ -275,6 +274,37 @@ async def test_malformed_row_in_complete_snapshot_fails_closed_before_graph(
     assert scope.writes == []
     assert result.incomplete is True
     assert result.incomplete_cause == "realm_incomplete"
+
+
+@pytest.mark.asyncio
+async def test_non_governed_source_family_is_skipped_not_realm_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BoardSourceReader is broader than the stale-sweep domain.
+
+    A source family this reconciler has no policy for (a newly added reader
+    family, for instance) must be IGNORED, never treated as an incomplete
+    realm — otherwise one forward-compatible reader poisons every board's
+    daily sweep.
+    """
+
+    reader, transaction, scope = _install_registry(
+        monkeypatch,
+        snapshot=BoardSourceSnapshot(
+            rows=({"artifact_type": "unknown", "id": "source-id"},)
+        ),
+    )
+
+    result = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=None,
+    )
+
+    assert reader.fetch_calls == ["board-card5"]
+    assert scope.writes == []
+    assert result.incomplete is False
+    assert result.incomplete_cause is None
 
 
 @pytest.mark.parametrize(

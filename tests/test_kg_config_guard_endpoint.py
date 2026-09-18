@@ -1,16 +1,17 @@
-"""KG-01.5 endpoint integration — IR ir_4039d470 (val_06cd6809 rework).
+"""KG-01.5 endpoint integration — IR ir_4039d470 (Grafx rework).
 
-Proves that the real settings endpoint (PUT /api/v1/settings/runtime)
-routes graph-runtime changes through KGConfigChangeGuard BEFORE
-persisting. Tests cover:
+Proves the real settings endpoint (PUT /api/v1/settings/runtime) persists the
+Grafx graph-runtime knobs fail-closed. The Grafx runtime has no in-place
+storage migration: constructor options are restart-required and existing
+storage geometry is immutable, so the endpoint no longer runs the
+storage-grow / shrink / migration-plan branches of ``KGConfigChangeGuard``.
+The retired engine's ``kg_kuzu_max_db_size_gb`` / ``kg_connection_pool_size``
+knobs have no Grafx equivalent and were dropped with it. Tests cover:
 
-* Allowed change persists (buffer with implicit restart_required).
-* Blocked changes do NOT persist and return HTTP 400 with bounded reason.
-* Storage shrink below current is blocked.
-* Storage grow without migration_plan_ref is blocked.
-* Connection-pool changes require restart policy.
-* Bounded audit_event surfaces in the response — no raw values leak.
-* Existing legacy tests continue to pass (no regression).
+* Allowed changes persist (buffer + read participants, restart_required).
+* Retired engine keys are refused by the payload contract (extra=forbid).
+* Invalid Grafx values are refused before persistence.
+* Event-queue keys are hot-reload and never bump the guard counter.
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ from httpx import ASGITransport, AsyncClient
 from okto_pulse.community.config import CommunitySettings
 from okto_pulse.core.infra.config import configure_settings, get_settings
 from okto_pulse.core.kg.config_guard import (
-    ConfigBlockReason,
     SETTING_GROUP_BUFFER,
     SETTING_GROUP_CONNECTION_POOL,
     SETTING_GROUP_STORAGE,
@@ -44,7 +44,7 @@ def _restore_core_settings_and_counter():
 async def _reset_app_settings():
     """Wipe persisted AppSetting rows so tests don't leak state via the
     shared DB factory. Without this, a test that persists
-    kg_kuzu_max_db_size_gb=4 makes the next test's "value_not_changed"
+    kg_grafx_buffer_pool_mb=128 makes the next test's "value_not_changed"
     path fire spuriously."""
     from okto_pulse.core.infra.database import get_session_factory
     from sqlalchemy_test_models import AppSetting
@@ -100,174 +100,109 @@ async def settings_client():
 async def test_put_buffer_change_persists_with_implicit_restart_required(
     settings_client,
 ):
-    """Buffer change with no explicit restart_policy uses default
-    restart_policy='required' (matches existing semantics) and is allowed."""
+    """Buffer change with no explicit restart_policy persists as a desired
+    value; the effective snapshot keeps the boot value until restart."""
     configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 128},
+        json={"kg_grafx_buffer_pool_mb": 128},
     )
     assert put_resp.status_code == 200
     body = put_resp.json()
-    assert body["kg_kuzu_buffer_pool_mb"] == 256
-    assert body["desired_values"]["kg_kuzu_buffer_pool_mb"] == 128
+    assert body["kg_grafx_buffer_pool_mb"] == 64
+    assert body["desired_values"]["kg_grafx_buffer_pool_mb"] == 128
     assert body["restart_required"] is True
 
 
 @pytest.mark.asyncio
-async def test_put_connection_pool_change_persists_with_implicit_restart_required(
+async def test_put_read_participants_change_persists_with_implicit_restart_required(
+    settings_client,
+):
+    """Read participants replaced the retired connection-pool knob: it is a
+    Grafx constructor option, so it is restart-required just the same."""
+    configure_settings(CommunitySettings())
+    put_resp = await settings_client.put(
+        "/api/v1/settings/runtime",
+        json={"kg_grafx_read_participants": 4},
+    )
+    assert put_resp.status_code == 200
+    body = put_resp.json()
+    assert body["kg_grafx_read_participants"] == 2
+    assert body["desired_values"]["kg_grafx_read_participants"] == 4
+    assert body["restart_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_put_descriptor_revalidation_persists_with_restart_required(
     settings_client,
 ):
     configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_connection_pool_size": 12},
+        json={"kg_grafx_descriptor_revalidation": "strict"},
     )
     assert put_resp.status_code == 200
     body = put_resp.json()
-    assert body["kg_connection_pool_size"] == 2
-    assert body["desired_values"]["kg_connection_pool_size"] == 12
+    assert body["desired_values"]["kg_grafx_descriptor_revalidation"] == "strict"
     assert body["restart_required"] is True
 
 
-@pytest.mark.asyncio
-async def test_put_storage_grow_with_migration_plan_persists(settings_client):
-    configure_settings(CommunitySettings())
-    put_resp = await settings_client.put(
-        "/api/v1/settings/runtime",
-        json={
-            "kg_kuzu_max_db_size_gb": 4,
-            "migration_plan_ref": "MP-2026-05-26-001",
-            "restart_policy": "scheduled",
-        },
-    )
-    assert put_resp.status_code == 200
-
-
-# --- Blocked paths (KGConfigChangeGuard enforcement) -------------------------
+# --- Fail-closed paths --------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_put_storage_grow_without_migration_plan_is_blocked(
+async def test_retired_graph_engine_keys_are_refused_by_the_payload_contract(
     settings_client,
 ):
-    """val_06cd6809 enforcement: storage group requires migration_plan_ref.
-    The endpoint MUST refuse to persist and return HTTP 400."""
+    """The retired engine's storage/connection knobs have no Grafx equivalent.
+    ``RuntimeSettingsPayload`` forbids extras, so they can never be persisted
+    through a stale client."""
     configure_settings(CommunitySettings())
-    # Baseline GET to establish boot snapshot.
+    await settings_client.get("/api/v1/settings/runtime")
+
+    for retired_key, value in (
+        ("kg_kuzu_max_db_size_gb", 4),
+        ("kg_kuzu_buffer_pool_mb", 128),
+        ("kg_connection_pool_size", 12),
+    ):
+        resp = await settings_client.put(
+            "/api/v1/settings/runtime",
+            json={retired_key: value},
+        )
+        assert resp.status_code == 422, retired_key
+
+    get_resp = await settings_client.get("/api/v1/settings/runtime")
+    assert get_resp.status_code == 200
+    assert retired_key not in get_resp.json()
+
+
+@pytest.mark.asyncio
+async def test_put_out_of_range_grafx_value_is_refused_before_persistence(
+    settings_client,
+):
+    """Grafx knobs are bounded by the payload validators; an out-of-range
+    value never reaches the persistence layer."""
+    configure_settings(CommunitySettings())
     await settings_client.get("/api/v1/settings/runtime")
 
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={
-            "kg_kuzu_max_db_size_gb": 4,
-            # Note: no migration_plan_ref.
-            "restart_policy": "required",
-        },
+        json={"kg_grafx_read_participants": 99},
     )
-    assert put_resp.status_code == 400
-    body = put_resp.json()
-    detail = body["detail"]
-    assert detail["error"] == "kg_config_change_blocked"
-    assert detail["reason"] == ConfigBlockReason.MIGRATION_PLAN_REQUIRED.value
-    assert detail["setting_group"] == SETTING_GROUP_STORAGE
-    assert detail["audit_event"].startswith("kg.config_change.")
-    # TR12 safety: no raw values in the response.
-    assert "4" not in detail["audit_event"]
-    assert "4" not in detail["reason"]
+    assert put_resp.status_code == 422
 
-    # Counter bumped for the bounded reason.
-    assert (
-        get_config_block_count(
-            SETTING_GROUP_STORAGE,
-            reason=ConfigBlockReason.MIGRATION_PLAN_REQUIRED.value,
-        )
-        == 1
-    )
-
-    # The block MUST NOT have persisted — GET still shows the baseline.
     get_resp = await settings_client.get("/api/v1/settings/runtime")
-    assert get_resp.status_code == 200
-    # Default boot value for kg_kuzu_max_db_size_gb is 2.
-    assert get_resp.json()["kg_kuzu_max_db_size_gb"] == 2
+    assert get_resp.json()["desired_values"]["kg_grafx_read_participants"] == 2
 
 
 @pytest.mark.asyncio
-async def test_put_storage_shrink_below_current_is_blocked(settings_client):
-    """val_06cd6809 enforcement: storage shrink below current footprint
-    is blocked even with a migration plan + restart policy."""
-    configure_settings(CommunitySettings())
-
-    # First, grow storage to 4 (allowed with migration).
-    grow = await settings_client.put(
-        "/api/v1/settings/runtime",
-        json={
-            "kg_kuzu_max_db_size_gb": 4,
-            "migration_plan_ref": "MP-grow",
-            "restart_policy": "required",
-        },
-    )
-    assert grow.status_code == 200
-
-    # Now attempt to shrink back to 2 — must be blocked.
-    shrink = await settings_client.put(
-        "/api/v1/settings/runtime",
-        json={
-            "kg_kuzu_max_db_size_gb": 2,
-            "migration_plan_ref": "MP-shrink",
-            "restart_policy": "required",
-        },
-    )
-    assert shrink.status_code == 400
-    detail = shrink.json()["detail"]
-    assert detail["reason"] == ConfigBlockReason.SHRINK_BELOW_CURRENT_FOOTPRINT.value
-    assert detail["setting_group"] == SETTING_GROUP_STORAGE
-    # Counter recorded the shrink-block.
-    assert (
-        get_config_block_count(
-            SETTING_GROUP_STORAGE,
-            reason=ConfigBlockReason.SHRINK_BELOW_CURRENT_FOOTPRINT.value,
-        )
-        == 1
-    )
-
-
-@pytest.mark.asyncio
-async def test_put_buffer_with_restart_policy_none_is_blocked(
-    settings_client,
-):
-    """Buffer changes are restart-required; explicit policy=none blocks."""
+async def test_put_non_power_of_two_page_size_is_refused(settings_client):
     configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={
-            "kg_kuzu_buffer_pool_mb": 128,
-            "restart_policy": "none",
-        },
+        json={"kg_grafx_page_size": 12288},
     )
-    assert put_resp.status_code == 400
-    detail = put_resp.json()["detail"]
-    assert detail["reason"] == ConfigBlockReason.RESTART_POLICY_REQUIRED.value
-    assert detail["setting_group"] == SETTING_GROUP_BUFFER
-
-
-@pytest.mark.asyncio
-async def test_put_connection_pool_with_restart_policy_none_is_blocked(
-    settings_client,
-):
-    """Connection-pool changes are graph-runtime constructor-time settings."""
-    configure_settings(CommunitySettings())
-    put_resp = await settings_client.put(
-        "/api/v1/settings/runtime",
-        json={
-            "kg_connection_pool_size": 12,
-            "restart_policy": "none",
-        },
-    )
-    assert put_resp.status_code == 400
-    detail = put_resp.json()["detail"]
-    assert detail["reason"] == ConfigBlockReason.RESTART_POLICY_REQUIRED.value
-    assert detail["setting_group"] == SETTING_GROUP_CONNECTION_POOL
+    assert put_resp.status_code == 422
 
 
 # --- Non-graph-runtime keys bypass the guard ---------------------------------
@@ -287,7 +222,6 @@ async def test_event_queue_key_change_does_not_go_through_guard(
     assert put_resp.status_code == 200
 
     # No guard counter bumps for event-queue keys.
-    samples_storage = get_config_block_count(SETTING_GROUP_STORAGE)
-    samples_buffer = get_config_block_count(SETTING_GROUP_BUFFER)
-    assert samples_storage == 0
-    assert samples_buffer == 0
+    assert get_config_block_count(SETTING_GROUP_STORAGE) == 0
+    assert get_config_block_count(SETTING_GROUP_BUFFER) == 0
+    assert get_config_block_count(SETTING_GROUP_CONNECTION_POOL) == 0

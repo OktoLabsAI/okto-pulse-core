@@ -891,6 +891,44 @@ class _CoreTestRelationalApplicationAdapter:
     def permission_presets(self, session):
         return _CoreTestPermissionPresetGateway(session)
 
+    def delivery_evidence(self, session):
+        """Empty delivery-evidence seam for Core scenarios with no persistence.
+
+        The Core suite has no relational delivery ledger: every scope it moves
+        through a terminal transition is seeded WITHOUT acceptance criteria or
+        test scenarios, so a faithful adapter would project an empty obligation
+        set too. Recording is fail-closed — a Core test that needs real receipts
+        must register its own adapter.
+        """
+
+        _ = session
+
+        from okto_pulse.core.domain.delivery_evidence import (
+            DeliveryEvidenceSnapshot,
+        )
+
+        class _CoreTestDeliveryEvidenceStore:
+            async def lock_scope(self, _scope) -> None:
+                return None
+
+            async def load_snapshot(self, scope):
+                return DeliveryEvidenceSnapshot(scope=scope, obligations=())
+
+            async def projection(self, board_id: str, spec_id: str) -> dict:
+                return {
+                    "board_id": board_id,
+                    "spec_id": spec_id,
+                    "obligations": [],
+                    "complete": True,
+                }
+
+            async def record(self, command, *, actor_id: str, actor_kind: str):
+                raise NotImplementedError(
+                    "Delivery evidence recording needs an edition-owned adapter."
+                )
+
+        return _CoreTestDeliveryEvidenceStore()
+
     def quality_assessments(self, session):
         _ = session
         from okto_pulse.core.ports.quality_assessment import (

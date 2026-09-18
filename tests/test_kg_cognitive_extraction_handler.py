@@ -7,7 +7,7 @@ Cards covered:
     - TC-5 (TS5): board sem cognitive_llm_config → skip Learning, run others
 
 The handler emits structured logs as the "candidate enqueue" surface
-(per spec design — actual Kuzu persistence goes through a downstream
+(per spec design — actual graph persistence goes through a downstream
 worker registered in the umbrella ideation's out-of-scope list). Tests
 assert against ``caplog.records`` since that is the authoritative output
 for v1.

@@ -313,54 +313,44 @@ def test_enqueue_sources_docstring_documents_active_row_contract() -> None:
 def test_prepare_board_graph_storage_quarantines_existing_graph(
     tmp_path: Path,
 ) -> None:
-    graph = tmp_path / "boards" / "b1" / "graph.lbug"
-    graph.parent.mkdir(parents=True)
-    graph.write_text("graph", encoding="utf-8")
-    wal = tmp_path / "boards" / "b1" / "graph.lbug.wal"
-    wal.write_text("wal", encoding="utf-8")
+    """A confirmed rebuild quarantines the existing board graph through the
+    routed lifecycle, then leaves the route materialized with the current
+    schema so the rebuild lane can enqueue rows against a fresh target."""
 
-    from kg_registry_testing import configure_test_kg_registry
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.interfaces.graph_lifecycle import PurgeReport
-    from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
-    import okto_pulse.community.adapters.kg_runtime as kg_runtime
+    from kg_registry_testing import configure_real_graph_test_kg_registry
+    from kg_schema_testing import (
+        board_graph_path,
+        bootstrap_board_graph,
+        close_all_connections,
+    )
 
-    class _Lifecycle:
-        async def purge(self, board_id: str, *, reason: str) -> PurgeReport:
-            assert board_id == "b1"
-            assert reason == "explicit_rebuild:test"
-            moved: list[str] = []
-            for path in (graph, wal):
-                if path.exists():
-                    moved.append(str(path))
-                    path.unlink()
-            return PurgeReport(
-                board_id=board_id,
-                status="purged",
-                reason=reason,
-                affected_storage_refs=tuple(
-                    StorageRef(path, "test_graph") for path in moved
-                ),
-                quarantined=True,
-            )
+    configure_real_graph_test_kg_registry()
+    bootstrap_board_graph("b1")
 
-    configure_test_kg_registry()
-    get_kg_registry().graph_lifecycle = _Lifecycle()
-    original_board_path = kg_runtime.board_kuzu_path
-    kg_runtime.board_kuzu_path = lambda board_id: graph
+    adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
+    report = adapter.prepare_board_graph_storage_report(
+        board_id="b1",
+        reason="explicit_rebuild:test",
+    )
 
-    try:
-        adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
-        moved = adapter.prepare_board_graph_storage(
-            board_id="b1",
-            reason="explicit_rebuild:test",
-        )
-    finally:
-        kg_runtime.board_kuzu_path = original_board_path
+    assert report.status == "purged"
+    assert report.reason == "explicit_rebuild:test"
+    assert report.quarantined is True
+    assert report.quarantine_ref is not None
 
-    assert moved == (str(graph), str(wal))
-    assert not graph.exists()
-    assert not wal.exists()
+    # The stable board storage token — not concrete backend paths — is what
+    # crosses the port boundary.
+    moved = adapter.prepare_board_graph_storage(
+        board_id="b1",
+        reason="explicit_rebuild:test",
+    )
+    assert moved == ("board:b1",)
+
+    # Rebuild preparation must end with the route materialized again (fresh
+    # generation, current schema), never with the board graph absent.
+    close_all_connections()
+    active_path = board_graph_path("b1")
+    assert active_path.exists()
 
 
 def test_rebuild_step_fails_when_worker_queue_does_not_drain(
@@ -674,35 +664,6 @@ def test_drain_until_idle_hard_ceiling_stops_endless_progress(
     assert result["idle"] is False
     assert result["hard_timed_out"] is True
 
-
-def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from okto_pulse.community.adapters import kg_runtime
-
-    graph = tmp_path / "boards" / "b1" / "graph.lbug"
-    graph.parent.mkdir(parents=True)
-    graph.write_bytes(b"not-a-valid-ladybug-graph")
-
-    monkeypatch.setattr(kg_runtime, "board_kuzu_path", lambda board_id: graph)
-    monkeypatch.setattr(kg_runtime, "close_all_connections", lambda *_: None)
-    monkeypatch.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
-    monkeypatch.setattr(
-        kg_runtime,
-        "_open_kuzu_db_path_cached",
-        lambda _path: (_ for _ in ()).throw(RuntimeError("bad wal")),
-    )
-
-    result = kg_runtime.apply_ladybug_lifecycle_step(
-        "b1",
-        "board_graph",
-        "close_reopen_probe",
-    )
-
-    assert result.ok is False
-    assert result.detail is not None
-    assert "bad wal" in result.detail
 
 
 def test_rebuild_endpoint_is_recovery_only_offline() -> None:

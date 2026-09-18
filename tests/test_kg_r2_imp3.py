@@ -4,7 +4,7 @@ Spec 9aedfe78 / card d3263170 (FR6/TR6/TR11/TR12; ts_fe9fe207, ts_110b573e).
 
 Anti-test-theater: the canonical evidence comes from the REAL SQL source + the
 maturity classifier; the post-commit chain runs the REAL worker
-``ConsolidationProcessor.process_batch``. No direct Kuzu/DecisionDigest seed of
+``ConsolidationProcessor.process_batch``. No direct Grafx/DecisionDigest seed of
 canonical state.
 """
 

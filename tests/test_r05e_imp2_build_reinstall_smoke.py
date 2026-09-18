@@ -54,7 +54,7 @@ NO-COMMIT empirical findings (re-executable; observed on this tree 2026-06-26):
      (cache-warm versions) and goes green; if a GENUINE ML-closure dep is still
      uncached even at the lock version, it SKIPs with the exact captured error —
      an explicit residual, never a faked pass. (A benign warm-cache PATCH drift —
-     the lock pinning a version the cache advanced past, e.g. ladybug — is
+     the lock pinning a version the cache advanced past, e.g. okto-grafx — is
      self-healed by relaxing only the exact pins uv reports.)
 
 Offline / Windows / deterministic: no network, AWS, PyPI fetch or model download.
@@ -382,7 +382,7 @@ class TestArtifactDistributionContract:
         # huggingface-hub==1.20.1, absent from the cache, and fails).
         #
         # Self-healing relax for benign warm-cache PATCH drift: when the lock pins an
-        # exact version the cache has advanced PAST (e.g. ladybug 0.16.0 -> cached
+        # exact version the cache has advanced PAST (e.g. okto-grafx 0.0.7 -> cached
         # 0.16.1), uv reports that pin as unavailable offline. We drop ONLY the pins
         # uv NAMES and retry; the ML closure (cache-warm at the lock versions) is
         # never the thing uv reports, so it stays pinned. If after relaxing a GENUINE
@@ -459,10 +459,10 @@ class TestArtifactDistributionContract:
                 # generic auto-relax that could float a real technical dep and still
                 # pass): ONLY these benign patch-drift pins may be relaxed — the
                 # local ``okto-pulse-core`` (rebuilt fresh into ../dist this run) and
-                # ``ladybug`` (lock 0.16.0 vs cache-advanced 0.16.1). The ML closure
+                # ``okto-grafx`` (lock 0.0.7 vs cache-advanced 0.0.8). The ML closure
                 # is already asserted to stay at the lock (the SKIP above). Anything
                 # else relaxed is an ERROR, not a silent pass.
-                _ALLOWED_PATCH_DRIFT_RELAX = {"ladybug", "okto-pulse-core"}
+                _ALLOWED_PATCH_DRIFT_RELAX = {"okto-grafx", "okto-pulse-core"}
                 assert relaxed <= _ALLOWED_PATCH_DRIFT_RELAX, (
                     "combined offline install relaxed pins OUTSIDE the allowed "
                     f"patch-drift set: relaxed={sorted(relaxed)}, "

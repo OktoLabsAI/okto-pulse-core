@@ -129,7 +129,7 @@ def test_impl1_consolidation_dead_letter_table_exists():
 
 
 # ----------------------------------------------------------------------
-# AC6 — PUT kg_kuzu_buffer_pool_mb dispara restart_required (Graph DB)
+# AC6 — PUT kg_grafx_buffer_pool_mb dispara restart_required (Graph DB)
 # ----------------------------------------------------------------------
 
 
@@ -141,13 +141,13 @@ async def test_ac6_put_graph_db_field_triggers_restart_required(settings_client)
 
     resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 512},
+        json={"kg_grafx_buffer_pool_mb": 512},
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["restart_required"] is True
     # Effective value is still the boot value (constructor-time).
-    assert body["kg_kuzu_buffer_pool_mb"] == 256
+    assert body["kg_grafx_buffer_pool_mb"] == 64
 
 
 @pytest.mark.asyncio

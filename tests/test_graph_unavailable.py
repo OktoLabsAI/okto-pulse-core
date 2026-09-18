@@ -3,12 +3,12 @@
 Integration + unit tests for the shared open-or-classify helper
 (``core/kg/graph_availability.py``) and the vector + Cypher read-path wiring.
 
-TR6 test infra: seed a board via ``bootstrap_board_graph`` and simulate the
-fail-closed open failure by monkeypatching the community graph runtime
-``_open_kuzu_db_path_cached``
-to raise — the REAL ``_raise_existing_graph_open_failed(operation="bootstrap_probe")``
-guard then fires (we never corrupt on-disk files). The MCP tools are driven
-through a tiny FastMCP double; ACL is satisfied by stubbing ``_get_user_boards``.
+TR6 test infra: seed a real board via ``bootstrap_board_graph`` and simulate
+unavailability by making the composed graph providers raise the adapter-level
+``GraphUnavailable`` — the same typed refusal a real edition adapter reports
+when a board graph exists but cannot be opened (we never corrupt on-disk
+files). The MCP tools are driven through a tiny FastMCP double; ACL is
+satisfied by stubbing ``_get_user_boards``.
 
 Scenario -> test-card map:
   ts_69283d46, ts_b4d2368a  -> card 7d883f70 (AC1/AC2: vector + Cypher open-failure)
@@ -24,7 +24,6 @@ import asyncio
 import hashlib
 import inspect
 import json
-import shutil
 import uuid
 
 import pytest
@@ -39,7 +38,7 @@ from okto_pulse.core.kg.kg_service import (
     reset_kg_service_for_tests,
 )
 from kg_schema_testing import (
-    board_kuzu_path,
+    board_graph_path,
     bootstrap_board_graph,
     close_all_connections,
     reset_bootstrap_cache_for_tests,
@@ -47,10 +46,7 @@ from kg_schema_testing import (
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
-kg_runtime = pytest.importorskip(
-    "okto_pulse.community.adapters.kg_runtime",
-    reason="AF-04 Community integration test requires the Community KG runtime adapter.",
-)
+from okto_pulse.core.kg.interfaces.graph_errors import GraphUnavailable
 
 
 # --------------------------------------------------------------------------- #
@@ -77,14 +73,7 @@ def _fresh_board_id() -> str:
 
 
 def _purge(board_id: str) -> None:
-    path = board_kuzu_path(board_id)
-    close_all_connections(board_id)
-    if path.is_dir():
-        shutil.rmtree(path, ignore_errors=True)
-    elif path.is_file():
-        path.unlink(missing_ok=True)
-        for sibling in path.parent.glob(path.name + ".*"):
-            sibling.unlink(missing_ok=True)
+    close_all_connections()
     reset_bootstrap_cache_for_tests()
     reset_kg_service_for_tests()
     clear_cache()
@@ -125,23 +114,31 @@ def _invoke(tool, **kwargs) -> dict:
 
 @pytest.fixture
 def open_failure_board(monkeypatch):
-    """A board whose on-disk graph EXISTS but fails to open, so the real
-    ``kg_runtime._raise_existing_graph_open_failed(operation="bootstrap_probe")``
-    guard fires. TR6: monkeypatch the open, never corrupt real files."""
+    """A real board whose composed graph providers report ``GraphUnavailable``.
+
+    TR6: the on-disk graph is never corrupted; the adapter-level refusal is
+    injected at the port boundary, which is exactly what Core classifies.
+    """
     configure_real_graph_test_kg_registry()
     bid = _fresh_board_id()
-    _purge(bid)
-    path = board_kuzu_path(bid)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"partial-lbug-bytes")  # file exists -> the probe reaches the open
+    bootstrap_board_graph(bid)
 
-    def _raise_corrupt(_path):
-        raise RuntimeError(
-            "Runtime exception: Corrupted wal file. Read out invalid WAL record type."
+    def _unavailable(*_args, **_kwargs):
+        raise GraphUnavailable(
+            "board graph exists but could not be opened",
+            details={"board_id": bid, "operation": "open"},
         )
 
-    monkeypatch.setattr(kg_runtime, "_open_kuzu_db_path_cached", _raise_corrupt)
-    reset_bootstrap_cache_for_tests()
+    registry = get_kg_registry()
+    monkeypatch.setattr(registry.cypher_executor, "execute_read_only", _unavailable)
+    # A board graph that cannot be opened refuses EVERY read, not one method,
+    # so every public reader on the composed store reports the same refusal.
+    store = registry.graph_store
+    for name in dir(type(store)):
+        if name.startswith("_"):
+            continue
+        if callable(getattr(store, name, None)):
+            monkeypatch.setattr(store, name, _unavailable, raising=False)
     reset_kg_service_for_tests()
     clear_cache()
     yield bid
@@ -194,31 +191,17 @@ def test_ts_e9f925d9_code_registered_and_single_shared_predicate():
     assert ga.derive_graph_state("at_risk") == "recovery_needed"
 
 
-def test_ts_f500022f_classification_preserves_files_and_guard(open_failure_board, monkeypatch):
+def test_ts_f500022f_classification_preserves_storage(open_failure_board, monkeypatch):
     bid = open_failure_board
-    path = board_kuzu_path(bid)
-    before = path.read_bytes()
-    before_hash = hashlib.sha256(before).hexdigest()
-    before_mtime = path.stat().st_mtime
+    path = board_graph_path(bid)
+    before = sorted(p.name for p in path.rglob("*"))
 
     tools = _register_query_tools(monkeypatch, bid)
     payload = _invoke(tools["okto_pulse_kg_get_learning_from_bugs"], board_id=bid, area="anything")
     assert payload["error"]["code"] == "graph_unavailable"
 
     # classification must NOT auto-bootstrap / purge / repair the on-disk graph
-    after = path.read_bytes()
-    assert after == before
-    assert hashlib.sha256(after).hexdigest() == before_hash
-    assert path.stat().st_mtime == before_mtime
-
-    # the fail-closed guard body is unchanged: it still raises its RuntimeError
-    with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
-        kg_runtime._raise_existing_graph_open_failed(
-            board_id=bid,
-            path=path,
-            operation="bootstrap_probe",
-            exc=RuntimeError("boom"),
-        )
+    assert sorted(p.name for p in path.rglob("*")) == before
 
 
 # --------------------------------------------------------------------------- #
@@ -347,31 +330,24 @@ def test_ts_d4c8031f_full_cypher_family_graph_unavailable(
 
 
 def test_is_graph_unavailable_error_is_narrow():
-    """The classifier matches the REAL fail-closed guard message for both
-    operation values, and rejects look-alikes (TR3). Guards the false-positive
-    surface that matching the interpolated ``bootstrap_probe`` token would open."""
-    for operation in ("bootstrap_probe", "schema_migration_open"):
-        with pytest.raises(RuntimeError) as exc_info:
-            kg_runtime._raise_existing_graph_open_failed(
-                board_id="b",
-                path=board_kuzu_path("b"),
-                operation=operation,
-                exc=RuntimeError("inner open error"),
-            )
-        assert ga.is_graph_unavailable_error(exc_info.value)
+    """The classifier recognizes exactly the adapter's typed unavailability and
+    nothing else (TR3) — no message sniffing, no sibling graph error."""
+    from okto_pulse.core.kg.interfaces.graph_errors import (
+        GraphError,
+        GraphInvalidQuery,
+    )
 
-    # a benign query error whose text merely mentions the operation token is NOT
-    # a graph-open failure
+    assert ga.is_graph_unavailable_error(GraphUnavailable("cannot open board graph"))
+
+    # a benign query error is NOT graph unavailability
     assert not ga.is_graph_unavailable_error(
-        RuntimeError("Binder exception: Table bootstrap_probe does not exist")
+        GraphInvalidQuery("Binder exception: table does not exist")
     )
-    # the regular (non-fail-closed) open error is NOT classified
+    # the generic adapter error is NOT classified
+    assert not ga.is_graph_unavailable_error(GraphError("failed to open the graph"))
+    # look-alike message text on a plain RuntimeError is NOT classified
     assert not ga.is_graph_unavailable_error(
-        RuntimeError("Failed to open LadybugDB database at /tmp/x")
-    )
-    # marker text on a NON-RuntimeError type is NOT classified (type gate)
-    assert not ga.is_graph_unavailable_error(
-        ValueError("refusing to auto-bootstrap or purge it")
+        RuntimeError("graph_unavailable: refusing to auto-bootstrap or purge it")
     )
 
 

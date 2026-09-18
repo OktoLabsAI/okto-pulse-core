@@ -60,9 +60,6 @@ from okto_pulse.core.services.kg_health_service import (
     get_kg_health,
 )
 
-kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
-_ensure_last_recomputed_at_columns = kg_runtime._ensure_last_recomputed_at_columns
-apply_schema_to_connection = kg_runtime.apply_schema_to_connection
 
 
 KG_REL_BOARD_ID = "board-kg-relevance-dynamic-test"
@@ -144,17 +141,6 @@ def test_ts29_eleven_node_types_share_common_attrs_block():
         assert "last_recomputed_at STRING" in ddl
 
 
-def test_ts29_ensure_last_recomputed_helper_signature_matches_siblings():
-    """Helper has (conn, node_type) like _ensure_priority_boost_columns."""
-    sig = inspect.signature(_ensure_last_recomputed_at_columns)
-    assert list(sig.parameters) == ["conn", "node_type"]
-
-
-def test_ts29_apply_schema_to_connection_invokes_last_recomputed_helper():
-    """apply_schema_to_connection wires the new helper into the bootstrap path
-    (legacy boards add the column on next open)."""
-    src = inspect.getsource(apply_schema_to_connection)
-    assert "_ensure_last_recomputed_at_columns" in src
 
 
 # ---------------------------------------------------------------------------
@@ -1718,8 +1704,8 @@ def test_doc_g_drift_review_invariants_preserved():
     import inspect
     from okto_pulse.core.kg import cypher_templates as tpl
 
-    kuzu_graph_store = pytest.importorskip(
-        "okto_pulse.community.adapters.kuzu_graph_store"
+    grafx_graph_store = pytest.importorskip(
+        "okto_pulse.community.adapters.grafx_graph_store"
     )
 
     # (1) BR4 — cypher_templates retain ORDER BY <var>.relevance_score DESC.
@@ -1739,7 +1725,7 @@ def test_doc_g_drift_review_invariants_preserved():
     )
 
     # (2) the public decay reorder policy is invoked by the graph adapter path.
-    src_store = inspect.getsource(kuzu_graph_store)
+    src_store = inspect.getsource(grafx_graph_store)
     assert "apply_decay_reorder" in src_store
 
     # (3) Tick handler updates last_recomputed_at, NOT last_queried_at.

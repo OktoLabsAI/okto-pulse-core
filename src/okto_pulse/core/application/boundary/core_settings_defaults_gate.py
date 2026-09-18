@@ -111,13 +111,15 @@ _EDITION_COMMUNITY_OWNERS: dict[str, tuple[str, str, str]] = {
 }
 
 _KG_RUNTIME_OWNERS: dict[str, str] = {
-    "kg_kuzu_buffer_pool_mb": (
-        "Legacy public buffer knob retained for API/env compatibility; AF37 "
-        "tracks the neutral graph_runtime_* alias plan."
+    "kg_grafx_buffer_pool_mb": (
+        "Public Grafx buffer knob exposed through the runtime settings API; "
+        "AF37 tracks the neutral graph_runtime_* alias plan."
     ),
-    "kg_kuzu_max_db_size_gb": (
-        "Legacy public storage knob retained for API/env compatibility; AF37 "
-        "tracks the neutral graph_runtime_* alias plan."
+    "kg_grafx_page_size": (
+        "Public Grafx page-geometry knob exposed through the runtime settings "
+        "API; AF37 tracks the neutral graph_runtime_* alias plan. The retired "
+        "engine's max-database-size knob has no Grafx equivalent: Grafx storage "
+        "geometry is immutable per generation."
     ),
     "kg_wal_salvage_enabled": (
         "WAL salvage toggle (KGD-01 FR1/TR3) exposed through the public "

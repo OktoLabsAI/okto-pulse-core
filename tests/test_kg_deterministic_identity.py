@@ -5,7 +5,7 @@ re-computation) and the integration side of S1/S8 (fresh CREATE mints the
 deterministic recipe id; NC-8 reuse keeps the existing id; zero data
 migration on the way in).
 
-Reuses the NC-8 real-graph harness (throwaway SQLite + per-board Ladybug
+Reuses the NC-8 real-graph harness (throwaway SQLite + per-board Grafx
 graph, stub embeddings).
 """
 
@@ -154,18 +154,45 @@ async def test_fresh_create_mints_deterministic_recipe_id(
     assert int(attrs["generation"] or 0) == 0
 
 
-async def test_nc8_reuse_keeps_existing_id(identity_tempdir, monkeypatch):
+async def test_title_revision_supersedes_with_deterministic_trail(
+    identity_tempdir, monkeypatch
+):
+    """Re-consolidating a source with an unchanged title keeps the existing
+    deterministic id (NC-8 merge-reuse, pinned by test_kg_dedup_nc8). A
+    CHANGED title mints a new natural key, so MKG-D-S1 FR8 supersedes with a
+    trail instead: the successor follows the deterministic recipe at
+    generation + 1 and the old node points at it via superseded_by."""
+
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
 
     await _drive_one_session(session_factory, board_id, artifact_ref, "[MKG-A] Spec Y")
     first_id = (await _query_one_async(board_id, artifact_ref))["id"]
+    assert first_id == mint_node_id(
+        board_id,
+        "Entity",
+        derive_natural_key(artifact_ref, "Entity", "[MKG-A] Spec Y"),
+        0,
+    )
 
     commit2 = await _drive_one_session(
         session_factory, board_id, artifact_ref, "[MKG-A] Spec Y revised"
     )
     assert commit2.nodes_added == 0
-    assert (await _query_one_async(board_id, artifact_ref))["id"] == first_id
+    assert commit2.nodes_superseded == 1
+
+    expected_successor = mint_node_id(
+        board_id,
+        "Entity",
+        derive_natural_key(artifact_ref, "Entity", "[MKG-A] Spec Y revised"),
+        1,
+    )
+    successor = await _node_attrs_async(board_id, expected_successor)
+    assert successor["id"] == expected_successor
+    assert int(successor["generation"] or 0) == 1
+
+    old = await _node_attrs_async(board_id, first_id)
+    assert old["superseded_by"] == expected_successor
 
 
 async def test_replay_reuses_already_materialized_deterministic_id(
@@ -174,7 +201,7 @@ async def test_replay_reuses_already_materialized_deterministic_id(
     """An already-written id is an ACKed replay, not a duplicate-PK DLQ.
 
     This models the field failure precisely: the deterministic Entity exists
-    in Ladybug, but the historical row has no source_artifact_ref, so the
+    in Grafx, but the historical row has no source_artifact_ref, so the
     legacy NC-8 lookup cannot find it.  Reprocessing must bind the missing ref,
     keep one node, and report a merge instead of issuing CREATE again.
     """
@@ -312,7 +339,7 @@ async def test_supersede_mints_generation_plus_one_deterministically(
     # At-least-once replay of the same explicit SUPERSEDE must acknowledge the
     # already materialized deterministic successor.  Before the replay guard,
     # this second commit issued CREATE for ``expected_successor`` again and
-    # Ladybug raised a duplicate-primary-key error.
+    # Grafx raised a duplicate-primary-key error.
     replay_begin = await begin_consolidation(
         BeginConsolidationRequest(
             board_id=board_id,

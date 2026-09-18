@@ -76,7 +76,13 @@ def test_f14_wheel_surface_excludes_optional_dependency_groups(tmp_path: Path) -
     )
 
 
-@pytest.mark.parametrize("resolved_extra, expected", [("", ("accel",)), (', extra = ["other"]', ("other",))])
+# Explicit ids: the raw parameter contains characters that are illegal in a
+# Windows filename, and the suite derives a per-test log file from the node id.
+@pytest.mark.parametrize(
+    "resolved_extra, expected",
+    [("", ("accel",)), (', extra = ["other"]', ("other",))],
+    ids=("no-resolved-extra", "resolved-extra-other"),
+)
 def test_f14_lock_preserves_requested_empty_extras_without_hiding_resolved_drift(
     tmp_path: Path, resolved_extra: str, expected: tuple[str, ...],
 ) -> None:

@@ -68,7 +68,7 @@ def test_learning_already_exists_false_on_exception(monkeypatch):
     monkeypatch.setattr(
         get_kg_registry(),
         "cypher_executor",
-        _BoomCypherExecutor("kuzu not bootstrapped"),
+        _BoomCypherExecutor("graph not bootstrapped"),
     )
     assert _learning_already_exists("board-1", "bug_xyz") is False
 

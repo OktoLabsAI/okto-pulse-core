@@ -65,6 +65,10 @@ def _repo(tmp_path: Path, dependencies: list[str], core_files: dict[str, str] | 
 
 
 def test_matrix_classifies_unledgered_and_removed_manifest_dependencies(tmp_path: Path):
+    # ``kuzu`` is deliberate: it is a GOVERNED technical token in
+    # ``dependency_conformance.GOVERNED_TECHNICAL_TOKENS`` with NO ledger entry,
+    # which is exactly the "unledgered governed dependency" shape this row
+    # classifies. It is a retired-engine absence guard, not live vocabulary.
     pyproject, src = _repo(tmp_path, ["kuzu>=0.1", "asyncpg>=0.29"])
 
     report = build_conformance_matrix(

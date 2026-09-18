@@ -231,7 +231,7 @@ def test_classifier_non_bug_layer_and_no_edge_are_weak():
 
 def test_ts_kg02_07_off_taxonomy_endpoint_is_invalid_orphan_fail_closed():
     # The board graph cannot materialize a relates_to from a Learning to a
-    # non-taxonomy type (the Kuzu rel table only declares the seven endpoints), so
+    # non-taxonomy type (the Grafx rel table only declares the seven endpoints), so
     # the fail-closed branch is exercised at the classification authority itself.
     for off_type in ("Alternative", "Assumption", "Bug", "Learning"):
         assert classify_canonical_learning(

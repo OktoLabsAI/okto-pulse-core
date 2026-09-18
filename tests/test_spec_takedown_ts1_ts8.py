@@ -127,6 +127,25 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 @pytest.fixture(scope="module", autouse=True)
 def _global_discovery_graph():
     reset_global_discovery_runtime_for_tests()
+    # The routed Global graph is fail-closed until its backend binding exists;
+    # the composition's explicit initialization door publishes it (inside the
+    # durable writer fence, like any Global mutation) before the runtime
+    # bootstrap can inspect the route.
+    from coordination_fakes import FakeWriteLockPort
+    from global_graph_testing import global_discovery_writer_scope
+    from kg_schema_testing import graph_composition
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_write_lock_port,
+        register_coordination_providers,
+    )
+
+    try:
+        get_write_lock_port()
+    except CoordinationProviderMissing:
+        register_coordination_providers(write_lock_port=FakeWriteLockPort())
+    with global_discovery_writer_scope(operation="test_global_route_init"):
+        graph_composition().initialize_global_route()
     bootstrap_global_discovery()
     yield
     reset_global_discovery_runtime_for_tests()

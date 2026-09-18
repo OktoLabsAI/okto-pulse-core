@@ -55,13 +55,13 @@ def test_af04_inventory_mode_classifies_every_real_community_import_site():
     assert {
         (
             "tests/test_kg_board_rebuild_adapter.py",
-            "from",
-            "okto_pulse.community.adapters",
+            "importorskip",
+            "okto_pulse.community.adapters.board_rebuild_ingestion",
         ),
         (
             "tests/test_kg_relevance_dynamic.py",
             "importorskip",
-            "okto_pulse.community.adapters.kuzu_graph_store",
+            "okto_pulse.community.adapters.grafx_graph_store",
         ),
     }.issubset(
         {(site.file, site.import_kind, site.imported) for site in report.sites}
@@ -73,7 +73,7 @@ def test_af04_gate_blocks_unclassified_indented_imports_and_importorskip(tmp_pat
         'TEXT = "from okto_pulse.community.adapters import kg_runtime"\n'
         "def uses_community():\n"
         "    from okto_pulse.community.adapters import kg_runtime\n"
-        "    pytest.importorskip('okto_pulse.community.adapters.kuzu_graph_store')\n",
+        "    pytest.importorskip('okto_pulse.community.adapters.grafx_graph_store')\n",
         encoding="utf-8",
     )
 
@@ -82,7 +82,7 @@ def test_af04_gate_blocks_unclassified_indented_imports_and_importorskip(tmp_pat
     assert report.status == "blocking"
     assert [(site.line, site.import_kind, site.imported) for site in report.blocking] == [
         (3, "from", "okto_pulse.community.adapters"),
-        (4, "importorskip", "okto_pulse.community.adapters.kuzu_graph_store"),
+        (4, "importorskip", "okto_pulse.community.adapters.grafx_graph_store"),
     ]
 
 

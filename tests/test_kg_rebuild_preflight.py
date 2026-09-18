@@ -395,7 +395,7 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
 def _graph_store_fingerprint(path) -> dict:
     """Map {relpath: (mtime, size, sha256|None)} for the board graph store on
     disk — handles graph.lbug being a single file OR a directory. mtime+size
-    come from os.stat (never opens the file, so a Ladybug lock can't hide a
+    come from os.stat (never opens the file, so a Grafx lock can't hide a
     mutation); sha256 is added when the file is readable (the cache is closed
     before this is called)."""
     import hashlib
@@ -427,7 +427,7 @@ def test_preflight_is_non_mutating_and_diagnostic_on_recovery_needed():
     import uuid
 
     from kg_schema_testing import (
-        board_kuzu_path,
+        board_graph_path,
         bootstrap_board_graph,
         close_board_db_cache,
         open_board_connection,
@@ -442,11 +442,11 @@ def test_preflight_is_non_mutating_and_diagnostic_on_recovery_needed():
             "source_confidence:1.0})",
             {"id": "d1", "t": "seed"},
         )
-    # Release the Ladybug handle so the on-disk store is fully flushed + readable
+    # Release the Grafx handle so the on-disk store is fully flushed + readable
     # for a content hash (preflight itself never opens the board graph).
     close_board_db_cache(board_id)
 
-    graph_path = board_kuzu_path(board_id)
+    graph_path = board_graph_path(board_id)
     before = _graph_store_fingerprint(graph_path)
     assert before, "expected a materialized board graph store on disk"
 

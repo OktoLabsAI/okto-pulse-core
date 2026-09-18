@@ -1,7 +1,7 @@
 """NC-8 — KG Entity dedup on re-consolidation (spec 7f23535f).
 
 Covers the bug where re-consolidating the same artefact (spec/sprint/card)
-produced multiple Kuzu Entity nodes for the same `source_artifact_ref`
+produced multiple Grafx Entity nodes for the same `source_artifact_ref`
 because the ADD branch of `_do_graph_commit` never consulted the existing
 `_lookup_existing_node` helper.
 
@@ -43,7 +43,7 @@ def dedup_tempdir(monkeypatch):
     """Throwaway KG base dir + SQLite DB for dedup tests.
 
     Mirrors the pipeline e2e fixture but stays focused — no global discovery
-    drain, no health probes, just per-board Kuzu primitives.
+    drain, no health probes, just per-board Grafx primitives.
     """
     base = Path(tempfile.mkdtemp(prefix="okto_pulse_nc8_"))
     db_path = base / "pulse.db"
@@ -96,7 +96,7 @@ async def _drive_one_session(
     """Run one begin -> propose -> commit cycle for one graph candidate.
 
     Returns the CommitConsolidationResponse so callers can assert on
-    `nodes_added` and the kuzu node id mappings.
+    `nodes_added` and the grafx node id mappings.
 
     The zero-orphan guard requires structured Entity nodes to be attached to a
     source/root entity. NC-8 is a deterministic dedup test, so the fixture uses
@@ -436,7 +436,7 @@ async def _bootstrap_test_board(monkeypatch):
 
 
 def _count_entities(board_id: str, source_artifact_ref: str) -> int:
-    """Direct Kuzu count of Entity nodes by source_artifact_ref."""
+    """Direct Grafx count of Entity nodes by source_artifact_ref."""
     from kg_schema_testing import open_board_connection
 
     conn = open_board_connection(board_id)
@@ -634,7 +634,7 @@ def _count_named_entities_sync(board_id: str, title: str) -> int:
 
 async def test_tc3_reconsolidation_counts_and_audits_merge(dedup_tempdir, monkeypatch):
     """AC6: NC-8 dedup-reuse on re-consolidation increments nodes_merged and
-    emits a merge audit item in the response (no silent drop, no KuzuWriteRecord).
+    emits a merge audit item in the response (no silent drop, no GrafxWriteRecord).
     AC7: the counters sum closes as processed_candidates. Structural Entity
     dedup stays intact (AC8 invariant)."""
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
@@ -1053,9 +1053,9 @@ async def test_ts2_reconsolidation_updates_attrs_preserves_history(
     # Attrs updated:
     assert snapshot_after["title"] == "Original"
     assert snapshot_after["content"] == "B"
-    # Same underlying node (same kuzu id, same created_at):
+    # Same underlying node (same grafx id, same created_at):
     assert snapshot_after["id"] == snapshot_before["id"], (
-        "expected same kuzu node id after re-consolidation, dedup failed"
+        "expected same grafx node id after re-consolidation, dedup failed"
     )
     assert snapshot_after["created_at"] == snapshot_before["created_at"], (
         "created_at must be preserved across re-consolidation"
@@ -1177,7 +1177,7 @@ async def test_automatic_decision_supersede_preserves_human_curated_target(
 
 async def test_ts8_dedup_reused_log_emitted(dedup_tempdir, monkeypatch):
     """Capture cross-thread log via a dedicated handler — pytest's caplog
-    reads records from the calling thread only, but `_run_kuzu` runs in a
+    reads records from the calling thread only, but `_run_graph` runs in a
     `loop.run_in_executor` worker pool so the dedup log is emitted from a
     different thread. A custom handler attached to the primitives logger
     captures records regardless of thread origin.
@@ -1246,7 +1246,7 @@ async def test_ts7_tech_entity_dedup_cross_spec(dedup_tempdir, monkeypatch):
 
     The worker emits an `ent_<canonical_slug>` candidate with
     `source_artifact_ref="tech_entities.yml"` for each spec mentioning the
-    tech. Without the dedup branch, three Entity nodes appeared in Kùzu;
+    tech. Without the dedup branch, three Entity nodes appeared in Grafx;
     with the fix, the second + third specs reuse the existing Entity.
     """
     session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
