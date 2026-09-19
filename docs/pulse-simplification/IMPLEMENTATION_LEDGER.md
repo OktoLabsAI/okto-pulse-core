@@ -1082,8 +1082,10 @@ Evidências em `PULSE_REFACTOR/.validation-v040/`:
   singleton aprovados, **7.447 imports Core / 1.236 Community→Core**, 25 deps.
 
 O usuário confirmou reautenticação. A conta ativa do GitHub e `ls-remote` dos
-dois repos foram verificados com sucesso. Publicação deste par e dos commits
-acumulados será registrada após os pushes normais; não há release/tag/merge.
+dois repos foram verificados com sucesso. **Pushes normais concluídos**:
+Core `8eb02456` → `1ad0091b` (código `df56fa11` e ledger) e Community
+`aea2d9ed` → `de3355ec`. Todos os commits locais acumulados foram enviados a
+`origin/feature/v0.4.0`; não houve force-push, release, tag ou merge.
 
 P1 continua **em andamento**. Próximo passo: autoria das três decisões na UI e
 testes frontend de envio/erros/replay/conflito, sugestões determinísticas e
