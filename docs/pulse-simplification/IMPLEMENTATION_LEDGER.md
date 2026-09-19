@@ -903,3 +903,8 @@ erros, permissão estática de writer no registry e regeneração oficial do cat
 Depois, UI e testes de frontend, projeção de decisões/currentness, gate de início
 e rollout autorizado legado. Não declarar P1 completo nem liberar execução com
 base apenas na presença de um recibo. Nenhum processo/dado real foi alterado.
+
+Publicação: após o ledger `f9daf63b`, pushes normais de ambos os repositórios
+novamente recusados por `Invalid username or token`. Core `a78cfc06` e Community
+`38c568d8` permanecem locais. A solicitação anterior de reautenticação continua
+pendente; não alterar credenciais nem reescrever histórico para contorná-la.
