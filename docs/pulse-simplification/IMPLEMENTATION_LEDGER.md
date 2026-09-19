@@ -2185,3 +2185,8 @@ gates continuam pendentes. Preservação de policy por Card autorizada na decis�
 F2B continua exigindo proveniência e deprecation warning quando implementada.
 Estado da iniciativa: **progresso**, não conclusão integral. Não houve release,
 migração de dados reais nem promessa de downgrade isolado seguro.
+
+Par de conjuntos de execuções publicado por push normal em `feature/v0.4.0`:
+Core `04e321dc01ce15642719a180d5d6718ae5f4b585`; Community
+`575ab904741267b588e3a860a3d4ff942f5c6a4f`. `ls-remote` confirmou ambos os
+HEADs publicados e as duas árvores limpas após os commits funcionais.
