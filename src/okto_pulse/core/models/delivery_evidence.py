@@ -24,12 +24,39 @@ class DeliveryProgressReference(BaseModel):
         return self
 
 
+class DeliveryExecutionReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    execution_id: Identity | None = None
+    client_ref: ClientReference | None = None
+
+    @model_validator(mode="after")
+    def one_identity(self):
+        if (self.execution_id is None) == (self.client_ref is None):
+            raise ValueError("delivery_execution_reference_identity_required")
+        return self
+
+
 class CardImplementationBinding(BaseModel):
     """Executor declaration, never an authenticated completion or proof flag."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     obligation_ref: Identity
     contribution: Literal["partial", "complete"]
+    execution_refs: list[DeliveryExecutionReference] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_executions(self):
+        identities = [(ref.execution_id, ref.client_ref) for ref in self.execution_refs]
+        if len(set(identities)) != len(identities):
+            raise ValueError("delivery_execution_reference_duplicate")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_single_execution_digest(self, handler):
+        result = handler(self)
+        if not self.execution_refs:
+            result.pop("execution_refs", None)
+        return result
 
 
 class DeliveryEvidenceQuery(BaseModel):
@@ -122,6 +149,14 @@ class CardDeliveryEvidenceFields(BaseModel):
     def selected_obligation_refs(self) -> list[str]:
         return [item.obligation_ref for item in self.bindings] if self.bindings is not None else self.obligation_refs
 
+    @property
+    def binding_execution_refs(self) -> list[DeliveryExecutionReference]:
+        return [ref for binding in self.bindings or () for ref in binding.execution_refs]
+
+    @property
+    def composite_execution(self) -> bool:
+        return bool(self.binding_execution_refs)
+
     @model_validator(mode="before")
     @classmethod
     def reject_null_bindings(cls, value):
@@ -159,13 +194,18 @@ class CardDeliveryEvidenceFields(BaseModel):
             if getattr(self, name) is not None
         }
         required = {
-            "implementation": {"execution_client_ref"} if self.execution_client_ref is not None else {"execution_submission"} if self.execution_submission is not None else {"execution_id"},
+            "implementation": set() if self.composite_execution else {"execution_client_ref"} if self.execution_client_ref is not None else {"execution_submission"} if self.execution_submission is not None else {"execution_id"},
             "test": {"scenario_id"},
             "revoke": {"record_id"},
             "progress": set(),
         }[self.kind]
         if supplied != required:
             raise ValueError("delivery_command_fields_invalid")
+        if self.composite_execution and (
+            any(not binding.execution_refs for binding in self.bindings)
+            or len(refs) + len(self.binding_execution_refs) + len(self.progress_refs) > 200
+        ):
+            raise ValueError("delivery_execution_set_invalid")
         references = [(ref.record_id, ref.client_ref) for ref in self.progress_refs]
         if len(references) != len(set(references)):
             raise ValueError("delivery_progress_reference_duplicate")
@@ -202,7 +242,7 @@ class CardDeliveryEvidenceInput(CardDeliveryEvidenceFields):
 
     @model_validator(mode="after")
     def aliases_require_batch(self):
-        if self.execution_client_ref is not None or any(ref.client_ref is not None for ref in self.progress_refs):
+        if self.execution_client_ref is not None or any(ref.client_ref is not None for ref in (*self.progress_refs, *self.binding_execution_refs)):
             raise ValueError("delivery_local_reference_requires_batch")
         return self
 
@@ -231,6 +271,12 @@ class CardDeliveryEvidenceEntry(CardDeliveryEvidenceFields):
                 {"record_id": ref.record_id or prior_results[ref.client_ref]["id"]}
                 for ref in self.progress_refs
             ]
+        if self.composite_execution:
+            for value, binding in zip(fields["bindings"], self.bindings, strict=True):
+                value["execution_refs"] = [
+                    {"execution_id": ref.execution_id or prior_results[ref.client_ref]["execution_id"]}
+                    for ref in binding.execution_refs
+                ]
         return fields
 
 
@@ -254,9 +300,12 @@ class CardDeliveryEvidenceBatchInput(BaseModel):
                 raise ValueError("delivery_execution_local_reference_invalid")
             if any(ref.client_ref is not None and prior.get(ref.client_ref) != "progress" for ref in entry.progress_refs):
                 raise ValueError("delivery_progress_local_reference_invalid")
-            prior[entry.client_ref] = entry.kind
+            if any(ref.client_ref is not None and prior.get(ref.client_ref) != "implementation" for ref in entry.binding_execution_refs):
+                raise ValueError("delivery_execution_local_reference_invalid")
+            prior[entry.client_ref] = "composite_implementation" if entry.composite_execution else entry.kind
         links = sum(
             len(entry.selected_obligation_refs)
+            + len(entry.binding_execution_refs)
             + len(entry.progress_refs) + bool(entry.execution_client_ref)
             + len(entry.implementation_ids)
             + len(entry.progress.target_ids if entry.progress else ())

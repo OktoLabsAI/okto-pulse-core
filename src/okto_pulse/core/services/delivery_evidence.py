@@ -12,7 +12,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     CardDeliveryScope,
     DeliveryScope,
     evaluate_delivery_coverage,
-    implementation_binding_complete,
+    implementation_binding_ready,
 )
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
@@ -149,8 +149,7 @@ async def require_card_delivery(
         for row in evaluation.rows
         if not row.implementation_satisfied
         and not any(
-            fact.current_accepted_execution
-            and implementation_binding_complete(fact, row.obligation.binding)
+            implementation_binding_ready(fact, row.obligation.binding)
             for fact in snapshot.implementations
         )
     ]

@@ -105,6 +105,7 @@ class DeliveryObligation:
 class DeliveryContribution:
     binding: DeliveryBinding
     contribution: Literal["partial", "complete"]
+    execution_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.contribution not in {"partial", "complete"}:
@@ -122,22 +123,59 @@ def read_delivery_contributions(
     if "contribution_contract_version" not in payload and "contributions" not in payload:
         return None
     rows = payload.get("contributions")
-    if payload.get("contribution_contract_version") != "card-binding-contribution/v1" or not isinstance(rows, list) or not rows:
+    version = payload.get("contribution_contract_version")
+    if version not in {"card-binding-contribution/v1", "card-binding-contribution/v2"} or not isinstance(rows, list) or not rows:
         raise ValueError("delivery_contribution_payload_invalid")
     by_ref = {binding.obligation_ref: binding for binding in bindings}
     if len(by_ref) != len(bindings) or len(rows) != len(bindings):
         raise ValueError("delivery_contribution_payload_invalid")
     seen = set()
     result = []
+    execution_count = 0
     for row in rows:
-        if not isinstance(row, dict) or set(row) != {"obligation_ref", "contribution"}:
+        fields = {"obligation_ref", "contribution"} | ({"execution_ids"} if version.endswith("/v2") else set())
+        if not isinstance(row, dict) or set(row) != fields:
             raise ValueError("delivery_contribution_payload_invalid")
         ref = row["obligation_ref"]
         if not isinstance(ref, str) or ref not in by_ref or ref in seen:
             raise ValueError("delivery_contribution_payload_invalid")
         seen.add(ref)
-        result.append(DeliveryContribution(by_ref[ref], row["contribution"]))
+        execution_ids = row.get("execution_ids", [])
+        if version.endswith("/v2") and (
+            not isinstance(execution_ids, list) or not 1 <= len(execution_ids) <= 100
+            or any(not isinstance(identity, str) or not identity.strip() or len(identity) > 512 for identity in execution_ids)
+            or len(set(execution_ids)) != len(execution_ids)
+        ):
+            raise ValueError("delivery_execution_set_invalid")
+        execution_count += len(execution_ids)
+        result.append(DeliveryContribution(by_ref[ref], row["contribution"], tuple(execution_ids)))
+    if version.endswith("/v2") and execution_count + len(rows) > 200:
+        raise ValueError("delivery_execution_set_invalid")
     return tuple(result)
+
+
+def delivery_execution_ids(payload: dict, selected_bindings: tuple[DeliveryBinding, ...] | None = None) -> tuple[str, ...]:
+    """Exact immutable receipt references, optionally restricted to tested bindings."""
+    if payload.get("contribution_contract_version") == "card-binding-contribution/v2":
+        bindings = tuple(DeliveryBinding(**value) for value in payload.get("bindings", []))
+        contributions = read_delivery_contributions(payload, bindings)
+        return tuple(sorted({identity for item in contributions
+            if selected_bindings is None or item.binding in selected_bindings
+            for identity in item.execution_ids}))
+    identity = payload.get("execution_id")
+    return (identity,) if isinstance(identity, str) and identity.strip() else ()
+
+
+@dataclass(frozen=True, slots=True)
+class ImplementationExecutionProof:
+    execution_id: str
+    target_id: str
+    target_revision: int
+    source_ref: str
+    result_revision: str
+    relative_path: str
+    current_accepted_execution: bool
+    symbol: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +198,46 @@ class ImplementationDeliveryFact:
     symbol: str | None = None
     # None is historical compatibility, not an authored complete declaration.
     contributions: tuple[DeliveryContribution, ...] | None = None
+    executions: tuple[ImplementationExecutionProof, ...] | None = None
+
+
+def implementation_binding_proof_issue(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> str | None:
+    """Check only the declared receipt set; no head is transferred to a new binding."""
+    if binding not in fact.bindings:
+        return "delivery_execution_set_unresolved"
+    if fact.executions is None:
+        valid = fact.current_accepted_execution is True and _text(
+            fact.source_ref, fact.result_revision, fact.relative_path, fact.receipt_id,
+        )
+        return None if valid else "delivery_accepted_committed_task_execution_required"
+    selected = [item for item in fact.contributions or () if item.binding == binding]
+    if len(selected) != 1 or not selected[0].execution_ids:
+        return "delivery_execution_set_unresolved"
+    by_id = {proof.execution_id: proof for proof in fact.executions}
+    ids = selected[0].execution_ids
+    if len(by_id) != len(fact.executions) or len(set(ids)) != len(ids) or any(identity not in by_id for identity in ids):
+        return "delivery_execution_set_unresolved"
+    proofs = [by_id[identity] for identity in ids]
+    # Different commits/repos are not evidence of a compatible integrated base.
+    # Each binding can independently name a different observed immutable base.
+    if not all(proof.current_accepted_execution is True
+            and type(proof.target_revision) is int and proof.target_revision >= 1
+            and _text(proof.execution_id, proof.target_id, proof.source_ref, proof.result_revision, proof.relative_path)
+            for proof in proofs):
+        return "delivery_accepted_committed_task_execution_required"
+    if len({proof.target_id for proof in proofs}) != len(proofs):
+        return "delivery_execution_set_ambiguous"
+    if len({(proof.source_ref, proof.result_revision) for proof in proofs}) != 1:
+        return "delivery_execution_base_conflict"
+    return None
+
+
+def implementation_binding_proof_current(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
+    return implementation_binding_proof_issue(fact, binding) is None
+
+
+def implementation_binding_ready(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
+    return implementation_binding_complete(fact, binding) and implementation_binding_proof_current(fact, binding)
 
 
 def implementation_binding_complete(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
@@ -288,21 +366,16 @@ def evaluate_delivery_coverage(
             item.scope == snapshot.scope
             and item.card_type in (CardType.NORMAL, CardType.BUG)
             and item.card_status == CardStatus.DONE
-            and item.current_accepted_execution is True
             and _text(
                 item.id,
                 item.card_id,
-                item.source_ref,
-                item.result_revision,
-                item.relative_path,
                 item.explanation,
-                item.receipt_id,
                 item.actor_id,
             )
         )
         matches = {
             binding for binding in expected.intersection(item.bindings)
-            if implementation_binding_complete(item, binding)
+            if implementation_binding_ready(item, binding)
         } if valid else set()
         if not matches:
             rejected.add(item.id)

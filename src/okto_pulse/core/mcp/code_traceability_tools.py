@@ -997,6 +997,14 @@ def register_code_traceability_tools(
         requires the original proof, lifecycle and review checks. Historic
         records without declarations retain their legacy verdict, not a forged
         complete label. This does not adopt the future ARQ/VER contribution scope.
+        To compose several Targets, each binding supplies execution_refs with
+        execution_id or a client_ref to an earlier single-execution entry. Omit
+        the envelope execution fields. Every binding names its own nonempty set;
+        receipts must share an observed source/revision within that set. No Git
+        ancestry is inferred. Currentness is checked per binding, including all
+        receipts required by a Test Evidence association. Set references count
+        toward the same 200-link batch budget. A composite entry cannot serve
+        as an ambiguous single-execution alias.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase

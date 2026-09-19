@@ -2113,3 +2113,75 @@ Par de declarações por binding publicado por push normal em `feature/v0.4.0`:
 Core `8a48fcded92bcd8dbb5e9c7827ac27a2e7902fe9`; Community
 `4fa85bcfed1129db0627a74415845b8aa5bb6b42`. `ls-remote` confirmou os dois
 HEADs publicados e as árvores estavam limpas após os commits funcionais.
+
+### Implementado — conjuntos explícitos de execuções por binding
+
+Turno anterior: progresso. Árvores limpas em Core `b70807f9` / Community
+`4fa85bcf`. DEI §4.4/§7.3–7.4 exige nomear o conjunto exato de Targets por
+contribuição e invalidar apenas o escopo afetado. O adapter atual lê um único
+execution_id por registro, inclusive na checagem temporal de Test Evidence.
+Evoluir o mesmo ledger com referências tipadas por binding, admitidas pela cadeia
+existente; nenhuma tabela paralela, inferência de ancestralidade ou mudança de
+autoridade. A composição verificável inicialmente exige a mesma identidade de
+source/revisão imutável dentro de cada conjunto; bases divergentes precisam de
+observação compatível, não comparação cronológica de hashes. Adoção ARQ/VER,
+escopo versionado e seleção final continuam no caminho crítico do cutover.
+
+Entregue neste incremento:
+
+- Bindings novos podem nomear conjuntos próprios de execuções persistidas ou
+  aliases anteriores do mesmo batch. Contrato fechado, sem mistura com execução
+  no envelope, sem alias ambíguo para outro conjunto, sem duplicatas após resolução
+  e com orçamento agregado de 200 referências. Digest anterior preservado quando
+  a opção não é usada; persistência v2 guarda somente IDs canônicos por binding.
+- A cadeia original de admissão de Execution/Target/Receipt foi extraída uma vez
+  no adapter Community e reutilizada. O Core decide atualidade por binding; a
+  obsolescência de um Target invalida apenas os conjuntos que o nomeiam. Parciais
+  não se somam, testes continuam presos ao registro imutável de implementação e
+  a checagem temporal inclui todos os recibos do conjunto testado.
+- Frontend permite selecionar explicitamente os recibos de cada obrigação e
+  exibe atualidade por binding. Não há expansão cartesiana automática nem escolha
+  de um recibo representativo que esconda os demais. REST e MCP usam o mesmo batch,
+  CAS, autorização, transação e replay existentes; nenhuma migration física.
+
+Validação em 2026-09-19, evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-execution-sets.json`: conjuntos e bytes dos **794/312 .py**
+  Core/Community idênticos antes dos testes; **859/396 payloads** idênticos em
+  source→wheel→install, sem mismatches. SHA256 dos wheels: Core
+  `03a3aa32ee569c2e42180cc697cef66f67d1248f2bdc0c096e2a4bb742e00410`;
+  Community `6ee52e7f202462e47ebdfc9e79fc483268a3aca118888c31ce12dac3fe5c8338`.
+  Processos novos, PYTHONPATH pareado e dados descartáveis; runtime do usuário
+  não foi reiniciado nem usado como evidência deste código.
+- `core-execution-sets.log`: **175 passed em 21,95 s**, incluindo 17 casos novos
+  de composição, bases incompatíveis, atualidade seletiva, limites e aliases.
+- `community-execution-sets.log`: **79 passed / 1 failed em 227,50 s**. A falha
+  era uma expectativa de lista contra a tupla retornada pela projeção interna;
+  corrigida somente a asserção. `community-execution-sets-rerun.log`: **6 passed
+  em 24,22 s**. Total final **80 casos distintos aprovados**, incluindo composição
+  via origem real, rollback integral, replay após fechar sessão, REST→MCP e teste
+  assinado contra todos os recibos nomeados. Os casos temporais/base conflitante
+  usam fixtures de recibos admitidos; não constituem E2E instalado/Grafx.
+- Frontend: **88 casos distintos aprovados** em quatro arquivos. Primeira rodada
+  teve 87 aprovados e uma consulta de título ambígua (lista e banner). Consulta
+  restrita à lista; `frontend-execution-sets-dod.log`: **13 passed em 4,34 s**.
+  Build/typecheck, ESLint e dist aprovados: **78 arquivos**, tree SHA256
+  `e5deaad76f2e32eb241cfb01f5f29676e9b8e689c88493cb542cdeacc518500c`.
+- `closure-execution-sets.json`: **exit 0, ok=true**, nenhum finding de código ou
+  documentação, oito budgets **0/0**; **7.540 imports Core / 1.242 Community→Core /
+  25 dependências**. Catálogo/manifests pelos generators oficiais. Diff-check e
+  Ruff dos arquivos de implementação/testes aprovados; a verificação adicional
+  do módulo MCP apontou dois F401 já presentes no HEAD anterior, nos reexports
+  DeliveryEvidenceInput/DeliveryEvidenceCommand, sem alteração nesta rodada.
+
+Limites e retomada: a prova composta exige source_ref e revisão imutável iguais
+no mesmo conjunto. Bindings diferentes podem ter bases diferentes; um conjunto
+com bases divergentes é recusado com delivery_execution_base_conflict. Integração
+entre bases/fontes distintas ainda requer observação compatível pelo contrato
+consolidado; não inferir ancestralidade de hashes nem considerar este recorte como
+DEI §7.4 completo. Adoção conjunta ARQ/VER, scope hash/ownership do inventário
+efetivo, seleção final/consolidação, invalidação por progresso dirty e cutover dos
+gates continuam pendentes. Preservação de policy por Card autorizada na decisão
+F2B continua exigindo proveniência e deprecation warning quando implementada.
+Estado da iniciativa: **progresso**, não conclusão integral. Não houve release,
+migração de dados reais nem promessa de downgrade isolado seguro.

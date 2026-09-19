@@ -52,8 +52,21 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   New records do not silently revoke or replace earlier records. Legacy clients
   may still use `obligation_refs` under the current compatibility contract;
   history without a declaration stays legacy, never relabelled complete.
-  This extension does not adopt ARQ/VER, redefine assigned contribution scope,
-  compose multiple Target receipts or seal the final selection.
+  This extension does not adopt ARQ/VER, redefine assigned contribution scope
+  or seal the final selection.
+  For multiple Targets, supply a nonempty `execution_refs` set on **each** binding:
+  `[{"execution_id":"execution-A"},{"execution_id":"execution-B"}]`.
+  Omit envelope `execution_id`, `execution_submission` and `execution_client_ref`
+  in that form. Each binding independently selects its receipts; no Cartesian
+  Target×obligation expansion is inferred. Within a set, receipts must have the
+  same observed source and immutable revision (`delivery_execution_base_conflict`
+  otherwise); obtain compatible observations rather than assuming Git ancestry.
+  In a batch, a set can use `{"client_ref":"earlier-proof"}` for an earlier
+  single-execution implementation entry. Composite entries cannot act as a
+  single-execution alias. Referenced execution sets count toward the aggregate
+  200-link limit. A stale member invalidates only bindings using it; tests must
+  name the exact implementation record and satisfy chronology for every receipt
+  in the bindings they verify. No previous test transfers to a new set.
 - `progress`: executing, unarchived normal/bug/Test card; requires
   `card.conclusion.write`. Use `justification` as the work summary and provide
   `progress` with `contract_version: "delivery-progress/v1"`, `remaining`, and
