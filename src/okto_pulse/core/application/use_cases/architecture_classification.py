@@ -18,6 +18,10 @@ from okto_pulse.core.domain.architecture_classification import (
     ArchitectureClassificationBatch,
 )
 from okto_pulse.core.domain.permissions import ALL_FLAGS
+from okto_pulse.core.ports.application_persistence import (
+    ApplicationFilter,
+    ApplicationQuery,
+)
 from okto_pulse.core.ports.permission_policy import PermissionSet, set_permission_flag
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
@@ -45,9 +49,20 @@ class ClassifyArchitectureCandidatesUseCase:
         try:
             if await load_accessible_board(uow, command.board_id, actor) is None:
                 raise EntityNotFoundError("spec", command.spec_id)
-            spec = await uow.services.get_application_record(
-                entity="spec", record_id=command.spec_id, includes=()
+            # Authorize the entire batch using scoped metadata only. includes=()
+            # would still load scalar requirement JSON before its read authority.
+            matches = await uow.services.list_application_records(
+                ApplicationQuery(
+                    entity="spec",
+                    filters=(
+                        ApplicationFilter("id", "eq", command.spec_id),
+                        ApplicationFilter("board_id", "eq", command.board_id),
+                    ),
+                    select_fields=("id", "board_id", "status", "archived"),
+                    limit=1,
+                )
             )
+            spec = matches[0] if matches else None
             if (
                 spec is None
                 or spec.board_id != command.board_id

@@ -20,6 +20,9 @@ from okto_pulse.core.domain.architecture_classification import (
     ArchitectureClassificationBatch,
 )
 from okto_pulse.core.ports.architecture_classification import ArchitectureDecisionRecord
+from okto_pulse.core.domain.architecture_promotion_suggestion import (
+    architecture_promotion_suggestion,
+)
 
 ArchitectureReviewState = Literal[
     "pending", "current", "review_required", "unresolved", "retired", "unavailable"
@@ -370,6 +373,13 @@ def architecture_classification_review(
                     "architecture_candidate_source_changed"
                 )
             row["current_contract"] = chosen[0].contract if chosen else None
+            row["promotion_suggestion"] = (
+                architecture_promotion_suggestion(chosen[0].contract)
+                if len(variants) == 1
+                and chosen
+                and row_state in {"pending", "current", "review_required"}
+                else None
+            )
             row["analyzed_contract"] = stored
             row["decisions"] = (
                 [

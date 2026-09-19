@@ -392,6 +392,17 @@ never makes an outdated decision current. Conflicting source variants remain
 unresolved and can be inspected individually. A retired witness uses its analyzed
 digest. Retirement/context-only does not remove normative IR obligations.
 
+For a resolved current source, detail also offers `promotion_suggestion` for the
+whole contract, with source-backed `proposed_ir`, `scope_paths: [""]`, explicit
+`requires_author_review` and `missing_required_fields`. Only a recognized explicit
+contract discriminator supplies an existing IR type (`http` maps to `api`).
+Unknown/MCP/in-process/gRPC types remain for the author to classify. Participant
+order never supplies provider/consumer; no HTTP method is inferred. Declared
+schemas/errors/direction/protocol/participants stay in the proposed data contract;
+references remain data and are not fetched. This is an editable draft, not a
+write or semantic approval. Partial adoption requires content authored for those
+scopes; do not silently reuse the whole-contract proposal as partial coverage.
+
 Reads do not refresh sources, fetch `schema_ref`, migrate legacy work, reopen Done
 Specs, create IRs, or persist decisions. Use the authorized writer to classify or
 revise a decision; source/version changes require refreshing before retrying.

@@ -323,6 +323,7 @@ def test_conflicting_adopted_revisions_do_not_choose_a_winner():
     conflict = replace(before, candidates=before.candidates + after.candidates)
     result = detail(conflict, (decision(before.candidates[0]),))
     assert result["state"] == "unresolved" and result["current_source_digest"] is None
+    assert result["promotion_suggestion"] is None
     assert (
         result["source_variant_count"] == 2
         and result["decisions"][0]["state"] == "unresolved"
