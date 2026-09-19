@@ -18,10 +18,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     StrictInt,
     StringConstraints,
     model_validator,
 )
+from typing_extensions import Required, TypedDict
+
+from okto_pulse.core.models.schemas import IntegrationRequirementType
 
 from okto_pulse.core.domain.architecture_candidates import (
     ArchitectureCandidate,
@@ -38,13 +42,39 @@ class ArchitectureClassificationError(ValueError):
     """Stable code, with no provider diagnostics or source contract in errors."""
 
 
+class AuthoredIntegrationRequirement(TypedDict, total=False):
+    """Closed create input; relational links still use the shared IR preflight.
+
+    Preserve omitted fields rather than inferring roles, protocol or HTTP data.
+    data_contract is JSON data, never an authority/policy input.
+    """
+
+    __pydantic_config__ = ConfigDict(extra="forbid")
+
+    id: Nonempty
+    title: Required[Nonempty]
+    integration_type: Required[IntegrationRequirementType]
+    description: str
+    provider: str | None
+    consumer: str | None
+    contract_ref: str | None
+    endpoint: str | None
+    method: str | None
+    data_contract: dict[str, JsonValue] | None
+    linked_requirements: list[Nonempty] | None
+    linked_api_contracts: list[Nonempty] | None
+    linked_task_ids: list[Nonempty] | None
+    status: Literal["active"]
+    notes: str | None
+
+
 class ArchitectureDecisionIntent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     candidate_ref: Nonempty
     expected_source_digest: Digest
     disposition: Literal["promote_to_ir", "associate_existing_ir", "context_only"]
-    integration_requirements: tuple[dict[str, Any], ...] = ()
+    integration_requirements: tuple[AuthoredIntegrationRequirement, ...] = ()
     integration_requirement_refs: tuple[Nonempty, ...] = ()
     # RFC6901 paths through named object members. Selecting an array is fine;
     # selecting a positional array element would not be a stable fragment.

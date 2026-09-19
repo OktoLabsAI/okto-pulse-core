@@ -57,7 +57,8 @@ from okto_pulse.core.domain.test_scenarios import (
 )
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource
+from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_mcp_schema
+from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
 from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from okto_pulse.core.mcp.filters import (
     BoardEntityType,
@@ -12887,6 +12888,54 @@ async def okto_pulse_list_architecture_candidates(
         return _perm_error(exc.message)
     except ArchitectureCandidateReadError as exc:
         return json.dumps({"error": str(exc)})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
+@closed_mcp_schema
+async def okto_pulse_classify_architecture_candidates(
+    board_id: Annotated[str, Field(min_length=1, max_length=255)],
+    spec_id: Annotated[str, Field(min_length=1, max_length=255)],
+    batch: ArchitectureClassificationBatch,
+) -> str:
+    """Classify 1..50 adopted contract decisions atomically (batch <=256 KiB).
+
+    Supply expected_spec_version, expected_spec_edition, actor-bound idempotency_key
+    and decisions with candidate_ref and expected_source_digest. Dispositions:
+    promote_to_ir with explicitly authored integration_requirements (including
+    integration_type); associate_existing_ir with active local IR references;
+    context_only with a reason. Partial named-member scope_paths require a
+    remainder_reason. Contracts/schema_ref are never fetched or inferred.
+    Requires Spec/architecture/IR reads and spec.entity.edit_fields, plus IR create
+    for promotion or IR update for association. Draft and content lock apply.
+    Replay returns the original receipt; classification does not waive existing
+    requirements, evaluate readiness or authorize Spec execution.
+    """
+    from okto_pulse.core.application.use_cases.architecture_classification import (
+        ClassifyArchitectureCandidatesCommand, ClassifyArchitectureCandidatesUseCase,
+    )
+    from okto_pulse.core.inbound.architecture_classification import (
+        CLASSIFICATION_REQUEST_ERRORS, classification_error,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    try:
+        # Direct catalog callers and transport callers share strict validation
+        # before authentication can open a UoW. Never trust model_construct().
+        batch = ArchitectureClassificationBatch.model_validate(
+            batch.model_dump(mode="json") if isinstance(batch, ArchitectureClassificationBatch) else batch,
+        )
+        ctx = await _get_agent_ctx(board_id)
+        if not ctx:
+            return _auth_error()
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ClassifyArchitectureCandidatesUseCase().execute(
+                ClassifyArchitectureCandidatesCommand(board_id, spec_id, batch), actor=actor, uow=uow,
+            )
+    except CLASSIFICATION_REQUEST_ERRORS as exc:
+        projected = classification_error(exc)
+        return json.dumps({"success": False, **projected.payload(), "status_code": projected.status_code})
     return json.dumps({"success": True, **result})
 
 

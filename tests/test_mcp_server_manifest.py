@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from okto_pulse.core import __version__
 
 from okto_pulse.core.mcp import server
 from okto_pulse.core.mcp.manifest import (
@@ -18,8 +19,9 @@ def test_manifest_count_hash_and_aliases_match_live_catalog():
     inventory = manifest["tool_inventory"]
 
     assert manifest["manifest_version"] == "1.0"
-    assert manifest["server"]["version"] == "0.3.3"
-    assert inventory["count"] == len(document["tools"]) == 340
+    assert manifest["server"]["version"] == __version__
+    assert inventory["count"] == len(document["tools"]) == 342
+    assert "okto_pulse_classify_architecture_candidates" in inventory["tools"]
     assert inventory["tools"] == document["tools"]
     assert "okto_pulse_execute_test_scenario_evidence" in inventory["tools"]
     assert inventory["sha256"] == tool_inventory_sha256(document)

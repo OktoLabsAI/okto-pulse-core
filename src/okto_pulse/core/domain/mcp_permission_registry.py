@@ -292,6 +292,12 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "amendment.revision.associate",
     ),
     _policy(
+        "okto_pulse_classify_architecture_candidates", "spec.entity.read",
+        "spec.architecture.read", "spec.integration_requirements.read", "spec.entity.edit_fields",
+        "spec.structured_entity.integration_requirement.create",
+        "spec.structured_entity.integration_requirement.update",
+    ),
+    _policy(
         "okto_pulse_classify_legacy_code_evidence",
         "code_traceability.evidence.classify_legacy",
     ),

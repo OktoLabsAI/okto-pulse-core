@@ -68,7 +68,7 @@ class DuplicateMcpToolNameError(ValueError):
         super().__init__(f"duplicate MCP tool registration: {tool_name}")
 
 
-def _json_schema_for(annotation: Any) -> dict[str, Any]:
+def _json_schema_for(annotation: Any, *, ref_template: str = "#/$defs/{model}") -> dict[str, Any]:
     """Return the client-facing JSON schema for one function parameter.
 
     ``TypeAdapter`` gives the Core the same Pydantic-derived union/list/object
@@ -79,7 +79,7 @@ def _json_schema_for(annotation: Any) -> dict[str, Any]:
     if annotation is inspect.Signature.empty:
         return {}
     try:
-        schema = TypeAdapter(annotation).json_schema()
+        schema = TypeAdapter(annotation).json_schema(ref_template=ref_template)
     except Exception:
         if annotation is str:
             return {"type": "string"}
@@ -97,7 +97,7 @@ def _json_schema_for(annotation: Any) -> dict[str, Any]:
     return _without_nonsemantic_titles(dict(schema)) if isinstance(schema, dict) else {}
 
 
-def _without_nonsemantic_titles(value: Any) -> Any:
+def _without_nonsemantic_titles(value: Any, *, named_schemas: bool = False) -> Any:
     """Drop generated JSON-Schema titles while preserving validation metadata.
 
     Pydantic repeats class/field names as ``title`` throughout every tool
@@ -107,8 +107,17 @@ def _without_nonsemantic_titles(value: Any) -> Any:
     """
 
     if isinstance(value, dict):
+        if named_schemas:
+            # Property/definition names are contract data. In particular an
+            # authored field named "title" must survive metadata compaction.
+            return {key: _without_nonsemantic_titles(item) for key, item in value.items()}
         return {
-            key: _without_nonsemantic_titles(item)
+            key: (
+                item if key in {"default", "examples", "enum", "const", "dependentRequired"}
+                else _without_nonsemantic_titles(
+                    item, named_schemas=key in {"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"},
+                )
+            )
             for key, item in value.items()
             if key != "title"
         }
@@ -171,7 +180,12 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
         # Preserve the complete Annotated type when building the schema.  The
         # metadata contains numeric/list constraints as well as descriptions;
         # stripping it made server-side bounds invisible to MCP clients.
-        schema = _json_schema_for(annotation)
+        # Each TypeAdapter schema (including its $defs) is embedded beneath
+        # this parameter. References are evaluated against the whole tool
+        # schema, so they must include that embedding path.
+        schema = _json_schema_for(
+            annotation, ref_template=f"#/properties/{parameter.name}/$defs/{{model}}",
+        )
         if description:
             schema["description"] = description
         if parameter.default is inspect.Signature.empty:
@@ -195,6 +209,12 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
     if required:
         result["required"] = required
     return result
+
+
+def closed_mcp_schema(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Publish the declared fixed-shape objects as a closed tool contract."""
+    setattr(fn, "__mcp_closed_schema__", True)
+    return fn
 
 
 class CoreMcpCatalog:

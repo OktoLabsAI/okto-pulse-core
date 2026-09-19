@@ -389,6 +389,7 @@ Semantic guideline protocol:
 
 ## Architecture
 - `okto_pulse_add_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
+- `okto_pulse_classify_architecture_candidates` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_delete_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_dump_architecture_diagram` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_get_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`

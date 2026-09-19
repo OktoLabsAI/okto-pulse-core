@@ -372,6 +372,57 @@ Returns:
 
 Example: `{"board_id":"<board-id>","spec_id":"<spec-id>"}`.
 
+## `okto_pulse_classify_architecture_candidates`
+
+Classify adopted contracts in one atomic batch. REST exposes the same command at
+`POST /boards/{board_id}/specs/{spec_id}/architecture-classifications`.
+Supply `board_id`, `spec_id` and a typed `batch` object with positive integer
+`expected_spec_version`, `expected_spec_edition`, an `idempotency_key` and 1–50
+`decisions`. The batch is bounded to 256 KiB of JSON; REST also limits the raw
+body to 256 KiB before authentication/UOW dependencies.
+
+Each decision has `candidate_ref`, `expected_source_digest` from the reader and:
+
+- `promote_to_ir`: authored `integration_requirements`, each with an explicit
+  `integration_type`. The existing structured IR validator validates the whole
+  resulting Spec before any IR or decision is persisted. No type/HTTP contract
+  is inferred from the architecture.
+- `associate_existing_ir`: `integration_requirement_refs` to uniquely identified,
+  active IRs already in this Spec. This does not edit their normative content.
+- `context_only`: a nonblank `reason`. Existing IR obligations remain normative.
+
+The default `scope_paths: [""]` classifies the full candidate. Partial scopes use
+RFC6901 paths through named object members, never positional array indexes. They
+must be disjoint and carry a consistent `remainder_reason` for the unassigned
+remainder. The decision retains the entire source contract and adopted revisions;
+`schema_ref` is data and is never fetched.
+
+Authority: Board/realm access, Spec/architecture/IR reads, `spec.entity.edit_fields`,
+and IR create for promotion or IR update for association. All decisions are
+authorized before reading Design bodies. New writes require Draft, current
+edition/version/digest and unlocked content. A single batch creates its IRs,
+decisions, events, history and actor-bound receipt in one transaction, with one
+Spec version increment. No automatic IRs, tasks, approval or policy changes.
+
+Return: `contract_version: "architecture-classification/v1"`, Board/Spec/edition,
+new `spec_version`, `idempotency_key`, `created_ir_ids`, decision IDs/references,
+`replayed`, and `pending_checks`. MCP adds `success`. Exact retries return the
+original receipt after checking current authority. A key reused by another actor
+or for another payload conflicts without exposing the original result.
+The Community MCP host places this payload in `structuredContent.data` using
+the shared outcome v2 envelope; handled failures set native `isError=true`.
+
+Stable errors are safe codes/messages (REST `detail`, MCP `error`/`message` with
+`status_code`): 404 unavailable Spec, 403 permission, 409 stale source/fence/lock/
+Draft/idempotency, 422 malformed scope/IR/request, 413 oversized batch. Responses
+never echo submitted contracts or provider diagnostics. Refresh and review stale
+source/fence conflicts before submitting a new intent; do not blindly retarget
+an existing idempotency key.
+
+Classification records a local decision. `pending_checks` explicitly leaves
+requirement readiness and Spec start admission to their gates. It is not an
+approval to execute or a waiver of verification.
+
 ## `okto_pulse_list_architecture_propagation_legacy`
 
 Read-only, forward-only diagnostic. Lists Architecture Design snapshots that were copied

@@ -1,6 +1,6 @@
 {
   "canonicalization": "json-utf8-lf-sort-keys-v1",
-  "manifest_sha256": "ba78ab6920e2e4f5816877f0d4ac4bbb7e1ff43337a1a76b20f35a9b27fa1e38",
+  "manifest_sha256": "c40a6e5a0a948c34d71d47cfbba4cd5150a938741505374e1144deee2a19fb26",
   "manifest_version": "SK-A-tools/v1",
   "tool_count": 13,
   "tools": [
@@ -102,7 +102,7 @@
         "SPECS_UPDATE",
         "{subject_type}.quality.assess"
       ],
-      "schema_sha256": "947b018effa5396ea0fe03a71f5763f1c94b74001c6116a91a54a34afd43111e"
+      "schema_sha256": "6abaa85d5adf4eec26b6cc46ed0d437a3ae3738292b997f213d6432a68d5754b"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/quality",
@@ -112,7 +112,7 @@
         "SPECS_UPDATE",
         "spec.quality.assess"
       ],
-      "schema_sha256": "593fa68aa2ca5e6f2d5b412b9e211d0ec359c59e1085d29be5bfc369f3de83e7"
+      "schema_sha256": "6d94864d45a246ace00a91aec9f313bd73c1302c7b5c6a3dd149f2206494012f"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",
@@ -132,7 +132,7 @@
         "SPECS_UPDATE",
         "spec.checklist.execute"
       ],
-      "schema_sha256": "cde56317eec056c5a66a39e3939fba319837143bef8503c0746f0108d4ccdf58"
+      "schema_sha256": "90093481bf05fef69ab5cdecbd6899a486365b1b8958d7ef898f0cbcc9e076fc"
     }
   ]
 }
