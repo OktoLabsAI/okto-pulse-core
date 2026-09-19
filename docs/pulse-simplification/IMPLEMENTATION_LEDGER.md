@@ -130,8 +130,9 @@ Não copiar resultados de validações de setembro anteriores como resultados at
 
 ## Próximo passo concreto
 
-Reproduzir adoção seletiva versus herança na derivação real (AC-ARQ-01);
-implementar decisões e promoção/reuso transacionais, com locks/edição/idempotência existentes e
+Implementar adoção explícita prospectiva após a reprodução abaixo (AC-ARQ-01),
+sem reinterpretar seleção legada ou reduzir os gates existentes; implementar
+decisões e promoção/reuso transacionais, com locks/edição/idempotência existentes e
 rollout explícito. Não publicar aprovação ou gate fictício. Continuar
 inventários F0/K0/I0 em [inventory.md](inventory.md).
 F2B pode implementar compatibilidade autorizada com aviso de depreciação; F11
@@ -499,3 +500,49 @@ não alterar silenciosamente ResourceGate, histórico ou contrato de herança.
 Também continuam pendentes classificação/promoção transacional, rollout,
 migração F2B e as demais frentes do pacote. Esta seção supera somente o limite
 de ausência de REST/MCP/UI da seção anterior; não certifica P1 completo.
+
+## P0/P1 — seleção de cópia não é adoção exclusiva persistida — 2026-09-19
+
+Commit Community `aea2d9ed98f856e7c81f2cd42185578486d95fff`; código Core
+permanece no par `4267c90b` (HEAD de documentação anterior `181c1239`).
+
+Reprodução nova em Community
+`tests/test_architecture_adoption_characterization.py`, usando
+`McpDeriveSpecUseCase`, UOW/SQLite, publisher e adapters reais, snapshot Done de
+Refinement e dois Designs elegíveis. Após commit, a consulta usa uma sessão nova.
+
+| Entrada na derivação | Cópias na Spec | Candidatos depois de reabrir |
+| --- | --- | --- |
+| `design_ids=[chosen]`, `copy` | 1, raiz chosen preservada | chosen + not-chosen |
+| `design_ids=[]`, `copy` | 0 | chosen + not-chosen |
+| `design_ids=[chosen]`, `reference_only` | 0 | chosen + not-chosen |
+
+Os três casos preservam IRs vazios e zero Cards. São **caracterizações do legado,
+não aprovação de AC-ARQ-01**. Preflight pareado repetido sem alterações em src:
+`provenance-p1-adoption-characterization.json`, 774/311 `.py` e 839/395 payloads
+idênticos. **3 passed**, 19,66 s, `p1-adoption-characterization.log`.
+O helper de seed agora aceita Designs opcionais antes de fixar o snapshot
+Done; seus testes existentes passaram: **3 passed**, 14,32 s,
+`p1-adoption-fixture-regression.log`. Nenhum gate de produção foi alterado.
+
+Cadeia observada: `McpDeriveSpecUseCase` encaminha seleção para
+`RefinementService.derive_spec`; `preflight_architecture_designs` valida a
+seleção e `propagate_architecture_designs`/`copy_from_parent` criam snapshots.
+`resource_propagation.requested_ids` é resultado transitório anexado ao record,
+não uma seleção de adoção persistida. `reference_only`/`none` retornam antes do
+preflight de seleção. O filtro Community de linhagem herdada seleciona apenas
+Knowledge v2; arquitetura mantém as outras raízes herdadas.
+`ResolvedResourceLineageService._prefer_direct_per_unique_resource` exclui
+somente a origem equivalente à cópia direta. Além disso, o critic de
+`ResourceGateService._effective_architecture_refs` usa referências diretas
+quando existem, enquanto as obrigações de cobertura da linhagem mantêm raízes
+independentes. Não unificar esses dois comportamentos sem testar seus gates.
+
+Consequência: não inferir adoção histórica exclusiva da presença de uma cópia,
+nem tratar lista vazia como exclusão histórica de todas as fontes. O caminho
+prospectivo deve registrar seleção/versão de adoção no write autorizado,
+reutilizar os snapshots existentes e respeitar o rollout ARQ/VER §11. Specs
+legadas em curso/Done conservam seu contrato; adoção normativa usa a revisão
+e os locks existentes. Antes de conectar o novo gate, testar juntos critic,
+cobertura existente e denominador de candidatos, sem usar classificação como
+waiver de obrigação já normativa. Não criar um segundo mecanismo de snapshot.
