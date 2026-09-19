@@ -45,7 +45,7 @@ versão real, reuso de chave após timeout e indicação explícita de truncamen
 Ainda não entrega batch/aliases, prova inline, partial/complete, seleção final,
 retomada integral paginada, leitor básico sem permissão técnica, selagem do impacto
 ou cutover ARQ/VER. Testes, migração descartável e auditoria aprovados; evidências
-detalhadas no final deste ledger. Publicação do par em andamento.
+detalhadas no final deste ledger. Par publicado e confirmado em origin.
 
 ## Base e instruções confirmadas — 2026-09-19
 
@@ -1698,6 +1698,10 @@ de reduzir links manuais. P1 integrado, P2/P3 completos, F2B, KG, migração,
 rollback, E2E/Grafx e benchmarks continuam pendentes; objetivo consolidado ativo.
 
 ### 2026-09-19 — validação do progresso canônico e migração
+
+Par confirmado por `ls-remote` em `origin/feature/v0.4.0`: Core
+**14895c5c1a7c27900f8a58dff8b648273f1e12d4**, Community
+**c5c55e30fea626d1f74fd1f63b96b25d9a6db695**. Árvores de implementação limpas.
 
 - `provenance-progress-final.json`, par `wheels-progress-final`: **793/312 .py,
   858/396 payloads**, source/wheel/install byte a byte. Reconstrução final após
