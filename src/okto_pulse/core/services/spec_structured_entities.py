@@ -185,6 +185,7 @@ _ID_PREFIX_BY_TYPE = {
 }
 _TECHNICAL_REQUIREMENT_FIELDS = {
     "verification",
+    "implementation_plan",
     "id",
     "text",
     "title",
@@ -1718,6 +1719,30 @@ class StructuredSpecEntityService:
                             f"{command.operation}_affects_verification_inheritance",
                         )
 
+        # Contribution declarations retain their selected criteria through
+        # retirement/reordering. Report their reverse impact, never rewrite
+        # the author's allocation to make a destructive operation pass.
+        if command.entity_type == "acceptance_criterion":
+            affected_requirements = {
+                (link.get("requirement_type"), link.get("requirement_id"))
+                for criterion in (spec.acceptance_criteria or [])
+                if isinstance(criterion, dict) and criterion.get("id") in target_id_set
+                for link in (criterion.get("requirement_links") or []) if isinstance(link, dict)
+            }
+            for target_type, target_field in VERIFICATION_REQUIREMENT_FIELDS.items():
+                for item in related_updates.get(target_field, getattr(spec, target_field, None) or []):
+                    if not isinstance(item, dict) or not isinstance(item.get("implementation_plan"), dict):
+                        continue
+                    target_id = spec_child_id(item)
+                    if target_id and any(
+                        isinstance(part, dict) and (
+                            bool(target_id_set.intersection(part.get("criterion_ids") or []))
+                            or part.get("scope") == "whole_requirement" and (target_type, target_id) in affected_requirements
+                        ) for part in item["implementation_plan"].get("contributions", [])
+                    ):
+                        add_ref(target_type, target_id, canonical_spec_child_ref(spec.id, target_type, target_id),
+                                f"{command.operation}_affects_implementation_plan")
+
         counts: dict[str, int] = {}
         for ref in refs:
             counts[ref.target_type] = counts.get(ref.target_type, 0) + 1
@@ -1894,7 +1919,7 @@ class StructuredSpecEntityService:
                     "status",
                     "notes",
                     "linked_task_ids",
-                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification"}),
+                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification", "implementation_plan"}),
             )
             text = str(payload.get("text") or payload.get("title") or "").strip()
             if not text:
@@ -1956,7 +1981,7 @@ class StructuredSpecEntityService:
                     "status",
                     "notes",
                     "linked_task_ids",
-                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification"}),
+                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification", "implementation_plan"}),
             )
             if "text" in payload or "title" in payload:
                 text = str(payload.get("text") or payload.get("title") or "").strip()

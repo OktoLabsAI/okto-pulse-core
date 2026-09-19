@@ -10,6 +10,7 @@ from typing import Protocol
 
 from okto_pulse.core.domain.delivery_evidence import DeliveryObligation
 from okto_pulse.core.domain.delivery_inventory import DefaultDeliveryInventoryPolicy
+from okto_pulse.core.domain.implementation_responsibility import ImplementationResponsibilityPlan
 
 
 class DeliveryInventoryPolicy(Protocol):
@@ -20,6 +21,11 @@ class DeliveryInventoryPolicy(Protocol):
     ) -> tuple[DeliveryObligation, ...]: ...
 
     def payload_digest(self, value: object) -> str: ...
+
+    def resolve_implementation_responsibility(
+        self, *, board_id: str, spec_id: str, collections: dict,
+        cards: list[dict], qualification: dict,
+    ) -> ImplementationResponsibilityPlan: ...
 
 
 def default_delivery_inventory_policy() -> DeliveryInventoryPolicy:

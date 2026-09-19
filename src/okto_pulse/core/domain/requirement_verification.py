@@ -6,6 +6,10 @@ backfills. Their explicit values are stored only through an authorized writer.
 """
 
 import hashlib
+from okto_pulse.core.domain.implementation_plan import (
+    RequirementImplementationPlan,
+    implementation_plan_fields,
+)
 import json
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal
@@ -104,23 +108,27 @@ class VerificationQualifiedModel(BaseModel):
     """Additive typed field without manufacturing nulls in older JSON objects."""
 
     verification: RequirementVerification | None = None
+    implementation_plan: RequirementImplementationPlan | None = None
 
     @model_serializer(mode="wrap")
     def preserve_unset_verification(self, handler):
         result = handler(self)
         if "verification" not in self.model_fields_set:
             result.pop("verification", None)
+        if "implementation_plan" not in self.model_fields_set:
+            result.pop("implementation_plan", None)
         return result
 
 
 def requirement_verification_fields(value: Mapping[str, Any]) -> dict[str, Any]:
     if "verification" not in value:
-        return {}
+        return implementation_plan_fields(value)
     raw = value["verification"]
     return {
+        **implementation_plan_fields(value),
         "verification": None
         if raw is None
-        else RequirementVerification.model_validate(raw).model_dump(mode="json")
+        else RequirementVerification.model_validate(raw).model_dump(mode="json"),
     }
 
 
@@ -161,6 +169,7 @@ def requirement_verification_digest(
             "locale",
             "status",
             "linked_task_ids",
+            "implementation_plan",
             "created_at",
             "updated_at",
         }

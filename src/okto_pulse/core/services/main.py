@@ -8315,6 +8315,29 @@ class CommentService:
         return True
 
 
+async def _validate_implementation_plan_refs(db, spec, collections, criteria, previous=None):
+    from okto_pulse.core.domain.implementation_plan import authored_contribution_card_ids
+
+    ids = authored_contribution_card_ids(
+        collections=collections, criteria=criteria, previous_collections=previous,
+    )
+    if not ids:
+        return
+    cards = await _application_list(
+        db, "card", filters=(
+            _apf("id", "in", ids), _apf("board_id", "eq", spec.board_id),
+            _apf("spec_id", "eq", spec.id),
+        ),
+    )
+    eligible = {
+        card.id for card in cards if not card.archived
+        and getattr(card.card_type, "value", card.card_type) in {"normal", "bug"}
+        and getattr(card.status, "value", card.status) != "cancelled"
+    }
+    if eligible != ids:
+        raise ValueError("implementation_contribution_card_unavailable")
+
+
 async def _validate_spec_linked_refs(
     db: Any,
     current_spec: Any,
@@ -8427,6 +8450,10 @@ async def _validate_spec_linked_refs(
     validate_requirement_verification_references(
         spec_id=current_spec.id, collections=verification_collections, criteria=final_acs_raw,
         previous_collections={field: getattr(current_spec, field, None) or () for field in verification_collections},
+    )
+    await _validate_implementation_plan_refs(
+        db, current_spec, verification_collections, final_acs_raw,
+        {field: getattr(current_spec, field, None) or () for field in verification_collections},
     )
     for tr in final_trs_raw:
         if isinstance(tr, dict) and tr.get("id"):
@@ -9630,6 +9657,11 @@ class SpecService:
             spec_id=spec.id,
             collections={field: getattr(spec, field, None) or () for field in VERIFICATION_REQUIREMENT_FIELDS.values()},
             criteria=spec.acceptance_criteria or (),
+        )
+        await _validate_implementation_plan_refs(
+            self.db, spec,
+            {field: getattr(spec, field, None) or () for field in VERIFICATION_REQUIREMENT_FIELDS.values()},
+            spec.acceptance_criteria or (),
         )
         await _application_add(
             self.db,

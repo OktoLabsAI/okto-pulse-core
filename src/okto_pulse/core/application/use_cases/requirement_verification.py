@@ -1,7 +1,8 @@
 """Bounded, authorized read of qualification paths over one relational snapshot."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from okto_pulse.core.ports.delivery_inventory import default_delivery_inventory_policy
 
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
@@ -131,6 +132,22 @@ def project_requirement_verification(resolved, command):
                 "paths_offset": command.paths_offset,
             }
         )
+        if "implementation_contributions" in item:
+            contributions = item["implementation_contributions"]
+            item["implementation_contributions"] = [
+                {
+                    **contribution,
+                    "criterion_ids": contribution["criterion_ids"][:20],
+                    "criterion_count": len(contribution["criterion_ids"]),
+                    "criteria_truncated": len(contribution["criterion_ids"]) > 20,
+                    "sources": contribution["sources"][:20],
+                    "source_count": len(contribution["sources"]),
+                    "sources_truncated": len(contribution["sources"]) > 20,
+                }
+                for contribution in contributions[:20]
+            ]
+            item["contribution_count"] = len(contributions)
+            item["contributions_truncated"] = len(contributions) > 20
         for path in row["criteria_paths"][
             command.paths_offset : command.paths_offset + 100
         ]:
@@ -276,10 +293,48 @@ class GetRequirementVerificationUseCase:
                 ],
                 admitted_methods=supported_test_verification_methods(),
             )
+            responsibilities = default_delivery_inventory_policy().resolve_implementation_responsibility(
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                collections={
+                    field: getattr(spec, field)
+                    for field in fields
+                    if hasattr(spec, field)
+                },
+                cards=[
+                    {field: getattr(card, field, None) for field in card_fields}
+                    for card in cards
+                ],
+                qualification=resolved,
+            )
+            by_requirement = {
+                (row.requirement_type, row.requirement_id): row
+                for row in responsibilities.rows
+            }
+            for row in resolved["requirements"]:
+                responsibility = by_requirement[
+                    (row["requirement_type"], row["requirement_id"])
+                ]
+                row["implementation_contributions"] = [
+                    asdict(fact) for fact in responsibility.contributions
+                ]
+                row["contribution_blockers"] = list(responsibility.blockers)
+            resolved.update(
+                {
+                    "implementation_plan_evaluated": True,
+                    "implementation_scope": "qualified_requirements",
+                    "implementation_plan_complete": responsibilities.complete,
+                    "implementation_population_complete": responsibilities.population_complete,
+                    "implementation_issues": list(responsibilities.issues),
+                }
+            )
         else:
             resolved.update(
                 {
                     "verification_work_evaluated": False,
+                    "implementation_plan_evaluated": False,
+                    "implementation_plan_complete": False,
+                    "implementation_population_complete": False,
                     "method_plan_complete": False,
                     "verification_work_complete": False,
                     "planning_population_complete": False,

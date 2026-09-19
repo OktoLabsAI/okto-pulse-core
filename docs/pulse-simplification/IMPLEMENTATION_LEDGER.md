@@ -1589,3 +1589,77 @@ resolução direta/herdada compartilhada antes de reduzir esses links manuais.
 
 - Isto não resolve contribuição de implementação, dependências, mínimos de policy,
   escopo sem requisitos, adoção ou integração de gates; pendências anteriores mantidas.
+
+### 2026-09-19 — declaração tipada e responsabilidade por contribuição (P2/P3 parcial)
+
+- Turno anterior: progresso comprovado, par ca45ccd1/3eba6e8 publicado; partida
+  atual limpa. A inspeção confirmou que linked_task_ids pode mudar sem revisar
+  corpo aprovado; vínculo operacional sozinho não é declaração de divisão.
+- Novo implementation_plan opcional nos cinco requisitos, sob writer/lock de
+  conteúdo existente: contributions anotam linked_task_ids, com Card exato,
+  whole_requirement ou selected_criteria e resumo obrigatório para parte selecionada.
+  Schema fechado, até 50 contribuições, 100 critérios por parte e 32 KiB agregado;
+  nenhum approved/complete/trusted do cliente é aceito. Ausência histórica não
+  é preenchida. Writers novos/alterados devem conferir Card normal/bug vivo no
+  mesmo board/Spec e IDs exatos de critérios; plano inalterado pode ficar pendente
+  após remoção/cancelamento de dependência, preservando sua declaração histórica.
+- Resolver tipado na política pública DeliveryInventoryPolicy: escopos diretos
+  prevalecem; BR sem alocação direta reutiliza contribuição FR inequívoca pelos
+  critérios selecionados ou um único responsável explícito pelo FR inteiro.
+  Sobreposição ambígua fica pendente, sem atribuir BR a todos os Cards.
+- Hash de contribuição vincula requisito, critérios e fontes herdadas, separado
+  do digest da definição usada pela herança de verificação. Alterar somente o
+  escopo de um Card não deve invalidar o do outro. Isso ainda não é prova de execução.
+- Leitor/REST/MCP e UI recebem declaração/proveniência e pendências limitadas.
+  Autoria disponível pelo structured writer; editor dedicado de contribuição
+  ainda pendente. Validação do incremento registrada abaixo; publicação em curso.
+- Não houve cutover do ledger legado: card_obligations e seus hashes/rollup
+  permanecem na compatibilidade antiga até integrar binding de contribuição,
+  partial/complete e adoção autorizada. Redução de links manuais e gates continuam
+  pendentes. A porta nova concentra a resolução futura; adapters não a duplicam.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-contribution-final.json`, par `wheels-contribution-final`:
+  **792/311 .py e 857/395 payloads**, source/wheel/install idênticos byte a byte.
+  Processos de teste novos com PYTHONPATH pareado e dados descartáveis;
+  runtime do usuário preservado. As alterações posteriores foram em testes,
+  ledger e matriz README, sem mudar o payload validado.
+- `core-contribution-final.log`: 128 passed e uma falha de expectativa do teste
+  de lock. O writer recusou corretamente a edição fora de Draft por
+  `SubjectEditRequiresDraftError`; o teste esperava retorno de erro. Corrigida
+  somente essa expectativa e acrescentados dois casos de digest/população.
+  `core-contribution-regression.log`: **24 passed em 2,16 s**. São **131 casos
+  distintos aprovados** entre os dois lotes, sem apresentar o lote inicial
+  como execução inteiramente verde.
+- Casos de contribuição: schema fechado; vínculo operacional insuficiente;
+  autoria nos cinco tipos; Card ausente/Test/fora do escopo; escrita inválida
+  sem versão/histórico novo; lock; impacto reverso de AC; herança BR→FR limitada
+  ao responsável correto; ambiguidade; alocação direta legítima; alteração de
+  escopo/critério invalidando só as contribuições dependentes; notas editoriais
+  sem invalidação; população indisponível/excedida sem resultado completo.
+- `community-contribution-final.log`: **35 passed em 106,72 s**. Inclui paridade
+  REST/FastMCP sobre SQL descartável, população completa antes da página,
+  permissões sem leitura dos corpos negados e regressões de Delivery Evidence.
+  Não equivale a E2E do runtime instalado com Grafx.
+- `frontend-contribution-final.log`: **51 passed em 29,98 s**: 23 do painel,
+  24 de SpecModal.activity e quatro de structuredEditing. Origem da contribuição,
+  Card correto, ambiguidade, truncamento e ausência de autoridade estão cobertos.
+- Typecheck/build, ESLint dos módulos alterados, Ruff e diff-check aprovados.
+  `frontend-contribution-dist.log`: **78 arquivos**, SHA256
+  `9c80796b931024c4e3a2b94e2082fd026e05b9b0db2bd522e224c7980fb573de`.
+  Aviso de chunks >500 kB permanece; não é benchmark. Generators oficiais
+  executados; catálogo/manifests sem edição manual.
+- Closure inicial: zero findings de código e oito budgets **0/0**; somente
+  matriz README divergente. Renderer oficial aplicado: **7.522 imports Core,
+  1.239 Community→Core, 25 dependências**. `closure-contribution-final.json`:
+  **exit 0, ok=true**, zero findings de código/documentação, oito budgets **0/0**.
+
+Retomada: a resolução publicada aqui cobre os cinco tipos de requisito
+qualificado (`implementation_scope=qualified_requirements`), não o inventário
+integral de API Contracts/Decisions/fallback de escopo. A declaração não é
+aprovação semântica, execução ou autorização de início. Integrar o binding
+versionado por contribuição, partial/complete, admissão e rollup canônico junto
+à adoção ARQ/VER; completar o editor de autoria e o inventário integral antes
+de reduzir links manuais. P1 integrado, P2/P3 completos, F2B, KG, migração,
+rollback, E2E/Grafx e benchmarks continuam pendentes; objetivo consolidado ativo.

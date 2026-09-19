@@ -12921,9 +12921,15 @@ async def okto_pulse_get_requirement_verification(
     proposals are available for authoring verification through the existing
     structured entity writer. With additional spec.tests.read and card.entity.read,
     also resolves declared methods against installed admission capabilities and
-    canonical scenario-to-Test-Card assignments. Without those reads, planning
+    canonical scenario-to-Test-Card assignments, plus declared implementation
+    contributions and unambiguous BR responsibility through canonical FR links.
+    Requirement implementation_plan uses implementation-plan/v1 contributions:
+    card_id, scope (whole_requirement or selected_criteria), criterion_ids and
+    summary (required for selected_criteria). Author through existing Draft
+    structured-entity writes; every Card must already be in linked_task_ids.
+    These are declared scopes, not completion claims or approvals. Without those reads, planning
     remains explicitly unavailable. Planning requires no passing result and never
-    adopts ARQ/VER or assesses implementation, dependencies, semantic adequacy or
+    adopts ARQ/VER or assesses implemented work, dependencies, semantic adequacy or
     delivery evidence.
     """
     from okto_pulse.core.application.use_cases.requirement_verification import (

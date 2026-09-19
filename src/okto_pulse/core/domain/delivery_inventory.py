@@ -153,3 +153,10 @@ class DefaultDeliveryInventoryPolicy:
 
     def payload_digest(self, value: object) -> str:
         return delivery_digest(value)
+
+    def resolve_implementation_responsibility(self, *, board_id, spec_id, collections, cards, qualification):
+        from okto_pulse.core.domain.implementation_responsibility import resolve_implementation_responsibility
+        return resolve_implementation_responsibility(
+            board_id=board_id, spec_id=spec_id, collections=collections,
+            cards=cards, qualification=qualification,
+        )
