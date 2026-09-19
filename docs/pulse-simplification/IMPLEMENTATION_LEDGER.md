@@ -2,13 +2,13 @@
 
 ## Estado para retomada
 
-Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
-I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
+Iniciativa **em andamento**. Etapa atual: implementação integrada de P1 sobre a
+caracterização conjunta F0/F1 + K0 + I0 + P0, com política pura e adoção prospectiva:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
 autorizada e depreciada. Preparação de IRs, contrato de classificação,
-armazenamento atômico, coordenador autorizado, writers REST/MCP e revisão de
-atualidade/histórico em REST/MCP/frontend disponíveis; autoria de classificação
-na UI, integração do gate, adoção de revisão legada,
+armazenamento atômico, coordenador autorizado, writers REST/MCP, revisão de
+atualidade/histórico e autoria em lote na UI disponíveis, com sugestões
+determinísticas e testes frontend. Integração do gate, adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -1094,3 +1094,99 @@ continua significando somente escopo de Designs; não é marcador de adoção do
 contrato ARQ/VER. Gate inicial, adoção legada, verificabilidade/P2, Delivery/P3,
 migração F2B, KG, suites amplas/E2E instalado/Grafx, benchmarks e rollback final
 permanecem abertos. Nenhum processo ou dado real foi alterado.
+
+## P1 — autoria em lote na UI e sugestões determinísticas — 2026-09-19
+
+Par de código **publicado por pushes normais** em `feature/v0.4.0`:
+Core `ac3ed04699248790a6a67e0b6c70c664d53eefd6`, Community
+`9a12b6d47f9510f216f61e7c22c6c36d51d31a41`. Sem release/tag/merge.
+
+`domain/architecture_promotion_suggestion.py` oferece uma proposta pura de IR
+no detalhe já autorizado do candidato: título/descrição/endpoint/ref/notas
+declarados e schemas/erros/direção/protocolo/participantes preservados. Somente
+discriminador explícito reconhecido fornece tipo (`http` → `api`); MCP, gRPC,
+in_process ou tipo desconhecido exigem escolha do autor. Nenhum provider,
+consumer ou verbo HTTP é inferido. Proposta para contrato inteiro, com campos
+obrigatórios faltantes explícitos; só a aceitação/edição do autor a leva ao lote.
+Não há fetch de referências, IR automático, tarefa ou nova aprovação.
+
+`ArchitectureClassificationAuthoring`, integrado ao painel e à aba IRs:
+
+- Seleção por identidade/digest exatos, preservada entre páginas/filtros;
+  candidatos futuros não entram implicitamente no lote. Contexto e associação
+  aceitam vários candidatos selecionados. Promoção permite vários IRs por
+  candidato; promoções diferentes podem ser enfileiradas no mesmo lote misto.
+- Formulários editáveis, IRs ativos/unívocos da mesma Spec, razão de contexto e
+  escopo parcial por caminhos nomeados com razão comum do restante. Espaços em
+  nomes JSON são preservados; não são corrigidos silenciosamente para outro
+  membro. A proposta de contrato inteiro não é aplicada automaticamente a uma
+  adoção parcial; proposta não editada é limpa ao trocar sua fonte/escopo.
+- Revisão/edição/remoção de decisões antes do envio, um POST para todo o lote,
+  fences de Spec/edição e UUID por intenção, limite de 50 decisões/256 KiB UTF-8.
+  JSON inválido, raiz não objeto e números não finitos não viram null omitido.
+- Requisição sem retries automáticos. Resultado desconhecido congela a
+  tentativa exata para replay; nova negação de permissão não prova que uma
+  tentativa anterior incerta nunca gravou. Recibo de escopo/versão/chave
+  divergente não é aceito. Sucesso seguido de falha de refresh não reenvia.
+- Recusa definida por validação permite editar o conteúdo preservado e gerar
+  nova intenção; conflito de fonte/versão/lock exige refresh/revisão, sem
+  retarget automático. Uma chamada em voo não duplica por clique repetido.
+  Resposta tardia após desmontar/trocar o contexto não atualiza a outra Spec.
+- Draft não arquivada, leituras e `edit_fields`/`interact_in` controlam autoria;
+  create/update de IR controlam as escolhas correspondentes. Permissão e lock
+  continuam exigidos pelo mesmo coordenador no Core. Contexto não dispensa IRs;
+  salvar não inicia Spec, não muda policy e não declara prontidão de entrega.
+
+Investigação adicional no writer: a premissa de `includes=()` como projeção
+leve também existia antes de sua autorização. Asserts SQL adicionados aos sete
+casos de permissão negada reproduziram leitura de `specs.integration_requirements`.
+`ClassifyArchitectureCandidatesUseCase` agora usa a porta pública existente
+`ApplicationQuery`, filtrada por Board/Spec, projetando apenas id/board_id/status/
+archived para autorizar o lote antes dos corpos. Mesmas permissões, gates,
+transação e respostas; nenhum budget ou contrato de autoridade relaxado.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- Provas `provenance-classification-authoring.json`, `...-write-auth-before.json`
+  e `...-final.json`, antes dos respectivos lotes: **784/311 `.py`, 849/395
+  payloads**, source/wheel/install idênticos. Par final
+  `wheels-classification-authoring-final`; testes em processos novos, PYTHONPATH
+  pareado, SQLite descartável e sem processos/dados reais.
+- `frontend-classification-authoring.log`: **111 passed**, 55,38 s, seis
+  arquivos, incluindo 32 cenários do novo componente, cliente REST, integração
+  no SpecModal e regressões de leitura. Lote misto, vários IRs/escopo parcial,
+  sugestão explícita, nenhum HTTP/role inventado, JSON inválido/overflow,
+  permissões/estados, byte budget, replay, correção de lote recusado, respostas
+  tardias e atualização após sucesso. Estes são testes frontend efetivos.
+- `core-classification-authoring.log`: **166 passed**, 14,07 s, propostas,
+  domínio/currentness, contratos, catálogo, manifests e permissões. Executados
+  antes do ajuste final da projeção de metadados do writer.
+- `community-classification-authoring.log`: **26 passed**, 51,39 s, antes desse
+  ajuste. `...-write-auth-before.log`: **7 failed / 20 deselected**, 20,52 s,
+  reprodução específica da leitura antes da autorização. Após correção e nova
+  prova instalada, `...-final.log`: **53 passed**, 104,79 s: coordenador completo,
+  guards/lock/replay, leituras, REST/cliente FastMCP e persistência reais.
+- ESLint inicialmente recusou o nome `useSuggestion` como hook; renomeado para
+  `loadSourceSuggestion`. Typecheck apontou narrowing nullable perdido dentro
+  do callback; o draft é materializado após o guard, antes do callback.
+  ESLint/Ruff/typecheck/build finais e `git diff --check` aprovados.
+- `frontend-classification-authoring-build-final.log` e
+  `npm run verify:frontend-dist`: **78 arquivos** sincronizados/verificados,
+  SHA256 `fc9694cf60e0d9e7860cafc0d7732ecf755cde1b40442d219a582c2ffdc49dec`.
+  Catálogo/manifests regenerados oficialmente; resource manifest `--check`
+  passou. Permanecem 343 tools/340 policies/três isenções e 45 schemas fechados.
+- Closure inicial tinha somente drift das matrizes README. Regeneradas pelo
+  renderer oficial. `closure-classification-authoring-final.json`: **exit 0,
+  ok=true**, zero findings de código/documentação, oito budgets **0/0**;
+  distribuição/conformance/AF35/singleton aprovados. **7.451 imports Core /
+  1.236 Community→Core**, 25 dependências.
+
+P1 **ainda não completo**. Próxima frente: incorporar o predicado relacional de
+classificação atual ao gate existente de início e ao readiness, com rollout
+ARQ/VER explícito conforme seção 11, coordenado com perfis/critério/método de P2.
+Caracterizar `services/spec_readiness.py`, `spec_readiness_read_model.py` e o
+writer real da transição antes de editar. `architecture_adoption` continua
+apenas escopo de Designs; não transformar esse campo em marcador de rollout.
+Legado em andamento preserva contrato aprovado até adoção/revisão autorizada;
+Done não reabre. P2/P3, F2B, KG, E2E instalado/Grafx/suites amplas, benchmarks e
+rollback continuam pendentes. Não declarar o pacote consolidado concluído.
