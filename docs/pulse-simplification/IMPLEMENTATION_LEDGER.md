@@ -3,9 +3,10 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
-I0 + P0, com início da política pura P1: correção F09/porta publicada, F11
-caracterizado; compatibilidade F2B por Card autorizada e depreciada. Inventário,
-integração P1 e suites amplas pendentes. Nenhuma migração real autorizada.
+I0 + P0, com política pura e leitor interno P1 sobre linhagem canônica:
+correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
+autorizada e depreciada. Classificação/promoção, integração pública P1,
+inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
 
@@ -117,18 +118,19 @@ reprodução, alternativas e frente isolada.
 | BASE | INV-01…18; T01…46 | Não executados |
 | KG | KG-01…66; D/G/Q | Não executados |
 | DEI | DEI-01…24; DEI-T01…64 | DEI-T53/F09 coberto; F11 caracterizado; demais critérios ainda sem matriz completa |
-| ARQ/VER | AC-ARQ-01…16, AC-VER-01…18, AC-INT-01…12; ADV-01…24 | Não executados |
+| ARQ/VER | AC-ARQ-01…16, AC-VER-01…18, AC-INT-01…12; ADV-01…24 | P1 parcial: política de identidade/contrato e leitura efetiva exercitadas; critérios integrados de aceitação ainda pendentes |
 | Arquitetura executável | Todos os budgets zero | Aprovada: oito budgets zero, sem findings, inclusive wheels e READMEs |
-| Pacote/ambiente | Wheels iguais às fontes, par/imports/processos | Patch F09 + porta: 771 Core + 311 Community `.py` idênticos |
+| Pacote/ambiente | Wheels iguais às fontes, par/imports/processos | P1 leitor: 773 Core + 311 Community `.py` idênticos; E2E/release completos pendentes |
 
 Custos antes/depois e ensaios de migração/rollback ainda não medidos/executados.
 Não copiar resultados de validações de setembro anteriores como resultados atuais.
 
 ## Próximo passo concreto
 
-Integrar a projeção pura P1 à enumeração autoritativa de arquitetura efetiva,
-depois classificação/promoção transacionais e rollout, sem publicar aprovação
-ou gate fictício. Continuar inventários F0/K0/I0 em [inventory.md](inventory.md).
+Integrar o leitor interno P1 à entrada autorizada da Spec; implementar decisões
+e promoção/reuso transacionais, com locks/edição/idempotência existentes e
+rollout explícito. Não publicar aprovação ou gate fictício. Continuar
+inventários F0/K0/I0 em [inventory.md](inventory.md).
 F2B pode implementar compatibilidade autorizada com aviso de depreciação; F11
 exige correção prospectiva integrada ao rollout. Falhas amplas e E2E instalados
 continuam abertos conforme o registro abaixo. Após qualquer mudança em `src`,
@@ -365,3 +367,67 @@ pacote continuam 0.3.4 enquanto a iniciativa 0.4.0 está em implementação.
 Autorização F2B do usuário incorporada acima e em comentário no resolver atual.
 Não há ainda campos/migração por Card implementados; manter o aviso de
 depreciação ao implementar o contrato e a migração correspondentes.
+
+## P1 — leitor de arquitetura adotada e decisão F2B preservada — 2026-09-19
+
+Par de código deste incremento:
+
+- Core `eeca39d2c8b70e1b3426de5305d492edd1aa1397`.
+- Community `6e3112da3b2a5271e0b53c016940dec6c4f836de`.
+- Incremento anterior já publicado: Core `7c547310` e Community `b466038`.
+  O comentário de depreciação autorizado está em
+  `services/main.py::CardService._resolve_validation_config`, e a decisão,
+  proveniência pretendida e condição de retirada estão na seção F2B acima.
+  A autorização não cria permissão de edição de policy nem executa migração.
+
+`services/architecture_candidates.py` reutiliza `ResolvedResourceLineageService`
+e `ResourceGateService`, consumindo a persistência pela porta pública existente.
+A linhagem canônica escolhe o proprietário adotado mais próximo de cada raiz;
+todas as variantes físicas nesse proprietário são mantidas. Uma cópia da Spec
+prevalece sobre sua própria origem herdada, sem excluir raízes independentes.
+Uma cópia adotada no refinamento continua representando seu snapshot quando a
+origem muda. Não foi criado outro mecanismo de propagação ou atualização.
+
+O leitor exige Spec no board pedido, recupera todos os IDs selecionados e
+confere proprietário/revisão entre metadados e conteúdo. Limite de enumeração,
+fonte indisponível, payload ausente, revisão divergente e coleção legada inválida
+produzem população desconhecida; não viram zero confirmado. Erros do provider
+não expõem mensagens privadas. IDs ausentes continuam pendência, sem geração
+em leitura. Classificações, IRs, gates e histórico não são escritos.
+
+Limite explícito: é um **serviço interno** cujo chamador deve ter autorizado a
+leitura. Ainda não há rota/tool/UI, classificação, promoção/reuso ou gate de
+início conectados a ele. Estes testes não provam autorização de entrada,
+concorrência de escrita transacional, aprovação ou AC-ARQ completo. A operação
+futura de classificação/transição deve revalidar fontes e locks na transação.
+
+Validação em processos novos, com caminhos do par fixados:
+
+- Rebuild/reinstall dos dois pacotes: `wheels-p1-reader`,
+  `provenance-p1-reader.json`. **773/311 `.py`**, payloads **838/393**, todos
+  idênticos entre fonte, wheel e instalação antes dos testes.
+- Core: `test_architecture_candidates`, `test_resource_lineage_service`,
+  `test_copy_architecture_root_coverage_06` e
+  `test_sprint_policy_migration_characterization`: **47 passed**, 4,83 s,
+  `architecture-reader-core.log`.
+- Community: `test_architecture_candidates_integration` (12 casos novos) e
+  `test_resource_gate_metadata_only_adapter` (4 existentes): **16 passed**,
+  35,40 s, `architecture-reader-community-final.log`. SQLite real/ports reais;
+  captura SQL das leituras repetidas contém somente SELECT, preservando versão
+  de Design/Spec e conteúdo legado. Falhas de payload/revisão são injetadas
+  explicitamente nos testes, sem fingir prova de concorrência real.
+- Tentativas intermediárias conservadas: oito casos iniciais passaram em
+  isolamento; suite conjunta encontrou 12 erros de fixture por sessão comum
+  (`architecture-reader-community.log`). Corrigido para
+  `CommunitySemanticSession`, com versioning instalado explicitamente. A
+  repetição teve 15 passed/1 failed porque criar Design já incrementa Spec;
+  o oráculo passou a capturar a versão **após setup e antes da leitura**, em vez
+  de presumir versão 1. Nenhuma proteção de produção foi relaxada.
+- `closure-p1-reader.json`: budgets zero/findings de código zero, com apenas
+  drift dos READMEs por Core 7.344 → 7.350 imports. Fragmentos regenerados pelo
+  renderer oficial. `closure-p1-reader-final.json`: **exit 0, ok=true**, oito
+  budgets zero, nenhum finding de código, distribuição ou documentação.
+
+Nenhuma migração de schema/dados, mudança de superfície MCP ou edição de
+catálogo ocorreu neste incremento. Não foram repetidas as suites amplas nem
+certificado E2E instalado; falhas e limites anteriores continuam abertos.
