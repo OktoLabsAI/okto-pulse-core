@@ -12851,6 +12851,46 @@ async def okto_pulse_restore_tree(
 
 
 @mcp.tool()
+async def okto_pulse_list_architecture_candidates(
+    board_id: str, spec_id: str, offset: int = 0, limit: int = 25,
+    candidate_id: str = "", source_digest: str = "",
+) -> str:
+    """Page adopted contract summaries/digests for one Spec edition (limit 1..100).
+
+    Reports incomplete sources and conflicting variants explicitly. Reading does
+    not classify candidates, create IRs, refresh sources or authorize execution.
+    schema_ref is returned as data and is never fetched by this operation.
+    Supply candidate_id and source_digest together for the full current contract.
+    Global counts and issues cover all sources, not just this page of variants.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidateReadError
+    from okto_pulse.core.application.use_cases.architecture_candidates import (
+        GetArchitectureCandidatesCommand, GetArchitectureCandidatesUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError, PermissionDeniedError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetArchitectureCandidatesUseCase().execute(
+                GetArchitectureCandidatesCommand(
+                    board_id, spec_id, offset, limit, candidate_id or None, source_digest or None,
+                ), actor=actor, uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": "Spec not found"})
+    except PermissionDeniedError as exc:
+        return _perm_error(exc.message)
+    except ArchitectureCandidateReadError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
 async def okto_pulse_list_architecture_designs(
     board_id: str,
     parent_type: str,

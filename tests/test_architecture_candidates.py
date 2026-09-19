@@ -11,6 +11,7 @@ import pytest
 
 from okto_pulse.core.domain.architecture_candidates import (
     AdoptedArchitectureDesign,
+    architecture_candidate_read_projection,
     declares_architecture_contract,
     project_architecture_candidates,
 )
@@ -25,6 +26,42 @@ def _project(*designs, complete=True, spec_id="spec", edition=1):
         board_id="board", spec_id=spec_id, spec_edition=edition,
         designs=designs, source_complete=complete,
     )
+
+
+def _page(population, **kwargs):
+    return architecture_candidate_read_projection(
+        population, board_id="board", spec_id="spec", spec_version=1, spec_edition=1,
+        **kwargs,
+    )
+
+
+def test_summary_pages_have_global_counts_and_lazy_bodies():
+    population = _project(_design(*({"id": str(n), "event_schema": {"const": n}} for n in range(102))))
+    first, last = _page(population), _page(population, offset=100)
+    assert first["total"] == last["total"] == 102
+    assert len(first["candidates"]) == 25 and len(last["candidates"]) == 2
+    assert first["has_more"] and not last["has_more"]
+    assert all("contract" not in item for item in first["candidates"])
+    item = first["candidates"][0]
+    detail = _page(population, candidate_id=item["id"], source_digest=item["source_digest"])
+    assert detail["profile"] == "detail" and len(detail["candidates"]) == 1
+    assert "event_schema" in detail["candidates"][0]["contract"]
+    with pytest.raises(ValueError, match="architecture_candidate_source_changed"):
+        _page(population, candidate_id=item["id"], source_digest="stale")
+
+
+def test_global_issues_outside_a_page_cannot_disappear_into_empty_or_complete():
+    population = _project(_design(*({"id": str(n), "event_schema": {}} for n in range(30)), {"event_schema": {}}))
+    first = _page(population, limit=1)
+    assert len(first["candidates"]) == 1
+    assert first["population_state"] == "unresolved" and first["total"] is None
+    assert first["issue_counts"] == {"architecture_contract_identity_required": 1}
+
+
+@pytest.mark.parametrize("options", [{"limit": 0}, {"limit": 101}, {"offset": -1}, {"offset": 2**63}, {"candidate_id": "id"}])
+def test_read_windows_and_detail_identity_are_bounded(options):
+    with pytest.raises(ValueError):
+        _page(_project(), **options)
 
 
 @pytest.mark.parametrize("field,value", [

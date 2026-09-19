@@ -325,6 +325,39 @@ auto-marking the inherited architecture N/A. To propagate, fix the SOURCE design
 backend critic resolves the findings, then retry the copy.
 
 
+## `okto_pulse_list_architecture_candidates`
+
+Page summaries of the adopted contract population of one Spec, using the same
+effective-resource lineage as the existing Resource Gate. Requires board access,
+`spec.entity.read` and `spec.architecture.read`. No IR, classification, source
+refresh or external schema fetch is performed.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID in that board
+    offset: Offset among semantic variants (default 0; nonnegative int64)
+    limit: Summary page size (default 25; range 1..100)
+    candidate_id: Optional exact identity for a full contract detail
+    source_digest: Required together with candidate_id; must match the current variant
+
+Returns:
+    JSON `{success, contract_version, board_id, spec_id, spec_version,
+    spec_edition, source_complete, population_state, total, total_variants,
+    offset, limit, has_more, profile, candidates, issues, issue_counts,
+    issues_truncated}`.
+    Each candidate includes stable `id`, root/interface identities, semantic
+    `source_digest`, name/type/direction/protocol, adopted physical revisions and
+    signals for reference-only, missing or unrestricted content. Conflicting
+    variants remain visible under the same candidate ID. `total` is null when
+    enumeration or identity is unresolved; complete empty is distinct from
+    unresolved data. `total_variants` and continuation refer to semantic variants;
+    `total` counts logical candidates. Global issue counts include sources outside
+    the page; diagnostic examples are bounded to 100. Only a detail response
+    contains the full `contract`. A changed detail digest yields an explicit error.
+    Population completeness does not mean classification or approval to start.
+
+Example: `{"board_id":"<board-id>","spec_id":"<spec-id>"}`.
+
 ## `okto_pulse_list_architecture_propagation_legacy`
 
 Read-only, forward-only diagnostic. Lists Architecture Design snapshots that were copied

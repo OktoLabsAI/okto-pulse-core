@@ -10,6 +10,7 @@ design revisions and diagram layout.
 from __future__ import annotations
 
 import copy
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import json
@@ -23,6 +24,10 @@ _SEMANTIC_FIELDS = (
     "name", "endpoint", "description", "participants", "direction", "protocol",
     "contract_type", *_CONTRACT_FIELDS, "schema_ref", "notes",
 )
+
+
+class ArchitectureCandidateReadError(ValueError):
+    """Public, bounded read-contract errors; provider failures are not exposed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +76,71 @@ class ArchitectureCandidatePopulation:
     def resolved(self) -> bool:
         """Population integrity only; this does not authorize starting a Spec."""
         return self.source_complete and not self.issues
+
+
+def architecture_candidate_read_projection(
+    population: ArchitectureCandidatePopulation, *, board_id: str, spec_id: str,
+    spec_version: int, spec_edition: int,
+    offset: int = 0, limit: int = 25, candidate_id: str | None = None,
+    source_digest: str | None = None,
+) -> dict[str, Any]:
+    """One transport-neutral read envelope; integrity is not start permission.
+
+    Conflicting semantic variants share a candidate identity and remain visible.
+    Unknown enumeration has no authoritative total, even when nothing was read.
+    """
+    if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
+        raise ArchitectureCandidateReadError("architecture_candidates_invalid_offset")
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ArchitectureCandidateReadError("architecture_candidates_invalid_limit")
+    if bool(candidate_id) != bool(source_digest):
+        raise ArchitectureCandidateReadError("architecture_candidate_identity_and_digest_required")
+    detail = bool(candidate_id)
+    selected = population.candidates[offset:offset + limit]
+    if detail:
+        selected = tuple(item for item in population.candidates
+                         if item.id == candidate_id and item.source_digest == source_digest)
+        if population.source_complete and len(selected) != 1:
+            raise ArchitectureCandidateReadError("architecture_candidate_source_changed")
+    issue_counts = Counter(issue.code for issue in population.issues)
+    identities_complete = population.source_complete and not any(
+        issue.candidate_id is None for issue in population.issues
+    )
+    return {
+        "contract_version": "architecture-candidates/v1",
+        "board_id": board_id, "spec_id": spec_id,
+        "spec_version": spec_version, "spec_edition": spec_edition,
+        "source_complete": population.source_complete,
+        "population_state": (
+            "unavailable" if not population.source_complete
+            else "complete" if population.resolved else "unresolved"
+        ),
+        "total": len({item.id for item in population.candidates}) if identities_complete else None,
+        "total_variants": len(population.candidates) if population.source_complete else None,
+        "offset": 0 if detail else offset, "limit": 1 if detail else limit,
+        "has_more": not detail and offset + limit < len(population.candidates),
+        "profile": "detail" if detail else "summary",
+        "issue_counts": dict(sorted(issue_counts.items())),
+        "issues_truncated": len(population.issues) > 100,
+        "candidates": [{
+            "id": item.id, "root_design_id": item.root_design_id,
+            "interface_id": item.interface_id, "source_digest": item.source_digest,
+            "name": item.contract.get("name"),
+            "contract_type": item.contract.get("contract_type"),
+            "direction": item.contract.get("direction"),
+            "protocol": item.contract.get("protocol"),
+            **({"contract": item.contract} if detail else {}),
+            "adopted_sources": [
+                {"design_id": design_id, "revision": revision}
+                for design_id, revision in item.adopted_sources
+            ],
+            "signals": list(item.signals),
+        } for item in selected],
+        "issues": [{
+            "code": issue.code, "design_id": issue.design_id,
+            "interface_index": issue.interface_index, "candidate_id": issue.candidate_id,
+        } for issue in population.issues[:100]],
+    }
 
 
 def _text(value: Any) -> str:

@@ -23,6 +23,7 @@ from okto_pulse.core.domain.code_traceability_kg import (
 )
 
 if TYPE_CHECKING:
+    from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidatePopulation
     from okto_pulse.core.application.use_cases.entity_pagination import (
         EntityPageService,
     )
@@ -406,6 +407,10 @@ class ApplicationServiceCatalog(Protocol):
         record_id: str,
         includes: tuple[str, ...] = (),
     ) -> object | None: ...
+
+    async def load_spec_architecture_candidates(
+        self, *, board_id: str, spec_id: str,
+    ) -> "ArchitectureCandidatePopulation": ...
 
     async def list_application_records(self, query: object) -> tuple[object, ...]: ...
 

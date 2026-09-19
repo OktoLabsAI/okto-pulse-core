@@ -594,6 +594,15 @@ class CoreApplicationServiceCatalog:
 
         return ArchitectureDesignRepository(self.__relational_context)
 
+    async def load_spec_architecture_candidates(self, *, board_id: str, spec_id: str):
+        from okto_pulse.core.services.architecture_candidates import (
+            load_spec_architecture_candidates,
+        )
+
+        return await load_spec_architecture_candidates(
+            self.__relational_context, board_id=board_id, spec_id=spec_id,
+        )
+
     @cached_property
     def architecture_diagrams(self):  # noqa: ANN201
         from okto_pulse.core.services.architecture import ArchitectureDiagramStore

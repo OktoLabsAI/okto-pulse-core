@@ -3,9 +3,9 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
-I0 + P0, com política pura e leitor interno P1 sobre linhagem canônica:
+I0 + P0, com política pura e leitura P1 em REST/MCP/frontend sobre linhagem canônica:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
-autorizada e depreciada. Classificação/promoção, integração pública P1,
+autorizada e depreciada. Classificação/promoção, adoção seletiva P1,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -44,6 +44,9 @@ Correções explícitas do usuário:
   validar comportamento; fixar imports do par e processo novo para cada execução.
 - Catálogo MCP é gerado por `python -m okto_pulse.core.mcp.tools_catalog_generator`.
   Nunca editar `tools_catalog.md` manualmente.
+- Instrução adicional: cada feature que impactar o frontend deve incluir testes
+  do frontend dos fluxos afetados e dos estados de erro/permissão relevantes;
+  build/typecheck e testes de backend não substituem essa evidência.
 
 ## Especificação lida e precedência
 
@@ -127,8 +130,8 @@ Não copiar resultados de validações de setembro anteriores como resultados at
 
 ## Próximo passo concreto
 
-Integrar o leitor interno P1 à entrada autorizada da Spec; implementar decisões
-e promoção/reuso transacionais, com locks/edição/idempotência existentes e
+Reproduzir adoção seletiva versus herança na derivação real (AC-ARQ-01);
+implementar decisões e promoção/reuso transacionais, com locks/edição/idempotência existentes e
 rollout explícito. Não publicar aprovação ou gate fictício. Continuar
 inventários F0/K0/I0 em [inventory.md](inventory.md).
 F2B pode implementar compatibilidade autorizada com aviso de depreciação; F11
@@ -431,3 +434,65 @@ Validação em processos novos, com caminhos do par fixados:
 Nenhuma migração de schema/dados, mudança de superfície MCP ou edição de
 catálogo ocorreu neste incremento. Não foram repetidas as suites amplas nem
 certificado E2E instalado; falhas e limites anteriores continuam abertos.
+
+## P1 — leitura pública autorizada e testes de frontend — 2026-09-19
+
+O caso de uso `GetArchitectureCandidatesUseCase` compartilha autorização e
+projeção entre REST e MCP. Usa snapshot consistente, resolve o board acessível
+e a Spec sem includes, exige `spec.entity.read` e `spec.architecture.read`, e
+só então carrega fontes. O reader rico de Spec carregava Designs antes dessas
+verificações: os testes HTTP reais detectaram isso e motivaram o preflight leve,
+sem relaxar permissões. IDs de outro board/usuário retornam 404 sem ler Designs.
+
+REST expõe `GET /boards/{board_id}/specs/{spec_id}/architecture-candidates`;
+MCP expõe `okto_pulse_list_architecture_candidates`, registrado como reader.
+Resumos paginados (25 padrão, 100 máximo) mantêm totais e diagnósticos globais;
+variantes conflitantes não são colapsadas. Detalhe exige ID e digest correntes;
+fonte alterada retorna conflito. Fontes desconhecidas não viram zero confirmado.
+Nenhuma referência externa é buscada. Catálogo e manifest de resources foram
+regenerados pelos geradores oficiais, sem edição manual do catálogo.
+
+Frontend na aba IR da Spec inclui painel de candidatos, paginação e detalhes
+sob demanda. Troca de Spec/versão, revogação de permissão e refresh escondem
+imediatamente o conteúdo anterior; respostas tardias são ignoradas. Contratos
+e referências são texto, sem navegação automática ou execução. Ainda não há
+classificar/promover/reusar IR ou novo gate de início neste incremento.
+
+Evidência final, após rebuild/reinstall pareado e antes dos testes de backend:
+
+- `wheels-p1-read-authorized` / `provenance-p1-read-authorized.json`:
+  **774 Core + 311 Community `.py`**, payloads **839/395**, igualdade byte a byte
+  source/wheel/instalação e resolução dos módulos comprovadas.
+- Core: **56 passed**, 9,52 s, `p1-read-authorized-core.log` (política, use case,
+  ordem de autorização, wrapper MCP, registry e drift do catálogo).
+- Community: **20 passed**, 63,76 s, `p1-read-authorized-community.log` (HTTP
+  FastAPI real/UOW/SQLite, reader interno e versão de distribuição). Captura SQL
+  comprova ausência de leitura de Designs para board/Spec/usuário negados;
+  interceptação DNS comprova que `schema_ref` não é buscado nesses cenários.
+- Frontend: **15 passed**, `p1-read-paged-frontend.log`: 10 casos do painel,
+  1 caso do cliente HTTP e 4 regressões das entidades estruturadas. Inclui
+  permissões, 403 após refresh, resposta tardia de outra Spec, escopo inválido,
+  paginação com totais globais, conflito e detalhe com digest desatualizado.
+- Build TypeScript/Vite e `verify:frontend-dist` passaram; 78 arquivos, hash
+  `35b11f54d87b4859a3fb1ed0c7a1f98ccfa7f4420952c883cbe0e690b88d537b`.
+  Assets versionados foram gerados pelo build. Warning de chunk grande persiste;
+  não há alegação de medição de performance nem E2E instalado completo.
+- `closure-p1-read-authorized-final.json`: **ok=true**, nenhum finding de código
+  ou documentação, oito budgets **0/0**. Matrizes README regeneradas: 7.364
+  imports Core e 1.229 Community→Core. `git diff --check` passou.
+
+Tentativas intermediárias são mantidas nos logs: fixtures de permissão vazia
+(dict herda defaults; lista vazia nega), chamada MCP por wrapper/keywords e realm
+local no fixture corrigidos sem mudar semântica. Testes HTTP inicialmente
+falharam pela leitura antecipada descrita acima; corrigido o código de produção,
+reconstruído/reinstalado/provado o par e só então repetidos os testes afetados.
+Closure intermediário apontou exclusivamente drift dos fragmentos README.
+
+Pendência antes de declarar AC-ARQ-01: a propagação recebe
+`architecture_design_ids` e copia os selecionados, enquanto a linhagem herdada
+existente mantém raízes independentes do ancestral. Investigar com reprodução
+da derivação real se seleção representa adoção exclusiva ou somente cópia;
+não alterar silenciosamente ResourceGate, histórico ou contrato de herança.
+Também continuam pendentes classificação/promoção transacional, rollout,
+migração F2B e as demais frentes do pacote. Esta seção supera somente o limite
+de ausência de REST/MCP/UI da seção anterior; não certifica P1 completo.
