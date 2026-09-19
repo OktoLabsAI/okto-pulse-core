@@ -29,7 +29,7 @@ class GetDeliveryEvidenceUseCase:
 
 
 class RecordDeliveryEvidenceUseCase:
-    """Legacy spec-scoped recording surface (waivers/revoke human-only)."""
+    """Spec-scoped exceptions only; historical proof remains readable."""
 
     async def execute(
         self, command: DeliveryEvidenceCommand, *, actor, uow: PulseUnitOfWork
@@ -43,6 +43,7 @@ class RecordDeliveryEvidenceUseCase:
         await require_authorization(
             actor, PermissionRequirement(operation), uow=uow, board_id=command.board_id
         )
+        command.require_exception_kind()
         if command.kind in {"waiver", "revoke"} and actor.actor_kind not in {
             "human",
             "user",

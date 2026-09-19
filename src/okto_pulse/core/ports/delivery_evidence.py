@@ -43,10 +43,12 @@ class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
     async def record(
         self, command: DeliveryEvidenceCommand, *, actor_id: str, actor_kind: str
     ) -> dict:
-        """Validate receipts and current scope under the terminal-transition fence.
+        """Record human exceptions under the terminal-transition fence.
 
-        Append immutable bindings/audit or revocation tombstones, with actor-scoped
-        idempotency. Never commits the caller's transaction.
+        Append waivers or revocation tombstones with actor-scoped idempotency.
+        Implementation/test writes must use the card-scoped port; obsolete
+        spec-scoped proof requests fail with delivery_card_scope_required.
+        Historical records remain readable. Never commits the caller's transaction.
         """
         ...
 

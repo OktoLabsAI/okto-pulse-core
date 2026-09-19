@@ -1,4 +1,27 @@
-# Delivery Evidence: agreed implementation plan
+# Delivery Evidence: original implementation record
+
+## Current implementation authority (v0.4.0 initiative)
+
+This document preserves the earlier DE-1–DE-4 implementation/validation record.
+Its spec-scoped proof workflow and statements that no advisory/skip exists are
+superseded by the local v0.3.4 card-ledger implementation and the consolidated
+v1.3 specification. Do not use the historical sections below as current API
+instructions or as validation performed in this initiative.
+
+Implementation/test bindings belong to the card ledger. Record implementation
+before completing the task/bug; the Spec reads the rollup. Spec POST accepts only
+human waivers/revocations. Legacy proof writes fail with
+`delivery_card_scope_required`; historical records remain preserved. Existing
+`delivery_evidence_gate` and `skip_delivery_evidence` policies do not change the
+factual verdict. Current contracts are in the served Code Traceability resources
+and the paired Community `docs/DELIVERY_EVIDENCE.md`.
+
+Follow [the integrated ledger](pulse-simplification/IMPLEMENTATION_LEDGER.md)
+for current decisions, reproductions, changes and outstanding work. Progress,
+batch, specialized verification and the other v1.3 features are not implemented
+merely because the original phases below were completed.
+
+## Historical implementation record
 
 Status: **DE-1–DE-4 implemented and validated in isolation on 2026-09-14; not installed in the active user runtime**.
 

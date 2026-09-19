@@ -2,9 +2,11 @@
 
 ## Estado para retomada
 
-Iniciativa **em andamento**, ainda sem alterações funcionais. Etapa atual:
-caracterização conjunta F0/F1 + K0 + I0 + P0. Nenhum teste de comportamento
-foi executado nesta sessão até este marco. Nenhuma migração real autorizada.
+Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
+I0 + P0 e correção do writer F09. O patch F09/porta passou nos testes focados e
+na auditoria completa; publicação do incremento em andamento. Nenhuma migração
+real autorizada. Não confundir esse incremento com
+a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
 
 Este é o ledger único dos dois repositórios. Atualizar após cada incremento
 coerente com arquivos, decisões, testes, commits e próximo passo; não interpretar
@@ -88,8 +90,10 @@ vira nó gráfico ou aprovação. Métodos precisam de admission path até o ada
 
 ## Investigações abertas
 
-- DEI F09: seguir writer REST legado → use case → store antigo → rollup por card;
-  reproduzir antes de anunciar defeito de runtime.
+- DEI F09: reproduzido com SQLite descartável e requests antigos válidos de
+  implementação/teste: ambos retornavam HTTP 200. Patch fecha esse writer de
+  provas com `delivery_card_scope_required` (422), orienta rota por card, mantém
+  waiver/revoke e leitura histórica. Validação do patch em andamento.
 - DEI F11: fallback por título versus alterações description/details e versões/
   receipts; não mudar digests históricos por hipótese.
 - P0: interfaces/IDs/proveniência, snapshots efetivos, locks, gates iniciais,
@@ -111,15 +115,82 @@ reprodução, alternativas e frente isolada.
 | KG | KG-01…66; D/G/Q | Não executados |
 | DEI | DEI-01…24; DEI-T01…64 | Não executados |
 | ARQ/VER | AC-ARQ-01…16, AC-VER-01…18, AC-INT-01…12; ADV-01…24 | Não executados |
-| Arquitetura executável | Todos os budgets zero | Auditoria ainda não executada |
-| Pacote/ambiente | Wheels iguais às fontes, par/imports/processos | Preparação pendente |
+| Arquitetura executável | Todos os budgets zero | Aprovada: oito budgets zero, sem findings, inclusive wheels e READMEs |
+| Pacote/ambiente | Wheels iguais às fontes, par/imports/processos | Patch F09 + porta: 771 Core + 311 Community `.py` idênticos |
 
 Custos antes/depois e ensaios de migração/rollback ainda não medidos/executados.
 Não copiar resultados de validações de setembro anteriores como resultados atuais.
 
 ## Próximo passo concreto
 
-Preparar ambiente descartável, instalar o par local, comparar bytes e fixar
-`PYTHONPATH` + `OKTO_PULSE_CORE_REPO` + `OKTO_PULSE_COMMUNITY_REPO`. Executar o
-auditor de arquitetura e caracterizar F09/F11 com SQLite descartável, preservando
-um mapa de símbolos efetivamente revisados antes do primeiro patch funcional.
+Concluir revisão de distribuição F09/porta e registrar commits pareados e push;
+reconstruir/reinstalar/comparar o par após qualquer alteração em `src`. Registrar
+commits pareados e push. Prosseguir caracterização F11 (receipt, versão, conteúdo
+e edição autorizada), P0 e dependências do inventário efetivo antes de congelar
+schema/migrações de entrega incremental.
+
+## Execução 2026-09-19 — primeiro incremento
+
+- Bootstrap publicado: Core `cfedfd5d`, Community `e8d4f31`, ambos na
+  `feature/v0.4.0` com upstream correspondente.
+- Ambiente descartável: `PULSE_REFACTOR/.validation-v040/venv`, Python 3.13,
+  dependências herdadas do ambiente existente; instalação do par apenas nessa
+  venv. Dados SQLite/receipts assinados em diretórios temporários dos testes.
+  Cada comando abre processo novo. Nenhum processo Pulse ativo foi alterado.
+- `verify_pair.py` compara conjuntos completos de `.py` e bytes, origem de
+  imports e payloads source → wheel → site-packages com o comparador existente
+  `scripts/release_artifact_gate.py`. Baseline e F09: Core 769 `.py` / 834
+  payloads; Community 311 `.py` / 393 payloads; igualdade integral.
+- Artefatos locais: `wheels-baseline`, `wheels-f09`,
+  `provenance-baseline.json`, `provenance-f09.json` no diretório descartável.
+- Baseline Core: 64 testes passaram (`test_delivery_evidence_domain`,
+  `contract`, `lifecycle`, `test_card_delivery_inventory`,
+  `test_coverage_traceability_read_model`); Community: 22 passaram em
+  `test_delivery_evidence_integration`. Logs `core-delivery-baseline.log` e
+  `community-delivery-baseline.log`.
+- Regressão F09 antes do patch: 2 falhas esperadas (HTTP 200 em vez de 422),
+  log `f09-red.log`. Caminho revisado: REST `api/code_traceability.py` →
+  `RecordDeliveryEvidenceUseCase` → `CommunityDeliveryEvidenceStore.record`
+  → tabela antiga; `load_rollup_snapshot` lê provas por card e só waivers
+  antigos. A escolha de rejeição explícita é autorizada por DEI §11.1; não há
+  tradução implícita sem fence de versão do card.
+- Patch Core: DTO spec-scoped fechado para waiver/revoke, defesa de chamadas
+  diretas no caso de uso, contrato da porta, documentação MCP e testes de
+  DTO. Patch Community: defesa no adapter, retirada da admissão de provas
+  antigas, tipo de frontend e testes REST/caso de uso/store/histórico.
+- Catálogo MCP e manifest de resources regenerados pelos geradores oficiais;
+  documentos Delivery anteriores demarcados como históricos/corrigidos.
+- Auditoria baseline `closure-baseline.json`: 7 budgets zero e
+  `community_adapter_bridges=3` (limite 0), quatro achados de provenance e
+  drift em ambos os READMEs. **Não aprovada.** Investigação obrigatória antes
+  de declarar conformidade; não aumentar exceções.
+- `tsc -b` passou. A primeira chamada Vitest apontou para caminho inexistente
+  e não executou testes; repetição com os caminhos reais passou: 23 testes,
+  `DeliveryEvidencePanel` + `CardDeliveryDoDPanel`.
+- F09 antes da extração: 76 Core e 26 Community passaram. Após extração para a
+  porta: 83 Core (inclui catálogo MCP e report F16) e 51 Community (inclui
+  integração Delivery, F13 provenance e AF21 import boundary) passaram. Logs
+  `core-f09-port.log` e `community-f09-port.log`.
+- Causa das 3 bridges: import e 2 chamadas de `card_delivery_inventory` do
+  serviço privado pelo adapter Delivery. Criada porta pública
+  `ports/delivery_inventory.py` (`DeliveryInventoryPolicy`), com política pura
+  única em `domain/delivery_inventory.py`. Adapter depende da porta; serviços
+  mantêm nomes compatíveis apontando à mesma regra de domínio. Nenhuma mudança
+  de digest/seleção, novo singleton, mecanismo no Core ou exceção no manifest.
+  Teste F13 também bloqueia o import do serviço privado em subprocesso real.
+- Wheels `wheels-f09-port`, `provenance-f09-port.json`: 771 `.py` / 836 payloads
+  Core e 311 `.py` / 393 payloads Community, todos idênticos. Auditoria
+  `closure-f09-port.json`: **oito budgets zero**, nenhum finding de código ou
+  distribuição. Só restava drift dos READMEs; fragmentos regenerados pela função
+  oficial `render_saas_closure_readme` usando esse relatório. CLI completa
+  repetida: exit 0, `ok=true`, nenhum finding de código/distribuição/documentação
+  em `closure-f09-final.json`.
+
+Símbolos adicionais revisados: `card_inventory`, `require_card_delivery`,
+`require_spec_delivery`, `resolve_delivery_gate_mode`, `delivery_digest`,
+`coverage_traceability_read_model`, `CardService.update_card`,
+`require_card_operational_mutation_allowed`, listeners de
+`sqlalchemy_policy_subject_versioning`, admission/projection `_implementation`
+e `_test`, `record_card`, contratos de `ArchitectureInterface`/Design e início
+de `services/architecture.py`. A cadeia F11/P0 não está concluída; não modificar
+digests selados nem inferir exploração apenas da ausência de campo no hash.

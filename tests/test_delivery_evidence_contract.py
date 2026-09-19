@@ -4,7 +4,11 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceCommand
+from okto_pulse.core.models.delivery_evidence import (
+    CardDeliveryEvidenceCommand,
+    DeliveryEvidenceCommand,
+    DeliveryEvidenceInput,
+)
 from okto_pulse.core.services.delivery_evidence import delivery_inventory
 from okto_pulse.core.domain.delivery_evidence import evaluate_delivery_coverage
 from test_delivery_evidence_domain import SNAPSHOT, IMPLEMENTATION, TEST
@@ -49,7 +53,7 @@ def test_inventory_selectively_invalidates_and_never_assumes_empty_is_delivered(
     [
         {"verified": True},
         {"actor_id": "owner"},
-        {"expected_edition": True},
+        {"expected_spec_edition": True},
         {"obligation_refs": ["fr:1", "fr:1"]},
         {"implementation_ids": ["foreign"]},
         {"scenario_id": "scenario"},
@@ -61,8 +65,8 @@ def test_closed_command_rejects_forged_authority_and_wrong_shape(extra):
         board_id="b",
         spec_id="s",
         kind="implementation",
-        expected_edition=1,
-        expected_version=1,
+        expected_spec_edition=1,
+        expected_card_version=1,
         idempotency_key="key",
         obligation_refs=["fr:1"],
         card_id="task",
@@ -70,4 +74,29 @@ def test_closed_command_rejects_forged_authority_and_wrong_shape(extra):
         justification="Implemented",
     )
     with pytest.raises(ValidationError):
-        DeliveryEvidenceCommand(**{**data, **extra})
+        CardDeliveryEvidenceCommand(**{**data, **extra})
+
+
+@pytest.mark.parametrize("kind", ["implementation", "test"])
+def test_spec_exception_contract_rejects_obsolete_proof_with_remediation(kind):
+    """DEI-T53: a legacy client cannot create proof outside the canonical ledger."""
+    with pytest.raises(ValidationError) as caught:
+        DeliveryEvidenceInput.model_validate({"kind": kind})
+    assert caught.value.errors()[0]["type"] == "delivery_card_scope_required"
+    assert "card-scoped" in str(caught.value)
+    assert DeliveryEvidenceInput.model_json_schema()["properties"]["kind"]["enum"] == [
+        "waiver", "revoke"
+    ]
+
+
+@pytest.mark.parametrize("kind", [[], {}, None, "unknown"])
+def test_invalid_spec_exception_kind_is_validation_error(kind):
+    with pytest.raises(ValidationError):
+        DeliveryEvidenceInput.model_validate({"kind": kind})
+
+
+@pytest.mark.parametrize("kind", ["implementation", "test"])
+def test_constructed_spec_command_cannot_bypass_kind_guard(kind):
+    command = DeliveryEvidenceCommand.model_construct(kind=kind)
+    with pytest.raises(ValueError, match="delivery_card_scope_required"):
+        command.require_exception_kind()

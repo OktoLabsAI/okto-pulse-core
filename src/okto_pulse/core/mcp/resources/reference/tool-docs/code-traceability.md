@@ -1,5 +1,5 @@
 ---
-version: "1.2"
+version: "1.3"
 ---
 
 # Tool docs — Code Traceability
@@ -9,38 +9,43 @@ version: "1.2"
 Inputs: `board_id`, `spec_id`. Requires `code_traceability.evidence.read` and board
 access. Returns current `edition`, `version`, complete obligation rows with semantic
 digests, implementation/test association IDs, separate waiver IDs, `allowed`,
-`blockers`, rejected IDs, eligible completed-card receipt candidates and audit
-history. Read-only: no test execution, implicit waiver, graph mutation or reopen.
+`blockers`, rejected IDs, eligible receipt candidates, per-card obligations and
+audit history. Implementation receipts are selectable before card completion;
+test candidates currently require a completed Test Card. Read-only: no test
+execution, implicit waiver, graph mutation or reopen.
 
 ## `okto_pulse_record_delivery_evidence`
 
-Inputs: `board_id`, `spec_id`, and closed object `evidence`:
+Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
 ```json
 {
-  "expected_edition": 1,
-  "expected_version": 7,
+  "expected_spec_edition": 1,
+  "expected_card_version": 7,
   "idempotency_key": "delivery-task-42-v1",
   "kind": "implementation",
   "obligation_refs": ["fr:fr_42", "ac:ac_42"],
-  "card_id": "task-id",
   "execution_id": "accepted-target-execution-id",
   "justification": "The committed parser implements these input/output obligations."
 }
 ```
 
-- `implementation`: done task/bug `card_id` + accepted `execution_id`, with clean,
-  immutable Git result revision and actual path. A planned Target is insufficient.
+- `implementation`: task/bug + accepted `execution_id`, with clean, immutable Git
+  result revision and actual path. Record the binding before completing the card;
+  final rollup credit still requires Done. A planned Target is insufficient.
 - `test`: done TEST `card_id`, linked passed `scenario_id`, nonempty
   `implementation_ids` returned from implementation associations. Uses the current
   authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
   select records this run actually tested. Multiple tests may jointly cover code.
-- `waiver`: authorized human only, `phase` = `implementation` or `test`, exact
-  obligation refs, justification. No card/receipt fields. Not a passing test.
 - `revoke`: authorized human only, `record_id`, empty `obligation_refs`,
-  justification. Appends a tombstone; cannot erase or restore revoked history.
+  justification. Revokes a record of this card. Appends a tombstone; cannot erase
+  or restore revoked history.
 
-Every write requires edition/version and a nonempty audit explanation. At most
+Waivers remain on the human-only Spec REST surface, using `phase` =
+`implementation` or `test`, exact obligation refs and justification. That surface
+also revokes legacy records. Neither operation creates a passing test.
+
+Every card write requires Spec edition/card version and a nonempty explanation. At most
 1,000 refs/implementation IDs, 20,000 explanation characters; unknown fields and
 duplicate refs fail validation. Same actor/key/payload replays `{id,replayed:true}`;
 changing that payload yields `delivery_idempotency_conflict`. Normal acceptance
@@ -55,13 +60,21 @@ Agents must ask the human rather than forge an actor or authorization receipt.
 
 Errors: `delivery_version_conflict`/`delivery_edition_conflict` → reread and review;
 `delivery_obligation_not_found` → use the current inventory;
-`delivery_accepted_committed_task_execution_required` → finish the task/receipt;
+`delivery_accepted_committed_task_execution_required` → obtain a valid committed execution receipt;
 `delivery_current_verified_test_and_implementation_required` → fix ownership or
 rerun against the current implementation; `delivery_evidence_incomplete` on Done
-→ address the projection's missing rows, not Skip settings. Corrected requests
-need a new idempotency key. REST equivalent: GET/POST
-`/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence`; POST body is exactly
-`evidence` (board/Spec IDs belong to the path).
+→ address the projection's missing rows. Existing `delivery_evidence_gate`
+advisory/blocking policy and the authorized `skip_delivery_evidence` override
+affect transitions, never the factual coverage verdict. Corrected requests need
+a new idempotency key.
+
+REST read: GET `/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence`.
+Card write: POST
+`/api/v1/boards/{board_id}/cards/{card_id}/specs/{spec_id}/delivery-evidence`;
+the body is exactly `evidence`. The old Spec POST accepts only human-authorized
+`waiver`/`revoke`, with `expected_edition`/`expected_version`. An old
+`implementation`/`test` body returns 422 `delivery_card_scope_required`; use the
+card route and its current fences. Historical records remain readable/revocable.
 
 These tools accept bounded observations from an authenticated external agent.
 Pulse never clones, opens, searches, or resolves a repository. Read

@@ -914,8 +914,9 @@ def register_code_traceability_tools(
     ) -> McpToolOutcome:
         """Submit an authenticated agent Execution Disposition for one Target.
 
-        After completing the task/bug, bind this accepted committed execution to
-        the Spec with okto_pulse_record_delivery_evidence, evidence.kind="implementation".
+        Before completing the task/bug, bind this accepted committed execution to
+        its card ledger with okto_pulse_record_delivery_evidence,
+        evidence.kind="implementation". The Spec reads the resulting rollup.
         It is implementation proof, not test verification; that requires a test card.
         """
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase
