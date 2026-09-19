@@ -2019,3 +2019,8 @@ resolução. A projeção de planejamento entregue ainda não muda o crédito at
 Divisão de AC/API/Decision entre vários Cards sem plano suficiente continua
 pendente, não recebe ownership fabricado. Sem migration nova, benchmark, E2E/Grafx
 ou release/tag. Estado: **progresso**; iniciativa completa permanece em andamento.
+
+Par de inventário publicado por push normal em `feature/v0.4.0`: Core
+`9e55f2b373eb9fef0d0678cd17116a93bfa8540e`, Community
+`31c63b1cc5d6e0d814d9fefb89709a4ff0331225`. HEADs remotos iguais aos locais,
+árvores limpas após os commits funcionais; este follow-up registra a retomada.
