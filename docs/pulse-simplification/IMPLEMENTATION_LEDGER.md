@@ -5,9 +5,9 @@
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
 I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
-autorizada e depreciada. Preparação de IRs, contrato de classificação e
-armazenamento atômico e coordenador autorizado disponíveis; classificação/promoção
-em REST/MCP/UI, adoção de revisão legada,
+autorizada e depreciada. Preparação de IRs, contrato de classificação,
+armazenamento atômico, coordenador autorizado e writers REST/MCP disponíveis;
+UI de classificação, projeção de atualidade/gate, adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -908,3 +908,90 @@ Publicação: após o ledger `f9daf63b`, pushes normais de ambos os repositório
 novamente recusados por `Invalid username or token`. Core `a78cfc06` e Community
 `38c568d8` permanecem locais. A solicitação anterior de reautenticação continua
 pendente; não alterar credenciais nem reescrever histórico para contorná-la.
+
+## P1 — classificação em REST/MCP e schema publicado — 2026-09-19
+
+Par de código: Core `78b9f3387febc11ce2531505c5d6b845cc4172fb`, Community
+`32fe2c52a0cb719aa0af8a8a19228430496dc127`, em `feature/v0.4.0`.
+
+Superfícies disponíveis, usando o mesmo coordenador do incremento anterior:
+
+- REST `POST /boards/{board_id}/specs/{spec_id}/architecture-classifications`,
+  com o lote no body. Limite bruto de 256 KiB e validação antes das dependências
+  de autenticação/UOW, inclusive whitespace e erro no último item.
+- MCP `okto_pulse_classify_architecture_candidates(board_id, spec_id, batch)`:
+  schema fechado, classificação de admissão **writer**, permissões exatas no
+  registry. FastMCP mantém o envelope outcome v2; payload em `data`, falhas
+  tratadas com `isError=true`. A validação anterior ao handler usa a mesma
+  projeção segura de erros e não serializa contratos/inputs/ctx do Pydantic.
+- Erros compartilhados: 403 autoridade, 404 escopo indisponível, 409 conflito de
+  versão/edição/fonte/idempotência/lock/Draft, 422 entrada inválida, 413 tamanho.
+  O projector puro tem três símbolos públicos explícitos; módulo inteiro,
+  tabela interna e imports auxiliares continuam privados. Expectativa pareada
+  de contratos Core/Community atualizada com os mesmos três símbolos.
+
+O schema da promoção agora expõe `AuthoredIntegrationRequirement`, TypedDict
+fechado com campos do IR e tipo explícito, status ativo e contrato como JSON
+tipado. Preserva campos omitidos, não infere provider/consumer/HTTP e continua
+usando o preflight relacional compartilhado para validar o estado final.
+Campos extras de autoridade são recusados antes da transação.
+
+Dois defeitos encontrados na montagem do schema MCP foram corrigidos em
+`mcp/catalog.py`: `$ref` de modelos aninhados agora aponta para `$defs` sob o
+parâmetro correto; a remoção de títulos de metadados preserva propriedades de
+negócio chamadas `title`, nomes de definições e valores literais de JSON Schema.
+Testes validam um IR real e dois parâmetros tipados com definições independentes.
+Não houve alteração de política/gate de negócio para acomodar o schema.
+
+Catálogo/documentação/manifests regenerados pelos geradores oficiais
+`tools_catalog_generator`, `ska_tool_manifest` e `ska_resource_manifest`.
+Inventário atual: **342 tools / 339 policies / 3 isenções humanas existentes**,
+**44 tools de schema fechado**. O teste do server manifest tinha oráculos antigos
+340/0.3.3; agora exige 342, presença da nova tool e igualdade com a versão real
+do pacote Core. Nenhuma versão de release foi alterada.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-classification-transports.json`, `...-typed.json`, `...-final.json`
+  e `...-native.json`: comparação antes de cada lote comportamental. Par final
+  `wheels-classification-transports-final`, **781/311 `.py`**, **846/395 payloads**
+  source/wheel/install byte-identical, processos novos e PYTHONPATH pareado.
+- Core inicial **119 passed**, 11,41 s. Lote após DTO fechado:
+  `core-classification-transports-typed.log`, **167 passed / 1 failed**, 13,66 s;
+  reproduziu a perda indevida do campo `title` no schema. Corrigido o catálogo,
+  não a exigência do campo: `core-classification-transports-final.log`,
+  **168 passed**, 14,72 s. Inclui domínio, JSON Schema, contrato público,
+  permissões, catálogos/manifests, budgets MCP existentes e governança.
+- Community primeira coleta falhou por import do adapter REST no namespace
+  incorreto do fixture; corrigido para o adapter Community. Lote seguinte:
+  **12 passed / 2 failed**, 28,53 s, por expectativas do limite físico de Board
+  e contagem das tools fechadas. Limite real preservado e contagem 43→44.
+- `community-classification-transports-typed.log`: **40 passed / 1 failed**,
+  79,84 s, incluindo os 27 cenários do coordenador com o DTO fechado. A falha
+  restante era leitura do payload no nível errado do envelope nativo no teste.
+- `community-classification-transports-final.log`: **14 passed**, 29,62 s.
+  REST real e cliente FastMCP real com SQLite/UOW reais: gravação/replay único,
+  erro nativo de fonte obsoleta, paridade de permissões/fences/lock/IR inválido,
+  zero gravação parcial, schema do host e validação REST antes das dependências.
+- `community-classification-transports-native.log`: **5 passed**, 15,95 s,
+  após adaptação do erro pré-handler no host. Três casos novos (tamanho, versão
+  booleana, campo extra no IR) negados sem autenticação/UOW e sem eco de conteúdo;
+  repetidos a chamada/replay real e o gate de schema do host.
+- Closure inicial identificou o novo projector ainda não declarado como público
+  (cinco bridges), e o seguinte recusou manifestos Core/Community não pareados.
+  Resolvido publicando somente os símbolos de contrato e alinhando a expectativa
+  pareada; nenhum budget, baseline ou exceção foi aumentado. Matrizes README
+  regeneradas oficialmente. `closure-classification-transports-final.json`:
+  **exit 0, ok=true**, oito budgets **0/0**, zero findings de código/documentação;
+  distribuição/conformance/AF35/singleton aprovados. **7.426 imports Core /
+  1.234 Community→Core**, 25 dependências.
+- Ruff dos novos contratos/testes e catálogo, mais `git diff --check`, aprovados.
+
+P1 ainda **não concluído**: UI de escrita e seus testes de frontend, projeção das
+decisões/atualidade/diferenças, sugestões determinísticas, gate de início e adoção
+legada/rollout continuam pendentes. Este incremento não altera frontend; não
+atribuir os testes de API/UOW à cobertura de UI. Próximo passo: leitura atual das
+decisões com autorização adequada antes de exibir IRs, seguida da autoria na tela
+de Spec e testes de cliente/componente/integração, mantendo a lista como decisão
+local e nunca aprovação ou waiver. Testes de pacote/Grafx/E2E amplo e demais fases
+do plano continuam abertos. Nenhum processo/dado real foi alterado.
