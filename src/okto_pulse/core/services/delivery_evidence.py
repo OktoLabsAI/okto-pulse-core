@@ -3,15 +3,16 @@
 # Compatibility names retain the established service API; policy lives only
 # in the domain and is consumed by edition adapters through its public port.
 from okto_pulse.core.domain.delivery_inventory import (
-    card_delivery_inventory,
-    delivery_digest,
-    delivery_inventory,
+    card_delivery_inventory as card_delivery_inventory,
+    delivery_digest as delivery_digest,
+    delivery_inventory as delivery_inventory,
 )
 
 from okto_pulse.core.domain.delivery_evidence import (
     CardDeliveryScope,
     DeliveryScope,
     evaluate_delivery_coverage,
+    implementation_binding_complete,
 )
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
@@ -116,8 +117,8 @@ async def require_card_delivery(
     card is already DONE — a status the completing card cannot have while
     this gate runs (AC ac_c41b1fa3: record proof, then move). The gate
     therefore accepts chain-valid proof (``current_accepted_execution``)
-    bound to the obligation; the evaluator itself stays pure and unchanged
-    and re-runs with the final status at the spec rollup.
+    with a complete contribution (or the preserved legacy contract) bound to
+    the obligation. The same completion predicate applies at the spec rollup.
     """
     if resolve_delivery_gate_mode(board) != "blocking":
         return
@@ -141,7 +142,7 @@ async def require_card_delivery(
     # The card DoD covers the implementation phase only — the evaluator's
     # test-phase blockers (delivery_test_result_missing) are rollup concerns
     # (BR-5). Evaluator-valid proof always satisfies; beyond that, chain-valid
-    # proof (accepted committed execution) bound to the obligation satisfies
+    # proof (accepted committed execution) with complete/legacy contribution satisfies
     # the DoD even before the DONE status lands (see docstring).
     missing = [
         row.obligation.binding.obligation_ref
@@ -149,7 +150,7 @@ async def require_card_delivery(
         if not row.implementation_satisfied
         and not any(
             fact.current_accepted_execution
-            and row.obligation.binding in fact.bindings
+            and implementation_binding_complete(fact, row.obligation.binding)
             for fact in snapshot.implementations
         )
     ]

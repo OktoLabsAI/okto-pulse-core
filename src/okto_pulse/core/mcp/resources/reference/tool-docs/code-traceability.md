@@ -31,7 +31,10 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   "expected_card_version": 7,
   "idempotency_key": "delivery-task-42-v1",
   "kind": "implementation",
-  "obligation_refs": ["fr:fr_42", "ac:ac_42"],
+  "bindings": [
+    {"obligation_ref": "fr:fr_42", "contribution": "partial"},
+    {"obligation_ref": "ac:ac_42", "contribution": "complete"}
+  ],
   "execution_id": "accepted-target-execution-id",
   "justification": "The committed parser implements these input/output obligations."
 }
@@ -40,6 +43,17 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 - `implementation`: task/bug + accepted `execution_id`, with clean, immutable Git
   result revision and actual path. Record the binding before completing the card;
   final rollup credit still requires Done. A planned Target is insufficient.
+  Use `bindings` to declare `partial` or `complete` separately for each obligation;
+  omit `obligation_refs` with this form. A partial binding retains its accepted
+  receipt but cannot satisfy the Card DoD, implementation rollup or a test join.
+  Multiple partial records do not add up to completion. Complete is still an
+  executor declaration, subject to the existing proof and review requirements.
+  Exact replay cannot change a declaration; a later declaration is a new record.
+  New records do not silently revoke or replace earlier records. Legacy clients
+  may still use `obligation_refs` under the current compatibility contract;
+  history without a declaration stays legacy, never relabelled complete.
+  This extension does not adopt ARQ/VER, redefine assigned contribution scope,
+  compose multiple Target receipts or seal the final selection.
 - `progress`: executing, unarchived normal/bug/Test card; requires
   `card.conclusion.write`. Use `justification` as the work summary and provide
   `progress` with `contract_version: "delivery-progress/v1"`, `remaining`, and

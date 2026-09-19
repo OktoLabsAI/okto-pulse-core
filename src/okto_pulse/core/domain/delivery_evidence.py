@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 from okto_pulse.core.domain.enums import CardStatus, CardType, TestScenarioStatus
 
@@ -101,6 +102,45 @@ class DeliveryObligation:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryContribution:
+    binding: DeliveryBinding
+    contribution: Literal["partial", "complete"]
+
+    def __post_init__(self) -> None:
+        if self.contribution not in {"partial", "complete"}:
+            raise ValueError("delivery_contribution_invalid")
+
+
+def read_delivery_contributions(
+    payload: dict, bindings: tuple[DeliveryBinding, ...]
+) -> tuple[DeliveryContribution, ...] | None:
+    """Decode server-persisted declarations; absence alone denotes legacy.
+
+    Never infer complete from a receipt, a missing new-format field or an empty
+    collection. Declaration data does not establish receipt validity.
+    """
+    if "contribution_contract_version" not in payload and "contributions" not in payload:
+        return None
+    rows = payload.get("contributions")
+    if payload.get("contribution_contract_version") != "card-binding-contribution/v1" or not isinstance(rows, list) or not rows:
+        raise ValueError("delivery_contribution_payload_invalid")
+    by_ref = {binding.obligation_ref: binding for binding in bindings}
+    if len(by_ref) != len(bindings) or len(rows) != len(bindings):
+        raise ValueError("delivery_contribution_payload_invalid")
+    seen = set()
+    result = []
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"obligation_ref", "contribution"}:
+            raise ValueError("delivery_contribution_payload_invalid")
+        ref = row["obligation_ref"]
+        if not isinstance(ref, str) or ref not in by_ref or ref in seen:
+            raise ValueError("delivery_contribution_payload_invalid")
+        seen.add(ref)
+        result.append(DeliveryContribution(by_ref[ref], row["contribution"]))
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
 class ImplementationDeliveryFact:
     id: str
     scope: DeliveryScope
@@ -118,6 +158,27 @@ class ImplementationDeliveryFact:
     current_accepted_execution: bool
     actor_id: str
     symbol: str | None = None
+    # None is historical compatibility, not an authored complete declaration.
+    contributions: tuple[DeliveryContribution, ...] | None = None
+
+
+def implementation_binding_complete(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> bool:
+    """One completion predicate for the pre-Done gate and final rollup.
+
+    Two partial records do not accumulate completion. Technical admission,
+    scope, lifecycle and review remain independent predicates of the caller.
+    """
+    if binding not in fact.bindings:
+        return False
+    if fact.contributions is None:
+        return True  # Preserve the tested legacy verdict without rewriting it.
+    declarations = {item.binding: item.contribution for item in fact.contributions}
+    return (
+        len(declarations) == len(fact.contributions) == len(fact.bindings)
+        and set(declarations) == set(fact.bindings)
+        and all(value in {"partial", "complete"} for value in declarations.values())
+        and declarations.get(binding) == "complete"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,7 +300,10 @@ def evaluate_delivery_coverage(
                 item.actor_id,
             )
         )
-        matches = expected.intersection(item.bindings) if valid else set()
+        matches = {
+            binding for binding in expected.intersection(item.bindings)
+            if implementation_binding_complete(item, binding)
+        } if valid else set()
         if not matches:
             rejected.add(item.id)
         for binding in matches:

@@ -99,5 +99,9 @@ class CardDeliveryEvidenceStore(Protocol):
         revision, authorize every kind in the use case, then save all entries
         or none. Exact envelope replay returns the same client_ref/record IDs.
         No waiver/revoke entry, lifecycle change or implicit proof promotion.
+        Explicit implementation bindings carry partial/complete declarations;
+        persist them in the same immutable record. A partial declaration is
+        admissible with valid proof but cannot satisfy the Card DoD or rollup.
+        Do not manufacture complete declarations for legacy records.
         """
         ...

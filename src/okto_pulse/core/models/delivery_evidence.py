@@ -24,6 +24,14 @@ class DeliveryProgressReference(BaseModel):
         return self
 
 
+class CardImplementationBinding(BaseModel):
+    """Executor declaration, never an authenticated completion or proof flag."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    obligation_ref: Identity
+    contribution: Literal["partial", "complete"]
+
+
 class DeliveryEvidenceQuery(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     board_id: Identity
@@ -99,6 +107,7 @@ class CardDeliveryEvidenceFields(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     kind: Literal["implementation", "test", "revoke", "progress"]
     obligation_refs: list[Identity] = Field(default_factory=list, max_length=1000)
+    bindings: list[CardImplementationBinding] | None = Field(default=None, min_length=1, max_length=1000)
     execution_id: Identity | None = None
     execution_submission: ImplementationTargetExecutionFields | None = None
     execution_client_ref: ClientReference | None = None
@@ -108,6 +117,17 @@ class CardDeliveryEvidenceFields(BaseModel):
     record_id: Identity | None = None
     justification: str = Field(min_length=1, max_length=20000, pattern=r"\S")
     progress: DeliveryProgress | None = None
+
+    @property
+    def selected_obligation_refs(self) -> list[str]:
+        return [item.obligation_ref for item in self.bindings] if self.bindings is not None else self.obligation_refs
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_bindings(cls, value):
+        if isinstance(value, dict) and "bindings" in value and value["bindings"] is None:
+            raise ValueError("delivery_contribution_bindings_required")
+        return value
 
     @model_serializer(mode="wrap")
     def preserve_legacy_request_digest(self, handler):
@@ -120,11 +140,16 @@ class CardDeliveryEvidenceFields(BaseModel):
             result.pop("execution_client_ref", None)
         if not self.progress_refs:
             result.pop("progress_refs", None)
+        if self.bindings is None:
+            result.pop("bindings", None)
         return result
 
     @model_validator(mode="after")
     def closed_shape(self):
-        if len(set(self.obligation_refs)) != len(self.obligation_refs):
+        if self.bindings is not None and (self.kind != "implementation" or self.obligation_refs):
+            raise ValueError("delivery_contribution_bindings_invalid")
+        refs = self.selected_obligation_refs
+        if len(set(refs)) != len(refs):
             raise ValueError("delivery_duplicate_obligation")
         if len(set(self.implementation_ids)) != len(self.implementation_ids):
             raise ValueError("delivery_duplicate_implementation")
@@ -146,7 +171,7 @@ class CardDeliveryEvidenceFields(BaseModel):
             raise ValueError("delivery_progress_reference_duplicate")
         if self.progress_refs and self.kind == "revoke":
             raise ValueError("delivery_command_fields_invalid")
-        if self.kind != "progress" and bool(self.obligation_refs) != (
+        if self.kind != "progress" and bool(refs) != (
             self.kind != "revoke"
         ):
             raise ValueError("delivery_obligation_refs_required")
@@ -157,11 +182,11 @@ class CardDeliveryEvidenceFields(BaseModel):
         if self.kind == "progress" and len(self.obligation_refs) > 200:
             raise ValueError("delivery_progress_payload_limit")
         if self.execution_submission is not None and (
-            len(self.obligation_refs) + len(self.progress_refs) + 2 + bool(self.execution_submission.replacement_target_id) > 200
+            len(refs) + len(self.progress_refs) + 2 + bool(self.execution_submission.replacement_target_id) > 200
         ):
             raise ValueError("delivery_payload_limit")
         if self.progress_refs and (
-            len(self.obligation_refs) + len(self.progress_refs) + len(self.implementation_ids)
+            len(refs) + len(self.progress_refs) + len(self.implementation_ids)
             + len(self.progress.target_ids if self.progress else ()) > 200
         ):
             raise ValueError("delivery_payload_limit")
@@ -231,7 +256,7 @@ class CardDeliveryEvidenceBatchInput(BaseModel):
                 raise ValueError("delivery_progress_local_reference_invalid")
             prior[entry.client_ref] = entry.kind
         links = sum(
-            len(entry.obligation_refs)
+            len(entry.selected_obligation_refs)
             + len(entry.progress_refs) + bool(entry.execution_client_ref)
             + len(entry.implementation_ids)
             + len(entry.progress.target_ids if entry.progress else ())

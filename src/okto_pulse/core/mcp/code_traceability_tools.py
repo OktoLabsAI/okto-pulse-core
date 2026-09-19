@@ -990,6 +990,13 @@ def register_code_traceability_tools(
         execution_client_ref may reuse an earlier implementation entry in this batch.
         progress_refs cite same-scope history by record_id or earlier progress by
         client_ref. Aliases resolve to canonical IDs; they grant no proof credit.
+        Implementation may replace obligation_refs with bindings containing
+        obligation_ref and contribution=partial|complete for each obligation.
+        Partial is admitted proof without completion credit; multiple partial
+        records never add up to complete. Complete remains a declaration and
+        requires the original proof, lifecycle and review checks. Historic
+        records without declarations retain their legacy verdict, not a forged
+        complete label. This does not adopt the future ARQ/VER contribution scope.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase

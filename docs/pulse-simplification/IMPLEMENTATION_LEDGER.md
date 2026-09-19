@@ -2024,3 +2024,87 @@ Par de inventário publicado por push normal em `feature/v0.4.0`: Core
 `9e55f2b373eb9fef0d0678cd17116a93bfa8540e`, Community
 `31c63b1cc5d6e0d814d9fefb89709a4ff0331225`. HEADs remotos iguais aos locais,
 árvores limpas após os commits funcionais; este follow-up registra a retomada.
+
+### Validado — declaração parcial/completa por binding
+
+Autenticação ativa e HEADs remotos reconfirmados: Core `874ce3c1`, Community
+`31c63b1`; nada pendente de push na partida. Investigação da adoção conjunta:
+`architecture_adoption` governa seleção de Designs, não o contrato ARQ/VER.
+`move_spec` e `allowed_transitions` preservam os gates existentes. Antes de
+ativar o contrato novo, Delivery precisa distinguir contribuição parcial de
+completa: hoje `require_card_delivery` aceita qualquer binding com execução
+atual, inclusive antes de Done. Esta é a próxima dependência implementada.
+
+Escopo deste incremento: declaração tipada por obrigação no writer canônico,
+persistência no mesmo Card ledger, distinção no avaliador/DoD/rollup e UI,
+mantendo recibos, autorização, replay e legado sem declaração. Ausência histórica
+continua identificável como legado; não converter registros antigos para
+`complete`. Não ativa adoção ARQ/VER nem redefine ownership: composição de
+múltiplos Targets, escopos tipados, seleção final e cutover permanecem dependências
+explícitas. DEI §4.3/§11 e DEI-T14/T15/T56 orientam os testes.
+
+Implementado: `bindings` fechado substitui `obligation_refs` somente em
+implementation, com estado `partial|complete` por obrigação; não recebe hashes,
+ator nem flags de prova. Lote contabiliza as referências novas no mesmo limite.
+Serializer omite o campo ausente para preservar os digests de replay legados.
+Community resolve os hashes e guarda `card-binding-contribution/v1` e as
+declarações no payload imutável existente, junto ao recibo canônico. Um parser
+de domínio recusa formato novo incompleto/corrompido em vez de tratá-lo como legado.
+O predicado de completude é compartilhado pelo avaliador e pelo DoD pré-Done.
+`partial` não satisfaz implementação nem o join de teste; duas entradas parciais
+não se somam. `complete` continua sujeito à cadeia atual, tipo/estado e avaliações.
+Registros anteriores não são sobrescritos nem implicitamente revogados.
+
+UI do Card declara cada obrigação separadamente (default visível partial),
+apresenta checkpoint parcial sem o check de implementação e identifica recibos
+legados sem declaração. Test Cards e waivers mantêm contratos próprios. REST e
+MCP compartilham o schema e a composição original de execução/ledger/outbox.
+
+Validação em 2026-09-19 (`.validation-v040`), sem alterar o Pulse ativo:
+
+- `provenance-contributions.json`: **794 Core / 312 Community .py**, conjuntos
+  e bytes idênticos antes dos testes; **859/396 payloads** source→wheel→install,
+  sem mismatches. Wheels SHA256 Core
+  `3064dca4c49b770bebd292ed0dfe75ca47ced6f38b6721562d824fb8f9debfa1`;
+  Community `95769a0f7df68b164d1894bfd316c30f80b98788560eb7a5fbfa2840641cde1c`.
+  Testes em processos novos, PYTHONPATH pareado e dados descartáveis.
+- `core-contributions.log`: **158 passed em 13,59 s**. Estados distintos no
+  mesmo recibo, duas parciais sem crédito, complete sem dispensar prova/lifecycle,
+  legado preservado, schema fechado, limites agregados, payload novo corrompido
+  recusado e gate pré-Done; regressões batch/aliases/inline/catálogo/manifests.
+- `community-contributions.log`: **72 passed em 149,93 s**. Quatro testes novos
+  com SQL e serviço real de origem: FR parcial/TR completa, DoD/rollup concordam,
+  replay após fechar sessão, mudança de declaração conflita, declaração complete
+  posterior preserva as duas parciais, autorização, escopo e rollback de quatro
+  tabelas. `community-contributions-transports.log`: **2 passed em 13,60 s**,
+  REST→MCP replay com o contrato legado e o novo. Total **73 casos distintos**
+  (o caso legado de transporte foi repetido após parametrizar o teste).
+- Frontend: **86 passed** em quatro arquivos. `frontend-contributions.log`
+  **38 em 32,39 s** (DoD/progresso/rollup) e
+  `frontend-contributions-modal.log` **48 em 30,27 s** (CardModal). Testes novos
+  de declaração independente, leitura parcial sem crédito e origem legacy.
+  Build/typecheck, ESLint e dist aprovados: **78 arquivos**, tree SHA256
+  `8245fd3e000b2171bff2d8262b8104b2543931f57d4951651bd8ca8f5815cee0`.
+- `closure-contributions-final.json`: **exit 0, ok=true**, nenhum finding de
+  código/documentação, oito budgets **0/0**; **7.540 imports Core / 1.242
+  Community→Core / 25 dependências**. READMEs via renderer oficial; catálogo e
+  manifests pelos generators oficiais. Ruff e diff-check aprovados.
+
+Nenhuma falha de comportamento nas rodadas. Ajustes de verificação: Ruff
+identificou reexports históricos sem alias explícito, agora declarados como tal;
+uma chamada ESLint foi feita na raiz errada e repetida com o binário local do
+frontend; o filtro inicial de CardModal tinha caminho incorreto e sua suíte foi
+executada separadamente no caminho real. A primeira closure pediu apenas as
+novas contagens dos READMEs; nenhum budget foi alterado.
+
+Retomada: o contrato de adoção ARQ/VER ainda deve ser distinto de seleção de
+Designs. Integrar versão/escopo de contribuição do inventário efetivo, composição
+de múltiplos Targets, referências de consolidação e seleção final antes do cutover
+de admissão/rollup/gate inicial. O writer legado continua em compatibilidade até
+esse rollout; a extensão entregue não declara RF-INT-01 nem I1/I6 completos.
+Não houve migration física neste incremento. Downgrade isolado de binários após
+novos writes não é rollback seguro: o avaliador anterior ignora estas declarações
+e pode creditar partial como legado. Preparar backup/binários consistentes no
+ensaio integrado; nenhuma promessa de rollback sem perda foi feita ou testada.
+E2E instalado/Grafx, benchmark, adoção/migração e restante do plano seguem pendentes.
+Estado da iniciativa: **progresso**, não conclusão integral.
