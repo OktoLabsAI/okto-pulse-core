@@ -548,6 +548,9 @@ waiver de obrigação já normativa. Não criar um segundo mecanismo de snapshot
 
 ## P1 — adoção prospectiva persistida na linhagem canônica — 2026-09-19
 
+Par de código: Core `7ac696c2f46eeff119a7c7d6821ba70c756c6f12` e Community
+`eda98a8e403998cbd0423814353c9cef5fb4b5a8`.
+
 `domain/architecture_adoption.py::ArchitectureAdoptionScope` define o contrato
 versionado, vinculado a board/Spec/edição/ator. `SpecService.create_spec` calcula
 a seleção antes do insert, depois do preflight de autorização/linhagem existente,
