@@ -1827,3 +1827,11 @@ custo das consultas e da projeção de revisão ainda precisa de medição. Pró
 trabalho continua na composição de receipt/binding na mesma UoW, inventário e
 contribuição versionada, adoção/gates e retomada completa; F2B e métodos de prova
 restantes mantêm as dependências já registradas. Nenhum gate/histórico foi relaxado.
+
+Par publicado em `feature/v0.4.0`, push normal e HEADs remotos conferidos:
+Core `0fb9bb0f66ed7bc2a01c36222c77fbf5a8752be3`; Community
+`3e2dde3a4463ffab9e8d30a8e4fd6b2f80c18cd4`. Árvores limpas após os commits
+funcionais; este apontamento é o follow-up documental. Autenticação ativa de
+`oktolabsai-developer` validada pelos pushes, sem alterar contas ou permissões.
+Estado da iniciativa: **progresso**, sem bloqueio externo; escopo consolidado
+ainda incompleto. Retomar das dependências acima, sem refazer este lote validado.
