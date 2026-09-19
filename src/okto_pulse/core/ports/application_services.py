@@ -23,6 +23,7 @@ from okto_pulse.core.domain.code_traceability_kg import (
 )
 
 if TYPE_CHECKING:
+    from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
     from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidatePopulation
     from okto_pulse.core.application.use_cases.entity_pagination import (
         EntityPageService,
@@ -230,6 +231,9 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def structured_specs(self) -> "StructuredSpecEntityService": ...
+
+    @property
+    def architecture_classifications(self) -> "ArchitectureClassificationService": ...
 
     async def resolve_user_permissions(
         self, user_id: str, board_id: str

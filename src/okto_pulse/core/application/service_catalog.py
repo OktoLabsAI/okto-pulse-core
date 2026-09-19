@@ -906,6 +906,12 @@ class CoreApplicationServiceCatalog:
 
         return StructuredSpecEntityService(self.__relational_context)
 
+    @cached_property
+    def architecture_classifications(self):  # noqa: ANN201
+        from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
+
+        return ArchitectureClassificationService(self.__relational_context)
+
     async def resolve_user_permissions(self, user_id: str, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.main import resolve_user_permissions
 
