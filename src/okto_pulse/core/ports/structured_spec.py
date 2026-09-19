@@ -12,6 +12,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, Sequence
 
+from okto_pulse.core.ports.architecture_classification import (
+    ArchitectureClassificationPersistenceResult,
+    ArchitectureClassificationReceipt,
+    ArchitectureDecisionRecord,
+)
+
 
 @dataclass(slots=True)
 class StructuredSpecRecord:
@@ -91,6 +97,38 @@ class StructuredSpecStore(Protocol):
         spec_id: str,
         idempotency_key: str,
     ) -> ProjectStructureMutationReceipt | None: ...
+
+    async def get_architecture_classification_receipt(
+        self, context: Any, *, spec_id: str, idempotency_key: str,
+    ) -> ArchitectureClassificationReceipt | None: ...
+
+    async def list_architecture_decisions(
+        self, context: Any, *, spec_id: str, spec_edition: int,
+    ) -> tuple[ArchitectureDecisionRecord, ...]:
+        """Latest complete decision group per candidate in the exact edition.
+
+        Prior decisions remain stored. Multiple scope fragments written in
+        the same Spec version are one group, never a last-fragment-wins merge.
+        """
+        ...
+
+    async def save_architecture_classification(
+        self, context: Any, record: StructuredSpecRecord, *,
+        expected_spec_version: int, expected_spec_edition: int,
+        changed_fields: Sequence[str],
+        decisions: Sequence[ArchitectureDecisionRecord],
+        receipt: ArchitectureClassificationReceipt,
+    ) -> ArchitectureClassificationPersistenceResult:
+        """Fence board/version/edition and atomically store IRs + decisions + key.
+
+        The caller owns authorization, content locks and source currentness,
+        in the same write UoW. Every applied batch advances Spec version once,
+        even context-only decisions. Exact actor+digest replay returns the
+        original receipt without updates; different actor/payload conflicts.
+        No commit, event publication, domain validation or IR inference belongs
+        here. A failed fence/key claim leaves none of the batch written.
+        """
+        ...
 
     async def save_project_structure_mutation(
         self,
