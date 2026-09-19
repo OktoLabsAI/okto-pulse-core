@@ -99,8 +99,23 @@ appends and revocations. A batch has 1–50 entries, unique `client_ref` (80 ASC
 letters/digits/underscore/hyphen), at most 200 reference uses across entries and
 128 KiB serialized bytes. Each entry uses its existing progress/implementation/test
 contract and permission; waiver/revoke remain separate. Implementation/test
-admission still requires the existing authenticated source records. Local reference
-aliases and partial/complete declarations are not yet supported.
+admission still requires the existing authenticated source records. Partial/complete
+declarations are not yet supported.
+
+Within a batch, an implementation may use `execution_client_ref: "earlier-proof"`
+instead of execution_id/execution_submission. This references the accepted execution
+of an earlier implementation entry; it does not create another execution or grant
+attestation authority. Missing, forward, cyclic and wrong-kind references are rejected.
+The response includes the canonical execution_id for inline and alias entries.
+
+Any progress/implementation/test entry may cite `progress_refs` with either
+`{"record_id": "saved-progress"}` or, in a batch, `{"client_ref": "earlier-progress"}`.
+Each reference has exactly one identity. Persisted progress must belong to the same
+Card/Spec/edition and board. Local references resolve only to earlier progress in
+this request. The ledger stores canonical IDs. These are historical references:
+they neither supersede/revoke progress nor declare its remaining work complete.
+They grant no proof credit, even when the cited historical progress was revoked.
+All references count against the aggregate budget and share the batch rollback.
 
 An implementation entry may replace `execution_id` with `execution_submission`:
 

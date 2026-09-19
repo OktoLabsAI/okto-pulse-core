@@ -987,6 +987,9 @@ def register_code_traceability_tools(
         target_id, result_investigation_receipt_id, disposition and optional actual
         path/symbol/replacement. Origin authorization and admission are unchanged;
         execution, binding and event share one commit. Scope/summary/key are inherited.
+        execution_client_ref may reuse an earlier implementation entry in this batch.
+        progress_refs cite same-scope history by record_id or earlier progress by
+        client_ref. Aliases resolve to canonical IDs; they grant no proof credit.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase

@@ -1901,3 +1901,57 @@ Par inline publicado por push normal em `feature/v0.4.0`: Core
 `85d11e9c462b13a320e57507a5689bbfe9a5e5fd`, Community
 `000506a42b948312f5c8a0b4e519040d6768280d`. HEADs remotos iguais aos locais e
 árvores limpas após commits funcionais; este follow-up registra o checkpoint.
+
+### Validado — referências locais e vínculo ao progresso histórico
+
+Turno anterior: progresso publicado (par inline 85d11e9c/000506a). Árvores limpas
+na partida. Releitura DEI §5.1–5.7: batch permanece um único Card/Spec/edição/ator;
+alias é referência local, não criação ou autorização. `execution_client_ref`
+reutiliza execução admitida de entrada implementation anterior, exclusivo com
+execution_id/execution_submission. `progress_refs` tem identidade fechada por
+record_id persistido ou client_ref anterior de progress. Core valida tipos,
+unicidade/ordem/limites e resolve IDs; Community verifica existência no exato
+escopo e persiste identidades canônicas dentro do mesmo savepoint.
+
+Referência a progresso é histórica, inclusive se a origem depois for revogada;
+não é seleção, supersession, contribuição completa ou crédito de prova. Aliases
+não entram no caso único e não alcançam outro lote/Card. Envelopes antigos omitem
+os campos novos vazios no digest. Preparados testes de replay em sessão esvaziada,
+uma execução/evento para vários bindings, falha posterior com rollback integral,
+progress real de outro Card e tipo de registro incorreto. Validação abaixo.
+Contribuição versionada, UI/retomada completa e adoção/gates continuam pendentes.
+
+Evidências 2026-09-19, ambiente descartável `.validation-v040`:
+
+- `provenance-localrefs.json`: **793/312 arquivos .py**, conjuntos e bytes exatos;
+  payloads source→wheel→install **858/396**, sem mismatches. SHA256 dos wheels:
+  Core `5e9cfcd265b792ff8fa25b2364771bce356e4a0aecf9f5b93c2c71d921f540b6`;
+  Community `31f19da3db0770bfc7847e8d28c52fd3d6fd4b03342c4a3abc3cf868625b6a82`.
+  Testes em processos novos com PYTHONPATH pareado; runtime real preservado.
+- `core-localrefs.log`: **140 passed em 12,34 s**. Referências tipadas anteriores,
+  inexistentes/adiantadas/autorreferentes/tipo errado recusadas, limites agregados,
+  exclusividade de origem de execução, caso único sem aliases, compatibilidade
+  de digests, domínio/lifecycle e catálogo/manifests.
+- `community-localrefs.log`: **68 passed em 127,48 s**. Cinco casos novos com
+  SQL e serviço de origem reais: uma execução/evento para múltiplos bindings,
+  cadeia de aliases, progress_refs canônicos, replay após fechar a sessão,
+  rollback integral no erro posterior, progresso real de outro Card recusado,
+  registro implementation não confundido com progress e permissão de execução
+  exigida antes de qualquer escrita. Sem falhas nesta rodada.
+- `frontend-localrefs.log`: **83 passed em 26,84 s**, quatro arquivos do fluxo
+  Card/Delivery/progresso. Sem alterações de UI/dist neste incremento.
+- `closure-localrefs.json`: **exit 0, ok=true**, findings de código/documentação
+  vazios; oito budgets **0/0**, 7.530 imports Core, 1.242 Community→Core,
+  25 dependências. README já coincide com o renderer; generators oficiais,
+  Ruff e diff-check aprovados.
+
+Reconfirmação da próxima dependência: `DeliveryBinding` ainda sela somente
+obligation_ref/semantic_sha256. `domain/delivery_inventory.py` preserva os oito
+conjuntos legados (incluindo AC/API/Decision e fallback); já existe resolução
+tipada de responsabilidade em `domain/implementation_responsibility.py`, com
+scope_sha256 por contribuição/Card, mas sem crédito de execução. Integrar a
+versão nova de binding/seleção com o inventário completo e a adoção ARQ/VER;
+não substituir os oito conjuntos pelas cinco famílias qualificadas e perder
+obrigações. Referências históricas adicionadas aqui não realizam esse cutover.
+Sem migration nova, benchmark, E2E/Grafx, release/tag ou mudança de gates/histórico.
+Estado da iniciativa: **progresso**, escopo completo ainda não concluído.
