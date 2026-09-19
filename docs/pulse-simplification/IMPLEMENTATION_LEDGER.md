@@ -1519,6 +1519,10 @@ E2E/Grafx e benchmarks seguem pendentes. O objetivo consolidado permanece ativo.
 
 ### 2026-09-19 — resolução de método e associação a Test Cards (P2 parcial)
 
+Par enviado e confirmado em `origin/feature/v0.4.0`: Core
+**ca45ccd15ae80897fb1709b803c414003d7bc655**, Community
+**3eba6e880be8c2675094a6c86718986809299784**. Árvores de implementação limpas.
+
 - Turno anterior classificado como progresso: par 4461ced0/75952f3 publicado,
   provas e closure registrados acima. Partida atual: árvores limpas e sem blocker.
 - Resolver relacional de plano, compartilhando os caminhos
