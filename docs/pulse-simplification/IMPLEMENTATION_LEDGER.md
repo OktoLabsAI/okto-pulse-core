@@ -1955,3 +1955,8 @@ não substituir os oito conjuntos pelas cinco famílias qualificadas e perder
 obrigações. Referências históricas adicionadas aqui não realizam esse cutover.
 Sem migration nova, benchmark, E2E/Grafx, release/tag ou mudança de gates/histórico.
 Estado da iniciativa: **progresso**, escopo completo ainda não concluído.
+
+Par de referências locais publicado por push normal em `feature/v0.4.0`:
+Core `cc5d025977b8a39fbd926691c555d0c54a50d153`; Community
+`f8e3be731719833bd7e12e04c80642a7db9d652d`. HEADs remotos conferidos iguais
+aos locais; árvores limpas após os commits funcionais.
