@@ -995,3 +995,8 @@ decisões com autorização adequada antes de exibir IRs, seguida da autoria na 
 de Spec e testes de cliente/componente/integração, mantendo a lista como decisão
 local e nunca aprovação ou waiver. Testes de pacote/Grafx/E2E amplo e demais fases
 do plano continuam abertos. Nenhum processo/dado real foi alterado.
+
+Publicação: após o ledger `d75e47b7`, os pushes normais de ambos os repos
+continuaram recusados por `Invalid username or token`. O par
+`78b9f338` / `32fe2c52` permanece local. Reautenticação solicitada anteriormente
+continua pendente; nenhuma credencial ou histórico remoto foi alterado.
