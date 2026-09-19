@@ -14,6 +14,13 @@ audit history. Implementation receipts are selectable before card completion;
 test candidates currently require a completed Test Card. Read-only: no test
 execution, implicit waiver, graph mutation or reopen.
 
+Each `per_card` also carries its current `card_version` and a bounded `progress`
+summary: at most 20 recent checkpoints, original authors, remaining work and
+declared source state. `total`, `truncated` and shortened-text markers disclose
+omissions. Revoked checkpoints remain labeled history. This is not a complete
+resume manifest; `recovery_verified` is always false. Check your own access to
+the declared workspace before claiming that earlier changes were recovered.
+
 ## `okto_pulse_record_delivery_evidence`
 
 Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
@@ -33,6 +40,17 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 - `implementation`: task/bug + accepted `execution_id`, with clean, immutable Git
   result revision and actual path. Record the binding before completing the card;
   final rollup credit still requires Done. A planned Target is insufficient.
+- `progress`: executing, unarchived normal/bug/Test card; requires
+  `card.conclusion.write`. Use `justification` as the work summary and provide
+  `progress` with `contract_version: "delivery-progress/v1"`, `remaining`, and
+  `source_state: {"workspace_state":"dirty","recoverability":"external_workspace"}`
+  (or both values `unknown`). No execution/test receipt or commit is required;
+  omit their fields. Optional `target_ids` must belong to this Card; a supplied
+  opaque `source_ref` must be known to this board. `impact_delta` uses the existing
+  closed ImpactEvidence contract and is a claim. Progress never counts as
+  implementation/test proof, approval or completion. It does not start rework.
+  Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
+  Record significant results or a deliberate pause; no fixed time/command cadence.
 - `test`: done TEST `card_id`, linked passed `scenario_id`, nonempty
   `implementation_ids` returned from implementation associations. Uses the current
   authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
@@ -50,6 +68,9 @@ Every card write requires Spec edition/card version and a nonempty explanation. 
 duplicate refs fail validation. Same actor/key/payload replays `{id,replayed:true}`;
 changing that payload yields `delivery_idempotency_conflict`. Normal acceptance
 returns `{id,replayed:false}`. Refresh after acceptance; read `allowed` separately.
+Progress has a 128 KiB aggregate request limit, at most 200 obligation refs,
+100 Target IDs and 8,000 remaining-work characters. Reuse the same key/content
+after uncertain failure; do not create another key simply because of a timeout.
 
 Implementation writes require `code_traceability.target.execution_submit`; test
 associations require `spec.tests.execute` (QA need not have implementation-write

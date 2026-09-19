@@ -2,8 +2,10 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 from pydantic_core import PydanticCustomError
+
+from okto_pulse.core.domain.delivery_progress import DeliveryProgress
 
 Identity = Annotated[str, Field(min_length=1, max_length=512, pattern=r"\S")]
 
@@ -50,9 +52,7 @@ class DeliveryEvidenceInput(BaseModel):
         if len(set(self.obligation_refs)) != len(self.obligation_refs):
             raise ValueError("delivery_duplicate_obligation")
         supplied = {
-            name
-            for name in ("phase", "record_id")
-            if getattr(self, name) is not None
+            name for name in ("phase", "record_id") if getattr(self, name) is not None
         }
         required = {
             "waiver": {"phase"},
@@ -86,13 +86,21 @@ class CardDeliveryEvidenceInput(BaseModel):
     expected_card_version: int = Field(ge=1)
     expected_spec_edition: int = Field(ge=1)
     idempotency_key: Identity
-    kind: Literal["implementation", "test", "revoke"]
+    kind: Literal["implementation", "test", "revoke", "progress"]
     obligation_refs: list[Identity] = Field(default_factory=list, max_length=1000)
     execution_id: Identity | None = None
     scenario_id: Identity | None = None
     implementation_ids: list[Identity] = Field(default_factory=list, max_length=1000)
     record_id: Identity | None = None
     justification: str = Field(min_length=1, max_length=20000, pattern=r"\S")
+    progress: DeliveryProgress | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_request_digest(self, handler):
+        result = handler(self)
+        if self.progress is None:
+            result.pop("progress", None)
+        return result
 
     @model_validator(mode="after")
     def closed_shape(self):
@@ -109,13 +117,23 @@ class CardDeliveryEvidenceInput(BaseModel):
             "implementation": {"execution_id"},
             "test": {"scenario_id"},
             "revoke": {"record_id"},
+            "progress": set(),
         }[self.kind]
         if supplied != required:
             raise ValueError("delivery_command_fields_invalid")
-        if bool(self.obligation_refs) != (self.kind != "revoke"):
+        if self.kind != "progress" and bool(self.obligation_refs) != (
+            self.kind != "revoke"
+        ):
             raise ValueError("delivery_obligation_refs_required")
         if bool(self.implementation_ids) != (self.kind == "test"):
             raise ValueError("delivery_test_implementation_binding_required")
+        if (self.progress is not None) != (self.kind == "progress"):
+            raise ValueError("delivery_progress_fields_invalid")
+        if self.kind == "progress" and (
+            len(self.obligation_refs) > 200
+            or len(self.model_dump_json().encode("utf-8")) > 128 * 1024
+        ):
+            raise ValueError("delivery_progress_payload_limit")
         return self
 
 

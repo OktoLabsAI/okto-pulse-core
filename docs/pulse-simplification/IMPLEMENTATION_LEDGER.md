@@ -2,15 +2,14 @@
 
 ## Estado para retomada
 
-Iniciativa **em andamento**. Etapa atual: implementação integrada de P1 sobre a
-caracterização conjunta F0/F1 + K0 + I0 + P0, com política pura e adoção prospectiva:
-correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
-autorizada e depreciada. Preparação de IRs, contrato de classificação,
-armazenamento atômico, coordenador autorizado, writers REST/MCP, revisão de
-atualidade/histórico e autoria em lote na UI disponíveis, com sugestões
-determinísticas e testes frontend. P2 iniciado pela autoria de perfil e vínculos
-tipados nos critérios existentes, incluindo UI e integridade no writer.
-Integração do gate, adoção de revisão legada, inventário e suites amplas
+Iniciativa **em andamento**. Etapa atual: P2 + I1/I2/I3, sobre a caracterização
+conjunta F0/F1 + K0 + I0 + P0. Correção F09/porta publicada, F11 caracterizado;
+compatibilidade F2B por Card autorizada e depreciada. Candidatos/classificação
+arquitetural, autoria em lote, perfis/vínculos/herança, método autenticado de teste,
+planejamento com Test Cards e declaração de contribuição por Card estão publicados
+em incrementos parciais. Progresso declarado na mesma tabela Delivery foi validado
+neste turno. Gate integrado, adoção ARQ/VER, inventário integral,
+partial/complete, batch/retomada integral, F2B e frentes KG/release permanecem
 pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -18,6 +17,35 @@ a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
 Este é o ledger único dos dois repositórios. Atualizar após cada incremento
 coerente com arquivos, decisões, testes, commits e próximo passo; não interpretar
 um documento localizado ou um teste histórico como revisão/execução desta sessão.
+
+### 2026-09-19 — progresso declarado no ledger canônico (DEI I1/I2/I3 parcial)
+
+Turno anterior classificado como progresso: par f08aacf1/ed65c2c e ledger 8817145a
+enviados. Partida atual: árvores limpas. A investigação do binding confirmou que
+o rollup ainda precisa da integração de API/Decision/fallback, adoção e contribuição
+versionada; não trocar somente os cinco requisitos e excluir as outras obrigações.
+
+Incremento atual: variante progress na superfície card-scoped existente, na mesma
+tabela append-only, sem receipt obrigatório e sem crédito no evaluator. Usa o leaf
+canônico card.conclusion.write (domain/permissions.py, relatórios do executor),
+não board.read. Resumo reaproveita justification; source_state é claim fechado;
+impact_delta reutiliza ImpactEvidence; remaining registra o próximo trabalho.
+Targets devem pertencer ao Card; fonte conhecida deve existir no board. Dirty e
+unknown não exigem commit nem afirmam recuperação por outro ator. Novos appends
+exigem Card normal/bug/Test não arquivado em started/in_progress. Replay exato
+mantém identidade e autorização antes do acesso, sem alterar policy_version.
+
+Migração Community expande apenas o CHECK predecessor exato, compara contrato,
+preserva todas as colunas/linhas e triggers append-only em transação SQLite.
+Drift de schema/triggers ou FK externa nova falha fechado. Não foi executada
+em dados reais. Serialização sem progress preserva o digest das requests legadas.
+UI integra relato e últimos fatos no painel Delivery, com autoridade própria,
+versão real, reuso de chave após timeout e indicação explícita de truncamento.
+
+Ainda não entrega batch/aliases, prova inline, partial/complete, seleção final,
+retomada integral paginada, leitor básico sem permissão técnica, selagem do impacto
+ou cutover ARQ/VER. Testes, migração descartável e auditoria aprovados; evidências
+detalhadas no final deste ledger. Publicação do par em andamento.
 
 ## Base e instruções confirmadas — 2026-09-19
 
@@ -1668,3 +1696,59 @@ versionado por contribuição, partial/complete, admissão e rollup canônico ju
 à adoção ARQ/VER; completar o editor de autoria e o inventário integral antes
 de reduzir links manuais. P1 integrado, P2/P3 completos, F2B, KG, migração,
 rollback, E2E/Grafx e benchmarks continuam pendentes; objetivo consolidado ativo.
+
+### 2026-09-19 — validação do progresso canônico e migração
+
+- `provenance-progress-final.json`, par `wheels-progress-final`: **793/312 .py,
+  858/396 payloads**, source/wheel/install byte a byte. Reconstrução final após
+  ajuste de ordem da migração, documentação e proteção de resposta tardia na UI.
+  Processos novos, PYTHONPATH pareado, bancos descartáveis; runtime real intacto.
+- `core-progress-final.log`: **97 passed em 8,60 s**. Contrato fechado, progresso
+  dirty sem receipt/commit, recusa de autoridade falsa/shape incompatível, limites
+  de bytes e paths de impacto, serialização legada preservada, freeze e permissões
+  reais (board.read, execução de Target ou teste não concedem relato), regressões
+  de Delivery e contratos/manifests/catálogo.
+- `community-progress-final.log`: **62 passed / 4 failed** inicialmente. As falhas
+  identificaram ordem divergente entre registry e ledger de migração, contagem
+  explícita antiga (74→75), lista de passos com reconstrução e expectativas de
+  no-op em base nova. Ordem corrigida; testes passam a nomear a etapa concreta,
+  sem remover assertions ou ampliar budgets arquiteturais.
+- `community-progress-regression.log`: **42 passed em 63,27 s**, incluindo 30
+  testes do migrador e 12 de progresso. `community-progress-rollback.log`:
+  **13 passed em 30,30 s**, acrescentando falha injetada entre DROP e RENAME:
+  transação restaura tabela, todas as linhas, três triggers e remove a tabela
+  temporária; reexecução converge e é idempotente. Junto aos 26 testes de Delivery
+  integration aprovados no primeiro lote, são **69 casos distintos aprovados**.
+- SQL real: identidade/autoria persistida após fechar a sessão, sem avanço de
+  policy_version/Spec.version, nenhum crédito de implementação/teste, estados
+  congelados recusados sem registros, refs fora de escopo, resumo de 23 fatos
+  limitado a 20 com truncamento e revogação preservada. REST→MCP reaproveita o
+  mesmo registro/chave e rejeita campos falsos. São ensaios ASGI/handler e SQL,
+  não E2E do Pulse instalado com Grafx nem rollback completo de release.
+- `frontend-progress-final.log`: **81 passed em 19,48 s** em quatro arquivos,
+  incluindo CardModal, painel DoD, painel de evidência e novo painel de progresso.
+  Cobertura de dirty, reload com vários fatos, histórico incompleto, status,
+  perda de permissão, retry com mesma chave, clique duplo e resposta de Card antigo.
+- Build/typecheck, ESLint dos novos módulos, Ruff e diff-check aprovados.
+  `frontend-progress-dist.log`: **78 arquivos**, SHA256
+  `659e2cfadcd65de62de663972b38e8cda0a749b136d2f98fa50a9941df954c6b`.
+  Avisos preexistentes de chunks e Browserslist não foram tratados como benchmark.
+  Resources explicam progresso como claim, autoridade, limites e recuperação;
+  catálogo/manifests passaram exclusivamente pelos generators oficiais.
+- `closure-progress-final.json`: **exit 0, ok=true**, sem findings de código ou
+  documentação, oito budgets **0/0**. READMEs via renderer oficial: **7.526 imports
+  Core / 1.240 Community→Core / 25 dependências**. Sem mecanismo concreto novo
+  no Core, reach-in privado ou projeção de checkpoint no KG.
+
+Implantação/rollback: etapa integrada ao migrador existente, testada somente em
+cópia descartável. Exige par de binários/dados consistente; o teste de rollback
+transacional não autoriza instalar binário antigo sobre writes progress novos.
+Rollback de release/backup e preservação dos writes posteriores ainda precisam
+do ensaio integrado. Nenhuma migration real, release ou tag executada.
+
+Próximo incremento: contrato único de entries/batch e revisão de seleção no mesmo
+ledger; composição de receipt/binding com autoridade de origem; inventário completo
+e contribuição versionada/admissão antes do cutover dos gates. Completar leitura
+de retomada por Card com paginação/detalhe e autoridade básica, impacto acumulado
+e partial/complete. P1/P2/P3 completos, F2B, KG, migrações integradas, E2E/Grafx e
+benchmarks seguem pendentes; não considerar este incremento conclusão da iniciativa.

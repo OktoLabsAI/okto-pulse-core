@@ -71,6 +71,7 @@ class RecordCardDeliveryEvidenceUseCase:
         self, command: CardDeliveryEvidenceCommand, *, actor, uow: PulseUnitOfWork
     ):
         operation = {
+            "progress": "card.conclusion.write",
             "implementation": "code_traceability.target.execution_submit",
             "test": "spec.tests.execute",
             "revoke": "code_traceability.waiver.clear",

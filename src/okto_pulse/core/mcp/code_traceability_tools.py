@@ -961,7 +961,7 @@ def register_code_traceability_tools(
         return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
 
     async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryEvidenceInput) -> McpToolOutcome:
-        """Bind accepted task execution or an authenticated TEST-card result to the CARD ledger.
+        """Record declared progress or bind accepted execution/test proof to the CARD ledger.
 
         Card-scoped since 0.3.4 (spec 793c43d0 / FR-7): the task owns its
         bindings. implementation: accepted committed execution_id. test: passed
@@ -971,6 +971,12 @@ def register_code_traceability_tools(
         rollup and per_card obligations. Waivers are NOT accepted here — they
         stay on the spec rollup and require an authorized human. Revoke is
         human-only. Never claim a task is a test or fabricate receipt fields.
+        progress: justification plus typed progress source_state/remaining and
+        optional target_ids/impact_delta; no execution receipt or commit required.
+        Requires card.conclusion.write and an executing, unarchived card. Dirty
+        or unknown source state remains a claim and never grants delivery credit.
+        Reuse the idempotency key after a timeout. Recovery by another actor is
+        never inferred from a declared external workspace.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
 
