@@ -5,8 +5,9 @@
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
 I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
-autorizada e depreciada. Preparação de IRs em lote sem escrita extraída do writer
-existente; persistência da classificação/promoção, adoção de revisão legada,
+autorizada e depreciada. Preparação de IRs, contrato de classificação e
+armazenamento atômico disponíveis; caso de uso da classificação/promoção,
+adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -764,3 +765,63 @@ de atualidade/início conforme ARQ/VER, sem declarar esta fundação como P1 pro
 Publicação: pushes normais dos dois repos repetidos após `3123b770` e
 `e9caac46`; ambos recusados novamente por `Invalid username or token`.
 Os commits deste incremento permanecem locais; nenhuma credencial alterada.
+
+## P1 — contrato de classificação e armazenamento atômico — 2026-09-19
+
+Par de código: Core `c987214c5f30d3c6d0739585e0c1179a694c7cfe`, Community
+`825476bee4ce571487a32606f862d57a95005905`, em `feature/v0.4.0`.
+Contrato novo em `domain/architecture_classification.py`:
+intenção tipada (três disposições), fences obrigatórios, limite 1–50/256 KiB,
+escopos por membros nomeados sem índices de array, justificativa do restante,
+digest vinculado a ator/Board/Spec e resolução de fontes/IRs locais ativos.
+Não infere HTTP nem papéis dos participantes; não altera IR existente.
+
+Valores públicos em `ports/architecture_classification.py` e métodos na porta
+`StructuredSpecStore`. Community implementa gravação conjunta sob savepoint:
+claim do recibo, CAS Board/versão/edição, writer ORM (listeners preservados),
+decisões append-only. Replay ator+digest devolve o recibo original sem DML;
+conflito não revela recibo de outro ator. Duas tabelas e um índice novos,
+criadas pela fronteira create_all existente, mais guard de drift registrado
+como passo idempotente/não destrutivo. Não há classificação/backfill legado.
+
+Primeira evidência: `core-classification-store.log`, **92 passed**, 6,73 s;
+`community-classification-store.log`, **19 passed**, 35,53 s (persistência,
+preflight e Project Structure). Rollback externo, falha injetada, fences
+independentes, duas UOWs concorrentes e preservação das partições/histórico
+exercitados. Fonte/wheel/install comprovados antes: 778/311 `.py`, 843/395
+payloads em `provenance-classification-store.json`.
+
+Segundo lote `community-classification-store-final.log`: **45 passed / 2 failed**,
+78,29 s. Casos novos de drift/dados legados passaram. O upgrade real v0.3.0
+observou **876 objetos**, +2 tabelas/+1 índice; oráculo antigo de 873 corrigido
+para 876. Registro de callable do novo guard foi movido para a mesma ordem
+post-create_all do ledger, sem relaxar a comparação de ordem. Essas duas
+correções passaram em `community-classification-store-verified.log`: **2 passed**,
+19,97 s, incluindo upgrade/replay exato. O ledger possui agora 74 passos
+`_migrate_*`; o novo guard valida colunas/tipos/nullability, PK, FKs, índices e
+checks das tabelas, sem backfill.
+
+Closure inicial apontou apenas matrizes README antigas; regeneradas pelo
+renderer oficial. `closure-classification-store-final.json` passou, budgets
+0/0 e zero findings, antes da correção final da ordem do registry. A revisão
+final também rejeita IRs com ID ausente/não textual ou duplicado: não transforma
+`None` em ID `"None"` nem escolhe uma das duplicatas. Evidência final:
+
+- `wheels-classification-store-hardened` /
+  `provenance-classification-store-hardened.json`: **778/311 `.py`** e
+  payloads **843/395** source/wheel/install byte-identical, comprovados antes
+  dos testes em processos novos. Frontend distribuído também permanece igual.
+- `core-classification-store-hardened.log`: **95 passed**, 6,28 s: contratos,
+  limites de bytes UTF-8 e cardinalidade, conflitos/partições/IDs/reuso,
+  projeção de candidatos e preflight completo dos IRs.
+- `closure-classification-store-hardened.json`: **exit 0, ok=true**, oito
+  budgets **0/0**, zero findings de código/documentação; distribuição,
+  conformance, AF35 e singleton aprovados. Matrizes geradas atualizadas para
+  **7.388 imports Core / 1.230 Community→Core**, 25 dependências.
+- Ruff dos módulos novos/testes novos e `git diff --check` passaram. Catálogo
+  MCP não mudou: nenhum novo handler foi registrado neste incremento.
+
+Ainda falta conectar este armazenamento à preparação dos IRs em um caso de
+uso autorizado (sem loop de writers), publicar eventos/histórico no mesmo UOW,
+e expor REST/MCP/UI com testes de frontend. Gate/currentness/rollout continuam
+pendentes. O armazenamento testado **não prova** o fluxo público completo.
