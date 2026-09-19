@@ -1450,6 +1450,11 @@ integrado, P3, F2B, KG, migração/rollback, E2E/Grafx e benchmarks do pacote in
 
 ### 2026-09-19 — autoria de método e primeira admissão autenticada (P2 parcial)
 
+Par de implementação enviado para `origin/feature/v0.4.0` e confirmado por
+`ls-remote`: Core **4461ced0dbb6edc88d3454587adeec3f3e97bcb5**, Community
+**75952f319011cf08d9c8869e1b1277d2d878d08b**. Reautenticação funcionou;
+nenhum bloqueio de push restante. Árvores limpas após os commits do incremento.
+
 - Método fechado independente de scenario_type, writer compartilhado
   REST/MCP versionado e editor de frontend. Ausência histórica não ganha default.
   Método explícito entra no digest da prova; passed/failed exige recibo V2
