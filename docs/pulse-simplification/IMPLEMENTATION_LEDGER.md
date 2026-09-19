@@ -5,7 +5,8 @@
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
 I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
-autorizada e depreciada. Classificação/promoção, adoção de revisão legada,
+autorizada e depreciada. Preparação de IRs em lote sem escrita extraída do writer
+existente; persistência da classificação/promoção, adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -689,3 +690,73 @@ bundle, schema ou registry; nenhuma alegação de nova execução do closure.
 Commit local ainda sujeito à mesma pendência de autenticação do GitHub acima.
 Próximo passo funcional permanece classificação/promoção/reuso de IR em lote
 atômico e idempotente, com os testes de frontend correspondentes ao expor a UI.
+
+## P1 — preparação integral dos IRs antes da persistência — 2026-09-19
+
+Par de código: Core `6e3fcc5137c83c8c05bb194902bc4aaddf290ad1`, Community
+`e9caac46d16454b6296874cb80b4213e35fa32b5`, ambos em `feature/v0.4.0`.
+
+Investigação do writer confirmou que cada `mutate` já publica eventos,
+registra histórico e salva. Não pode ser usado repetidamente como preflight de
+um lote. Também confirmou que `expected_spec_edition` era comparado com um
+`StructuredSpecRecord` sem edição: a condição sempre via `None`, mesmo quando
+a edição enviada era a persistida. A projeção agora transporta `Spec.edition`
+exatamente; adapters antigos sem esse valor permanecem desconhecidos (`None`),
+sem inventar uma edição inicial ou retirar a conferência.
+
+`StructuredSpecEntityService.prepare_integration_requirement_creates` prepara
+o conjunto inteiro sem salvar ou emitir eventos. Foram extraídas do writer as
+mesmas rotinas de autorização, fence/lock e canonicalização/validação final.
+O fluxo individual continua usando essas rotinas; o novo preflight exige
+permissões autenticadas e versão/edição explícitas, mantém Draft e content lock,
+valida IDs duplicados, campos desconhecidos e vínculos. Canonicalização de
+FR/TR/AC legados e remapeamento de referências fazem parte do resultado que o
+futuro writer atômico deverá persistir junto aos IRs e decisões.
+
+Isto **não é a classificação/promoção concluída**: ainda não há endpoint de
+escrita, recibo de replay, decisão persistida nem gate novo de início. O objeto
+preparado é estado do chamador, não autorização durável; o coordenador deve
+revalidar/fixar a fonte e usar a mesma UOW com fence de versão/edição para a
+gravação conjunta. Nenhuma semântica foi transferida ao adapter, schema ou
+catálogo. O frontend de produção permaneceu igual.
+
+Evidência:
+
+- `wheels-ir-preparation` + `provenance-ir-preparation.json`: **776/311 `.py`**
+  e payloads **841/395** source/wheel/instalação byte-identical antes dos testes;
+  imports pareados e processos novos.
+- Core `core-ir-preparation.log`: **72 passed / 1 failed**, incluindo os
+  primeiros 20 testes novos e o arquivo inteiro do writer existente.
+- Core `core-ir-preparation-regression.log`: **33 passed**, 4,76 s: 21 testes
+  novos (incluindo remapeamento legado), Project Structure e drift do catálogo.
+- Core `core-ir-preparation-canonicalization.log`: **32 passed**, 4,52 s:
+  canonicalização de entidades/requisitos e erros canônicos de APIContract.
+- Community: os cinco casos existentes de persistência Project Structure
+  passaram no primeiro lote. Os três casos novos com adapter real passaram em
+  `community-ir-preparation-scoped.log` (**3 passed**, 14,25 s). Captura SQL prova
+  somente SELECTs, inclusive após commit explícito e releitura: sucesso de
+  preparação, edição obsoleta e último IR inválido não escrevem nada. O fixture
+  inicialmente omitia realm_scope, foi corrigido para o escopo local real; o
+  gate `realm_scope_required` foi preservado.
+- Frontend `frontend-ir-preparation-compat.log`: **4 passed**, 2,12 s, cliente
+  das operações estruturadas. Não é evidência de UI de classificação, que
+  permanece pendente e terá testes próprios quando implementada.
+- `closure-ir-preparation.json`: **exit 0, ok=true**, oito budgets **0/0**,
+  zero findings de código/documentação; distribuição, conformance, AF35 e
+  singleton aprovados. Matrizes continuam 7.374/1.229 imports e 25 dependências,
+  sem drift dos READMEs. `git diff --check` passou.
+
+Falha preexistente comprovada, ainda aberta: o teste
+`test_link_task_validates_target_card_before_persisting` espera rejeição ao
+vincular um Card ausente, mas recebe sucesso. `verify_baseline.py` comprovou
+769/311 `.py` e payloads pareados da v0.3.4 intacta; o teste reproduziu a mesma
+falha em `baseline-structured-missing-card.log` (1 failed, 3,51 s). O validador
+comum documenta limpeza de vínculos a Cards removidos; investigar a distinção
+entre criação explícita de vínculo e resíduo legado antes de corrigir. Não foi
+alterado nem enfraquecido esse teste ou comportamento neste incremento.
+
+Próximo passo obrigatório P1: DTO de decisões com limites/escopo/digest estritos,
+porta de persistência atômica IRs + decisões + recibo vinculado ao ator,
+coordenador com autorização de todo o lote, bloqueio/fence e replay. Usar o
+preflight acima, não fazer loop sobre `mutate`. Em seguida REST/MCP/UI e gates
+de atualidade/início conforme ARQ/VER, sem declarar esta fundação como P1 pronto.
