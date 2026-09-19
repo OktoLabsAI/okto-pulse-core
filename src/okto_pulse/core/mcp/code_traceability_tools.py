@@ -18,7 +18,7 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import CardDeliveryEvidenceCommand, CardDeliveryEvidenceInput, DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
+from okto_pulse.core.models.delivery_evidence import CardDeliveryEvidenceWriteInput, card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -212,7 +212,7 @@ def _error_outcome(error: Exception) -> McpToolOutcome:
             "remediation": [],
         }
     elif isinstance(error, ValueError) and str(error).startswith("delivery_"):
-        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": {}, "remediation": [{"action": "review_delivery_evidence", "tool": "okto_pulse_get_delivery_evidence"}]}
+        projected = {"code": str(error).split(":", 1)[0], "message": str(error), "details": error.details() if isinstance(error, DeliveryBatchEntryError) else {}, "remediation": [{"action": "review_delivery_evidence", "tool": "okto_pulse_get_delivery_evidence"}]}
     elif isinstance(error, PermissionDeniedError):
         projected = {
             "code": "forbidden",
@@ -960,7 +960,7 @@ def register_code_traceability_tools(
 
         return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
 
-    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryEvidenceInput) -> McpToolOutcome:
+    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryEvidenceWriteInput) -> McpToolOutcome:
         """Record declared progress or bind accepted execution/test proof to the CARD ledger.
 
         Card-scoped since 0.3.4 (spec 793c43d0 / FR-7): the task owns its
@@ -977,11 +977,16 @@ def register_code_traceability_tools(
         or unknown source state remains a claim and never grants delivery credit.
         Reuse the idempotency key after a timeout. Recovery by another actor is
         never inferred from a declared external workspace.
+        Atomic entries: contract_version=card-delivery-batch/v1, the two existing
+        scope fences plus expected_delivery_revision, idempotency_key and 1..50
+        entries with unique client_ref. Each entry uses the same progress/proof
+        fields and its own permission. At most 200 links and 128 KiB in aggregate.
+        No waiver/revoke entries. Failed admission rolls back the whole batch;
+        retry the exact envelope after timeout. Read per_card.delivery_revision.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
 
-        evidence = CardDeliveryEvidenceInput.model_validate(evidence)
-        command = CardDeliveryEvidenceCommand(board_id=board_id, card_id=card_id, spec_id=spec_id, **evidence.model_dump())
+        command = card_delivery_command(board_id=board_id, card_id=card_id, spec_id=spec_id, evidence=evidence)
         return await _execute(board_id, command, RecordCardDeliveryEvidenceUseCase())
 
     for handler in (

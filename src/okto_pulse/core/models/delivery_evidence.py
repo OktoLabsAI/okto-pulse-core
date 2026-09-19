@@ -75,7 +75,7 @@ class DeliveryEvidenceCommand(DeliveryEvidenceQuery, DeliveryEvidenceInput):
             )
 
 
-class CardDeliveryEvidenceInput(BaseModel):
+class CardDeliveryEvidenceFields(BaseModel):
     """Card-scoped recording contract: the task owns its delivery bindings.
 
     Waivers are deliberately absent — they remain a human-only, spec-rollup
@@ -83,9 +83,6 @@ class CardDeliveryEvidenceInput(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid", strict=True)
-    expected_card_version: int = Field(ge=1)
-    expected_spec_edition: int = Field(ge=1)
-    idempotency_key: Identity
     kind: Literal["implementation", "test", "revoke", "progress"]
     obligation_refs: list[Identity] = Field(default_factory=list, max_length=1000)
     execution_id: Identity | None = None
@@ -137,5 +134,101 @@ class CardDeliveryEvidenceInput(BaseModel):
         return self
 
 
+class CardDeliveryEvidenceInput(CardDeliveryEvidenceFields):
+    expected_card_version: int = Field(ge=1)
+    expected_spec_edition: int = Field(ge=1)
+    idempotency_key: Identity
+
+
 class CardDeliveryEvidenceCommand(DeliveryEvidenceQuery, CardDeliveryEvidenceInput):
     card_id: Identity
+
+
+class CardDeliveryEvidenceEntry(CardDeliveryEvidenceFields):
+    """One existing admission contract; exceptions are never batched."""
+
+    client_ref: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    kind: Literal["progress", "implementation", "test"]
+
+
+class CardDeliveryEvidenceBatchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    contract_version: Literal["card-delivery-batch/v1"]
+    expected_card_version: int = Field(ge=1)
+    expected_spec_edition: int = Field(ge=1)
+    expected_delivery_revision: int = Field(ge=0)
+    idempotency_key: Identity
+    entries: list[CardDeliveryEvidenceEntry] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def aggregate_limits(self):
+        refs = [entry.client_ref for entry in self.entries]
+        if len(refs) != len(set(refs)):
+            raise ValueError("delivery_batch_client_ref_duplicate")
+        links = sum(
+            len(entry.obligation_refs)
+            + len(entry.implementation_ids)
+            + len(entry.progress.target_ids if entry.progress else ())
+            for entry in self.entries
+        )
+        if links > 200 or len(self.model_dump_json().encode("utf-8")) > 128 * 1024:
+            raise ValueError("delivery_batch_payload_limit")
+        return self
+
+
+class CardDeliveryEvidenceBatchCommand(
+    DeliveryEvidenceQuery, CardDeliveryEvidenceBatchInput
+):
+    card_id: Identity
+
+
+CardDeliveryEvidenceWriteInput = (
+    CardDeliveryEvidenceInput | CardDeliveryEvidenceBatchInput
+)
+CardDeliveryEvidenceWriteCommand = (
+    CardDeliveryEvidenceCommand | CardDeliveryEvidenceBatchCommand
+)
+
+
+def card_delivery_command(
+    *, board_id, card_id, spec_id, evidence
+) -> CardDeliveryEvidenceWriteCommand:
+    """REST and MCP share the same closed envelope and legacy parsing."""
+    batch = isinstance(evidence, CardDeliveryEvidenceBatchInput) or (
+        isinstance(evidence, dict) and "entries" in evidence
+    )
+    input_model = CardDeliveryEvidenceBatchInput if batch else CardDeliveryEvidenceInput
+    command_model = (
+        CardDeliveryEvidenceBatchCommand if batch else CardDeliveryEvidenceCommand
+    )
+    body = input_model.model_validate(evidence)
+    return command_model(
+        board_id=board_id, card_id=card_id, spec_id=spec_id, **body.model_dump()
+    )
+
+
+class DeliveryBatchEntryError(ValueError):
+    """Only caller-owned identity and a bounded domain code cross transports."""
+
+    def __init__(self, entry_index: int, client_ref: str, cause_code: str):
+        self.entry_index = entry_index
+        self.client_ref = client_ref
+        self.cause_code = (
+            cause_code
+            if (
+                cause_code.startswith("delivery_")
+                and len(cause_code) < 100
+                and all(char.isalnum() or char == "_" for char in cause_code)
+            )
+            else "delivery_entry_invalid"
+        )
+        super().__init__(
+            f"delivery_batch_entry_invalid: entry {entry_index} ({client_ref}): {self.cause_code}"
+        )
+
+    def details(self):
+        return {
+            "entry_index": self.entry_index,
+            "client_ref": self.client_ref,
+            "cause_code": self.cause_code,
+        }

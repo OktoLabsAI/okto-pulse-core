@@ -72,6 +72,44 @@ Progress has a 128 KiB aggregate request limit, at most 200 obligation refs,
 100 Target IDs and 8,000 remaining-work characters. Reuse the same key/content
 after uncertain failure; do not create another key simply because of a timeout.
 
+For one or several entries, use the same endpoint/tool with this envelope:
+
+```json
+{
+  "contract_version": "card-delivery-batch/v1",
+  "expected_card_version": 7,
+  "expected_spec_edition": 1,
+  "expected_delivery_revision": 0,
+  "idempotency_key": "parser-checkpoints-1",
+  "entries": [{
+    "client_ref": "parser",
+    "kind": "progress",
+    "justification": "Parser changed; normalization remains.",
+    "progress": {
+      "source_state": {"workspace_state": "dirty", "recoverability": "external_workspace"},
+      "remaining": "Implement normalization and run scenarios."
+    }
+  }]
+}
+```
+
+Read `per_card.delivery_revision`; zero is valid only for an empty ledger.
+The revision includes every record in this Card/Spec/edition, including legacy
+appends and revocations. A batch has 1–50 entries, unique `client_ref` (80 ASCII
+letters/digits/underscore/hyphen), at most 200 reference uses across entries and
+128 KiB serialized bytes. Each entry uses its existing progress/implementation/test
+contract and permission; waiver/revoke remain separate. Implementation/test
+admission still requires the existing authenticated source records. No inline
+receipt creation, local reference alias or partial/complete declaration is implied.
+
+The server returns `entries: [{client_ref,id}]`, the accepted `delivery_revision`
+and `replayed`. IDs are server-owned. Every entry succeeds or none persists,
+including when a later proof fails. The first immutable entry holds the envelope
+receipt; retry the complete unchanged envelope. Adding/removing/reordering entries
+under that key conflicts. A stale revision requires reading/reviewing the current
+ledger. An entry error includes `entry_index`, `client_ref` and a bounded cause
+code. These identifiers do not grant access to another Card or another actor's proof.
+
 Implementation writes require `code_traceability.target.execution_submit`; test
 associations require `spec.tests.execute` (QA need not have implementation-write
 privileges). Human waiver/revoke require `code_traceability.waiver.create`/`.clear`.

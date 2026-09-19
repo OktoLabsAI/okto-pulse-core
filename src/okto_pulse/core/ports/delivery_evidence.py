@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from okto_pulse.core.models.delivery_evidence import (
-    CardDeliveryEvidenceCommand,
+    CardDeliveryEvidenceWriteCommand,
     DeliveryEvidenceCommand,
 )
 
@@ -74,7 +74,7 @@ class CardDeliveryEvidenceStore(Protocol):
         ...
 
     async def record_card(
-        self, command: CardDeliveryEvidenceCommand, *, actor_id: str, actor_kind: str
+        self, command: CardDeliveryEvidenceWriteCommand, *, actor_id: str, actor_kind: str
     ) -> dict:
         """Validate the card-scoped candidate under the card-version fence.
 
@@ -82,5 +82,9 @@ class CardDeliveryEvidenceStore(Protocol):
         ledger, with actor-scoped idempotency; revocations are human-only.
         Validate before insert — a rejection never persists a partial
         binding. Never commits the caller's transaction.
+        A batch is one Card/Spec/edition and one actor. Fence the delivery
+        revision, authorize every kind in the use case, then save all entries
+        or none. Exact envelope replay returns the same client_ref/record IDs.
+        No waiver/revoke entry, lifecycle change or implicit proof promotion.
         """
         ...

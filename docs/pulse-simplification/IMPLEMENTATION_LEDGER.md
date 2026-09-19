@@ -1756,3 +1756,74 @@ e contribuição versionada/admissão antes do cutover dos gates. Completar leit
 de retomada por Card com paginação/detalhe e autoridade básica, impacto acumulado
 e partial/complete. P1/P2/P3 completos, F2B, KG, migrações integradas, E2E/Grafx e
 benchmarks seguem pendentes; não considerar este incremento conclusão da iniciativa.
+
+### Validado — lote atômico na superfície Delivery existente
+
+Turno anterior: progresso, par 14895c5c/c5c55e3 e ledger 0da59319 publicados.
+Partida atual: duas árvores limpas. Releitura de DEI §5 confirmou um único Card,
+board, Spec/edição e ator por lote, all-of antes de writes, erro atômico e replay
+do envelope completo. O inventário/contribuição e admissão prospectiva continuam
+dependências do cutover; este lote reaproveita a admissão existente, sem fabricar
+partial/complete ou antecipar crédito de Test Card.
+
+- `card-delivery-batch/v1`: 1–50 entries, client_ref único, fences de Card/edição
+  mais expected_delivery_revision. Limite agregado 128 KiB e 200 referências
+  (contando usos em obrigações/implementações/Targets, não multiplicando tetos
+  individuais). Progress/implementation/test usam os mesmos contratos tipados;
+  waiver/revoke não entram no lote do executor.
+- A revisão é a contagem dos registros imutáveis no escopo Card/Spec/edição,
+  incluindo registros legados e revogações, calculada sob fence do board. Não
+  altera Card.policy_version nem numera novamente histórico. Uma escrita legada
+  também faz o próximo lote com revisão antiga conflitar.
+- Recibo de lote na primeira entrada append-only, com digest do envelope,
+  client_ref→ID e revisão aceita; demais entradas apontam a essa primeira.
+  Nenhuma tabela/ledger paralelo, migration nova ou update de registro existente.
+  Savepoint envolve todos os appends e protege inclusive caller que captura
+  a exceção e faz commit externo. Replay confere escopo, ator e conjunto completo.
+- Core autoriza todos os tipos antes de chamar o adapter; aplica tipo de Card
+  e freeze sem emprestar autoridade por agrupamento. Done mantém a associação
+  autorizada de prova existente; progress continua exigindo execução. Erro de
+  entrada expõe somente índice/client_ref do chamador e código de domínio.
+- REST/MCP usam o mesmo parser e use case. UI de progresso envia entries de
+  tamanho um com revisão real; sem revisão disponível não inventa zero.
+- Ainda pendentes: proof inline, aliases que referenciam criações locais, seleção
+  final, partial/complete, inventário completo/adoção, retomada paginada e métricas.
+  Não confundir este incremento com conclusão da iniciativa.
+
+Validação concluída em 2026-09-19, em ambiente descartável:
+
+- `provenance-batch-final.json` e reconfirmação `provenance-batch-resume.json`
+  em `PULSE_REFACTOR/.validation-v040`: **793 Core / 312 Community .py** com
+  conjuntos e bytes idênticos; payload source→wheel→install **858 / 396**,
+  sem divergências. Wheels SHA256 Core
+  `797d200234e709c26ac408ae760ed5366b41029be320eeeffcd509a7ddc64aab` e Community
+  `1336ee5f77ce375a68c8edd7e74b77f547d899333d6e882a07164a601afed90c`.
+  Testes em processos novos, com PYTHONPATH pareado; runtime ativo não alterado.
+- `core-batch-final.log`: **116 passed em 9,13 s**. Contrato fechado, limites
+  agregados, tipo de Card, autorização all-of antes do adapter, replay autorizado,
+  compatibilidade de payload legado, domínio/lifecycle, catálogo e manifests.
+- `community-batch-final.log`: **52 passed em 87,37 s**. Lote inteiro persistido
+  ou revertido, inclusive commit externo após erro na segunda entrada; dois
+  concorrentes na mesma revisão produzem só um sucesso; append legado invalida
+  revisão antiga; chave/envelope divergentes conflitam; prova real de implementação
+  e resultado autenticado de Test Card usam a admissão existente. REST→MCP
+  reaproveita IDs/revisão do mesmo lote; erro identifica entrada sem conceder crédito.
+- `frontend-batch-final.log`: **83 passed em 21,69 s**, quatro arquivos
+  (CardProgressPanel, CardDeliveryDoDPanel, DeliveryEvidencePanel, CardModal).
+  Sem revisão não grava; revisão zero é válida; retry/clique duplo/Card antigo,
+  permissão e estados continuam cobertos. Build/typecheck e verificação de dist
+  passaram: **78 arquivos**, SHA256
+  `e5d89652273c63a85ebcbbf5c0688a2c6a8653a2f23c86e7f5f84f7ff9f7319f`.
+- `closure-batch-initial.json`: **exit 0, ok=true**, findings de código e
+  documentação vazios; **oito budgets 0/0**. Mantidos 7.526 imports Core,
+  1.240 Community→Core e 25 dependências. README já coincide com o renderer.
+  Catálogo/manifests gerados somente pelos generators oficiais; Ruff, ESLint
+  dos módulos de progresso e diff-check aprovados.
+
+Limites: estes são testes de domínio/SQL/ASGI/handler e frontend; não constituem
+E2E do runtime instalado com Grafx, benchmark ou rollback integrado de release.
+Não há migration nova neste incremento. O lote reutiliza verificações por entrada;
+custo das consultas e da projeção de revisão ainda precisa de medição. Próximo
+trabalho continua na composição de receipt/binding na mesma UoW, inventário e
+contribuição versionada, adoção/gates e retomada completa; F2B e métodos de prova
+restantes mantêm as dependências já registradas. Nenhum gate/histórico foi relaxado.

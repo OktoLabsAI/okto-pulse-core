@@ -7,7 +7,8 @@ from okto_pulse.core.application.use_cases.authorization import (
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError, commit
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.models.delivery_evidence import (
-    CardDeliveryEvidenceCommand,
+    CardDeliveryEvidenceBatchCommand,
+    CardDeliveryEvidenceWriteCommand,
     DeliveryEvidenceCommand,
     DeliveryEvidenceQuery,
 )
@@ -68,18 +69,21 @@ class RecordCardDeliveryEvidenceUseCase:
     """
 
     async def execute(
-        self, command: CardDeliveryEvidenceCommand, *, actor, uow: PulseUnitOfWork
+        self, command: CardDeliveryEvidenceWriteCommand, *, actor, uow: PulseUnitOfWork
     ):
-        operation = {
+        operations = {
             "progress": "card.conclusion.write",
             "implementation": "code_traceability.target.execution_submit",
             "test": "spec.tests.execute",
             "revoke": "code_traceability.waiver.clear",
-        }[command.kind]
-        await require_authorization(
-            actor, PermissionRequirement(operation), uow=uow, board_id=command.board_id
-        )
-        if command.kind == "revoke" and actor.actor_kind not in {"human", "user"}:
+        }
+        entries = command.entries if isinstance(command, CardDeliveryEvidenceBatchCommand) else (command,)
+        # All subactions are authorized before the first mutation or replay read.
+        for operation in sorted({operations[entry.kind] for entry in entries}):
+            await require_authorization(
+                actor, PermissionRequirement(operation), uow=uow, board_id=command.board_id
+            )
+        if any(entry.kind == "revoke" for entry in entries) and actor.actor_kind not in {"human", "user"}:
             raise PermissionDeniedError(
                 "delivery_evidence_human_authorization_required"
             )

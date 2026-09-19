@@ -19,6 +19,29 @@ class DeliveryPhase(str, Enum):
     TEST = "test"
 
 
+def require_delivery_entry_card_type(card_type: object, kind: str) -> None:
+    """A batch groups writes; it cannot borrow another Card type's authority."""
+    card_type = getattr(card_type, "value", card_type)
+    allowed = {
+        "progress": {"normal", "bug", "test"},
+        "implementation": {"normal", "bug"},
+        "test": {"test"},
+    }
+    if card_type not in allowed.get(kind, set()):
+        raise ValueError("delivery_entry_card_type_invalid")
+
+
+def require_delivery_batch_state(card: object) -> None:
+    status = getattr(card, "status", None)
+    # Done keeps the existing authorized proof-association repair path. A
+    # progress entry has its separate execution-only predicate. Neither kind
+    # may start rework or mutate a frozen submission through a batch.
+    if getattr(card, "archived", None) is not False or getattr(status, "value", status) not in {
+        "started", "in_progress", "done",
+    }:
+        raise ValueError("delivery_batch_card_frozen")
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryScope:
     board_id: str
