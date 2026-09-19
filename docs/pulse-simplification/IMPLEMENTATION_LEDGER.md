@@ -2108,3 +2108,8 @@ e pode creditar partial como legado. Preparar backup/binários consistentes no
 ensaio integrado; nenhuma promessa de rollback sem perda foi feita ou testada.
 E2E instalado/Grafx, benchmark, adoção/migração e restante do plano seguem pendentes.
 Estado da iniciativa: **progresso**, não conclusão integral.
+
+Par de declarações por binding publicado por push normal em `feature/v0.4.0`:
+Core `8a48fcded92bcd8dbb5e9c7827ac27a2e7902fe9`; Community
+`4fa85bcfed1129db0627a74415845b8aa5bb6b42`. `ls-remote` confirmou os dois
+HEADs publicados e as árvores estavam limpas após os commits funcionais.
