@@ -47,6 +47,8 @@ Correções explícitas do usuário:
 - Instrução adicional: cada feature que impactar o frontend deve incluir testes
   do frontend dos fluxos afetados e dos estados de erro/permissão relevantes;
   build/typecheck e testes de backend não substituem essa evidência.
+  Registrar os cenários e resultados junto ao incremento da feature, incluindo
+  a integração na tela que expõe o fluxo quando ela for afetada.
 
 ## Especificação lida e precedência
 
@@ -654,3 +656,36 @@ com `gh auth login -h github.com`; retomar push normal após a confirmação.
 Esse impedimento afeta publicação, não o trabalho local de implementação.
 Últimos pushes confirmados nesta sessão antes da falha: Core `8eb02456` e
 Community `aea2d9e`. Não declarar este novo incremento como publicado.
+
+## P1 — regressões de frontend e integração na Spec — 2026-09-19
+
+Requisito de testes de frontend mantido para toda feature que afete a interface.
+Community `8a1b934671c7db9bf0ed5a6dccddc20e424626ff` acrescenta **18 casos** aos
+testes da leitura de candidatos, sem alterar código de produção:
+
+- Painel: cancelamento e descarte de detalhe tardio após troca de Spec, Board,
+  versão, permissão, refresh ou página; rejeição de detalhe de outro
+  Board/Spec/candidato/digest; perda e recuperação de permissão sem reutilizar
+  contrato antigo; recuperação de indisponibilidade por refresh explícito.
+- Cliente HTTP: preservação da página e da identidade/digest exatos na query,
+  incluindo escape de caracteres, propagação de cancelamento e leitura GET.
+- SpecModal real com painel real: consulta somente ao abrir IRs; ausência de
+  cada permissão (`spec.entity.read`, `spec.architecture.read`,
+  `spec.integration_requirements.read`) impede a consulta. Esses testes
+  complementam os testes isolados do painel e os HTTP/backend já registrados.
+
+Antes dos testes, `verify_pair.py wheels-p1-adoption-verified
+provenance-p1-frontend-regression.json` comprovou novamente os **776/311 `.py`**
+e os payloads **841/395** byte-identical entre source/wheel/instalação. Processos
+de teste novos, frontend carregado diretamente desta working tree.
+
+Evidência: **49 passed** em três arquivos: painel + cliente HTTP, **26 passed**
+em 35,81 s (`frontend-p1-late-responses.log`); navegação/integração de SpecModal,
+**23 passed** em 41,20 s (`frontend-p1-modal-integration.log`). `npx tsc -b`
+e `git diff --check` passaram. São testes de componentes/integração com API
+mockada; não equivalem a E2E instalado. Sem alteração de fontes distribuídas,
+bundle, schema ou registry; nenhuma alegação de nova execução do closure.
+
+Commit local ainda sujeito à mesma pendência de autenticação do GitHub acima.
+Próximo passo funcional permanece classificação/promoção/reuso de IR em lote
+atômico e idempotente, com os testes de frontend correspondentes ao expor a UI.
