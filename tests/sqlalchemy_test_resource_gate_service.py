@@ -301,12 +301,13 @@ class TestSqlAlchemyResourceGateAdapter:
     async def collect_refs_metadata(
         self,
         ref: LineageEntityRef,
+        *, resource_types: tuple[str, ...] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        return {
-            "architecture": await self._architecture_refs_metadata(ref),
-            "mockup": await self._mockup_refs_metadata(ref),
-            "knowledge_base": await self._knowledge_refs_metadata(ref),
-        }
+        collectors = {"architecture": self._architecture_refs_metadata,
+                      "mockup": self._mockup_refs_metadata,
+                      "knowledge_base": self._knowledge_refs_metadata}
+        selected = tuple(collectors) if resource_types is None else resource_types
+        return {kind: await collectors[kind](ref) for kind in selected}
 
     async def filter_inherited_refs_metadata(
         self,

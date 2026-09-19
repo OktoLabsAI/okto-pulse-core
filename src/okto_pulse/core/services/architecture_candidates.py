@@ -44,7 +44,8 @@ async def load_spec_architecture_candidates(
     try:
         lineage = await ResolvedResourceLineageService(
             ResourceGateService(context)
-        ).resolve(board_id, "spec", spec_id, include_coverage=True, projection_profile="gate")
+        ).resolve(board_id, "spec", spec_id, include_coverage=True,
+                  projection_profile="gate", resource_types=("architecture",))
     except Exception:
         # An inaccessible or unenumerable source is not an empty adopted set.
         # Do not expose provider messages, paths or another scope's identifiers.

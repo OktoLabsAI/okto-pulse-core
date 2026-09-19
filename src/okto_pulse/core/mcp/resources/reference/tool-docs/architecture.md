@@ -332,6 +332,20 @@ effective-resource lineage as the existing Resource Gate. Requires board access,
 `spec.entity.read` and `spec.architecture.read`. No IR, classification, source
 refresh or external schema fetch is performed.
 
+New Specs persist their adopted architecture selection at creation. When deriving,
+omitted `architecture_design_ids` adopts the then-effective roots; an explicit
+list selects those roots, and `[]` selects no inherited root. Copy/derive still
+use the existing Design snapshots; reference_only/none do not create snapshots.
+References retain their existing current-source behavior. Unknown selection IDs
+are rejected before the Spec is created. Sources added to an ancestor later are
+not silently adopted. Directly authored or attached Spec Designs remain effective.
+
+An upgraded legacy Spec without persisted adoption retains its previous lineage.
+The upgrade does not infer exclusive adoption from old copies or rewrite its
+history. Changing a legacy normative scope must use authorized revision/locks;
+this reader does not perform adoption. Candidate reads consult architecture
+metadata only, so unrelated KB/mockup availability is not a candidate gate.
+
 Args:
     board_id: Board ID
     spec_id: Spec ID in that board

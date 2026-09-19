@@ -9345,6 +9345,7 @@ class SpecService:
         target_id: str | None = None,
         knowledge_propagation_v2: bool = False,
         source_refinement_snapshot: object | None = None,
+        architecture_design_ids: list[str] | None = None,
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
         if (target_id is None) != (not knowledge_propagation_v2):
@@ -9529,9 +9530,18 @@ class SpecService:
         initial_project_structure_digest = canonical_project_structure_digest(
             initial_project_structure
         )
+        from okto_pulse.core.services.architecture_adoption import initial_spec_architecture_adoption
+
+        architecture_adoption = await initial_spec_architecture_adoption(
+            self.db, board_id=board_id, spec_id=spec_id, actor_id=user_id,
+            selected_design_ids=architecture_design_ids,
+            source_parent_type="refinement" if data.refinement_id else "ideation" if data.ideation_id else None,
+            source_parent_id=data.refinement_id or data.ideation_id,
+        )
         spec = _new_application_record(
             "spec",
             id=spec_id,
+            architecture_adoption=architecture_adoption,
             board_id=board_id,
             title=data.title,
             description=data.description,
@@ -9660,6 +9670,7 @@ class SpecService:
             changes=[
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": data.status.value},
+                {"field": "architecture_adoption", "old": None, "new": spec.architecture_adoption},
                 *(
                     [
                         {
@@ -15682,6 +15693,7 @@ class IdeationService:
             spec_data,
             skip_ownership_check=skip_ownership_check,
             query_scope=query_scope,
+            architecture_design_ids=architecture_design_ids,
         )
         if spec:
             # Propagate mockups and Q&A from ideation to spec
@@ -17330,6 +17342,7 @@ class RefinementService:
             target_id=target_id,
             knowledge_propagation_v2=knowledge_propagation_v2,
             source_refinement_snapshot=source_snapshot,
+            architecture_design_ids=architecture_design_ids,
         )
         if spec:
             # Propagate artifacts using pre-flush snapshots

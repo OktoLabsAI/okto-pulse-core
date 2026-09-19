@@ -547,7 +547,7 @@ class ResourceLineageMetadataProvider(Protocol):
     ) -> list[Any]: ...
 
     async def collect_refs_metadata(
-        self, ref: Any
+        self, ref: Any, *, resource_types: tuple[str, ...] | None = None,
     ) -> dict[str, list[dict[str, Any]]]: ...
 
     async def filter_inherited_refs_metadata(
@@ -572,8 +572,14 @@ class ResolvedResourceLineageService:
         *,
         include_coverage: bool = True,
         projection_profile: Literal["legacy", "summary", "gate", "full"] = "full",
+        resource_types: tuple[str, ...] | None = None,
     ) -> ResolvedResourceLineage:
         started_at = perf_counter()
+        selected_types = RESOURCE_TYPES if resource_types is None else resource_types
+        if (not selected_types or len(set(selected_types)) != len(selected_types)
+                or set(selected_types) - set(RESOURCE_TYPES)
+                or (resource_types is not None and projection_profile != "gate")):
+            raise ResourceLineageError("invalid_resource_types", "Resource selection requires known metadata resource types.")
         try:
             resolved = await self._resolve_uninstrumented(
                 board_id,
@@ -581,6 +587,7 @@ class ResolvedResourceLineageService:
                 entity_id,
                 include_coverage=include_coverage,
                 projection_profile=projection_profile,
+                resource_types=selected_types,
             )
         except ResourceLineageError as exc:
             _observe_resource_lineage_failed(
@@ -611,6 +618,7 @@ class ResolvedResourceLineageService:
         *,
         include_coverage: bool,
         projection_profile: Literal["legacy", "summary", "gate", "full"],
+        resource_types: tuple[str, ...],
     ) -> ResolvedResourceLineage:
         self._validate_entity_type(entity_type)
         supports_metadata = projection_profile == "gate"
@@ -651,11 +659,17 @@ class ResolvedResourceLineageService:
             if supports_metadata
             else self._provider.load_parent_refs
         )
-        collect_refs = (
+        provider_collect_refs = (
             self._provider.collect_refs_metadata  # type: ignore[attr-defined]
             if supports_metadata
             else self._provider.collect_refs
         )
+        async def collect_refs(ref):
+            if resource_types == RESOURCE_TYPES:
+                return await provider_collect_refs(ref)
+            # The provider selects only these resource kinds; irrelevant KB or
+            # mockup availability cannot become an architecture creation gate.
+            return await provider_collect_refs(ref, resource_types=resource_types)
         root = await load_entity_ref(board_id, str(entity_type), entity_id)
         owner = self._coerce_entity_ref(root)
         parents = await self._load_checked_parents(
@@ -667,7 +681,7 @@ class ResolvedResourceLineageService:
         direct_refs = await collect_refs(root)
 
         inherited_refs: dict[str, list[dict[str, Any]]] = {
-            resource_type: [] for resource_type in RESOURCE_TYPES
+            resource_type: [] for resource_type in resource_types
         }
         inherited_na_marks: dict[str, Any] = {}
         inherited_na_sources: dict[str, Any] = {}
@@ -707,11 +721,17 @@ class ResolvedResourceLineageService:
             entity_id,
         )
 
+        # Prospective Spec adoption is shared by context, coverage, propagation
+        # and candidate readers. Unselected ancestors remain visible as history.
+        # Legacy Specs have no scope and retain their existing inheritance.
+        if "architecture" in resource_types:
+            self._apply_architecture_adoption(board_id, owner, parents, direct_refs, inherited_refs)
+
         attachments: list[ResourceAttachment] = []
         resource_states: list[ResourceStateEnvelope] = []
         coverage_obligations: list[CoverageObligation] = []
 
-        for resource_type in RESOURCE_TYPES:
+        for resource_type in resource_types:
             # Keep every physical attachment in the lineage/history projection,
             # but only refs that are explicitly effective participate in the
             # Resource Gate state, coverage, propagation refs and effective
@@ -830,6 +850,63 @@ class ResolvedResourceLineageService:
             seen.add(attachment.unique_resource_id)
             selected.append(attachment)
         return selected
+
+    def _apply_architecture_adoption(
+        self, board_id: str, owner: LineageEntityRef, parents: list[Any],
+        direct_refs: dict[str, list[dict[str, Any]]],
+        inherited_refs: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
+        subject = owner if owner.entity_type == "spec" else next((
+            self._coerce_entity_ref(parent) for parent in parents
+            if self._coerce_entity_ref(parent).entity_type == "spec"
+        ), None) if owner.entity_type == "card" else None
+        if subject is None:
+            return
+        raw = getattr(subject.entity, "architecture_adoption", None)
+        if raw is None:
+            return
+        try:
+            if not isinstance(raw, dict) or raw.get("contract_version") != "architecture-adoption/v1":
+                raise ValueError("architecture_adoption_version_required")
+            scope = ArchitectureAdoptionScope.model_validate(raw)
+            scope.require_scope(
+                board_id=board_id, spec_id=subject.entity_id,
+                edition=getattr(subject.entity, "edition", 1),
+            )
+        except (ValueError, TypeError) as exc:
+            raise ResourceLineageError(
+                "architecture_adoption_invalid", "The adopted architecture scope is unavailable.",
+            ) from exc
+        selected = set(scope.inherited_resource_ids)
+        observed: set[str] = set()
+        for ref in [*direct_refs.get("architecture", []), *inherited_refs.get("architecture", [])]:
+            attachment = self._attachment_from_ref(
+                resource_type="architecture", ref=ref,
+                attachment_kind="inherited_reference", coverage_state="not_required",
+            )
+            if attachment.effective:
+                observed.add(attachment.unique_resource_id)
+        if selected - observed:
+            raise ResourceLineageError(
+                "architecture_adoption_source_missing", "An adopted architecture source is unavailable.",
+            )
+        filtered = []
+        for ref in inherited_refs.get("architecture", []):
+            attachment = self._attachment_from_ref(
+                resource_type="architecture", ref=ref,
+                attachment_kind="inherited_reference", coverage_state="not_required",
+            )
+            # A directly authored/attached Design is an explicit adoption too.
+            local_to_spec = (
+                attachment.source_entity_type == "spec"
+                and attachment.source_entity_id == subject.entity_id
+            )
+            filtered.append({**ref, "effective": attachment.effective and (
+                local_to_spec or attachment.unique_resource_id in selected
+            )})
+        inherited_refs["architecture"] = filtered
 
     async def _load_checked_parents(
         self,

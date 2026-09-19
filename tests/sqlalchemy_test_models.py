@@ -1040,6 +1040,7 @@ class Spec(Base):
     """Spec model - represents a specification that drives card creation."""
 
     __tablename__ = "specs"
+    architecture_adoption: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())

@@ -3,9 +3,9 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
-I0 + P0, com política pura e leitura P1 em REST/MCP/frontend sobre linhagem canônica:
+I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
-autorizada e depreciada. Classificação/promoção, adoção seletiva P1,
+autorizada e depreciada. Classificação/promoção, adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -130,9 +130,8 @@ Não copiar resultados de validações de setembro anteriores como resultados at
 
 ## Próximo passo concreto
 
-Implementar adoção explícita prospectiva após a reprodução abaixo (AC-ARQ-01),
-sem reinterpretar seleção legada ou reduzir os gates existentes; implementar
-decisões e promoção/reuso transacionais, com locks/edição/idempotência existentes e
+Implementar decisões e promoção/reuso transacionais sobre a adoção prospectiva,
+com locks/edição/idempotência existentes e
 rollout explícito. Não publicar aprovação ou gate fictício. Continuar
 inventários F0/K0/I0 em [inventory.md](inventory.md).
 F2B pode implementar compatibilidade autorizada com aviso de depreciação; F11
@@ -546,3 +545,96 @@ legadas em curso/Done conservam seu contrato; adoção normativa usa a revisão
 e os locks existentes. Antes de conectar o novo gate, testar juntos critic,
 cobertura existente e denominador de candidatos, sem usar classificação como
 waiver de obrigação já normativa. Não criar um segundo mecanismo de snapshot.
+
+## P1 — adoção prospectiva persistida na linhagem canônica — 2026-09-19
+
+`domain/architecture_adoption.py::ArchitectureAdoptionScope` define o contrato
+versionado, vinculado a board/Spec/edição/ator. `SpecService.create_spec` calcula
+a seleção antes do insert, depois do preflight de autorização/linhagem existente,
+e a registra no histórico de criação. As duas derivações encaminham a seleção.
+O Core usa suas portas; somente Community possui o mapping JSON nullable e o
+passo de schema `_migrate_add_spec_architecture_adoption`.
+
+Sem seleção explícita, novas Specs adotam as raízes efetivas então conhecidas;
+uma lista adota somente essas raízes; `[]` não adota arquitetura herdada. Tokens
+de seleção usam a normalização/aliases já aceitos na cópia. IDs inexistentes
+falham antes de gravar a Spec, inclusive em reference_only/none. Não há IR/Card
+automático. Copy/derive continuam usando o snapshot existente; referências
+continuam acompanhando a fonte corrente, tornando visível seu novo digest.
+
+`ResolvedResourceLineageService` aplica a mesma seleção às obrigações de
+cobertura, candidatos e contexto de Cards. As raízes não selecionadas continuam
+na linhagem histórica com `effective=false`. Designs diretamente autorados ou
+anexados à Spec permanecem efetivos. Fonte adotada ausente ou manifest inválido,
+de outro board, com edição futura ou sem versão não vira população vazia.
+
+A porta de metadados ganhou seleção explícita de tipos de recurso. Os leitores
+de adoção/candidatos pedem somente arquitetura; o adapter seleciona somente seus
+metadados. Isso evita fazer da indisponibilidade de KB/mockup um novo gate de
+criação arquitetural. A consulta geral dos gates mantém todos os tipos.
+
+O upgrade adiciona a coluna e **não faz backfill**: NULL mantém a herança legada
+exatamente como antes. Instalação limpa usa create_all; replay sem mudança é
+`skipped`; coluna incompatível falha fechado. Nenhum dado real foi migrado.
+Ainda falta o fluxo autorizado de adoção/revisão para Specs legadas e a
+classificação/promoção/reuso com locks, idempotência e gate de início. Esta
+etapa satisfaz a seleção prospectiva exercitada de AC-ARQ-01, não P1 inteiro.
+
+Documentação da tool de candidatos atualizada; gerador oficial de manifest de
+resources executado (sem delta no manifest). Não houve alteração de registry
+nem edição manual do catálogo. Frontend de produção não mudou; o teste novo
+verifica que uma revisão troca a população inteira e remove a raiz excluída.
+
+Diagnósticos preservados:
+
+- Primeira execução Community: `community-p1-adoption.log`, 60 passed/4 failed.
+  Um fixture de Knowledge não registrava o adapter real de Resource Gate, agora
+  necessário à criação; fixture alinhado ao wiring de produção, sem fallback
+  permissivo. Repetição desse arquivo: 3 passed, 14,37 s.
+- As outras três falhas de schema foram reproduzidas no par v0.3.4 intacto após
+  `verify_baseline.py`: 769/311 `.py` byte-identical e payloads pareados. Log
+  `baseline-p1-adoption-oracles.log`: 3 failed/27 deselected. Baseline já possui
+  72 passos de migração (oráculo dizia 71), skip idempotente de Delivery Evidence
+  ausente da lista esperada e 873 objetos de schema (oráculo dizia 868).
+- Oráculos corrigidos de forma exata: 73 passos com a adoção nova, skips de
+  Delivery Evidence/adoção e os mesmos 873 objetos (esta mudança só adiciona
+  uma coluna). A tentativa intermediária atribuiu o skip ao recovery e falhou;
+  o diff de conjuntos identificou Delivery Evidence, sem relaxar o teste.
+- `community-p1-adoption-final.log`: 63 passed/1 failed antes dessa última
+  correção. O arquivo inteiro de schema passou nos demais 29 casos, incluindo
+  upgrade real do fixture v0.3.0 e replay/igualdade do schema. O replay antes
+  falho passou depois em `community-p1-adoption-scoped.log` (36 passed no lote).
+- Auditorias `closure-p1-adoption-final.json` e
+  `closure-p1-adoption-scoped.json`: ok=true, todos os budgets 0/0, zero findings.
+  Matrizes dos READMEs regeneradas: 7.374 imports Core, 1.229 Community→Core.
+
+Evidência final (processos novos, caminhos fixados para o par):
+
+- `wheels-p1-adoption-verified` / `provenance-p1-adoption-verified.json`:
+  **776 Core + 311 Community `.py`**, payloads **841/395**, igualdade byte a byte
+  source/wheel/instalação comprovada antes dos testes.
+- Core: **125 passed**, 20,65 s, `core-p1-adoption-verified.log`: candidatos,
+  caso de uso, linhagem, cópia/propagação, criação/lineage preflight de Spec e
+  drift do catálogo. Inclui os gates de propagação já existentes.
+- Community: **39 passed**, 82,67 s, `community-p1-adoption-verified.log`:
+  criação/cópia/referência/seleção vazia/aliases/whitespace, cobertura e contexto
+  de Card, mudança posterior da origem versus snapshot, fontes novas não
+  adotadas, desconhecidas sem escrita, corrupção sem falso zero, HTTP autorizado,
+  fixtures Knowledge reais e replay de schema. Teste de indisponibilidade
+  KB/mockup prova que só metadados de arquitetura são consultados nesse fluxo.
+- Caso adicional: **1 passed**, 10,11 s,
+  `community-p1-adoption-local-design.log`; uma Spec com adoção herdada vazia
+  continua expondo seu Design autorado diretamente, sem reintroduzir o ancestral.
+- Frontend: **12 passed**, `frontend-p1-adoption.log` (11 casos do painel e 1 do
+  cliente HTTP). Inclui a troca da população após revisão. Como nenhum código
+  de frontend de produção mudou, o bundle já conferido no incremento anterior
+  permanece byte-identical no wheel/instalação comprovados acima.
+- `closure-p1-adoption-verified.json`: **exit 0, ok=true**, zero findings de
+  código/distribuição/documentação e oito budgets **0/0**. `git diff --check`
+  passou. E2E instalado/Grafx e suites amplas continuam pendentes.
+
+Próximo incremento: decisões/promover/reusar IR com batch atômico e recibo
+idempotente. Reutilizar `StructuredSpecEntityService` para autorização, draft,
+content lock, canonicalização e validação de vínculos; não chamar repetidamente
+o writer de item sem pré-validar todo o lote. A persistência das decisões e do
+resultado precisa compartilhar UOW/fence com o IR, sem lógica no adapter.

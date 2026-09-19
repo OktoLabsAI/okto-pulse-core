@@ -67,7 +67,9 @@ class ResourceGateMetadataLineageAdapter(Protocol):
     async def load_parent_refs_metadata(
         self, board_id: str, root: Any
     ) -> list[Any]: ...
-    async def collect_refs_metadata(self, ref: Any) -> dict[str, list[dict]]: ...
+    async def collect_refs_metadata(
+        self, ref: Any, *, resource_types: tuple[str, ...] | None = None,
+    ) -> dict[str, list[dict]]: ...
     async def filter_inherited_refs_metadata(
         self,
         root: Any,
