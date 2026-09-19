@@ -825,3 +825,7 @@ Ainda falta conectar este armazenamento à preparação dos IRs em um caso de
 uso autorizado (sem loop de writers), publicar eventos/histórico no mesmo UOW,
 e expor REST/MCP/UI com testes de frontend. Gate/currentness/rollout continuam
 pendentes. O armazenamento testado **não prova** o fluxo público completo.
+
+Publicação: após o ledger `30b01a6d`, pushes normais do Core e Community foram
+novamente recusados por credencial inválida. Este par permanece local;
+nenhuma alteração de credencial, force-push, release ou migração real ocorreu.
