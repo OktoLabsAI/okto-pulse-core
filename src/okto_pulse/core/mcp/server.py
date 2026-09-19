@@ -12919,8 +12919,12 @@ async def okto_pulse_get_requirement_verification(
     identity fields for one row and paths_offset for more paths. Responses are
     bounded; inspect truncation/unknown flags. Source digests and versioned default
     proposals are available for authoring verification through the existing
-    structured entity writer. Reading neither adopts ARQ/VER nor assesses methods,
-    execution, semantic adequacy or delivery evidence.
+    structured entity writer. With additional spec.tests.read and card.entity.read,
+    also resolves declared methods against installed admission capabilities and
+    canonical scenario-to-Test-Card assignments. Without those reads, planning
+    remains explicitly unavailable. Planning requires no passing result and never
+    adopts ARQ/VER or assesses implementation, dependencies, semantic adequacy or
+    delivery evidence.
     """
     from okto_pulse.core.application.use_cases.requirement_verification import (
         GetRequirementVerificationCommand, GetRequirementVerificationUseCase, RequirementVerificationReadError,

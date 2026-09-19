@@ -1516,3 +1516,72 @@ ao resolver de requisitos, mínimos por autoridade e fallback de escopo; depois
 compartilhar inventário/contribuição por Card e integrar adoção ARQ/VER e gates
 writer/preview. P1 integrado, P2 completo, P3, F2B, KG, migração/rollback,
 E2E/Grafx e benchmarks seguem pendentes. O objetivo consolidado permanece ativo.
+
+### 2026-09-19 — resolução de método e associação a Test Cards (P2 parcial)
+
+- Turno anterior classificado como progresso: par 4461ced0/75952f3 publicado,
+  provas e closure registrados acima. Partida atual: árvores limpas e sem blocker.
+- Resolver relacional de plano, compartilhando os caminhos
+  de qualificação existentes. Observação GWT, método admitido pela porta concreta
+  e Test Cards vivos no mesmo board/Spec; nenhum resultado passing é exigido.
+  Todos os cenários declarados para o critério contam, sem alternativa implícita.
+- Leitor REST/MCP calcula a população inteira antes de paginar. Cenários/cards
+  só são consultados após spec.tests.read + card.entity.read; sem essas flags,
+  qualificação autorizada permanece disponível e planejamento fica indisponível.
+- UI recebe resumo global e detalhes limitados de cenários/cards. Perder autoridade
+  de leitura de cenários/Card desmonta o painel e elimina os detalhes carregados;
+  respostas com planejamento restrito não escondem a qualificação autorizada.
+- Populações inválidas, desconhecidas, duplicadas e limites excedidos ficam
+  indisponíveis. IDs são exatos, sem matching por índice/texto. Cards cancelados,
+  arquivados, de outro escopo ou de tipo não Test não satisfazem a associação.
+  Critérios inativos seguem a mesma exclusão da resolução de requisitos; seus
+  cenários históricos não obrigam trabalho novo e não são apagados.
+- `methods_evaluated` e `verification_work_evaluated` indicam a avaliação dessa
+  estrutura. `method_plan_complete` e `verification_work_complete` são fatos de
+  planejamento declarado; execution/semantic_review/delivery/rollout continuam
+  não avaliados. Não são autorização para iniciar nem evidência de entrega.
+- Resolução inteira antes da paginação, com 5.000 nós por população e 4.096
+  vínculos/expansões; resumo limita 20 cenários por caminho e 20 Cards por cenário,
+  com contagens/truncamento explícitos. As pendências omitidas continuam afetando
+  o resultado global. A consulta privilegiada acrescenta uma leitura relacional
+  limitada de Cards; ainda não há benchmark do fluxo completo.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-plan-final.json`, par `wheels-plan-final`: **790/311 .py,
+  855/395 payloads**, source/wheel/install byte a byte. Processos novos e
+  PYTHONPATH pareado; nenhuma reinicialização do runtime do usuário.
+- `core-plan-final.log`: **109 passed em 18,88 s**: plano sem execução prévia,
+  métodos/capacidade ausentes, todos os cenários declarados obrigatórios,
+  Test Card removido/cancelado/arquivado/fora do escopo, herança com seleção
+  limitada, pendência fora da página/resumo, limites/duplicidade e quatro
+  estados de critério inativo, além das regressões de qualificação/métodos e
+  contratos/catálogos. O lote inicial de 105 passou; os quatro casos de histórico
+  foram adicionados após identificar a exclusão ativa faltante na revisão.
+- `community-plan-final.log`: **9 passed em 43,56 s**, SQL descartável real,
+  REST/FastMCP materializado com e sem autoridade de planejamento, capacidade
+  do verifier Community real, contagem global com TR pendente fora da página,
+  ausência de writes e de SELECT dos corpos protegidos quando leitura é negada.
+- `frontend-plan-final.log`: **48 passed em 25,08 s**: 20 do painel de qualificação,
+  24 de SpecModal.activity e quatro de structuredEditing. Resumo global não é
+  inferido da página; métodos sem suporte, Test Cards ausentes, indisponibilidade,
+  truncamento e perda de autoridade permanecem explícitos.
+- Typecheck/build, ESLint dos módulos alterados, Ruff e diff-check aprovados.
+  `frontend-plan-dist.log`: **78 arquivos**, SHA256
+  `6e4427fcd6cdc4f3eb141dacc2031074c69c061fd66ee225e960bc73a3588b8d`.
+  Aviso de chunks >500 kB permanece. Catálogos/manifests só via generators oficiais.
+- Closure inicial sem findings de código e com oito budgets zero; README requeria
+  atualização de matriz. Após a correção de histórico, par e testes foram refeitos;
+  renderer oficial aplicado aos READMEs. `closure-plan-final.json`: **exit 0,
+  ok=true**, sem findings de código/documentação e oito budgets **0/0**.
+  Matriz: **7.504 imports Core / 1.239 Community→Core / 25 dependências**;
+  distribuição, conformance, singleton e AF35 aprovados.
+
+Retomada investigada: `DefaultDeliveryInventoryPolicy`/`card_delivery_inventory`
+em `domain/delivery_inventory.py` ainda selecionam somente `linked_task_ids` e
+fallback por título de Card. A porta pública `DeliveryInventoryPolicy` já existe;
+não criar seleção paralela no adapter. Evoluir contribuição aprovada por Card e
+resolução direta/herdada compartilhada antes de reduzir esses links manuais.
+
+- Isto não resolve contribuição de implementação, dependências, mínimos de policy,
+  escopo sem requisitos, adoção ou integração de gates; pendências anteriores mantidas.

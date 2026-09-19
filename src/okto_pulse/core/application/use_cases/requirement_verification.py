@@ -7,7 +7,16 @@ from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
     require_all,
 )
-from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
+from okto_pulse.core.application.use_cases.base import (
+    ActorContext,
+    EntityNotFoundError,
+    PermissionDeniedError,
+)
+from okto_pulse.core.domain.verification_plan import (
+    MAX_PLAN_NODES,
+    resolve_verification_plan,
+)
+from okto_pulse.core.ports.test_evidence import supported_test_verification_methods
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.domain.criterion_verification import (
     VERIFICATION_REQUIREMENT_FIELDS,
@@ -125,6 +134,22 @@ def project_requirement_verification(resolved, command):
         for path in row["criteria_paths"][
             command.paths_offset : command.paths_offset + 100
         ]:
+            if "scenario_plans" in path:
+                plans = path["scenario_plans"]
+                path = {
+                    **path,
+                    "scenario_plans": [
+                        {
+                            **plan,
+                            "test_card_ids": plan["test_card_ids"][:20],
+                            "test_card_count": len(plan["test_card_ids"]),
+                            "test_cards_truncated": len(plan["test_card_ids"]) > 20,
+                        }
+                        for plan in plans[:20]
+                    ],
+                    "scenario_count": len(plans),
+                    "scenarios_truncated": len(plans) > 20,
+                }
             if _bytes([*item["criteria_paths"], path]) > 16 * 1024:
                 break
             item["criteria_paths"].append(path)
@@ -169,6 +194,19 @@ class GetRequirementVerificationUseCase:
             board_id=command.board_id,
         )
         fields = (*VERIFICATION_REQUIREMENT_FIELDS.values(), "acceptance_criteria")
+        # Qualification retains its existing authority. Optional planning facts
+        # are never loaded when either scenario or Card read is denied.
+        can_read_planning = True
+        try:
+            await require_all(
+                actor,
+                PermissionRequirement("spec.tests.read"),
+                PermissionRequirement("card.entity.read"),
+                uow=uow,
+                board_id=command.board_id,
+            )
+        except PermissionDeniedError:
+            can_read_planning = False
         records = await uow.services.list_application_records(
             ApplicationQuery(
                 entity="spec",
@@ -184,6 +222,7 @@ class GetRequirementVerificationUseCase:
                     "status",
                     "archived",
                     *fields,
+                    *(("test_scenarios",) if can_read_planning else ()),
                 ),
                 limit=1,
             )
@@ -204,6 +243,53 @@ class GetRequirementVerificationUseCase:
                 field: getattr(spec, field) for field in fields if hasattr(spec, field)
             },
         )
+        if can_read_planning:
+            card_fields = (
+                "id",
+                "board_id",
+                "spec_id",
+                "card_type",
+                "status",
+                "archived",
+                "test_scenario_ids",
+            )
+            cards = await uow.services.list_application_records(
+                ApplicationQuery(
+                    entity="card",
+                    filters=(
+                        ApplicationFilter("board_id", "eq", command.board_id),
+                        ApplicationFilter("spec_id", "eq", command.spec_id),
+                    ),
+                    select_fields=card_fields,
+                    limit=MAX_PLAN_NODES + 1,
+                )
+            )
+            resolved = resolve_verification_plan(
+                qualification=resolved,
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                scenarios=getattr(spec, "test_scenarios", None),
+                criteria=getattr(spec, "acceptance_criteria", None),
+                cards=[
+                    {field: getattr(card, field, None) for field in card_fields}
+                    for card in cards
+                ],
+                admitted_methods=supported_test_verification_methods(),
+            )
+        else:
+            resolved.update(
+                {
+                    "verification_work_evaluated": False,
+                    "method_plan_complete": False,
+                    "verification_work_complete": False,
+                    "planning_population_complete": False,
+                    "planning_issues": [
+                        {"code": "verification_planning_read_restricted"}
+                    ],
+                    "planning_issue_count": 1,
+                    "planning_issues_truncated": False,
+                }
+            )
         return {
             **project_requirement_verification(resolved, command),
             "board_id": spec.board_id,
