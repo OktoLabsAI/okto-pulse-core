@@ -163,6 +163,16 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def architecture_candidate_identity(spec_id: str, root_design_id: str, interface_id: str) -> str:
+    """Stable logical identity shared by candidates and stored decision witnesses."""
+    return "arqc_" + _digest([spec_id, root_design_id, interface_id])
+
+
+def architecture_contract_digest(contract: Any) -> str:
+    """Digest a normalized contract or selected JSON value without coercion."""
+    return _digest(contract)
+
+
 def _contract(interface: Mapping[str, Any]) -> dict[str, Any]:
     result = {field: copy.deepcopy(interface.get(field)) for field in _SEMANTIC_FIELDS}
     # Participants are an unordered collection of identities, not role slots.
@@ -219,7 +229,7 @@ def project_architecture_candidates(
                     "architecture_contract_identity_required", design.design_id, index,
                 ))
                 continue
-            candidate_id = "arqc_" + _digest([spec_id, design.root_design_id, interface_id])
+            candidate_id = architecture_candidate_identity(spec_id, design.root_design_id, interface_id)
             if interface_id in seen:
                 issues.append(ArchitectureCandidateIssue(
                     "architecture_interface_identity_duplicate", design.design_id,
@@ -228,7 +238,7 @@ def project_architecture_candidates(
             seen.add(interface_id)
             try:
                 contract = _contract(interface)
-                digest = _digest(contract)
+                digest = architecture_contract_digest(contract)
             except (TypeError, ValueError):
                 issues.append(ArchitectureCandidateIssue(
                     "architecture_contract_unresolved", design.design_id,

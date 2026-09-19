@@ -38,6 +38,7 @@ class McpAdmissionClass(str, Enum):
 MCP_READER_TOOL_NAMES = frozenset(
     {
         "okto_pulse_list_architecture_candidates",
+        "okto_pulse_list_architecture_classifications",
         "okto_pulse_get_active_default_board_config",
         "okto_pulse_get_amendment_revision",
         "okto_pulse_get_architecture_design_schema",
@@ -677,6 +678,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_list_amendment_revisions", "amendment.revision.read"),
     _policy("okto_pulse_list_api_contracts", "spec.contracts.read"),
     _policy("okto_pulse_list_architecture_candidates", "spec.entity.read", "spec.architecture.read"),
+    _policy("okto_pulse_list_architecture_classifications", "spec.entity.read", "spec.architecture.read", "spec.integration_requirements.read"),
     _policy(
         "okto_pulse_list_architecture_designs",
         "ideation.architecture.read",

@@ -372,6 +372,30 @@ Returns:
 
 Example: `{"board_id":"<board-id>","spec_id":"<spec-id>"}`.
 
+## `okto_pulse_list_architecture_classifications`
+
+Read classification currentness for one Spec edition. Requires `spec.entity.read`,
+`spec.architecture.read` and `spec.integration_requirements.read` before reading
+source contracts or IR bindings. REST: `GET /boards/{board_id}/specs/{spec_id}/architecture-classifications`.
+
+`offset` and `limit` (1–100, default 25) page logical candidates and retired
+witnesses. Optional `state` filters pending/current/review_required/unresolved/
+retired/unavailable items; `state_counts` always covers the full population.
+Incomplete sources/history yield `total=null`, observed counts and no claim of
+classification completeness. `classification_complete` is structural currentness,
+not semantic approval, requirement readiness, rollout adoption or start permission.
+
+Supply `candidate_id` with the exact `source_digest` for detail. Detail preserves
+analyzed/current contracts, changed JSON paths, scopes, authorship, revision
+provenance and IR bindings. Diagnostics are capped at 100 paths/16 KiB; truncation
+never makes an outdated decision current. Conflicting source variants remain
+unresolved and can be inspected individually. A retired witness uses its analyzed
+digest. Retirement/context-only does not remove normative IR obligations.
+
+Reads do not refresh sources, fetch `schema_ref`, migrate legacy work, reopen Done
+Specs, create IRs, or persist decisions. Use the authorized writer to classify or
+revise a decision; source/version changes require refreshing before retrying.
+
 ## `okto_pulse_classify_architecture_candidates`
 
 Classify adopted contracts in one atomic batch. REST exposes the same command at

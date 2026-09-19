@@ -20,7 +20,8 @@ def test_manifest_count_hash_and_aliases_match_live_catalog():
 
     assert manifest["manifest_version"] == "1.0"
     assert manifest["server"]["version"] == __version__
-    assert inventory["count"] == len(document["tools"]) == 342
+    assert inventory["count"] == len(document["tools"]) == 343
+    assert "okto_pulse_list_architecture_classifications" in inventory["tools"]
     assert "okto_pulse_classify_architecture_candidates" in inventory["tools"]
     assert inventory["tools"] == document["tools"]
     assert "okto_pulse_execute_test_scenario_evidence" in inventory["tools"]

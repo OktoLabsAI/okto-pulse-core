@@ -11,16 +11,22 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.domain.architecture_classification import (
     ArchitectureClassificationError,
 )
+from okto_pulse.core.domain.architecture_classification_review import (
+    ArchitectureClassificationReadError,
+)
 from okto_pulse.core.domain.human_validation_cycle import SubjectEditRequiresDraftError
 from okto_pulse.core.ports.guideline_policy import GuidelinePolicyVersionConflict
 
 __all__ = [
-    "CLASSIFICATION_REQUEST_ERRORS", "ClassificationErrorProjection", "classification_error",
+    "CLASSIFICATION_REQUEST_ERRORS",
+    "ClassificationErrorProjection",
+    "classification_error",
 ]
 
 
 CLASSIFICATION_REQUEST_ERRORS = (
     ArchitectureClassificationError,
+    ArchitectureClassificationReadError,
     EntityNotFoundError,
     PermissionDeniedError,
     SubjectEditRequiresDraftError,
@@ -29,6 +35,27 @@ CLASSIFICATION_REQUEST_ERRORS = (
 )
 
 _ERRORS = {
+    "architecture_classification_scope_unavailable": (404, "Spec not found."),
+    "architecture_classification_history_unavailable": (
+        409,
+        "Classification history could not be resolved.",
+    ),
+    "architecture_classification_invalid_offset": (
+        422,
+        "Offset must be a nonnegative integer.",
+    ),
+    "architecture_classification_invalid_limit": (
+        422,
+        "Limit must be an integer between 1 and 100.",
+    ),
+    "architecture_classification_invalid_state": (
+        422,
+        "Unknown classification review state.",
+    ),
+    "architecture_classification_identity_and_digest_required": (
+        422,
+        "Candidate identity and source digest must be supplied together.",
+    ),
     "architecture_classification_payload_too_large": (
         413,
         "Classification batch exceeds 256 KiB.",
@@ -116,7 +143,9 @@ def classification_error(exc: Exception) -> ClassificationErrorProjection:
             for item in exc.errors(include_input=False, include_url=False)
         ):
             code = "architecture_classification_payload_too_large"
-    elif isinstance(exc, ArchitectureClassificationError):
+    elif isinstance(
+        exc, (ArchitectureClassificationError, ArchitectureClassificationReadError)
+    ):
         code = str(exc)
     else:
         raise TypeError("unsupported_classification_error") from None

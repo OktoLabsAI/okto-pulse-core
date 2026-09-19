@@ -18,6 +18,11 @@ from okto_pulse.core.domain.architecture_classification import (
     resolve_architecture_classification,
 )
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
+from okto_pulse.core.domain.architecture_classification_review import (
+    ArchitectureClassificationReadError,
+    ArchitectureReviewState,
+    architecture_classification_review,
+)
 from okto_pulse.core.events import publish
 from okto_pulse.core.events.types import (
     SpecSemanticChanged,
@@ -46,6 +51,50 @@ from okto_pulse.core.services.spec_structured_entities import (
 class ArchitectureClassificationService:
     def __init__(self, context: Any):
         self.context = context
+
+    async def review(
+        self,
+        *,
+        board_id: str,
+        spec_id: str,
+        offset: int = 0,
+        limit: int = 25,
+        candidate_id: str | None = None,
+        source_digest: str | None = None,
+        state: ArchitectureReviewState | None = None,
+    ) -> dict[str, Any]:
+        """The caller has authorized all three reads in one consistent UoW."""
+        store = get_structured_spec_store()
+        spec = await store.get(self.context, spec_id=spec_id)
+        if spec is None or spec.board_id != board_id:
+            raise ArchitectureClassificationReadError(
+                "architecture_classification_scope_unavailable"
+            )
+        population = await load_spec_architecture_candidates(
+            self.context, board_id=board_id, spec_id=spec_id
+        )
+        try:
+            decisions = await store.list_architecture_decisions(
+                self.context, spec_id=spec_id, spec_edition=spec.edition
+            )
+        except (ValueError, TypeError, KeyError):
+            raise ArchitectureClassificationReadError(
+                "architecture_classification_history_unavailable"
+            ) from None
+        return architecture_classification_review(
+            board_id=board_id,
+            spec_id=spec_id,
+            spec_edition=spec.edition,
+            spec_version=spec.version,
+            population=population,
+            decisions=decisions,
+            integration_requirements=tuple(spec.integration_requirements or ()),
+            offset=offset,
+            limit=limit,
+            candidate_id=candidate_id,
+            source_digest=source_digest,
+            state=state,
+        )
 
     async def apply(
         self,

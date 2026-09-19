@@ -12893,6 +12893,50 @@ async def okto_pulse_list_architecture_candidates(
 
 @mcp.tool()
 @closed_mcp_schema
+async def okto_pulse_list_architecture_classifications(
+    board_id: Annotated[str, Field(min_length=1, max_length=255)],
+    spec_id: Annotated[str, Field(min_length=1, max_length=255)],
+    offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 25,
+    candidate_id: str = "", source_digest: str = "",
+    state: Literal["pending", "current", "review_required", "unresolved", "retired", "unavailable"] | None = None,
+) -> str:
+    """Page classification currentness across all adopted contracts and retired witnesses.
+
+    Requires Spec, architecture and IR reads. Counts include candidates outside
+    this page; unavailable enumeration has unknown total. Optional state filters
+    do not narrow global counts. Supply candidate_id and source_digest together
+    for current/analyzed contracts, changed paths, authorship and IR bindings.
+    A retired item retains its analyzed digest for detail lookup; normative IRs
+    remain obligations. Reading never fetches schema_ref or writes decisions.
+    Classification completeness is not readiness, semantic approval or rollout.
+    """
+    from okto_pulse.core.application.use_cases.architecture_classification_review import (
+        GetArchitectureClassificationsCommand, GetArchitectureClassificationsUseCase,
+    )
+    from okto_pulse.core.inbound.architecture_classification import (
+        CLASSIFICATION_REQUEST_ERRORS, classification_error,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetArchitectureClassificationsUseCase().execute(
+                GetArchitectureClassificationsCommand(board_id, spec_id, offset, limit, candidate_id or None, source_digest or None, state),
+                actor=actor, uow=uow,
+            )
+    except CLASSIFICATION_REQUEST_ERRORS as exc:
+        projected = classification_error(exc)
+        return json.dumps({"success": False, **projected.payload(), "status_code": projected.status_code})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
+@closed_mcp_schema
 async def okto_pulse_classify_architecture_candidates(
     board_id: Annotated[str, Field(min_length=1, max_length=255)],
     spec_id: Annotated[str, Field(min_length=1, max_length=255)],
