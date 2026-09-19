@@ -1896,3 +1896,8 @@ benchmarks, rollback integrado e conclusão requisito a requisito continuam pend
 Próxima dependência: aliases locais de referência e contribuição/seleção versionada,
 conectadas ao inventário completo e adoção ARQ/VER; completar UI/retomada com essa
 mesma autoridade, sem criar writer ou ledger paralelo. Estado: **progresso**.
+
+Par inline publicado por push normal em `feature/v0.4.0`: Core
+`85d11e9c462b13a320e57507a5689bbfe9a5e5fd`, Community
+`000506a42b948312f5c8a0b4e519040d6768280d`. HEADs remotos iguais aos locais e
+árvores limpas após commits funcionais; este follow-up registra o checkpoint.
