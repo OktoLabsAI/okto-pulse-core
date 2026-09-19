@@ -760,3 +760,7 @@ porta de persistência atômica IRs + decisões + recibo vinculado ao ator,
 coordenador com autorização de todo o lote, bloqueio/fence e replay. Usar o
 preflight acima, não fazer loop sobre `mutate`. Em seguida REST/MCP/UI e gates
 de atualidade/início conforme ARQ/VER, sem declarar esta fundação como P1 pronto.
+
+Publicação: pushes normais dos dois repos repetidos após `3123b770` e
+`e9caac46`; ambos recusados novamente por `Invalid username or token`.
+Os commits deste incremento permanecem locais; nenhuma credencial alterada.
