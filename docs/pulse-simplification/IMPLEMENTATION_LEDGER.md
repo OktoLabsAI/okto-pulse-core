@@ -641,3 +641,16 @@ idempotente. Reutilizar `StructuredSpecEntityService` para autorização, draft,
 content lock, canonicalização e validação de vínculos; não chamar repetidamente
 o writer de item sem pré-validar todo o lote. A persistência das decisões e do
 resultado precisa compartilhar UOW/fence com o IR, sem lógica no adapter.
+
+### Publicação pendente por autenticação
+
+Os commits locais do incremento acima estão concluídos, com ledger pareado em
+`1344487f`. Os pushes dos dois repositórios foram recusados pelo GitHub com
+`Invalid username or token. Password authentication is not supported`.
+`gh auth status` confirmou token inválido no keyring; não há GH_TOKEN ou
+GITHUB_TOKEN no ambiente. Não foi alterada configuração de conta/credencial,
+nem recriado o histórico por outro transporte. Solicitada reautenticação local
+com `gh auth login -h github.com`; retomar push normal após a confirmação.
+Esse impedimento afeta publicação, não o trabalho local de implementação.
+Últimos pushes confirmados nesta sessão antes da falha: Core `8eb02456` e
+Community `aea2d9e`. Não declarar este novo incremento como publicado.
