@@ -1190,3 +1190,61 @@ apenas escopo de Designs; não transformar esse campo em marcador de rollout.
 Legado em andamento preserva contrato aprovado até adoção/revisão autorizada;
 Done não reabre. P2/P3, F2B, KG, E2E instalado/Grafx/suites amplas, benchmarks e
 rollback continuam pendentes. Não declarar o pacote consolidado concluído.
+
+## Retomada — autenticação e caracterização do gate de início — 2026-09-19
+
+Reautenticação confirmada pelo acesso aos dois remotes. `git ls-remote` retornou
+os mesmos HEADs locais de `feature/v0.4.0`: Core `71595f1a8d31348bc0b17d904cce70b72fe8e879`
+e Community `9a12b6d47f9510f216f61e7c22c6c36d51d31a41`. Nenhum push de implementação
+pendente e ambas as árvores limpas no início desta retomada. A antiga pendência
+de autenticação não constitui bloqueio atual.
+
+Caracterização inspecionada, sem alterar semântica ou ativar rollout parcial:
+
+- `services/spec_readiness.py` e `spec_readiness_read_model.py` compõem analytics
+  a partir das validações persistidas. `validation.lifecycle_ready` não é o
+  veredito completo de admissão ao início; não converter esse fato histórico
+  em autorização ARQ/VER nem reescrever validações históricas.
+- REST `MoveSpecUseCase` e MCP `McpMoveSpecUseCase` autorizam a transição e
+  convergem em `SpecService.move_spec` (`services/main.py`). Este writer confere
+  máquina de estados, contexto de entrega e proveniência fixados, rastreabilidade
+  e contexto crítico. Em validated→in_progress reexecuta dez verificações de
+  cobertura/presença, depois avaliações qualitativas aplicáveis. Guidelines,
+  precedência entre Specs e fences de lifecycle continuam no mesmo caminho.
+- `ListAllowedTransitionsUseCase._spec_blocked_reason` projeta os bloqueios de
+  cobertura, dependências e avaliação. É outro consumidor a integrar ao mesmo
+  predicado novo, para não anunciar uma transição que o writer recusará.
+- O writer adquire o fence do grafo de dependências, verifica precedência e
+  marca a edição iniciada na transação do chamador. O fence da linha confere
+  status/edition/version/archived/current_validation_id antes de mutar status;
+  validação/checklist e entrega possuem rechecks específicos após o lock.
+  A integração ARQ/VER também precisa considerar fontes arquiteturais mutáveis,
+  não apenas o version da Spec, antes de afirmar ausência de corrida.
+- `last_started_edition` também é gravado por criação direta de Card STARTED
+  e pela transição de Card para execução (`CardService`), através de
+  `SpecDependencyService.require_ready_for_execution`. É fato de execução da
+  edição, não autorização de adoção ARQ/VER. Tampouco `architecture_adoption`
+  significa essa adoção: segue sendo o manifesto de escopo de Designs.
+- Reabertura em Draft avança `edition`, limpa apenas o ponteiro da validação
+  corrente e conserva tentativas anteriores. A seção 11 do complemento exige
+  distinguir novas Specs, legado ainda não iniciado, execução já em curso e
+  histórico Done; não inferir aprovação nova de nenhum desses dois marcadores.
+
+Verificação do código atual, antes de futura alteração do gate:
+
+- `provenance-start-gate-characterization.json`: origem instalada confirmada,
+  **784/311 arquivos `.py`** e **849/395 payloads** idênticos byte a byte entre
+  source/wheels/install, usando `wheels-classification-authoring-final`.
+- `core-start-gate-characterization.log`: **101 passed em 7,23 s**, em processo
+  novo e PYTHONPATH pareado: `test_allowed_transitions_mutation_parity_regressions`,
+  `test_spec_readiness` e `test_spec_dependencies_core`. Esta evidência cobre o
+  comportamento existente dessas suites, não a integração ARQ/VER ainda ausente.
+- Nenhum código de produto/frontend alterado nesta caracterização; a evidência
+  frontend do incremento anterior permanece registrada acima, sem alegar nova
+  execução. Nenhum processo ou dado real do Pulse foi alterado.
+
+Próximo passo permanece implementação coordenada de adoção ARQ/VER e predicados
+de planejamento de P2, seguida da integração no writer/preview e respectivas
+superfícies. Não ativar classificação globalmente por ausência de marcador,
+não promover `classification_complete` a prontidão integral e não usar qualquer
+skip existente como dispensa dos novos contratos. O pacote permanece incompleto.
