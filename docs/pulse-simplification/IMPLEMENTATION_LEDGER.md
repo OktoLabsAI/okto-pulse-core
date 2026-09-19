@@ -437,6 +437,9 @@ certificado E2E instalado; falhas e limites anteriores continuam abertos.
 
 ## P1 — leitura pública autorizada e testes de frontend — 2026-09-19
 
+Par de código: Core `4267c90b35fd674b7aa37398aa4a44e83e882951` e
+Community `e93c1f160173db8da2249817d0f3188edf8f48ca`.
+
 O caso de uso `GetArchitectureCandidatesUseCase` compartilha autorização e
 projeção entre REST e MCP. Usa snapshot consistente, resolve o board acessível
 e a Spec sem includes, exige `spec.entity.read` e `spec.architecture.read`, e
