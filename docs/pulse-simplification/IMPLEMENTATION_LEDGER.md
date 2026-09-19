@@ -3,8 +3,9 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
-I0 + P0: correção do writer F09/porta concluída e publicada, F11 caracterizado;
-inventário e suites amplas em andamento. Nenhuma migração real autorizada.
+I0 + P0, com início da política pura P1: correção F09/porta publicada, F11
+caracterizado; compatibilidade F2B por Card autorizada e depreciada. Inventário,
+integração P1 e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
 
@@ -125,11 +126,58 @@ Não copiar resultados de validações de setembro anteriores como resultados at
 
 ## Próximo passo concreto
 
-Examinar suites amplas e separar falhas do par atual de falhas reproduzidas na
-base. Prosseguir P0 e inventários F0/K0/I0 em [inventory.md](inventory.md), antes
-de congelar schema/migrações de entrega incremental. F11 exige correção
-prospectiva integrada ao rollout. Após qualquer mudança em `src`, reconstruir,
-reinstalar e comparar os bytes do par antes de validar comportamento.
+Integrar a projeção pura P1 à enumeração autoritativa de arquitetura efetiva,
+depois classificação/promoção transacionais e rollout, sem publicar aprovação
+ou gate fictício. Continuar inventários F0/K0/I0 em [inventory.md](inventory.md).
+F2B pode implementar compatibilidade autorizada com aviso de depreciação; F11
+exige correção prospectiva integrada ao rollout. Falhas amplas e E2E instalados
+continuam abertos conforme o registro abaixo. Após qualquer mudança em `src`,
+reconstruir, reinstalar e comparar os bytes do par antes de validar comportamento.
+
+## Decisão F2B autorizada — compatibilidade depreciada por Card
+
+O resolver `CardService._resolve_validation_config` usa Sprint → Spec → Board;
+o argumento `card` não participa. CardCreate/CardUpdate/CardResponse e o modelo
+Community Card não expõem os quatro overrides. O histórico `validations` contém
+thresholds de avaliações anteriores, mas não é fonte de policy atual e não pode
+ser reinterpretado como tal.
+
+Reprodução em `tests/test_sprint_policy_migration_characterization.py`: dois
+cards na mesma Spec resolvem min_confidence 90 e 60 pelas respectivas Sprints;
+sem Sprint ambos resolvem 70. Segundo caso preserva False/zero como overrides e
+null como herança independente. **2 passed**, log
+`sprint-policy-characterization.log`; teste do resolver, sem simular autorização
+de transição nem acessar dados reais.
+
+BASE F2B item 5 exigiu decisão porque não existe escopo fiel. Em 2026-09-19 o
+usuário **autorizou a preservação por Card**, como compatibilidade para evitar
+breaking change/atrito, exigindo comentário e registro de deprecation warning.
+Decisão autorizada, ainda sem migração implementada: acrescentar representação
+tipada por Card exclusivamente para retenção dos overrides migrados, com origem
+histórica opaca e versão. Materializar somente campos cujo valor efetivo muda
+sem Sprint; conservar herança dos demais. Isso adiciona representação sem
+escolher novos limites, sem novo endpoint para o executor alterar policy e sem
+transformar avaliações antigas em aprovação. Regra/resolver no Core; mapping,
+migração e persistência no Community por porta pública. Testar equivalência por
+campo, novas tasks sem override e falha/retomada da migração.
+
+Alternativa: bloquear o upgrade dos casos divergentes até harmonização humana
+explícita das policies nos escopos existentes. Essa alternativa impede a
+retirada completa de Sprint nesses ambientes enquanto houver divergências;
+não escolher automaticamente a policy mais forte/fraca nem dividir Specs.
+
+**Deprecation warning (de projeto):** essa representação existe somente para
+preservar os overrides migrados; não é uma nova hierarquia permanente nem uma
+superfície de tuning por executores. Incluir o mesmo aviso no contrato/resolver
+e na migração que a materializar. Planejar sua retirada futura somente após
+inventário comprovar ausência de overrides ainda necessários ou revisão humana
+explícita que os substitua. Não apagar por prazo fixo, reinterpretar histórico
+ou convergir automaticamente para a policy Board/Spec. A depreciação não reduz
+os gates enquanto a compatibilidade for necessária. Não gerar warnings a cada
+leitura nem exigir ação do agente para continuar executando.
+
+O recorte F2B está liberado para implementação/testes. A autorização não inclui
+migrar ambiente real; investigação KG/health, arquitetura e evidência continuam.
 
 ## Execução 2026-09-19 — primeiro incremento
 
@@ -241,3 +289,79 @@ Este incremento não muda schema nem migra registros. Rollback de código exige
 reverter **o par** `54832726`/`cac95ef` (Community passa a requerer a porta Core),
 sem alterar os ledgers existentes. Nenhuma release/tag foi criada; versões de
 pacote continuam 0.3.4 enquanto a iniciativa 0.4.0 está em implementação.
+
+## Investigação da suite ampla e início P1 — 2026-09-19
+
+- Core `25bd70c9` publicado: fixture Spec corrigido, inventário real de
+  superfícies e ledger atualizado. A segunda suite ampla Core foi interrompida
+  deliberadamente em cerca de 20%, após sete falhas, para investigar e mudar o
+  código com processos novos. Somente o processo pytest descartável identificado
+  pelo launcher/command line foi encerrado; nenhum Pulse ativo foi tocado.
+  `core-suite-fixture.log` é **execução incompleta**, sem summary de aprovação.
+- Sete falhas observadas: quatro em `test_card_lifecycle` (duas de relatório
+  único, dependência concluída e evento de conclusão), três em
+  `test_cognitive_closeout_service_wiring` (advisory, blocking sem debt e
+  advisory sem instanciar readiness). Dois casos reproduzidos separadamente
+  retornam rejected em vez de done (`core-lifecycle-investigation.log`). O
+  adapter de teste só tem o store Delivery antigo, sem `load_card_snapshot`/
+  `record_card`; o gate atual recusa esse seam. Não relaxar o gate nem transformar
+  o adapter global em prova sempre aceita. A fixture/composição adequada ainda
+  precisa ser corrigida e esses testes repetidos.
+- Community ampla: **1.510 passed, 5 failed, 2 skipped, 5 errors** em 1.272,97 s.
+  Além do drift AF25 já corrigido, falharam init offline, manifesto de schema,
+  versão frontend e seis casos/setup E2E instalados por ausência da indicação
+  explícita de artefato Grafx. Suite não aprovada.
+- Init: meu `DATABASE_URL` fixo e depois `KG_BASE_DIR` fixo interferiam nos roots
+  próprios do fixture. Repetido removendo ambos do ambiente, mantendo DATA_DIR
+  descartável e caminhos de imports fixos: **1 passed**, 83 s,
+  `cli-init-own-roots.log`, engine Grafx real/offline. Erro de harness, não
+  alteração necessária no produto. Para novas suites Community deixar o fixture
+  controlar DATABASE_URL/KG_BASE_DIR.
+- Localizado checkout Grafx `D:/Projetos/Techridy/okto_grafx`, versão 0.0.7.
+  E2E requer `OKTO_E2E_GRAFX_REPO` ou wheel explícita. Também foram localizadas
+  várias expectativas 0.3.3 no E2E/release gate; precisam alinhar ao par atual
+  antes de declarar pacote certificado. Nenhum E2E instalado passou nesta etapa.
+- Reprodução na base exata: venv separada `baseline-venv`, wheels reconstruídas
+  dos worktrees limpos 20707250/b6dda64. A primeira tentativa de reutilizar
+  wheels da árvore principal falhou na comparação estrita de bytes; não foi
+  usada para validar comportamento. `wheels-baseline-reproduction` e
+  `provenance-baseline-reproduction.json` comprovam 769/311 `.py` e todos os
+  payloads idênticos. Baseline AF23 reproduziu coluna ausente; baseline Community
+  reproduziu manifesto de schema e versão frontend. Logs `baseline-core-af23`
+  e `baseline-community-drift`. Tentativa baseline dos dois casos de lifecycle
+  esbarrou antes na coluna ausente (`baseline-core-lifecycle`); não demonstra
+  reprodução da rejeição após corrigir essa fixture.
+- Drift de schema provado em `schema-drift-proof.json`: retirar somente
+  `specs.skip_delivery_evidence` do manifesto atual e classificar a nova tabela
+  `card_delivery_evidence_records` como extensão reproduz exatamente o hash
+  governado anterior `cac384...aa4a`. Atualizada a expectativa para
+  `8b43b7...c09d`, mantendo 65 tabelas herdadas. Nenhum DDL, constraint ou dado
+  alterado; o teste continua verificando igualdade exata. Frontend package/lock
+  alinhados a 0.3.4; quatro testes de versão passaram.
+- P1 iniciado em `domain/architecture_candidates.py`: projeção pura de snapshots
+  adotados/autorizados fornecidos pelo chamador. Identidade Spec+raiz+interface;
+  edição/revisão separadas; cópias equivalentes mantêm proveniência; conflitos,
+  falta de ID e enumeração incompleta não viram conjunto resolvido. Contratos
+  `{}`, referência e erro textual são preservados; protocolo/endpoint isolados
+  não criam candidato. Conteúdo/digest independem de layout/reordenação de
+  participantes e não atribuem provider/consumer pela posição.
+- Esse projetor **ainda não está ligado a REST/MCP/UI, classificação, admissão
+  ou gates**. Não declarar AC-ARQ integrado satisfeito. IDs legados devem ser
+  normalizados em write/migração autorizada; o projetor não os fabrica.
+- Validação nova: `core-p1-foundation.log` teve **107 passed, 1 error**; erro era
+  o nome parametrizado contendo `:` incompatível com o arquivo de log Windows.
+  IDs de teste corrigidos; **24 passed** em `architecture-candidates.log`.
+  Os demais casos cobrem propagação/raiz, Spec Validation e caracterização F2B.
+  Community: **38 passed**, schema/versão/Delivery/F11,
+  `community-p1-foundation.log`. Nenhuma flexibilização de autoridade.
+- Build pareado `wheels-p1-foundation`, `provenance-p1-foundation.json`:
+  **772 Core + 311 Community `.py`**, payloads 837/393, todos idênticos.
+  `closure-p1-foundation.json`: oito budgets zero e zero findings de código;
+  somente READMEs divergiam porque o inventário Core passou de 7.338 a 7.344
+  imports. Fragmentos regenerados por `render_saas_closure_readme`; repetição
+  completa em `closure-p1-final.json`: **exit 0, ok=true**, oito budgets zero,
+  nenhum finding de código/distribuição/documentação.
+
+Autorização F2B do usuário incorporada acima e em comentário no resolver atual.
+Não há ainda campos/migração por Card implementados; manter o aviso de
+depreciação ao implementar o contrato e a migração correspondentes.

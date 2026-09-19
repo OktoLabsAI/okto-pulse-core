@@ -4437,6 +4437,13 @@ class CardService:
         value (the source of ``required``) and per-field ``resolved_sources``.
         Threshold overrides are independent, so a single provenance label
         cannot accurately describe a mixed sprint/spec/board configuration.
+
+        Migration note (BASE F2B, authorized 2026-09-19): preserving Sprint
+        overrides on each affected Card is a deprecated compatibility measure,
+        not a new executor-editable policy hierarchy. Remove that compatibility
+        only after no active override needs it or an authorized policy revision
+        replaces it; never silently fall back to Board/Spec thresholds. Track
+        the cutover in docs/pulse-simplification/IMPLEMENTATION_LEDGER.md.
         """
         # Defaults from board settings
         board_required = board_settings.get("require_task_validation", True)
