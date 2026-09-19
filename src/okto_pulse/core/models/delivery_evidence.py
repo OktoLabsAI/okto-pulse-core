@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 from pydantic_core import PydanticCustomError
 
 from okto_pulse.core.domain.delivery_progress import DeliveryProgress
+from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionFields
 
 Identity = Annotated[str, Field(min_length=1, max_length=512, pattern=r"\S")]
 
@@ -86,6 +87,7 @@ class CardDeliveryEvidenceFields(BaseModel):
     kind: Literal["implementation", "test", "revoke", "progress"]
     obligation_refs: list[Identity] = Field(default_factory=list, max_length=1000)
     execution_id: Identity | None = None
+    execution_submission: ImplementationTargetExecutionFields | None = None
     scenario_id: Identity | None = None
     implementation_ids: list[Identity] = Field(default_factory=list, max_length=1000)
     record_id: Identity | None = None
@@ -97,6 +99,8 @@ class CardDeliveryEvidenceFields(BaseModel):
         result = handler(self)
         if self.progress is None:
             result.pop("progress", None)
+        if self.execution_submission is None:
+            result.pop("execution_submission", None)
         return result
 
     @model_validator(mode="after")
@@ -107,11 +111,11 @@ class CardDeliveryEvidenceFields(BaseModel):
             raise ValueError("delivery_duplicate_implementation")
         supplied = {
             name
-            for name in ("execution_id", "scenario_id", "record_id")
+            for name in ("execution_id", "execution_submission", "scenario_id", "record_id")
             if getattr(self, name) is not None
         }
         required = {
-            "implementation": {"execution_id"},
+            "implementation": {"execution_submission"} if self.execution_submission is not None else {"execution_id"},
             "test": {"scenario_id"},
             "revoke": {"record_id"},
             "progress": set(),
@@ -126,11 +130,14 @@ class CardDeliveryEvidenceFields(BaseModel):
             raise ValueError("delivery_test_implementation_binding_required")
         if (self.progress is not None) != (self.kind == "progress"):
             raise ValueError("delivery_progress_fields_invalid")
-        if self.kind == "progress" and (
-            len(self.obligation_refs) > 200
-            or len(self.model_dump_json().encode("utf-8")) > 128 * 1024
-        ):
+        if self.kind == "progress" and len(self.obligation_refs) > 200:
             raise ValueError("delivery_progress_payload_limit")
+        if self.execution_submission is not None and (
+            len(self.obligation_refs) + 2 + bool(self.execution_submission.replacement_target_id) > 200
+        ):
+            raise ValueError("delivery_payload_limit")
+        if len(self.model_dump_json().encode("utf-8")) > 128 * 1024:
+            raise ValueError("delivery_payload_limit")
         return self
 
 
@@ -169,6 +176,7 @@ class CardDeliveryEvidenceBatchInput(BaseModel):
             len(entry.obligation_refs)
             + len(entry.implementation_ids)
             + len(entry.progress.target_ids if entry.progress else ())
+            + (2 + bool(entry.execution_submission.replacement_target_id) if entry.execution_submission else 0)
             for entry in self.entries
         )
         if links > 200 or len(self.model_dump_json().encode("utf-8")) > 128 * 1024:

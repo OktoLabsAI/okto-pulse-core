@@ -99,8 +99,35 @@ appends and revocations. A batch has 1–50 entries, unique `client_ref` (80 ASC
 letters/digits/underscore/hyphen), at most 200 reference uses across entries and
 128 KiB serialized bytes. Each entry uses its existing progress/implementation/test
 contract and permission; waiver/revoke remain separate. Implementation/test
-admission still requires the existing authenticated source records. No inline
-receipt creation, local reference alias or partial/complete declaration is implied.
+admission still requires the existing authenticated source records. Local reference
+aliases and partial/complete declarations are not yet supported.
+
+An implementation entry may replace `execution_id` with `execution_submission`:
+
+```json
+{
+  "client_ref": "parser-proof",
+  "kind": "implementation",
+  "obligation_refs": ["fr:parser"],
+  "justification": "Implemented the parser and observed the committed result.",
+  "execution_submission": {
+    "target_id": "target-parser",
+    "result_investigation_receipt_id": "accepted-result-receipt",
+    "disposition": "touched",
+    "actual_relative_path": "src/parser.py"
+  }
+}
+```
+
+The same variant is accepted as a single entry without `client_ref`. Supply
+exactly one of execution_id/execution_submission. Board/Card/actor, idempotency
+and justification come from the enclosing request. The origin Target service
+validates disposition, current Target scope, ownership, trust, freshness and
+committed proof; its receipt, event and Delivery binding share one transaction.
+The accepted execution ID is returned with the binding ID, including on replay.
+An inline execution does not create an investigation attestation or consume a new
+challenge: obtain the accepted result-state investigation first, covering the final
+Target revisions. Tests continue to reference results authenticated by their runtime.
 
 The server returns `entries: [{client_ref,id}]`, the accepted `delivery_revision`
 and `replayed`. IDs are server-owned. Every entry succeeds or none persists,

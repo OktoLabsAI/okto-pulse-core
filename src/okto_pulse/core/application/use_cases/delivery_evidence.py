@@ -68,6 +68,9 @@ class RecordCardDeliveryEvidenceUseCase:
     human-only (BR-3). Revoke keeps the human-only rule.
     """
 
+    def __init__(self, execution_use_case=None):
+        self._execution_use_case = execution_use_case
+
     async def execute(
         self, command: CardDeliveryEvidenceWriteCommand, *, actor, uow: PulseUnitOfWork
     ):
@@ -93,8 +96,23 @@ class RecordCardDeliveryEvidenceUseCase:
             raise PermissionDeniedError(
                 "card_delivery_evidence_adapter_unavailable"
             )
+        options = {}
+        if any(entry.execution_submission is not None for entry in entries):
+            if self._execution_use_case is None:
+                raise PermissionDeniedError("delivery_execution_submitter_unavailable")
+            await self._execution_use_case.authorize_in_transaction(
+                board_id=command.board_id, actor=actor, uow=uow
+            )
+
+            async def submit_execution(submission):
+                admitted = await self._execution_use_case.execute_in_transaction(
+                    submission, actor=actor, uow=uow
+                )
+                return admitted.record.id
+
+            options["execution_submitter"] = submit_execution
         result = await record_card(
-            command, actor_id=actor.actor_id, actor_kind=actor.actor_kind
+            command, actor_id=actor.actor_id, actor_kind=actor.actor_kind, **options
         )
         await commit(uow)
         return result

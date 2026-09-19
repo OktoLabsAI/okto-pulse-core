@@ -2090,6 +2090,17 @@ class SubmitImplementationTargetExecutionUseCase:
         self._investigation_service = investigation_service
         self._target_service = target_service
 
+    async def authorize_in_transaction(self, *, board_id, actor, uow):
+        """Authorize composition/replay before any dependent mutation."""
+        from okto_pulse.core.services.code_investigation import require_code_attestor
+
+        require_code_attestor(actor.actor_id, actor.actor_kind)
+        policy = await _load_policy(board_id=board_id, uow=uow)
+        await _authorize(actor, uow, board_id=board_id,
+                         operation="code_traceability.target.execution_submit")
+        await _require_attestor_policy(policy, actor, uow, board_id=board_id)
+        return policy
+
     async def execute(
         self,
         command: ImplementationTargetExecutionSubmission,
@@ -2097,19 +2108,24 @@ class SubmitImplementationTargetExecutionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ImplementationTargetExecutionResult:
-        policy = await _load_policy(board_id=command.board_id, uow=uow)
-        await _authorize(
-            actor,
-            uow,
-            board_id=command.board_id,
-            operation="code_traceability.target.execution_submit",
-        )
-        await _require_attestor_policy(
-            policy,
-            actor,
-            uow,
-            board_id=command.board_id,
-        )
+        result = await self.execute_in_transaction(command, actor=actor, uow=uow)
+        if not result.replayed:
+            await commit(uow)
+        return result
+
+    async def execute_in_transaction(
+        self,
+        command: ImplementationTargetExecutionSubmission,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> ImplementationTargetExecutionResult:
+        """Admit and stage the origin event in the caller's atomic unit of work.
+
+        Keeps all standalone authorization/trust checks. The caller owns both
+        commit and rollback, including the outbox staged by this operation.
+        """
+        policy = await self.authorize_in_transaction(board_id=command.board_id, actor=actor, uow=uow)
         result = await self._target_service.submit_execution(
             command,
             actor_id=actor.actor_id,
@@ -2140,8 +2156,6 @@ class SubmitImplementationTargetExecutionUseCase:
             target_revision=record.target_revision,
             payload_sha256=record.payload_sha256,
         )
-        if not result.replayed:
-            await commit(uow)
         return result
 
 

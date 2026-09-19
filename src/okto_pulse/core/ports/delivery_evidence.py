@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from typing import Protocol
+from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
+
 
 from okto_pulse.core.models.delivery_evidence import (
     CardDeliveryEvidenceWriteCommand,
@@ -14,6 +16,16 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryEvidenceSnapshot,
     DeliveryScope,
 )
+
+
+class DeliveryExecutionSubmitter(Protocol):
+    async def __call__(self, submission: ImplementationTargetExecutionSubmission) -> str:
+        """Admit through the origin service and stage its event; never commit.
+
+        The returned ID belongs to the authenticated caller and same UoW.
+        The Delivery adapter must include receipt and event in its savepoint.
+        """
+        ...
 
 
 class DeliveryEvidenceReadPort(Protocol):
@@ -74,7 +86,8 @@ class CardDeliveryEvidenceStore(Protocol):
         ...
 
     async def record_card(
-        self, command: CardDeliveryEvidenceWriteCommand, *, actor_id: str, actor_kind: str
+        self, command: CardDeliveryEvidenceWriteCommand, *, actor_id: str, actor_kind: str,
+        execution_submitter: DeliveryExecutionSubmitter | None = None,
     ) -> dict:
         """Validate the card-scoped candidate under the card-version fence.
 

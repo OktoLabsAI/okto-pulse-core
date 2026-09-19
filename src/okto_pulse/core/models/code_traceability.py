@@ -879,21 +879,17 @@ class ImplementationTargetResolutionSubmission(_ClosedModel):
         return self
 
 
-class ImplementationTargetExecutionSubmission(_ClosedModel):
+class ImplementationTargetExecutionFields(_ClosedModel):
     envelope_limit: ClassVar[int] = (
         DEFAULT_CODE_TRACEABILITY_LIMITS.execution_envelope_bytes
     )
 
-    board_id: str = Field(min_length=1)
-    card_id: str = Field(min_length=1)
     target_id: str = Field(min_length=1)
     result_investigation_receipt_id: str = Field(min_length=1)
     disposition: ImplementationTargetExecutionDisposition
     actual_relative_path: str | None = None
     actual_qualified_symbol: str | None = None
     replacement_target_id: str | None = None
-    justification: str = Field(min_length=1)
-    idempotency_key: str = Field(min_length=1, max_length=512)
 
     @field_validator("actual_relative_path")
     @classmethod
@@ -922,6 +918,13 @@ class ImplementationTargetExecutionSubmission(_ClosedModel):
         elif self.replacement_target_id is not None:
             raise ValueError("target_execution_replacement_incoherent")
         return self
+
+
+class ImplementationTargetExecutionSubmission(ImplementationTargetExecutionFields):
+    board_id: str = Field(min_length=1)
+    card_id: str = Field(min_length=1)
+    justification: str = Field(min_length=1)
+    idempotency_key: str = Field(min_length=1, max_length=512)
 
 
 class TargetOverlapAcknowledgementInput(_ClosedModel):

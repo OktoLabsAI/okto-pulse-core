@@ -1835,3 +1835,64 @@ funcionais; este apontamento é o follow-up documental. Autenticação ativa de
 `oktolabsai-developer` validada pelos pushes, sem alterar contas ou permissões.
 Estado da iniciativa: **progresso**, sem bloqueio externo; escopo consolidado
 ainda incompleto. Retomar das dependências acima, sem refazer este lote validado.
+
+### Validado — composição inline da execução de Target com Delivery
+
+Turno anterior classificado como progresso (par de lote publicado e 251 testes).
+Árvores limpas na partida. DEI §5.5–5.7 exige composição pelo serviço de origem;
+investigação confirmou que `SubmitImplementationTargetExecutionUseCase.execute`
+fazia commit interno. Separada a operação pública `execute_in_transaction`, com
+autorização/allowlist/ator novamente conferidos antes do adapter, inclusive replay.
+Standalone mantém seu commit; o composto controla o único commit.
+
+`execution_submission` reutiliza os campos e validadores tipados de origem,
+exclusivo com execution_id. Escopo/ator/chave/justificativa vêm do envelope.
+Callback Protocol fornecido pelo Core executa admissão original no mesmo UoW;
+Community inclui recibo, binding e outbox no savepoint (fence antes do savepoint
+também no caso único). Prova persistida contém apenas execução canônica, sem
+duplicar os campos técnicos; response devolve execution_id, preservado no replay.
+Investigação autenticada/challenge continua como pré-requisito, não é fabricada.
+Fixtures SQL com origem real e evento/handler validadas conforme evidências abaixo.
+Sem mudança no frontend neste incremento; formulário inline ainda precisa integrar
+o fluxo final. Aliases, contribuição/seleção, retomada completa e gates continuam
+nas dependências registradas, não substituídos por esta composição.
+
+Validação 2026-09-19 em `.validation-v040`:
+
+- `provenance-inline-final.json`: **793/312 .py** e **858/396 payloads** idênticos
+  entre source, wheel e install, sem mismatches. SHA256 dos wheels Core
+  `b059ae4b91cb2c0308a57b7ef7a58668b294537dff0d75e0c2ecde7c5e1a0b87`, Community
+  `62ffbdc9af1ecae877a9c406de1cee1dde17f4b5a18babd205af6c4aa3c71b53`.
+  Processos de teste novos, PYTHONPATH pareado, dados descartáveis.
+- `core-inline-final.log`: **108 passed em 8,78 s**, contrato inline exclusivo,
+  autoridade/escopo fechados, validação de path/disposition compartilhada, limite
+  de 200 referências incluindo Target/receipt no caso único, compatibilidade de
+  digests legados, serviço de origem, replay sequencial e catálogo/manifests.
+- `community-inline-final.log`: **63 passed em 119,00 s**. Onze casos novos
+  comprovam origem real com SQL, único commit, retorno dos mesmos IDs, rollback
+  de ExecutionRecord + Delivery + DomainEvent + handler após erro posterior,
+  rollback externo no caso único, binding inválido sem receipt órfão, origem
+  inválida sem promoção para progresso, humano recusado e allowlist revalidada
+  no replay. Standalone preserva commit/replay. REST→MCP usa a composição real;
+  somente o authorizer do teste de mapeamento de transportes é substituído,
+  enquanto os testes de autoridade anteriores usam o authorizer real.
+- Tentativas anteriores preservadas nos logs: inicialmente **52 passed/6 errors**
+  por fixture trocar selector antes do digest; depois **5 failed/5 passed** por
+  revisão fictícia `revision-1` não ser commit aceito pelo Delivery; depois
+  **9 passed/1 failed** por campos obrigatórios ausentes no progresso da segunda
+  entrada. Corrigidas somente fixtures (digest atômico, hash de commit e estado
+  explícito). Nenhuma validação de produção foi relaxada para fazê-las passar.
+- `frontend-inline.log`: **83 passed em 27,45 s** nos quatro arquivos do fluxo
+  Card/Delivery/progresso. Sem modificação da SPA neste incremento; formulário
+  inline permanece pendente no fluxo final. Dist anterior preservado.
+- `closure-inline-final.json`: **exit 0, ok=true**, zero findings de código e
+  documentação; **oito budgets 0/0**. Renderer oficial atualizou os READMEs para
+  **7.530 imports Core / 1.242 Community→Core / 25 dependências**. Ruff/diff-check
+  aprovados; catálogo/manifests somente por generators oficiais.
+
+Sem migration nova, alteração de status, crédito parcial inventado, exceção de
+arquitetura, release/tag ou ação sobre dados/runtime reais. E2E instalado/Grafx,
+benchmarks, rollback integrado e conclusão requisito a requisito continuam pendentes.
+Próxima dependência: aliases locais de referência e contribuição/seleção versionada,
+conectadas ao inventário completo e adoção ARQ/VER; completar UI/retomada com essa
+mesma autoridade, sem criar writer ou ledger paralelo. Estado: **progresso**.

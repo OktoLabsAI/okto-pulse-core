@@ -983,11 +983,19 @@ def register_code_traceability_tools(
         fields and its own permission. At most 200 links and 128 KiB in aggregate.
         No waiver/revoke entries. Failed admission rolls back the whole batch;
         retry the exact envelope after timeout. Read per_card.delivery_revision.
+        Implementation may use execution_submission instead of execution_id:
+        target_id, result_investigation_receipt_id, disposition and optional actual
+        path/symbol/replacement. Origin authorization and admission are unchanged;
+        execution, binding and event share one commit. Scope/summary/key are inherited.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
+        from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase
 
         command = card_delivery_command(board_id=board_id, card_id=card_id, spec_id=spec_id, evidence=evidence)
-        return await _execute(board_id, command, RecordCardDeliveryEvidenceUseCase())
+        investigation, _, targets = _services()
+        return await _execute(board_id, command, RecordCardDeliveryEvidenceUseCase(
+            SubmitImplementationTargetExecutionUseCase(investigation, targets)
+        ))
 
     for handler in (
         okto_pulse_get_delivery_evidence,
