@@ -22,6 +22,23 @@ ScenarioType: TypeAlias = Literal[
 
 VALID_SCENARIO_TYPES: tuple[str, ...] = get_args(ScenarioType)
 DEFAULT_SCENARIO_TYPE: ScenarioType = "integration"
+VerificationMethod: TypeAlias = Literal[
+    "automated_test", "static_analysis", "inspection", "demonstration"
+]
+VALID_VERIFICATION_METHODS: tuple[str, ...] = get_args(VerificationMethod)
+# Other authored methods remain pending until both their Core admission rules
+# and an edition verifier exist. Merely declaring an enum cannot grant credit.
+ADMITTED_VERIFICATION_METHODS = frozenset({"automated_test"})
+
+
+def validate_verification_method(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in VALID_VERIFICATION_METHODS:
+        raise ValueError("verification_method_invalid")
+    return value
+
+
 SCENARIO_TYPE_DESCRIPTION = (
     "Scenario kind: unit, integration, e2e, manual, or negative. "
     "Use negative for invalid, forbidden, or denial paths that the product "
@@ -34,4 +51,8 @@ __all__ = [
     "SCENARIO_TYPE_DESCRIPTION",
     "ScenarioType",
     "VALID_SCENARIO_TYPES",
+    "VerificationMethod",
+    "VALID_VERIFICATION_METHODS",
+    "ADMITTED_VERIFICATION_METHODS",
+    "validate_verification_method",
 ]

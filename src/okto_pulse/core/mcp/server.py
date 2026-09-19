@@ -54,6 +54,7 @@ from okto_pulse.core.domain.test_scenarios import (
     SCENARIO_TYPE_DESCRIPTION,
     ScenarioType,
     VALID_SCENARIO_TYPES,
+    VerificationMethod,
 )
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
@@ -11670,10 +11671,13 @@ async def okto_pulse_add_test_scenario(
     ] = DEFAULT_SCENARIO_TYPE,
     linked_criteria: str = "",
     notes: str = "",
+    verification_method: VerificationMethod | None = None,
 ) -> str:
     """Add a Given/When/Then scenario to a spec. ``scenario_type`` is closed to
     unit, integration, e2e, manual, or negative; negative models an expected
     rejection/failure path. Invalid values fail validation without mutation.
+    verification_method is independent of the scenario type. Unsupported
+    admission methods remain pending; selecting one never grants proof credit.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -11717,6 +11721,7 @@ async def okto_pulse_add_test_scenario(
                         parse_multi_value(linked_criteria) if linked_criteria else None
                     ),
                     notes=notes.replace("\\n", "\n") if notes else None,
+                    verification_method=verification_method,
                 ),
                 actor=actor,
                 uow=uow,
@@ -12148,11 +12153,14 @@ async def okto_pulse_update_test_scenario(
     linked_criteria: str = "",
     notes: str = "",
     clear: str = "",
+    verification_method: VerificationMethod | None = None,
+    expected_spec_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
     """Edit scenario body fields; status remains exclusive to the status tool.
     Omit fields, including ``scenario_type``, to preserve them. Explicit null,
     empty, or unknown scenario types are invalid. ``clear`` may clear notes or
-    linked criteria. Semantic edits reset evidenced scenarios to ``ready`` and
+    linked criteria or verification_method. Method edits are semantic; absent
+    methods do not adopt the new contract. Semantic edits reset evidenced scenarios to ``ready`` and
     drop evidence; title/notes edits preserve both. Respects the content lock.
     """
     ctx = await _get_agent_ctx(board_id)
@@ -12187,6 +12195,8 @@ async def okto_pulse_update_test_scenario(
                         linked_criteria_tokens=lc,
                         notes=notes,
                         clear_fields=clear_fields,
+                        verification_method=verification_method,
+                        expected_spec_version=expected_spec_version,
                     ),
                     actor=actor,
                     uow=uow,

@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import Any, Callable
 
 from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.domain.spec_content_lock import SpecLockedError as SpecLockedError
 from okto_pulse.core.application.artifact_propagation import (
     propagate_artifacts,
     validate_artifact_selections,
@@ -731,9 +732,15 @@ def _require_trusted_test_evidence_v2_write(
     status: str,
     actor_id: str | None,
     evidence: object,
+    verification_method: object = None,
 ) -> None:
     """Authenticate an edition receipt before a scenario write can persist."""
 
+    if verification_method is not None and status in GATED_STATUSES:
+        from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method
+        require_supported_test_verification_method(verification_method)
+        if status in {"passed", "failed"} and not _claims_test_evidence_v2(evidence):
+            raise ValueError("verification_evidence_authenticated_result_required")
     if not _claims_test_evidence_v2(evidence):
         return
     from okto_pulse.core.ports.test_evidence import (
@@ -1974,34 +1981,6 @@ async def _evaluate_entity_cognitive_done_or_raise(
 # ---------------------------------------------------------------------------
 # Spec Validation Gate — exception and lock helper
 # ---------------------------------------------------------------------------
-
-
-class SpecLockedError(Exception):
-    """Raised when a content-edit operation is attempted on a locked spec.
-
-    A spec is locked when its current_validation_id points to a validation
-    record with outcome='success'. To edit, the spec must enter ``draft``,
-    which starts a new lifecycle edition, atomically clears
-    ``current_validation_id`` and preserves validation history. Same-edition
-    lifecycle moves, including a move back to ``approved``, preserve Current.
-    For an eligible existing scenario, leave spec content unchanged for Path A regression evidence;
-    use amendment lineage when expected behavior changed.
-    """
-
-    def __init__(
-        self,
-        spec_id: str,
-        current_validation_id: str | None = None,
-        message: str | None = None,
-    ):
-        self.spec_id = spec_id
-        self.current_validation_id = current_validation_id
-        self.message = message or (
-            "Spec is locked because validation passed. "
-            "Move the spec to draft to open a new edition "
-            "(Current validation will be cleared; history is preserved)."
-        )
-        super().__init__(self.message)
 
 
 def spec_is_content_locked(spec: "Spec | None") -> bool:
@@ -9853,6 +9832,8 @@ class SpecService:
         when: str | None = None,
         then: str | None = None,
         scenario_type: str | None = None,
+        verification_method: str | None = None,
+        expected_spec_version: int | None = None,
         linked_criteria: list[str] | None = None,
         notes: str | None = None,
         clear: list[str] | None = None,
@@ -9873,6 +9854,19 @@ class SpecService:
         if not spec:
             raise ValueError("scenario_not_found: spec not found")
 
+        if expected_spec_version is not None and (type(expected_spec_version) is not int or spec.version != expected_spec_version):
+            raise ValueError("spec_version_conflict")
+        if expected_spec_version is not None and not await _application_fence(
+            self.db, "spec", spec.id,
+            expected_values={
+                "version": expected_spec_version,
+                "status": spec.status,
+                "edition": spec.edition,
+                "archived": spec.archived,
+                "current_validation_id": spec.current_validation_id,
+            },
+        ):
+            raise ValueError("spec_version_conflict")
         scenarios = [
             dict(s) for s in (spec.test_scenarios or []) if isinstance(s, dict)
         ]
@@ -9886,7 +9880,11 @@ class SpecService:
         if scenario_type is not None:
             validate_scenario_type(scenario_type)
 
-        clearable = {"notes", "linked_criteria"}
+        if verification_method is not None:
+            from okto_pulse.core.domain.test_scenarios import validate_verification_method
+            validate_verification_method(verification_method)
+
+        clearable = {"notes", "linked_criteria", "verification_method"}
         clear_set = set(clear or [])
         bad_clear = clear_set - clearable
         if bad_clear:
@@ -9914,6 +9912,7 @@ class SpecService:
             ("when", when),
             ("then", then),
             ("scenario_type", scenario_type),
+            ("verification_method", verification_method),
             ("notes", notes),
         ):
             if value is not None and target.get(field) != value:
@@ -9922,7 +9921,7 @@ class SpecService:
 
         # Explicit clears (distinguish "omitted" from "emptied").
         for field in clear_set:
-            empty: object = [] if field == "linked_criteria" else ""
+            empty: object = None if field == "verification_method" else ([] if field == "linked_criteria" else "")
             if target.get(field) != empty:
                 target[field] = empty
                 if field not in changed_fields:
@@ -10152,7 +10151,7 @@ class SpecService:
         # A board-level evidence bypass may relax NC-9 completeness, but it must
         # never turn a caller-authored SHA/boolean into a trusted V2 execution.
         # Authenticate the installation receipt before any mutation or audit.
-        if evidence is not None:
+        if evidence is not None or target_scenario.get("verification_method") is not None:
             _require_trusted_test_evidence_v2_write(
                 board_id=spec.board_id,
                 spec_id=spec_id,
@@ -10161,6 +10160,7 @@ class SpecService:
                 status=status,
                 actor_id=user_id,
                 evidence=evidence,
+                verification_method=target_scenario.get("verification_method"),
             )
 
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
@@ -10433,6 +10433,7 @@ class SpecService:
                     status=str(status),
                     actor_id=user_id,
                     evidence=evidence,
+                    verification_method=s.get("verification_method"),
                 )
             if scenario_has_required_evidence(s, for_write=True):
                 continue

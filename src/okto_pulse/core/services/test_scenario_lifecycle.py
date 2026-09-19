@@ -22,10 +22,12 @@ import re
 from typing import Any, Mapping
 
 from okto_pulse.core.domain.enums import TestScenarioStatus
+from okto_pulse.core.domain.criterion_verification import criterion_verification_fields
 from okto_pulse.core.domain.sdlc_registry import is_transition_allowed
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     VALID_SCENARIO_TYPES,
+    validate_verification_method,
 )
 
 # --------------------------------------------------------------------------
@@ -55,6 +57,7 @@ SEMANTIC_FIELDS: tuple[str, ...] = (
     "then",
     "scenario_type",
     "linked_criteria",
+    "verification_method",
 )
 
 #: Editing only these fields preserves status and evidence.
@@ -163,7 +166,12 @@ def validate_scenario_types_for_write(
         s.get("id"): s for s in (old_scenarios or []) if isinstance(s, dict)
     }
     for s in new_scenarios or []:
-        if not isinstance(s, dict) or "scenario_type" not in s:
+        if not isinstance(s, dict):
+            continue
+        prev = old_by_id.get(s.get("id"))
+        if "verification_method" in s and (prev is None or prev.get("verification_method") != s["verification_method"]):
+            validate_verification_method(s["verification_method"])
+        if "scenario_type" not in s:
             continue
         new_type = s.get("scenario_type")
         prev = old_by_id.get(s.get("id"))
@@ -200,6 +208,9 @@ def resolve_scenario_types_for_whole_list_write(
             resolved.append(item)
             continue
         candidate = dict(item)
+        previous = old_by_id.get(candidate.get("id"))
+        if "verification_method" not in candidate and previous is not None and "verification_method" in previous:
+            candidate["verification_method"] = previous["verification_method"]
         if "scenario_type" not in candidate:
             previous = old_by_id.get(candidate.get("id"))
             if previous is None:
@@ -461,7 +472,9 @@ def compute_execution_attestation_sha256(
     return f"{EVIDENCE_V2_DIGEST_PREFIX}{digest}"
 
 
-def _semantic_acceptance_criterion(value: object) -> dict[str, str | None]:
+def _semantic_acceptance_criterion(
+    value: object, *, include_verification: bool = False
+) -> dict[str, Any]:
     """Project an AC to the stable identity/text that affects test semantics.
 
     Task backlinks and other workflow metadata deliberately do not participate:
@@ -479,6 +492,7 @@ def _semantic_acceptance_criterion(value: object) -> dict[str, str | None]:
         return {
             "id": str(identifier) if identifier not in (None, "") else None,
             "text": str(text) if text is not None else "",
+            **(criterion_verification_fields(value) if include_verification else {}),
         }
     return {"id": None, "text": str(value) if value is not None else ""}
 
@@ -527,9 +541,19 @@ def compute_test_scenario_semantic_sha256(
             "linked_criteria": linked_values,
         },
         "acceptance_criteria": [
-            _semantic_acceptance_criterion(item) for item in (acceptance_criteria or ())
+            _semantic_acceptance_criterion(
+                item, include_verification=plain.get("verification_method") is not None
+            )
+            for item in (acceptance_criteria or ())
         ],
     }
+    if plain.get("verification_method") is not None:
+        # Absent/null legacy methods keep the exact V1 receipt binding. An
+        # authored method is semantic and cannot reuse a pre-method receipt.
+        # V2 also binds the authored AC profile/obligation scope: changing the
+        # claimed obligation cannot reinterpret an older execution as proof.
+        payload["semantic_schema_version"] = 2
+        payload["scenario"]["verification_method"] = plain["verification_method"]
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return f"{EVIDENCE_V2_DIGEST_PREFIX}{digest}"
 
@@ -940,6 +964,12 @@ def scenario_has_authenticated_required_evidence(
 
     if not scenario_has_required_evidence(scenario):
         return False
+    if scenario.get("verification_method") is not None and scenario.get("status") in GATED_STATUSES:
+        from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method
+        try:
+            require_supported_test_verification_method(scenario["verification_method"])
+        except (TypeError, ValueError):
+            return False
     evidence = scenario.get("evidence") or scenario.get("latest_evidence")
     claims_v2 = bool(
         isinstance(evidence, dict)
@@ -950,7 +980,7 @@ def scenario_has_authenticated_required_evidence(
         )
     )
     if not claims_v2:
-        return True
+        return not (scenario.get("verification_method") is not None and scenario.get("status") in {"passed", "failed"})
 
     from okto_pulse.core.ports.test_evidence import (
         resolve_test_evidence_write_verifier,

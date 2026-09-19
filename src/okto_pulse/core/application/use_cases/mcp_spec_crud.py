@@ -32,7 +32,7 @@ from okto_pulse.core.application.use_cases.authorization import (
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     transition_permission_requirement,
 )
-from okto_pulse.core.domain.test_scenarios import ScenarioType
+from okto_pulse.core.domain.test_scenarios import ScenarioType, VerificationMethod, validate_verification_method
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.services.application_schemas import (
     PersistedTestScenarioSpecUpdate,
@@ -1945,6 +1945,7 @@ class McpAddTestScenarioCommand:
         "scenario_type",
         "linked_criteria_tokens",
         "notes",
+        "verification_method",
     )
 
     def __init__(
@@ -1959,6 +1960,7 @@ class McpAddTestScenarioCommand:
         scenario_type: ScenarioType,
         linked_criteria_tokens: list | None,
         notes: str | None,
+        verification_method: VerificationMethod | None = None,
     ) -> None:
         self.spec_id = spec_id
         self.scenario_id = scenario_id
@@ -1969,6 +1971,7 @@ class McpAddTestScenarioCommand:
         self.scenario_type = scenario_type
         self.linked_criteria_tokens = linked_criteria_tokens
         self.notes = notes
+        self.verification_method = verification_method
 
 
 class McpAddTestScenarioResult:
@@ -2026,6 +2029,7 @@ class McpAddTestScenarioUseCase:
 
         if not is_valid_scenario_type(command.scenario_type):
             return McpAddTestScenarioResult(invalid_scenario_type=command.scenario_type)
+        validate_verification_method(command.verification_method)
 
         criteria = spec.acceptance_criteria or []
         criteria_list = None
@@ -2046,6 +2050,7 @@ class McpAddTestScenarioUseCase:
             "title": command.title,
             "linked_criteria": criteria_list,
             "scenario_type": command.scenario_type,
+            **({"verification_method": command.verification_method} if command.verification_method is not None else {}),
             "given": command.given,
             "when": command.when,
             "then": command.then,
@@ -2114,6 +2119,8 @@ class McpUpdateTestScenarioCommand:
         "linked_criteria_tokens",
         "notes",
         "clear_fields",
+        "verification_method",
+        "expected_spec_version",
     )
 
     def __init__(
@@ -2129,6 +2136,8 @@ class McpUpdateTestScenarioCommand:
         linked_criteria_tokens: list | None,
         notes: str,
         clear_fields: list | None,
+        verification_method: VerificationMethod | None = None,
+        expected_spec_version: int | None = None,
     ) -> None:
         self.spec_id = spec_id
         self.scenario_id = scenario_id
@@ -2140,6 +2149,8 @@ class McpUpdateTestScenarioCommand:
         self.linked_criteria_tokens = linked_criteria_tokens
         self.notes = notes
         self.clear_fields = clear_fields
+        self.verification_method = verification_method
+        self.expected_spec_version = expected_spec_version
 
 
 class McpUpdateTestScenarioResult:
@@ -2182,6 +2193,8 @@ class McpUpdateTestScenarioUseCase:
             when=command.when or None,
             then=command.then or None,
             scenario_type=command.scenario_type,
+            **({"verification_method": command.verification_method} if command.verification_method is not None else {}),
+            **({"expected_spec_version": command.expected_spec_version} if command.expected_spec_version is not None else {}),
             linked_criteria=command.linked_criteria_tokens,
             notes=command.notes or None,
             clear=command.clear_fields,

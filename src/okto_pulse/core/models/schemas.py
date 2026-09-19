@@ -16,6 +16,7 @@ from pydantic import (
     computed_field,
     field_validator,
     model_validator,
+    model_serializer,
 )
 
 from okto_pulse.core.discovery_params_schema import (
@@ -68,6 +69,7 @@ from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     SCENARIO_TYPE_DESCRIPTION,
     ScenarioType,
+    VerificationMethod,
 )
 from okto_pulse.core.models.knowledge_propagation import (
     CardCreateKnowledgeMutationResponse,
@@ -456,6 +458,7 @@ class TestScenario(BaseModel):
     title: str
     linked_criteria: list[str] | None = None  # indices or text of acceptance criteria
     scenario_type: str = DEFAULT_SCENARIO_TYPE
+    verification_method: str | None = None
     given: str = ""  # precondition
     when: str = ""  # action
     then: str = ""  # expected result
@@ -466,6 +469,13 @@ class TestScenario(BaseModel):
     )
     evidence: TestScenarioEvidence | None = None
     latest_evidence: TestScenarioEvidence | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_unset_verification_method(self, handler):
+        result = handler(self)
+        if "verification_method" not in self.model_fields_set:
+            result.pop("verification_method", None)
+        return result
 
 
 class TestScenarioWrite(TestScenario):
@@ -478,6 +488,7 @@ class TestScenarioWrite(TestScenario):
 
     model_config = ConfigDict(extra="forbid")
 
+    verification_method: VerificationMethod | None = None
     scenario_type: ScenarioType = Field(
         DEFAULT_SCENARIO_TYPE,
         description=SCENARIO_TYPE_DESCRIPTION,

@@ -1447,3 +1447,67 @@ Retomada: continuar métodos/admissão até adapters e resolução compartilhada
 inventário/contribuição por Card; adoção ARQ/VER e integração writer/preview dos
 gates seguem dependentes desses predicados. P2 continua parcial, assim como P1
 integrado, P3, F2B, KG, migração/rollback, E2E/Grafx e benchmarks do pacote inteiro.
+
+### 2026-09-19 — autoria de método e primeira admissão autenticada (P2 parcial)
+
+- Método fechado independente de scenario_type, writer compartilhado
+  REST/MCP versionado e editor de frontend. Ausência histórica não ganha default.
+  Método explícito entra no digest da prova; passed/failed exige recibo V2
+  autenticado e capacidade publicada pela porta. O adapter atual declara somente
+  automated_test; demais métodos podem ser planejados, mas não ganham crédito.
+- SpecLockedError movido para contrato público de domínio e reexportado pelo
+  serviço, para preservar identidade e evitar reach-in do transporte Community.
+- A edição versionada adquire fence condicional da Spec antes de montar a lista
+  alterada, incluindo versão/status/edição/archive/Current. Conflito entre leitura
+  e escrita não sobrescreve conteúdo. Alterar/limpar método usa a invalidação
+  semântica existente, sem mudar scenario_type ou desbloquear conteúdo validado.
+- Digest com método explícito usa semantic_schema_version=2 e vincula também
+  perfil e links/aspectos de obrigação dos critérios. Sem método, mantém bytes
+  da projeção histórica V1: não reescreve recibos anteriores nem infere adoção.
+- UI no detalhe expandido de cenário exige Draft, não arquivado e permissões
+  de edição/interação; PATCH tem versão, escopo e zero retries. Mudança de
+  escopo/versão/autoridade desmonta o editor; clique duplo, resposta tardia e
+  falha de refresh após salvar não repetem a gravação. Método desconhecido
+  permanece visível e sem fallback silencioso.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-method-final.json`, par `wheels-method-final`: **789/311 .py,
+  854/395 payloads**, árvores source/wheel/install idênticas. Testes em processos
+  novos com PYTHONPATH pareado e bancos descartáveis; runtime do usuário intacto.
+- `core-method-final.log`: **131 passed em 21,24 s**, incluindo vocabulário
+  fechado, ausência histórica, digest e qualificação, prova não autenticada com
+  board Skip, fence após leitura, lifecycle, Evidence V2, contrato da exceção
+  pública, catálogo/manifests gerados e manifesto de contratos públicos.
+- `community-method-final.log`: **61 passed em 68,59 s**. REST e handler MCP
+  usam o mesmo writer; versão antiga, método inválido, campos extras, board
+  alheio, falta de permissão e conteúdo fora de Draft são recusados. Replay HTTP
+  real via ASGI produz recibo assinado pelo adapter; alteração de método e
+  adulteração de recibo não ganham crédito. Inclui regressões de Evidence V2
+  e entrega. Este ensaio não é E2E do Pulse instalado/Grafx.
+- As falhas preparatórias eram fixtures: versão herdada não era 1; permissões
+  novas conservam a autoridade histórica `spec.tests.create/update_status`;
+  GET sem o contexto completo foi substituído por releitura SQL da persistência.
+  O SpecModal precisava isolar o painel de policy não relacionado. As regras
+  do produto não foram relaxadas para satisfazer esses testes.
+- `frontend-method-final.log`: **36 passed em 15,96 s**, sendo 10 do editor,
+  24 de SpecModal.activity e dois da API. Cobrem métodos pendentes, remoção,
+  valor histórico desconhecido, read-only por estado/archive/permissão, versão,
+  refresh, clique duplo, resposta tardia e URL/body/retries do PATCH.
+- Typecheck/build, ESLint dos módulos novos, Ruff Python e diff-check aprovados.
+  `frontend-method-build.log` e `frontend-method-dist.log`: **78 arquivos**,
+  SHA256 `f84501abf2b26ba282bb0de52473dc7ed27e66a707ac8c8cb8c21b0f484486e0`.
+  Aviso de chunks acima de 500 kB permanece; não substitui benchmark do fluxo.
+- Closure inicial: sem findings de código, oito budgets **0/0**; somente os
+  dois READMEs precisaram do renderer oficial. Matriz: **7.497 imports Core,
+  1.239 Community→Core, 25 dependências**. `closure-method-final.json`: **exit 0,
+  ok=true**, zero findings de código/documentação, oito budgets **0/0**;
+  distribuição, conformance, singleton e AF35 aprovados.
+
+Limites e retomada: somente automated_test tem admissão concreta neste incremento.
+Static analysis/inspection/demonstration precisam de caminhos autenticados reais;
+enum ou checklist não são prova. Integrar capacidade/método e atribuição de trabalho
+ao resolver de requisitos, mínimos por autoridade e fallback de escopo; depois
+compartilhar inventário/contribuição por Card e integrar adoção ARQ/VER e gates
+writer/preview. P1 integrado, P2 completo, P3, F2B, KG, migração/rollback,
+E2E/Grafx e benchmarks seguem pendentes. O objetivo consolidado permanece ativo.

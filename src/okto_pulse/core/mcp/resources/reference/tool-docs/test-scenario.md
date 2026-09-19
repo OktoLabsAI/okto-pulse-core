@@ -4,6 +4,20 @@ version: "2.0"
 
 # Tool docs — `test-scenario`
 
+Scenario `verification_method` is independent of `scenario_type`: `automated_test`,
+`static_analysis`, `inspection`, or `demonstration`. Omission preserves legacy
+meaning; no method is inferred from the scenario type or evidence class. The
+Community verifier currently declares authenticated Evidence V2 automated tests.
+Other methods may be authored as pending plans, but cannot receive execution
+credit until their admission paths exist. The board evidence skip does not
+bypass the explicit method's authenticated-result requirement.
+
+Use add/update scenario to author the method. A method change is semantic and
+invalidates existing evidence through the normal body writer. `clear` can remove
+the method as an explicit Draft edit; it cannot preserve the old proof as credit
+for a different contract. `expected_spec_version` on the update tool rejects a
+stale edit. Historic scenarios without a method retain their original V1 digest.
+
 Delivery closeout requires this scenario to belong to a completed **test card**,
 have a current authenticated `passed` receipt, and be explicitly associated with
 the implementation it tested via `okto_pulse_record_delivery_evidence` with

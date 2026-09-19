@@ -1260,6 +1260,8 @@ class ExecuteTestScenarioEvidenceUseCase:
 
         issuer = resolve_test_evidence_execution_issuer()
         verifier = resolve_test_evidence_write_verifier()
+        from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method
+        require_supported_test_verification_method(scenario.get("verification_method"))
         if issuer is None or verifier is None:
             raise ValueError("evidence_v2.trusted_runtime_not_configured")
         issued = await issuer.execute(
