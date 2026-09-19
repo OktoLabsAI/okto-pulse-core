@@ -6,8 +6,9 @@ Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
 I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
 autorizada e depreciada. Preparação de IRs, contrato de classificação,
-armazenamento atômico, coordenador autorizado e writers REST/MCP disponíveis;
-UI de classificação, projeção de atualidade/gate, adoção de revisão legada,
+armazenamento atômico, coordenador autorizado, writers REST/MCP e revisão de
+atualidade/histórico em REST/MCP/frontend disponíveis; autoria de classificação
+na UI, integração do gate, adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -1000,3 +1001,94 @@ Publicação: após o ledger `d75e47b7`, os pushes normais de ambos os repos
 continuaram recusados por `Invalid username or token`. O par
 `78b9f338` / `32fe2c52` permanece local. Reautenticação solicitada anteriormente
 continua pendente; nenhuma credencial ou histórico remoto foi alterado.
+
+## P1 — revisão de classificações e testes de frontend — 2026-09-19
+
+Par de código: Core `df56fa1145d788ef89d59394e47ad6fba3cf5a5b`, Community
+`de3355eccfcf55e6ac64fb24fbb0688906378514`, em `feature/v0.4.0`.
+
+O projetor puro `domain/architecture_classification_review.py` reúne candidatos
+atuais e testemunhos relacionais da edição, sem criar ou alterar decisões/IRs.
+Classifica atualidade como pending/current/review_required/unresolved/retired/
+unavailable. Calcula contadores globais antes de paginação/filtro, mantém total
+desconhecido para enumeração incompleta e nunca usa fonte inacessível como zero.
+Layout, ordem de participantes e revisão física sem delta semântico preservam
+a classificação. Alteração de contrato afeta somente o candidato/fragmento ou
+restante contextual alterado; IR ausente/inativo/ambíguo exige revisão.
+
+O detalhe usa identidade e digest exatos, retém contrato analisado/atual,
+autoria/data/versão/IRs/escopos/proveniência e diferenças RFC6901 (máximo de 100
+caminhos/16 KiB, truncamento explícito sem alterar atualidade). Arrays são
+atômicos; ausência, null, boolean e número não são equivalentes. Retirada
+confirmada permite ler o testemunho pelo digest analisado e mantém obrigações
+dos IRs. Conflitos/corrupção detectável ficam não resolvidos ou indisponíveis;
+nenhum reparo em leitura. Histórico de outra edição não satisfaz a atual.
+
+Superfícies: REST `GET /boards/{board_id}/specs/{spec_id}/architecture-classifications`
+e MCP `okto_pulse_list_architecture_classifications`, schema fechado, limite
+1–100/default 25 e filtro opcional de estado. Permissões exigidas antes dos
+corpos: `spec.entity.read`, `spec.architecture.read` e
+`spec.integration_requirements.read`; leitor anterior de candidatos inalterado.
+O caso de uso mantém um snapshot consistente e usa a projeção pública existente
+`ApplicationQuery(select_fields=(id, board_id))`, filtrada pelos dois IDs antes
+de carregar a Spec. Sem reach-in, exceção ou infraestrutura nova no Core.
+
+Investigação executável: `get_application_record(..., includes=())` não era uma
+projeção leve como suposto; suprime relacionamentos, mas lê escalares JSON.
+Três testes de negação detectaram leitura de IR antes da autorização. Corrigida
+a ordem das verificações e usada projeção explícita/escopo na consulta, mantendo
+os asserts de zero leitura de corpos antes da autorização. Dois outros testes
+falharam porque o fixture reutilizava sessão após fechar o snapshot; agora cada
+leitura abre/fecha sua própria sessão/UOW, como REST/MCP reais. Nenhum guard de
+snapshot, permissão ou estado foi relaxado.
+
+Frontend: `ArchitectureClassificationsPanel` na aba IRs da Spec, carregamento
+sob demanda, contadores globais, filtro/paginação, contratos/diferenças e
+proveniência/IRs em detalhe. Invalida resultados e aborta consultas ao trocar
+Spec/versão/página, atualizar, fechar ou perder permissão. Referências externas
+são texto, sem fetch. `classification_complete` não é aprovação semântica,
+adoção de rollout ou autorização de início; os três flags de avaliação permanecem
+false. Fonte removida/context_only não dispensa IRs. Specs Done/arquivadas não
+são reabertas nem migradas pela leitura.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-classification-review.json` e `...-final.json`: antes dos lotes
+  comportamentais, **783/311 `.py` e 848/395 payloads** idênticos entre source,
+  wheels e install; par `wheels-classification-review`, processos novos e
+  PYTHONPATH pareado. Frontend build/typecheck passou, **78 arquivos**, SHA256
+  `8b03c619139b4943705f449daedde4531231fdfb853dd89dd55488b21ef199ee`.
+- `frontend-classification-review.log`: **71 passed**, 52,28 s, cinco arquivos
+  (novo componente/cliente e regressões de candidatos/cliente/SpecModal). Inclui
+  pendência fora da página, filtros, população desconhecida, detalhes exatos,
+  contratos como texto, IRs preservados, escopo/edição/versão/digest divergentes,
+  cancelamento/resposta tardia e erros/permissões. Build não substituiu os testes.
+- `core-classification-review.log`: **150 passed / 1 failed**, 15,05 s, contagem
+  antiga 342 tools. Oráculo atualizado para **343 tools / 340 policies / três
+  isenções existentes**, sem aumentar isenções. `...-final.log`: **151 passed**,
+  14,73 s, domínio/leitores/contratos públicos/permissões/catalog/manifests.
+- `community-classification-review.log`: **16 passed / 5 failed**, 32,65 s,
+  investigação descrita acima. `...-final.log`: **40 passed**, 60,40 s; inclui
+  SQLite real, ausência de DML em leituras, negação antes dos corpos, filtro de
+  outra Board, histórico corrompido, edição/Done, ASGI/FastMCP reais, erro de
+  digest 409, leitura negada 403, schema fechado e regressões do writer/replay.
+- Catálogo e manifests regenerados pelos geradores oficiais; **45 tools de
+  schema fechado**. Ruff dos novos módulos/testes e ESLint dos novos arquivos
+  frontend passaram; `git diff --check` aprovado.
+- Closure inicial: zero findings de código, oito budgets 0/0; somente as duas
+  matrizes README desatualizadas. Regeneradas pelo renderer oficial.
+  `closure-classification-review-final.json`: **exit 0, ok=true**, zero findings
+  de código/documentação, oito budgets **0/0**, distribuição/conformance/AF35/
+  singleton aprovados, **7.447 imports Core / 1.236 Community→Core**, 25 deps.
+
+O usuário confirmou reautenticação. A conta ativa do GitHub e `ls-remote` dos
+dois repos foram verificados com sucesso. Publicação deste par e dos commits
+acumulados será registrada após os pushes normais; não há release/tag/merge.
+
+P1 continua **em andamento**. Próximo passo: autoria das três decisões na UI e
+testes frontend de envio/erros/replay/conflito, sugestões determinísticas e
+integração da atualidade com o gate/rollout autorizado. `architecture_adoption`
+continua significando somente escopo de Designs; não é marcador de adoção do
+contrato ARQ/VER. Gate inicial, adoção legada, verificabilidade/P2, Delivery/P3,
+migração F2B, KG, suites amplas/E2E instalado/Grafx, benchmarks e rollback final
+permanecem abertos. Nenhum processo ou dado real foi alterado.
