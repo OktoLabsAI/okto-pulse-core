@@ -1,0 +1,19 @@
+{
+  "kind": "schema_inventory_only",
+  "lifespan_entered": false,
+  "files": {
+    "mcp-tools-f09.json": {
+      "bytes": 244028,
+      "sha256": "b5216d9672ea46906258e03ff06c703fcfe353bdc9f788d16f0e60fb58c4a814"
+    },
+    "openapi-f09.json": {
+      "bytes": 1012988,
+      "sha256": "2bb6ff36512899c30797ed3ddae968b0f2d959593303d9534b54f9a34258c802"
+    }
+  },
+  "mcp_tools": 340,
+  "openapi_paths": 372,
+  "openapi_operations": 460,
+  "core_sha": "54832726a0adf61e3123b3fca21c209c20913e04",
+  "community_sha": "cac95ef3d962d9f14d99ad7f8e0124a67de5c960"
+}

@@ -3,9 +3,9 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
-I0 + P0 e correção do writer F09. O patch F09/porta passou nos testes focados e
-na auditoria completa; publicação do incremento em andamento. Nenhuma migração
-real autorizada. Não confundir esse incremento com
+I0 + P0: correção do writer F09/porta concluída e publicada, F11 caracterizado;
+inventário e suites amplas em andamento. Nenhuma migração real autorizada.
+Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
 
 Este é o ledger único dos dois repositórios. Atualizar após cada incremento
@@ -93,9 +93,11 @@ vira nó gráfico ou aprovação. Métodos precisam de admission path até o ada
 - DEI F09: reproduzido com SQLite descartável e requests antigos válidos de
   implementação/teste: ambos retornavam HTTP 200. Patch fecha esse writer de
   provas com `delivery_card_scope_required` (422), orienta rota por card, mantém
-  waiver/revoke e leitura histórica. Validação do patch em andamento.
-- DEI F11: fallback por título versus alterações description/details e versões/
-  receipts; não mudar digests históricos por hipótese.
+  waiver/revoke e leitura histórica. Patch validado e publicado no par abaixo.
+- DEI F11: reproduzido por caso de uso real: description/details incrementam a
+  versão, mas o predicado Delivery aceita a prova fallback anterior; title
+  invalida o digest. Correção prospectiva depende do contrato/rollout novo,
+  preservando históricos (DEI §11.4 + ARQ/VER §11).
 - P0: interfaces/IDs/proveniência, snapshots efetivos, locks, gates iniciais,
   coverage read model versus inventory e verifiers por método.
 - K0/F0: caracterizar implementação já incorporada; não repetir evolução de
@@ -113,7 +115,7 @@ reprodução, alternativas e frente isolada.
 | --- | --- | --- |
 | BASE | INV-01…18; T01…46 | Não executados |
 | KG | KG-01…66; D/G/Q | Não executados |
-| DEI | DEI-01…24; DEI-T01…64 | Não executados |
+| DEI | DEI-01…24; DEI-T01…64 | DEI-T53/F09 coberto; F11 caracterizado; demais critérios ainda sem matriz completa |
 | ARQ/VER | AC-ARQ-01…16, AC-VER-01…18, AC-INT-01…12; ADV-01…24 | Não executados |
 | Arquitetura executável | Todos os budgets zero | Aprovada: oito budgets zero, sem findings, inclusive wheels e READMEs |
 | Pacote/ambiente | Wheels iguais às fontes, par/imports/processos | Patch F09 + porta: 771 Core + 311 Community `.py` idênticos |
@@ -123,11 +125,11 @@ Não copiar resultados de validações de setembro anteriores como resultados at
 
 ## Próximo passo concreto
 
-Concluir revisão de distribuição F09/porta e registrar commits pareados e push;
-reconstruir/reinstalar/comparar o par após qualquer alteração em `src`. Registrar
-commits pareados e push. Prosseguir caracterização F11 (receipt, versão, conteúdo
-e edição autorizada), P0 e dependências do inventário efetivo antes de congelar
-schema/migrações de entrega incremental.
+Examinar suites amplas e separar falhas do par atual de falhas reproduzidas na
+base. Prosseguir P0 e inventários F0/K0/I0 em [inventory.md](inventory.md), antes
+de congelar schema/migrações de entrega incremental. F11 exige correção
+prospectiva integrada ao rollout. Após qualquer mudança em `src`, reconstruir,
+reinstalar e comparar os bytes do par antes de validar comportamento.
 
 ## Execução 2026-09-19 — primeiro incremento
 
@@ -192,5 +194,50 @@ Símbolos adicionais revisados: `card_inventory`, `require_card_delivery`,
 `require_card_operational_mutation_allowed`, listeners de
 `sqlalchemy_policy_subject_versioning`, admission/projection `_implementation`
 e `_test`, `record_card`, contratos de `ArchitectureInterface`/Design e início
-de `services/architecture.py`. A cadeia F11/P0 não está concluída; não modificar
-digests selados nem inferir exploração apenas da ausência de campo no hash.
+de `services/architecture.py`. A cadeia P0 não está concluída; não modificar
+digests selados nem extrapolar F11 para a aprovação de todos os gates de Done.
+
+## Marcos publicados e validação complementar
+
+| Repositório | Commit publicado em feature/v0.4.0 | Conteúdo |
+| --- | --- | --- |
+| Core | `54832726a0adf61e3123b3fca21c209c20913e04` | DTO/guard F09, porta de inventário, política pura única, docs/resources e matriz zero |
+| Community | `cac95ef3d962d9f14d99ad7f8e0124a67de5c960` | Writer fechado, consumo da porta, tipos/docs e regressões reais/F13 |
+| Community | `ff390b3` | Caracterização F11 por UpdateCardUseCase, sem mocks de autorização/persistência |
+| Community | `27f3654` | Inventário ARCHITECTURE alinhado a 1.227 imports públicos; texto exige zero exceções |
+
+F11: 3 testes passaram (`f11-characterization.log`). Execução conjunta com a
+integração Delivery: **29 passaram** (`delivery-with-f11.log`). As primeiras
+tentativas do fixture falharam por portas ainda não compostas (domain event
+reader, critical context e knowledge propagation); foram compostos os adapters
+reais, sem desligar guards. Não classificar essas falhas de fixture como bugs
+de produto nem como baseline.
+
+Coleta completa (`pytest --collect-only -q`) do par atual: **12.088 Core e 5.265
+Community**, exit 0. Primeira suite Core com `pytest -q --maxfail=10`:
+**299 passed, 10 failed**, 442,34 s (`core-suite-current.log`). As dez falhas
+AF23 chegaram ao mesmo erro SQLite: coluna `specs.skip_delivery_evidence`
+ausente. O fixture cria a tabela com sua metadata antes da Community;
+`create_all` não acrescenta colunas a tabelas já existentes. Corrigido somente
+`tests/sqlalchemy_test_models.py`, incluindo a coluna com o mesmo default false.
+As duas suites AF23 afetadas passaram: **39 passed** (`af23-fixture.log`).
+Reexecução ampla em `core-suite-fixture.log`, excluindo apenas o stress de
+release já aprovado na primeira execução (dados e efeitos do stress isolados
+por tmp_path e adapters de teste). Nenhuma mudança em produção para corrigir
+essa falha de fixture. Não afirmar reprodução dinâmica na base anterior.
+
+Suite Community continua em `community-suite-current.log`; resultado ainda
+pendente. Uma falha conhecida é drift do número de imports em
+`docs/ARCHITECTURE.md`, corrigido em `27f3654`; quatro testes AF25 passaram
+(`af25-docs.log`). Não declarar a suite ampla aprovada com esse reteste isolado.
+Dados permanecem descartáveis; nenhuma fonte `src` mudou durante essas suites.
+
+Captura real de catálogo/OpenAPI/CLI descrita em [inventory.md](inventory.md):
+340 tools, 372 paths/460 operações HTTP. Hashes, SHAs e tamanho observado em
+[surface-inventory-2026-09-19.json](surface-inventory-2026-09-19.json). Nenhuma
+medição de redução de tokens ou fluxo completo foi concluída.
+
+Este incremento não muda schema nem migra registros. Rollback de código exige
+reverter **o par** `54832726`/`cac95ef` (Community passa a requerer a porta Core),
+sem alterar os ledgers existentes. Nenhuma release/tag foi criada; versões de
+pacote continuam 0.3.4 enquanto a iniciativa 0.4.0 está em implementação.

@@ -1144,6 +1144,10 @@ class Spec(Base):
     skip_code_evidence_coverage: Mapped[bool] = mapped_column(
         nullable=False, server_default=text("false")
     )
+    # Keep the test-owned table compatible with the Community delivery reader.
+    skip_delivery_evidence: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false")
+    )
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
     skip_qualitative_validation: Mapped[bool] = mapped_column(
         nullable=False, server_default=text("false")
