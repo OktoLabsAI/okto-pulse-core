@@ -239,7 +239,7 @@ class GetRequirementVerificationUseCase:
                     "status",
                     "archived",
                     *fields,
-                    *(("test_scenarios",) if can_read_planning else ()),
+                    *(("test_scenarios", "api_contracts", "decisions", "title", "description", "context") if can_read_planning else ()),
                 ),
                 limit=1,
             )
@@ -269,6 +269,7 @@ class GetRequirementVerificationUseCase:
                 "status",
                 "archived",
                 "test_scenario_ids",
+                "title", "description", "details",
             )
             cards = await uow.services.list_application_records(
                 ApplicationQuery(
@@ -293,20 +294,28 @@ class GetRequirementVerificationUseCase:
                 ],
                 admitted_methods=supported_test_verification_methods(),
             )
-            responsibilities = default_delivery_inventory_policy().resolve_implementation_responsibility(
-                board_id=spec.board_id,
-                spec_id=spec.id,
-                collections={
-                    field: getattr(spec, field)
-                    for field in fields
-                    if hasattr(spec, field)
-                },
+            inventory = default_delivery_inventory_policy().effective_inventory(
+                spec=spec,
                 cards=[
                     {field: getattr(card, field, None) for field in card_fields}
                     for card in cards
                 ],
                 qualification=resolved,
             )
+            responsibilities = inventory.responsibilities
+            families = sorted({row.family for row in inventory.rows})
+            resolved["effective_inventory"] = {
+                "contract_version": inventory.contract_version,
+                "population_complete": inventory.population_complete,
+                "plan_complete": inventory.complete,
+                "total": len(inventory.rows) if inventory.population_complete else None,
+                "pending_count": sum(bool(row.blockers) for row in inventory.rows) if inventory.population_complete else None,
+                "unassigned_count": sum(not row.contributions for row in inventory.rows) if inventory.population_complete else None,
+                "families": {family: sum(row.family == family for row in inventory.rows) for family in families},
+                "snapshot_sha256": inventory.snapshot_sha256,
+                "issues": list(inventory.issues),
+                "adoption_evaluated": False, "delivery_evaluated": False,
+            }
             by_requirement = {
                 (row.requirement_type, row.requirement_id): row
                 for row in responsibilities.rows

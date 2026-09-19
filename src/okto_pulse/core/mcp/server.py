@@ -12923,6 +12923,11 @@ async def okto_pulse_get_requirement_verification(
     also resolves declared methods against installed admission capabilities and
     canonical scenario-to-Test-Card assignments, plus declared implementation
     contributions and unambiguous BR responsibility through canonical FR links.
+    effective_inventory summarizes the complete prospective delivery population,
+    including AC/API/Decision and unlinked Card scope, before pagination. Missing
+    supplementary facts return unknown totals; unassigned obligations stay pending.
+    Its snapshot digest and contribution scopes are planning facts, not adoption
+    of a new delivery contract. Current credit remains under the adopted contract.
     Requirement implementation_plan uses implementation-plan/v1 contributions:
     card_id, scope (whole_requirement or selected_criteria), criterion_ids and
     summary (required for selected_criteria). Author through existing Draft

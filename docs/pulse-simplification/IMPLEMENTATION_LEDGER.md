@@ -1960,3 +1960,62 @@ Par de referências locais publicado por push normal em `feature/v0.4.0`:
 Core `cc5d025977b8a39fbd926691c555d0c54a50d153`; Community
 `f8e3be731719833bd7e12e04c80642a7db9d652d`. HEADs remotos conferidos iguais
 aos locais; árvores limpas após os commits funcionais.
+
+### Validado — inventário efetivo completo para planejamento e futura adoção
+
+Turno anterior: progresso (referências locais publicadas). Árvores limpas na
+partida. Releitura ARQ/VER §4.2/§5/§11: centralizar a população sem eliminar
+obrigações e preservar o contrato aprovado até adoção explícita. O inventário
+legado tem oito conjuntos e fallback; a responsabilidade tipada qualificava cinco.
+
+Nova política pública `effective_inventory` resolve responsabilidade qualificada
+uma vez e agrega AC/API/Decision e escopo dos Cards sem vínculos. Mantém todas as
+obrigações observadas, inclusive sem responsável. Não sintetiza divisão entre
+vários Cards suplementares. Definição qualificada e scope_sha256 por contribuição
+permanecem separados, para não invalidar outro Card por alteração só de alocação.
+Fallback prospectivo card-delivery-scope/v2 inclui title/description/details;
+F11 já havia sido reproduzido no ledger. Nenhum digest selado legado é reescrito.
+
+Reader de qualificação usa essa mesma resolução e inclui resumo global delimitado
+effective_inventory antes de paginar requisitos. Campos suplementares e conteúdo
+de Card só são carregados com a autoridade de planejamento já exigida. UI distingue
+população completa, pendências e indisponibilidade, sem inferir zero ou crédito.
+Gate/admissão/rollup ativos permanecem no contrato atual até adoção/cutover integrado;
+esta é uma dependência concreta, não conclusão de RF-INT-01.
+
+Validação em 2026-09-19 (`.validation-v040`):
+
+- `provenance-inventory-final.json`: **794 Core / 312 Community .py**, conjuntos
+  e bytes exatos; **859/396 payloads** source→wheel→install, sem mismatches.
+  Wheels SHA256 Core `b5b4b261373cd887e7b0b450f0a9f795faf068596d7f05beae8ad8a5a4e88593`,
+  Community `3bca3fdfc5485df15ab84473b0f628ae2241af6bc686a400fb18786f7b8ba963`.
+  Processos novos, PYTHONPATH pareado; nenhum runtime real alterado.
+- `core-inventory-final.log`: **90 passed em 10,68 s**. Preservação de AC/API/
+  Decision, herança BR→Card exata, alocação suplementar ambígua permanece pendente
+  para os Cards vinculados, limites/duplicidade/ausência não viram zero, mudanças
+  normativas do fallback prospectivo alteram o digest sem reescrever o legado.
+  Definição de requisito e contribuição de outro Card permanecem estáveis sob
+  alteração de alocação não relacionada. Catálogo/manifests também aprovados.
+- `community-inventory.log`: **36 passed em 90,91 s** (10 leitura + 26 regressão
+  Delivery). Após o ajuste final da projeção por Card e digest global, os dez
+  testes de leitura foram repetidos: `community-inventory-final.log`, **10 passed
+  em 33,72 s**. SQL real comprova extras/escopo genérico fora da primeira página,
+  sem carregar cenários/Cards/API/Decision quando falta autoridade de planejamento.
+  REST/MCP continuam usando o mesmo reader e contrato de qualificação.
+- `frontend-inventory.log`: **108 passed em 31,40 s**, cinco arquivos incluindo
+  RequirementVerificationPanel. Novos testes distinguem escopo completo pendente
+  de requisitos qualificados alocados, desconhecido de zero e ocultação por perda
+  de permissão. Build/typecheck e ESLint aprovados; dist verificado, **78 arquivos**,
+  SHA256 `372e37ed677d0bb1eb2358c5ea2df205a5c865e3d126d610f4f456009e78f729`.
+- `closure-inventory-final.json`: **exit 0, ok=true**, zero findings de código e
+  documentação, oito budgets **0/0**. READMEs atualizados via renderer oficial:
+  **7.539 imports Core / 1.242 Community→Core / 25 dependências**. Ruff e diff-check
+  aprovados. Sem falha de teste; primeira auditoria pediu apenas atualização dos
+  READMEs para as novas contagens.
+
+Próximo passo: integrar bindings de contribuição/seleção e a adoção explícita do
+contrato a este inventário, fazendo admissão, gate e rollup consumirem a mesma
+resolução. A projeção de planejamento entregue ainda não muda o crédito ativo.
+Divisão de AC/API/Decision entre vários Cards sem plano suficiente continua
+pendente, não recebe ownership fabricado. Sem migration nova, benchmark, E2E/Grafx
+ou release/tag. Estado: **progresso**; iniciativa completa permanece em andamento.

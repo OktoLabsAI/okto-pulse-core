@@ -7,6 +7,7 @@ runtime provider, cache or registration side effect.
 """
 
 from typing import Protocol
+from okto_pulse.core.domain.effective_delivery_inventory import EffectiveDeliveryInventory
 
 from okto_pulse.core.domain.delivery_evidence import DeliveryObligation
 from okto_pulse.core.domain.delivery_inventory import DefaultDeliveryInventoryPolicy
@@ -14,6 +15,8 @@ from okto_pulse.core.domain.implementation_responsibility import ImplementationR
 
 
 class DeliveryInventoryPolicy(Protocol):
+    def effective_inventory(self, *, spec: object, cards: list[dict], qualification: dict) -> EffectiveDeliveryInventory: ...
+
     def spec_obligations(self, spec: object) -> tuple[DeliveryObligation, ...]: ...
 
     def card_obligations(
