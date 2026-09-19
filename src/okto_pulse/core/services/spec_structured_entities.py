@@ -23,6 +23,7 @@ from okto_pulse.core.domain.criterion_verification import (
     VERIFICATION_REQUIREMENT_FIELDS,
     criterion_verification_fields,
 )
+from okto_pulse.core.domain.requirement_verification import requirement_verification_fields
 
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import (
@@ -183,6 +184,7 @@ _ID_PREFIX_BY_TYPE = {
     "project_structure_node": "psn",
 }
 _TECHNICAL_REQUIREMENT_FIELDS = {
+    "verification",
     "id",
     "text",
     "title",
@@ -1686,6 +1688,36 @@ class StructuredSpecEntityService:
                             f"{command.operation}_affects_requirement_links",
                         )
 
+        # Inheritance belongs to the inheriting requirement. Include its
+        # dependents in the existing acknowledgement workflow; never prune or
+        # silently replace a selected source/terminal criterion.
+        if command.entity_type in {*VERIFICATION_REQUIREMENT_FIELDS, "acceptance_criterion"}:
+            for target_type, target_field in VERIFICATION_REQUIREMENT_FIELDS.items():
+                for item in related_updates.get(target_field, getattr(spec, target_field, None) or []):
+                    if not isinstance(item, dict):
+                        continue
+                    qualification = item.get("verification")
+                    if not isinstance(qualification, dict):
+                        continue
+                    selections = qualification.get("inheritance") or []
+                    affected = any(
+                        isinstance(selection, dict) and (
+                            command.entity_type == "acceptance_criterion"
+                            and bool(target_id_set.intersection(selection.get("criterion_ids") or []))
+                            or isinstance(selection.get("source"), dict)
+                            and selection["source"].get("requirement_type") == command.entity_type
+                            and selection["source"].get("requirement_id") in target_id_set
+                        )
+                        for selection in selections
+                    )
+                    target_id = spec_child_id(item)
+                    if affected and target_id:
+                        add_ref(
+                            target_type, target_id,
+                            canonical_spec_child_ref(spec.id, target_type, target_id),
+                            f"{command.operation}_affects_verification_inheritance",
+                        )
+
         counts: dict[str, int] = {}
         for ref in refs:
             counts[ref.target_type] = counts.get(ref.target_type, 0) + 1
@@ -1862,13 +1894,14 @@ class StructuredSpecEntityService:
                     "status",
                     "notes",
                     "linked_task_ids",
-                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else set()),
+                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification"}),
             )
             text = str(payload.get("text") or payload.get("title") or "").strip()
             if not text:
                 raise ValueError("text is required.")
             return {
                 **(criterion_verification_fields(payload) if entity_type == "acceptance_criterion" else {}),
+                **(requirement_verification_fields(payload) if entity_type == "functional_requirement" else {}),
                 **({"id": payload["id"]} if payload.get("id") else {}),
                 "text": text,
                 "status": payload.get("status") or "active",
@@ -1923,7 +1956,7 @@ class StructuredSpecEntityService:
                     "status",
                     "notes",
                     "linked_task_ids",
-                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else set()),
+                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else {"verification"}),
             )
             if "text" in payload or "title" in payload:
                 text = str(payload.get("text") or payload.get("title") or "").strip()
@@ -1935,6 +1968,8 @@ class StructuredSpecEntityService:
                     item_dict[key] = payload[key]
             if entity_type == "acceptance_criterion":
                 item_dict.update(criterion_verification_fields(payload))
+            else:
+                item_dict.update(requirement_verification_fields(payload))
             if (
                 "linked_task_ids" in item_dict
                 and item_dict["linked_task_ids"] is not None
@@ -2114,6 +2149,7 @@ class StructuredSpecEntityService:
         self, payload: dict[str, Any], *, creating: bool
     ) -> None:
         self._ensure_only_keys(payload, _TECHNICAL_REQUIREMENT_FIELDS)
+        payload.update(requirement_verification_fields(payload))
         if not creating and not str(payload.get("id") or "").strip():
             raise ValueError("id is required.")
         text = str(payload.get("text") or payload.get("title") or "").strip()

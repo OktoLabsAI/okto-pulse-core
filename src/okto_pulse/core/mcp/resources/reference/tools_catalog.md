@@ -266,6 +266,7 @@ Semantic guideline protocol:
 - `okto_pulse_delete_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_get_checklist_binding` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_checklist_receipt` — docs: `okto-pulse://reference/tool-docs/spec`
+- `okto_pulse_get_requirement_verification` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_context` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_spec_evaluation` — docs: `okto-pulse://reference/tool-docs/spec`

@@ -14,6 +14,36 @@ Validation and curated-checklist gate rules:
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+## `okto_pulse_get_requirement_verification`
+
+Read the current relational qualification of FR/TR/IR/OR/BR, including explicit
+criterion links, selected inheritance paths, bound source digests and versioned
+default proposals. Requires `spec.entity.read`, `spec.integration_requirements.read`
+and `spec.observability_requirements.read` before requirement bodies are loaded.
+
+Parameters: `board_id`, `spec_id`; optional `offset` (default 0), `limit` (1–100,
+default 25). Supply both `requirement_type` and `requirement_id` to inspect one
+obligation. `paths_offset` pages additional paths for that obligation. The type
+is one of `functional_requirement`, `technical_requirement`,
+`integration_requirement`, `observability_requirement`, `business_rule`.
+
+Global counts and `criteria_resolution_complete` include obligations outside the
+page. Missing populations have unknown totals. Inspect `population_complete`,
+`counts_scope`, issues, blockers and path truncation before interpreting results.
+Each inheritance selection retains its source, selected terminal criteria,
+covered aspect and source digest. Existing BR→FR links do not imply inheritance.
+
+Use the existing structured entity writer to author `verification` with
+`mode: explicit|inherited`, nonempty `required_profiles` and, for inheritance,
+`inheritance: [{source: {requirement_type, requirement_id}, source_digest,
+criterion_ids, covered_aspect}]`. The fixed evidence policy is
+`pulse-verification/v1`; no per-requirement bypass or alternative policy is
+accepted. Proposals become authored values only when deliberately saved.
+
+This reader performs no writes or backfills. Criterion resolution does **not**
+evaluate proof methods, execution assignments, semantic adequacy, evidence or
+ARQ/VER rollout. No readiness/approval/delivery credit is granted by the read.
+
 ## `okto_pulse_add_spec_dependency`
 
 Add a directed operational prerequisite to a Spec. Both Specs must exist on the

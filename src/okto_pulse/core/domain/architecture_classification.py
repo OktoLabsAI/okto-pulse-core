@@ -33,6 +33,8 @@ from okto_pulse.core.domain.architecture_candidates import (
 )
 
 
+from okto_pulse.core.domain.requirement_verification import RequirementVerification
+
 MAX_CLASSIFICATION_BYTES = 256 * 1024
 Nonempty = Annotated[str, StringConstraints(strict=True, min_length=1, pattern=r"\S")]
 Digest = Annotated[str, StringConstraints(strict=True, pattern=r"^[0-9a-f]{64}$")]
@@ -66,6 +68,7 @@ class AuthoredIntegrationRequirement(TypedDict, total=False):
     linked_task_ids: list[Nonempty] | None
     status: Literal["active"]
     notes: str | None
+    verification: RequirementVerification | None
 
 
 class ArchitectureDecisionIntent(BaseModel):

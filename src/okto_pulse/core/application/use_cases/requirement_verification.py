@@ -1,0 +1,215 @@
+"""Bounded, authorized read of qualification paths over one relational snapshot."""
+
+import json
+from dataclasses import dataclass
+
+from okto_pulse.core.application.use_cases.authorization import (
+    PermissionRequirement,
+    require_all,
+)
+from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.domain.criterion_verification import (
+    VERIFICATION_REQUIREMENT_FIELDS,
+)
+from okto_pulse.core.domain.requirement_verification import VerificationRequirementRef
+from okto_pulse.core.domain.requirement_verification_resolution import (
+    resolve_requirement_verification,
+)
+from okto_pulse.core.ports.application_persistence import (
+    ApplicationFilter,
+    ApplicationQuery,
+)
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
+
+class RequirementVerificationReadError(ValueError):
+    """Safe public code without payload or provider diagnostics."""
+
+
+@dataclass(frozen=True, slots=True)
+class GetRequirementVerificationCommand:
+    board_id: str
+    spec_id: str
+    offset: int = 0
+    limit: int = 25
+    requirement_type: str | None = None
+    requirement_id: str | None = None
+    paths_offset: int = 0
+
+    def __post_init__(self):
+        for value in (self.board_id, self.spec_id):
+            if not isinstance(value, str) or not value.strip() or len(value) > 255:
+                raise RequirementVerificationReadError(
+                    "verification_read_scope_invalid"
+                )
+        for value, minimum, maximum in (
+            (self.offset, 0, 2**63 - 1),
+            (self.limit, 1, 100),
+            (self.paths_offset, 0, 2**63 - 1),
+        ):
+            if type(value) is not int or not minimum <= value <= maximum:
+                raise RequirementVerificationReadError(
+                    "verification_read_window_invalid"
+                )
+        if (self.requirement_type is None) != (self.requirement_id is None):
+            raise RequirementVerificationReadError("verification_read_identity_invalid")
+        if self.requirement_type is not None:
+            try:
+                VerificationRequirementRef(
+                    requirement_type=self.requirement_type,
+                    requirement_id=self.requirement_id,
+                )
+            except ValueError:
+                raise RequirementVerificationReadError(
+                    "verification_read_identity_invalid"
+                ) from None
+        elif self.paths_offset:
+            raise RequirementVerificationReadError(
+                "verification_read_identity_required"
+            )
+
+
+def _bytes(value):
+    return len(
+        json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        ).encode()
+    )
+
+
+def project_requirement_verification(resolved, command):
+    """Page only presentation; global resolution never depends on this window."""
+    all_rows = resolved["requirements"]
+    rows = all_rows
+    if command.requirement_type is not None:
+        rows = [
+            row
+            for row in rows
+            if (row["requirement_type"], row["requirement_id"])
+            == (command.requirement_type, command.requirement_id)
+        ]
+    result = {key: value for key, value in resolved.items() if key != "requirements"}
+    result.update(
+        {
+            "contract_version": "requirement-verification/v1",
+            "total": len(rows) if resolved["population_complete"] else None,
+            "population_total": len(all_rows)
+            if resolved["population_complete"]
+            else None,
+            "resolved_count": sum(row["qualification_resolved"] for row in all_rows),
+            "counts_scope": "complete"
+            if resolved["population_complete"]
+            else "observed",
+            "offset": command.offset,
+            "limit": command.limit,
+            "items": [],
+        }
+    )
+    for row in rows[command.offset : command.offset + command.limit]:
+        item = {
+            key: value
+            for key, value in row.items()
+            if key not in {"criteria_paths", "blockers"}
+        }
+        item.update(
+            {
+                "blockers": row["blockers"][:20],
+                "blocker_count": len(row["blockers"]),
+                "blockers_truncated": len(row["blockers"]) > 20,
+                "criteria_paths": [],
+                "paths_total": len(row["criteria_paths"]),
+                "paths_offset": command.paths_offset,
+            }
+        )
+        for path in row["criteria_paths"][
+            command.paths_offset : command.paths_offset + 100
+        ]:
+            if _bytes([*item["criteria_paths"], path]) > 16 * 1024:
+                break
+            item["criteria_paths"].append(path)
+        next_path = command.paths_offset + len(item["criteria_paths"])
+        item["paths_has_more"] = next_path < len(row["criteria_paths"])
+        item["next_paths_offset"] = (
+            next_path
+            if item["paths_has_more"] and next_path > command.paths_offset
+            else None
+        )
+        item["paths_unavailable"] = (
+            item["paths_has_more"] and not item["criteria_paths"]
+        )
+        if _bytes({**result, "items": [*result["items"], item]}) > 240 * 1024:
+            break
+        result["items"].append(item)
+    next_offset = command.offset + len(result["items"])
+    result["has_more"] = next_offset < len(rows)
+    result["next_offset"] = (
+        next_offset if result["has_more"] and next_offset > command.offset else None
+    )
+    return result
+
+
+class GetRequirementVerificationUseCase:
+    async def execute(
+        self,
+        command: GetRequirementVerificationCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ):
+        await uow.begin_consistent_read()
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise EntityNotFoundError("spec", command.spec_id)
+        await require_all(
+            actor,
+            PermissionRequirement("spec.entity.read"),
+            PermissionRequirement("spec.integration_requirements.read"),
+            PermissionRequirement("spec.observability_requirements.read"),
+            uow=uow,
+            board_id=command.board_id,
+        )
+        fields = (*VERIFICATION_REQUIREMENT_FIELDS.values(), "acceptance_criteria")
+        records = await uow.services.list_application_records(
+            ApplicationQuery(
+                entity="spec",
+                filters=(
+                    ApplicationFilter("id", "eq", command.spec_id),
+                    ApplicationFilter("board_id", "eq", command.board_id),
+                ),
+                select_fields=(
+                    "id",
+                    "board_id",
+                    "version",
+                    "edition",
+                    "status",
+                    "archived",
+                    *fields,
+                ),
+                limit=1,
+            )
+        )
+        if not records:
+            raise EntityNotFoundError("spec", command.spec_id)
+        spec = records[0]
+        if spec.id != command.spec_id or spec.board_id != command.board_id:
+            raise EntityNotFoundError("spec", command.spec_id)
+        if any(
+            type(getattr(spec, name, None)) is not int or getattr(spec, name) < 1
+            for name in ("edition", "version")
+        ):
+            raise RequirementVerificationReadError("verification_snapshot_unavailable")
+        resolved = resolve_requirement_verification(
+            spec_id=spec.id,
+            collections={
+                field: getattr(spec, field) for field in fields if hasattr(spec, field)
+            },
+        )
+        return {
+            **project_requirement_verification(resolved, command),
+            "board_id": spec.board_id,
+            "spec_id": spec.id,
+            "spec_version": spec.version,
+            "spec_edition": spec.edition,
+            "spec_status": str(getattr(spec.status, "value", spec.status)),
+            "archived": spec.archived,
+        }

@@ -21,6 +21,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from okto_pulse.core.domain.criterion_verification import criterion_verification_fields
+from okto_pulse.core.domain.requirement_verification import requirement_verification_fields
 
 # Prefixes mirror the structured ids already used elsewhere.
 _ID_PREFIX_BY_ENTITY = {
@@ -157,6 +158,8 @@ def canonicalize_spec_children(
             child = {"id": child_id, "text": text, "status": "active"}
         if entity_type == "acceptance_criterion":
             child.update(criterion_verification_fields(child))
+        else:
+            child.update(requirement_verification_fields(child))
         out.append(child)
     return out
 

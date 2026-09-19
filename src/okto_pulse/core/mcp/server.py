@@ -12893,6 +12893,49 @@ async def okto_pulse_list_architecture_candidates(
 
 @mcp.tool()
 @closed_mcp_schema
+async def okto_pulse_get_requirement_verification(
+    board_id: Annotated[str, Field(min_length=1, max_length=255)],
+    spec_id: Annotated[str, Field(min_length=1, max_length=255)],
+    offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 25,
+    requirement_type: Literal["functional_requirement", "technical_requirement", "integration_requirement", "observability_requirement", "business_rule"] | None = None,
+    requirement_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None,
+    paths_offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
+) -> str:
+    """Read explicit/inherited requirement qualification paths and pending issues.
+
+    Requires Spec, IR and OR reads before loading bodies. Counts and resolution
+    cover the whole population, independent of this page. Supply both requirement
+    identity fields for one row and paths_offset for more paths. Responses are
+    bounded; inspect truncation/unknown flags. Source digests and versioned default
+    proposals are available for authoring verification through the existing
+    structured entity writer. Reading neither adopts ARQ/VER nor assesses methods,
+    execution, semantic adequacy or delivery evidence.
+    """
+    from okto_pulse.core.application.use_cases.requirement_verification import (
+        GetRequirementVerificationCommand, GetRequirementVerificationUseCase, RequirementVerificationReadError,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    try:
+        command = GetRequirementVerificationCommand(board_id, spec_id, offset, limit, requirement_type, requirement_id, paths_offset)
+        ctx = await _get_agent_ctx(board_id)
+        if not ctx:
+            return _auth_error()
+        actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetRequirementVerificationUseCase().execute(command, actor=actor, uow=uow)
+    except EntityNotFoundError:
+        return json.dumps({"success": False, "error": "Spec not found", "status_code": 404})
+    except PermissionDeniedError:
+        return json.dumps({"success": False, "error": "permission_denied", "status_code": 403})
+    except RequirementVerificationReadError as exc:
+        return json.dumps({"success": False, "error": str(exc), "status_code": 503 if str(exc) == "verification_snapshot_unavailable" else 422})
+    return json.dumps({"success": True, **result})
+
+
+@mcp.tool()
+@closed_mcp_schema
 async def okto_pulse_list_architecture_classifications(
     board_id: Annotated[str, Field(min_length=1, max_length=255)],
     spec_id: Annotated[str, Field(min_length=1, max_length=255)],
@@ -14560,6 +14603,12 @@ async def okto_pulse_update_spec_entity(
     business_rule. Use exact same-Spec IDs, not indices or text. Each target
     appears once, at most 100 links. Missing metadata is allowed in Draft;
     qualification does not grant test evidence, approval or start readiness.
+
+    FR/TR/IR/OR/BR payloads accept verification with mode explicit/inherited,
+    required_profiles, and inheritance selections {source: {requirement_type,
+    requirement_id}, source_digest, criterion_ids, covered_aspect}. Read the current
+    source digests/default proposals via okto_pulse_get_requirement_verification.
+    An inherited selection does not infer proof from existing BR→FR links.
 
     API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
     payload shape remains explicit while still delegating to StructuredSpecEntityService.

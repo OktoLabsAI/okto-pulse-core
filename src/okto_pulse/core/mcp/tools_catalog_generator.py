@@ -108,7 +108,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"^okto_pulse_(add|list|remove)_spec_dependenc(?:y|ies)$"),
     ("Specs — lifecycle & gates", "spec",
      r"^okto_pulse_(create_spec|update_spec$|delete_spec$|move_spec|get_spec$|"
-     r"get_spec_context|get_spec_history|derive_spec_from_ideation|"
+     r"get_spec_context|get_spec_history|get_requirement_verification|derive_spec_from_ideation|"
      r"submit_spec_validation|list_spec_validations|submit_spec_evaluation|"
      r"get_spec_evaluation|list_spec_evaluations|delete_spec_evaluation|"
      r"get_checklist_binding|"

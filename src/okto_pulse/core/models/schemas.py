@@ -22,6 +22,7 @@ from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
 )
+from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
     REJECTION_ID_MAX_LENGTH,
@@ -927,7 +928,7 @@ class StoryConversionResponse(BaseModel):
 # ============================================================================
 
 
-class BusinessRule(BaseModel):
+class BusinessRule(VerificationQualifiedModel):
     """A business rule that governs system behavior."""
 
     id: str
@@ -1051,7 +1052,7 @@ IntegrationRequirementType = Literal[
 ]
 
 
-class IntegrationRequirement(BaseModel):
+class IntegrationRequirement(VerificationQualifiedModel):
     """An integration requirement for APIs, queues, SPs, MCP tools, events, or data contracts."""
 
     id: str
@@ -1093,7 +1094,7 @@ ObservabilitySignalType = Literal[
 ]
 
 
-class ObservabilityRequirement(BaseModel):
+class ObservabilityRequirement(VerificationQualifiedModel):
     """An observability requirement for dashboards, metrics, alerts, and thresholds."""
 
     id: str
