@@ -1592,6 +1592,11 @@ resolução direta/herdada compartilhada antes de reduzir esses links manuais.
 
 ### 2026-09-19 — declaração tipada e responsabilidade por contribuição (P2/P3 parcial)
 
+Par enviado e confirmado por `ls-remote` em `origin/feature/v0.4.0`: Core
+**f08aacf1e9be4374ff045381ddd3ed8ae5f5d1f4**, Community
+**ed65c2c511c744bb9ca08ac72ef551192643fc52**. Árvores de implementação limpas.
+Credencial ativa autenticada; pushes concluídos sem alterar contas/permissões.
+
 - Turno anterior: progresso comprovado, par ca45ccd1/3eba6e8 publicado; partida
   atual limpa. A inspeção confirmou que linked_task_ids pode mudar sem revisar
   corpo aprovado; vínculo operacional sozinho não é declaração de divisão.
@@ -1612,7 +1617,7 @@ resolução direta/herdada compartilhada antes de reduzir esses links manuais.
   escopo de um Card não deve invalidar o do outro. Isso ainda não é prova de execução.
 - Leitor/REST/MCP e UI recebem declaração/proveniência e pendências limitadas.
   Autoria disponível pelo structured writer; editor dedicado de contribuição
-  ainda pendente. Validação do incremento registrada abaixo; publicação em curso.
+  ainda pendente. Validação e publicação do incremento concluídas conforme abaixo.
 - Não houve cutover do ledger legado: card_obligations e seus hashes/rollup
   permanecem na compatibilidade antiga até integrar binding de contribuição,
   partial/complete e adoção autorizada. Redução de links manuais e gates continuam
