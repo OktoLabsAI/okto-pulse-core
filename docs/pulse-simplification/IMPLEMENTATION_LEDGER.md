@@ -6,8 +6,8 @@ Iniciativa **em andamento**. Etapa atual: caracterização conjunta F0/F1 + K0 +
 I0 + P0, com política pura, adoção prospectiva e leitura P1 em REST/MCP/frontend:
 correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
 autorizada e depreciada. Preparação de IRs, contrato de classificação e
-armazenamento atômico disponíveis; caso de uso da classificação/promoção,
-adoção de revisão legada,
+armazenamento atômico e coordenador autorizado disponíveis; classificação/promoção
+em REST/MCP/UI, adoção de revisão legada,
 inventário e suites amplas pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
@@ -829,3 +829,77 @@ pendentes. O armazenamento testado **não prova** o fluxo público completo.
 Publicação: após o ledger `30b01a6d`, pushes normais do Core e Community foram
 novamente recusados por credencial inválida. Este par permanece local;
 nenhuma alteração de credencial, force-push, release ou migração real ocorreu.
+
+## P1 — coordenador autorizado e transação completa — 2026-09-19
+
+Par de código: Core `a78cfc06d14b9f485b7059e051c96964af4d64ee`, Community
+`38c568d8579b9f9916a685e22db3322669e58254`, em `feature/v0.4.0`.
+Core adiciona `ClassifyArchitectureCandidatesUseCase` e
+`ArchitectureClassificationService`, expostos no catálogo público de serviços.
+Community adiciona testes com UOW/SQLAlchemy reais e bancos descartáveis.
+
+O caso de uso abre a intenção de escrita antes das leituras, valida acesso ao
+Board/realm e Spec local, e autoriza **todo** o lote antes de carregar Designs.
+Operações comuns: `spec.entity.read`, `spec.architecture.read`,
+`spec.integration_requirements.read`, `spec.entity.edit_fields`. Promoção também
+exige `spec.structured_entity.integration_requirement.create`; associação exige
+`spec.structured_entity.integration_requirement.update`. `context_only` exige
+edição local, preserva IRs normativos e não recebe poder de waiver.
+Usa a política central e `interact_in`; nenhum preset/flag é alterado. Claims
+legados MCP/system passam pela mesma política e só então são materializados em
+um conjunto efêmero fechado das operações concedidas para o preflight antigo.
+
+Dentro da mesma UOW: recibo vinculado ao ator, Draft/content lock, fences de
+versão/edição, fontes e digest atuais, resolução de IRs existentes, preparação
+única de todos os IRs novos, persistência conjunta, eventos e histórico.
+Um lote incrementa a versão uma vez, inclusive quando contém só contexto.
+Histórico/eventos conservam identidade e tipo do ator; decisões preservam
+contrato completo, fontes e escopos. O recibo lista pendências de readiness/gate,
+sem aprovar execução. Replay exige as permissões atuais, devolve o resultado
+original mesmo após mudança da fonte e libera a transação sem DML.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `wheels-classification-coordinator` e
+  `provenance-classification-coordinator.json`: **780/311 `.py`**, payloads
+  **845/395**, source/wheel/install byte-identical antes de testes em processos
+  novos. O frontend distribuído integra essa comparação de payloads.
+- `core-classification-coordinator.log`: **75 passed**, 6,15 s, contratos de
+  classificação, autorização do reader e preparação de IRs.
+- Primeiro lote `community-classification-coordinator.log`: **22 passed /
+  3 failed**, 50,04 s. Fixture não restaurava os handlers após reset do registry
+  e reutilizava a mesma sessão ao trocar de ator. Corrigido para registrar o
+  subscriber real e abrir outra sessão para outra identidade; guard de identidade
+  permaneceu intacto, nenhuma asserção de atomicidade enfraquecida.
+- `community-classification-coordinator-verified.log`: **25 passed**, 46,50 s.
+  Oito negações de permissão sem consulta a Designs nem DML; lote misto e contexto
+  preservam IR normativo; erro no último IR, fonte obsoleta, fences, lock e estado
+  revertem tudo; falhas injetadas no outbox/histórico revertem IRs, decisões e
+  recibo já gravados; replay, conflito de ator/payload e isolamento de escopo.
+- `community-classification-coordinator-concurrency.log`: **2 passed**, 10,55 s:
+  duas sessões semânticas concorrentes devolvem o mesmo recibo e uma única
+  gravação; `owner_review_required` continua negando acesso.
+- Fixture humana alinhada a `PrincipalKind="human"`; repetição focada humano/
+  agente em `community-classification-coordinator-identity.log`: **2 passed**,
+  12,68 s, auditoria com tipos `user`/`agent` corretos. São **27 cenários únicos**
+  no arquivo novo, sem contar essa repetição como casos adicionais.
+- `closure-classification-coordinator-final.json`: **exit 0, ok=true**, oito
+  budgets **0/0**, zero findings de código/documentação. Distribuição,
+  conformance, AF35 e singleton aprovados. Matrizes README regeneradas pelo
+  renderer oficial: **7.414 imports Core / 1.230 Community→Core**, 25 dependências.
+  O primeiro closure falhou apenas pelo drift dessas duas matrizes.
+- Ruff dos três arquivos novos e `git diff --check` passaram.
+
+Frontend continua com os cenários de leitura já registrados neste ledger.
+Este incremento é interno e ainda não altera handlers nem UI. A instrução do
+usuário permanece requisito de conclusão: ao expor promoção/associação/contexto
+no frontend, incluir testes do cliente, componente e integração na tela afetada,
+com permissões, erros, respostas atrasadas e atualização após sucesso/replay.
+Build/typecheck e testes desta UOW não substituem esses testes de frontend.
+
+Próximo passo obrigatório: conectar REST e MCP a esse mesmo caso de uso, com
+limite bruto antes das dependências/validação do transporte, mapeamento seguro de
+erros, permissão estática de writer no registry e regeneração oficial do catálogo.
+Depois, UI e testes de frontend, projeção de decisões/currentness, gate de início
+e rollout autorizado legado. Não declarar P1 completo nem liberar execução com
+base apenas na presença de um recibo. Nenhum processo/dado real foi alterado.
