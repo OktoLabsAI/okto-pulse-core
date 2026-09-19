@@ -2272,3 +2272,9 @@ apenas com esta proteção. Sem migration física, alteração de policy ou exec
 de comandos no backend. O runtime do usuário foi preservado. A iniciativa segue
 em **progresso**, com adoção ARQ/VER, seleção/impacto, migrações e validação integral
 ainda no caminho crítico.
+
+Par publicado por push normal em `feature/v0.4.0`: Core
+`7dafe542b59376a6c6a7fef6f286df8f60a7f92a`; Community
+`48eaa9df210d6dda7c9cfa746851180bb6860dc4`. `ls-remote` confirmou os dois
+HEADs e as árvores limpas após os commits funcionais. A conta ativa permitiu os
+pushes; não foi necessário executar `gh auth switch`.
