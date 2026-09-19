@@ -39,6 +39,9 @@ class StructuredSpecRecord:
     project_structure: list[Any] | None = None
     project_structure_revision: int = 0
     project_structure_digest: str | None = None
+    # Keep the authoritative edition in this projection. None is deliberately
+    # unknown for older/custom adapters, never an invented initial edition.
+    edition: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

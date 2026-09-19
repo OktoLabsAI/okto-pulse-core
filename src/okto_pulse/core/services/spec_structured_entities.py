@@ -12,9 +12,9 @@ import hashlib
 import json
 import secrets
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 
 from pydantic import ValidationError
 
@@ -577,6 +577,23 @@ class StructuredSpecEntityResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedIntegrationRequirementCreates:
+    """Caller-owned final state, not a persisted mutation or an approval.
+
+    Architecture classification uses this preflight before its atomic write of
+    IRs, source decisions and receipt. The writer must still fence the edition
+    and version in the same UoW; preparing does not claim an idempotency key.
+    """
+
+    board_id: str
+    spec_id: str
+    expected_spec_version: int
+    expected_spec_edition: int
+    entity_ids: tuple[str, ...]
+    update_data: dict[str, Any]
+
+
 class StructuredSpecEntityService:
     """Mutates spec child entities through one typed, permissioned boundary."""
 
@@ -591,6 +608,79 @@ class StructuredSpecEntityService:
         self.metrics_sink = metrics_sink
         self.ack_store = ack_store or _DEFAULT_ACK_STORE
 
+    async def prepare_integration_requirement_creates(
+        self,
+        command: StructuredSpecEntityCommand,
+        payloads: Sequence[dict[str, Any]],
+    ) -> PreparedIntegrationRequirementCreates | StructuredSpecEntityResult:
+        """Prevalidate the whole IR creation set without any write or event.
+
+        This internal Core seam is not a second public mutation endpoint. It
+        shares the structured writer's authorization, draft/content locks,
+        payload rules, canonicalization and final-state reference validation.
+        The batch coordinator supplies authenticated permissions and exact
+        fences; historical optional-fence/permission behavior of individual
+        writers is not inherited by the new architecture workflow.
+        """
+        if command.entity_type != "integration_requirement" or command.operation != "create":
+            return self._failure(command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION)
+        if command.permission_set is None:
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED,
+                "Authenticated permissions are required for batch preparation.",
+                required_permission="spec.structured_entity.integration_requirement.create",
+            )
+        spec = await self._load_authorized_spec(command)
+        if isinstance(spec, StructuredSpecEntityResult):
+            return spec
+        require_draft_mutation(spec, subject_type="spec")
+        if (
+            type(command.expected_spec_version) is not int
+            or command.expected_spec_version < 1
+            or type(command.expected_spec_edition) is not int
+            or command.expected_spec_edition < 1
+        ):
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.VALIDATION_FAILED,
+                "Exact Spec version and edition are required for batch preparation.",
+            )
+        failure = await self._check_semantic_fence(spec, command)
+        if failure is not None:
+            return failure
+        if command.preview_only or command.payload or not payloads:
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.VALIDATION_FAILED,
+                "Provide a nonempty IR payload sequence and an empty creation command.",
+            )
+        field_name = "integration_requirements"
+        items = copy.deepcopy(spec.integration_requirements or [])
+        entity_ids: list[str] = []
+        try:
+            for payload in payloads:
+                if not isinstance(payload, dict):
+                    raise ValueError("Each IR payload must be an object.")
+                items, entity_id = await self._apply_operation(
+                    spec=spec, field_name=field_name,
+                    command=replace(command, payload=copy.deepcopy(payload)),
+                    current_items=items,
+                )
+                assert entity_id is not None
+                entity_ids.append(entity_id)
+            update_data = await self._prepare_semantic_update(spec, {field_name: items})
+        except ValueError as exc:
+            code = (
+                StructuredSpecEntityErrorCode.LINK_TARGET_INVALID
+                if "linked_" in str(exc) or "Card" in str(exc)
+                else StructuredSpecEntityErrorCode.VALIDATION_FAILED
+            )
+            return self._failure(command, code, str(exc))
+        return PreparedIntegrationRequirementCreates(
+            board_id=spec.board_id, spec_id=spec.id,
+            expected_spec_version=command.expected_spec_version,
+            expected_spec_edition=command.expected_spec_edition,
+            entity_ids=tuple(entity_ids), update_data=update_data,
+        )
+
     async def mutate(
         self, command: StructuredSpecEntityCommand
     ) -> StructuredSpecEntityResult:
@@ -602,42 +692,9 @@ class StructuredSpecEntityService:
             return self._failure(
                 command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION
             )
-        spec = await get_structured_spec_store().get(
-            self.db,
-            spec_id=command.spec_id,
-        )
-        if spec is None:
-            return self._failure(command, StructuredSpecEntityErrorCode.SPEC_NOT_FOUND)
-        if command.board_id is not None and spec.board_id != command.board_id:
-            return self._failure(
-                command,
-                StructuredSpecEntityErrorCode.VALIDATION_FAILED,
-                "Spec does not belong to the requested board.",
-            )
-        if command.board_id is None:
-            command.board_id = spec.board_id
-        if getattr(spec, "archived", False):
-            return self._failure(
-                command,
-                StructuredSpecEntityErrorCode.VALIDATION_FAILED,
-                "This spec is archived. Restore it first before making changes.",
-            )
-        permissions = self._required_permissions(command)
-        if command.permission_set is not None:
-            status = getattr(spec.status, "value", spec.status)
-            for permission in permissions:
-                err = command.permission_set.check_with_state(
-                    permission,
-                    entity="spec",
-                    status=str(status),
-                )
-                if err is not None:
-                    return self._failure(
-                        command,
-                        StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED,
-                        err,
-                        required_permission=permission,
-                    )
+        spec = await self._load_authorized_spec(command)
+        if isinstance(spec, StructuredSpecEntityResult):
+            return spec
 
         if (
             command.entity_type == "project_structure_node"
@@ -666,32 +723,9 @@ class StructuredSpecEntityService:
         if command.entity_type == "project_structure_node":
             return await self._mutate_project_structure(spec, command)
 
-        if (
-            command.expected_spec_version is not None
-            and command.expected_spec_version != spec.version
-        ):
-            return self._failure(
-                command,
-                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
-                f"Expected spec version {command.expected_spec_version}, found {spec.version}.",
-            )
-        if (
-            command.expected_spec_edition is not None
-            and command.expected_spec_edition != getattr(spec, "edition", None)
-        ):
-            return self._failure(
-                command,
-                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
-                f"Expected spec edition {command.expected_spec_edition}, "
-                f"found {getattr(spec, 'edition', None)}.",
-            )
-
-        try:
-            await _require_spec_unlocked(self.db, spec.id)
-        except SpecLockedError as exc:
-            return self._failure(
-                command, StructuredSpecEntityErrorCode.SPEC_LOCKED, str(exc)
-            )
+        failure = await self._check_semantic_fence(spec, command)
+        if failure is not None:
+            return failure
 
         if (
             command.preview_only
@@ -748,84 +782,11 @@ class StructuredSpecEntityService:
             )
             update_data = {field_name: new_items, **related_updates}
 
-            # Every structured semantic writer crosses the same final-state
-            # FR/TR/AC canonicalization boundary as bulk create/update. This
-            # also lazily materializes untouched legacy collections and
-            # validates cross-collection ID uniqueness before any mutation.
-            requirement_fields_before = {
-                requirement_field: copy.deepcopy(getattr(spec, requirement_field, None))
-                for requirement_field, _ in SPEC_REQUIREMENT_FIELDS
-            }
-            requirement_fields_final = {
-                requirement_field: (
-                    update_data[requirement_field]
-                    if requirement_field in update_data
-                    else current_value
-                )
-                for (
-                    requirement_field,
-                    current_value,
-                ) in requirement_fields_before.items()
-            }
-            canonical_requirements = canonicalize_spec_requirement_fields(
-                requirement_fields_final,
-                existing_fields=requirement_fields_before,
-            )
-            for requirement_field, canonical_value in canonical_requirements.items():
-                if (
-                    requirement_field in update_data
-                    or canonical_value != requirement_fields_before[requirement_field]
-                ):
-                    update_data[requirement_field] = canonical_value
-
-            if command.operation == "create" and field_name in canonical_requirements:
-                created = canonical_requirements[field_name] or []
+            update_data = await self._prepare_semantic_update(spec, update_data)
+            if command.operation == "create" and field_name in dict(SPEC_REQUIREMENT_FIELDS):
+                created = update_data[field_name] or []
                 entity_id = spec_child_id(created[-1]) if created else entity_id
 
-            old_frs = list(requirement_fields_before["functional_requirements"] or [])
-            new_frs = list(canonical_requirements["functional_requirements"] or [])
-            if old_frs != new_frs:
-                fr_dependencies = {
-                    dependent_field: list(
-                        update_data.get(
-                            dependent_field,
-                            getattr(spec, dependent_field, None) or [],
-                        )
-                        or []
-                    )
-                    for dependent_field in (
-                        "business_rules",
-                        "api_contracts",
-                        "integration_requirements",
-                        "observability_requirements",
-                        "decisions",
-                    )
-                }
-                update_data.update(
-                    migrate_legacy_fr_refs(
-                        old_frs,
-                        new_frs,
-                        fr_dependencies,
-                    )
-                )
-
-            old_acs = list(requirement_fields_before["acceptance_criteria"] or [])
-            new_acs = list(canonical_requirements["acceptance_criteria"] or [])
-            if old_acs != new_acs:
-                migrated_scenarios = migrate_legacy_ac_refs(
-                    old_acs,
-                    new_acs,
-                    list(
-                        update_data.get(
-                            "test_scenarios",
-                            getattr(spec, "test_scenarios", None) or [],
-                        )
-                        or []
-                    ),
-                )
-                if migrated_scenarios is not None:
-                    update_data["test_scenarios"] = migrated_scenarios
-            await _validate_spec_linked_refs(self.db, spec, update_data)
         except UnsupportedSpecEntityOperation as exc:
             return self._failure(
                 command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION, str(exc)
@@ -955,6 +916,161 @@ class StructuredSpecEntityService:
         )
         self._emit(command, "success", None)
         return result
+
+    async def _load_authorized_spec(
+        self, command: StructuredSpecEntityCommand,
+    ) -> StructuredSpecRecord | StructuredSpecEntityResult:
+        spec = await get_structured_spec_store().get(
+            self.db,
+            spec_id=command.spec_id,
+        )
+        if spec is None:
+            return self._failure(command, StructuredSpecEntityErrorCode.SPEC_NOT_FOUND)
+        if command.board_id is not None and spec.board_id != command.board_id:
+            return self._failure(
+                command,
+                StructuredSpecEntityErrorCode.VALIDATION_FAILED,
+                "Spec does not belong to the requested board.",
+            )
+        if command.board_id is None:
+            command.board_id = spec.board_id
+        if getattr(spec, "archived", False):
+            return self._failure(
+                command,
+                StructuredSpecEntityErrorCode.VALIDATION_FAILED,
+                "This spec is archived. Restore it first before making changes.",
+            )
+        permissions = self._required_permissions(command)
+        if command.permission_set is not None:
+            status = getattr(spec.status, "value", spec.status)
+            for permission in permissions:
+                err = command.permission_set.check_with_state(
+                    permission,
+                    entity="spec",
+                    status=str(status),
+                )
+                if err is not None:
+                    return self._failure(
+                        command,
+                        StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED,
+                        err,
+                        required_permission=permission,
+                    )
+
+        return spec
+
+    async def _check_semantic_fence(
+        self, spec: StructuredSpecRecord, command: StructuredSpecEntityCommand,
+    ) -> StructuredSpecEntityResult | None:
+        if (
+            command.expected_spec_version is not None
+            and command.expected_spec_version != spec.version
+        ):
+            return self._failure(
+                command,
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                f"Expected spec version {command.expected_spec_version}, found {spec.version}.",
+            )
+        if (
+            command.expected_spec_edition is not None
+            and command.expected_spec_edition != getattr(spec, "edition", None)
+        ):
+            return self._failure(
+                command,
+                StructuredSpecEntityErrorCode.VERSION_CONFLICT,
+                f"Expected spec edition {command.expected_spec_edition}, "
+                f"found {getattr(spec, 'edition', None)}.",
+            )
+
+        try:
+            await _require_spec_unlocked(self.db, spec.id)
+        except SpecLockedError as exc:
+            return self._failure(
+                command, StructuredSpecEntityErrorCode.SPEC_LOCKED, str(exc)
+            )
+
+        return None
+
+    async def _prepare_semantic_update(
+        self, spec: StructuredSpecRecord, updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate the complete final state without persistence or events."""
+        update_data = copy.deepcopy(updates)
+        # Every structured semantic writer crosses the same final-state
+        # FR/TR/AC canonicalization boundary as bulk create/update. This
+        # also lazily materializes untouched legacy collections and
+        # validates cross-collection ID uniqueness before any mutation.
+        requirement_fields_before = {
+            requirement_field: copy.deepcopy(getattr(spec, requirement_field, None))
+            for requirement_field, _ in SPEC_REQUIREMENT_FIELDS
+        }
+        requirement_fields_final = {
+            requirement_field: (
+                update_data[requirement_field]
+                if requirement_field in update_data
+                else current_value
+            )
+            for (
+                requirement_field,
+                current_value,
+            ) in requirement_fields_before.items()
+        }
+        canonical_requirements = canonicalize_spec_requirement_fields(
+            requirement_fields_final,
+            existing_fields=requirement_fields_before,
+        )
+        for requirement_field, canonical_value in canonical_requirements.items():
+            if (
+                requirement_field in update_data
+                or canonical_value != requirement_fields_before[requirement_field]
+            ):
+                update_data[requirement_field] = canonical_value
+
+        old_frs = list(requirement_fields_before["functional_requirements"] or [])
+        new_frs = list(canonical_requirements["functional_requirements"] or [])
+        if old_frs != new_frs:
+            fr_dependencies = {
+                dependent_field: list(
+                    update_data.get(
+                        dependent_field,
+                        getattr(spec, dependent_field, None) or [],
+                    )
+                    or []
+                )
+                for dependent_field in (
+                    "business_rules",
+                    "api_contracts",
+                    "integration_requirements",
+                    "observability_requirements",
+                    "decisions",
+                )
+            }
+            update_data.update(
+                migrate_legacy_fr_refs(
+                    old_frs,
+                    new_frs,
+                    fr_dependencies,
+                )
+            )
+
+        old_acs = list(requirement_fields_before["acceptance_criteria"] or [])
+        new_acs = list(canonical_requirements["acceptance_criteria"] or [])
+        if old_acs != new_acs:
+            migrated_scenarios = migrate_legacy_ac_refs(
+                old_acs,
+                new_acs,
+                list(
+                    update_data.get(
+                        "test_scenarios",
+                        getattr(spec, "test_scenarios", None) or [],
+                    )
+                    or []
+                ),
+            )
+            if migrated_scenarios is not None:
+                update_data["test_scenarios"] = migrated_scenarios
+        await _validate_spec_linked_refs(self.db, spec, update_data)
+        return update_data
 
     async def _mutate_project_structure(
         self,
