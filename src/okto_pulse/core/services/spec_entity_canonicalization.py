@@ -1,6 +1,6 @@
 """Leaf module for deterministic Spec requirement canonicalization.
 
-Self-contained (stdlib only) so it can be imported by BOTH ``services.main``
+Depends only on domain contracts so it can be imported by BOTH ``services.main``
 (``SpecService.create_spec``/``update_spec``) AND
 ``services.spec_structured_entities`` without creating an import cycle — the
 latter already imports ``SpecService`` from ``main``, so the canonicalization
@@ -19,6 +19,8 @@ import hashlib
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from typing import Any
+
+from okto_pulse.core.domain.criterion_verification import criterion_verification_fields
 
 # Prefixes mirror the structured ids already used elsewhere.
 _ID_PREFIX_BY_ENTITY = {
@@ -153,6 +155,8 @@ def canonicalize_spec_children(
             child.setdefault("status", "active")
         else:
             child = {"id": child_id, "text": text, "status": "active"}
+        if entity_type == "acceptance_criterion":
+            child.update(criterion_verification_fields(child))
         out.append(child)
     return out
 

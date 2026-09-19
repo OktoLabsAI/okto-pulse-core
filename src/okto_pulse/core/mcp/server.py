@@ -14553,6 +14553,14 @@ async def okto_pulse_update_spec_entity(
     expected_spec_version, expected_structure_revision and idempotency_key;
     batch operations are atomic.
 
+    AC payloads may include verification_profile (functional, integration,
+    technical, operational) and requirement_links [{requirement_type,
+    requirement_id, aspect?}]. Types: functional_requirement,
+    technical_requirement, integration_requirement, observability_requirement,
+    business_rule. Use exact same-Spec IDs, not indices or text. Each target
+    appears once, at most 100 links. Missing metadata is allowed in Draft;
+    qualification does not grant test evidence, approval or start readiness.
+
     API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
     payload shape remains explicit while still delegating to StructuredSpecEntityService.
     """

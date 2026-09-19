@@ -8425,6 +8425,18 @@ async def _validate_spec_linked_refs(
         for d in (_final("decisions", []) or [])
     ]
     final_trs_raw: list = list(_final("technical_requirements", []) or [])
+    from okto_pulse.core.domain.criterion_verification import validate_criterion_requirement_links
+
+    validate_criterion_requirement_links(
+        final_acs_raw,
+        {
+            "functional_requirements": final_frs_raw,
+            "technical_requirements": final_trs_raw,
+            "integration_requirements": final_irs,
+            "observability_requirements": final_ors,
+            "business_rules": final_brs,
+        },
+    )
     final_trs_structured: list[dict] = []
     for tr in final_trs_raw:
         if isinstance(tr, dict) and tr.get("id"):
@@ -9613,6 +9625,15 @@ class SpecService:
                 spec,
                 {"project_structure": initial_project_structure},
             )
+        from okto_pulse.core.domain.criterion_verification import (
+            VERIFICATION_REQUIREMENT_FIELDS,
+            validate_criterion_requirement_links,
+        )
+
+        validate_criterion_requirement_links(
+            spec.acceptance_criteria or (),
+            {field: getattr(spec, field, None) or () for field in VERIFICATION_REQUIREMENT_FIELDS.values()},
+        )
         await _application_add(
             self.db,
             spec,

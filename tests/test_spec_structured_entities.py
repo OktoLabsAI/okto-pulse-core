@@ -1810,6 +1810,28 @@ def test_active_reader_helper_omits_revoked_and_superseded_by_default():
     assert filter_active_spec_children(items, include_inactive=True) == items
 
 
+def test_rest_criterion_verification_uses_existing_versioned_writer(structured_rest_client):
+    client, _board_id, spec_id, _card_id = structured_rest_client
+    path = f"/api/v1/specs/{spec_id}/structured-entities/acceptance_criterion/ac_existing"
+    response = client.patch(path, json={
+        "operation": "update", "expected_spec_version": 1,
+        "payload": {"verification_profile": "functional", "requirement_links": [
+            {"requirement_type": "functional_requirement", "requirement_id": "fr_existing", "aspect": "Saved condition"},
+        ]},
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["success"] is True
+    assert response.json()["spec_version"] == 2
+    refused = client.patch(path, json={
+        "operation": "update", "expected_spec_version": 2,
+        "payload": {"requirement_links": [{"requirement_type": "functional_requirement", "requirement_id": "missing"}]},
+    })
+    assert refused.status_code == 422, refused.text
+    valid = client.patch(path, json={"operation": "update", "expected_spec_version": 2, "payload": {"text": "Edited text"}})
+    assert valid.status_code == 200, valid.text
+    assert valid.json()["success"] is True
+
+
 def test_rest_create_structured_spec_entity_uses_service(structured_rest_client):
     client, _board_id, spec_id, _card_id = structured_rest_client
 

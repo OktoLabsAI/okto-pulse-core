@@ -18,6 +18,12 @@ from typing import Any, Protocol, Sequence
 
 from pydantic import ValidationError
 
+from okto_pulse.core.domain.criterion_verification import (
+    CRITERION_VERIFICATION_FIELDS,
+    VERIFICATION_REQUIREMENT_FIELDS,
+    criterion_verification_fields,
+)
+
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import (
     SpecSemanticChanged,
@@ -1660,6 +1666,26 @@ class StructuredSpecEntityService:
                     f"{command.operation}_affects_{link_field}",
                 )
 
+        # The AC is the only owner of these typed links. Derive the reverse
+        # impact here without adding another editable link collection.
+        if command.entity_type in VERIFICATION_REQUIREMENT_FIELDS:
+            for criterion in related_updates.get("acceptance_criteria", spec.acceptance_criteria or []):
+                if not isinstance(criterion, dict):
+                    continue
+                if any(
+                    isinstance(link, dict)
+                    and link.get("requirement_type") == command.entity_type
+                    and link.get("requirement_id") in target_id_set
+                    for link in criterion.get("requirement_links") or []
+                ):
+                    criterion_id = spec_child_id(criterion)
+                    if criterion_id:
+                        add_ref(
+                            "acceptance_criterion", criterion_id,
+                            canonical_spec_child_ref(spec.id, "acceptance_criterion", criterion_id),
+                            f"{command.operation}_affects_requirement_links",
+                        )
+
         counts: dict[str, int] = {}
         for ref in refs:
             counts[ref.target_type] = counts.get(ref.target_type, 0) + 1
@@ -1836,12 +1862,13 @@ class StructuredSpecEntityService:
                     "status",
                     "notes",
                     "linked_task_ids",
-                },
+                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else set()),
             )
             text = str(payload.get("text") or payload.get("title") or "").strip()
             if not text:
                 raise ValueError("text is required.")
             return {
+                **(criterion_verification_fields(payload) if entity_type == "acceptance_criterion" else {}),
                 **({"id": payload["id"]} if payload.get("id") else {}),
                 "text": text,
                 "status": payload.get("status") or "active",
@@ -1896,7 +1923,7 @@ class StructuredSpecEntityService:
                     "status",
                     "notes",
                     "linked_task_ids",
-                },
+                } | (CRITERION_VERIFICATION_FIELDS if entity_type == "acceptance_criterion" else set()),
             )
             if "text" in payload or "title" in payload:
                 text = str(payload.get("text") or payload.get("title") or "").strip()
@@ -1906,6 +1933,8 @@ class StructuredSpecEntityService:
             for key in ("locale", "status", "notes", "linked_task_ids"):
                 if key in payload:
                     item_dict[key] = payload[key]
+            if entity_type == "acceptance_criterion":
+                item_dict.update(criterion_verification_fields(payload))
             if (
                 "linked_task_ids" in item_dict
                 and item_dict["linked_task_ids"] is not None
