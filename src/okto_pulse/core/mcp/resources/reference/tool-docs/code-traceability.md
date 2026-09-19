@@ -69,7 +69,8 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   in the bindings they verify. No previous test transfers to a new set.
 - `progress`: executing, unarchived normal/bug/Test card; requires
   `card.conclusion.write`. Use `justification` as the work summary and provide
-  `progress` with `contract_version: "delivery-progress/v1"`, `remaining`, and
+  `progress` with `contract_version: "delivery-progress/v2"`, `remaining`,
+  `material_change: "none"|"targets"|"source"|"unknown"`, and
   `source_state: {"workspace_state":"dirty","recoverability":"external_workspace"}`
   (or both values `unknown`). No execution/test receipt or commit is required;
   omit their fields. Optional `target_ids` must belong to this Card; a supplied
@@ -78,6 +79,18 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   implementation/test proof, approval or completion. It does not start rework.
   Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
   Record significant results or a deliberate pause; no fixed time/command cadence.
+  `none` is a context note without a material delta. `targets` requires exact
+  affected `target_ids`; `source` requires `source_ref` and no Target list.
+  `unknown` narrows by declared Targets/source when available, otherwise this
+  Card's work is uncertain. Target/source combinations must agree. An affected
+  execution stops proving the current result until its accepted receipt observes
+  the work strictly after the checkpoint. Rebinding an old receipt, appending a
+  clean note or comparing commit hashes cannot restore it. Independent Targets
+  stay eligible; tests never transfer to a new implementation record.
+  Legacy v1 payloads/replay digests remain intact: dirty state or material impact
+  is treated conservatively in its declared scope; a context-only legacy note
+  does not invalidate proof solely by time. The full active checkpoint population
+  governs currentness even when the resume summary is capped at 20 records.
 - `test`: done TEST `card_id`, linked passed `scenario_id`, nonempty
   `implementation_ids` returned from implementation associations. Uses the current
   authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
@@ -113,6 +126,8 @@ For one or several entries, use the same endpoint/tool with this envelope:
     "kind": "progress",
     "justification": "Parser changed; normalization remains.",
     "progress": {
+      "contract_version": "delivery-progress/v2",
+      "material_change": "unknown",
       "source_state": {"workspace_state": "dirty", "recoverability": "external_workspace"},
       "remaining": "Implement normalization and run scenarios."
     }

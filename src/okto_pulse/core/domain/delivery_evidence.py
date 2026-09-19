@@ -176,6 +176,8 @@ class ImplementationExecutionProof:
     relative_path: str
     current_accepted_execution: bool
     symbol: str | None = None
+    blocking_progress_ids: tuple[str, ...] = ()
+    blocking_progress_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +201,8 @@ class ImplementationDeliveryFact:
     # None is historical compatibility, not an authored complete declaration.
     contributions: tuple[DeliveryContribution, ...] | None = None
     executions: tuple[ImplementationExecutionProof, ...] | None = None
+    blocking_progress_ids: tuple[str, ...] = ()
+    blocking_progress_truncated: bool = False
 
 
 def implementation_binding_proof_issue(fact: ImplementationDeliveryFact, binding: DeliveryBinding) -> str | None:

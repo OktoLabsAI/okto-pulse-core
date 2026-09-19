@@ -2190,3 +2190,85 @@ Par de conjuntos de execuções publicado por push normal em `feature/v0.4.0`:
 Core `04e321dc01ce15642719a180d5d6718ae5f4b585`; Community
 `575ab904741267b588e3a860a3d4ff942f5c6a4f`. `ls-remote` confirmou ambos os
 HEADs publicados e as duas árvores limpas após os commits funcionais.
+
+### Implementado — invalidação por progresso material (DEI §7.1–7.2)
+
+Turno anterior: progresso publicado (Core `bebcedb5`, Community `575ab904`).
+Investigação confirmou que `_execution_proof` validava apenas o head técnico,
+sem consultar checkpoints dirty posteriores. DEI-T20/T21/T23 exigem distinguir
+nota de contexto de alteração material, mantendo a fonte relacional autoritativa.
+Contrato v2 declara none/targets/source/unknown; v1 não é reescrito e conserva
+seu digest. Dirty ou delta material v1 significa incerteza no escopo declarado,
+não uma afirmação inventada de ausência de mudança. Sem esses sinais, uma nota
+antiga não é tratada como mudança apenas por timestamp. A regra de atualidade
+fica no domínio Core; leitura SQL, revogações e observações continuam no adapter.
+Uma observação admissível estritamente posterior ao checkpoint pode suportar
+um sucessor; nova nota clean ou rebind do recibo velho não restaura prova.
+Revogação continua humana/autorizada, não uma permissão nova do executor.
+Seleção final/impacto selado e adoção ARQ/VER ainda pendentes, sem cutover nesta etapa.
+
+Autorização adicional do usuário: quando necessário para pushes já autorizados,
+pode-se executar `gh auth switch -u <usuario>` sem nova confirmação. Não foi
+necessário mudar conta neste ponto.
+
+Implementação inclui escopo tipado, leitura de toda a população de checkpoints
+ativos (independente do cap de resumo), IDs de bloqueio limitados a 20 com sinal
+de truncamento, e retirada de execuções antigas da seleção quando afetadas.
+O frontend exige declaração explícita do efeito no código e permite selecionar
+Targets existentes; nenhuma opção cria/altera Target ou concede autoridade.
+Os testes de aliases/batch que pretendiam apenas citar trabalho anterior agora
+declaram contexto sem mudança; um teste separado exige rollback quando dirty
+precede a tentativa de usar uma observação antiga no mesmo lote.
+
+Validação intermediária: `core-material-progress.log` **184 passed em 20,37 s**;
+`frontend-material-progress-final.log` **92 passed em 32,84 s**, após remover o
+default implícito de ausência de mudança. A primeira integração teve **52 failed /
+36 passed em 215,05 s**: `_active_material_progress` usava `spec_edition` no
+DeliveryScope, que expõe `edition`. Corrigidos o campo e a anotação do parâmetro;
+par reconstruído/reinstalado antes da repetição integral. Nenhum gate foi relaxado.
+
+Investigação para próxima etapa: `CardService.move_card` em `services/main.py`
+é o writer do relatório (`report_target` para Validation/Done, impacto e conclusão
+em `cards.conclusions`). `MoveCardUseCase` aplica autoridade de transição; não
+substituir por simples permissão de append. O gate de impacto resolve
+off/advisory/require em `services/impact_evidence.py`. Integrar o manifest/CAS da
+seleção e a composição líquida nessa conclusão, preservando completeness/drift,
+gates de dependência/revisão e o caminho separado de submit_task_validation.
+O schema atual de impacto distingue repo core/community, mas surfaces não têm
+identidade de source/base; a composição precisa expor ambiguidades, sem deduzir
+source a partir do nome do repo nem somar arrays como se fossem impacto líquido.
+
+Validação final deste incremento:
+
+- `community-material-progress-final.log`: **88 passed em 202,67 s**, incluindo
+  oito novos casos de persistência/atualidade, candidatos, gate pré-Done, origem
+  inline/rollback, escopo conflitante e revogação. Nenhuma falha residual da suíte
+  selecionada. O cenário de observação renovada usa fixture de fatos admitidos;
+  não equivale a E2E instalado autenticando um checkout Grafx.
+- `provenance-material-progress-final.json`: **794/312 .py** e **859/396 payloads**
+  idênticos entre source/wheel/install antes da repetição, nenhum mismatch. SHA256
+  Core `2f4482ea2808260ddc97e8cd40b4af2b4809e0a6ad0b7a0cc4a11e1bf3d167f7`;
+  Community `61acd0b86c463a67ee3a1edd143c3a34f3d6df03b4a81ba1c06be6c64ef75ad5`.
+  O payload Core final é byte-a-byte igual ao validado nos **184 testes Core**;
+  não houve repetição dessa suíte sem mudança correspondente. Processos novos,
+  PYTHONPATH pareado e bancos descartáveis em todas as rodadas.
+- **92 testes frontend** aprovados; build/typecheck, ESLint e verificação do
+  frontend_dist aprovados. **78 arquivos**, tree SHA256
+  `6d4bf9c2ea2c005bbc1b0b59119d6fd6d567c14e5e6a11318e46721b617f5671`.
+- `closure-material-progress-final.json`: **exit 0, ok=true**, nenhum finding
+  de código/documentação, oito budgets **0/0**. **7.541 imports Core / 1.242
+  Community→Core / 25 dependências**. READMEs pelo renderer oficial após drift
+  somente de contagem; catálogo/manifests pelos generators oficiais. Ruff dos
+  arquivos Python alterados e diff-check aprovados. Uma chamada inicial de Ruff
+  usou o cwd do frontend; repetida no repo Community com o caminho correto.
+
+Limite de cronologia: esta etapa exige observação posterior ao recebimento do
+checkpoint material. Um batch com esse checkpoint seguido de prova baseada em
+observação anterior é recusado atomicamente; mero progress_ref não demonstra
+que o recibo antigo cobre a mudança. A composição de registros acumulados fora
+do servidor precisa de demonstração admissível de aplicabilidade no contrato de
+consolidação/seleção final, ainda pendente. Não declarar todo DEI §7/I4 concluído
+apenas com esta proteção. Sem migration física, alteração de policy ou execução
+de comandos no backend. O runtime do usuário foi preservado. A iniciativa segue
+em **progresso**, com adoção ARQ/VER, seleção/impacto, migrações e validação integral
+ainda no caminho crítico.
