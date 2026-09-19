@@ -8,8 +8,10 @@ correção F09/porta publicada, F11 caracterizado; compatibilidade F2B por Card
 autorizada e depreciada. Preparação de IRs, contrato de classificação,
 armazenamento atômico, coordenador autorizado, writers REST/MCP, revisão de
 atualidade/histórico e autoria em lote na UI disponíveis, com sugestões
-determinísticas e testes frontend. Integração do gate, adoção de revisão legada,
-inventário e suites amplas pendentes. Nenhuma migração real autorizada.
+determinísticas e testes frontend. P2 iniciado pela autoria de perfil e vínculos
+tipados nos critérios existentes, incluindo UI e integridade no writer.
+Integração do gate, adoção de revisão legada, inventário e suites amplas
+pendentes. Nenhuma migração real autorizada.
 Não confundir esses incrementos com
 a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
 
@@ -1248,3 +1250,104 @@ de planejamento de P2, seguida da integração no writer/preview e respectivas
 superfícies. Não ativar classificação globalmente por ausência de marcador,
 não promover `classification_complete` a prontidão integral e não usar qualquer
 skip existente como dispensa dos novos contratos. O pacote permanece incompleto.
+
+## P2 — perfis e vínculos canônicos nos critérios existentes — 2026-09-19
+
+Commits de implementação: Core `70ba71899adbac475572b874183c83379fa3d4a2`;
+Community `b263b35231e229a1ed0cc445f84f9c583ad9eee2`, ambos em `feature/v0.4.0`.
+
+Incremento de AC-VER-03/04 e da autoria necessária a AC-VER-01/05/06. Reutiliza
+`acceptance_criteria`, os IDs, texto da condição, histórico, permissões, content
+lock, eventos e writers existentes. Não cria outra entidade de critério ou
+ledger de verificação e não ativa o gate/rollout ARQ/VER prematuramente.
+
+Contrato e integração:
+
+- `domain/criterion_verification.py`: metadados fechados por Pydantic,
+  `verification_profile` (functional/integration/technical/operational) e
+  `requirement_links` com `requirement_type`, `requirement_id` e `aspect`
+  opcional. Suporta os cinco tipos FR/TR/IR/OR/BR; BR mantém significado de
+  Business Rule. Um alvo por critério, no máximo 100 vínculos; identificador
+  estrito não vazio, aspecto não vazio quando fornecido, campos/valores não
+  suportados e duplicatas recusados. A condição continua no texto do AC.
+- Ausência/null/lista vazia são lacunas possíveis em Draft. Não materializa
+  perfis por leitura, não cria condição nem declara passing ou dispensa.
+  Targets inativos permanecem referenciáveis para integridade histórica;
+  atividade/adequação são predicados do planejamento, ainda a integrar.
+- O AC é dono do vínculo. A validação de estado final compara tipo e ID exatos
+  às coleções da mesma Spec, sem aproximação por texto/posição. Alvo ausente,
+  ambíguo ou de outro escopo é recusado antes da gravação. Alteração de texto
+  pelo writer estruturado conserva os metadados. Remoção física de requisito
+  ainda referenciado não gera vínculo órfão.
+- Canonicalização FR/TR/AC, criação/edição integral da Spec e preparação de
+  alterações estruturadas consomem o mesmo contrato. Na criação da Spec a
+  validação nova é explícita: o validador geral antigo só era chamado quando
+  havia project_structure, o que deixaria a nova referência sem validação.
+  Nenhuma validação antiga foi suprimida nem ampliada por suposição.
+- Preview de impacto deriva os ACs afetados a partir dos vínculos canônicos,
+  com tipo/ID exatos, e mantém o reconhecimento de impacto existente ao revogar/
+  substituir/reordenar requisito. Não há array reverso editável no requisito.
+- REST e MCP genéricos continuam encaminhando ao writer estruturado. A
+  documentação da tool existente descreve os novos campos. Catálogo e manifests
+  foram regenerados oficialmente; não há nova tool ou permissão.
+- `CriterionVerificationPanel`, no SpecModal, mostra perfil/vínculos e permite
+  editar o conjunto num PATCH versionado por critério. Picker por tipo/ID,
+  aspectos explícitos, vários requisitos por critério, restrições de leitura
+  IR/OR respeitadas. Link existente indisponível permanece no payload se não
+  for removido pelo autor. Opções ambíguas não são selecionáveis.
+- A UI restringe edição a Draft não arquivada com permissão de update e
+  interação no estado. Conteúdo legado/identidade ambígua/metadado desconhecido
+  aparece como pendência e não é regravado silenciosamente. Mudança de versão
+  ou perda de permissão desmonta o editor. Clique duplo não duplica a chamada;
+  resposta de contexto desmontado não recarrega outra Spec. Sucesso seguido de
+  falha de refresh oferece apenas reload, sem reenviar a mutação confirmada.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- Par `wheels-criterion-verification` instalado, conferido antes dos testes em
+  `provenance-criterion-verification.json`: **785/311 `.py`, 850/395 payloads**,
+  source/wheels/install idênticos. Processos novos, PYTHONPATH pareado, dados
+  descartáveis; nenhum processo ou dado real do Pulse alterado.
+- `core-criterion-verification.log`: **97 passed / 2 failed**, 16,86 s, abrangendo
+  novo contrato/integridade, canonicalização e writers estruturados. A falha
+  nova era somente o teste tratar `impact_report` como objeto em vez do dict
+  público; corrigido para verificar seu conteúdo real. A outra é
+  `test_link_task_validates_target_card_before_persisting`, já reproduzida no
+  baseline e registrada anteriormente: cleanup legado poda Card inexistente.
+  O teste e a pendência permanecem, sem relaxamento ou correção incidental.
+- `core-criterion-verification-final.log`: **35 passed**, 7,33 s, incluindo os
+  **21 casos novos** e catálogo/manifests/contrato público. Exercita criação e
+  atualização integrais, writer estruturado, handler MCP do registry até persistência, IDs
+  exatos dos cinco tipos, rejeições sem consumir versão/histórico, preservação
+  em edição de texto e impacto reverso. O teste REST novo passou no lote inicial.
+- `frontend-criterion-verification.log`: **55 passed**, 55,97 s, três arquivos:
+  15 cenários do painel, 36 do SpecModal e quatro verificações existentes do
+  roteamento estruturado. `frontend-criterion-authority.log`: **39 passed**,
+  27,42 s, repetição do SpecModal após acrescentar três casos de autoridade
+  (sem update, sem interact_in e Draft arquivada). **58 testes distintos**, sem
+  somar a repetição como cobertura adicional. Inclui envio versionado pelo componente,
+  metadados incompletos, alvo indisponível, leitura, permissões/estados,
+  recusas, duplicação de clique, contexto tardio e falha de refresh após salvar.
+- Ruff dos arquivos Python alterados e ESLint dos novos módulos/frontend testes
+  passaram. Typecheck inicialmente identificou retorno `Spec | null` no callback;
+  adaptação explícita ao callback void. Helper puro extraído para eliminar aviso
+  de Fast Refresh. Build final e `verify:frontend-dist`: **78 arquivos**,
+  SHA256 `6aa007259822fa5e2702cff1af9a9839f8ef5da6ce249f3f7235a903cfcea422`.
+  Resource manifest `--check` e `git diff --check` aprovados.
+- Closure inicial: zero findings de código, oito budgets **0/0**, somente as
+  duas matrizes README desatualizadas pelo aumento para **7.459 imports Core**.
+  Corrigidas pelo renderer oficial; imports Community→Core **1.236**, 25
+  dependências. `closure-criterion-verification-final.json`: **exit 0, ok=true**,
+  zero findings de código/documentação, oito budgets **0/0**; distribuição,
+  conformance, AF35 e singleton aprovados.
+
+P2 permanece parcial: faltam configuração explicit/inherited por obrigação,
+defaults versionados, perfis mínimos, herança/critério terminal e o resolver
+relacional compartilhado com `card_delivery_inventory`, contribuição por Card,
+métodos com admissão até o adapter e predicados de planejamento. Escopo explícito
+sem requisitos estruturados e demais obrigações suportadas pelo inventário
+também precisam ser conciliados; estes cinco tipos não redefinem o escopo final.
+Próximo incremento: construir essa resolução sobre os vínculos agora persistidos,
+sem usar links BR→FR como prova automática, e coordenar adoção ARQ/VER com os
+gates de início já caracterizados. P1 integrado, P2/P3, F2B, KG, E2E/Grafx,
+migração/rollback, benchmarks e fechamento do pacote continuam pendentes.
