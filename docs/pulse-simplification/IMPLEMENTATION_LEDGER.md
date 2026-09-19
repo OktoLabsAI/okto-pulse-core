@@ -1351,3 +1351,99 @@ Próximo incremento: construir essa resolução sobre os vínculos agora persist
 sem usar links BR→FR como prova automática, e coordenar adoção ARQ/VER com os
 gates de início já caracterizados. P1 integrado, P2/P3, F2B, KG, E2E/Grafx,
 migração/rollback, benchmarks e fechamento do pacote continuam pendentes.
+
+## P2 — qualificação por requisito e leitura dos caminhos — 2026-09-19
+
+Commits enviados em `feature/v0.4.0`: Core
+`bcd30af85e52a535283283f99b074d0d632d946e`; Community
+`77623b0626eb8f9f62ff522916db52aaf0ebfd52`.
+A autenticação ativa `oktolabsai-developer` foi confirmada por pushes normais dos
+dois repositórios. Os HEADs anteriores `17c8cf1` / `b263b35` já coincidiam com o
+remoto. Nenhuma conta, permissão real, processo ativo ou dado real foi alterado.
+
+- `domain/requirement_verification.py`: configuração fechada `explicit|inherited`,
+  quatro perfis, seleções de fontes tipadas da mesma Spec, critérios terminais,
+  aspecto coberto e digest da definição. No máximo 20 fontes, 100 critérios por
+  fonte e 32 KiB de configuração. Não admite `mode=none`, flags de prova ou policy
+  de dispensa. FR/TR/IR/OR recebem propostas de defaults v1; BR exige decisão
+  explícita. Consultar proposta não grava nada; o writer grava valores autorados,
+  sem fabricar recibo de aceite de default ou aprovação semântica.
+- Modelos BR/IR/OR, canonicalização FR/TR e writers integrais/estruturados
+  preservam o campo. Ausência antiga não vira null por serialização. Comparação
+  tipada distingue preenchimento de defaults de alteração autorada. Seleção nova
+  exige o digest atual; alteração material posterior da fonte conserva a seleção
+  anterior e a torna pendente, sem reescrever o histórico. Preview de impacto
+  inclui herdeiros de fontes e de critérios selecionados no rito já existente.
+- Resolver relacional puro: todos os requisitos/ACs ativos são examinados antes
+  da paginação; vínculos AC→requisito e herança selecionada são as únicas arestas.
+  BR→FR, tasks e vizinhança KG não geram crédito. Detecta lacunas, identidade
+  ambígua, fonte inativa, digest divergente, ciclo mesmo com digest antigo,
+  término ausente e perfil sem caminho. Diamantes mantêm as origens, sem duplicar
+  a população de requisitos. Limites de nós/caminhos/profundidade falham fechado.
+  Configuração incompleta continua possível como ausência/null em Draft; uma
+  configuração preenchida precisa respeitar o contrato fechado.
+- `GetRequirementVerificationUseCase` usa a projeção pública de persistência
+  existente e snapshot consistente, com board acessível e as três permissões
+  de leitura Spec/IR/OR verificadas antes do corpo. REST e nova tool MCP
+  `okto_pulse_get_requirement_verification` compartilham esse caso de uso.
+  Resposta limitada, paginação de requisitos e caminhos, totais desconhecidos
+  quando a população não é completa; catálogo/manifests gerados oficialmente.
+- `RequirementVerificationPanel` no SpecModal permite consultar propostas,
+  escolher perfis/fontes/critérios/aspectos e enviar um PATCH versionado ao writer
+  existente. Draft não arquivada e permissões de update/interação são necessárias.
+  Escopo, edição, versão e autoridade desmontam o editor; respostas tardias,
+  fontes divergentes, clique duplicado e refresh falho após sucesso são tratados.
+  Leitura exige as mesmas permissões do backend; não há defaults silenciosos.
+
+Limite explícito: `criteria_resolution_complete` só descreve estrutura declarada.
+Métodos, atribuição de trabalho, suficiência semântica, entrega e rollout retornam
+flags `False` de avaliação. O resolver admite entrada de perfis mínimos fornecida
+pela autoridade, mas o leitor ainda não tem provider de mínimos do board.
+Seleção estrutural de login válido para BR de bloqueio pode estar ligada e ainda
+precisa ser rejeitada semanticamente; o backend não simula essa cognição.
+Escopo sem requisitos estruturados fica pendente, não satisfeito por vazio.
+
+Evidências em `PULSE_REFACTOR/.validation-v040/`:
+
+- `provenance-requirement-final.json`: par `wheels-requirement-verification-final`
+  instalado e revalidado após a correção do registry; **788/311 `.py` e 853/395
+  payloads**, source/wheels/install idênticos. Processos de teste novos,
+  PYTHONPATH pareado e bancos descartáveis. Nenhum E2E é inferido dessa conferência.
+- `core-requirement-final.log`: **100 passed / 1 failed em 13,90 s**. Os 42 casos
+  de qualificação passaram, incluindo persistência dos cinco tipos, preservação
+  da seleção após editar fonte, recusas sem consumir histórico, impacto reverso,
+  ciclos, diamantes, paginação, desconhecido e ausência de crédito BR→FR.
+  A falha restante foi o snapshot do registry ainda esperar 343 tools/340 policies.
+  Atualizado para **344/341**, mantendo exatamente três exceções humanas antigas.
+  A repetição detectou também a policy nova fora de ordem; movida para a posição
+  alfabética, sem mudar flags. `core-requirement-registry-final.log`: **17 passed
+  em 4,70 s**, registry/catalog/manifests aprovados. São **101 testes Core
+  distintos** com os checks afetados aprovados após correção; não somar repetições.
+- Nos ensaios anteriores, o teste de persistência usava a projeção retornada pela
+  criação como se fosse ORM vivo e comparava tuplas Python com arrays JSON.
+  Corrigido para reler/refrescar a linha persistida, sem alterar o produto para
+  satisfazer a fixture. A falha baseline de cleanup de Card inexistente registrada
+  no incremento anterior não foi reexecutada neste lote nem declarada resolvida.
+- `community-requirement-final.log`: **6 passed em 27,95 s**, com SQL real
+  descartável, três permissões antes do corpo, isolamento de Spec/board,
+  nenhuma gravação nas leituras e paridade HTTP/FastMCP, inclusive rejeições.
+- `frontend-requirement-final.log`: **64 passed em 37,57 s**: 15 do novo painel,
+  48 do SpecModal (nove novos para estados/autoridade) e um da API. No lote anterior,
+  15 regressões do painel de critérios e 16 de atividade também passaram;
+  **95 casos distintos de frontend**. A falha inicial do teste de clique duplo
+  buscava novamente o botão pelo rótulo anterior, já trocado para Saving;
+  corrigido para usar a mesma referência DOM nos dois cliques.
+- Typecheck/build e ESLint dos módulos novos aprovados, Ruff dos arquivos Python
+  alterados e `git diff --check` aprovados. Build e `verify:frontend-dist`:
+  **78 arquivos**, SHA256 `8cd2e0e3e3388c1d4761d51d5e5fc50f25e958d1239423be77054bfbcdb0c22d`.
+  O build emitiu aviso de chunks acima de 500 kB; não é medição de custo do fluxo.
+- Closure inicial: zero findings de código, oito budgets **0/0**, somente duas
+  matrizes README desatualizadas. Regeneradas pelo renderer oficial: **7.490
+  imports Core / 1.237 imports Community→Core / 25 dependências**. Distribuição,
+  conformance, AF35 e singleton aprovados. `closure-requirement-final.json`:
+  **exit 0, ok=true**, zero findings de código/documentação e oito budgets **0/0**.
+
+Retomada: continuar métodos/admissão até adapters e resolução compartilhada com
+inventário/contribuição por Card; adoção ARQ/VER e integração writer/preview dos
+gates seguem dependentes desses predicados. P2 continua parcial, assim como P1
+integrado, P3, F2B, KG, migração/rollback, E2E/Grafx e benchmarks do pacote inteiro.
