@@ -11,8 +11,9 @@ O gate de conclusão direta do Card foi corrigido para exigir as implementaçõe
 selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
-Frente atual: F2A/F2C, com preflight relacional interno implementado; arquivo e
-cutover ainda pendentes. F2B autorizado: compatibilidade por Card, resolver,
+Frente atual: F2A/F2C, com preflight relacional e classificação de eventos/jobs
+internos implementados; arquivo e cutover ainda pendentes. F2B autorizado:
+compatibilidade por Card, resolver,
 leitura pública, armazenamento nullable e UI estão implementados e testados;
 materialização/cutover de dados continuam pendentes de F2A/F2C. A integração de
 contribuições distintas e provas por critério foi ampliada com recibos assinados.
@@ -3295,3 +3296,82 @@ F2A/F2C/F3 e a auditoria integral da iniciativa continuam em aberto.
 
 Community publicado por push normal em `feature/v0.4.0`, commit `c4ef1ce`;
 `ls-remote` confirmou o HEAD remoto. Este checkpoint Core altera somente o ledger.
+
+### 2026-09-20 — F2C/F3, inventário de eventos mistos e trabalho pendente
+
+Turno anterior classificado como progresso: preflight relacional publicado em
+Community `c4ef1ce`, ledger Core `b6a7b0c3`. Estado local/remoto limpo na partida.
+
+Core `domain/sprint_retirement_events.py` define classificação histórica pura,
+sem import de mecanismo ou registro de handler. Contratos exatos de
+`sprint.created/moved/closed` e `artifact.archive_changed` dirigido a Sprint são
+elegíveis para supersessão **somente no futuro cutover após arquivamento**.
+`card.created` com sprint_id mantém o fato completo de Card; não reescreve payload.
+Eventos próprios novos, campos extras em evento supostamente exclusivo e demais
+referências estruturadas não classificadas exigem investigação. Mencionar a palavra
+Sprint em prosa não apaga um fato. Referências aninhadas têm limite de nós/profundidade.
+
+O planejamento de execuções preserva status done como história. Processing,
+status desconhecido ou handler não classificado exige review. Os handlers próprios
+conhecidos foram verificados em `ConsolidationEnqueuer`,
+`SourceCancellationLifecycleHandler` e `SourceArchiveLifecycleHandler`.
+Não converte supersessão em done nem simula um processamento removido.
+A fila usa a mesma política pura: alvo Sprint, work_kind conhecido e payload vazio
+podem ser aposentados quando pendentes/paused/failed; claimed exige investigação
+da operação em voo. Payload com efeitos adicionais não é descartado.
+
+Community `adapters/sprint_retirement_work.py` integra essa política ao preflight
+existente, na **mesma transação consistente**, via contratos públicos de domínio.
+Inspeciona domain_events, domain_event_handler_executions e consolidation_queue,
+com IDs, Board, ação planejada, motivo, refs, handler e status originais.
+`work.require_classified_work()` recusa itens review; a verificação relacional
+continua separada e nenhuma delas é certificação geral de cutover.
+Evento/execution cross-board, execução órfã, schema incompleto, payload inválido
+ou orçamento excedido não viram resultado vazio. Históricos, status, tentativas,
+erros e payloads permanecem byte a byte no banco descartável do teste.
+
+Limites explícitos: o orçamento de linhas é compartilhado com relações (100.000
+por padrão); consultas buscam no máximo o restante + uma sentinela e transferem
+lotes de 16 linhas com stream_results. Não aguardar fetchall do driver antes de
+verificar o limite. CASE limita cada payload transferido a 131.072 caracteres;
+o orçamento agregado UTF-8 é 64 MiB. Excesso falha, sem truncar uma lista de jobs.
+Nenhuma nova API/tool/CLI, worker, writer, bootstrap, permissão ou controle de UI.
+
+Validação:
+- `core-f2a-work.log`: **103 passed**, 106,27 s; classificadores, contratos reais
+  serializados pelos eventos, preservação de Card, drift, limites, handlers e
+  suítes existentes de EventBus/dispatcher/projeções/delivery.
+- `community-f2a-work.log`: **36 passed**, 47,99 s. Após adicionar streaming e
+  LIMIT no driver, rebuild/reinstall/prova repetidos e todos os 36 casos afetados
+  repetidos em `community-f2a-work-final.log`: **36 passed**, 43,88 s. Incluem
+  casos anteriores de relações/F2B/WAL e novos eventos mistos/exclusivos, execução
+  em voo/desconhecida/concluída, cross-board, órfão, orçamento e payload falsey
+  malformado (False/0/[]/string vazia não tratados como objeto vazio).
+- `provenance-f2a-work-final.json`: **803/314 .py**, **868/398 membros**, par
+  source→wheel→install idêntico antes da rodada final, PYTHONPATH pareado e processos
+  novos. Wheels em `wheels-f2a-work-final`: Core SHA256
+  `b3ab9edf42ff01a49b045cf4cd9ed05d325ff531f6596228e873196c6dc34788`;
+  Community `4a14f0254896429e07cbf89ca5bcbe750f1581ff920943c5ef3942020af53ab5`.
+- Ruff passou após corrigir a importação da fixture compartilhada de teste;
+  nenhum lint foi dispensado. Sem mudança de frontend neste incremento.
+  O caminho PostgreSQL continua sem execução real; a evidência física é SQLite/WAL.
+
+Limites de conclusão: ainda não há escrita de supersessão, arquivo histórico,
+backup/restauração ou cutover. Não marcar jobs reais, remover tabelas nem chamar
+esta classificação de migração concluída. A auditoria completa dos complementos
+DEI/ARQ/VER/KG e demais fases permanece pendente.
+
+Próximo passo — referências polimórficas e arquivo: o levantamento estático
+encontrou families semantic_subject_*, semantic_guideline_*, quality_*, tombstones,
+canonical_debt, DLQ/audit, Global Discovery, knowledge bases e refs de código.
+Não generalizar por sufixos: `policy_compliance_receipts` usa **entity_type com
+subject_id**, portanto uma busca por pares homogêneos type/id o perderia. Esse
+levantamento localiza os próximos contratos; não prova que todos foram revisados.
+Reconciliar esses históricos e seus filhos antes de fechar o formato genérico de
+arquivo sob ACL de Board e proceder à transformação atômica F2B/F2C/F3.
+
+Auditoria final `closure-f2a-work-validated.json`: **ok=true**, findings de código
+e documentação vazios, oito budgets **0/0**, **7.618/1.249 imports**, 25 dependências.
+A primeira rodada acusou somente drift da matriz README (contagens antigas);
+os dois fragmentos foram regenerados pelo renderer oficial e o par reconstruído.
+Nenhum payload mudou após a prova final. Nenhuma operação em banco/runtime real.
