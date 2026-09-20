@@ -4818,6 +4818,15 @@ class CardService:
             else None
         )
         if spec is not None:
+            if execution_reports and impact_mode == "require" and impact_populated:
+                from okto_pulse.core.services.impact_evidence import require_current_report_impact
+                try:
+                    await require_current_report_impact(self.db, card, spec)
+                except ValueError as exc:
+                    failures.append(CompletionGateFailure(
+                        code="impact_evidence_required", summary=str(exc),
+                        reason_codes=("impact_evidence_stale",),
+                    ))
             maturity = spec_maturity_block(
                 CardTransitionFacts(
                     card_id=card.id,
@@ -7287,6 +7296,20 @@ class CardService:
 
             impact_mode, _impact_mode_source = resolve_impact_evidence_mode(board)
             impact_block = data.impact_evidence
+            resolved_impact = None
+            if data.delivery_selection is not None and data.delivery_selection.reuse_impact:
+                from okto_pulse.core.models.schemas import ImpactEvidence
+                if impact_block is not None:
+                    raise ValueError("delivery_impact_inputs_conflict")
+                if not card.spec_id:
+                    raise ValueError("delivery_selection_spec_required")
+                from okto_pulse.core.domain.delivery_evidence import CardDeliveryScope
+                from okto_pulse.core.services.delivery_evidence import card_delivery_store
+                resolved_impact = await card_delivery_store(self.db).resolve_selection_impact(
+                    CardDeliveryScope(card.board_id, card.id, card.spec_id, data.delivery_selection.expected_spec_edition),
+                    data.delivery_selection, expected_status=old_status.value,
+                )
+                impact_block = ImpactEvidence.model_validate(resolved_impact["impact_evidence"])
             impact_populated = (
                 impact_block is not None and impact_block.is_minimally_populated()
             )
@@ -7298,8 +7321,8 @@ class CardService:
                     "include impact_evidence with at least one populated "
                     "section (files, symbols, surfaces or tests).",
                     remediation=(
-                        "Re-enumerate what the execution touched and resubmit "
-                        "the move with impact_evidence (schema_version=1): "
+                        "Select accumulated evidence with delivery_selection.reuse_impact=true "
+                        "or submit impact_evidence (schema_version=1): "
                         "changed files (repo+path+change_kind), key symbols "
                         "(name+kind+action+file), affected surfaces "
                         "(kind+identifier) and authored tests. The block is a "
@@ -7346,6 +7369,7 @@ class CardService:
                     CardDeliveryScope(card.board_id, card.id, card.spec_id, data.delivery_selection.expected_spec_edition),
                     data.delivery_selection, expected_status=old_status.value,
                     impact=conclusion_entry.get("impact_evidence"),
+                    **({"impact_basis": resolved_impact["impact_basis"]} if resolved_impact is not None else {}),
                 )
                 conclusion_entry["delivery_manifest"] = pending_delivery_manifest
             pending_conclusion_entry = conclusion_entry

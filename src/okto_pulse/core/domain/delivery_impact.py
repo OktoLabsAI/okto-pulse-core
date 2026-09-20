@@ -6,10 +6,12 @@ bases and ambiguous changes are bounded reconciliation items, not guessed facts.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import re
 
 from okto_pulse.core.models.schemas import ImpactEvidence
+from okto_pulse.core.domain.delivery_progress import DeliveryProgress, progress_change_scope
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,69 @@ class DeliveryImpactClaim:
     base_revision: str | None
     result_revision: str | None
     impact: ImpactEvidence
+
+
+@dataclass(frozen=True)
+class DeliveryImpactObservation:
+    receipt_id: str
+    source_ref: str
+    source_identity_sha256: str | None
+    revision: str | None
+    observed_at: datetime
+    current_accepted_clean: bool
+
+
+def progress_affects_impact_source(progress: DeliveryProgress, source_ref: str, target_sources: dict[str, str]) -> bool:
+    if progress_change_scope(progress) == "none":
+        return False
+    if progress.source_state.source_ref:
+        return progress.source_state.source_ref == source_ref
+    if progress.target_ids:
+        return any(target_sources.get(identity) in {None, source_ref} for identity in progress.target_ids)
+    return True
+
+
+def require_impact_observation(source: dict, observation: DeliveryImpactObservation | None,
+                               material_checkpoints: tuple[datetime, ...], *, expected_identity: str | None = None) -> None:
+    """Confirm a declared result against the known source head, not real code.
+
+    No ancestry inference, source inspection or policy waiver. A checkpoint that
+    arrived after the observation remains unresolved until an admissible later
+    observation. Independent sources and context-only notes do not invalidate it.
+    """
+    if (observation is None or not observation.current_accepted_clean
+        or observation.source_ref != source["source_ref"]
+        or not observation.source_identity_sha256
+        or (observation.revision or "").lower() != source["result_revision"]
+        or (expected_identity is not None and observation.source_identity_sha256 != expected_identity)):
+        raise ValueError("delivery_impact_current_observation_required")
+    def utc(value):
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    if any(utc(observation.observed_at) <= utc(value) for value in material_checkpoints):
+        raise ValueError("delivery_impact_material_progress_unobserved")
+
+
+def reusable_impact_block(projection: dict) -> ImpactEvidence:
+    """Keep the existing report shape, including scenario links and consumers."""
+    if projection.get("status") != "composed":
+        raise ValueError("delivery_impact_needs_reconciliation")
+    sections = {name: [] for name in ("files", "symbols", "surfaces", "tests")}
+    repo_sources, refs = {}, set()
+    for source in projection["sources"]:
+        impact = ImpactEvidence.model_validate(source["impact_evidence"])
+        for name in sections:
+            for item in getattr(impact, name):
+                repo = getattr(item, "repo", None)
+                if repo is not None:
+                    if repo in repo_sources and repo_sources[repo] != source["source_ref"]:
+                        raise ValueError("delivery_impact_repo_source_ambiguous")
+                    repo_sources[repo] = source["source_ref"]
+                sections[name].append(item)
+        refs.update(impact.evidence_refs)
+    try:
+        return ImpactEvidence(**sections, evidence_refs=sorted(refs))
+    except ValueError as exc:
+        raise ValueError("delivery_impact_report_limit") from exc
 
 
 class _Ambiguous(ValueError):

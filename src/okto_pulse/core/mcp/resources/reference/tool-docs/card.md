@@ -253,8 +253,22 @@ reads the current ledger again and preserves the old report. Legacy reports
 without a manifest retain compatibility until the integrated adoption rollout.
 
 The existing conclusion, completeness/drift, review authority and impact policy
-remain required. This manifest currently seals the impact block you present;
-net-impact composition/reconciliation is not yet a replacement for that block.
+remain required. To reuse accumulated impact without retyping it, add
+`"reuse_impact":true` inside `delivery_selection` and omit the manual
+`impact_evidence` block. The server composes only the selected declarations,
+rechecks Card/Spec/ledger revisions and observed source bases under the report
+transaction, and stores the existing impact shape beside a v2 manifest with
+source/receipt provenance. Supplying both impact inputs is refused.
+
+Ambiguous chains, unknown source identity, mismatched source heads or material
+work not covered by a later observation require reconciliation. An empty net
+result cannot satisfy policy `require`. Original claims remain claims: this
+does not authenticate their paths/symbols or approve delivery. A submitted reused
+impact is rechecked by required impact validation; `off`/`advisory` keep their
+posture independently of the Delivery Evidence gate. The Delivery read exposes
+`report_impact` separately, without rewriting the historical report. Manual v1
+reports remain supported. Buffered-observation applicability and recording
+reconciliation corrections remain separate pending work.
 
 ### `impact_evidence` (optional, schema_version=1)
 

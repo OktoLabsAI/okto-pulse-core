@@ -75,12 +75,33 @@ class CardDeliveryEvidenceStore(Protocol):
     """
 
     async def seal_selection(self, scope: CardDeliveryScope, selection: DeliverySelectionInput,
-                             *, expected_status: str, impact: dict | None) -> dict:
+                             *, expected_status: str, impact: dict | None,
+                             impact_basis: list[dict] | None = None) -> dict:
         """Fence Card/Spec/delivery revisions and return a server-owned manifest.
 
         Called only by the already authorized report writer. Do not commit, add
         a journal, move the Card or grant proof credit. Revoked/foreign/missing
         selected records are errors; record hashes cover actual immutable payloads.
+        """
+        ...
+
+    async def resolve_selection_impact(self, scope: CardDeliveryScope, selection: DeliverySelectionInput,
+                                       *, expected_status: str) -> dict:
+        """Resolve exact selected claims and fence their observed source bases.
+
+        Returns server-owned impact_evidence and impact_basis for the existing
+        report writer. Ambiguous/empty/stale data is refused, not silently merged
+        with a manual block. No approval or Delivery Evidence credit is granted.
+        """
+        ...
+
+    async def report_impact_status(self, scope: CardDeliveryScope, *, for_update: bool = False) -> dict:
+        """Recheck the sealed claim basis, separately from delivery readiness.
+
+        Return source, current (bool or None for manual/absent), and bounded
+        reason. Impact policy decides enforcement; never rewrite the report.
+        Completion uses for_update to hold the same source/receipt fences until
+        its transaction commits. Read projections use the non-locking default.
         """
         ...
 

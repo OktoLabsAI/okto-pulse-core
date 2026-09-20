@@ -43,7 +43,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "d0146ba576a11399f1fe517e361fa9a3e49b444d1bab168f85f9de4027258c69",
+  "manifest_sha256": "745bc5231c84c19f51087daec522f9125b97115534b06cb2c16fbc3f0d7e4a9d",
   "manifest_version": "agent-resources/v2",
   "resource_count": 23,
   "resources": [
@@ -223,7 +223,7 @@
       "uri": "okto-pulse://reference/spec_gates"
     },
     {
-      "content_sha256": "a95175ba5b70f5583a3e29198286133b3af934d7d6663fb9076ddd2e1cfae82a",
+      "content_sha256": "309ead45b781fc34bd7c101375e2451d2ccf2ddfa7d20c526b227d16fc2699ab",
       "cross_links": [
         "okto-pulse://reference/code-traceability"
       ],

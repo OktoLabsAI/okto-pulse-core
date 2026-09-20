@@ -2439,3 +2439,79 @@ Par publicado por push normal em `feature/v0.4.0`: Core
 `f30452b439906f039af68a47ffdeb9ef396c5237`. `ls-remote` confirmou ambos os
 HEADs e as árvores limpas após os commits funcionais. Nenhuma troca de conta,
 tag, release, merge ou migração em dados reais foi executada.
+
+### Em implementação — reuso do impacto selecionado no relatório
+
+Turno anterior: progresso; árvores limpas/HEADs Core `add2545c` e Community
+`f30452b` confirmados. DEI §6.4/9.1 permite atender `impact_evidence_mode=require`
+com o conjunto acumulado selado. `delivery_selection.reuse_impact` solicita essa
+resolução pela porta pública; não aceita hashes, flags de validade ou bases
+autoritativas do cliente. Manual + acumulado no mesmo request é conflito.
+
+O writer resolve o agregado antes da policy, mantém o mesmo `impact_evidence`
+para consumidores existentes e sela as bases em manifest v2. v1 preserva sua
+serialização/hash. Fonte/revisão/identidade observadas e progresso material
+integral entram na revalidação; a seleção não oculta mudança fora do resumo.
+Head/receipt são lidos sob fence no relatório. A atualidade do impacto é
+exposta separadamente (`report_impact`) e o gate de impacto require a consome na
+conclusão; off/advisory não viram gate de Delivery Evidence.
+
+Investigação adicional: o checkpoint guardava source_ref, mas não a identidade
+observada no append. Novos deltas capturam `_impact_source_identity_sha256` do
+head aceito no servidor; o request fechado não pode fornecê-lo. Ausência ou
+conflito não impede salvar progresso, mas não autoriza reuso canônico. Histórico
+antigo não é reescrito nem recebe identidade retroativa por coincidência de hash.
+Reaproveitar revisão/path de receipt não prova change_kind de arquivo: um Target
+de símbolo `created` pode estar em arquivo existente. A derivação completa ainda
+precisa respeitar essa distinção; não fabricar file-created a partir dela.
+
+### Checkpoint — reuso do impacto selecionado validado
+
+O relatório pode consumir o impacto líquido dos registros selecionados sem
+redigitar o bloco. O manifest v2 sela as bases observadas; a representação de
+impacto consumida pelas policies permanece a existente. O fechamento em modo
+`require` revalida pela porta pública com `for_update=True`: lock de Board,
+head e receipts antes de ler revogações/progresso. A auditoria da implementação
+de revogação confirmou a mesma serialização por Board/head. Os testes SQLite
+abaixo validam as transições sequenciais; não são prova de contenção PostgreSQL.
+
+- **87 testes Core** passaram em `core-reused-impact-isolated.log`: contratos
+  fechados, preservação do hash v1, bases v2, composição, writer real, policy
+  off/advisory/require, regressões MCP e catálogo. A primeira execução encontrou
+  quatro problemas nas fixtures/asserts novas (mensagem versus código de erro e
+  status alterado apenas no objeto de aplicação). Após corrigi-los, uma execução
+  conjunta revelou vazamento de `delivery_evidence_gate=advisory` no Board
+  compartilhado. A fixture agora restaura a configuração em `finally`; a suíte
+  completa passou sem alterar qualquer gate. Três warnings preexistentes de
+  marcação asyncio permanecem.
+- **124 testes Community** passaram em `community-reused-impact-final.log`:
+  relatório real persistido/recarregado, identidade/revisão, revogação, head
+  conflitante, observação antiga, identidade ausente em registro legado,
+  progresso material fora da seleção e mesma base observada novamente, além
+  das regressões de seleção/batch/progresso/contribuições/execução. As fixtures
+  semeiam receipts aceitos; estes casos não certificam admissão criptográfica.
+- **73 testes frontend** em quatro arquivos passaram em
+  `frontend-reused-impact.log`. Cobrem escolha de reuso, preservação da seleção,
+  envio/retry do modal e atualidade exibida separadamente da policy de Delivery.
+  Build/typecheck e verificação do frontend_dist passaram: **78 arquivos**, SHA256
+  `1b293608269a1096b931e579cc4141ed225e12f2b75eb9df76b73745c6196621`.
+  ESLint: zero erros, 15 warnings existentes no CardModal.
+- `provenance-reused-impact-final.json`: **797 / 312 .py**, **862 / 396 membros**
+  source→wheel→site-packages idênticos byte-a-byte, sem divergências. Core wheel
+  SHA256 `4cfc1f0f8a4465266704d2ff07ddc518d11d0a0c72239200c0d908ef122fb943`;
+  Community `a394b6c9736928e791bb0371f3cd96d4035041393a0b42e897153ae435aa2592`.
+  Testes em processos novos, PYTHONPATH pareado e bancos descartáveis. A última
+  correção foi somente na fixture; nenhum payload runtime mudou após essa prova.
+- `closure-reused-impact-final.json`: **ok=true**, zero findings de código ou
+  documentação, oito budgets **0/0**; **7.565 imports Core / 1.245 Community→Core /
+  25 dependências**. O primeiro relatório apontou somente contagens dos READMEs;
+  ambos foram atualizados pelo renderer oficial e o gate foi reexecutado.
+  Catálogo/manifests gerados oficialmente, Ruff e diff-check aprovados.
+
+**Retomada:** concluir integração com campos derivados dos receipts sem confundir
+Target de símbolo com arquivo, reconciliação gravável, aplicabilidade de receipts
+bufferizados e último batch+relatório atômico. Este incremento não conclui DEI I4
+nem a iniciativa: adoção conjunta ARQ/VER, F2B/Sprints com compatibilidade por Card
+autorizada e depreciação, KG, migrations/rollback e auditoria integral seguem no
+escopo consolidado. Nenhuma migração física/dados reais, release/tag/merge ou
+reinício do runtime do usuário. Goal em progresso, sem bloqueio novo.

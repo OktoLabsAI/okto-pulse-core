@@ -86,7 +86,11 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   disconnected, missing or conflicting declarations return bounded
   `needs_reconciliation` items. Repo labels and source identities remain distinct.
   This preview is claim-only; `composed` does not mean current, verified or ready.
-  It does not yet replace the impact block submitted with the execution report.
+  A report can select these records with `delivery_selection.reuse_impact=true`
+  to avoid retyping the impact block. The report revalidates the exact selected
+  set and its observed bases; the whole-card preview alone is not approval.
+  New deltas capture the known source identity on the server. A legacy delta
+  without that provenance is not silently assigned the source's new identity.
   Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
   Record significant results or a deliberate pause; no fixed time/command cadence.
   `none` is a context note without a material delta. `targets` requires exact
