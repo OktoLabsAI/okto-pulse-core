@@ -11,8 +11,8 @@ O gate de conclusão direta do Card foi corrigido para exigir as implementaçõe
 selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
-Frente atual: F2A/F2C, com preflight relacional e classificação de eventos/jobs
-internos implementados; arquivo e cutover ainda pendentes. F2B autorizado:
+Frente atual: F2A/F2C, com preflight relacional, eventos/jobs e censo de referências
+polimórficas implementados; arquivo e cutover ainda pendentes. F2B autorizado:
 compatibilidade por Card, resolver,
 leitura pública, armazenamento nullable e UI estão implementados e testados;
 materialização/cutover de dados continuam pendentes de F2A/F2C. A integração de
@@ -3379,3 +3379,81 @@ Nenhum payload mudou após a prova final. Nenhuma operação em banco/runtime re
 Publicado em `feature/v0.4.0` por push normal: Core `5ab2a8af`, Community
 `c1b2004`; HEADs confirmados em `ls-remote`, árvores limpas após publicação.
 Este apontamento posterior é somente de ledger.
+
+### 2026-09-20 — F2A/F2C, referências polimórficas e filhos de histórico
+
+Turno anterior classificado como progresso: Core `5ab2a8af`/ledger `8849325a`,
+Community `c1b2004`, eventos/jobs publicados. Partida com árvores limpas.
+
+Community `adapters/sprint_retirement_references.py` adiciona censo interno à
+mesma transação do preflight: **44 seletores de raiz e 9 caminhos de filhos,
+51 tabelas**. Mapeamento explícito de discriminador, ID e Board, incluindo
+`policy_compliance_receipts.entity_type/subject_id`, famílias semantic_guideline,
+policies/waivers, KBs, auditoria/DLQ/Discovery, code references e candidatos quality.
+Filhos por recibo/waiver incluem revisões adotadas, eventos de waiver, perguntas/
+links/outbox quality, revogações e heads de investigação. O censo guarda chaves
+primárias físicas completas, inclusive compostas, papel da referência, origem
+opaca e Boards proprietário/referenciado separados. Não copia payload para outro
+Board nem concede acesso ao source; não é uma resposta pública de produto.
+
+KBs e links sem board_id derivam proprietário do pai relacional explícito. Board
+ausente ou referência a Sprint de outro Board exige investigação; não reatribui
+propriedade. Source já ausente permanece registrado como proveniência opaca,
+sem fabricar Sprint. `require_resolved_scopes()` verifica resolução de escopo,
+não validade/autoridade integral do histórico ou autorização de cutover.
+Uma mesma linha pode aparecer sob mais de um papel: o futuro arquivo deverá
+deduplicar por tabela/PK, preservando a linha original uma única vez.
+
+A investigação refinou a premissa sobre quality: `quality_findings` tem CHECK
+que só admite ideation/refinement/spec como sujeito e âncora. Não estender esse
+contrato para Sprint. O teste físico confirma a recusa; se uma base legada/driftada
+contiver tal linha, o censo marca `unsupported_subject_contract` para investigação.
+Não se pode deduzir que todas as famílias com coluna subject_type admitem Sprint.
+
+Bug reproduzido durante revisão do incremento: JOIN de filhos com seus pais
+ocultava filho órfão. `f2a-reference-orphan-reproduction.log`: **1 failed**, 7,10 s,
+porque a inspeção não recusava uma revisão adotada com recibo ausente. Corrigido
+com validação prévia da FK física, incluindo todas as colunas das FKs compostas,
+e diagnóstico com a PK do filho. Ausência/drift da relação também falha fechado.
+Vínculos opcionais null seguem MATCH SIMPLE; não os inventariar como órfãos.
+O teste de evento de waiver demonstra pai existente/mesmo Board versus Board
+diferente, preservando a chave e o Board efetivamente observado no caso inválido.
+
+Todas as consultas de dados mantêm streaming de 16 linhas e limite restante +
+sentinela. O orçamento é compartilhado com relações/eventos/jobs; contagens por
+papel são leituras de referência, não uma afirmação de linhas físicas distintas.
+Schema incompleto, nova coluna discriminadora sem classificação e excesso de
+limite interrompem a inspeção em vez de devolver censo parcial como completo.
+Sem novo endpoint, tool, CLI, permissão, scheduler ou writer de histórico.
+
+Evidência desta versão:
+- `community-f2a-references.log`: primeira rodada **44 passed**, 59,62 s.
+  Após reprodução/correção do órfão e casos adicionais de FK composta:
+  `community-f2a-references-final.log`: **47 passed**, 64,07 s, cobrindo referências,
+  relações, jobs/eventos e armazenamento/paridade F2B em SQLite descartável.
+  Dump antes/depois confirma ausência de mutação no cenário de recibos/filhos.
+  Fixtures de linkage não certificam hashes/autoria de guideline nem emitem
+  aprovação real; o foco é censo e preservação dos registros já armazenados.
+- Build pareado e `provenance-f2a-references-final.json` antes da rodada final:
+  **803/315 .py**, **868/399 membros**, source→wheel→install idênticos, PYTHONPATH
+  pareado e processo novo. Core SHA256
+  `b3ab9edf42ff01a49b045cf4cd9ed05d325ff531f6596228e873196c6dc34788`;
+  Community `aabd22a7d61b2e65efd60b4e6b148e455abe31c8bae985726c669a700671d742`.
+- `closure-f2a-references-final.json`: **ok=true**, zero findings de código/
+  documentação, oito budgets **0/0**, **7.618/1.249 imports**, 25 dependências.
+  Ruff e diff-check aprovados. Core de produção, frontend e MCP não mudaram;
+  não repetir testes históricos do Core como se executados neste turno.
+
+Limites: isso não é ainda arquivo, snapshot restaurável ou fechamento transitivo
+de todo JSON/source ref/KG. O manifesto cobre os seletores declarados; não prova
+por si só semântica, hashes ou completude de todas as autoridades relacionadas.
+PostgreSQL não foi exercitado. Nenhum banco/runtime real foi tocado.
+
+Próximo passo: materializar o arquivo genérico com origem, IDs, contagens e hashes,
+reusando armazenamento/audit de forma protegida por Board e preservando as
+fronteiras de leitura existentes; validar snapshot consistente e restauração
+descartável antes do writer de cutover. Completar source refs/JSON e projeções KG
+nessa reconciliação. F2A/F2C/F3 e a iniciativa completa continuam em andamento.
+
+Community publicado por push normal em `feature/v0.4.0`, commit `3e1c1b3`;
+HEAD confirmado em `ls-remote`. Este checkpoint Core altera somente o ledger.
