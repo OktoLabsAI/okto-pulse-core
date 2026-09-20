@@ -335,6 +335,12 @@ def card_delivery_command(
     *, board_id, card_id, spec_id, evidence
 ) -> CardDeliveryEvidenceWriteCommand:
     """REST and MCP share the same closed envelope and legacy parsing."""
+    if getattr(evidence, "contract_version", None) == "card-delivery-report/v1" or (
+        isinstance(evidence, dict) and evidence.get("contract_version") == "card-delivery-report/v1"
+    ):
+        from okto_pulse.core.models.delivery_report import CardDeliveryReportInput, CardDeliveryReportCommand
+        body = CardDeliveryReportInput.model_validate(evidence)
+        return CardDeliveryReportCommand(board_id=board_id, card_id=card_id, spec_id=spec_id, **body.model_dump())
     batch = isinstance(evidence, CardDeliveryEvidenceBatchInput) or (
         isinstance(evidence, dict) and "entries" in evidence
     )

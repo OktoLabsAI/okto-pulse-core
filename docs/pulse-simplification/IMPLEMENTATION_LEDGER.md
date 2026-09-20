@@ -2601,3 +2601,65 @@ Par publicado por push normal em `feature/v0.4.0`: Core
 `f2cd851c6af23845d0d9f400f171f0af9126ddac`. Ambos confirmados por `ls-remote`,
 árvores limpas após os commits funcionais. Sem troca de conta, release, tag,
 merge, migração de dados reais ou reinício do runtime do usuário.
+
+### Em implementação — último batch e relatório na mesma unidade de trabalho
+
+Turno anterior: progresso; Core `15828d64` / Community `f2cd851` limpos. DEI §9.2
+permite compor append e relatório usando os writers canônicos. A investigação
+confirmou que o batch sela recibo na primeira entrada imutável e CardService
+guarda o manifest na conclusão existente, sem commit interno no move. A nova
+variante fechada `card-delivery-report/v1` une esses caminhos; não cria entidade
+de handoff, tabela ou diário paralelo. O adapter mantém a fence e o savepoint;
+Core autoriza tipos/execução e transição antes da escrita, delegando às portas.
+
+Digest de replay cobre todo o comando (batch, relatório, estado esperado e
+seleção), sem mudar o hash dos batches comuns. A seleção inclui todos os novos
+registros e os IDs existentes explícitos. O resultado retorna recibo histórico
+do primeiro relatório que incluiu aqueles IDs; replay após retrabalho não move
+o Card nem emite evento. Erro de relatório preserva o código/gate acionável e
+reverte a UoW. Ainda em validação; não considerar este checkpoint publicado.
+
+### Checkpoint — batch e relatório atômicos validados
+
+- **66 testes Core** passaram (`core-delivery-report.log`): contrato fechado,
+  limites, autorização antes de escrita, regressões de batch/seleção/evidência
+  e igualdade dos catálogos/manifests gerados.
+- **95 casos distintos Community** passaram no mesmo payload: 92 na regressão
+  `community-delivery-report-regression.log`; os 11 casos de
+  `community-delivery-report-final.log` incluem nove já nessa regressão e dois
+  adicionais de rollback; o caso adicional de concorrência passou em
+  `community-delivery-report-concurrency.log` (10,87 s). Duas sessões independentes
+  obtêm o mesmo recibo, com um único batch e uma única conclusão persistida.
+- SQLite real, writer canônico de Card e integração REST/MCP: permissões,
+  seleção, estado esperado e gates de impacto preservados; rollback inclusive
+  após conclusão/evento preparados e após execução inline; replay integral,
+  conflito de corpo e replay após retrabalho sem nova transição. A primeira
+  execução falhou somente na fixture que tratava ActorContext como dataclass;
+  corrigida para construir o contexto explicitamente. Nenhum gate relaxado.
+- **33 testes frontend** passaram (`frontend-delivery-report-regression.log`).
+  Este incremento oferece composição opcional por REST/MCP; ainda não adiciona
+  o compositor à UI. Frontend_dist verificado, 78 arquivos, tree SHA256
+  `016c2d132bc1f2f3ed30133c0272fbb353fa0507bc9c4383378766ff8958a4b9`.
+- `provenance-delivery-report.json`: **798 / 312 .py**, **863 / 396 membros**
+  source→wheel→site-packages idênticos byte-a-byte antes dos testes de comportamento.
+  Core wheel SHA256
+  `61f5b59e2fd2afd527f4c5ff7f826a3836d20f2bb0b3f63c59b3f22117cb907b`;
+  Community `ea15753a395d62762befb4b4157f5d8eab875a03af39a1a5ca478cfac400eeff`.
+  Nenhuma mudança de payload posterior; testes em novos processos com PYTHONPATH
+  pareado e bancos descartáveis. Runtime do usuário não reiniciado.
+- `closure-delivery-report-final.json`: **ok=true**, zero findings de código ou
+  documentação, oito budgets **0/0**, **7.574 / 1.246 imports, 25 dependências**.
+  O primeiro closure apontou apenas contagens nos READMEs, atualizadas pelo
+  renderer oficial. Catálogo/manifests regenerados oficialmente; somente o
+  resource manifest mudou pelo tool-doc. Ruff e diff-check aprovados.
+
+Sem nova tabela, entidade de handoff, migração de história ou alteração de policy.
+O recibo usa a primeira conclusão histórica que selou os IDs do batch; o replay
+continua sujeito ao escopo atual de Card/Spec e à autorização. Test Card→Validation
+continua sem relatório de execução e não admite esta composição.
+
+**Retomada:** publicar este par e registrar os hashes abaixo. A iniciativa continua
+em progresso: composição na UI, integração receipt→impacto/reconciliação gravável,
+observações bufferizadas e resumo de retomada; adoção conjunta ARQ/VER e cutover de
+inventário/gates; F2B/Sprints com compatibilidade por Card e depreciação autorizadas;
+KG, migrações/rollback, benchmark e auditoria integral permanecem no escopo.

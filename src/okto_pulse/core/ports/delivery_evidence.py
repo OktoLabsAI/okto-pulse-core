@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
+from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
 
 
@@ -29,7 +30,24 @@ class DeliveryExecutionSubmitter(Protocol):
         ...
 
 
+class DeliveryReportSubmitter(Protocol):
+    async def __call__(self, selection: DeliverySelectionInput) -> None:
+        """Run the authorized existing Card writer in this UoW; never commit."""
+        ...
+
+
 class DeliveryEvidenceReadPort(Protocol):
+    async def record_card_report(self, command: CardDeliveryReportCommand, *, actor_id: str, actor_kind: str,
+                                 report_submitter: DeliveryReportSubmitter,
+                                 execution_submitter: DeliveryExecutionSubmitter | None = None) -> dict:
+        """Atomically append the canonical batch and seal the existing report.
+
+        Bind replay to the entire command. Replaying returns the original report
+        receipt without moving the Card again; never mutate historical reports.
+        Roll back records, source receipts and outbox on any report rejection.
+        """
+        ...
+
     async def load_snapshot(self, scope: DeliveryScope) -> DeliveryEvidenceSnapshot:
         """Load under the caller's authorized, transaction-scoped unit of work.
 

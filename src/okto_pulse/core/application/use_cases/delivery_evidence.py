@@ -12,6 +12,8 @@ from okto_pulse.core.models.delivery_evidence import (
     DeliveryEvidenceCommand,
     DeliveryEvidenceQuery,
 )
+from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand, DeliveryReportRejected
+from okto_pulse.core.application.use_cases.mutation_permissions import transition_permission_requirement
 
 
 class GetDeliveryEvidenceUseCase:
@@ -72,8 +74,19 @@ class RecordCardDeliveryEvidenceUseCase:
         self._execution_use_case = execution_use_case
 
     async def execute(
-        self, command: CardDeliveryEvidenceWriteCommand, *, actor, uow: PulseUnitOfWork
+        self, command: CardDeliveryEvidenceWriteCommand | CardDeliveryReportCommand, *, actor, uow: PulseUnitOfWork
     ):
+        if isinstance(command, CardDeliveryReportCommand):
+            return await self.submit_report(command, actor=actor, uow=uow)
+        options = await self.authorize_in_transaction(command, actor=actor, uow=uow)
+        result = await uow.services.delivery_evidence.record_card(
+            command, actor_id=actor.actor_id, actor_kind=actor.actor_kind, **options
+        )
+        await commit(uow)
+        return result
+
+    async def authorize_in_transaction(self, command, *, actor, uow):
+        """Authorize every constituent before any write or replay payload read."""
         operations = {
             "progress": "card.conclusion.write",
             "implementation": "code_traceability.target.execution_submit",
@@ -111,8 +124,31 @@ class RecordCardDeliveryEvidenceUseCase:
                 return admitted.record.id
 
             options["execution_submitter"] = submit_execution
-        result = await record_card(
-            command, actor_id=actor.actor_id, actor_kind=actor.actor_kind, **options
-        )
-        await commit(uow)
-        return result
+        return options
+
+    async def submit_report(self, command, *, actor, uow):
+        batch = command.batch_command()
+        options = await self.authorize_in_transaction(batch, actor=actor, uow=uow)
+        await require_authorization(actor, transition_permission_requirement(
+            "card", command.expected_card_status, command.report.status, legacy_operation="cards:move"
+        ), uow=uow, board_id=command.board_id)
+
+        async def submit(selection):
+            try:
+                moved = await uow.services.cards.move_card(command.card_id, actor.actor_id,
+                    command.report.model_copy(update={"delivery_selection": selection}), actor.actor_name)
+            except ValueError as exc:
+                raise DeliveryReportRejected(exc) from exc
+            if moved is None:
+                raise ValueError("delivery_report_card_unavailable")
+
+        try:
+            result = await uow.services.delivery_evidence.record_card_report(
+                command, actor_id=actor.actor_id, actor_kind=actor.actor_kind,
+                report_submitter=submit, **options,
+            )
+            await commit(uow)
+            return result
+        except BaseException:
+            await uow.rollback()
+            raise

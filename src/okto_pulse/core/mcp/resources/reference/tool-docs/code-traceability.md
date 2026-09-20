@@ -24,6 +24,26 @@ the declared workspace before claiming that earlier changes were recovered.
 
 ## `okto_pulse_record_delivery_evidence`
 
+To atomically save the last batch and submit the existing Card execution report,
+use `contract_version: "card-delivery-report/v1"` with `expected_card_status`
+(`started` or `in_progress`), `batch` (the unchanged card-delivery-batch/v1 body),
+and `report` (the existing Card move fields for `validation` or `done`, including
+conclusion/completeness/drift and their justifications). Do not put a
+`delivery_selection` inside `report`: the server selects every new batch record
+plus optional `existing_record_ids`. Set `reuse_impact: true` to reuse selected
+impact; otherwise the normal manual impact policy applies. A Test Card moving to
+Validation does not have an execution report and cannot use this composition.
+
+The aggregate remains capped at 128 KiB and 200 selected records. All batch,
+source-admission and lifecycle permissions/gates apply before commit. A report
+rejection rolls back the batch, inline receipts and events. The same batch key
+is bound to the entire request, including report fields and selection. An exact
+authorized retry returns the original entries and `report` receipt (submitted
+status, manifest hash and delivery revision); it never moves a Card again, even
+after rework. This receipt describes the historical submission, not the current
+Card status. Do not retry with changed fields under the same key. Ordinary
+checkpoints remain independent and never move the Card.
+
 Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
 
 ```json

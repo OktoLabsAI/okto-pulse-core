@@ -18,7 +18,8 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import CardDeliveryEvidenceWriteInput, card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceInput, DeliveryEvidenceCommand, DeliveryEvidenceQuery
+from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceQuery
+from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
 
 from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
@@ -960,7 +961,7 @@ def register_code_traceability_tools(
 
         return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
 
-    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryEvidenceWriteInput) -> McpToolOutcome:
+    async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryRecordInput) -> McpToolOutcome:
         """Record declared progress or bind accepted execution/test proof to the CARD ledger.
 
         Card-scoped since 0.3.4 (spec 793c43d0 / FR-7): the task owns its

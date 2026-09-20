@@ -43,6 +43,30 @@ def report_reuses_impact(report: Mapping) -> bool:
     )
 
 
+def submitted_report_receipt(card: object, scope: CardDeliveryScope, record_ids: set[str], target_status: str) -> dict:
+    """Locate the immutable report that atomically included this batch.
+
+    The first matching report is the original submission, even after authorized
+    rework. Do not return the Card's current status as the historical outcome.
+    """
+    for report in getattr(card, "conclusions", None) or ():
+        if not isinstance(report, Mapping) or report.get("source") != "move_to_" + target_status:
+            continue
+        raw = report.get("delivery_manifest")
+        if not isinstance(raw, Mapping):
+            continue
+        manifest = DeliverySelectionManifest.model_validate(raw)
+        if not record_ids <= {row.id for row in manifest.records}:
+            continue
+        if ((manifest.board_id, manifest.card_id, manifest.spec_id, manifest.spec_edition)
+            != (scope.board_id, scope.card_id, scope.spec_id, scope.spec_edition)
+            or delivery_digest(manifest.model_dump(mode="json", exclude={"sha256"})) != manifest.sha256
+            or delivery_digest(report.get("impact_evidence")) != manifest.impact_sha256):
+            raise ValueError("delivery_report_receipt_invalid")
+        return dict(status=target_status, manifest_sha256=manifest.sha256, delivery_revision=manifest.delivery_revision)
+    raise ValueError("delivery_report_receipt_unavailable")
+
+
 def current_delivery_selection(card: object, scope: CardDeliveryScope, *, obligations,
                                record_hashes: dict[str, str]) -> set[str] | None:
     """Only a frozen executor report controls delivery selection.
