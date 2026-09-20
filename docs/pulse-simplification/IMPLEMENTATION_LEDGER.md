@@ -2515,3 +2515,9 @@ nem a iniciativa: adoção conjunta ARQ/VER, F2B/Sprints com compatibilidade por
 autorizada e depreciação, KG, migrations/rollback e auditoria integral seguem no
 escopo consolidado. Nenhuma migração física/dados reais, release/tag/merge ou
 reinício do runtime do usuário. Goal em progresso, sem bloqueio novo.
+
+Par publicado por push normal em `feature/v0.4.0`: Core
+`a815243f719b312f1bec2ccd9ac154748e550291`; Community
+`a58f2b152353d5dd3541577d8a140d9e41f78212`. `ls-remote` confirmou ambos os
+commits e as árvores limpas. Autenticação ativa `jpbraga` válida; não foi preciso
+alternar contas. A autorização para `gh auth switch -u <usuario>` permanece.
