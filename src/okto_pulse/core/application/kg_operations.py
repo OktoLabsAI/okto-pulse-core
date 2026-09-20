@@ -5,13 +5,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
-from typing import Any
 
 from okto_pulse.core.domain.code_traceability_kg import (
     KGDeadLetterReprocessScope,
 )
-from okto_pulse.core.kg.curation_policy import CurationPolicyError
-from okto_pulse.core.kg.graph_export import GraphExportError
 
 
 logger = logging.getLogger(__name__)
@@ -1100,15 +1097,6 @@ class CoreKnowledgeGraphOperations:
         )
 
 
-def export_board_jsonld(board_id: str) -> dict[str, Any]:
-    from okto_pulse.core.kg.graph_export import export_board_jsonld as _export
-
-    return _export(board_id)
-
-
 __all__ = [
     "CoreKnowledgeGraphOperations",
-    "CurationPolicyError",
-    "GraphExportError",
-    "export_board_jsonld",
 ]

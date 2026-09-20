@@ -64,8 +64,10 @@ def test_unmigratable_graph_yields_structured_error_not_raw():
 
     msg = remediation.structured_message
     assert msg is not None
-    # Names the operational action (the migrate-schema tripleta) + the board.
-    assert "okto_pulse_kg_migrate_schema" in msg
+    # Keep the component/limitation; do not offer a removed repair command.
+    assert "affected graph operation is unavailable" in msg
+    assert "migrate_schema" not in msg
+    assert "migrate-schema" not in msg
     assert board_id in msg
     # The raw error survives only as CONTEXT — it is not the whole message.
     assert "underlying_error" in msg
@@ -145,8 +147,9 @@ async def test_worker_dead_letters_structured_diagnostic_not_raw(
     routed = captured.get("error_text")
     assert routed is not None
     assert routed != raw_error
-    assert "okto_pulse_kg_migrate_schema" in routed
-    assert "Operational action" in routed
+    assert "affected graph operation is unavailable" in routed
+    assert "migrate_schema" not in routed
+    assert "migrate-schema" not in routed
     assert board_id in routed
 
     # or_1f52d4fd recorded the unhandled occurrence.

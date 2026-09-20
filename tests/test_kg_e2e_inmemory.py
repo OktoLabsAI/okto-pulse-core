@@ -135,7 +135,7 @@ class TestBackwardCompat:
         # apenas garante que o módulo expõe a constante em formato semver
         # x.y.z. Quando uma migração realmente quebrar compat, fixe o valor
         # aqui de propósito — assim deltas silenciosos seguem sendo caught
-        # por test_kg_dedup_migration / test_kg_schema_migration_self_heal.
+        # por test_kg_schema_migration_self_heal.
         assert isinstance(SCHEMA_VERSION, str) and SCHEMA_VERSION.count(".") == 2
 
     def test_all_interfaces_importable(self):

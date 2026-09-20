@@ -5093,7 +5093,7 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
                 "kg_subtype_undeclared",
                 (
                     f"kind_of {kind_of!r} is not declared for node_type "
-                    f"{node_type} — declare it first (kg subtype declare)."
+                    f"{node_type}; this candidate cannot be committed."
                 ),
                 details={
                     "node_type": node_type,

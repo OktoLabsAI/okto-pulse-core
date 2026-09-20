@@ -12,8 +12,7 @@ not confidence, defines the default —
                       (the daily decay tick recomputes scores, destroys
                       nothing).
 * ``propose_only``  — irreversible or state-mutating; requires explicit
-                      governed authority (CLI ``--confirm``/``--approve``,
-                      the rebuild's opaque offline recovery capability, a DLQ
+                      governed authority (the rebuild's opaque offline recovery capability, a DLQ
                       item id listed first). This is the FAIL-CLOSED DEFAULT for any
                       operation not classified below.
 * ``forbidden``     — never runs through this surface (physical hard-delete
@@ -48,14 +47,6 @@ CURATION_LEVEL_FORBIDDEN = "forbidden"
 # not preference — mutating this at runtime is not supported.
 CURATION_POLICY: Mapping[str, str] = MappingProxyType(
     {
-        # Merge/curation writes — reversible only via the equivalence
-        # ledger flow, so the write itself needs explicit confirmation.
-        "kg_dedup_entities": CURATION_LEVEL_PROPOSE_ONLY,
-        "kg_unmerge": CURATION_LEVEL_PROPOSE_ONLY,
-        # Offline maintenance surfaces (community CLI).
-        "kg_backfill_apply": CURATION_LEVEL_PROPOSE_ONLY,
-        "kg_restore": CURATION_LEVEL_PROPOSE_ONLY,
-        "kg_reset": CURATION_LEVEL_PROPOSE_ONLY,
         # DLQ reprocessing mutates graph state from listed items — the
         # list→reprocess(id) pair IS the propose→confirm artifact.
         "kg_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
@@ -110,8 +101,7 @@ def require_curation_allowed(operation: str, *, confirmed: bool = False) -> str:
 
     * the level is ``forbidden`` — always;
     * the level is ``propose_only`` and ``confirmed`` is False — the caller
-      must present an explicit confirmation artifact (``--confirm``,
-      ``--approve <id>``, confirm token, listed DLQ id).
+      must present the internal confirmation artifact required by that caller.
 
     No I/O — safe to call anywhere, trivially testable.
     """
@@ -123,10 +113,8 @@ def require_curation_allowed(operation: str, *, confirmed: bool = False) -> str:
             level,
             remediation=(
                 "This operation is forbidden by the curation policy "
-                "(irreversible physical mutation). Use the reversible "
-                "default (tombstone + equivalence ledger); physical "
-                "materialization happens only inside the deterministic "
-                "rebuild."
+                "(irreversible physical mutation). No confirmation can "
+                "authorize this operation."
             ),
         )
     if level == CURATION_LEVEL_PROPOSE_ONLY and not confirmed:
@@ -135,8 +123,8 @@ def require_curation_allowed(operation: str, *, confirmed: bool = False) -> str:
             level,
             remediation=(
                 "This operation requires an explicit confirmation artifact. "
-                "Run with --dry-run/--propose first to inspect the plan, "
-                "then re-run with --confirm (or --approve <proposal_id>)."
+                "The caller must supply the governed authority required "
+                "by its operation; health observation grants none."
             ),
         )
     return level

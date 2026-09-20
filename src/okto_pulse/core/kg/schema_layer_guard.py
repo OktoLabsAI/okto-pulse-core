@@ -158,24 +158,14 @@ def build_structured_schema_layer_error(
     raw_error: Any | None = None,
     migration_errors: list[str] | None = None,
 ) -> str:
-    """Build the actionable diagnostic for a board whose maturity schema could
-    not be migrated automatically.
-
-    The message names the operational action (the migrate-schema tripleta) so a
-    dead-letter row is self-explanatory instead of leaking the raw
-    ``Cannot find property graph_layer for n``.
-    """
-    action = (
-        f"run MCP `okto_pulse_kg_migrate_schema --board {board_id}` "
-        f"(CLI: `okto-pulse kg migrate-schema --board {board_id}`) "
-        "to add the graph_layer/maturity_status columns and backfill defaults, "
-        "then retry the rebuild/reprocess. Do NOT delete the graph store."
-    )
+    """Describe the failed component and limitation without a repair command."""
     parts = [
         f"kg_rebuild_schema_layer_migration_failure board={board_id}: the KG "
         "graph is missing the graph_layer/maturity_status schema required for "
         "rebuild/reprocess and automatic migration did not resolve it. "
-        f"Operational action: {action}"
+        "The affected graph operation is unavailable. Schema compatibility "
+        "requires the authorized release/support process; health observation "
+        "does not authorize migration, repair or deletion of graph storage."
     ]
     if migration_errors:
         joined = "; ".join(str(e) for e in migration_errors)[:240]

@@ -13,7 +13,7 @@ TARGET_PARENT = "okto_pulse.core.kg"  # for `from okto_pulse.core.kg import sche
 # consumers of kg.schema and are NOT migration targets this phase.
 ALLOWLIST_EMBEDDED_PREFIX = ""
 ALLOWLIST_MIGRATION_FILES = frozenset()
-#: The `kg migrate-schema` CLI (lives outside core/, documented for completeness).
+#: No external CLI importer receives a migration allowance.
 ALLOWLIST_MIGRATION_CLI = ""
 
 VERDICT_ADAPTER = "adapter_internal_legitimate"
@@ -262,9 +262,7 @@ class KgSchemaClassificationReport:
 
 
 def default_package_path() -> Path:
-    """Scan the whole ``okto_pulse`` package (core/ + tools/ + ...) so allowlisted
-    importers outside ``core/`` — e.g. the ``kg migrate-schema`` CLI in ``tools/``
-    — are part of the canonical inventory (spec #06 rework)."""
+    """Scan the whole package so importers outside Core are inventoried too."""
     return Path(__file__).resolve().parents[2]
 
 
@@ -402,8 +400,7 @@ def run_kg_schema_import_classification_gate(
     root: str | Path | None = None,
 ) -> KgSchemaClassificationReport:
     """Scan ``root`` (default: the whole ``okto_pulse`` package) and classify
-    every importer of ``okto_pulse.core.kg.schema`` — including allowlisted
-    importers outside ``core/`` (the ``kg migrate-schema`` CLI in ``tools/``)."""
+    every importer of ``okto_pulse.core.kg.schema``, including those outside Core."""
     base = Path(root) if root is not None else default_package_path()
     importers: list[KgSchemaImporter] = []
     import_statements = 0
@@ -452,8 +449,7 @@ def run_kg_schema_import_classification_gate(
         "current_importer_files": current_files,
         "current_import_statements": import_statements,
         "explanation": (
-            f"Scanning the whole okto_pulse package (core/ + tools/; the `kg migrate-schema` "
-            f"CLI path is scanned and allowlisted when it imports kg.schema), the live recount "
+            f"Scanning the whole okto_pulse package, including importers outside core/, the live recount "
             f"finds {current_files} importer files / {import_statements} "
             f"import statements vs the validator baseline of {VALIDATOR_BASELINE_IMPORTER_FILES} and "
             f"the spec-local {SPEC_LOCAL_IMPORTER_FILES} files / {SPEC_LOCAL_IMPORT_STATEMENTS} "

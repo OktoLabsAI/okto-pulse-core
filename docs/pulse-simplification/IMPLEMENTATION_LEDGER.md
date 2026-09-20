@@ -4507,3 +4507,106 @@ parada/restart de runtime, promoção de binding, release ou mudança de permiss
 Community commit `5b7d56a`; Core altera somente este ledger e a matriz README
 gerada. Pushes normais à feature/v0.4.0; sem release/merge. Retomar pelo inventário
 F4 acima, mantendo o objetivo integral e as pendências de migração.
+
+### 2026-09-20 — F4, retirada do grupo KG da CLI e das rotinas exclusivas
+
+Partida: Core `a55ca732`, Community `5b7d56a`, limpos/publicados. Turno anterior
+classificado como progresso verificado. Mandato permanece o pacote integral.
+
+Inventário por efeito: `kg migrate-schema`, `backfill`, `dedup-entities`,
+`proposals`, `unmerge`, `export`, `subtype declare` e `restore` eram manutenção.
+`proposals` listava planos de dedup/curadoria, não propostas de Decision do produto;
+`export` era backup integral JSON-LD. Removidos o grupo/subparsers, oito handlers,
+serializadores de backfill, `_apply_backfill`, cold registry exclusivo de restore,
+`_json_field`/import copy exclusivos e `commands/kg_migrate_schema.py`, incluindo
+sua entrada por `python -m`. `_field` e `_result_records` continuam usados pela
+exportação autorizada de credenciais; não foram retirados por proximidade.
+
+A busca de consumidores demonstrou que `core.kg.dedup_migration` só era chamado
+pela CLI. Removido o módulo inteiro (propose/approve/confirm/dedup/unmerge, modos
+físicos e formatter), sem guardá-lo atrás de flag. Removida sua superfície no
+manifest público e na proveniência dos adaptadores. Também saiu o wrapper de
+export e reexports de erros em `application/kg_operations`, exclusivos da CLI.
+O exportador `kg.graph_export` permanece porque o MCP o consome diretamente;
+a retirada desse transporte ainda é uma pendência F4, não prova de término.
+
+Removidas do inventário CurationPolicy as operações CLI aposentadas, preservando
+semântica de default desconhecido, autoridade dos consumidores restantes e recusa
+incondicional de hard-delete. Mensagens não mandam mais reexecutar com flags de
+CLI. `schema_layer_guard` conserva código, Board, contexto do erro, limites e
+recusa; substitui instruções migrate/reprocess pela indisponibilidade do componente
+sem comando de reparo. Subtipo não declarado continua recusado, sem direcionar ao
+comando administrativo extinto. Nenhum gate foi afrouxado.
+
+Histórico: ledger de equivalências e dados persistidos não foram apagados. Os
+testes de fold, cache e query preservam leitura de registros históricos ativos e
+revogados; fixtures agora criam explicitamente nós/records históricos, sem chamar
+o dedup/unmerge aposentado para preparar os cenários. Regressões exclusivas de
+execução da antiga manutenção foram excluídas, não convertidas em skips ou
+contadas como aprovações. Arquivos mistos conservam testes de CORS, consentimento,
+status, métricas e restore interno roteado. A retirada não prova que todos os
+stores/ports antes usados por manutenção já foram limpos.
+
+Incompatibilidade mantém o padrão do checkpoint anterior: `kg`, seus comandos,
+opções de execução/planejamento/confirmação e --help recebem unknown-command,
+exit 2, antes de configuração/dispatch. Testes ampliados exercitam o launcher
+instalado contra diretório ausente e fixtures opacas de SQL/uploads/grafo/binding,
+comparando bytes/mtimes/estrutura. Testes de ausência cobrem módulos, handlers,
+helpers e contrato público retirados.
+
+README/resources não oferecem mais a CLI KG; documentos de closeout/E2E anteriores
+mantêm sua evidência com aviso histórico. A ajuda frontend substitui o bloco de
+tripleta de migração por indisponibilidade de schema e autoridade do processo de
+release. `HelpPanel.maintenanceCli` verifica a renderização, ausência da instrução
+retirada e preservação da explicação de consolidação semântica.
+- Build `frontend-f4-kg-cli-build.log`: TypeScript + Vite + sync aprovados;
+  78 arquivos, árvore SHA256
+  `7acfb0409c0930c3cd420bbdb62cbb9ed2e2cf2a3377e0063f3354d47ec9674b`.
+  Warnings de tamanho de chunk/plugin timing, sem erro.
+- `frontend-f4-kg-cli-tests.log`: **11 arquivos, 19 testes passaram**, 45,58 s.
+- `frontend-f4-kg-cli-dist-verify.log`: verificação de sincronismo aprovada.
+- `provenance-f4-kg-cli.json`: **803/321 .py, 868/405 membros de payload**,
+  source→wheel→install idênticos, incluindo ausência dos dois módulos apagados;
+  PYTHONPATH pareado nos testes e launcher filho instalado sem PYTHONPATH.
+- `closure-f4-kg-cli.json`: sem findings de código; apenas matrizes README
+  desatualizadas com a redução para **7.596 imports Core/1.226 Community→Core**.
+  Registrar a recertificação final após o renderer oficial e reconstrução.
+- `community-f4-kg-cli.log`: **192 passed**, 167,32 s, nenhuma falha ou skip.
+  Cobertura: ausência/launcher, closeouts mistos, restore interno, proveniência
+  dos adaptadores, init/serve/status e Code Traceability.
+- `core-f4-kg-cli.log`: **121 passed, 1 failed**, 262,13 s. Única falha:
+  `test_kg_graph_export::test_s7_surfaces_contract` ainda exigia o handler CLI
+  retirado. Atualizado para exigir ausência, preservando contratos MCP e REST
+  remanescentes; não houve mudança produtiva após essa rodada.
+- `provenance-f4-kg-cli-final.json`: mesmo conjunto .py/payload byte a byte
+  após matrizes README regeneradas e par reconstruído/reinstalado. SHA256 dos
+  wheels: Core `9653ee34e54cc0498561e8a1dedb493fe95ccff0615457fce0fdb63b0e0bbe6b`;
+  Community `8a8657209ce68da1327679faabb5451ccd04103c8d3e5caa07e9e93882d19ef0`.
+- `closure-f4-kg-cli-final.json`: **ok=true**, nenhum finding de código/docs,
+  budgets zero; contagens 7.596/1.226, 25 dependências.
+- `core-f4-kg-cli-final.log`: **13 passed**, 102,10 s, nenhuma falha ou skip;
+  reexecução dirigida de export, contratos retirados e manifesto público.
+  Não somar rodadas sobrepostas como casos únicos. Todos os handles encerrados.
+- Ruff e diff-check aprovados. Fonte produtiva congelada durante testes; os
+  resultados frontend permanecem aplicáveis à mesma árvore de assets.
+
+Dependência revelada para próxima limpeza: `kg_curation_proposals` não tem mais
+consumidor de produto em src; persistem o port, adaptador e registro em
+`adapters/composition.py`. Retirar código sem consumidor requer separar schema/
+dados históricos da composição viva. A tabela/model KGCurationProposal também
+participa do apagamento autorizado por Board em sqlalchemy_kg_governance e em
+test_board_relational_erasure; preservar esse contrato e os dados preexistentes,
+sem remover schema histórico junto com o adaptador morto. O ledger de equivalências, em contraste,
+tem consumidor de leitura `equivalence_fold`; preservá-lo é necessário.
+
+Continuam executor recovery-only, CLI materialize_legacy_fr_ac e demais MCP/REST/UI
+operacionais, providers de health sem efeitos, stores exclusivos remanescentes,
+F2 migração/backup/rollback/autoridade histórica e remoção atômica F3, além de todo
+BASE/KG/DEI/ARQ/VER não comprovado. Não houve migração real, edição de dados do
+usuário, parada de runtime, release ou mudança de permissões de leitura.
+
+Community commit `96bf16753a60283fc4dea868f144c70d4ec1e501`; Core contém retirada
+da implementação exclusiva, ajustes de mensagens/contratos/testes, matriz gerada
+e este ledger. Publicação incremental na feature/v0.4.0, sem release/merge.
+Próxima retomada: stores/ports exclusivos de curadoria e entrypoints distribuídos
+remanescentes, seguida da retirada coordenada MCP/REST/UI. Objetivo integral ativo.

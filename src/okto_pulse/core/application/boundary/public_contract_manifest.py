@@ -66,7 +66,6 @@ PUBLIC_CORE_CONTRACT_SURFACES: tuple[str, ...] = tuple(
             "okto_pulse.core.kg.cypher_templates",
             "okto_pulse.core.kg.cursor_codec",
             "okto_pulse.core.kg.data_provider_ownership_gate",
-            "okto_pulse.core.kg.dedup_migration",
             "okto_pulse.core.kg.embedding",
             "okto_pulse.core.kg.global_discovery.schema",
             "okto_pulse.core.kg.graph_availability",

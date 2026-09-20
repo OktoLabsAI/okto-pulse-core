@@ -2826,7 +2826,6 @@ _ENGINE_SWAP_SANCTIONED = frozenset(
     {
         "test_kg_governance.py",
         "test_kg_dedup_nc8.py",
-        "test_kg_dedup_migration.py",
         "test_kg_pipeline_e2e.py",
         "test_kg_real_integration.py",
     }
