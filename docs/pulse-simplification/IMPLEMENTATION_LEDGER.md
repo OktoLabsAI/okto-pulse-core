@@ -3974,3 +3974,92 @@ criá-los para fazer o censo passar. Ainda pendentes integração ao instalador,
 conteúdo substantivo, leitor autorizado, cutover F2B/F2C/F3 e toda a matriz restante
 DEI/ARQ/VER/KG. Community commit `1d59a86`; Core deste checkpoint altera o ledger.
 Iniciativa ativa; progresso, não conclusão.
+
+### 2026-09-20 — F2A/KG §8, seleção de recuperação reconciliada com routing
+
+Partida: Core `b84c5403`, Community `1d59a86`, árvores limpas. Turno anterior
+classificado como progresso. A decisão F2A de leitura pública continua pendente;
+nenhuma permissão, concessão ou rota foi alterada.
+
+Investigação de premissa: o resolver inicializa uma rota ausente apenas pela
+operação explícita `_initialize_missing`, com callback de criação física. Seus
+leitores e o store de bindings distinguem ausência de binding de uma rota
+autenticada. Não transformar ausência de binding em corrupção por suposição,
+nem inicializar grafos vazios para fazer um censo passar. O store pode inspecionar
+um binding cujo storage está ausente; o preflight deve registrar essa diferença.
+
+Community `adapters/recovery_graph_inventory.py` lê a tabela física `boards`
+dentro da transação SQLite do chamador, exigindo PK id sem drift. Reconciliam-se
+todos os IDs com `boards/<id>` e o escopo global no KG root explícito. Diretorias
+de Board sem proprietário relacional, storage sem binding, geração ativa ausente
+ou sem `grafx.meta`, backend vinculado incompatível, aliases e binding corrompido
+impedem aceitar a seleção como resolvida. Ausência de binding e de geração/storage
+fica explicitamente registrada como `binding_absent_storage_absent`; não é sinal
+genérico de prontidão da migração. Arquivos de lock conhecidos não viram dados de
+grafo nem são removidos. Nenhum router/init/CAS é chamado pelo censo.
+
+Cada rota vinculada registra Board/escopo, geração, path físico, page size,
+digest autenticado do binding e SHA256 observado do arquivo de identidade nativo.
+O hash do arquivo detecta drift observado; o censo não interpreta seu conteúdo
+como uma nova implementação do formato Grafx. Leitura de identidade limitada a
+1 MiB, budget agregado padrão de 100.000 entradas (IDs e entradas de diretório),
+sem truncar população silenciosamente. Gerações não selecionadas e outros paths
+de storage são listados separadamente como **conteúdo ainda a preservar**; suas
+bytes não são incluídas apenas porque seu path apareceu no censo.
+
+`create_joint_recovery_snapshot(..., kg_base_dir=...)` agora exige que o root KG
+também esteja na janela de startup. Antes da captura, sob a reserva SQL, exige
+igualdade exata entre rotas ativas e seleção (escopo, Board, path, page size), sem
+omissões, duplicação ou troca de dono. Após todos os exports/LSNs, relê o censo e
+recusa drift. Gera `joint-recovery-snapshot/v2` com `routing_inventory` autenticado
+pelo manifesto. Verificação offline valida a estrutura/população e a cobertura
+pelos registros de grafo sem reabrir paths vivos. Restauração suporta v1/v2;
+captura de seleção explícita sem esse argumento permanece v1 com sua cobertura
+anterior, não recebe retroativamente a garantia nova. A futura composição do
+instalador ainda deve exigir o caminho com censo, em vez de omitir o argumento.
+
+O mecanismo detecta mudanças observadas antes/depois; não é um lock de todos os
+writers de binding/filesystem, nem prova que nunca houve uma troca ABA externa de
+diretório/binding. A exclusão desses mutadores no cutover segue pendente. Tampouco
+um digest de identidade substitui admissão nativa/validação dos handles: exports
+continuam usando os adapters Grafx e seus checks. Não promover nem descartar
+automaticamente gerações inativas, dados órfãos ou conteúdo substantivo.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- `community-f2a-routing.log`: **63 passed**, 237,50 s; censo, snapshots conjuntos,
+  reserva SQLite e janela offline. Inclui arquivo/dump SQL intactos após o censo,
+  ausência sem criação, paths de retenção, seleção omitida/duplicada/page size
+  divergente, owner órfão, storage não vinculado, geração/identidade ausentes,
+  binding adulterado, budget compartilhado, drift de PK, aliases e manifesto que
+  omite Board. Fixtures físicas de censo usam placeholders explicitamente sem
+  abri-los como Grafx; integração usa grafos reais nos paths canônicos.
+- Integração v2 captura e restaura Board+global e mantém Board sem grafo ausente;
+  recusa troca real por CAS para uma geração g2 admitida, storage novo durante
+  export e alteração da observação do hash de identidade. Este último teste
+  injeta o digest observado; não corrompe um banco ativo para testar comparação.
+  Regressões v1, LSN/ABA/commit de outro processo e restauração permanecem verdes.
+  Nenhum teste falho ou pulado.
+- `provenance-f2a-routing.json`: par reconstruído/reinstalado antes dos testes,
+  **804/321 .py**, **869/405 membros**, source→wheel→install byte a byte, PYTHONPATH
+  pareado e processos novos. Core wheel SHA256
+  `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `f1fb36ad9d2b3603e378792b77d31fb37c11ed0cb058d9121cda8281939360b0`.
+- `closure-f2a-routing.json`: **ok=true**, findings de código/docs vazios, oito
+  budgets **0/0**, **7.619/1.251 imports**, 25 dependências. Ruff/diff-check
+  aprovados. Sem novo mecanismo no Core, mudança de UI/MCP ou matriz README.
+
+Próxima frente independente: preservar os arquivos externos e controles de
+lifecycle no conjunto de recuperação. Leitura de `CommunityFileSystemStorage`
+confirmou namespace por Board, mutexes em `.board_lifecycle/<hash>.lock` e marcador
+`.erased`, usado por save/restore/purge para impedir recriação após apagamento.
+Backup/rollback não pode ignorar esses controles ou reviver conteúdo apagado.
+Ainda é necessário identificar todos os consumidores/paths, coordenar o fence
+com SQL e distinguir prova de conteúdo de mera listagem, antes de implementar
+a preservação. Não inferir que a enumeração do root KG cobre uploads separados.
+
+Continuam pendentes arquivos/gerações não selecionadas, exclusão completa de
+writers/binding changes, integração interna do instalador e rollback, conteúdo
+substantivo, leitor autorizado, F2B/F2C/F3 e demais requisitos DEI/ARQ/VER/KG.
+Community commit `4988f58`; Core deste checkpoint altera somente este ledger.
+Dados reais e PostgreSQL não foram exercitados. Iniciativa ativa; progresso,
+não conclusão.
