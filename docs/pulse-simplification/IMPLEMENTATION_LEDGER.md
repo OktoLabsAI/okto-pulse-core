@@ -3808,3 +3808,75 @@ pendências substantivas sem novas aprovações. Integrar F2B/F2C/F3 e concluir 
 demais requisitos DEI/ARQ/VER/KG com auditoria integral continuam necessários.
 Community publicado em `feature/v0.4.0`, commit `9456bd5`; Core inclui o detector
 puro, testes, matriz README gerada e este ledger. A iniciativa permanece ativa.
+
+### 2026-09-20 — F2A/KG §8, janela offline e investigação da captura conjunta
+
+Partida: Core `872238db`, Community `9456bd5`, árvores limpas. Turno anterior
+classificado como progresso. Autenticação GitHub validada como `jpbraga`; não foi
+necessário executar a troca de conta autorizada. Decisão F2A de leitura pública
+continua pendente, sem alteração de permissões.
+
+Investigação: `CommunityGrafxLogicalSnapshotSource` abre uma transação read MVCC
+e mantém um snapshot consistente daquele grafo. `backup_logical_graph_file`
+fecha esse snapshot antes da publicação; o publisher existente usa replace e
+pode substituir um destino anterior. Portanto, ainda faltam identidade imutável
+do conjunto, publicação sem overwrite e coordenação entre os stores para chamar
+isso de backup de migração do ambiente. `graph_operation_guards` drena pins do
+processo, não escritores nativos externos. A recuperação/quarentena existente
+usa o mutex de aquisição do serve-lock para excluir novos runtimes.
+
+Premissa descartada com reprodução real: `database.begin("write")` no Grafx não
+é um fence de escrita. A lease é adquirida no commit, e outra transação consegue
+commitar enquanto aquela continua aberta. O teste novo também mantém um read
+snapshot antigo, vazio, e demonstra que uma leitura posterior vê o nó novo.
+Isso é comportamento esperado de MVCC; não é bug do Grafx. Inspeção do pacote
+instalado confirmou `okto-grafx 0.0.7` e a documentação de `Database.begin`.
+O código local do Grafx foi consultado somente para investigação, sem alteração.
+Não usar uma transação write vazia para alegar exclusão conjunta SQL+grafo.
+
+Community `adapters/migration_runtime_fence.py` adiciona `offline_migration_window`
+para a futura composição interna do instalador. Recebe 1–8 diretórios explícitos,
+absolutos e existentes; rejeita aliases/junctions/reparse points de ancestralidade
+e dos arquivos de lock, além de segmentos `..`. Deduplica os roots e adquire os
+mutexes existentes em ordem canônica. Só admite o corpo depois de adquirir todos
+e inspecionar seus owners, mantendo todos os mutexes até o fim. Reutiliza a regra
+existente: PID vivo, mesmo com heartbeat antigo, heartbeat fresco de PID morto e
+payload ilegível impedem entrada. Um servidor do próprio processo também impede
+entrada. Registro comprovadamente antigo/morto é preservado, nunca apagado pelo
+helper. Falha no segundo mutex ou no corpo libera todos os já adquiridos.
+
+Esta janela cobre início de runtimes que respeitam o protocolo Community. Não
+drena ferramentas CLI que já passaram por um preflight pontual, nem impede um
+writer nativo que ignora esse protocolo. Não é uma transação SQL, uma lease
+Grafx ou certificado de captura conjunta. O chamador futuro deverá identificar
+todos os DATA_DIR/KG_BASE_DIR efetivos, excluir esses demais participantes e
+manter captura/verificação/cutover autorizado dentro da janela. Nenhum hook de
+startup, endpoint, comando público, parada de processo ou migração real foi
+adicionado. A ausência de integração é uma pendência explícita, não um gate verde
+de F2A/F2D/KG §8.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- `community-f2a-fence.log`: **48 passed**, 18,08 s; novo módulo e regressão de
+  `serve_lock`. Inclui processos Python separados tentando iniciar nos dois
+  roots durante a janela e conseguindo iniciar depois; owner vivo no próprio
+  processo; heartbeat velho/vivo e fresco/morto; JSON/PID inválidos; contenção
+  no segundo mutex; exceção no corpo; roots inválidos/ausentes; aliases de root,
+  owner e mutex; reprodução Grafx real. Nenhum teste foi pulado.
+- Antes dos testes, par reconstruído/reinstalado e comprovado por
+  `provenance-f2a-fence.json`: **804/319 .py**, **869/403 membros** de payload,
+  source→wheel→install byte a byte, PYTHONPATH pareado e processos novos.
+  Core wheel SHA256 `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `1ab7974d58136957485994e3501918653387581f4b52a6b826b3227b53878dc1`.
+- `closure-f2a-fence.json`: **ok=true**, findings de código/documentação vazios,
+  oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências. Nenhuma mudança
+  de matriz README necessária. Ruff e diff-check aprovados. Sem mudança de UI,
+  de modo que não há teste frontend novo aplicável neste incremento.
+
+Community commit `57cbbc9`, `feat(migration): hold startup fences across offline
+recovery windows`. Core deste checkpoint altera somente este ledger. Próximo
+passo: vincular snapshots SQL/Grafx e identidades/gerações ao manifest de backup,
+provar consistência conjunta e restauração sem promoção nem overwrite, cobrindo
+escritores que não são excluídos pelo mutex de startup; então integrar ao fluxo
+interno resumível. Continuam pendentes conteúdo substantivo, reader autorizado,
+cutover F2B/F2C/F3 e o restante da matriz DEI/ARQ/VER/KG. Iniciativa ativa; este
+turno é progresso, não conclusão.
