@@ -13,7 +13,8 @@ não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
 Frente atual: F2A/F2C, com preflight relacional, eventos/jobs, censo de referências
 polimórficas e snapshot de recuperação SQLite restaurável implementados. Captura
-interna do histórico relacional próprio em storage/audit de Board implementada;
+interna do histórico relacional próprio, referências polimórficas e work items
+relacionados em storage/audit de Board implementada;
 consulta pública, reconciliação completa, captura coordenada do KG e cutover ainda
 pendentes. Decisão de autoridade de leitura do arquivo registrada ao final. F2B autorizado:
 compatibilidade por Card, resolver,
@@ -3647,3 +3648,79 @@ Core deste checkpoint altera ledger e matriz README gerada, sem código de domí
 A pergunta sobre autoridade de leitura foi enviada; nenhuma resposta/aceite foi
 inferido por passagem de tempo. Somente essa decisão e suas mutações dependentes
 ficam pendentes; não há bloqueio da iniciativa inteira.
+
+### 2026-09-20 — F2A, arquivo de referências e trabalho durável relacionado
+
+Partida: Core `456a8385`, Community `8db7093`, árvores limpas. Turno anterior
+classificado como progresso; a decisão de leitura pública continua pendente,
+sem inferir autorização pelo tempo. Este incremento não altera permissões.
+
+Community `sprint_retirement_archive.py` passa a produzir
+`historical-relational-archive/v2`. Além das quatro tabelas próprias e vínculos
+de Cards, copia as linhas físicas selecionadas pelo censo de referências
+polimórficas/filhos e pelo inventário de eventos/jobs na mesma transação reservada.
+Deduplica por tabela e PK completa, guarda todas as colunas sem decodificar/
+normalizar JSON SQL e registra todos os papéis/proveniências da linha. A mesma
+fila detectada por artifact_type e durable_work entra uma única vez, com ambos
+os papéis. As decisões preserve/supersede/review são fatos do plano de migração,
+não processamento nem novo estado dos jobs.
+
+Leitura parametrizada em lotes de 16 chaves, incluindo chaves compostas, com
+streaming, limite de bytes antes da transferência de payload e conferência de
+todas as chaves esperadas. Não faz uma query por linha nem interpola IDs no SQL.
+O budget agregado contabiliza dados e metadados; excesso não publica arquivo
+parcial. Contagens/hash abrangem todas as tabelas incluídas e a lista de papéis.
+Row ausente ou proprietário divergente entre plano e leitura falha fechado.
+
+O Board proprietário observado no censo define o arquivo. Um Board que só tem
+referências históricas a uma origem já removida recebe seu próprio arquivo, sem
+Sprint fabricada; não transferir a linha ao Board da origem. KBs sem board_id
+mantêm o proprietário derivado da Spec/entidade pai. Referência cross-board
+inválida impede captura antes do storage. Conteúdos, authors, hashes, estados e
+payloads originais permanecem inalterados nas tabelas vivas.
+
+Verificador continua lendo v1 com suas contagens históricas e cobertura limitada;
+não o promove a v2. Writer só gera v2. Replay de migration_id anteriormente
+associado a conteúdo/formato diferente falha, preservando a evidência existente.
+Nenhuma API/UI pública, handler ou serviço Legacy Sprint foi acrescentado.
+
+Evidências desta versão em `PULSE_REFACTOR/.validation-v040`:
+- `community-f2a-related-archive.log`: **62 passed**, 90,29 s. Inclui os testes
+  de arquivo, preflight relacional, referências e eventos/jobs. Novos casos:
+  recibo + filho de PK composta sem copiar sujeito Spec não relacionado;
+  fila com dois papéis e evento misto + execução pending sem processamento;
+  Board sem Sprint ativa, origem histórica ausente, alteração de recibo que
+  invalida replay, overflow incluindo payload relacionado, compatibilidade v1,
+  19 recibos além do lote inicial + KB com autoria/Unicode/CRLF preservados e
+  referência cross-board recusada antes de qualquer arquivo/evento novo.
+  Fixtures de recibos demonstram preservação/linkage, não validade semântica
+  dos digests de guideline nem aprovação de conteúdo por serviços de domínio.
+- `provenance-f2a-related-archive.json`: **803/317 .py**, **868/401 membros**,
+  source→wheel→install idênticos antes dos testes, PYTHONPATH pareado, processos
+  novos. Core wheel SHA256
+  `fb25e3f62af61b2ca694d6342efd09db8b8dd89c449011b39a9e766ac5e854ce`;
+  Community `d85778cf19213ee1a0e33cee9afdd7f512b2e38869b670fdd5ace20ab340b6b3`.
+- `closure-f2a-related-archive.json`: **ok=true**, findings de código e docs
+  vazios, oito budgets **0/0**, **7.618/1.250 imports**, 25 dependências. Ruff e
+  diff-check aprovados. Sem mudanças em código Core, frontend ou catálogo MCP.
+
+Limites: a seleção ainda é o censo declarado de raízes/filhos e eventos/jobs,
+não fechamento transitivo universal de JSON, todos os pais relacionados, Grafx
+ou arquivos externos. Não interpretar cópia integral de uma row como autorização
+para divulgá-la integralmente. As permissões específicas de cada família e seção
+continuam necessárias na futura leitura pública. Conteúdo substantivo não foi
+transferido automaticamente para Spec/Card; fontes vivas não foram apagadas.
+PostgreSQL e runtime real não foram tocados. F2A/F2C/F3 ainda não concluídos.
+
+Investigação que orienta o próximo passo: `QualityEvidenceRefInput` e `EvidenceRef`
+admitem source_type/source_id/source_version/content_hash dentro de evidence_refs.
+O sujeito de uma finding pode ser Spec e a referência embutida ter origem Sprint;
+um censo filtrado apenas pelo discriminador da row não cobre esse caminho. Isso
+é uma lacuna de cobertura identificada por leitura de contrato, não reprodução
+de um bug no runtime real. Inspecionar esses payloads/owners e source_ref textual
+com limites e localização exata, sem substituir referências por busca de texto
+ou modificar evidência assinada. Completar essa reconciliação, Grafx e conteúdo
+substantivo antes do writer de cutover, mantendo a decisão de leitura isolada.
+
+Community publicado por push normal em `feature/v0.4.0`, commit `c5c866f`.
+Core deste checkpoint altera somente o ledger. A iniciativa continua ativa.
