@@ -6720,3 +6720,90 @@ Preflight Card continua bloqueando contexto nesta publicação. Coordenador F2D,
 remoção operacional F3, F4/F5 restantes e matriz integral de critérios/rollout/
 medição seguem pendentes conforme registros anteriores. Etapa classificada como
 progresso verificado; objetivo integral permanece ativo.
+
+### 2026-09-20 — F2A/F2B: vínculo do recibo de contexto no Card transform (em implementação)
+
+Turno anterior: progresso verificado, Core 0a84a0df / Community aaae057,
+working trees limpas na retomada. Integração mantém o gate antigo sem receipt,
+mesmo se existir journal. Com receipt explícito, exige mecânica resolvida,
+população exata, arquivo/grants e alvos válidos antes de escrever qualquer Card.
+
+Evidência v2 dos Cards vincula ContextDispositionReceipt tanto no manifesto SQL
+quanto no blob privado; v1 permanece válido para etapas anteriores sem contexto.
+Replay e work retirement revalidam o vínculo contra arquivos/journal originais,
+sem recapturar fontes/destinos vivos ou restaurar grants revogados. Triggers no
+journal de trabalho também não podem invalidar a prova depois da verificação.
+
+Fence posterior compara população, fontes, referências e alvos. A única
+normalização prevista corresponde aos dois campos de Card já verificados byte
+a byte (sprint_id e migrated_validation_policy), incluindo a nova proveniência
+source_sprint_id gerada pelo plano autorizado. Nenhuma exceção por nome de
+campo/port/permissão está sendo aberta. Testes de integração/rollback/replay e
+prova do par antes da validação ainda pendentes; nenhum dado real alterado.
+
+Validação em curso: prova `provenance-card-context.json` e rechecagem antes da
+segunda rodada confirmam 810/328 .py e 875/412 payloads idênticos. Closure
+`closure-card-context.json` retornou ok=true, findings/documentation_findings
+vazios e oito budgets 0/0; matrizes README não mudaram. Frontend consumidor:
+24 passed (3,02 s), sem alterar/rebuildar SPA.
+
+Primeira rodada nova: 5 passed / 1 failed com -x (77,37 s). As duas variantes
+completas passaram (inclusive Card com contexto embutido), mais ausência de
+receipt, receipt incorreto e fonte alterada. Falha exclusivamente da expectativa
+do teste: Spec movida de Board falha antes em SprintRetirementRelationsInvalid,
+não no verificador de contexto. Expectativa corrigida para esse gate existente,
+sem alterar produto. Suite nova inteira reiniciada após término do processo e
+nova prova do par; acrescidos perda do journal Card, writer concorrente e falha
+de segundo blob. Regressões independentes anteriores continuam no mesmo handle.
+
+Fechamento da integração de recibos F2A/F2B/F2C:
+- Community **87a582d**: Card transform aceita receipt tipado explícito e
+  verificado para a população original; sem receipt conserva o bloqueio antigo.
+  Evidência privada/manifesto v2 vinculam o receipt, inclusive Boards sem Cards.
+  v1 continua aceito em replay; não há upgrade silencioso nem rebase de policy.
+- Fence posterior verifica fontes, população, alvos e referências, normalizando
+  apenas a proveniência produzida pelos dois campos Card já verificados. Origem
+  embutida anterior em Card mantém disposição explícita; caminho desconhecido
+  novo continua bloqueado. Nenhuma exceção arquitetural ou de autoridade.
+- Card replay e work retirement verificam o contexto pelo arquivo/journal
+  original. Journal Card/contexto ausente, binding/blob adulterado e manifesto
+  v2 sem vínculo falham. Replay não escreve sobre edições posteriores legítimas,
+  não transforma avaliação histórica em aprovação e não restaura grants.
+- `card-context-regression.log`: **62 passed** (298,76 s), Card v1, disposições,
+  preflight e trabalho. `card-context-new-final.log`: **21 passed** (203,51 s).
+  Inclui sequência completa em banco descartável, Card com contexto embutido,
+  policies 90/60 preservadas, leitura REST/MCP pós-desvínculo, revogação antes da
+  transformação e depois do replay, writer SQLite bloqueado, rollback de SQL/
+  arquivos novos em falha e triggers, e adulteração antes/depois dos recibos.
+- `frontend-card-context.log`: **24 passed** (3,02 s), consumidores do envelope
+  histórico. Sem mudança da SPA. Total selecionado distinto: **107**; os cinco
+  casos novos já verdes na primeira execução -x não são contados novamente.
+- `provenance-card-context.json` / `provenance-card-context-retest.json`: 810/328
+  .py e 875/412 payloads idênticos fonte/wheel/install. Core wheel não mudou em
+  relação ao incremento anterior. Pytest usa checkouts provados idênticos, não
+  alegar que ele importa site-packages; isso é comprovado pelo verificador.
+- `closure-card-context.json`: ok=true, findings/documentation_findings=[] e
+  oito budgets 0/0. Matrizes permanecem 7.548/1.170 imports e 25 dependências.
+- Wheels em `wheels-card-context`, SHA256:
+  Core 7e1c21ea8e64a84ee6925b5ecc4d1e4a1f1a21904de05037b9f50c6d19354e65;
+  Community d46dc869aef3351016c0e0a852f354d6436655aacbb3f92a676a7c6e6121bc4a.
+- Ruff e staged diff --check aprovados. Todos os processos desta etapa
+  (build/install/testes/closure) terminaram antes do commit; nenhum runtime
+  Pulse reiniciado e nenhuma migração aplicada a dados reais. Push normal do
+  par será comparado com ls-remote, sem merge/tag/release.
+
+Próxima continuidade: tratar a retenção destes receipts no coordenador durável
+F2D, em conjunto com checkpoints/cleanup de permissões, fence de runtime e
+backup/restore pareado já existentes. Nunca invocar captura original depois do
+Card transform: a retomada verifica os receipts armazenados. Investigar fontes
+KG/global outbox e remoção dirigida antes de declarar F2C concluída; coordenar
+corte pre_create_all/post_create_all e remoção F3 para impedir recriação de
+Sprint ou schema novo servido por código antigo. As etapas internas agora
+compõem um fluxo de prova, mas ainda não estão no bootstrap e não substituem
+esse coordenador/corte. Imutabilidade operacional, seções históricas próprias e
+administração de grants permanecem pendências explicitadas anteriormente.
+
+Gate global de metadata MCP segue pendente (última medição 56.024 > 50.800;
+nenhuma tool/schema mudou nesta etapa). F3/F4/F5, matriz integral BASE/KG/DEI/
+ARQ/VER/ADV, upgrade/rollback instalados e benchmark completo continuam fora da
+alegação de conclusão. Progresso verificado; objetivo integral permanece ativo.
