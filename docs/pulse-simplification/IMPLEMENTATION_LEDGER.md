@@ -7388,3 +7388,81 @@ cleanup real das permissões no F3, corte de schema/instalação limpa, F2A/F2C
 restantes, F3/F4/F5 e matriz integral. Metadata MCP permanece na última medição
 56.024 > 50.800, sem mudança nesta etapa. Objetivo integral ativo; progresso
 verificado, não conclusão da iniciativa.
+
+### 2026-09-20 — F2C/F3: Global Discovery ligado à origem removida
+
+Retomada: Core f94c75c5 / Community e7c06d98, árvores limpas. Turno anterior
+classificado como progresso (87 testes, ambos os pushes conferidos).
+Investigação: GlobalOutboxProcessor deriva identidade de (Board, node id),
+ignora node_type do digest como autoridade e recusa ID ambíguo entre tabelas.
+Board.decision_count é o total absoluto de fontes vetorizadas, não revogadas/
+supersedidas, do grafo Board; não equivale ao número de digests persistidos.
+O outbox consulta o grafo de origem antes de publicar; payload/session ref
+isolado não recria um nó ausente. Ainda é necessário classificar/superseder
+trabalho histórico exclusivo sem simular entrega nem descartar sessões mistas.
+
+Em implementação: fatos derivados do snapshot original e plano Board retido,
+plano global por identidade exata, preservação de outros Boards/Entity/Topic e
+relações sobreviventes, ajuste somente do contador dos Boards afetados contra
+a população autoritativa comprovada. Aplicação global exige fingerprints de
+Board pós-remoção, antes de mudar digests. Recibo durável e composição com
+outbox/coordenador permanecem etapas conjuntas necessárias ao cutover.
+
+Validação inicial: provenance-global-retirement.json aprovado (812/333 .py,
+877/417 payloads idênticos fonte/wheel/install). Primeira tentativa falhou
+na fixture, antes do produto: vetor Entity fornecido a Criterion foi recusado
+pelo codec/schema existentes. Fixture corrigida para espaço vetorial de cada
+tipo, sem mudar produto nem relaxar validação. Suite r2: 14 passed (154,49 s).
+Closure inicial: findings=[], budgets 0/0; somente matrizes README a regenerar.
+Refinamento final limita a composição a 256 Boards e 100.000 chaves removidas
+no agregado; novo teste cobre dois Boards afetados e recusa Global antes de
+ambos terminarem. Nenhuma edição/reinstalação com testes anteriores ativos.
+
+Fechamento da primitiva de remoção global:
+- Core `ports/global_retirement_graph.py`: fatos de origem derivados do snapshot
+  Board original, verificado contra o plano retido. Seleção de DecisionDigest
+  por (board_id, original_node_id), sem confiar no tipo cacheado. Identidade
+  ambígua na origem falha fechado. Contadores usam a população publicável
+  autoritativa (embedding presente, sem revogação/supersessão), nunca subtração
+  de linhas do cache. Limites de 256 Boards e 100.000 chaves agregadas.
+- Community `grafx_global_retirement.py`: exige estado pós-remoção de todos os
+  Boards afetados; verifica plano, remove digests/relações incidentes e atualiza
+  apenas decision_count na mesma transação WRITE do grafo global. Verifica
+  fingerprint integral depois e revalida os Boards antes do commit. Erros
+  desfazem a transação global; não há alegação de transação entre os bancos.
+  Replay verificado não escreve nem publica LSN. UUID físico permanece igual.
+- `global-retirement-new-final.log`: **15 passed** (221,85 s). Cobre múltiplos
+  digests da mesma origem, tipo cacheado divergente, outro Board com mesmo ID,
+  preservação integral de Entity/Topic e relações paralelas, contagem sem
+  digests correspondentes, revogação/supersessão/embedding nulo na origem,
+  rollback após remoção, drift global/Board, plano adulterado, Board ausente,
+  identidade ambígua, replay/reabertura e dois Boards afetados em conjunto.
+- `global-retirement-regression.log`: **25 passed** (209,95 s), suites
+  `test_grafx_sprint_retirement.py`, `test_grafx_global_discovery_providers.py`,
+  `test_grafx_global_digest_link_batching.py` e
+  `test_grafx_global_visibility_batching.py`. Total distinto: **40**. Os 14
+  casos intermediários não são somados novamente.
+- `provenance-global-retirement-final.json`: **812/333 .py**, **877/417 payloads**
+  idênticos entre fontes, wheels e instalação antes dos testes. Verificador
+  resolve site-packages; pytest utiliza checkouts provados idênticos. Nenhuma
+  alteração/reinstalação de produto durante os checks; handles encerrados.
+- `closure-global-retirement-final.json`: ok=true, findings=[] e
+  documentation_findings=[]; oito budgets 0/0. Renderer oficial atualizou
+  READMEs para 7.557/1.177 imports e 25 dependências. Ruff e diff --check passam.
+- Wheels em `.validation-v040/wheels-global-retirement-final`, SHA256:
+  Core 541ae6414f9016f3d40b1dc1b1790adbfe782cb4e24622081e4914ac26436721;
+  Community b41ee3259dd6c4a0c899568251b45005372b40cb3eab5ea5869c44ab04029d41.
+- Sem impacto em frontend/REST/MCP; apenas bancos descartáveis. Nenhum runtime
+  real ou dado de usuário alterado. Push pareado normal em feature/v0.4.0.
+
+Continuidade: estas primitivas Board/global ainda precisam de planos externos
+selados e recibos duráveis integrados ao coordenador, backup original, routing
+e exclusão de writers. A verificação final dos Boards não elimina uma corrida
+com writer raw após a leitura. A investigação seguinte é a aposentadoria do
+outbox exclusivo de Sprint, preservando sessões mistas, estado histórico e
+semântica de entrega. O outbox atual usa processed_at/retry_count; não existe
+estado explícito de aposentadoria. Não marcar como entregue nem reutilizar
+sentinela sem verificar todos os consumidores/redrives. Permissões F3, schema,
+certificado terminal/admissão, F2A/F2C restantes, F3/F4/F5 e matriz integral
+continuam pendentes. Metadata MCP permanece na última medição 56.024 > 50.800.
+Objetivo integral ativo; esta etapa é progresso verificado.

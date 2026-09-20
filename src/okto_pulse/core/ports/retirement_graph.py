@@ -39,10 +39,10 @@ class GraphRetirementPlan:
             raise ValueError("retirement_graph_plan_invalid")
 
 
-def _measure(snapshot, select, require_incident=None):
+def _measure(snapshot, select, require_incident=None, *, scope="board", transform=None):
     schema = snapshot.schema()
-    if schema.scope != "board":
-        raise ValueError("retirement_graph_board_scope_required")
+    if schema.scope != scope:
+        raise ValueError("retirement_graph_scope_required")
     declared = snapshot.counts()
     if declared.nodes + declared.relations > _MAX_RECORDS:
         raise ValueError("retirement_graph_record_limit")
@@ -73,7 +73,11 @@ def _measure(snapshot, select, require_incident=None):
             if select(node):
                 removed.add(identity)
             else:
-                after.add_node(node)
+                survivor = transform(node) if transform is not None else node
+                index.validate_node(survivor)
+                if (survivor.type_name, survivor.key) != identity:
+                    raise ValueError("retirement_graph_survivor_identity_changed")
+                after.add_node(survivor)
     for batch in snapshot.iter_relations(batch_size=500):
         if len(batch) > 500:
             raise ValueError("retirement_graph_batch_limit")
@@ -130,8 +134,8 @@ def plan_sprint_graph_retirement(snapshot, *, board_id: str, archived_origin_ids
     return GraphRetirementPlan(board_id, before, after, keys, relations)
 
 
-def graph_retirement_fingerprint(snapshot) -> str:
-    return _measure(snapshot, lambda node: False)[0]
+def graph_retirement_fingerprint(snapshot, *, scope="board") -> str:
+    return _measure(snapshot, lambda node: False, scope=scope)[0]
 
 
 def verify_graph_retirement_selection(snapshot, plan: GraphRetirementPlan) -> None:
