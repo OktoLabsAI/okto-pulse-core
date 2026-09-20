@@ -46,6 +46,7 @@ class DeliveryProgress(BaseModel):
     source_state: DeliveryProgressSource
     target_ids: list[ProgressIdentity] = Field(default_factory=list, max_length=100)
     impact_delta: ImpactEvidence | None = None
+    impact_base_revision: Annotated[str, Field(pattern=r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")] | None = None
     remaining: str = Field(min_length=1, max_length=8000, pattern=r"\S")
 
     @model_validator(mode="after")
@@ -60,6 +61,11 @@ class DeliveryProgress(BaseModel):
             raise ValueError("delivery_progress_changed_source_required")
         if self.material_change == "none" and self.has_material_delta:
             raise ValueError("delivery_progress_change_declaration_conflict")
+        if self.impact_base_revision is not None and (
+            self.impact_delta is None or not self.source_state.source_ref
+            or not self.source_state.declared_revision
+        ):
+            raise ValueError("delivery_progress_impact_base_scope_required")
         return self
 
     @property
@@ -72,6 +78,8 @@ class DeliveryProgress(BaseModel):
         result = handler(self)
         if self.material_change is None:
             result.pop("material_change", None)
+        if self.impact_base_revision is None:
+            result.pop("impact_base_revision", None)
         return result
 
 

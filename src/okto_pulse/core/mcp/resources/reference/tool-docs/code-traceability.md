@@ -77,6 +77,16 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   opaque `source_ref` must be known to this board. `impact_delta` uses the existing
   closed ImpactEvidence contract and is a claim. Progress never counts as
   implementation/test proof, approval or completion. It does not start rework.
+  When a delta has a known base, also provide `impact_base_revision` (full
+  40/64-character hexadecimal revision), with the source and result revision in
+  `source_state`. This declares a base→result edge, not authenticated ancestry.
+  Omit the base when unknown; do not fabricate one. The per-card read exposes
+  `accumulated_impact`: it composes explicit revision chains, keeps create→delete
+  out of the net result and preserves the complete work history. Divergent,
+  disconnected, missing or conflicting declarations return bounded
+  `needs_reconciliation` items. Repo labels and source identities remain distinct.
+  This preview is claim-only; `composed` does not mean current, verified or ready.
+  It does not yet replace the impact block submitted with the execution report.
   Validation/rejected/done/on_hold/not_started cards cannot accept a new checkpoint.
   Record significant results or a deliberate pause; no fixed time/command cadence.
   `none` is a context note without a material delta. `targets` requires exact

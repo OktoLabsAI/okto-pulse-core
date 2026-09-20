@@ -2362,3 +2362,74 @@ Par publicado por push normal em `feature/v0.4.0`: Core
 HEADs e as árvores limpas. A reautenticação estava válida para a conta ativa
 `jpbraga`, que realizou os pushes. Não foi necessário `gh auth switch`; a
 autorização do usuário para alternar contas, se necessário, permanece registrada.
+
+### Em implementação — composição ordenada de impacto declarado
+
+Turno anterior classificado como progresso; par publicado e árvores limpas
+reconfirmados (Core `eed0b110` / Community `ae54e442`). DEI §6.2 exige distinguir
+histórico e resultado líquido. O payload atual tinha source/revisão resultante,
+mas nenhuma base anterior; não se deve inferir sequência por timestamp/hash.
+`impact_base_revision` opcional declara essa base no mesmo checkpoint. Ausência
+preserva o digest/replay legado e aparece como reconciliação quando há delta.
+
+O domínio compõe arestas explícitas base→resultado por source, preservando repo,
+path e todas as origens. Creates removidos não aparecem no líquido; renames
+encadeados mantêm a origem. Branches, lacunas, ciclos, restaurações ambíguas e
+conflitos pedem reconciliação. Symbols/tests afetados por rename/delete de arquivo
+e superfícies anteriores sem confirmação explícita não são presumidos atuais.
+O adapter lê todos os deltas ativos e exclui revogações autorizadas apenas da
+projeção; não altera histórico. O painel de entrega mostra claims e pendências,
+com caps/totais. Limites: 200 declarações, 20 itens de reconciliação visíveis,
+64 KiB de resultado líquido; não transformar overflow em resultado parcial verde.
+
+Esta projeção é preparação para a consolidação final, não conclusão de DEI I4:
+`composed` prova somente composição determinística das declarações. Ainda falta
+reuso de campos dos receipts e detecção de divergência, reconciliação gravável
+dos resíduos, atualidade da base observada e uso do conjunto selecionado no
+relatório/impact policy. Nenhuma dessas autoridades foi inferida de um claim.
+
+Investigação para a próxima integração: `ImplementationTargetExecutionRecordView`
+expõe source, revisão resultante, disposição, path/símbolo e recibo resultante;
+não expõe a base anterior da mudança. `ImplementationTargetView.baseline_evidence_id`
+e a resolução atual não demonstram, por si, essa aresta. Reutilizar os campos
+selados do receipt quando disponíveis sem inventar base/ancestralidade. A nova
+base declarada continua claim; não autentica a realidade nem satisfaz policy.
+
+### Checkpoint — projeção de impacto líquido declarado validada
+
+- **92 testes Core** em `core-net-impact-final.log`: composição por arestas,
+  create/delete, rename encadeado/retorno, cancelamento conjunto de arquivo e
+  símbolo, separação entre repos/fontes, identidades de origem preservadas,
+  conflitos e limites; regressão de progresso, seleção, contribuições e catálogo.
+- **98 testes Community** em `community-net-impact-final.log`: integração real
+  da declaração até a projeção, releitura persistida, revogação sem apagar
+  histórico, delta legado sem base e regressão completa de Delivery Evidence.
+  Nenhuma falha de teste. Os casos adicionais após revisão foram executados no
+  par final de wheels, com nova instalação/prova de correspondência.
+- **32 testes frontend** aprovados. Após corrigir a legenda para “active
+  declarations”, os três testes do painel alterado passaram novamente; os outros
+  29 casos mantêm a validação do mesmo comportamento. Build/typecheck, ESLint
+  sem erros/warnings nos arquivos alterados e verificação frontend_dist passaram.
+  Artefato final: **78 arquivos**, tree SHA256
+  `ff45ad6a5f6bac4ad5a3090c16e65c4571f0adc1bf53780959614d7cfb3a329e`.
+- `provenance-net-impact-final-ui.json`: **797 / 312 .py**, **862 / 396 membros**
+  source→wheel→site-packages byte-a-byte. O último rebuild Community alterou apenas
+  o frontend; os payloads Python dos 92/98 testes permanecem idênticos. Core wheel
+  SHA256 `0dd82dfe44cf473a811db10c437311465e8c8dd6368e00b3e5faf87b85e5d733`;
+  Community `2fb652ffd60b56b0495f65e34ddebdb635d0b50063f4d67c47cf37ff7d139553`.
+  Processos novos/PYTHONPATH pareado/bancos descartáveis; runtime do usuário intacto.
+- `closure-net-impact-final.json` passou sem findings, com oito budgets **0/0**:
+  **7.556 imports Core / 1.244 Community→Core / 25 dependências**. READMEs pelo
+  renderer oficial após drift somente de contagem. Catálogo/manifests gerados
+  oficialmente; o resource manifest mudou com o tool-doc e foi incluído no rebuild
+  antes dos testes. `closure-net-impact-final-ui.json` confirmou o wheel com a
+  legenda final: **ok=true**, zero findings e os mesmos oito budgets **0/0**.
+  Ruff e diff-check passaram.
+
+**Retomada:** continuar integração do impacto canônico com receipts, reconciliação
+dos resíduos e conjunto selecionado/relatório, preservando policy e atualidade.
+O preview lê deltas ativos do Card inteiro; não se apresenta como o snapshot
+submetido. `history_count` conta as declarações ativas consideradas nessa
+composição, não toda a história com revogações; a UI explicita essa distinção.
+Sem migrations físicas neste incremento. Adoção ARQ/VER, F2B/Sprints, KG,
+migrações/rollback e auditoria integral continuam no escopo. Goal em progresso.
