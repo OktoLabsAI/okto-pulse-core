@@ -11,8 +11,9 @@ O gate de conclusão direta do Card foi corrigido para exigir as implementaçõe
 selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
-Frente atual: F2A/F2C, com preflight relacional, eventos/jobs e censo de referências
-polimórficas implementados; arquivo e cutover ainda pendentes. F2B autorizado:
+Frente atual: F2A/F2C, com preflight relacional, eventos/jobs, censo de referências
+polimórficas e snapshot de recuperação SQLite restaurável implementados. Arquivo
+histórico sob ACL de Board, captura coordenada do KG e cutover ainda pendentes. F2B autorizado:
 compatibilidade por Card, resolver,
 leitura pública, armazenamento nullable e UI estão implementados e testados;
 materialização/cutover de dados continuam pendentes de F2A/F2C. A integração de
@@ -3457,3 +3458,72 @@ nessa reconciliação. F2A/F2C/F3 e a iniciativa completa continuam em andamento
 
 Community publicado por push normal em `feature/v0.4.0`, commit `3e1c1b3`;
 HEAD confirmado em `ls-remote`. Este checkpoint Core altera somente o ledger.
+
+### 2026-09-20 — F2A, snapshot relacional consistente e restauração isolada
+
+Partida: Core `a251645c`, Community `3e1c1b3`, árvores limpas. Incremento anterior
+classificado como progresso. Community `adapters/relational_recovery_snapshot.py`
+implementa mecanismo interno de recuperação SQLite, sem CLI, rota, startup hook
+ou acesso ao runtime real. Não é o arquivo histórico consultável por Board:
+o banco completo pode conter vários Boards e credenciais e exige diretório de
+recuperação protegido pelo operador, nunca servido pelas rotas de attachments.
+
+Captura usa a API de backup do SQLite com transação de leitura efetivamente
+iniciada antes da cópia e do censo, preservando o estado commitado do WAL mesmo
+com escrita concorrente. Artefato standalone em journal_mode DELETE, manifesto
+`relational-recovery-snapshot/v1`, ID, origem, SHA256 do banco e schema, contagens
+por tabela, user_version e application_id. Compara fatos na origem pinada e no
+destino, verifica integrity_check, faz flush/fsync e publica staging sob lock.
+O digest esperado do manifesto deve ser retido pelo chamador confiável, nunca
+obtido do mesmo artefato cuja integridade está sendo verificada.
+
+Restauração valida manifesto/banco/censo e publica exclusivamente um arquivo novo
+via hard link no mesmo filesystem. Recusa alvo existente, sidecars WAL/SHM/journal,
+IDs de snapshot existentes e aliases de filesystem na origem, ancestralidade e
+lockfile. Falha antes da publicação limpa somente staging contido no diretório
+explicitamente fornecido. Não sobrescreve banco ativo, não reinicia processos,
+não executa downgrade de wheel e não altera permissões do produto.
+
+Evidências em `PULSE_REFACTOR/.validation-v040`:
+- Primeira rodada `community-f2a-recovery.log`: **57 passed**, 62,83 s. Após
+  proteção adicional do lockfile contra symlink, rebuild/reinstall e nova prova:
+  `community-f2a-recovery-final.log`: **59 passed**, 64,74 s, nenhum skip.
+  Cobertura: WAL, IDs/valores/blobs, índices/views/triggers/FKs, gravação concorrente,
+  adulteração de manifesto/banco, interrupção/retry, colisão de publicação, sidecars,
+  travessia de caminho e aliases. Restauração do schema atual completo reproduz
+  exatamente o preflight relacional/eventos/jobs/referências da fixture original.
+- `provenance-f2a-recovery-final.json`: **803/316 .py**, **868/400 membros**,
+  source→wheel→install byte a byte idênticos, verificados antes dos testes finais,
+  PYTHONPATH pareado e processos novos. Core wheel SHA256
+  `b3ab9edf42ff01a49b045cf4cd9ed05d325ff531f6596228e873196c6dc34788`;
+  Community `f4eddd6b98d806a38ef98ae105d1ecacff227249fd43478e055a917348649163`.
+- `closure-f2a-recovery-final.json`: **ok=true**, findings de código/documentação
+  vazios, oito budgets **0/0**, **7.618/1.249 imports**, 25 dependências. Ruff e
+  diff-check aprovados. Sem mudança em Core de produção, frontend ou MCP; não há
+  testes frontend novos a atribuir a este incremento interno.
+
+Limites: integridade de recuperação não certifica autoridade, FKs válidas na
+origem nem prontidão de migração. Não captura arquivos de attachments ou Grafx,
+não é backup coordenado de todo o ambiente e não foi exercitado em PostgreSQL.
+Cutover terá de adquirir fence de escrita e vincular backup, preflight e arquivo
+à mesma operação; a função de snapshot não fornece esse fence. O teste de falha
+é interrupção controlada antes da publicação, não simulação de perda de energia.
+Filesystem sem hard link falha sem sobrescrever o alvo. Todas as fixtures são
+descartáveis; nenhum dado/runtime real alterado.
+
+Investigação adicional para o próximo incremento: `Attachment.card_id` é
+obrigatório e CASCADE; não atende Sprint vazia sem fabricar Card. O adapter
+`CommunityAuditRepository` é específico de consolidação KG, incluindo undo e
+purge_by_board; não o tratar como arquivo histórico genérico imutável. O log
+`DomainEventRow` é Board-scoped e usado por dispatcher: sua reutilização exige
+reconciliar leitura, retenção e efeitos antes de escolher formato. Não foi tomada
+decisão de expor backup de ambiente como histórico de produto.
+
+Próximo passo: arquivo genérico de histórico com origem opaca, IDs, contagens,
+hashes e ACL de Board, preservando fronteiras de leitura; completar source refs
+JSON/KG, coordenar fence/snapshot e só então writer de transformação/cutover
+F2B/F2C/F3 com retomada/idempotência. Demais requisitos DEI/ARQ/VER/KG e auditoria
+integral permanecem pendentes; a iniciativa continua em andamento.
+
+Community publicado por push normal em `feature/v0.4.0`, commit `bf1d88d`.
+Este checkpoint Core altera somente o ledger.
