@@ -6225,3 +6225,100 @@ preservados. Não criar novo baseline de policy sobre Cards já migrados.
 Permanecem também superfícies genéricas de grants/MCP, F3/F4/F5, complementos e
 matriz integral. Metadata global segue 55.859 >50.800. Nenhum banco real migrado,
 restart, release, tag ou merge; iniciativa continua ativa e incompleta.
+
+### 2026-09-20 — F2C: supersedência de trabalho exclusivo (investigação/implementação)
+
+Continuidade após Core 6ec6ee34 / Community 33853f4, limpos e publicados.
+A classificação pura já distingue eventos Sprint exclusivos, eventos Card
+mistos e execução/queue desconhecida ou em voo. Falta materializar o estado
+superseded com proveniência, sem marcar done/processed_at nem alterar tentativas,
+erros e payloads originais. Investigação encontrou requeue/upsert que reabre
+qualquer terminal; protegê-los antes de instalar esse estado.
+
+Ordem integrada: arquivo+grants → recibo de preservação por Card → supersedência
+→ limpeza de permissões. Comparar as linhas de trabalho com o arquivo original,
+pois recaptura total após detach dos Cards conflita corretamente com card_links
+arquivados. Exigir o recibo Card e validar os arquivos/grants sob fence SQLite.
+Mixed Card facts e execuções done ficam íntegros; claimed/processing, contrato
+novo ou handler desconhecido bloqueiam. Não inventar processamento de Sprint.
+
+Journal planejado: eventos pequenos por origem de trabalho, com hash da linha
+antes/depois e referência ao arquivo, mais fechamento por Board com contagem/
+hash agregado. Os dados originais já estão no arquivo imutável; não embutir
+snapshot grande no DomainEvent nem relaxar limites do inventário. Retomada deve
+verificar evidência e não reexecutar mutações. Sem bootstrap ou banco real nesta
+etapa; testes e validação ainda não executados.
+
+Implementação e investigação adicional:
+- Porta pública pura `ports/work_retirement.py`: classificadores históricos,
+  status terminal e contrato do journal. Nenhuma mecânica SQL no Core ou novo
+  reach-in Community; os classificadores não são prova de proveniência sozinhos.
+- `sprint_work_retirement.py` valida arquivos/grants já instalados e recibo Card,
+  compara população e bytes SQL originais sob BEGIN IMMEDIATE, muda somente
+  status de trabalho exclusivo e grava journal `archived-work-retirement/v1`.
+  Payloads, tentativas, erros, timestamps e eventos originais ficam intactos.
+  Recibo vincula hashes/contagens ao arquivo original e à etapa Card. Replay
+  verifica evidência e terminais sem impedir progresso do trabalho misto válido.
+- Investigação do caminho DLQ: `route_to_dead_letter` remove a linha da queue.
+  Portanto status terminal sozinho não impede recriação. Journal inclui
+  `migration.work_origin_retired` para CADA origem arquivada, inclusive Sprint
+  vazia/sem queue. Fence SQL por Board+tipo+ID barra upsert/reconcile/retry/DLQ
+  de origem retirada, sem converter falha histórica em sucesso.
+- DLQ retirada permanece armazenada, fora de contagens/listas operacionais e
+  da limpeza automática de poison. Replay explícito misto falha antes de mudar
+  qualquer linha; seleção automática ignora histórico e continua entregando
+  Cards válidos. Health global, por Board e census usam o mesmo predicado.
+- Testes: 39 Core aprovados; 14 novos Community aprovados inicialmente. Mais
+  35 regressões aprovadas e duas falhas na fixture mínima de segurança CT por
+  ausência de `domain_events`. Incluir a tabela consultada, sem alterar as
+  asserções de autorização. Rodada final de migração+CT: **16 passed**, 51,70 s.
+  Inclui rollback, concorrência, drift/remoção de journal, mixed delivery,
+  callbacks tardios, origem vazia, reconcile e DLQ sem linha de queue.
+- Frontend: **87 passed**, quatro arquivos KG Health/pending; teste de contagem
+  inclui zero após retirada e separação do outbox. Nenhum bundle alterado.
+- Prova `provenance-work-retirement-origin.json`: 805/325 .py e 870/409 payloads,
+  fontes/wheels/install idênticos e imports de site-packages antes dos testes.
+- Closure intermediário: findings=[], oito budgets 0/0; somente matrizes README
+  regeneradas pelo renderer oficial. Observado 7.520/1.160 imports e 25 deps.
+  Par final/documentação ainda em validação; nenhum commit desta etapa ainda.
+
+Limites de integração: etapa interna, não registrada no bootstrap. Coordenador
+F2D deverá validar TODOS os blockers antes de qualquer transformação e drenar
+processos/handlers em voo; código F3 e schema precisam ser promovidos juntos.
+Não recapturar baseline histórico depois da etapa Card. Não supor que este passo
+remove produtores Sprint, refs do grafo/outbox ou transfere contexto substantivo.
+Esses trabalhos e toda a matriz integral permanecem pendentes. Nenhuma alteração
+de permissões/grants atuais, banco real, restart, release, tag ou merge.
+
+Fechamento/publicação deste incremento F2C:
+- Fixture DLQ reforçada: origem retirada com 9 tentativas (limite poison=4),
+  origem Card com 3. Teste dirigido aprovado, **1 passed**, 9,64 s; histórico
+  acima do limite permanece, Card reprocessa, census/health reportam zero DLQ
+  operacional e uma entrada ativa. Não somar essa repetição ao total.
+- `community-work-sequence.log`: **2 passed**, 17,70 s, sequência integrada
+  agora inclui work retirement e replay depois da limpeza de permissões.
+- Total selecionado sem duplicar repetições: **177 testes aprovados** — 39 Core,
+  51 Community, 87 frontend. Os 35 verdes da rodada de regressão são reutilizados;
+  as duas falhas de fixture foram resolvidas e aprovadas na rodada final. Ruff
+  dos arquivos alterados e staged diff --check aprovados; processos encerrados.
+- `provenance-work-retirement-final.json`: 805/325 .py, 870/409 payloads, mesma
+  prova byte a byte e origem instalada. README alterou metadata do wheel, não
+  código Python. `closure-work-final.json`: ok=true, findings=[],
+  documentation_findings=[], oito budgets 0/0; 7.520/1.160 imports, 25 deps.
+- Wheels finais SHA256:
+  Core 34c5990ae666578a6bc92bc1c4630ffe5d8b7d14a0cab81d9e237690d0d490cb;
+  Community e14e338e2d634c7a06314f4f512af279a9ac3355495415cd5bac97dba8462155.
+- Frontend empacotado: 78 arquivos intactos, árvore
+  e9d02144d1ce7e4a58affbf6cc96c01c33d3ae85ce9f264a79d6621a65cf90b7.
+- Community commit **15469e7f9ae0b0b06afdc37b7eb0bc3b835e1e3b**. Core publica
+  neste commit contrato puro, classificador, testes, README e ledger; push
+  normal dos dois em feature/v0.4.0, sem tag/release/merge.
+
+Retomada concreta: preflight único F2D deve identificar blockers de contexto
+substantivo e referências remanescentes ANTES da etapa Card. Não habilitar a
+migração interna enquanto F3 ainda produz Sprint. Integrar checkpoint original,
+arquivo/grants, Card receipt, work receipt e permission receipt sob coordenação
+durável que impeça inicialização parcial e não recapture fonte transformada.
+Remoção real do schema, upgrade=clean, rollback conjunto e todos os demais
+complementos continuam pendentes. Metadata global permanece 55.859 >50.800.
+A iniciativa está ativa e incompleta; estes verdes cobrem somente o incremento.

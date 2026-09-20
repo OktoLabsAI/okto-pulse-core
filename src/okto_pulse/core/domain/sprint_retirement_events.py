@@ -7,6 +7,7 @@ future archived cutover. Classification never rewrites stored event payloads.
 from dataclasses import dataclass
 from typing import Literal
 
+SUPERSEDED_WORK_STATUS = "superseded"
 
 @dataclass(frozen=True, slots=True)
 class SprintEventDisposition:
@@ -104,6 +105,8 @@ def classify_historical_sprint_execution(
     event_type: str, disposition: SprintEventDisposition, *, handler_name: str, status: str,
 ) -> tuple[str, str]:
     """Plan pending work without declaring it processed or changing its history."""
+    if status == SUPERSEDED_WORK_STATUS:
+        return "preserve", "superseded_execution_history"
     if status == "done":
         return "preserve", "completed_execution_history"
     if status == "processing":
@@ -129,6 +132,8 @@ def classify_historical_sprint_queue(
         refs = tuple(sorted(set(refs) | {artifact_id}))
     if not refs:
         return SprintEventDisposition("preserve", (), "no_sprint_reference")
+    if status == SUPERSEDED_WORK_STATUS:
+        return SprintEventDisposition("preserve", refs, "superseded_queue_history")
     if status == "done":
         return SprintEventDisposition("preserve", refs, "completed_queue_history")
     if status == "claimed":

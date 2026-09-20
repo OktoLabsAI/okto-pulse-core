@@ -70,6 +70,16 @@ def test_reference_walk_is_bounded():
         classify_historical_sprint_event("unknown", payload)
 
 
+def test_superseded_work_is_preserved_as_history_without_claiming_delivery():
+    from okto_pulse.core.ports.work_retirement import SUPERSEDED_WORK_STATUS
+    disposition = classify_historical_sprint_event("sprint.closed", {"sprint_id": "s"})
+    assert classify_historical_sprint_execution("sprint.closed", disposition,
+        handler_name="ConsolidationEnqueuer", status=SUPERSEDED_WORK_STATUS) == ("preserve", "superseded_execution_history")
+    result = classify_historical_sprint_queue(artifact_type="sprint", artifact_id="s", work_kind="consolidate",
+        status=SUPERSEDED_WORK_STATUS, payload=None)
+    assert result.action == "preserve" and result.reason == "superseded_queue_history"
+
+
 @pytest.mark.parametrize(("handler", "status", "action"), [
     ("ConsolidationEnqueuer", "pending", "supersede"),
     ("ConsolidationEnqueuer", "failed", "supersede"),
