@@ -6322,3 +6322,97 @@ durável que impeça inicialização parcial e não recapture fonte transformada
 Remoção real do schema, upgrade=clean, rollback conjunto e todos os demais
 complementos continuam pendentes. Metadata global permanece 55.859 >50.800.
 A iniciativa está ativa e incompleta; estes verdes cobrem somente o incremento.
+
+### 2026-09-20 — F2A/F2D: preflight de contexto antes de transformar Cards
+
+Turno anterior: progresso verificado/publicado, Core 5417c017 / Community
+15469e7, worktrees limpas e remotos iguais. Iniciar esta etapa por investigação
+do contrato real, sem procurar a ideação original.
+
+Evidência: `SprintQAItem` identifica pergunta aberta por answered_at IS NULL;
+answer_question pode gravar selected ou mesmo resposta nula com timestamp, logo
+truthiness de answer não reproduz o contrato. `Sprint.evaluations` é JSON com
+recomendação, dimensões/justificativas, autoria, stale e data; não há identidade
+ou resolução individual de achado. Approve/stale/closed não provam que texto
+substantivo foi transferido ou deixou de ser aplicável. Description/objective/
+expected_outcome, Q&A respondido e histórico também podem conter decisões.
+
+Próxima alteração: inventário privilegiado e limitado desses conteúdos, com
+origem/campo/hash e Spec estrutural, sem inferir destino Card a partir de prosa.
+Preflight reúne relações, trabalho, escopos de referências e contextos antes
+do primeiro UPDATE de Card. Conteúdo que ainda exige disposição explícita
+impede transformação; captura histórica continua possível para investigação.
+Nenhum novo gate de produto, cópia para Q&A público de Spec, aprovação sintética
+ou mudança de ACL. Transferência concreta e disposição semântica permanecem a
+resolver; um preflight sem candidatos não certifica todo o cutover F2D/F3.
+
+Detalhamento da investigação/implementação:
+- A ausência de resolução individual acima é específica de Sprint.evaluations.
+  Há findings estruturados separados de policy compliance e semantic guidelines;
+  QualityFinding atual limita subject/anchor a ideation/refinement/spec. Censos
+  físicos existentes continuam necessários para variantes históricas. Nenhum
+  recibo/waiver preso a Sprint pode virar autoridade de Spec por remapeamento.
+- `ports/retirement_context.py` faz triagem pura de texto, avaliações, Q&A e
+  histórico. Não decide aplicabilidade por approve/stale/score/status. Q&A
+  respondido também pode conter decisão; apenas o rótulo aberto segue o relógio
+  de resposta, incluindo respostas somente por escolha.
+- `sprint_retirement_preflight.py` combina os inventários no mesmo snapshot;
+  inclui referências de governança e fontes cognitivas embutidas. Apenas fontes
+  mecânicas já classificadas têm tratamento separado. Diagnósticos contêm
+  origem, chave, caminho, Spec estrutural e hash, sem copiar prosa para logs.
+- Primeiro Card transform chama esse preflight sob o próprio BEGIN IMMEDIATE,
+  antes de recaptura/mutações. Replay concluído continua verificando recibo
+  original, sem reexecutar etapa por mudanças posteriores. Captura de arquivo
+  permanece permitida para investigação mesmo quando contexto impede migração.
+- Testes de trabalho desconhecido/em voo agora verificam impedimento ANTES
+  da etapa Card, com bytes de Cards e filas intactos. Acrescentada reprodução
+  de trabalho que entra em voo depois do Card receipt, ainda bloqueado em F2C.
+- Par inicial instalado/provado: 806/326 .py, 871/410 payloads. Core: 60 passed,
+  4,16 s. Community e closure ainda em execução; sem publicação nesta etapa.
+
+Revisão e segunda validação:
+- Primeira rodada Community: **45 passed**, 172,75 s, nos testes de preflight,
+  supersedência, preservação de Card e sequência integrada. Closure intermediário
+  sem findings e com oito budgets 0/0, apenas matrizes README; renderer oficial
+  atualizou 7.522 imports Core / 1.161 Community→Core / 25 dependências.
+- Reforçar source_sha256 para incluir TODAS as colunas físicas da linha de
+  origem, incluindo autoria, datas e versão. Não aceitar coluna desconhecida
+  nas tabelas próprias de Sprint como se não pudesse conter uma decisão.
+  Testes adicionais alteram somente a autoria e introduzem coluna não mapeada.
+- Par final instalado e comprovado em provenance-context-preflight-final.json:
+  806/326 .py, 871/410 payloads, fonte/wheel/install byte a byte. Pytest do repo
+  ativa as duas árvores locais em conftest; elas são idênticas ao par instalado
+  comprovado antes da execução. Não editar código nem reinstalar durante testes.
+- Wheels finais SHA256:
+  Core 69ee3b3c756e198b4e70e16b7b056f8841ea38d2a81fdeb9b32d7347e0c0c796;
+  Community b82503727d650a7661e443e1a3b5572c079c2bf1ed71b8afab5ed46ab349df94.
+- Rodada final Community e closure em curso. Core Python permanece idêntico ao
+  validado; frontend não foi alterado por este preflight interno.
+
+Publicação deste incremento:
+- `community-context-final.log`: **47 passed**, 175,08 s. Cobertura inclui
+  perguntas abertas/choice respondido, avaliações stale/approve, prosa e história,
+  contexto externo por recibo/ref cognitiva, hashes sensíveis a autoria/conteúdo,
+  limites compartilhados de linhas/bytes, schema desconhecido/incompleto,
+  replay e bloqueio anterior à mutação de Card. Nenhum conteúdo foi promovido
+  a aprovação ou copiado para uma superfície de leitura mais permissiva.
+- Core **60 passed**; total selecionado **107**, sem duplicar rodada inicial.
+  Ruff e staged diff --check aprovados. Todos os processos de teste encerrados.
+- `closure-context-final.json`: ok=true, findings=[], documentation_findings=[],
+  oito budgets em 0/0. Mesmo par final/hash/proveniência acima.
+- Community commit **d2f8230f5915906e078ceb90135791f7ac0b4103**; Core publica
+  neste commit contrato puro, testes, README e ledger. Push normal em ambos.
+
+Próxima continuidade: implementar disposição explícita vinculada ao arquivo,
+hash e origem do candidato, distinguindo contexto aplicável a Spec/Card de
+histórico administrativo. Reutilizar as autorizações por seção já aprovadas;
+não despejar conteúdo em SpecQA/KB, não transformar parecer de Sprint em parecer
+de Spec, não alterar resolução de finding/waiver. As quatro projeções históricas
+atuais cobrem content/qa/evaluations/history; registros de governança e IDs de
+Cards/cenários/regras não estão automaticamente autorizados por essas seções.
+Investigar e manter essa separação ao concretizar o vínculo de contexto.
+
+Preflight não é conclusão de F2D: disposição/transferência, coordenação durável,
+corte de schema com F3, fontes/outbox/grafo e a matriz inteira seguem pendentes.
+Metadata global continua 55.859 >50.800. Sem banco real migrado, restart, release,
+tag ou merge. Objetivo integral permanece ativo e incompleto.
