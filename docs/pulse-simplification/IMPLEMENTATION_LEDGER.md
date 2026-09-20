@@ -6488,3 +6488,74 @@ foram provados idênticos antes dos testes. Closure final
 `closure-disposition-final.json`: ok=true, findings e documentation_findings
 vazios, oito budgets 0/0. Community commit 7dbedfc; publicação do par a seguir.
 Objetivo integral permanece ativo; leitor e integração Card ainda pendentes.
+
+### 2026-09-20 — F2A: leitor interno de contexto vinculado (em implementação)
+
+Publicação anterior confirmada: Core d76a54f46e4fb5eebe1697fa111ffa3ea5bd4443 /
+Community 7dbedfc56e93a90f1a4c69daa44e0fdf1983c36a; HEADs iguais ao remoto,
+ambas as working trees limpas antes desta etapa.
+
+Porta Core e caso de uso adicionados para ler vínculos de um destino Spec/Card.
+O destino usa o acesso existente de entidade/Board; para agentes, a resolução
+atual deve também satisfazer a folha entity.read do destino. Snapshot único,
+Board atual, grant original e revogações por seção precedem conteúdo. Filtragem
+antes da paginação evita revelar contagens/IDs de seções negadas. Limites de
+100.000 candidatos/64 MiB de metadados e 25 MiB de saída agregada.
+
+Adaptador Community registrado no UoW: somente eventos leves na descoberta;
+leitura revalida destino e grant antes de abrir arquivo original ou audit privado.
+Binding é reconstruído a partir da decisão tipada e linha original hashada;
+seleção passa pelas mesmas allowlists do leitor histórico. Objetivo/descrição/
+resultado esperado vêm com autoria/datas originais; Q&A e avaliações permanecem
+históricas, sem resposta/aprovação nova. Fontes e destinos não são escritos.
+
+Nenhum endpoint, catálogo MCP ou frontend alterado ainda. Não consumir receipt
+no Card transform até a integração REST/MCP/UI e respectivos testes de frontend.
+Esta etapa está em build/prova do par antes dos testes; validação ainda pendente.
+
+Investigação da primeira rodada: 146 testes Core passaram; Community terminou
+com 57 passed / 10 failed (269,80 s). As falhas novas eram EntityNotFound no
+lookup de destino, antes da autorização histórica. Evidência: fixture de
+inventário cria Board.realm_id NULL; application_persistence filtra destinos
+com Board.realm_id == realm local, enquanto o leitor de origem mantém sua
+compatibilidade histórica explícita com NULL. Correção: preparar o realm local
+na fixture ANTES da captura; manter o filtro de entidade existente. O adaptador
+de contexto também exige realm explícito na consulta de destino, inclusive para
+chamadas diretas. Nenhuma ampliação de ACL nem alteração na compatibilidade de
+leitura da origem. Nova prova do par e reexecução dos casos novos pendentes.
+
+Fechamento do leitor interno:
+- `core-context-reader.log`: 146 passed (6,79 s).
+- Primeira rodada Community: 49 regressões históricas/disposições aprovadas;
+  os 18 casos do leitor novo foram integralmente reexecutados após a correção,
+  mais dois novos casos (histórico cross-Spec e realm legado no port direto).
+- `community-context-reader-final.log`: 20 passed (139,65 s). Total distinto
+  desta etapa: 146 Core + 49 regressões Community + 20 leitor = **215**.
+  Não somar os oito casos novos que já passaram na rodada inicial novamente.
+- Todos os processos de teste/build/install/closure encerrados. Ruff e diff
+  --check aprovados. Nenhuma fonte/reinstalação alterada durante testes ativos.
+- `provenance-context-reader-final.json`: 809/328 .py e 874/412 payloads com
+  igualdade byte a byte fonte/wheel/install. Verificador importa site-packages;
+  pytest usa checkouts ativados pela fixture, provados idênticos previamente.
+- `closure-context-reader-final.json`: ok=true, findings=[] e
+  documentation_findings=[]; oito budgets 0/0. READMEs regenerados pelo renderer
+  oficial: 7.538 imports Core, 1.167 Community->Core, 25 dependências.
+- Wheels em `.validation-v040/wheels-context-reader-final`, SHA256:
+  Core 20406245eb01217ecc62c563fb88ac581c56e382f3a6ed12eec23fc09bc3c600;
+  Community 12f56629a96b8bc5e64ea7ff09e6eb7e77a08c71149877c4da77316442783f03.
+- Community commit 95b08d3; Core acompanha este registro. Push normal do par
+  será conferido por HEAD == ls-remote, sem merge/tag/release/migração real.
+
+Próximo incremento concreto: API em `api/historical_archives.py` com envelope
+fechado/no-store para o caso de uso; cliente/painel de contexto nos destinos
+`frontend/src/components/specs/SpecModal.tsx` e `components/kanban/CardModal.tsx`,
+com teste de parser, revogação/erro/paginação/troca de destino e integração dos
+dois modais. Em seguida superfície MCP e testes de autoridade/contexto, geração
+oficial de catálogo se registry mudar. Só depois ligar disposition receipt ao
+Card transform sob o fence já existente. Não inferir que links ausentes no
+runtime provam completude da migração: a conferência integral de população e
+journal continua sendo responsabilidade do verificador de disposições.
+
+Nenhum frontend alterado nesta etapa interna. Integração visível, autorização
+administrativa de grants, imutabilidade operacional e coordenador F2D continuam
+pendentes, assim como as demais frentes do plano. Objetivo integral ativo.
