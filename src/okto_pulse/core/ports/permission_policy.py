@@ -9,6 +9,7 @@ and validate a SaaS adapter without importing Community.
 from __future__ import annotations
 
 import copy
+from collections.abc import Collection
 from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.permissions import (
@@ -75,6 +76,24 @@ class PermissionPolicyPort(Protocol):
     def evaluate(self, context: PermissionContext) -> PermissionDecision:
         """Evaluate one canonical permission operation."""
         ...
+
+
+def board_membership_allows_read(
+    *, owner_id: str | None, actor_id: str, share_permission: str | None = None,
+    verified_agent_board_access: bool = False,
+    allowed_share_permissions: Collection[str] | None = None,
+) -> bool:
+    """Canonical Board membership decision after identity/realm/binding checks.
+
+    Adapters load facts only. A verified agent binding is supplied by the
+    authentication path; this helper never infers it from a role or Board owner.
+    Owner access is independent of a share's optional mutation-role restriction.
+    """
+    return (
+        verified_agent_board_access is True or owner_id == actor_id
+        or (share_permission is not None and (allowed_share_permissions is None
+            or share_permission in allowed_share_permissions))
+    )
 
 
 def flatten_permission_flags(flags: PermissionFlags) -> list[str]:
@@ -233,6 +252,7 @@ __all__ = [
     "SKB3_PERMISSION_INTRODUCTION_V1",
     "SKM_PERMISSION_INTRODUCTION_V1",
     "builtin_permission_presets",
+    "board_membership_allows_read",
     "builtin_preset_name",
     "evaluate_permission",
     "explicit_permission_overrides",

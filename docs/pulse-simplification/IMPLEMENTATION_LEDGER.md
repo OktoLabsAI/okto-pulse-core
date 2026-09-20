@@ -5513,3 +5513,135 @@ Core publica a porta, os testes de contrato e este ledger. Publicação pareada 
 push normal de feature/v0.4.0. Sem migração real, restart de Pulse, release, merge
 ou alteração de permissões de contas reais. Retomar pelo reader autorizado e
 introdução coordenada das permissões genéricas, conforme dependências acima.
+
+#### F2A — leitor autorizado e projeção histórica (em implementação)
+
+O incremento anterior é progresso publicado e validado. Repos limpos em
+3eaacd15/ece12b7 na retomada. Implementados contrato de leitura paginada, caso de
+uso Core, reader/projeção Community e GET REST por Board/origem/seção, ainda sem
+prova comportamental desta rodada. Snapshot precede ACL/grants; identidade/realm
+incorretos não iniciam leitura. Falta de grant, seção revogada e origem ausente
+usam o mesmo envelope. O mecanismo revalida estado e fonte commitada/hash antes
+de devolver uma projeção fechada. Nenhum caminho de storage vai para a resposta.
+
+A autoridade corrente por seção é o grant genérico escopado já persistido, junto
+à ACL atual do Board, atividade e revisão do agente. A captura é seu teto. O
+reader não converte esse grant em quatro booleans globais de agente/preset: o
+registry plano existente não representa origem, e seu manifest exige também uma
+autoridade histórica explícita. Copiar a decisão para flags globais perderia o
+escopo; exigir Sprint no reader criaria dependência ativa proibida por F3.
+Portanto, nesta etapa a checagem usa a porta de grants da origem; a integração de
+capabilities/listagem de MCP e a administração na UI permanecem dependências
+explícitas, sem criar alias ou fallback de board.read. Não declarar concluída a
+introdução em todas as superfícies. A instalação continua exclusiva do cutover
+interno; bootstrap normal não popula grants nem migra dados reais.
+
+A projeção de v4 interpreta tabelas históricas conhecidas sem importar o modelo
+Sprint vivo. Conteúdo exclui evaluations, IDs de cenários/BR, Cards, jobs e
+manifest de permissões. Q&A/histórico filtram a FK opaca da origem; avaliações
+ficam em sua seção. Valores originais de texto/JSON são preservados, sem
+normalização editorial. Paginação de 1–200 registros, offset até 100 mil, arquivo
+até 64 MiB (contrato existente), registros da página até 25 MiB; exceder limite
+não trunca silenciosamente. Outras seções que precisam de card.entity.read,
+spec.tests.read/spec.rules.read ainda exigem seus próprios caminhos autorizados.
+
+O histórico preserva o conteúdo do audit original (inclusive changes/summary),
+como o acesso histórico existente; não é uma nova aprovação. Não suprimir nem
+reinterpretar audit com base em policy de outra seção sem caracterização/decisão.
+A nova rota é read-only, no-store, com 404 genérico para ausência/negação e 503
+sanitizado para fonte indisponível/corrompida. DTOs e UoW continuam sem SQLAlchemy,
+filesystem ou FastAPI no Core. Testes e closure deste incremento pendentes.
+
+Primeira validação: provenance-f2a-reader.json confirma **799/319 .py e 864/403
+payloads** fonte→wheel→install idênticos. core-f2a-reader.log: **208 passed**,
+33,29 s; community-f2a-reader.log: **45 passed**, 109,96 s. A captura, os grants
+persistidos e a nova leitura coexistem sem alterar a autoridade anterior.
+closure-f2a-reader.json: findings vazios, oito budgets 0/0; apenas matrizes README
+foram regeneradas pelo renderer oficial. Contagens 7.485/1.143 imports, 25 deps.
+
+Revisão posterior identificou que arrays de avaliações podem exceder a quantidade
+de linhas físicas do arquivo. Acrescentado limite de 100 mil registros por seção
+antes da primeira página para não emitir cursor além do offset suportado; segue
+413 explícito, sem truncamento. Testes novos cobrem também limite agregado de
+25 MiB, remoção das quatro tabelas antigas em fixture com foreign_keys=ON e
+revogação concorrente: request em andamento usa seu snapshot único; o próximo
+request precisa observar a revogação. Par final e essas provas ainda pendentes.
+
+#### F2A — leitor/REST validados
+
+Par final wheels-f2a-reader-final reinstalado e comprovado por
+provenance-f2a-reader-final.json: **799/319 .py e 864/403 payloads** idênticos
+fonte→wheel→install. Core SHA256
+1b67d2a01fbef866bf57115dbef2f0cf3ed4077743b8d3c6d857a914493ded43;
+Community SHA256
+6ea0d9c73f984d180bd1c3f0b8bdb01db2820595e1df6b4d1dd591176f4396fd.
+
+- core-f2a-reader.log: **208 passed**, 33,29 s. Sem mudança Python Core posterior;
+  somente README gerado. Contratos de reader, grants, autoridade e UoW aprovados.
+- community-f2a-reader-final.log: **75 passed**, 97,46 s. Inclui as provas de
+  limites de seção/página, grants e read snapshot, source grant/corrupção,
+  root/seções sem vazamento, isolamento de origem, atividade/revisão/Board ACL,
+  identidade nova mesmo Full Control sem acesso herdado, paginação/revogação,
+  REST, export existente e ownership. Remoção das quatro tabelas antigas passou
+  em fixture com foreign_keys=ON, sem desabilitar FKs para fazer o teste passar.
+- O teste concorrente confirmou uma única visão consistente: revogação commitada
+  durante o stat não mistura snapshots no request já iniciado; o próximo request
+  recebe negação sem abrir storage. O objeto histórico permaneceu byte a byte.
+- closure-f2a-reader-final.json: **ok=true**, findings/documentation_findings
+  vazios, oito budgets 0/0; **7.485/1.143 imports, 25 dependências**.
+- Ruff e staged/worktree diff --check aprovados. Sem mudança frontend neste
+  incremento; assets antigos seguem no payload provado. A futura UI permanece
+  obrigada a testes frontend pela instrução do usuário.
+
+Documentada a leitura em Community/docs/historical-archive-read.md. Inspeção da
+composição real confirmou prefixo /api/v1 (community/app.py inclui api_router,
+que define esse prefixo). O teste HTTP foi ampliado do router isolado para esse
+router principal; rodada específica pendente abaixo. Nenhum processo real de
+Pulse foi reiniciado nem recebeu migração/permissão nova.
+
+Retomada: descoberta/listagem e administração autorizadas, capability MCP com
+escopo de origem, UI histórica e testes frontend, seções adicionais de Card/Spec,
+transferência substantiva e cutover completo F2/F3. O reader já evita depender de
+folhas/serviços Sprint vivos, mas o capturador/instalador ainda precisam da
+avaliação anterior congelada no caminho de migração antes da remoção dessas
+folhas. Não tratar os grants capturados como permissão global de preset nem
+implementar reach-in no core. F2A e a iniciativa seguem abertas, assim como o
+gate global de metadata registrado anteriormente.
+
+community-f2a-reader-mounted.log: **1 passed**, 12,16 s, usando o api_router real
+sob /api/v1. Revisão arquitetural antes do commit extraiu a regra owner/share para
+board_membership_allows_read, helper puro da porta pública permission_policy.
+O preflight Core existente, o capturador e o reader passam a consumir essa mesma
+regra. Evita duplicar política em Community sem importar helper privado do Core.
+Nenhuma regra de realm, atividade/revisão, binding MCP ou restrição de share foi
+relaxada. Casos novos cobrem viewer/editor/admin, owner, binding verificado
+estrito e share humano por realm. Reconstrução pareada e regressão após essa
+centralização pendentes; hashes finais anteriores serão substituídos.
+
+Validação da policy pública centralizada: provenance-f2a-reader-policy.json
+comprova o par instalado antes dos testes. core-f2a-reader-policy.log: **143
+passed**, 9,79 s (membership, porta de policy, hardening REST por Board, reader e
+gate UoW). community-f2a-reader-policy.log: **54 passed**, 82,82 s (reader/REST no
+router real, captura, share por realm, limites e export). Nenhuma falha nesta
+rodada. closure-f2a-reader-policy.json manteve findings vazios e oito budgets 0/0;
+matrizes README regeneradas oficialmente para **7.487/1.144 imports, 25 deps**.
+
+Staging inclui todos os arquivos novos e diff --check passa nos dois repos.
+Par de publicação reconstruído em wheels-f2a-reader-publish após as matrizes.
+Somente comprovação final do install/closure e commits/pushes pendentes abaixo.
+
+provenance-f2a-reader-publish.json confirma o par final **799/319 .py e 864/403
+payloads** byte a byte. SHA256 finais (substituem os pares intermediários):
+Core d5de67df0822a4fcf8e9ed418fb815844e195a69b85fa9f40408c8049f1b61ca;
+Community 1fda2ca359199cabc000ed1a96b9aec595c030efe6ef96cd30a46661d20ece60.
+Somente matrizes README mudaram após a rodada de policy; código Python testado
+permanece igual. closure-f2a-reader-publish.json executa contra esses wheels.
+
+closure-f2a-reader-publish.json confirmou **ok=true**, findings/documentation_findings
+vazios e os oito budgets 0/0 no par final. Todos os processos de teste/auditoria
+terminaram. Community commit bb99ba233257b9af5cdd8c0a9b7e21d5dbe713a4;
+Core publica contrato/use case, policy pública compartilhada, testes e ledger.
+Push pareado normal em feature/v0.4.0, sem migração real, release, merge, restart
+ou alteração de permissões de contas reais. Próximas dependências de F2A/F3
+permanecem descritas acima; iniciativa ativa, sem declarar conclusão parcial como
+cumprimento do pacote inteiro.

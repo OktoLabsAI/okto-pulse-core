@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     )
     from okto_pulse.core.ports.entity_export import EntityExportReadPort
     from okto_pulse.core.ports.historical_archive import HistoricalArchiveGrantPort
+    from okto_pulse.core.ports.historical_archive_read import HistoricalArchiveReadPort
 
 
 class ConsistentReadContractError(RuntimeError):
@@ -56,6 +57,7 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
     entity_exports: "EntityExportReadPort"
     historical_archive_grants: "HistoricalArchiveGrantPort"
+    historical_archive_reader: "HistoricalArchiveReadPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 

@@ -51,6 +51,12 @@ class _UnsupportedEntityExportReadPort:
 
 
 class _UnsupportedHistoricalArchiveGrants:
+    async def has_current_board_access(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive reader is not configured")
+
+    async def read_section(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive reader is not configured")
+
     async def get(self, **kwargs: object) -> None:
         raise NotImplementedError("historical archive grants are not configured")
 
@@ -96,6 +102,7 @@ class SQLAlchemyUnitOfWork:
         # exercises the public Core UoW shape, not export materialization.
         self.entity_exports = _UnsupportedEntityExportReadPort()
         self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
+        self.historical_archive_reader = self.historical_archive_grants
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self
