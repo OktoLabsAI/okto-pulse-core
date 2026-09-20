@@ -12,6 +12,8 @@ import copy
 from collections.abc import Collection
 from typing import Any, Protocol, runtime_checkable
 
+from okto_pulse.core.domain.permission_migration_review import migration_review_reason
+
 from okto_pulse.core.domain.permissions import (
     DefaultPermissionPolicy,
     GUIDELINE_ADOPTION_MANAGE,
@@ -94,6 +96,62 @@ def board_membership_allows_read(
         or (share_permission is not None and (allowed_share_permissions is None
             or share_permission in allowed_share_permissions))
     )
+
+
+def direct_permission_review(agent_flags: object, *, preset_id: str | None) -> tuple[bool, str | None]:
+    """Canonical classification of a persisted, preset-less direct document."""
+    if preset_id is not None or agent_flags is None:
+        return False, None
+    if not isinstance(agent_flags, dict):
+        return True, "invalid_agent_flags"
+    try:
+        normalized = normalize_agent_permission_overrides(agent_flags)
+    except (TypeError, ValueError):
+        return True, "invalid_agent_flags"
+    return (False, None) if normalized is None else (True, "unrecognized_direct_permissions")
+
+
+def resolve_agent_permission_facts(
+    *, agent_flags: object, legacy_permissions: object, preset_id: str | None,
+    presets: tuple[PermissionPresetLineageNode, ...], board_overrides: object,
+    agent_migration_review: object = None, board_migration_review: object = None,
+    policy: PermissionPolicyPort | None = None,
+) -> PermissionSet:
+    """Resolve edition-loaded facts through one canonical agent policy path.
+
+    Migration review is separate from editable flags. Losing a retired key or
+    reconciling a preset cannot clear it. Only existing authorized policy writers
+    may replace the affected layer; profile edits and activation do not do so.
+    """
+    review, reason = direct_permission_review(agent_flags, preset_id=preset_id)
+    direct = copy.deepcopy(agent_flags)
+    if direct is None and isinstance(legacy_permissions, list):
+        direct = map_legacy_permissions(legacy_permissions)
+    preset_flags = None
+    if preset_id:
+        lineage = resolve_permission_preset_lineage(preset_id, presets)
+        preset_flags, review, reason = lineage.flags, lineage.owner_review_required, lineage.review_reason
+    effective = (policy or DefaultPermissionPolicy()).resolve(direct, preset_flags, board_overrides,
+        owner_review_required=review, review_reason=reason)
+    agent_reason = migration_review_reason(agent_migration_review, layer="agent")
+    board_reason = migration_review_reason(board_migration_review, layer="board")
+    # Preserve the old evaluator's priority: malformed agent, malformed Board,
+    # then direct/preset review. A damaged marker itself is always fail-closed.
+    if "invalid_permission_migration_review" in (agent_reason, board_reason):
+        retained = "invalid_permission_migration_review"
+    elif agent_reason == "invalid_agent_flags" or effective.review_reason == "invalid_agent_flags":
+        retained = "invalid_agent_flags"
+    elif board_reason is not None:
+        retained = board_reason
+    elif effective.owner_review_required:
+        retained = effective.review_reason
+    else:
+        retained = agent_reason
+    if retained is not None:
+        if effective.owner_review_required and effective.review_reason == retained:
+            return effective
+        return effective.with_owner_review(retained)
+    return effective
 
 
 def flatten_permission_flags(flags: PermissionFlags) -> list[str]:
@@ -227,6 +285,8 @@ def merge_permission_registry_defaults(
 
 
 __all__ = [
+    "direct_permission_review",
+    "resolve_agent_permission_facts",
     "DefaultPermissionPolicy",
     "GUIDELINE_ADOPTION_MANAGE",
     "GUIDELINE_ASSESSMENTS_READ",

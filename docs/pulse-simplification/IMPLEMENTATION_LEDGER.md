@@ -5932,3 +5932,129 @@ testes e auditoria encerrados. Community commit
 gate de paridade, refactor da facade congelada, testes e ledger. Push normal
 pareado na feature/v0.4.0; sem migração de dados reais, mudança de policy real,
 restart do Pulse, release, tag ou merge. Pendências de integração acima mantidas.
+
+### F2/F3 — revisão persistida nas camadas e resolvedores (em implementação)
+
+Continuação após progresso verificado e publicado: Core e60f1d7d / Community
+7426c5e. Worktrees limpas no início. Investigados os writers existentes: update
+de flags/preset do agente, teto Board e flags do preset já são decisões de policy
+autorizadas; descrição, nome, atividade e rotação de credencial não são substituição
+da policy. Não conceder ao executor um campo novo nem liberar review em bootstrap.
+
+Implementação atual ainda não validada:
+- Value object puro PermissionMigrationReview, por camada agent/preset/board,
+  motivo antigo e hashes do checkpoint/fonte. Parser fail-closed para marcador
+  inválido ou de outra camada. Não é flag nem endpoint.
+- PermissionPresetLineageNode carrega review do próprio preset; filhos continuam
+  herdando review do pai mesmo quando editados. Facade pública
+  resolve_agent_permission_facts concentra classificação direta, legacy vazio,
+  lineage, teto e precedência original dos motivos. Os três resolvedores
+  Community usam a mesma policy Core; classificação antes duplicada na edição
+  virou reexport da porta pública.
+- Três colunas JSON nullable permission_migration_review, somente nos modelos
+  Community. Step pre_create_all adiciona-as sem mudar dados, com transação física
+  SQLite e idempotência. create_all cria o mesmo shape; schema callable/ledger
+  registrados. Bootstrap mantém camada direta guardada intacta e lê review dos
+  presets; reconciliação automática não tem autoridade para limpar review.
+- Writers existentes limpam somente o marcador da camada explicitamente
+  substituída. AgentUpdate e payloads de produto não expõem o marcador. Não
+  considerar mudança de descrição/atividade ou diferença de hash como aprovação.
+- Instalador interno, fora de bootstrap/transports: verifica checkpoint e fonte
+  sob BEGIN IMMEDIATE, classifica cada camada pelo avaliador original, grava
+  marcadores e exige paridade de todas as decisões sobreviventes/motivos antes
+  do commit. Preserva também identidade/atividade/contextos inativos. Falha
+  reverte marcadores e recibo. Replay de instalação não reinstala marcador
+  removido por edição de policy posterior; verifica recibo de instalação.
+
+Testes novos escritos: ambiguidade, herança/motivos, marcadores malformados,
+três gateways reais, edição/ativação/bootstrap, rollback de paridade, fonte
+alterada, esquema antigo e payload sem campo interno. Ainda pendem Ruff,
+build/install byte a byte, execução Python/frontend e closure. Flags antigas
+não foram removidas pelo instalador; cutover de dados e coordenador F2/F3 ainda
+necessários. Nenhuma execução de migração/instalador em banco real.
+
+Observação para revisão: fallback genérico de _load_effective_permissions_for_user
+em Core/services/main.py é anterior à lineage atual; Community usa o resolver
+compacto registrado, que foi integrado. Não ampliar a alegação para outros
+adapters/edições sem verificar seus caminhos. O seam público agora permite que
+eles consumam a mesma policy, sem importar mecanismo Community.
+
+Validação/investigação até aqui:
+- provenance-permission-review.json e provenance-permission-review-corrected.json:
+  **803/321 .py, 868/405 payloads** byte-identical fonte/wheel/install; imports
+  em site-packages. Nenhuma execução comportamental contra install antigo.
+- Core inicial: 423 passed / 1 failed no catálogo explícito de imports puros.
+  Incluído o novo value object canônico e teste adicional que exige somente
+  dataclasses, sem importação de mecanismo. Rodada ampliada 448 passed; após
+  correção da projeção de extensões e regressão nova: **449 passed**, 37,02 s,
+  core-permission-review-corrected.log.
+- Community inicial 39 passed / 1 failed: fixture do writer não tinha RealmScope.
+  Rodada ampliada 98 passed / 4 failed encontrou uma regressão real: o facade
+  reconstruía a árvore negada e perdia vendor_extension. Corrigido preservando
+  o PermissionSet existente e clonando sua projeção ao aplicar review adicional.
+  A fixture também tinha Board.realm_id NULL, compatível com captura histórica
+  mas não com writer ativo; agora usa realm local explícito e exige row encontrada.
+  Nenhuma flexibilização do predicado de realm do produto.
+- Ledger de schema agora tem 78 migrations (nova etapa explícita). A contagem
+  antiga de 876 objetos estava atrasada desde F2A: identificados e exigidos pelo
+  nome historical_archive_grants e ix_historical_archive_grants_archive_id,
+  resultando em 878 objetos. Fixture v0.3.0/hash, paridade de replay, constraints,
+  guards e demais asserts mantidos. Rodada corrigida **102 passed**, 115,04 s,
+  community-permission-review-corrected.log, incluindo migração real de cópia
+  descartável da fixture instalada v0.3.0, replay, bootstrap e projeção REST.
+- Frontend: 49 passed / 7 failed expuseram o hook que só negava flags introduzidas
+  quando owner_review_required. Corrigido para negar todas, igual à policy Core.
+  Os dois asserts que proibiam Reset to Base em base válida eram inadequados:
+  o reset é rascunho de policy permitido ao owner; agora testes exigem aviso
+  persistente e nenhuma gravação antes de Save. Não removido o fluxo existente.
+  Rodada corrigida 56 passed / 4 arquivos. TypeScript/build/verify aprovados;
+  tree intermediária 383afd5327f62b39d951e99c9fd627637c4a8d34135ab29f05e6d4972150b597.
+- Chromium e2e-permission-review.log: **1 passed**, 10,5 s, SPA instalada, APIs
+  integralmente em fixtures, navegação de arquivo/seções/revogação, 360/768/1440
+  e acessibilidade. Não é E2E contra dados reais. Servidor descartável encerrado.
+- Lint frontend: zero erros, 394 avisos <=402. Closure corrected: findings
+  vazios, oito budgets 0/0, somente matrizes README. Renderer oficial atualizou
+  **7.513 imports Core / 1.151 Community→Core / 25 dependências**.
+
+Revisão adicional do fluxo real de edição encontrou que PresetEditorModal
+submetia flags mesmo em edição somente de nome/descrição. A tela agora envia
+flags apenas após interação no editor, Enable/Disable All ou Reset to Base;
+criação continua enviando flags. Isso mantém a revisão pendente em edição de
+metadados e usa a autoridade de policy já existente, sem novo campo público.
+frontend-permission-review-publish.log: **63 passed / 6 arquivos**, 10,43 s,
+incluindo os novos casos de metadata-only e decisão explícita antes do Save.
+Novo frontend build e par final ainda sendo preparados; repetir a prova do
+payload/SPA e closure antes de publicar. Python não mudou após 449/102 aprovados.
+
+Pendências de continuidade: remoção das flags e transformação F2/F3, coordenador
+que instale o checkpoint/review antes de normalizações, recibo de retomada,
+restante de arquivo/grants/MCP e matriz completa do pacote. Verificar também
+projeção readonly de review direto/do binding na administração de agentes: os
+DTOs atuais não expõem o marcador nem seus hashes; não inferir conclusão de
+toda a UX administrativa a partir dos testes de usePermissions/preset.
+
+Publicação deste incremento:
+- provenance-permission-review-publish.json: **803/321 .py, 868/405 payloads**,
+  byte a byte entre fonte/wheel/install. Python idêntico à rodada 449/102;
+  o par final incorpora README e a correção adicional da UI, testada separadamente.
+- frontend_dist final: **78 arquivos**, todos no índice Git, árvore
+  **e9d02144d1ce7e4a58affbf6cc96c01c33d3ae85ce9f264a79d6621a65cf90b7**.
+  TypeScript/build/verify aprovados. 63 testes frontend e lint direto dos arquivos
+  finais aprovados (2 avisos preexistentes de any; nenhum erro).
+- e2e-permission-review-publish.log: **1 passed**, 10,1 s, SPA final instalada,
+  servidor iniciado após instalação/prova e encerrado após execução. APIs em
+  fixtures; sem tráfego de escrita para Pulse real.
+- closure-permission-review-publish.json: **ok=true**, findings e
+  documentation_findings vazios; todos os oito budgets 0/0, 7.513/1.151 imports
+  e 25 dependências. Ruff de todos os Python alterados e staged diff --check
+  aprovados. Nenhum processo de build/teste/auditoria/servidor descartável ativo.
+- SHA256 dos wheels finais:
+  Core af3ff410366514527b9ef789098867a51c7a4d1d5a462a5a9ffafaed31b30a11;
+  Community 89d379a4c66cb1cbc7300c11f4b802ea6505446590785c3ff5d8e6e69254e45e.
+
+Community commit **eb6ec25c5438f4174c383979eabf168e65854485**; Core publica neste
+commit value object, policy canônica/lineage com review persistido, classificação
+de origem, writers via records, testes e ledger. Push normal em feature/v0.4.0
+dos dois repos. Nenhuma migração de banco real, mudança de policy real, restart,
+release, tag ou merge. Metadata global segue 55.859 >50.800; nenhuma conclusão
+de F2/F3 ou da iniciativa inteira. Retomada pelas pendências registradas acima.

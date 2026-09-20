@@ -16,6 +16,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, TypeAlias
 
+from okto_pulse.core.domain.permission_migration_review import migration_review_reason
+
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_TRACEABILITY_KG_READ_PERMISSIONS,
 )
@@ -2025,6 +2027,15 @@ class PermissionSet:
         self.owner_review_required = owner_review_required
         self.review_reason = review_reason
 
+    def with_owner_review(self, reason: str) -> PermissionSet:
+        """Deny while retaining the existing projection, including extensions."""
+        import copy
+
+        flags = copy.deepcopy(self.flags)
+        _set_all_flags(flags, False)
+        return PermissionSet(flags, preset_name=self.preset_name,
+            owner_review_required=True, review_reason=reason)
+
     def has(self, flag: str) -> bool:
         """Check if a specific flag is active.
 
@@ -2523,6 +2534,7 @@ class PermissionPresetLineageNode:
     id: str
     flags: Any
     base_preset_id: str | None = None
+    migration_review: object = None
 
     def __post_init__(self) -> None:
         import copy
@@ -2530,6 +2542,7 @@ class PermissionPresetLineageNode:
         if not self.id.strip():
             raise PermissionContractViolation("preset lineage id must not be empty")
         object.__setattr__(self, "flags", copy.deepcopy(self.flags))
+        object.__setattr__(self, "migration_review", copy.deepcopy(self.migration_review))
 
 
 @dataclass(frozen=True)
@@ -2714,11 +2727,12 @@ def resolve_permission_preset_lineage(
                 owner_review_required=True,
                 review_reason=("unknown_preset" if first else "dangling_base_preset"),
             )
-        if not _canonical_permission_shape_is_valid(node.flags):
+        persisted_review = migration_review_reason(node.migration_review, layer="preset")
+        if persisted_review is not None or not _canonical_permission_shape_is_valid(node.flags):
             return PermissionPresetLineageResolution(
                 flags=_fail_closed_permission_flags(),
                 owner_review_required=True,
-                review_reason="invalid_preset_flags",
+                review_reason=persisted_review or "invalid_preset_flags",
             )
         chain.append(node)
         if node.base_preset_id is None:

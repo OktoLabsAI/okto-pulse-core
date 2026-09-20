@@ -7939,6 +7939,9 @@ class AgentService:
         if not ab:
             return None
         ab.permission_overrides = permission_overrides
+        # Only this authorized policy edit replaces the Board layer's review;
+        # profile/activation/key edits must leave migration provenance intact.
+        ab.permission_migration_review = None
         return ab
 
     async def list_boards_for_agent(self, agent_id: str) -> list[ApplicationRecord]:
@@ -7991,6 +7994,9 @@ class AgentService:
             agent.mark_dirty("permission_flags")
         elif flags_in_payload:
             agent.mark_dirty("permission_flags")
+
+        if preset_id_in_payload or flags_in_payload:
+            agent.permission_migration_review = None
 
         return agent
 

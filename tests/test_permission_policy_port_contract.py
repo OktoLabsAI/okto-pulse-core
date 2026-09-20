@@ -64,6 +64,7 @@ def test_permission_domain_module_has_only_stdlib_and_canonical_domain_imports()
         "logging",
         "okto_pulse.core.domain.code_traceability_kg",
         "okto_pulse.core.domain.mcp_permission_registry",
+        "okto_pulse.core.domain.permission_migration_review",
         "okto_pulse.core.domain.sdlc_registry",
         "typing",
     }
