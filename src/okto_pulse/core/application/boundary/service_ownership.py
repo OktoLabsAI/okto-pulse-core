@@ -145,12 +145,6 @@ F05_SERVICE_SLICES: tuple[ServiceSlice, ...] = (
         "spec JSON mutation and ORM dirty tracking",
     ),
     ServiceSlice(
-        "legacy_materialization_command",
-        ("commands/materialize_legacy_fr_ac.py",),
-        "legacy-to-structured conversion policy",
-        "spec enumeration and persisted JSON mutation",
-    ),
-    ServiceSlice(
         "kg_relational_workflows",
         (
             "kg/bug_cognitive_closure.py",

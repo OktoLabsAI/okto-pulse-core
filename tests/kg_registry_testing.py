@@ -205,20 +205,13 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
 
     register_cognitive_source_store(_InMemoryCognitiveSourceStore())
 
-    # Spec MKG-C-S1 (FR1): curation merges append to the EquivalenceLedger
-    # fail-closed; a fresh in-memory ledger per configuration keeps dedup
-    # and fold tests self-contained.
+    # Historical equivalences remain readable after the maintenance CLI is
+    # retired. A fresh ledger keeps the recall/fold tests self-contained.
     from okto_pulse.core.ports.kg_equivalence_ledger import (
         register_equivalence_ledger,
     )
 
     register_equivalence_ledger(_InMemoryEquivalenceLedger())
-
-    from okto_pulse.core.ports.kg_curation_proposals import (
-        register_curation_proposal_store,
-    )
-
-    register_curation_proposal_store(_InMemoryCurationProposalStore())
 
     from okto_pulse.core.ports.kg_subtype_registry import (
         register_node_subtype_registry,
@@ -265,49 +258,6 @@ class _InMemoryNodeSubtypeRegistry:
         return tuple(
             sorted(self.declarations, key=lambda d: (d.node_type, d.kind_of))
         )
-
-
-class _InMemoryCurationProposalStore:
-    """Test-only proposal store (MKG-C FR7)."""
-
-    def __init__(self) -> None:
-        self.proposals: dict[str, Any] = {}
-
-    async def append(self, proposal: Any) -> str:
-        self.proposals.setdefault(proposal.proposal_id, proposal)
-        return proposal.proposal_id
-
-    async def get(self, proposal_id: str) -> Any:
-        return self.proposals.get(proposal_id)
-
-    async def resolve(self, proposal_id: str, status: str) -> Any:
-        from dataclasses import replace
-        from datetime import datetime, timezone
-
-        from okto_pulse.core.ports.kg_curation_proposals import (
-            CurationProposalError,
-        )
-
-        proposal = self.proposals.get(proposal_id)
-        if proposal is None:
-            raise CurationProposalError(
-                "curation_proposal_not_found", proposal_id=proposal_id
-            )
-        updated = replace(
-            proposal,
-            status=status,
-            resolved_at=datetime.now(timezone.utc).isoformat(),
-        )
-        self.proposals[proposal_id] = updated
-        return updated
-
-    async def pending_for_board(self, board_id: str) -> tuple:
-        rows = [
-            pr for pr in self.proposals.values()
-            if pr.board_id == board_id and pr.status == "pending"
-        ]
-        rows.sort(key=lambda pr: (pr.created_at or "", pr.proposal_id))
-        return tuple(rows)
 
 
 class _InMemoryEquivalenceLedger:

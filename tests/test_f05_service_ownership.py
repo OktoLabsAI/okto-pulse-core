@@ -24,7 +24,8 @@ def test_f05_core_relational_service_gate_reaches_zero() -> None:
 
 
 def test_f05_inventory_has_explicit_two_sided_ownership() -> None:
-    assert len(F05_FILE_TO_SLICE) == 53
+    assert len(F05_FILE_TO_SLICE) == 52
+    assert "commands/materialize_legacy_fr_ac.py" not in F05_FILE_TO_SLICE
     assert len(F05_FILE_TO_SLICE) == len(set(F05_FILE_TO_SLICE))
     for service_slice in F05_SERVICE_SLICES:
         assert service_slice.files

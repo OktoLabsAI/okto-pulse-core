@@ -1,9 +1,9 @@
 """Tests for FR/AC canonicalization (spec 9d66847f, Phase 1).
 
-Covers the 11 spec scenarios: canonicalization in create/update_spec, id
+Covers the retained product scenarios: canonicalization in create/update_spec, id
 preservation + reorder, duplicate text -> distinct ids + idempotency, hash
 collision, fixed ``_N`` suffix, duplicate ``dict.id`` fail-closed, ``status``
-shape, anti-cycle smoke import, idempotent migrator + dry-run,
+shape, anti-cycle smoke import,
 ``resolve_linked_requirements_to_ids`` and the no-breaking-change regression.
 """
 
@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from sqlalchemy_test_models import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.services.main import SpecService
 from okto_pulse.core.services.spec_entity_canonicalization import (
@@ -26,9 +26,6 @@ from okto_pulse.core.services.spec_entity_canonicalization import (
 from okto_pulse.core.services.analytics_service import (
     resolve_linked_requirements_to_ids,
     resolve_linked_fr_indices,
-)
-from sqlalchemy_spec_materialization_store import (
-    materialize_legacy_fr_ac_board,
 )
 
 USER = "c4-agent"
@@ -267,82 +264,3 @@ async def test_no_breaking_change_text_links(db_factory):
     assert resolve_linked_fr_indices(
         ["User can log in"], updated.functional_requirements
     ) == {0}
-
-
-# ====================================================================
-# Integration — migrator (ts_e0731b4b)
-# ====================================================================
-
-
-async def _seed_legacy_spec(db_factory, board_id, frs, acs) -> str:
-    spec_id = _id("c4-spec")
-    async with db_factory() as db:
-        db.add(
-            Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Legacy",
-                status=SpecStatus.DRAFT,
-                created_by=USER,
-                functional_requirements=frs,
-                acceptance_criteria=acs,
-            )
-        )
-        await db.commit()
-    return spec_id
-
-
-async def test_migrator_idempotent_and_dry_run(db_factory):
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(db_factory, board_id, ["FR a", "FR b"], ["AC a"])
-
-    # dry-run does not persist
-    async with db_factory() as db:
-        summary = await materialize_legacy_fr_ac_board(db, board_id, dry_run=True)
-    assert summary["scanned"] == 1 and summary["changed"] == 1 and summary["errors"] == 0
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-        assert spec.functional_requirements == ["FR a", "FR b"]  # unchanged
-
-    # real run persists
-    async with db_factory() as db:
-        await materialize_legacy_fr_ac_board(db, board_id, dry_run=False)
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-        first_ids = [x["id"] for x in spec.functional_requirements]
-    assert all(i.startswith("fr_") for i in first_ids)
-
-    # second real run is idempotent (same ids, reported as skipped)
-    async with db_factory() as db:
-        summary2 = await materialize_legacy_fr_ac_board(db, board_id, dry_run=False)
-    assert summary2["changed"] == 0 and summary2["skipped"] == 1
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-        second_ids = [x["id"] for x in spec.functional_requirements]
-    assert second_ids == first_ids
-
-
-async def test_migrator_corrupted_spec_is_atomic(db_factory):
-    # IMPL-3 fix (Codex): a spec where ONE field is corrupted (duplicate
-    # dict.id) must not partially persist the other field.
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(
-        db_factory,
-        board_id,
-        ["FR legacy"],  # would canonicalize
-        [{"id": "ac_dup", "text": "A"}, {"id": "ac_dup", "text": "B"}],  # corrupted
-    )
-
-    async with db_factory() as db:
-        summary = await materialize_legacy_fr_ac_board(db, board_id, dry_run=False)
-    assert summary["errors"] == 1
-    assert summary["changed"] == 0
-
-    async with db_factory() as db:
-        spec = await SpecService(db).get_spec(spec_id)
-    # nothing persisted: FR is still the legacy string, AC is byte-identical
-    assert spec.functional_requirements == ["FR legacy"]
-    assert spec.acceptance_criteria == [
-        {"id": "ac_dup", "text": "A"},
-        {"id": "ac_dup", "text": "B"},
-    ]

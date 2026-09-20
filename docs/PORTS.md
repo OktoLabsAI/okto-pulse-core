@@ -3,8 +3,8 @@
 The complete catalogue of extension points an edition must fill.
 
 
-Core defines **~100 `Protocol` contracts across 78 modules in `okto_pulse/core/ports/`** plus **30
-Knowledge-Graph interfaces in `okto_pulse/core/kg/interfaces/`**. Every one of them is a seam an
+Core defines `Protocol` contracts in `okto_pulse/core/ports/` and
+Knowledge-Graph interfaces in `okto_pulse/core/kg/interfaces/`. Every one of them is a seam an
 edition must fill: core declares *what* it needs and *what the contract guarantees*; it never
 constructs a database, opens a file, resolves an environment variable or speaks a wire protocol.
 
@@ -28,7 +28,7 @@ a silent default.
 | `relational_schema_migrator` | `RelationalSchemaMigrator` (3) | Schema migration execution. |
 | `relational_schema_lifecycle` | `RelationalSchemaLifecycleOrchestrator` (1) | Ordering guarantee between migration, seed and worker startup. |
 | `relational_services` | `ResourceGateRelationalAdapter` (10) · `ResourceGateAdapterFactory` | Resource-gate reads over the relational store. |
-| `card_repository` · `structured_spec` · `spec_materialization` | (1 / 2 / 2) | Focused read/write seams for cards, structured spec entities and materialization. |
+| `card_repository` · `structured_spec` | (1 / 2) | Focused read/write seams for cards and structured spec entities. |
 | `architecture_persistence` · `architecture_legacy` | (8 / 1) | Architecture designs and the legacy snapshot read path. |
 | `amendment_revision` | `AmendmentRevisionStore` (3) | Path B amendment persistence. |
 | `default_board_configuration` | `DefaultBoardConfigurationStore` (11) | Versioned board-config templates. |
@@ -63,8 +63,7 @@ a silent default.
 | `consolidation` | `ConsolidationPersistencePort` (18) | Consolidation sessions, candidates and commits. |
 | `kg_operational` | `KGOperationalReadModelPort` (9) · `KGGovernanceEffectsPort` (5) · `KGWorkerQueuePort` (5) · `KGWorkerAuditPort` (2) | Queue, DLQ, worker claim/audit and governance effects. |
 | `kg_cognitive_source` | `CognitiveSourceStore` (4) | Durable cognitive source of truth with `generation` (MKG-A). |
-| `kg_equivalence_ledger` | `EquivalenceLedger` (4) | Reversible dedup — a wrong merge can be undone (MKG-C). |
-| `kg_curation_proposals` | `CurationProposalStore` (4) | Curation proposals under an autonomy policy. |
+| `kg_equivalence_ledger` | `EquivalenceLedger` (4) | Historical equivalence records used by query-time recall. |
 | `kg_subtype_registry` | `NodeSubtypeRegistry` (3) | Declarative `kind_of` subtypes (MKG-E). |
 | `canonical_debt` | `CanonicalDebtStore` (7) | Failed/deferred canonical promotion with replay. |
 | `kg_health` · `kg_events` | `KGHealthReadPort` (4) · `KGEventsReaderPort` (2) | Health projection and event reads. |

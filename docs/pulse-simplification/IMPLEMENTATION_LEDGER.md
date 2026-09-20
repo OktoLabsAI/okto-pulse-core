@@ -4610,3 +4610,101 @@ da implementação exclusiva, ajustes de mensagens/contratos/testes, matriz gera
 e este ledger. Publicação incremental na feature/v0.4.0, sem release/merge.
 Próxima retomada: stores/ports exclusivos de curadoria e entrypoints distribuídos
 remanescentes, seguida da retirada coordenada MCP/REST/UI. Objetivo integral ativo.
+
+### 2026-09-20 — F4, stores exclusivos e materialização manual FR/TR/AC
+
+Partida: Core `e1052beb`, Community `96bf167`, limpos e publicados. Turno anterior
+classificado como progresso verificado. O objetivo continua o pacote consolidado
+inteiro; esta retirada não encerra F4 nem a migração.
+
+Investigação de consumidores confirmou duas cadeias exclusivas do controle público:
+1. Após a retirada de dedup/propose/approve, `kg_curation_proposals` era referenciado
+   em produção apenas pelo próprio adaptador e sua composição. Removidos port/DTO/
+   registro de runtime, adaptador SQLAlchemy e fake de testes sem consumidores.
+2. `commands/materialize_legacy_fr_ac.py` oferecia --dry-run=false para enumerar
+   Specs de um Board e escrever FR/TR/AC com actor de sistema. Era o único
+   consumidor de produção do planner dedicado, orchestration, port e adaptador.
+   Retirada a cadeia inteira, inclusive alias do planner e actor exclusivo; não
+   manter um comando escondido chamável após apagar apenas a CLI.
+
+A conversão de requisitos no fluxo normal continua em
+`services/spec_entity_canonicalization.py` e seus consumidores de create/update.
+Não houve mudança nesses algoritmos, na autoria/versionamento de edits normais,
+nos gates de Spec ou na resolução de links por texto. Os testes antigos de
+execução da materialização manual foram retirados junto com a capacidade; testes
+mistos de canonicalização preservam cenários do produto. Nada foi convertido em
+skip. O inventário vivo F05 passou de 53 a 52 paths, retirando apenas o comando
+extinto; o teste continua exigindo cobertura completa e zero import relacional.
+O mapa RETIRED_CORE_ORM_IMPORT_ALLOWLIST permanece como evidência histórica
+congelada, sem reativar exceção; não é um comando nem um import vivo.
+
+História e privacidade: `KGCurationProposal`/`kg_curation_proposals`, seu schema,
+índice e participação no erasure continuam. Remover a feature de aprovação não
+é licença para apagar propostas existentes. O docstring do model agora explica
+esse papel histórico. O teste de erasure foi ampliado com uma proposta de outro
+Board e verifica preservação de plano, hash, autor e estado após apagar o alvo.
+O novo teste de composição cria propostas históricas pending/resolved usando o
+model real, compõe duas vezes sem permitir abertura de sessão e compara bytes
+integrais do SQLite antes/depois. Confirma também ausência do registro de writer.
+A fixture usa somente essa tabela para isolar a composição; a suíte existente de
+erasure usa o schema completo e os permits reais. Não confundir as duas provas.
+
+CLI por módulo: --help, --dry-run=true e --dry-run=false do módulo retirado agora
+falham no Python instalado com módulo inexistente (exit 1), antes de abrir dados.
+Não é tombstone/alias do parser `okto-pulse`: a entrada Python não existe no wheel.
+Testes rodam sem PYTHONPATH em processo novo e preservam bytes/mtimes de SQLite
+opaco. Testes de ausência verificam os módulos Core/Community retirados.
+
+Docs PORTS/ARCHITECTURE deixaram de oferecer as duas portas e os adaptadores
+retirados; inventários introdutórios deixam de fixar contagens antigas sem prova.
+A composição passa a descrever Grafx por portas, sem a falsa exceção de runtime
+embutido no Core. Não houve alteração frontend, MCP ou novos mecanismos no Core.
+
+Pré-validação em `PULSE_REFACTOR/.validation-v040`:
+- `provenance-f4-retired-stores.json`: **799/318 .py, 864/402 membros de payload**,
+  source→wheel→install idênticos byte a byte, inclusive ausência dos sete módulos
+  de produção retirados; testes com PYTHONPATH pareado e processos novos.
+- Ruff e diff-check aprovados.
+- `core-f4-retired-stores.log`: **45 passed**, 67,55 s; nenhuma falha ou skip.
+  Inclui canonicalização FR/TR/AC normal, IDs, links por texto, fold histórico,
+  manifesto público, ausência e gate F05.
+- `community-f4-retired-stores.log`: **68 passed, 1 failed**, 217,41 s.
+  Erasure completo/cross-Board, composição, autoria semântica e init passaram.
+  Falha somente na fixture nova que publicou include_graph=False: registry
+  corretamente recusou providers obrigatórios ausentes. Corrigido o teste para
+  usar a composição completa lazy; nenhum gate/default foi relaxado.
+- `closure-f4-retired-stores.json`: sem finding de código; somente duas matrizes
+  README divergentes, regeneradas pelo renderer oficial. Oito budgets 0/0.
+- `provenance-f4-retired-stores-final.json`: par reconstruído/reinstalado após
+  matrizes; 799/318 .py e 864/402 payloads ainda byte-idênticos. SHA256:
+  Core `489cd484ea8259fdd59763469ba4b656317629437a57370607251e8a26c0325d`;
+  Community `a84550254e951bfbe8908aeb0eae0cba48722b82e576d4623b5da35a6b0ccae7`.
+- `community-f4-retired-stores-final.log`: **7 passed**, 8,06 s, nenhuma falha
+  ou skip; composição completa lazy, bytes históricos e ausência instalada.
+  Não somar rodadas sobrepostas como casos únicos.
+- `closure-f4-retired-stores-final.json`: **ok=true**, nenhum finding de código/
+  docs, oito budgets **0/0**, 7.580 imports Core/1.219 Community→Core e
+  25 dependências. Fonte produtiva não mudou após a primeira rodada de testes.
+  Todos os processos de validação encerraram; nenhum runtime real foi reiniciado.
+
+Próxima frente confirmada: `kg_recovery_only.py`/console-script, suas instruções
+em api/kg_rebuild e resources, e UI/REST/MCP operacionais. No teste misto
+`test_r16b_relational_schema_migrator`, a parte que usa o executor é fingerprint/
+budgets auxiliares após a prova do schema; preservar schema_objects, contracts,
+replay e índices/triggers ao retirar os checks específicos da CLI. O E2E instalado
+de Global Discovery importa apenas EXPECTED_GRAFX_VERSION do executor, mas seus
+fluxos MCP de manutenção exigem revisão F4 própria; não apagar cobertura de
+produto por conveniência. A versão deve derivar da dependência pinada, não de
+um módulo de manutenção que está saindo.
+
+Permanecem demais F4, health passivo, F2A/B/C/D, leitor histórico autorizado,
+exclusão completa de writers/cutover/rollback, remoção atômica F3 e requisitos
+BASE/KG/DEI/ARQ/VER ainda sem prova. Nenhuma migração de dados reais, restart,
+publicação de release, remoção de história ou nova permissão foi executada.
+
+Community commit `692eb188ec18e6fcca526f589bc7dd631439c2e4`; Core remove os ports/
+planner/orchestration exclusivos e fixtures correspondentes, mantendo canonicalização
+de produto, inventário zero-relacional e evidência neste ledger. Pushes normais
+na feature/v0.4.0, sem release/merge. Próxima retomada: retirada coordenada do
+executor recovery-only e de suas recomendações, seguindo o inventário F4 por
+efeito. Iniciativa integralmente ativa.
