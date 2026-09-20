@@ -24,6 +24,7 @@ from okto_pulse.core.discovery_params_schema import (
     normalize_discovery_params_schema,
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
@@ -2295,6 +2296,9 @@ class SpecCreate(BaseModel):
 class SpecUpdate(BaseModel):
     """Schema for updating a spec."""
 
+    adopt_execution_contract: SpecExecutionContractAdoption | None = Field(default=None,
+        description="Explicitly adopt the joint architecture/verification contract in Draft, with current version and edition. Existing content/review authority applies.")
+
     title: str | None = Field(
         None,
         min_length=1,
@@ -2837,6 +2841,8 @@ class CardSummaryForSpec(BaseSchema):
 
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
+
+    execution_contract: SpecExecutionContract | None = None
 
     id: str
     board_id: str

@@ -500,6 +500,7 @@ def _requirement_change_permissions(
     next_keys = set(next_by_key)
 
     required: set[str] = set()
+
     if next_keys - current_keys:
         required.add(f"{prefix}.create")
         if any(_linked_task_ids(next_by_key[key]) for key in next_keys - current_keys):
@@ -526,6 +527,9 @@ def _spec_update_permission_requirements(spec, data: SpecUpdate) -> set[str]:
         or getattr(data, "__fields_set__", set())
     )
     required: set[str] = set()
+
+    if getattr(data, "adopt_execution_contract", None) is not None:
+        required.add("spec.entity.edit_fields")
 
     if "integration_requirements" in fields_set:
         required.update(

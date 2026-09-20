@@ -7,6 +7,7 @@ runtime provider, cache or registration side effect.
 """
 
 from typing import Protocol
+from okto_pulse.core.domain.execution_plan import SpecExecutionPlan
 from okto_pulse.core.domain.effective_delivery_inventory import EffectiveDeliveryInventory
 
 from okto_pulse.core.domain.delivery_evidence import DeliveryObligation, DeliveryEvidenceSnapshot
@@ -16,6 +17,8 @@ from okto_pulse.core.domain.implementation_responsibility import ImplementationR
 
 
 class DeliveryInventoryPolicy(Protocol):
+    def execution_plan(self, *, spec: object, cards: list[dict], admitted_methods: frozenset[str] | None) -> SpecExecutionPlan: ...
+
     def effective_coverage(self, *, inventory: EffectiveDeliveryInventory, snapshot: DeliveryEvidenceSnapshot,
                            implementations: tuple[ScopedImplementationFact, ...], tests: tuple[ScopedTestFact, ...],
                            admitted_methods: frozenset[str] | None) -> EffectiveDeliveryCoverage: ...

@@ -1041,6 +1041,7 @@ class Spec(Base):
 
     __tablename__ = "specs"
     architecture_adoption: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    execution_contract: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())

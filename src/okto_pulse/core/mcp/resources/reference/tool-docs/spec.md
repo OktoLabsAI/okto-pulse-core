@@ -670,6 +670,21 @@ Returns:
 Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
 Only non-empty fields are updated.
 
+New Specs adopt the joint architecture/verification execution contract. A legacy
+Spec must explicitly adopt before its first start, through an authorized Draft
+revision. Send `adopt_execution_contract` with `contract_version` equal to
+`spec-execution-contract/v1`, `expected_spec_version` and `expected_spec_edition`.
+The existing content-edit permission and lock apply. The server persists actor
+provenance and bumps the content version; a stale request fails without mutation.
+This marker is separate from the selection of Architecture Designs. Adoption
+does not classify candidates, allocate Cards, invent criteria or upgrade old proof.
+
+Before first start, all current architecture candidates must be classified and
+the complete verification/implementation plan must resolve. Existing evaluations,
+dependencies and coverage gates still apply; passing execution is not required
+at planning time. Already-running legacy work preserves its approved contract
+until an explicit revision/adoption. Done history is not automatically reopened.
+
 Args:
     board_id: Board ID
     spec_id: Spec ID

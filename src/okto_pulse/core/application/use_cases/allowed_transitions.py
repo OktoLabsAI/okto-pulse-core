@@ -899,6 +899,11 @@ class ListAllowedTransitionsUseCase:
                         "spec_evaluation_below_threshold: average approval "
                         f"score {average:.0f} is below {threshold}."
                     )
+            if spec.status == SpecStatus.VALIDATED:
+                try:
+                    await services.specs.require_execution_contract_ready(spec)
+                except ValueError as exc:
+                    return self._exception_reason(exc)
 
         if target_status == "done":
             skip_global = bool(board_settings.get("skip_test_coverage_global", False))

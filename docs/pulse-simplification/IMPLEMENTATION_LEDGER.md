@@ -2821,3 +2821,120 @@ Publicado por push normal em `feature/v0.4.0`: Core
 Referências remotas confirmadas por `ls-remote`, árvores limpas após os commits.
 Iniciativa em progresso; integração da adoção conjunta é a próxima dependência,
 não uma frente concluída por estes testes de domínio.
+
+### Em implementação — adoção conjunta e integração dos writers/gates
+
+Retomada de 2026-09-19: autenticação `jpbraga` válida, sem troca de conta;
+`ls-remote` confirma Core `f3cabf44` / Community `4f9d5de` publicados.
+Há WIP não publicado em ambos os checkouts. A prova de payload e os testes
+do checkpoint anterior **não validam estas alterações**.
+
+- Marcador tipado `spec-execution-contract/v1` independente da seleção de
+  Architecture Designs; novos registros adotam, coluna nullable sem backfill
+  conserva o contrato histórico. Adoção explícita pelo writer de Draft com
+  versão/edição esperadas, fence e proveniência do ator existente.
+- Resolução compartilhada do plano e contexto efetivo no snapshot; writer de
+  implementação persiste atestados de escopo por contribuição, sem input do
+  cliente nem atualização de provas históricas por leitura. Rollup e gate de
+  Card passam a consultar esse contexto quando a Spec adota o contrato.
+- Ainda pendentes: admissão por critério/método, reader e gate de início comuns,
+  transportes/UI, testes de domínio e persistência real, migração/rollback,
+  rebuild pareado/prova byte-a-byte, frontend, catálogo e closure zero.
+
+Não publicar este WIP como feature pronta nem ativar rollout fora dos testes
+descartáveis. Retomar pela inspeção do diff de `sqlalchemy_delivery_evidence.py`
+e integração de `require_test_result_admission` com o contexto efetivo.
+
+Atualização 2026-09-20 (ainda WIP, sem novos commits): admissão já consulta
+critério/método e escopo; reader usa `SpecExecutionPlan`; primeiro início
+Validated→InProgress consulta classificação global e plano sob o fence do Board.
+Specs já em andamento não recebem esse predicado por retomada. REST/MCP e painel
+de verificabilidade oferecem adoção explícita em Draft; UI trata CAS, permissão,
+duplo submit e refresh falho após commit. Migração continua nullable/sem backfill.
+
+Evidência intermediária:
+- `provenance-joint-first.json` e `provenance-joint-second.json`: **801/312 .py**,
+  **866/396 membros**, source→wheel→install idênticos em processos novos.
+- `core-joint-first.log`: **124 passed**; `frontend-joint-tests.log`: **34 passed**.
+  Build frontend aprovado: **78 arquivos**, árvore
+  `7b6dad37abc5ac83dc8dcdea65508597f2e6a6d0360dd784a957dcf5298b9367`.
+  Lint **402 warnings/baseline 402**, zero erros (`frontend-joint-lint.log`).
+- `community-joint-first.log`: **52 passed** (migração, leitura, ledger e relatório).
+  Integração inicial com SQLite+assinatura: **4 passed** após corrigir o digest
+  default capturado pela fixture de manifest (`community-joint-integration.log`).
+- `community-joint-adoption.log`: **22 passed/2 failed**; os 12 casos de criação
+  passaram. Falhas das novas fixtures: porta de Knowledge faltando no pós-write
+  REST e porta de application persistence faltando no teste do gate. Corrigidas
+  as configurações de teste; repetição em andamento.
+- `core-joint-gates.log`: **45 passed/15 failed**, por coluna ausente no schema
+  duplicado de testes `tests/sqlalchemy_test_models.py`. Adicionada a mesma coluna
+  nullable no modelo de teste; repetir antes de interpretar paridade dos gates.
+
+Ainda não há prova final deste incremento, closure final ou publicação. Verificar
+logs `*-joint-*-retry.log`, ampliar concorrência/content lock/start gate/rollback,
+completar documentação servida e repetir o rebuild/prova caso o payload mude.
+
+### Checkpoint validado — contrato conjunto seleciona writers, plano e crédito
+
+2026-09-20: os itens implementados acima formam agora um incremento integrado.
+O caminho adotado usa o mesmo plano relacional na leitura, gravação, admissão,
+gate de primeiro início e avaliação da entrega; o marcador ausente mantém o
+avaliador histórico. A origem da seleção de Designs permanece independente.
+O writer persiste `card-contribution-scope/v1`, não aceita hash autorado pelo
+cliente e não preenche registros anteriores. A UI de rollup mostra contribuições
+e critérios pendentes mesmo quando há alguma prova aceita, com listas limitadas.
+
+Validação no payload final:
+- **168 passed**, `core-joint-final.log` (13,63 s): domínio, seleção do contrato,
+  contribuição/critério, planejamento, catálogo e paridade de transições.
+  A repetição revelou uma diferença real na ordem do primeiro bloqueador:
+  o preview consultava adoção antes da avaliação qualitativa existente. A ordem
+  foi alinhada à mutação, preservando ambos os gates e o teste original.
+- **22 passed**, `core-joint-packaged-contracts.log` (2,91 s): manifest MCP e
+  envelope de content lock. Catálogo e manifest regenerados pelos geradores
+  oficiais; nenhum diff gerado necessário nesta mudança de parâmetro.
+- **15 passed**, `community-joint-final-adoption-retry.log` (30,22 s): REST e
+  FastMCP reais, CAS concorrente (uma adoção/uma versão/um histórico), autorização,
+  content lock, Draft versus Approved/Validated/InProgress/Done, rollback de
+  conteúdo companheiro inválido, atestados persistidos/replay, assinatura real,
+  mudança de alocação, ausência de upgrade por leitura e gate com o plano real.
+  O teste de rollback inicialmente usou Card inexistente, mas o writer legado
+  tem política explícita de prune para esses links. Investigado em
+  `_validate_spec_linked_refs`; preservada essa semântica. O teste usa referência
+  de API Contract inválida, que o mesmo validador sempre rejeita. O teste MCP
+  trata o envelope de erro real do host (`raise_on_error=False`).
+- **52 passed** em `community-joint-first.log` (89,76 s), migração/leitura/ledger/
+  relatório; `community-joint-final.log` teve **47 passed/1 failed**, incluindo
+  regressões de teste incremental e relatório. A falha era a fixture de gate
+  criando Design fora de `CommunitySemanticSession`; foi composta a sessão
+  correta e esse teste passou na rodada final de 15. Nenhum erro conhecido
+  permanece nestas rodadas. **12 casos de criação** passaram na rodada
+  `community-joint-adoption.log`, comprovando marcador prospectivo em derivação.
+- **125 passed**, `frontend-joint-final-tests.log` (27,25 s), painel de
+  verificabilidade/adoção, rollup, DoD e CardModal. Build/typecheck e verificação
+  de distribuição aprovados: **78 arquivos**, tree SHA256
+  `6ca565b8ddcb2f189fba5b5e9c00b06db4105e5c35733ff163fb88ebbd301911`.
+  `frontend-joint-final-lint.log`: zero erros, **402 warnings/baseline 402**.
+- `provenance-joint-final.json`: **801/312 .py**, **866/396 membros**, igualdade
+  byte-a-byte source→wheel→install. Wheel Core
+  `2130809ab00291dcee568f24c99b61e5cf1dab7c3b2ee416a13b133d27300594`;
+  Community `bcbb6a22d3750c686c7798a65c116c8cd0ab861da114462c7361ba57cfb8bf5b`.
+  Nenhum payload alterado após esta prova. Novos processos, PYTHONPATH pareado,
+  bancos descartáveis; nenhum processo do usuário reiniciado.
+- `closure-joint-packaged-final.json`: **ok=true**, zero findings de código ou
+  documentação, oito budgets **0/0**, **7.606/1.248 imports**, 25 dependências.
+  Drift inicial limitado às contagens dos READMEs; renderer oficial aplicado.
+
+Migração: coluna JSON nullable idempotente, sem backfill nem mudança de status,
+edição, versão ou histórico legado. Rejeição da adoção reverte a unidade de
+trabalho. O rollback de implantação para binários anteriores sobre dados já
+adotados **não foi validado**; a matriz de upgrade/rollback do rollout continua
+obrigatória. Nenhuma migração em banco real foi executada.
+
+Retomada após publicar este checkpoint: ampliar a matriz DEI/ARQ/VER para
+contribuições distintas em persistência real, paginação global/concorrência de
+fontes e transições, seleção/relatório atômico sob contrato adotado e rollout
+instalado. Continuam abertos receipt→impacto, reconciliação gravável, observações
+bufferizadas, retomada delimitada, métodos especializados, F2B/Sprints com a
+depreciação por Card já autorizada, KG, benchmark e auditoria integral. Este
+checkpoint não conclui a iniciativa nem autoriza release/tag/merge.

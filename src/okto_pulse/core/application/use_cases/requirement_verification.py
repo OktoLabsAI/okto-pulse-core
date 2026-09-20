@@ -15,8 +15,8 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.domain.verification_plan import (
     MAX_PLAN_NODES,
-    resolve_verification_plan,
 )
+from okto_pulse.core.domain.execution_contract import execution_contract
 from okto_pulse.core.ports.test_evidence import supported_test_verification_methods
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.domain.criterion_verification import (
@@ -238,6 +238,7 @@ class GetRequirementVerificationUseCase:
                     "edition",
                     "status",
                     "archived",
+                    "execution_contract",
                     *fields,
                     *(("test_scenarios", "api_contracts", "decisions", "title", "description", "context") if can_read_planning else ()),
                 ),
@@ -282,26 +283,16 @@ class GetRequirementVerificationUseCase:
                     limit=MAX_PLAN_NODES + 1,
                 )
             )
-            resolved = resolve_verification_plan(
-                qualification=resolved,
-                board_id=spec.board_id,
-                spec_id=spec.id,
-                scenarios=getattr(spec, "test_scenarios", None),
-                criteria=getattr(spec, "acceptance_criteria", None),
+            plan = default_delivery_inventory_policy().execution_plan(
+                spec=spec,
                 cards=[
                     {field: getattr(card, field, None) for field in card_fields}
                     for card in cards
                 ],
                 admitted_methods=supported_test_verification_methods(),
             )
-            inventory = default_delivery_inventory_policy().effective_inventory(
-                spec=spec,
-                cards=[
-                    {field: getattr(card, field, None) for field in card_fields}
-                    for card in cards
-                ],
-                qualification=resolved,
-            )
+            resolved = plan.qualification
+            inventory = plan.inventory
             responsibilities = inventory.responsibilities
             families = sorted({row.family for row in inventory.rows})
             resolved["effective_inventory"] = {
@@ -314,7 +305,9 @@ class GetRequirementVerificationUseCase:
                 "families": {family: sum(row.family == family for row in inventory.rows) for family in families},
                 "snapshot_sha256": inventory.snapshot_sha256,
                 "issues": list(inventory.issues),
-                "adoption_evaluated": False, "delivery_evaluated": False,
+                "adoption_evaluated": True,
+                "contract_adopted": execution_contract(spec) is not None,
+                "delivery_evaluated": False,
             }
             by_requirement = {
                 (row.requirement_type, row.requirement_id): row
@@ -362,4 +355,5 @@ class GetRequirementVerificationUseCase:
             "spec_edition": spec.edition,
             "spec_status": str(getattr(spec.status, "value", spec.status)),
             "archived": spec.archived,
+            "execution_contract": execution_contract(spec).model_dump(mode="json") if execution_contract(spec) is not None else None,
         }

@@ -5,11 +5,13 @@ the effective inventory together; a historical binding has no authored scope
 attestation and cannot acquire one merely by being read after an upgrade.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from okto_pulse.core.domain.delivery_evidence import (
     DeliveryBinding,
     DeliveryEvidenceSnapshot,
+    DeliveryCoverageEvaluation,
+    DeliveryCoverageRow,
     DeliveryObligation,
     ImplementationDeliveryFact,
     TestDeliveryFact,
@@ -112,6 +114,81 @@ class EffectiveDeliveryCoverage:
         return not self.blockers
 
 
+@dataclass(frozen=True, slots=True)
+class EffectiveDeliveryContext:
+    inventory: EffectiveDeliveryInventory
+    implementations: tuple[ScopedImplementationFact, ...]
+    tests: tuple[ScopedTestFact, ...]
+    admitted_methods: frozenset[str] | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScopedDeliveryCoverageRow(DeliveryCoverageRow):
+    contributions_complete: bool
+    criteria_complete: bool
+    required_card_ids: tuple[str, ...]
+    missing_card_ids: tuple[str, ...]
+    missing_criteria: tuple[tuple[str, str], ...]
+
+    @property
+    def implementation_satisfied(self):
+        return self.contributions_complete
+
+    @property
+    def test_satisfied(self):
+        return self.criteria_complete
+
+
+def implementation_scope_current(snapshot, fact, binding):
+    context = snapshot.effective_context
+    if context is None:
+        return True
+    if not isinstance(context, EffectiveDeliveryContext):
+        return False
+    scoped = [item for item in context.implementations if item.fact == fact]
+    rows = [item for item in context.inventory.rows if item.binding == binding]
+    if len(scoped) != 1 or len(rows) != 1 or rows[0].blockers:
+        return False
+    planned = [item for item in rows[0].contributions if item.card_id == fact.card_id]
+    attestations = [item for item in scoped[0].scopes if item.binding == binding]
+    return len(planned) == len(attestations) == 1 and planned[0].scope_sha256 == attestations[0].scope_sha256
+
+
+def test_observes_contribution(snapshot, test, implementation, binding):
+    """Admission checks relevance; final coverage separately requires all criteria."""
+    context = snapshot.effective_context
+    if context is None:
+        return True
+    if not isinstance(context, EffectiveDeliveryContext) or not implementation_scope_current(snapshot, implementation, binding):
+        return False
+    observed = [item for item in context.tests if item.fact == test]
+    if len(observed) != 1 or not isinstance(context.admitted_methods, frozenset):
+        return False
+    observation = observed[0]
+    if (observation.verification_method not in context.admitted_methods
+        or not isinstance(observation.criterion_ids, tuple)
+        or any(not isinstance(value, str) or not value for value in observation.criterion_ids)):
+        return False
+    planned = next(row for row in context.inventory.rows if row.binding == binding)
+    contribution = next(item for item in planned.contributions if item.card_id == implementation.card_id)
+    return not contribution.criterion_ids or bool(set(contribution.criterion_ids).intersection(observation.criterion_ids))
+
+
+def evaluate_adopted_snapshot(snapshot):
+    context = snapshot.effective_context
+    if not isinstance(context, EffectiveDeliveryContext):
+        return DeliveryCoverageEvaluation((), ('delivery_effective_context_unavailable',), ())
+    result = evaluate_effective_delivery_coverage(inventory=context.inventory, snapshot=snapshot,
+        implementations=context.implementations, tests=context.tests, admitted_methods=context.admitted_methods)
+    obligations = {item.binding: item for item in snapshot.obligations}
+    return DeliveryCoverageEvaluation(tuple(ScopedDeliveryCoverageRow(
+        obligations[row.binding], row.implementation_ids, row.test_ids,
+        row.implementation_waiver_ids, row.test_waiver_ids,
+        row.implementation_satisfied, row.test_satisfied, row.required_card_ids,
+        row.missing_card_ids, row.missing_criteria,
+    ) for row in result.rows if row.binding in obligations), result.blockers, result.rejected_record_ids)
+
+
 def evaluate_effective_delivery_coverage(
     *,
     inventory: EffectiveDeliveryInventory,
@@ -127,6 +204,7 @@ def evaluate_effective_delivery_coverage(
     Several authenticated tests may jointly cover it, but a passing functional
     condition cannot conceal a missing technical/operational condition.
     """
+    snapshot = replace(snapshot, effective_context=None)
     blockers = set()
     # Count expanded associations before evaluating them. A bounded failure is
     # unknown coverage, not a truncated population that could appear complete.

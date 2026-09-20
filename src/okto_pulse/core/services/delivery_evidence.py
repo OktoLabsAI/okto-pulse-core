@@ -17,6 +17,7 @@ from okto_pulse.core.domain.delivery_evidence import (
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
 )
+from okto_pulse.core.domain.effective_delivery_coverage import implementation_scope_current
 
 def delivery_store(session: object):
     factory = getattr(
@@ -150,6 +151,7 @@ async def require_card_delivery(
         if not row.implementation_satisfied
         and not any(
             implementation_binding_ready(fact, row.obligation.binding)
+            and implementation_scope_current(snapshot, fact, row.obligation.binding)
             for fact in snapshot.implementations
         )
     ]

@@ -304,10 +304,13 @@ def require_test_result_admission(snapshot: DeliveryEvidenceSnapshot, fact: Test
         or len(implementations) != len(snapshot.implementations) or not set(ids) <= implementations.keys()):
         raise ValueError(error)
     covered = set()
+    from okto_pulse.core.domain.effective_delivery_coverage import test_observes_contribution
+
     for identity in ids:
         implementation = implementations[identity]
         matches = {binding for binding in selected.intersection(implementation.bindings)
-                   if implementation_binding_proof_current(implementation, binding)}
+                   if implementation_binding_proof_current(implementation, binding)
+                   and test_observes_contribution(snapshot, fact, implementation, binding)}
         if (implementation.scope != snapshot.scope
             or implementation.card_type not in {CardType.NORMAL, CardType.BUG}
             or implementation.card_status in {CardStatus.CANCELLED, CardStatus.REJECTED}
@@ -339,6 +342,8 @@ class DeliveryEvidenceSnapshot:
     tests: tuple[TestDeliveryFact, ...] = ()
     waivers: tuple[DeliveryWaiverFact, ...] = ()
     complete: bool = False
+    # Server-resolved joint contract. None preserves the historical evaluator.
+    effective_context: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,6 +379,15 @@ def _text(*values: str) -> bool:
 
 
 def evaluate_delivery_coverage(
+    snapshot: DeliveryEvidenceSnapshot,
+) -> DeliveryCoverageEvaluation:
+    if snapshot.effective_context is not None:
+        from okto_pulse.core.domain.effective_delivery_coverage import evaluate_adopted_snapshot
+        return evaluate_adopted_snapshot(snapshot)
+    return _evaluate_legacy_delivery_coverage(snapshot)
+
+
+def _evaluate_legacy_delivery_coverage(
     snapshot: DeliveryEvidenceSnapshot,
 ) -> DeliveryCoverageEvaluation:
     """Evaluate both obligations without mutating or auto-reopening any Spec.

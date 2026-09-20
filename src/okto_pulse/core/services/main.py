@@ -9067,6 +9067,33 @@ class SpecService:
             _build_default_cognitive_readiness_service
         )
 
+    async def require_execution_contract_ready(self, spec: object) -> None:
+        """First-start planning predicate; existing in-flight contracts stay intact."""
+        from okto_pulse.core.domain.execution_contract import execution_contract
+        from okto_pulse.core.domain.verification_plan import MAX_PLAN_NODES
+        from okto_pulse.core.ports.delivery_inventory import default_delivery_inventory_policy
+        from okto_pulse.core.ports.test_evidence import supported_test_verification_methods
+        from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
+
+        if execution_contract(spec) is None:
+            raise ValueError("spec_execution_contract_adoption_required: reopen to Draft and explicitly adopt the execution contract before first start")
+        fields = ("id", "board_id", "spec_id", "card_type", "status", "archived",
+                  "test_scenario_ids", "title", "description", "details")
+        cards = await _application_list(self.db, "card", filters=(
+            ApplicationFilter("board_id", "eq", spec.board_id),
+            ApplicationFilter("spec_id", "eq", spec.id),
+        ), select_fields=fields, limit=MAX_PLAN_NODES + 1)
+        plan = default_delivery_inventory_policy().execution_plan(spec=spec,
+            cards=[{field: getattr(card, field, None) for field in fields} for card in cards],
+            admitted_methods=supported_test_verification_methods())
+        if not plan.complete:
+            raise ValueError("spec_execution_plan_incomplete: resolve qualification, methods, criteria and Card contributions before first start")
+        classification = await ArchitectureClassificationService(self.db).review(
+            board_id=spec.board_id, spec_id=spec.id, limit=1)
+        # The review computes this over the full population before presentation paging.
+        if classification.get("classification_complete") is not True:
+            raise ValueError("spec_architecture_classification_incomplete: classify all current architecture candidates before first start")
+
     async def _validate_test_scenario_subject_identities(
         self,
         *,
@@ -9606,10 +9633,13 @@ class SpecService:
             source_parent_type="refinement" if data.refinement_id else "ideation" if data.ideation_id else None,
             source_parent_id=data.refinement_id or data.ideation_id,
         )
+        from okto_pulse.core.domain.execution_contract import new_execution_contract
         spec = _new_application_record(
             "spec",
             id=spec_id,
             architecture_adoption=architecture_adoption,
+            execution_contract=new_execution_contract(board_id=board_id, spec_id=spec_id,
+                edition=1, actor_id=user_id, origin="new_spec"),
             board_id=board_id,
             title=data.title,
             description=data.description,
@@ -9657,6 +9687,12 @@ class SpecService:
             source_context_manifest=source_context_manifest,
             source_context_sha256=source_context_sha256,
         )
+        # New-contract absence is an explicit empty collection, not an unknown
+        # projection. No classifications, criteria or proof are manufactured.
+        from okto_pulse.core.domain.delivery_inventory import COLLECTIONS
+        for _, collection in (*COLLECTIONS, ("scenario", "test_scenarios")):
+            if getattr(spec, collection, None) is None:
+                setattr(spec, collection, [])
         # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
         # at creation BEFORE persistence — the create twin of the update_spec gate. The
         # baseline is the entity's (empty) mockups, so every submitted screen is
@@ -9760,6 +9796,7 @@ class SpecService:
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": data.status.value},
                 {"field": "architecture_adoption", "old": None, "new": spec.architecture_adoption},
+                {"field": "execution_contract", "old": None, "new": spec.execution_contract},
                 *(
                     [
                         {
@@ -10579,6 +10616,24 @@ class SpecService:
         await _require_spec_unlocked(self.db, spec_id)
 
         update_data = data.model_dump(exclude_unset=True)
+        adoption_request = update_data.pop("adopt_execution_contract", None)
+        if adoption_request is not None:
+            from okto_pulse.core.domain.execution_contract import SpecExecutionContractAdoption, adopt_execution_contract
+            from okto_pulse.core.domain.delivery_evidence import DeliveryScope
+            from okto_pulse.core.services.delivery_evidence import delivery_store
+            await delivery_store(self.db).lock_scope(DeliveryScope(spec.board_id, spec.id, spec.edition))
+            spec = await _application_refresh(self.db, spec)
+            require_draft_mutation(spec, subject_type="spec")
+            if spec.archived:
+                raise ValueError("This spec is archived. Restore it first before making changes.")
+            await _require_spec_unlocked(self.db, spec_id)
+            contract = adopt_execution_contract(spec, SpecExecutionContractAdoption.model_validate(adoption_request), actor_id=user_id)
+            if contract is not None:
+                update_data["execution_contract"] = contract
+                from okto_pulse.core.domain.delivery_inventory import COLLECTIONS
+                for _, collection in (*COLLECTIONS, ("scenario", "test_scenarios")):
+                    if getattr(spec, collection, None) is None and collection not in update_data:
+                        update_data[collection] = []
         next_ideation_id = (
             update_data["ideation_id"]
             if "ideation_id" in update_data
@@ -10894,6 +10949,7 @@ class SpecService:
             "validation_min_completeness",
             "validation_max_drift",
             "delivery_context",
+            "execution_contract",
             "delivery_context_provenance",
             "source_context_manifest",
             "source_context_sha256",
@@ -11247,6 +11303,7 @@ class SpecService:
             "labels",
             "delivery_context_provenance",
             "source_context_manifest",
+            "execution_contract",
         }
         if previous_knowledge_parent != next_knowledge_parent:
             await _reset_v2_knowledge_for_relink(
@@ -12093,6 +12150,11 @@ class SpecService:
             self.db,
         )
         await dependency_service.acquire_lifecycle_write_fence(board_id=spec.board_id)
+
+        if data.status == SpecStatus.IN_PROGRESS and spec.status == SpecStatus.VALIDATED:
+            # Resolve the mutable Card/architecture population while holding the
+            # same board fence as planning and delivery writers.
+            await self.require_execution_contract_ready(spec)
 
         if transition_starts_spec_execution(spec.status, data.status):
             await dependency_service.require_ready_for_execution(

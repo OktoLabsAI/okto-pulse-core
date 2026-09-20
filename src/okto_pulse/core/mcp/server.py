@@ -60,6 +60,7 @@ from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_mcp_schema
 from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
+from okto_pulse.core.domain.execution_contract import SpecExecutionContractAdoption
 from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from okto_pulse.core.mcp.filters import (
     BoardEntityType,
@@ -11397,10 +11398,12 @@ async def okto_pulse_update_spec(
     delivery_context_override_reason: str = "",
     assignee_id: str = "",
     labels: list[str] | str = "",
+    adopt_execution_contract: SpecExecutionContractAdoption | None = None,
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
-    Only non-empty fields are updated."""
+    Only non-empty fields are updated. Explicit execution-contract adoption requires
+    Draft, expected Spec version/edition and the existing content edit authority."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11416,6 +11419,7 @@ async def okto_pulse_update_spec(
             acceptance_criteria,
             delivery_context,
             delivery_context_override_reason,
+            adopt_execution_contract,
         )
     ):
         required_permissions.append("spec.entity.edit_fields")
@@ -11438,6 +11442,8 @@ async def okto_pulse_update_spec(
 
     # Build update data with only non-empty fields
     update_kwargs: dict[str, Any] = {}
+    if adopt_execution_contract is not None:
+        update_kwargs["adopt_execution_contract"] = adopt_execution_contract
     if title:
         update_kwargs["title"] = title
     if description:
