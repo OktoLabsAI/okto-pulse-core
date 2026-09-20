@@ -2595,3 +2595,9 @@ Continuar a integração receipt→impacto, reconciliação gravável, observaç
 bufferizadas, batch+relatório atômico e resumo de retomada completo; manter a adoção
 conjunta ARQ/VER, F2B/Sprints/depreciação autorizada, KG, migrações/rollback,
 benchmark e auditoria integral no escopo. Goal em progresso, sem novo bloqueio.
+
+Par publicado por push normal em `feature/v0.4.0`: Core
+`8c265787963a9fab3e0c316e75048ee15650cc93`; Community
+`f2cd851c6af23845d0d9f400f171f0af9126ddac`. Ambos confirmados por `ls-remote`,
+árvores limpas após os commits funcionais. Sem troca de conta, release, tag,
+merge, migração de dados reais ou reinício do runtime do usuário.
