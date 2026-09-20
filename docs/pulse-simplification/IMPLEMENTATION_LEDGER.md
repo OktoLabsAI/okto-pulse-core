@@ -6416,3 +6416,75 @@ Preflight não é conclusão de F2D: disposição/transferência, coordenação 
 corte de schema com F3, fontes/outbox/grafo e a matriz inteira seguem pendentes.
 Metadata global continua 55.859 >50.800. Sem banco real migrado, restart, release,
 tag ou merge. Objetivo integral permanece ativo e incompleto.
+
+### 2026-09-20 — F2A: disposição explícita e vínculos de contexto (em implementação)
+
+Turno anterior classificado como progresso: Core dd7b2b74 / Community d2f8230,
+limpos e publicados. Estado atual conferido antes de continuar.
+
+Contrato planejado: entrada privada do operador de migração, com referência da
+decisão, justificativa e conjunto exato de candidatos/hash. Não é endpoint de
+executor, credencial, nova aprovação nem alegação de revisão autenticada. Cada
+candidato recebe retenção histórica explícita ou vínculo de contexto a Spec/Card
+do mesmo Board; não existe default automático baseado em score/stale/status.
+Arquivo e grants originais devem estar verificados antes de instalar disposições.
+
+Não copiar conteúdo para SpecQA/KB nem alterar finding, waiver, estado ou policy.
+Vínculos só podem apontar às quatro projeções já autorizadas; fontes adicionais
+continuam exigindo tratamento próprio. Justificativas/entrada completa ficam em
+artefato privado pelo StorageProvider, evitando introduzir prosa em DomainEvent
+e repetir o problema de payload/ref Sprint observado na etapa Card. Eventos
+leves guardam hashes/contagens e vínculos opacos; futuros leitores devem autorizar
+o destino e a seção original ANTES de abrir esse artefato. Integração com leitura,
+preflight e recibo Card ainda em implementação; nenhum teste desta etapa rodou.
+
+Implementação/validação desta etapa interna:
+- Core `ports/context_disposition.py`: contrato fechado/frozen para candidato,
+  ação retain_history/bind_context, justificativa e destinos Spec/Card; rejeita
+  aprovação sintética, população duplicada, binding sem destino, destinos
+  repetidos e escopo cross-Board. Referência da decisão é evidência submetida
+  pelo operador, não uma alegação de autenticação/revisão que o sistema produziu.
+- Community `context_disposition_retirement.py`: BEGIN IMMEDIATE; verifica
+  arquivos e grants já instalados, conjunto exato de candidatos, hashes das
+  linhas arquivadas e destinos no Board. Recaptura original antes e depois;
+  snapshots completos de destinos detectam triggers que alterem title/estado/
+  autoria/policy. Não muda fontes, destinos, permissões, findings ou waivers.
+- Artefato privado por Board contém decisões/justificativas e registros de
+  auditoria completos. DomainEvents leves: migration.context_dispositions_committed
+  e historical_context.bound. Não criar Attachment público. A referência e
+  justificativa de teste começam com `sprint:` para provar que prosa privada
+  não entra no inventário de eventos/fatos ativos. Nenhum classificador relaxado.
+- Replay verifica arquivo/journal original e o plano fornecido, não recaptura
+  fonte transformada nem reaplica decisões após edições legítimas. Ausência/
+  corrupção de journal, binding, blob ou recibo falha; não reparar evidência.
+  Falha antes de commit desfaz SQL e remove somente blobs criados na tentativa;
+  commit incerto conserva artefatos para reconciliação.
+- `core-disposition.log`: **28 passed**, 3,68 s. `community-disposition.log`:
+  **17 passed**, 102,33 s. Total selecionado 45; todos os processos encerrados.
+  Inclui não mutação, população incompleta/extra, destino inexistente/cross-Board,
+  replay/drift, falhas SQL/target/source/segundo blob, writer concorrente e
+  impedimento de expor recibo de governança pelas quatro seções existentes.
+- Par inicial provado antes de testar: 807/327 .py, 872/411 payloads idênticos
+  fonte/wheel/install. Ruff aprovado. Closure intermediário sem findings,
+  oito budgets 0/0; READMEs regenerados oficialmente para 7.524/1.162 imports e
+  25 deps. Par final está em instalação/prova/auditoria de documentação.
+- Wheels finais SHA256:
+  Core 48e34e5191f427a05e2c1b7e6e759fd72a5b508e012da41991d6e7a9893e6b5e;
+  Community 746742e91bc4f4079883f822eb1bb421210cdbfc5e696c2a04e6053a5066a13f.
+
+Limite deliberado desta publicação: não ligar disposition receipt ao Card
+transform antes de existir leitura autorizada dos vínculos no destino. O
+preflight continua exigindo disposição; registrar journal sozinho NÃO declara
+concluída a transferência para o usuário. Nada é exposto em REST/MCP/frontend
+nesta etapa; não há UI modificada. Próxima ação é o leitor que primeiro autoriza
+Spec/Card, depois a origem/seção original, verifica artifact+binding e só então
+projeta o conteúdo com autoria/proveniência. Integrar esse leitor e seus testes
+de frontend, e então consumir recibo no preflight/Card sob o fence existente.
+
+Fechamento desta etapa interna: par final reinstalado/provado em
+`provenance-context-disposition-final.json` (807/327 .py; 872/411 payloads).
+O processo verificador importou site-packages; pytest ativa checkouts cujos bytes
+foram provados idênticos antes dos testes. Closure final
+`closure-disposition-final.json`: ok=true, findings e documentation_findings
+vazios, oito budgets 0/0. Community commit 7dbedfc; publicação do par a seguir.
+Objetivo integral permanece ativo; leitor e integração Card ainda pendentes.
