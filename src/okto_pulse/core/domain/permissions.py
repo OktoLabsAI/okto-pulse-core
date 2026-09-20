@@ -2560,6 +2560,12 @@ def _canonical_permission_shape_is_valid(
 ) -> bool:
     if not isinstance(document, Mapping):
         return False
+    # Retired fields are not executable permissions, but malformed persisted
+    # values must not become valid merely because the live registry shrank.
+    if canonical is PERMISSION_REGISTRY and not _canonical_permission_shape_is_valid(
+        document, _RETIRED_KG_PERMISSION_SHAPE,
+    ):
+        return False
     for key, canonical_value in canonical.items():
         if key not in document:
             continue
@@ -2854,6 +2860,12 @@ def normalize_agent_permission_overrides(
     if not materialized:
         return working
 
+    # Retired operations are provenance, never active authority. Recognize only
+    # the complete all-True v0.3.4 generation; partial generations,
+    # False values and unknown extensions must still require owner review.
+    if not _remove_retired_kg_full_control_fingerprint(working):
+        return working
+
     # The retired ``any_to_cancelled`` leaf dominated every source-specific
     # cancellation check.  Some historical presets therefore carried a False
     # exact leaf that was semantically irrelevant beside a True wildcard.  Do
@@ -2974,6 +2986,43 @@ def normalize_agent_permission_overrides(
             ):
                 _set_nested(explicit_delta, flag_path, True)
     return explicit_delta
+
+
+_RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
+    "tick": {"run": True},
+    "global_outbox": {"read": True, "reprocess": True, "verify": True},
+    "global_recovery": {"preflight": True, "confirm": True, "read": True, "cancel": True, "resume": True, "run": True},
+    "quarantine": {"restore": True},
+    "rebuild": {"preflight": True, "confirm": True, "run": True},
+}}}
+
+
+def _remove_retired_kg_full_control_fingerprint(working: PermissionFlags) -> bool:
+    """Recognize the complete original KG-OPERATIONS/v1 snapshot.
+
+    Intermediate F4 shapes are ambiguous without stored source provenance and
+    must not turn a partial v0.3.4 document into Full Control. Captured authority
+    still uses the frozen evaluator and classifies ambiguous documents against
+    that original generation before any operational permission cleanup.
+    """
+    tick = frozenset({"kg.operations.tick.run"})
+    outbox = tick | {"kg.operations.global_outbox.read", "kg.operations.global_outbox.reprocess", "kg.operations.global_outbox.verify"}
+    recovery = outbox | {"kg.operations.global_recovery.preflight", "kg.operations.global_recovery.confirm",
+        "kg.operations.global_recovery.read", "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume",
+        "kg.operations.global_recovery.run", "kg.operations.quarantine.restore"}
+    rebuild = recovery | {"kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run"}
+    present = frozenset(path for path in rebuild if _permission_value_presence(working, path)[0])
+    has_retired_subtree = any(_permission_value_presence(working, path.rsplit(".", 1)[0])[0] for path in rebuild)
+    if not has_retired_subtree:
+        return True
+    if present != rebuild:
+        return False
+    if not all(_get_nested(working, path) is True
+               for path in (*present, *KG_OPERATIONS_PERMISSION_INTRODUCTION_V1.leaves)):
+        return False
+    for path in present:
+        _delete_permission_value(working, path)
+    return True
 
 
 # ---------------------------------------------------------------------------

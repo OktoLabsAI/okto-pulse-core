@@ -5730,3 +5730,119 @@ commit as portas/use case de descoberta, testes e este ledger. Publicação norm
 na feature/v0.4.0 dos dois repos, sem alteração de dados/permissões reais,
 restart do Pulse, tag, release ou merge. Continuidade conforme pendências acima;
 o gate global de metadata e o restante do pacote seguem abertos.
+
+### F2A/F3 — congelamento de autoridade de origem e regressão F4 (em implementação)
+
+Turno anterior: progresso concreto publicado e verificado (Core e3bbce9f /
+Community ab61d21). Investigação seguinte encontrou dependência que impede
+retirar Sprint com segurança: capturador/instalador consultavam a policy viva.
+Além disso, reprodução contra par instalado byte-identical confirmou que um
+snapshot Full Control anterior à remoção de kg.operations.tick.run passa a
+owner_review_required/unrecognized_direct_permissions. O normalizador tratava a
+folha removida como extensão desconhecida. Não é autorização para relaxar review.
+
+Prova de origem: permissions.py no commit-base local 20707250 e no pai de
+26e75111 têm o mesmo blob Git 74101618064a1e50a1e9e11c012f7ff6f1f8f7a9;
+SHA256 textual f43dbc442765160acefc45093994eb48460c0611100a6f2c04552db13236463b.
+Foi extraída a dependência pura necessária do avaliador original, com dados e
+funções versionados em historical_permission_policy_v034.py. A cópia histórica
+é deliberadamente imutável e não é registry/preset vivo: nenhuma importação de
+mecanismo, registry atual ou lifecycle. Somente lookups originais de transições/
+status são substituídos pelos valores literais do mesmo baseline. A porta
+pública historical_archive_authority retorna apenas quatro decisões históricas,
+sem conferir acesso a Board nem operações ativas. Community continua dono do
+carregamento SQL/identidade/ACL e da transação; não duplica merge/policy.
+
+A captura/primeira instalação passa a avaliar fatos originais nessa versão,
+inclusive snapshots ambíguos que parecem Full Control no registry menor atual.
+Eles continuam negados se eram parciais no registry original. Grants/arquivos já
+instalados não são reescritos ou ampliados; replay divergente continua fechado.
+Não executada migração real. Se houver arquivo antigo capturado pela avaliação
+incorreta, sua divergência exige reconciliação explícita, não recaptura silenciosa.
+
+No normalizador vivo, reconhecer somente as quatro gerações exatas all-True
+publicadas nas retiradas de F4. False, valores não booleanos, geração parcial e
+extensões desconhecidas continuam reconhecíveis como review/negação. Folhas
+retiradas não voltam a ALL_FLAGS, manifest público, MCP, preset seed ou rota.
+
+316 casos golden foram calculados pelo módulo original do commit-base (256
+combinações de seções/teto Board + 60 documentos diretos/legacy). Fixture inclui
+proveniência e hash do avaliador congelado. Testes adicionados de independência
+do registry/lifecycle atuais, ancestria inválida, fingerprints de retirada e
+SQLite real: captura, instalação, leitura e replay após revogação. Build pareado,
+proveniência e execução ainda pendentes abaixo. Integração MCP/cutover continuam
+no escopo; esta dependência de autoridade deve ser fechada primeiro.
+
+Rodada inicial: provenance-f2a-frozen-authority.json comprovou **801/319 .py e
+866/403 payloads** antes dos testes. Os 316 casos golden passaram; Core total
+550 passed / 3 failed. Falhas investigadas: hash da fixture calculado com CRLF
+versus comparação canônica LF; normalização de folha retirada null/objeto vazio
+podia desaparecer no delta. Corrigido somente o hash normalizado da fixture (o
+avaliador congelado não mudou) e mantido documento não reconhecido íntegro no
+normalizador vivo. A validação de shape também preserva os tipos antigos das
+folhas retiradas, inclusive com preset/Board override, sem reativá-las. Novos
+casos cobrem isso. Community inicial: **65 passed**, 124,10 s. Frontend:
+**31 passed / 2 arquivos**, 3,00 s (estado de permissão e UI de arquivo).
+
+Validação adicional de provenance do gerador: sdlc_registry.py é o mesmo blob
+na base e HEAD (**004739b93ec92ffa4b98dfb4bcfd4de291711fe7**); idem
+code_traceability_kg.py (**4680e1e97ced6299c7306bb6f93ba91ea2e664a2**).
+Portanto os valores literais congelados vieram efetivamente da mesma policy
+baseline, sem incorporar lifecycle posterior. SHA256 LF do avaliador congelado:
+**3856be16963e571e5282ca2e6cb6c150c9458b48a17cdec9965b1a5818f23506**.
+
+closure-f2a-frozen-authority.json: findings vazios, oito budgets 0/0, apenas
+matrizes README desatualizadas. Regeneradas pelo renderer oficial para
+**7.504 imports Core / 1.146 Community→Core / 25 dependências**. Par final
+reconstruído em wheels-f2a-frozen-authority-final e instalação provada por
+provenance-f2a-frozen-authority-final.json antes da repetição: **801/319 .py,
+866/403 payloads**, todos byte a byte, origins em site-packages. Core final:
+**559 passed**, 23,59 s. Rodada Community e closure final ainda em andamento.
+Nenhum arquivo frontend mudou neste incremento; os 78 assets publicados no
+incremento anterior permanecem no payload byte-identical.
+
+Revisão final de autoridade restringiu o reconhecedor vivo: **somente o snapshot
+completo original v0.3.4 com as 14 folhas retiradas explicitamente True**, junto
+a toda a geração viva, pode perder o fingerprint retirado e normalizar para
+Full Control. A proposta intermediária de reconhecer quatro etapas de F4 foi
+rejeitada antes de commit/publicação: essas formas também representam documentos
+parciais da versão original e não possuem provenance persistida suficiente para
+distingui-los. Testes convertidos para exigir review nessas formas ambíguas.
+Isto substitui a descrição anterior das quatro gerações; não há relaxamento.
+A fonte congelada continua negando documentos parciais da base, inclusive um
+snapshot menor idêntico ao registry atual. A migração F3 ainda precisa preservar
+essa classificação/proveniência ao limpar os flags operacionais persistidos,
+antes de o gateway vivo operar com o registro reduzido; não considerar a simples
+remoção de folhas como migração de policy concluída.
+
+Rodada anterior final, antes desse estreitamento adicional: Core 559 passed,
+Community 65 passed em 121,53 s; closure ok=true com oito budgets 0/0. Nova prova
+pareada e repetição dos testes de autoridade pendentes após a revisão acima.
+
+Validação de publicação após o estreitamento:
+- provenance-f2a-frozen-authority-publish.json: **801/319 .py, 866/403 payloads**
+  byte-identical fonte/wheel/install; imports em site-packages.
+- core-f2a-frozen-authority-publish.log: **559 passed**, 24,40 s.
+- community-f2a-frozen-authority-publish.log: **65 passed**, 123,34 s.
+- closure-f2a-frozen-authority-publish.json: **ok=true**, findings e
+  documentation_findings vazios, oito budgets 0/0, **7.504/1.146 imports e
+  25 dependências**. Ruff e staged diff --check aprovados nos dois repos.
+- SHA256 final dos wheels (substitui pares intermediários):
+  Core 02621903a34d579a9028c727de9ebda6a0421536dd8a548eb53e4a0eaa1a35c0;
+  Community 9f697695a9460e10808a5d9db8c2f08367d9d296fd6b87cddeadcc6faad5b8e5.
+  Frontend manteve o payload anterior provado; testes de regressão frontend
+  registrados acima. Não houve mudanças em tools/catalog/ALL_FLAGS.
+
+Community commit **8a6432239420946dd3f63a260270379973b4c636**; Core publica
+neste commit a policy histórica, facade pública, normalização restrita e provas
+golden do baseline. Todos os processos de validação encerrados. Push normal
+pareado em feature/v0.4.0, sem migração real, restart, release, tag ou merge.
+
+Retomada obrigatória: antes do cutover F3, persistir/preservar a classificação de
+review e proveniência dos documentos antigos ao retirar flags operacionais. O
+avaliador congelado e a captura agora independem de registry/lifecycle vivos;
+a limpeza/migração de dados ainda não está implementada. Seguem MCP/capabilities
+por origem, administração histórica sem ampliação de autoridade, imutabilidade
+DB dos grants, seções próprias de Card/Spec, transformação e cutover completos.
+Não tratar esta correção como conclusão de F2/F3. Metadata ainda **55.859 >
+50.800**; o escopo completo DEI/ARQ/VER/KG permanece no objetivo ativo.
