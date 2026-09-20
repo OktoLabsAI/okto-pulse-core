@@ -350,6 +350,34 @@ async def test_move_card_returns_committed_subject_version(_seed) -> None:
 # --- atomic activity log ----------------------------------------------------
 
 
+@pytest.mark.asyncio
+async def test_move_tool_forwards_typed_delivery_selection_to_report_writer(_seed):
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.domain.delivery_evidence import CardDeliveryScope
+    from okto_pulse.core.domain.delivery_selection import seal_delivery_selection
+    from okto_pulse.core.services import delivery_evidence as delivery_service
+    spec_id, _ = _seed
+    card_id = (await _create_card(spec_id))["card"]["id"]
+    async with get_session_factory()() as session:
+        card = await session.get(Card, card_id)
+        card.status = CardStatus.IN_PROGRESS
+        (await session.get(Spec, spec_id)).status = SpecStatus.IN_PROGRESS
+        await session.commit()
+        version = card.policy_version
+    manifest = seal_delivery_selection(scope=CardDeliveryScope(BOARD_A, card_id, spec_id, 1),
+        card_version=version, revision=0, records=[], obligations=(), impact=None)
+    seal = AsyncMock(return_value=manifest)
+    with patch.object(delivery_service, "card_delivery_store", return_value=SimpleNamespace(seal_selection=seal)):
+        payload = await _call("okto_pulse_move_card", board_id=BOARD_A, card_id=card_id,
+            status="validation", conclusion="Report", completeness=100,
+            completeness_justification="Done", drift=0, drift_justification="No drift",
+            delivery_selection=dict(expected_card_version=version, expected_spec_edition=1,
+                expected_delivery_revision=0, record_ids=[]))
+    assert payload["success"] is True
+    assert seal.await_args.args[1].record_ids == []
+    assert seal.await_args.kwargs["expected_status"] == "in_progress"
+
+
 def _assert_mcp_actor(row: ActivityLog) -> None:
     assert row.actor_type == "agent"
     assert row.actor_id == USER_ID

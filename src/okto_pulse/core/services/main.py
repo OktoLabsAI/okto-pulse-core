@@ -7213,6 +7213,7 @@ class CardService:
 
         report_target = None
         pending_conclusion_entry: dict[str, Any] | None = None
+        pending_delivery_manifest: dict[str, Any] | None = None
         pending_missing_impact_advisory = False
         if data.status == CardStatus.DONE:
             report_target = "Done"
@@ -7228,6 +7229,9 @@ class CardService:
             and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
         ):
             report_target = "Validation"
+
+        if data.delivery_selection is not None and not report_target:
+            raise ValueError("delivery_selection_requires_execution_report")
 
         # Require an execution report before handoff to Validation/Done.
         if report_target:
@@ -7333,6 +7337,17 @@ class CardService:
                 conclusion_entry["impact_evidence"] = impact_block.model_dump(
                     mode="json", exclude_none=True
                 )
+            if data.delivery_selection is not None:
+                if not card.spec_id:
+                    raise ValueError("delivery_selection_spec_required")
+                from okto_pulse.core.domain.delivery_evidence import CardDeliveryScope
+                from okto_pulse.core.services.delivery_evidence import card_delivery_store
+                pending_delivery_manifest = await card_delivery_store(self.db).seal_selection(
+                    CardDeliveryScope(card.board_id, card.id, card.spec_id, data.delivery_selection.expected_spec_edition),
+                    data.delivery_selection, expected_status=old_status.value,
+                    impact=conclusion_entry.get("impact_evidence"),
+                )
+                conclusion_entry["delivery_manifest"] = pending_delivery_manifest
             pending_conclusion_entry = conclusion_entry
 
         # Block forward moves if dependencies not met

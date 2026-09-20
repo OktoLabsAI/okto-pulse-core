@@ -233,6 +233,29 @@ card that is already Rejected. It cannot be used to enter Rejected manually;
 the only lifecycle writer for that state is an admitted Task Validation/
 completion decision.
 
+### `delivery_selection` (optional report selection)
+
+On a Validation/Done move that requires an execution report, you may supply
+`{"expected_card_version":7,"expected_spec_edition":1,"expected_delivery_revision":4,"record_ids":["saved-record-id"]}`.
+Read the current per-card revision and bounded `selection` list from Delivery
+Evidence. At most 200 unique persisted record IDs; empty means an explicitly
+empty selection, not all records. Foreign, missing or revoked records fail;
+stale Card/Spec/ledger revisions require refresh. A truncated list is not a
+complete population and must not be selected as one silently.
+
+The server stores a `card-delivery-selection/v1` manifest beside the conclusion,
+with hashes of the actual immutable records, obligation scope and presented
+impact. Do not send client hashes or validity flags. A frozen Card's delivery
+read uses the selected records while still applying all relevant revocations,
+material progress, source/Target heads and latest authenticated test results.
+Selection cannot hide a known failure or authorize completion. Authorized rework
+reads the current ledger again and preserves the old report. Legacy reports
+without a manifest retain compatibility until the integrated adoption rollout.
+
+The existing conclusion, completeness/drift, review authority and impact policy
+remain required. This manifest currently seals the impact block you present;
+net-impact composition/reconciliation is not yet a replacement for that block.
+
 ### `impact_evidence` (optional, schema_version=1)
 
 Typed declared-impact block attached to the execution report: `files`

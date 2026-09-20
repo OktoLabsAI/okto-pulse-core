@@ -2278,3 +2278,80 @@ Par publicado por push normal em `feature/v0.4.0`: Core
 `48eaa9df210d6dda7c9cfa746851180bb6860dc4`. `ls-remote` confirmou os dois
 HEADs e as árvores limpas após os commits funcionais. A conta ativa permitiu os
 pushes; não foi necessário executar `gh auth switch`.
+
+### Em implementação — seleção selada no relatório existente
+
+Turno anterior: progresso. Base limpa Core `9cbde122` / Community `48eaa9df`.
+DEI §9.1 requer selar os IDs/revisões e o impacto apresentado no relatório,
+preservando a autoridade de transição. O request recebe uma seleção fechada com
+CAS Card/Spec/ledger; o servidor calcula hashes do payload persistido (o digest
+de request da linha não identifica necessariamente seus IDs canônicos resolvidos).
+O manifest fica em `cards.conclusions`, não em outra entidade de handoff.
+No estado congelado, a leitura usa os IDs selecionados, mas mantém revogações,
+heads de Target/teste e checkpoints materiais fora desse filtro: omissão não
+apaga defeito nem restaura prova. Rework autorizado volta a ler o ledger corrente;
+o relatório anterior permanece histórico. Relatórios legados sem manifest mantêm
+compatibilidade até a adoção/cutover integrado. Este incremento sela também o hash
+do impacto apresentado; a composição líquida/reconciliação para eliminar o corpo
+manual ainda precisa ser integrada, sem fingir que uma união de arrays basta.
+
+### Checkpoint — seleção selada implementada e validada (2026-09-19/20)
+
+O relatório existente recebe `delivery_selection` tipada por REST/MCP. A porta
+pública sela IDs, hashes, edição, versão do Card e revisão do ledger sob o fence
+existente. O manifest é persistido no mesmo `cards.conclusions`; não há entidade
+paralela, novo privilégio, implementação concreta no Core ou alteração de policy.
+Relatórios em validation/rejected/done restringem a prova aos registros escolhidos.
+Manifest inválido torna a projeção incompleta, inclusive no rollup da Spec;
+revogações, heads e progresso material continuam sendo avaliados integralmente.
+Seleção vazia é explícita e não concede completude. Rework preserva o relatório
+histórico e volta a consultar o ledger atual.
+
+Frontend: seleção optativa no Execution Report, com leitura das versões reais,
+limite visível de 200 registros, refresh e bloqueio do submit durante erro/carregamento.
+População truncada não é selecionada automaticamente. O manifest aparece na leitura
+do relatório. A compatibilidade legada permanece até a adoção conjunta ARQ/VER.
+
+Validação do payload final, antes de commits/pushes:
+
+- `provenance-selection.json`: comparação integral de conjuntos e bytes de **796
+  .py Core / 312 Community**, e **861 / 396 membros** source→wheel→site-packages.
+  Wheels SHA256 Core
+  `26d83151cd8e4bb58ca143f77d8a49bfef61fb59530fa2176426c3f6c43b224e`;
+  Community `d1336d171a5d0d924e8c7938394be96abbfdde1d0ee6914d9f467dd7c1c7d21b`.
+  Processos novos, PYTHONPATH pareado e bancos descartáveis. O runtime do usuário
+  não foi reiniciado ou modificado. Nenhuma alteração de runtime após essa prova.
+- **120 casos Core aprovados**, agregando 108 casos da rodada inicial e 12 de
+  `core-selection-impact-final.log`. A rodada inicial teve 118 pass/1 fail:
+  a fixture de impacto não implementava a porta CardDelivery. O diagnóstico exato
+  foi `card_delivery_evidence_adapter_unavailable`. O teste agora fornece fatos de
+  domínio explícitos pela porta pública e verifica os dois ramos do gate real:
+  Done com prova, Rejected sem prova. Não se relaxou o gate nem se declarou esse
+  teste de Core como validação de armazenamento/recibos reais. Permanecem três
+  warnings preexistentes de marca asyncio em testes síncronos.
+- **112 casos Community aprovados**: sete casos de seleção, 17 casos em
+  `community-selection-real.log` e 88 em `community-selection-regression.log`.
+  A integração real passou por origem/recibo/batch, CardService, adapter e commit
+  com `CommunitySemanticSession`; uma sessão nova releu o manifest e aprovou o
+  predicado de entrega. As primeiras tentativas identificaram configuração
+  incompleta da fixture: persistence/realm/fact reader/critical context/session.
+  Corrigida com adapters reais, sem simular o writer ou dispensar seus gates.
+- **98 casos frontend aprovados**, combinando os 49 casos das outras quatro
+  suítes com os 49 do CardModal na repetição. O único fail inicial foi histórico
+  acumulado do mock entre os dois parâmetros; `mockReset` isolou as chamadas.
+  Build/typecheck e verificação frontend_dist aprovados: **78 arquivos**, tree
+  SHA256 `cdf918beb0501ca3bce511b8307c8ae6c17860b7c141ce0ed4eebd7af8e0c543`.
+  ESLint sem erros; 17 warnings históricos nos arquivos existentes.
+- `closure-selection-final.json`: **ok=true**, zero findings de código e docs,
+  oito budgets **0/0**, **7.552 imports Core / 1.243 Community→Core / 25 dependências**.
+  READMEs atualizados pelo renderer oficial; catálogo/manifests pelos generators
+  oficiais. Uma tentativa intermediária usou nome incorreto do wheel Community;
+  corrigido para o caminho comprovado em provenance (`okto_pulse-0.3.4`).
+  Ruff dos arquivos Python alterados/testes e diff-check aprovados.
+
+**Retomada:** falta composição líquida/reconciliação do impacto e seu reaproveitamento
+canônico, incluindo aplicabilidade de observações buffered após checkpoint material;
+falta composição atômica do último batch com o relatório. Esta seleção não fecha
+DEI §9/I4. Adoção/cutover ARQ/VER e inventário completo, F2B com override por Card
+autorizado e aviso de depreciação, migrações/rollback e validação integral do pacote
+continuam pendentes. A iniciativa segue em **progresso**, sem novo bloqueio.

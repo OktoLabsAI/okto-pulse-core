@@ -104,6 +104,7 @@ from okto_pulse.core.ports.mcp_auth import (
     principal_from_auth_session,
     require_authenticator,
 )
+from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
@@ -414,6 +415,7 @@ def _build_mcp_catalog() -> CoreMcpCatalog:
 # The core input family is already closed (extra="forbid"), so the published
 # tool schema carries the full nested contract instead of a loose dict.
 ImpactEvidenceParam = ImpactEvidence | None
+DeliverySelectionParam = DeliverySelectionInput | None
 
 mcp = runtime_state("mcp.catalog", _build_mcp_catalog)
 
@@ -4859,6 +4861,10 @@ async def okto_pulse_move_card(
             )
         ),
     ] = None,
+    delivery_selection: Annotated[
+        DeliverySelectionParam,
+        Field(description="Optional exact Card ledger selection sealed into this execution report; requires Card/Spec/delivery revisions and persisted record IDs. Does not approve proof or waive impact policy."),
+    ] = None,
 ) -> str:
     """Move a card to a different column/position on the board.
 
@@ -4926,6 +4932,7 @@ async def okto_pulse_move_card(
             drift_justification=drift_justification or None,
             cancellation_reason=cancellation_reason or None,
             impact_evidence=impact_evidence,
+            delivery_selection=delivery_selection,
         )
 
         try:

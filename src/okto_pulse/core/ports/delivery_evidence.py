@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
 
 
@@ -72,6 +73,16 @@ class CardDeliveryEvidenceStore(Protocol):
     untouched; only the addressing scope and the CAS fence (card version)
     change. Waivers stay on the spec rollup surface and are human-only.
     """
+
+    async def seal_selection(self, scope: CardDeliveryScope, selection: DeliverySelectionInput,
+                             *, expected_status: str, impact: dict | None) -> dict:
+        """Fence Card/Spec/delivery revisions and return a server-owned manifest.
+
+        Called only by the already authorized report writer. Do not commit, add
+        a journal, move the Card or grant proof credit. Revoked/foreign/missing
+        selected records are errors; record hashes cover actual immutable payloads.
+        """
+        ...
 
     async def load_card_snapshot(self, scope: CardDeliveryScope) -> DeliveryEvidenceSnapshot:
         """Load the per-card projection under the caller's authorized unit of work.

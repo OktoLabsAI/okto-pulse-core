@@ -24,6 +24,7 @@ from okto_pulse.core.discovery_params_schema import (
     normalize_discovery_params_schema,
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
+from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
     REJECTION_ID_MAX_LENGTH,
@@ -3354,6 +3355,16 @@ class ConclusionEntry(ConclusionEntrySummary):
     """
 
     impact_evidence: ImpactEvidence | None = None
+    delivery_manifest: DeliverySelectionManifest | None = None
+
+    @field_validator("delivery_manifest", mode="before")
+    @classmethod
+    def tolerate_stored_delivery_manifest(cls, value):
+        try:
+            return DeliverySelectionManifest.model_validate(value) if value is not None else None
+        except (TypeError, ValueError):
+            # Domain admission reads the raw report and fails closed on corruption.
+            return None
 
     @model_validator(mode="before")
     @classmethod
@@ -3549,6 +3560,7 @@ class CardMove(BaseModel):
                 raise ValueError(f"card_move_empty_anchor: {name} must be non-blank")
         return self
 
+    delivery_selection: DeliverySelectionInput | None = None
     conclusion: str | None = Field(
         None,
         description="Resumo obrigatorio ao mover para 'validation' ou 'done': o que foi feito, arquivos, decisoes e testes.",

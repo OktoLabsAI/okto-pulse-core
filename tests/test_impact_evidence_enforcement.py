@@ -258,7 +258,8 @@ def test_resolver_contract():
     assert IMPACT_EVIDENCE_MODES == {"off", "advisory", "require"}
 
 
-async def test_require_exemptions_inherited_from_report_target(db_factory):
+@pytest.mark.parametrize("delivery_ready", [False, True])
+async def test_require_exemptions_inherited_from_report_target(db_factory, monkeypatch, delivery_ready):
     """TS-7/AC-7: under 'require', the two exempt paths never demand the
     block — a TEST card moving to validation (no report gate at all) and
     submit_task_validation approving a card straight to DONE."""
@@ -266,6 +267,13 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
     from test_card_lifecycle import _mark_all_resources_na
 
     from okto_pulse.core.domain.enums import CardType
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.domain.delivery_evidence import (
+        DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact,
+    )
+    from okto_pulse.core.domain.delivery_inventory import card_delivery_inventory
+    from okto_pulse.core.services import delivery_evidence as delivery_service
 
     await _seed_board(db_factory)
     async with db_factory() as db:
@@ -312,6 +320,27 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
             ),
         )
         exec_card.status = CardStatus.IN_PROGRESS
+        # This Core fixture has no delivery ledger. Supply explicit domain facts
+        # through its public seam, keeping the real completion gate active in
+        # both cases. Real receipt/storage admission is covered in Community.
+        scope = DeliveryScope(BOARD_ID, specs[0].id, specs[0].edition)
+        obligations = card_delivery_inventory(specs[0], exec_card)
+        proof = ImplementationDeliveryFact(
+            id="impact-test-proof", scope=scope, card_id=exec_card.id,
+            card_type=CardType.NORMAL, card_status=CardStatus.IN_PROGRESS,
+            bindings=tuple(row.binding for row in obligations),
+            source_ref="impact-test-source", result_revision="a" * 40,
+            relative_path="src/x.py", explanation="Test adapter accepted proof",
+            receipt_id="impact-test-receipt", current_accepted_execution=True,
+            actor_id=USER_ID,
+        )
+        snapshot = DeliveryEvidenceSnapshot(
+            scope=scope, obligations=obligations,
+            implementations=(proof,) if delivery_ready else (),
+            complete=True,
+        )
+        store = SimpleNamespace(load_card_snapshot=AsyncMock(return_value=snapshot))
+        monkeypatch.setattr(delivery_service, "card_delivery_store", lambda _: store)
         await db.commit()
         test_card_id, exec_card_id = test_card.id, exec_card.id
 
@@ -357,9 +386,14 @@ async def test_require_exemptions_inherited_from_report_target(db_factory):
         persisted = (
             await db.execute(select(Card).where(Card.id == exec_card_id))
         ).scalar_one()
-        # submit_task_validation set DONE directly WITHOUT demanding a new
-        # impact block (the validator conclusion path is exempt).
-        assert persisted.status == CardStatus.DONE
+        # Exemption from a new impact block does not waive delivery readiness.
+        failures = persisted.validations[-1]["completion_gate_failures"]
+        if delivery_ready:
+            assert persisted.status == CardStatus.DONE, failures
+            assert failures == []
+        else:
+            assert persisted.status == CardStatus.REJECTED
+            assert [row["code"] for row in failures] == ["delivery_evidence_incomplete"]
 
 
 def test_tolerance_is_read_only_write_paths_stay_strict():
