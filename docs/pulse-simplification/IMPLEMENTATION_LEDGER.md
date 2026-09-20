@@ -7818,3 +7818,70 @@ apenas da decisão F3 registrada; demais frentes independentes continuam. Sem
 alteração de frontend nesta etapa. Objetivo integral ativo e incompleto.
 
 Commit Community e3ab8d12e338b45ed7b9ae526fcfccc282a30c00; par preparado para push normal em feature/v0.4.0 e verificação de igualdade remota.
+
+### 2026-09-20 — F3: contexto Spec e remoção dos casos MCP exclusivos de Sprint
+
+O checkpoint anterior foi publicado e verificado: Core 15965c308001956a0100b7734cf7c2c4b9da0d1a
+/ Community e3ab8d12e338b45ed7b9ae526fcfccc282a30c00; HEAD=ls-remote e árvores limpas.
+
+Investigação B (§10.4): get_spec_context buscava Sprints pelo serviço, devolvia
+seus dados e fazia commit dentro de try/except amplo. SpecService.get_spec usa
+somente leitura com includes de cards/knowledge/QA/architecture; o UoW Community
+faz rollback de transação ainda ativa na saída. Retirado o bloco Sprint inteiro,
+o campo sprints e sprint_id dos Cards dessa resposta, sem mudar a leitura de
+requisitos/recursos, readiness ou ponte para arquivo histórico. Os quatro perfis
+(summary/detail/full/legacy) não reintroduzem o campo eliminado.
+
+Também removido mcp_sprint_crud.py e seus 24 exports (8 trios command/result/use
+case). Busca nos DOIS src comprovou ausência de consumidores de produto depois
+da retirada das tools dedicadas. Removidos apenas casos de teste exclusivos
+desses use cases. Permanecem as negativas de Board dos use cases REST ativos e
+as negativas de autoridade das outras entidades. Teste novo confirma ausência
+do módulo instalado/exportado; isso não equivale à retirada de sprints_crud.py,
+SprintService ou registry/permissões operacionais, ainda pendentes para F3.
+
+Verificação em PULSE_REFACTOR/.validation-v040:
+- Primeira seleção sprint-context-behavior.log: 136 passed e 4 erros no import
+  do novo teste; corrigido para services.main. Reexecução específica: 4 passed.
+  Foi erro de harness, sem alteração de semântica ou relaxamento de assert.
+- Após remover o módulo morto, reconstruídos/reinstalados os DOIS wheels.
+  provenance-sprint-context-r2.json: 812/337 .py e 875/421 payloads source/wheel/
+  install idênticos. Reinstalação encerrou antes de iniciar a seleção final.
+- sprint-context-final-behavior.log: 205 passed, incluindo 4 perfis com Sprint e
+  Card persistidos, nenhuma consulta Sprint/commit e registros finais intactos;
+  permissões, contexto, readiness e isolamento dos use cases remanescentes.
+- sprint-context-final-contracts.log: 164 passed e a única falha conhecida:
+  tools/list 54.330 > 50.800 tokens; limite mantido. Catálogo gerado oficial.
+- sprint-context-final-transport.log: 16 passed. Total final: 385 testes distintos
+  aprovados, uma falha de footprint. Ruff e git diff --check aprovados.
+
+Retomada independente: a rastreabilidade viva ainda agrega Sprint no adapter
+Community sqlalchemy_traceability_read_model.py (_spec_summary, resolve_lineage_root,
+build_lineage_graph e overlays); LineageGraphModal.tsx renderiza a etapa e os
+links. Essa frente exige alteração coordenada do report/REST/UI e testes de
+frontend, evitando quebrar os Cards/bugs de origem durante a retirada. Há cópia
+legada tests/sqlalchemy_test_traceability_read_model.py no Core: confirmar o
+provider realmente executado antes de usar seus testes como evidência. O resolver
+de validação ainda consulta Sprint; integrá-lo com a compatibilidade migrada
+por Card na retirada operacional. Decisão F3 sobre normal em Spec Done segue
+pendente; não houve mudança dos gates. Nenhum frontend alterado nesta etapa.
+Objetivo integral permanece ativo, sem declaração de F3/F4/F5 ou rollout completos.
+
+Confirmação da investigação para a próxima frente: tests/conftest.py:217–229
+registra explicitamente sqlalchemy_test_traceability_read_model como provider
+de teste no Core. Usar testes Community com adapter real para a retirada de
+Sprint em lineage/report; os testes Core existentes isoladamente não bastam.
+
+Closure r2: findings=[] e oito budgets 0/0; somente as duas matrizes README
+estavam divergentes (7.501 imports Core após remover 11 imports). Regeneradas
+pelo renderer oficial. Após isso, reconstrução/reinstalação final dos DOIS
+wheels e provenance-sprint-context-final.json: 812/337 .py, 875/421 payloads;
+hashes agregados de ambos iguais aos da revisão r2 testada. Wheels finais:
+Core bf606db7ab190ab4a7fe2c987f99aff25b9d82ca2da6059c8717e91104cd8f74;
+Community 6820dcd6b9c73af5394488579494d58367fc7f43e94eb6d5ab42009a63485f7e.
+Nenhuma mudança de produto/reinstalação ocorreu com testes ativos.
+
+Fechamento: closure-sprint-context-final.json ok=true, findings=[] e
+documentation_findings=[], oito budgets 0/0. Todos os processos desta etapa
+encerrados; Community 071b0ebda57ba4f5379cdb90cf1d4a25d0e6ca6f. Commit e push normal
+em feature/v0.4.0, com verificação HEAD/ls-remote. Sem dados/runtime reais tocados.

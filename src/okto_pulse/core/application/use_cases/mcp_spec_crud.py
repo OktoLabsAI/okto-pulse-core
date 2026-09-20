@@ -462,7 +462,7 @@ class McpGetSpecContextUseCase:
     """Board-scoped spec fetch for the consolidated-context tool (read, no commit).
     A missing OR cross-board spec is ``EntityNotFoundError`` → the adapter's
     ``{"error": "Spec not found"}`` (BEFORE the aggregation). Transport-free: the
-    heavy presentation aggregation (5+ services, the sprint swallow, projection /
+    heavy presentation aggregation (5+ services, projection /
     gate_readiness, ``_mcp_architecture_for_parent`` / ``_serialize_knowledge_base``)
     stays in the inbound presentation adapter and outside the use case."""
 

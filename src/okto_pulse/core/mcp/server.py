@@ -10978,7 +10978,7 @@ async def okto_pulse_get_spec_context(
     ] = "summary",
 ) -> str:
     """Consolidated spec context: requirements, scenarios, rules, contracts,
-    IR/OR, decisions, resources, Q&A, evaluations, cards and sprints. Use
+    IR/OR, decisions, resources, Q&A, evaluations and cards. Use
     `summary` for exploration and `profile="full"` before evaluating, moving,
     or deriving cards. Includes read-only `gate_readiness` for spec transition
     gates; cognitive readiness is per-card — call okto_pulse_get_task_context
@@ -11020,7 +11020,7 @@ async def okto_pulse_get_spec_context(
     # MCP-FU6 strangler (spec VARIANT): board-scope + get_spec move into the pure
     # McpGetSpecContextUseCase; the heavy presentation aggregation below stays in the
     # adapter through the F12 legacy presentation context (server helpers /
-    # the sprint swallow / gate_readiness stay here, NOT pushed into the core).
+    # gate_readiness stay here, NOT pushed into the core).
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with AsyncExitStack() as stack:
         uow = await stack.enter_async_context(
@@ -11139,13 +11139,10 @@ async def okto_pulse_get_spec_context(
                     "priority": c.priority.value,
                     "assignee_id": c.assignee_id,
                     "card_type": c.card_type.value if c.card_type else "normal",
-                    "sprint_id": c.sprint_id,
                     "test_scenario_ids": c.test_scenario_ids or [],
                 }
                 for c in spec.cards
             ],
-            # Sprints — loaded separately to avoid lazy-load issues
-            "sprints": [],
         }
         if (
             _mcp_check_permission(
@@ -11220,31 +11217,6 @@ async def okto_pulse_get_spec_context(
         )
 
         result["coverage_summary"] = _mcp_spec_coverage_summary(spec)
-
-        # Load sprints separately to avoid lazy-load error
-        try:
-            sprint_service = uow.services.sprints
-            sprints = await sprint_service.list_board_sprints(board_id, spec_id=spec_id)
-            await uow.commit()
-            result["sprints"] = [
-                {
-                    "id": s.id,
-                    "title": s.title,
-                    "status": s.status.value,
-                    "description": s.description,
-                    "objective": getattr(s, "objective", None),
-                    "expected_outcome": getattr(s, "expected_outcome", None),
-                    "lane_type": s.lane_type.value
-                    if getattr(s, "lane_type", None)
-                    else "normal",
-                    "origin_sprint_id": getattr(s, "origin_sprint_id", None),
-                    "origin_bug_id": getattr(s, "origin_bug_id", None),
-                    "normal_sprint_created": getattr(s, "normal_sprint_created", True),
-                }
-                for s in sprints
-            ]
-        except Exception:
-            pass
 
         # R4-IMP4: read-only gate/readiness block. Spec context does NOT aggregate
         # per-card cognitive verdicts (codex Q1) — cognitive readiness is per-card and

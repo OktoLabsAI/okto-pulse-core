@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from mcp_runtime_testing import register_mcp_test_runtime
 
-import ast
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -35,17 +33,6 @@ OTHER_BOARD_ID = "r01a-mcpsprint-other"
 USER_ID = "r01a-mcpsprint-agent"
 OTHER_USER = "r01a-mcpsprint-someone-else"
 
-def test_mcp_sprint_crud_is_transport_free():
-    from okto_pulse.core.application.use_cases import mcp_sprint_crud
-
-    src = Path(mcp_sprint_crud.__file__).read_text(encoding="utf-8")
-    bad = [
-        (getattr(n, "module", None))
-        for n in ast.walk(ast.parse(src))
-        if isinstance(n, (ast.Import, ast.ImportFrom))
-        and (getattr(n, "module", None) or "").startswith("okto_pulse.core.mcp")
-    ]
-    assert not bad, f"mcp_sprint_crud must not import the MCP transport package: {bad}"
 
 
 # --- runtime harness --------------------------------------------------------
@@ -286,10 +273,6 @@ async def test_shared_sprint_use_cases_enforce_actor_board(_foreign_sprint):
         UpdateSprintCommand,
         UpdateSprintUseCase,
     )
-    from okto_pulse.core.application.use_cases.mcp_sprint_crud import (
-        McpGetSprintContextCommand,
-        McpGetSprintContextUseCase,
-    )
     from okto_pulse.core.domain.realm import LOCAL_REALM_ID
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.models.schemas import SprintCreate, SprintMove, SprintUpdate
@@ -312,13 +295,6 @@ async def test_shared_sprint_use_cases_enforce_actor_board(_foreign_sprint):
                 GetSprintCommand(sprint_id), actor=actor, uow=uow
             )
 
-    with pytest.raises(EntityNotFoundError):
-        async with uowf(actor=actor) as uow:
-            await McpGetSprintContextUseCase().execute(
-                McpGetSprintContextCommand(sprint_id, OTHER_BOARD_ID, True),
-                actor=actor,
-                uow=uow,
-            )
 
     with pytest.raises(EntityNotFoundError):
         async with uowf(actor=actor) as uow:

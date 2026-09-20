@@ -40,10 +40,6 @@ from okto_pulse.core.application.use_cases.mcp_spec_crud import (
     McpUpdateTestScenarioCommand,
     McpUpdateTestScenarioUseCase,
 )
-from okto_pulse.core.application.use_cases.mcp_sprint_crud import (
-    McpDeleteSprintQuestionCommand,
-    McpDeleteSprintQuestionUseCase,
-)
 from okto_pulse.core.application.use_cases.spec_crud import (
     DeleteSpecQuestionCommand,
     DeleteSpecQuestionUseCase,
@@ -106,12 +102,6 @@ _CASES = (
         "refinement.qa.answer",
         McpDeleteRefinementQuestionUseCase(),
         McpDeleteRefinementQuestionCommand(BOARD_ID, "refinement-1", "qa-1"),
-    ),
-    (
-        "sprint.qa.delete",
-        "sprint.qa.answer",
-        McpDeleteSprintQuestionUseCase(),
-        McpDeleteSprintQuestionCommand(BOARD_ID, "sprint-1", "qa-1"),
     ),
     (
         "spec.tests.execute",
@@ -249,16 +239,15 @@ _LEGACY_CASES = (
     (McpDeleteIdeationKnowledgeUseCase(), _CASES[1][3], "specs:update"),
     (McpDeleteIdeationQuestionUseCase(), _CASES[2][3], "qa:delete"),
     (McpDeleteRefinementQuestionUseCase(), _CASES[3][3], "qa:delete"),
-    (McpDeleteSprintQuestionUseCase(), _CASES[4][3], "qa:delete"),
-    (ExecuteTestScenarioEvidenceUseCase(), _CASES[5][3], "specs:update"),
+    (ExecuteTestScenarioEvidenceUseCase(), _CASES[4][3], "specs:update"),
     (McpUpdateTestScenarioUseCase(), _update_scenario_command(), "specs:update"),
-    (McpDeleteTestScenarioUseCase(), _CASES[7][3], "specs:update"),
-    (DeleteSpecQuestionUseCase(), _CASES[8][3], "qa:delete"),
-    (McpAddScreenMockupUseCase(), _CASES[9][3], "specs:update"),
-    (McpUpdateScreenMockupUseCase(), _CASES[10][3], "specs:update"),
-    (McpAnnotateMockupUseCase(), _CASES[11][3], "specs:update"),
-    (McpDeleteScreenMockupUseCase(), _CASES[12][3], "specs:update"),
-    (McpListScreenMockupsUseCase(), _CASES[13][3], "board:read"),
+    (McpDeleteTestScenarioUseCase(), _CASES[6][3], "specs:update"),
+    (DeleteSpecQuestionUseCase(), _CASES[7][3], "qa:delete"),
+    (McpAddScreenMockupUseCase(), _CASES[8][3], "specs:update"),
+    (McpUpdateScreenMockupUseCase(), _CASES[9][3], "specs:update"),
+    (McpAnnotateMockupUseCase(), _CASES[10][3], "specs:update"),
+    (McpDeleteScreenMockupUseCase(), _CASES[11][3], "specs:update"),
+    (McpListScreenMockupsUseCase(), _CASES[12][3], "board:read"),
 )
 
 

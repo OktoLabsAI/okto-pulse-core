@@ -1542,6 +1542,71 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert bad["error_code"] == "unsupported_projection"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile", ("summary", "detail", "full", "legacy"))
+async def test_spec_context_does_not_read_or_publish_retired_sprints(monkeypatch, profile):
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy_test_models import Sprint, SprintStatus
+    from okto_pulse.core.services.main import SprintService
+
+    board_id, spec_id, sprint_id, card_id = (
+        _id("retired-context-board"), _id("retired-context-spec"),
+        _id("retired-context-sprint"), _id("retired-context-card"),
+    )
+    async with get_session_factory()() as db:
+        db.add(Board(id=board_id, name="Retired context", owner_id=USER_ID))
+        db.add(Spec(id=spec_id, board_id=board_id, title="Active Spec",
+                    status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
+                    functional_requirements=[{"id": "fr_0", "text": "Keep this requirement"}]))
+        db.add(Sprint(id=sprint_id, board_id=board_id, spec_id=spec_id,
+                      title="Retired private context", status=SprintStatus.CLOSED,
+                      created_by=USER_ID))
+        db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id,
+                    sprint_id=sprint_id, title="Keep this task",
+                    status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
+                    created_by=USER_ID))
+        await db.commit()
+
+    register_mcp_test_runtime(get_session_factory())
+    actual_factory = mcp_server.get_unit_of_work_factory_for_mcp()
+    commits = AsyncMock(side_effect=AssertionError("context read must not commit"))
+
+    @asynccontextmanager
+    async def observed_uow(**kwargs):
+        async with actual_factory(**kwargs) as uow:
+            monkeypatch.setattr(uow, "commit", commits)
+            yield uow
+
+    sprint_read = AsyncMock(side_effect=AssertionError("retired Sprint was queried"))
+    monkeypatch.setattr(SprintService, "list_board_sprints", sprint_read)
+    monkeypatch.setattr(mcp_server, "get_unit_of_work_factory_for_mcp", lambda: observed_uow)
+    monkeypatch.setattr(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id)))
+    monkeypatch.setattr(mcp_server, "check_permission", lambda *args: None)
+    monkeypatch.setattr(mcp_server, "_mcp_code_traceability_projection",
+                        AsyncMock(return_value={"subject_type": "spec", "subject_id": spec_id}))
+    tool = await mcp_server.mcp.get_tool("okto_pulse_get_spec_context")
+    result = json.loads(await tool.fn(board_id=board_id, spec_id=spec_id, profile=profile))
+
+    sprint_read.assert_not_awaited()
+    commits.assert_not_awaited()
+    assert "sprints" not in result
+    assert sprint_id not in json.dumps(result)
+    assert "Retired private context" not in json.dumps(result)
+    assert result["cards"][0]["id"] == card_id
+    assert "sprint_id" not in result["cards"][0]
+    assert result["functional_requirements"][0]["text"] == "Keep this requirement"
+    if profile != "legacy":
+        assert result["historical_context_read"]
+        assert result["gate_readiness"]
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Sprint, sprint_id)).status == SprintStatus.CLOSED
+        assert (await db.get(Card, card_id)).sprint_id == sprint_id
+        assert (await db.get(Spec, spec_id)).status == SpecStatus.IN_PROGRESS
+
+
 # ---------------------------------------------------------------------------
 # spec 9e0bf979 / b4e89fcc point 1 — projection must NOT omit the re-executable
 # evidence fields, in summary OR full, so a validator sees them in context.

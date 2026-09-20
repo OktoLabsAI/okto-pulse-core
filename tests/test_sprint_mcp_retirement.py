@@ -85,3 +85,12 @@ async def test_retired_resources_absent_and_surviving_work_remains_discoverable(
         "okto_pulse_submit_task_validation", "okto_pulse_submit_spec_evaluation",
         "okto_pulse_delete_spec_question", "okto_pulse_delete_ideation_question",
         "okto_pulse_delete_refinement_question"} <= tools.keys()
+
+
+def test_dedicated_sprint_mcp_use_cases_are_not_shipped_or_exported():
+    from importlib.util import find_spec
+    from okto_pulse.core.application import use_cases
+
+    assert find_spec("okto_pulse.core.application.use_cases.mcp_sprint_crud") is None
+    assert not [name for name in dir(use_cases) if name.startswith("Mcp") and "Sprint" in name]
+    assert not [name for name in use_cases.__all__ if name.startswith("Mcp") and "Sprint" in name]
