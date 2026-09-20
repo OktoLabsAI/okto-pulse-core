@@ -3880,3 +3880,97 @@ escritores que não são excluídos pelo mutex de startup; então integrar ao fl
 interno resumível. Continuam pendentes conteúdo substantivo, reader autorizado,
 cutover F2B/F2C/F3 e o restante da matriz DEI/ARQ/VER/KG. Iniciativa ativa; este
 turno é progresso, não conclusão.
+
+### 2026-09-20 — F2A/KG §8, conjunto de recuperação SQL/Grafx consistente
+
+Partida: Core `af923ff1`, Community `57cbbc9`, árvores limpas. Turno anterior
+classificado como progresso. Sem resposta adicional à decisão F2A de leitura
+pública; esta frente independente não altera permissões nem leitores públicos.
+
+Community `adapters/joint_recovery_snapshot.py` implementa captura, verificação
+e restauração de um conjunto **explicitamente selecionado** de SQLite e grafos
+Grafx Board/global_discovery. Não presume que a seleção representa todos os
+Boards, bindings e arquivos do ambiente. API exclusivamente interna, sem rota,
+CLI, bootstrap automático ou alteração de dados reais.
+
+Consistência: mantém a janela offline de startup e uma conexão SQLite `mode=rw`
+com `BEGIN IMMEDIATE`. Antes de qualquer export, coleta UUID e LSN publicado de
+todos os handles Grafx. Exporta SQLite pela API de backup, incluindo WAL, e cada
+grafo pelo codec lógico existente. Depois de **todos** os exports, obtém novas
+views públicas de `database.transactions`, verifica recovery_required e compara
+os UUIDs/LSNs. Não reutiliza a view imutável inicial como se fosse leitura atual.
+Qualquer alteração impede a publicação do conjunto, inclusive ABA: valores que
+mudam e voltam ao anterior continuam tendo LSN diferente. A reserva SQL impede
+escritas no relacional durante esse intervalo. Com identidades estáveis e os
+LSNs monotônicos inalterados, os stores selecionados têm um intervalo comum de
+captura; isso não afirma transação distribuída ou quiescência para cutover.
+
+O manifesto `joint-recovery-snapshot/v1` registra contrato de captura, par exato
+de revisões/wheels informado pelo gate de proveniência do instalador, versão
+Grafx, hashes relacionais, seleção de escopos/Boards, paths observados, UUID/LSN,
+hashes dos arquivos lógicos e certificados (schema, contagens, fingerprint e
+checksum). `RecoveryBuildPair` exige hashes fechados; o mecanismo não inventa a
+proveniência dos binários a partir desses valores. Composição futura deve chamar
+o gate real antes de fornecê-los. Limites: 256 grafos, manifesto 1 MiB, batch de
+1–5.000, deadline verificado entre operações. Isso não é cancelamento preemptivo
+de uma chamada nativa longa. Roots explícitos/absolutos, aliases e segmentos `..`
+recusados, paths de sidecars SQLite checados, identidade de escopo/database
+duplicada recusada. Nenhum handle Grafx do chamador é fechado ou promovido.
+
+Publicação usa diretório parcial privado e mutex do root de recuperação, com
+verificação de destino inexistente antes do rename; IDs existentes não são
+reutilizados. Esse protocolo serializa os publishers cooperantes no diretório
+protegido do operador, não escritores arbitrários de filesystem que o violem.
+Falha deixa o conjunto sem publicação e limpa o staging contido. Artefatos são
+verificados pelo digest retido pelo chamador; nunca se obtém o hash esperado do
+próprio arquivo. Arquivos de grafo têm nomes gerados e fechados no verificador,
+sem aceitar traversal trazido pelo manifesto.
+
+Restauração verifica o conjunto, exige o par de builds registrado e usa um novo
+diretório inteiro. SQL recuperado não recebe in-place overwrite. Grafos são
+restaurados em gerações novas pelo sink existente, com checkpoint/reabertura
+fria/certificação e comparação dos fingerprints/contagens/schema. UUID e LSN
+nativos novos são esperados: recuperação lógica não transplanta o commit log.
+Falha no segundo grafo limpa também o primeiro candidato ainda não publicado.
+Não há troca de binding, reinício de runtime ou promoção automática.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- Primeira rodada `community-f2a-joint.log`: **44 passed**, 152,32 s.
+- Após ampliar cobertura e exigir o par na restauração,
+  `community-f2a-joint-final.log`: **46 passed**, 172,60 s. Inclui conjunto real
+  com os dois esquemas Grafx, campos/vetores tipados e source_artifact_ref Sprint
+  preservado; histórico SQL em WAL com bytes exatos; contenção de writer SQL;
+  commit antes do primeiro export, depois de um grafo já exportado, ABA e commit
+  de **outro processo Python**; nova captura após recusa; falha no segundo
+  export/restore; adulteração de manifesto/grafo/SQL; traversal com digest
+  estruturalmente confiado; recusa de par diferente e de destinos existentes.
+  Inclui regressões dos snapshots SQLite e da janela offline. Não somar as
+  rodadas como casos distintos. Nenhum teste pulado ou falho.
+- Par final reconstruído/reinstalado antes dos testes:
+  `provenance-f2a-joint-final.json`, **804/320 .py**, **869/404 membros**, todos
+  source→wheel→install byte a byte; PYTHONPATH pareado, processos novos.
+  Core SHA256 `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `0fb1cb7e29ec97c035a401b7b480851dc89854ec4da38454773d740ac8638d5a`.
+- `closure-f2a-joint-final.json`: **ok=true**, findings de código/documentação
+  vazios, oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências. Ruff e
+  diff-check aprovados. Core não recebeu mecanismo concreto. Nenhuma mudança
+  de frontend, MCP ou matriz README neste incremento.
+
+Limites e retomada: falta reconciliar a seleção com o censo completo do ambiente,
+autenticar os bindings/gerações e preservar arquivos externos. O algoritmo não
+certifica trocas externas de diretórios/bindings nem coerência de negócio entre
+stores (por exemplo outbox pendente). Não autoriza usar um snapshot já capturado
+como fence de futuras mutações. Cutover ainda exige impedir escritores e binários
+incompatíveis, relacionar o backup ao intent/audit, revalidar as fontes e coordenar
+rollback compatível. Esta etapa não altera fontes Sprint ou dá destino automático
+a conteúdo substantivo. PostgreSQL e ambiente real não foram exercitados.
+
+Investigação para o próximo passo: `CommunityGraphBackendBindingStore` dispõe de
+`inspect_board_binding`/`inspect_global_binding`, que autenticam o documento sem
+exigir storage existente; `acquire_*` acrescenta a exigência de storage físico.
+Ambos são leitores, sem inicialização automática. Usar essas evidências para
+reconciliar Boards/bindings/gerações sob a janela, recusando ausência/drift sem
+criá-los para fazer o censo passar. Ainda pendentes integração ao instalador,
+conteúdo substantivo, leitor autorizado, cutover F2B/F2C/F3 e toda a matriz restante
+DEI/ARQ/VER/KG. Community commit `1d59a86`; Core deste checkpoint altera o ledger.
+Iniciativa ativa; progresso, não conclusão.
