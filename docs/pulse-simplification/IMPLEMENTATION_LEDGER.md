@@ -2663,3 +2663,11 @@ em progresso: composição na UI, integração receipt→impacto/reconciliação
 observações bufferizadas e resumo de retomada; adoção conjunta ARQ/VER e cutover de
 inventário/gates; F2B/Sprints com compatibilidade por Card e depreciação autorizadas;
 KG, migrações/rollback, benchmark e auditoria integral permanecem no escopo.
+
+Par publicado por push normal em `feature/v0.4.0`: Core
+`b56123854eb608e12bfc5d721ff00b46a829ba34`; Community
+`011afcbec219f7ec356c654198f97f7bd2cfd6f7`. Ambos confirmados por `ls-remote`,
+com árvores limpas após os commits funcionais. Autenticação `jpbraga` válida;
+não foi necessário usar a troca de conta autorizada pelo usuário. Este par
+encerra o checkpoint de batch+relatório por REST/MCP; as pendências de retomada
+acima continuam abertas.
