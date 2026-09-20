@@ -2,17 +2,26 @@
 
 ## Estado para retomada
 
-Iniciativa **em andamento**. Etapa atual: P2 + I1/I2/I3, sobre a caracterização
-conjunta F0/F1 + K0 + I0 + P0. Correção F09/porta publicada, F11 caracterizado;
-compatibilidade F2B por Card autorizada e depreciada. Candidatos/classificação
-arquitetural, autoria em lote, perfis/vínculos/herança, método autenticado de teste,
-planejamento com Test Cards e declaração de contribuição por Card estão publicados
-em incrementos parciais. Progresso declarado na mesma tabela Delivery foi validado
-neste turno. Gate integrado, adoção ARQ/VER, inventário integral,
-partial/complete, batch/retomada integral, F2B e frentes KG/release permanecem
-pendentes. Nenhuma migração real autorizada.
-Não confundir esses incrementos com
-a conclusão dos contratos novos de entrega, arquitetura ou verificabilidade.
+Iniciativa **em andamento**. Estado consolidado em 2026-09-20: candidatos e
+classificação arquitetural, autoria em lote, perfis/vínculos/herança, Test Cards,
+contribuições por Card e contrato conjunto com adoção explícita estão publicados.
+Entrega incremental registra progress, partial/complete, execução inline/lotes,
+seleção e relatório atômico; gate inicial e rollup usam o plano compartilhado.
+O gate de conclusão direta do Card foi corrigido para exigir as implementações
+selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
+não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
+
+Checkpoint funcional atual: Core `57552199` (ledger `683a8a79`) / Community
+`88ad207d`. Frente atual: integração de contribuições distintas e provas por
+critério, seguida da retomada F2B autorizada. Continuam pendentes a matriz completa
+de permissões/paginação/concorrência, receipt→impacto, reconciliação gravável,
+observações bufferizadas, métodos especializados, retomada integral, remoção de
+Sprints e sua migração, frentes KG, rollout/rollback instalado, benchmarks e
+auditoria requisito a requisito. F2B por Card está **autorizado**, com comentário
+de depreciação; isso ainda não prova campos/migração implementados.
+Nenhuma migração real autorizada. Os últimos resultados e próximos passos ficam
+na seção final deste ledger; se divergirem de um checkpoint histórico, prevalece
+a evidência mais recente, sem apagar o histórico.
 
 Este é o ledger único dos dois repositórios. Atualizar após cada incremento
 coerente com arquivos, decisões, testes, commits e próximo passo; não interpretar
@@ -3030,3 +3039,64 @@ Publicado por push normal em `feature/v0.4.0`: Core
 `5755219997eb5128f4fa6c342b2e4cb901c3959e`; Community
 `88ad207d4a05301314ac923d4cc287e2725fe344`. `ls-remote` confirmou ambos e as
 árvores ficaram limpas. Este registro posterior altera somente o ledger.
+
+### 2026-09-20 — contribuições distintas, herança e prova por critério
+
+Turno anterior classificado como progresso: Core `683a8a79` / Community
+`88ad207d`, árvores limpas. `provenance-multicard-baseline.json` confirmou
+novamente **801/312 .py** e **866/396 membros** source→wheel→install. Este
+incremento acrescenta testes e atualiza o resumo de retomada; nenhum payload de
+produção foi alterado. A closure `closure-adopted-report-final.json` continua
+correspondendo ao mesmo payload: ok=true, oito budgets 0/0.
+
+Novo `community/tests/test_multicard_delivery_integration.py`: SQLite descartável
+com `CommunitySemanticSession`, dois Cards normais com execuções aceitas próprias,
+FR com escopos selected_criteria distintos, BR sem link manual herdada apenas
+pelo Card de autorização e Test Card com dois cenários. Os resultados são emitidos
+pelo `CommunityHttpManifestExecutor` contra endpoints ASGI controlados e assinados
+no `CommunityEvidenceLedger`; o verifier de produção os admite. Os recibos de
+implementação são dados de entrada aceitos da fixture, não uma execução real de
+agente nem uma alegação de validação de autorização da aplicação de pagamento.
+
+Sete casos comprovam a composição dos contratos (AC-INT-01/02, RN-07/09/16,
+ADV-12 e recortes DEI-T13/15/19/23/26/27):
+- UI concluída não entrega autorização nem BR; a BR aparece no inventário do
+  responsável correto, sem criar vínculo direto artificial.
+- Ambas as contribuições e ambos os testes autenticados permitem o rollup.
+- Falha técnica permanece visível ao lado de teste funcional passing; um novo
+  passing pode resolver a pendência sem reescrever o resultado failed.
+- Referenciar a implementação de autorização em teste que só observa UI é
+  recusado na admissão, sem registro parcial; não ganha crédito por associação.
+- Mudança de Target revision ou de escopo declarado invalida apenas a contribuição
+  afetada; a prova independente da UI continua satisfeita.
+- Um run failed posterior retira o crédito antigo antes de outro binding.
+- Dois registros partial não satisfazem FR/BR, mesmo com resultado assinado.
+Todos os casos preservam o histórico imutável relevante.
+
+As rodadas iniciais encontraram composição inadequada da fixture (sessão comum
+para Card protegido e challenge hash repetido), corrigida sem mexer nos guards.
+`community-multicard-scoped.log` teve 2 passed/1 failed: o terceiro caso esperava
+leitura incompleta após admissão, mas o sistema corretamente recusava já na
+admissão; o teste passou a exigir essa recusa e ausência de registro. Não houve
+falha de produto reproduzida nesta matriz. `community-multicard-matrix.log`:
+**7 passed**, 22,41 s.
+
+Rodada final, novos processos e imports pareados:
+- `core-multicard-final.log`: **62 passed**, 4,82 s; responsabilidades, inventário
+  efetivo e cobertura.
+- `community-multicard-final.log`: **22 passed**, 51,76 s; sete casos novos,
+  contrato conjunto, relatório adotado, rollback/replay/concorrência.
+- `frontend-multicard-final.log`: **38 passed**, 3,81 s; rollup e DoD com
+  contribuições/critério pendentes. Sem mudança na produção do frontend.
+- Diff check aprovado. Sem migração, processo do usuário, release/tag/merge.
+
+Retomada prioritária: implementar o contrato tipado de compatibilidade F2B já
+autorizado, resolver a policy preservada por campo e preparar migração em cópia,
+com depreciação e sem expor escrita ao executor. A retirada completa de Sprint
+depende também de arquivo histórico/ACL, referências, permissões e KG conforme
+F2A/F2C/F3; não remover tabelas nem vínculos antes dessas dependências. As demais
+frentes e a auditoria integral continuam abertas; os sete casos não encerram
+todos os critérios citados nem a iniciativa.
+
+Community publicado por push normal: `d91529ae178347ddebc8b5fe611b0b18be5e63a5`
+em `feature/v0.4.0`. O commit companheiro do Core contém somente este ledger.
