@@ -480,3 +480,37 @@ computed currentness.
 Pulse Core governs the contract; Community only persists and projects accepted
 records. Neither surface accesses a repository. Canonical protocol:
 `okto-pulse://reference/code-traceability`.
+
+
+## `okto_pulse_get_historical_context`
+
+Read original archived context explicitly linked to a current Spec or Card.
+Arguments: `board_id` (1..255 characters; Community physical bound 36),
+`target_kind` (`spec` or `card`), `target_id` (1..128), integer `offset`
+(0..100000, default 0), integer `limit` (1..200, default 50). Extra arguments
+are rejected. Example: `{ "board_id": "board-a", "target_kind": "spec",
+"target_id": "spec-a", "offset": 0, "limit": 50 }`.
+
+Success returns `success: true`, `format: historical-context/v1`, Board,
+`target: {kind, id}`, `items` and `next_offset`. Each item contains `binding_id`,
+`origin: {kind, id}`, `archive_id`, `section`, `field` (only for an original
+content field), and the original `record`, including available authorship/dates.
+No storage path, operator rationale or private migration receipt is returned.
+
+The reader requires current access to the destination (`spec.entity.read` or
+`card.entity.read`) and current Board membership/access, intersected with the
+captured archived-origin content and section grants. It never authorizes through
+`board.read` alone or requires an active Sprint permission. Denied sources are
+absent before pagination; an empty page reveals no denied source count. Follow
+`next_offset` until null, retaining the same destination. Every page rechecks
+current authority; revocation may shorten or empty later pages. Missing/denied
+destinations share sanitized 404; invalid request 422, bounded reading limit 413,
+and unverifiable/unavailable history 503 return no partial content.
+
+Modern Spec/Task context profiles include `historical_context_read` with
+`availability: not_queried` and exact initial arguments. This pointer does not
+claim that any historical source exists or is accessible. Read accessible linked
+constraints when evaluating relevant work; historical evaluations and unanswered
+Q&A retain their original state and do not approve current work, waive a gate,
+or authorize answering an archived question. This read performs no mutation.
+The legacy context shape remains unchanged.

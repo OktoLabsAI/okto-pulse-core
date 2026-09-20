@@ -74,6 +74,16 @@ class HistoricalContextPage:
     items: tuple[HistoricalContextItem, ...]
     next_offset: int | None
 
+    def to_payload(self) -> dict:
+        """Public, detached wire projection; private audit/storage never escapes."""
+        return {"format": "historical-context/v1", "board_id": self.request.scope.board_id,
+            "target": {"kind": self.request.target.kind, "id": self.request.target.identity},
+            "items": [{"binding_id": item.binding.identity,
+                "origin": {"kind": item.binding.scope.origin_kind, "id": item.binding.scope.origin_id},
+                "archive_id": item.binding.archive_id, "section": item.binding.section.value,
+                "field": item.binding.field, "record": item.source.records()[0]} for item in self.items],
+            "next_offset": self.next_offset}
+
 
 @runtime_checkable
 class HistoricalContextReadPort(Protocol):

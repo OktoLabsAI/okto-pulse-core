@@ -185,6 +185,7 @@ _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
     "test_card_operational_flow",
     "gate_readiness",
     "code_traceability",
+    "historical_context_read",
 )
 
 _GATE_CARD_KEYS = (
@@ -914,9 +915,14 @@ def _project_task_gate_context(
         # the additive drilldown inventory.
         projected["content_manifest"] = _content_manifest(source)
 
+    historical_read = source.get("historical_context_read")
+    if historical_read is not None:
+        projected["historical_context_read"] = historical_read
     omitted = max(0, _count_fields(source) - _count_fields(projected))
+    projected.pop("historical_context_read", None)
     truncated = False
-    body_budget = CONTEXT_GATE_BUDGET_BYTES - _PROJECTION_METADATA_RESERVE_BYTES
+    reserved = _stable_payload_bytes({"historical_context_read": historical_read}) if historical_read is not None else 0
+    body_budget = CONTEXT_GATE_BUDGET_BYTES - _PROJECTION_METADATA_RESERVE_BYTES - reserved
     if _stable_payload_bytes(projected) > body_budget:
         projected, bounded_omitted, truncated = _bounded_clone(
             projected,
@@ -972,6 +978,8 @@ def _project_task_gate_context(
         omitted += strict_omitted
         truncated = True
 
+    if historical_read is not None:
+        projected["historical_context_read"] = historical_read
     projection: dict[str, Any] = {
         "profile": "full",
         "context_scope": "gate",
@@ -1087,12 +1095,12 @@ def _essential_context_projection(
 
 
 def _apply_profile_budget(
-    projected: dict[str, Any], *, profile: str
+    projected: dict[str, Any], *, profile: str, reserved_bytes: int = 0
 ) -> tuple[dict[str, Any], int, bool]:
     """Fit summary/detail under their advertised response budget."""
 
     budget = _PROFILE_BUDGET_BYTES[profile]
-    body_budget = budget - _PROJECTION_METADATA_RESERVE_BYTES
+    body_budget = budget - _PROJECTION_METADATA_RESERVE_BYTES - reserved_bytes
     if _stable_payload_bytes(projected) <= body_budget:
         return projected, 0, False
 
@@ -1382,10 +1390,17 @@ class MCPContextProjectionService:
         task_context_budgeted = tool_name == "okto_pulse_get_task_context"
         truncated = False
         if task_context_budgeted:
+            # Keep complete routing identities/offset=0, even under strict fallback.
+            # Reserve their actual size instead of truncating a follow-up argument.
+            historical_read = projected.pop("historical_context_read", None)
+            reserved = _stable_payload_bytes({"historical_context_read": historical_read}) if historical_read is not None else 0
             projected, budget_omitted, truncated = _apply_profile_budget(
                 projected,
                 profile=resolved_profile,
+                reserved_bytes=reserved,
             )
+            if historical_read is not None:
+                projected["historical_context_read"] = historical_read
             omitted += budget_omitted
 
         # FR-10 / ac_622687f9: canonical R5 projection metadata. The byte counter

@@ -635,8 +635,8 @@ def test_initial_footprint_under_budget() -> None:
     # closed write contracts; reviewed bounds below include their explicit schemas.
     # Always-loaded prose remains within its unchanged 11,250-character budget.
     # Further growth needs explicit review; do not weaken closed schemas.
-    assert len(parts) == 324, "MCP tool-count ratchet changed"
-    # F4 retires twenty tools from the observed 344-tool baseline (324 remain). Prior
+    assert len(parts) == 325, "MCP tool-count ratchet changed"
+    # F4 retired twenty tools; historical context adds one read (325 remain). Prior
     # measured metadata was 57,705 tokens (already over budget); keep the limits
     # and explicit schema/authority constraints unchanged during retirement.
     assert tools_tokens <= 50_800, (

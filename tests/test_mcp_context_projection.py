@@ -848,6 +848,11 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     # explicit legacy passthrough keeps its historical payload shape.
     assert default["code_traceability"]["subject_id"] == card_id
     assert full["code_traceability"]["subject_id"] == card_id
+    from okto_pulse.core.inbound.historical_context import historical_context_follow_up
+    expected_read = historical_context_follow_up(board_id, "card", card_id)
+    assert default["historical_context_read"] == expected_read
+    assert full["historical_context_read"] == expected_read
+    assert "historical_context_read" not in legacy
     assert "code_traceability" not in legacy
     assert all(
         call.kwargs["profile"] != "legacy"
@@ -1522,6 +1527,11 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert full["skip_code_evidence_coverage_effective"] is True
     assert default["code_traceability"]["subject_id"] == spec_id
     assert full["code_traceability"]["subject_id"] == spec_id
+    from okto_pulse.core.inbound.historical_context import historical_context_follow_up
+    expected_read = historical_context_follow_up(board_id, "spec", spec_id)
+    assert default["historical_context_read"] == expected_read
+    assert full["historical_context_read"] == expected_read
+    assert "historical_context_read" not in legacy
     assert "code_traceability" not in legacy
     assert all(
         call.kwargs["profile"] != "legacy"

@@ -6632,3 +6632,91 @@ disposições -> leitura nos destinos -> Card -> trabalho, com replay/rollback e
 revogações preservadas. MCP/cutover ainda não implementados nesta publicação;
 preflight continua bloqueando contexto pendente. Objetivo integral permanece
 ativo, incluindo F2D/F3/F4/F5 e os gates ainda pendentes registrados acima.
+
+### 2026-09-20 — F2A: leitura MCP de contexto histórico (em implementação)
+
+Base publicada conferida limpa: Core baf4637d / Community e4916cc. Nova tool
+okto_pulse_get_historical_context reutiliza caso de uso/UoW/autoridade da rota
+REST; esquema fechado, paginação limitada e nenhuma permissão Sprint ativa.
+Política exata condicional spec.entity.read/card.entity.read; admissão reader.
+Envelope compartilhado puro no inbound Core, sem mecanismo concreto. Erros
+públicos sanitizados; somente a projeção autorizada sai do arquivo privado.
+
+Contextos Spec/Card não-legacy recebem ponteiro not_queried: não consulta fontes
+nem revela existência/contagem. Projeção reserva bytes antes do orçamento para
+preservar argumentos exatos, inclusive offset=0. Legacy permanece sem o bloco.
+Catálogo regenerado pelo módulo oficial. Contagens explícitas 325 tools,
+322 políticas/3 exceções humanas, 47 esquemas fechados; limites de tokens e
+budgets arquiteturais não foram elevados. Medição e validação ainda pendentes.
+
+Testes preparados: schema/admissão/projeção sob orçamento, consumidores existentes,
+MCP com transporte Community e leitor real, revogação entre leituras, negação
+sem IO privado, corrupção/limites sem resposta parcial e argumentos inválidos.
+REST terá regressão do envelope compartilhado. Nenhuma UI alterada nesta etapa.
+Card transform continua bloqueado até receipt verificado ser integrado depois.
+
+Investigação/validação inicial MCP:
+- Core 51 passed (7,10 s); Community 17 passed / 3 failed exclusivamente por
+  helper tentando chamar CoreMcpTool, corrigido para tool.fn. Quatro casos novos
+  reexecutados: 4 passed (30,59 s); não houve mudança de produto por essa falha.
+- Prova inicial: 810/328 .py e 875/412 payloads fonte/wheel/install idênticos.
+- Gate footprint continua vermelho: 56.024 > 50.800 tokens (+165 vs 55.859);
+  limite e schemas fechados preservados. Não alegar validação global verde.
+- Closure detectou o import Community->core.inbound.historical_context como
+  privado e dois bridges derivados. Corrigido sem exceção: to_payload() exposto
+  em HistoricalContextPage no contrato público já consumido; REST/MCP usam esse
+  método. Inbound conserva apenas ponteiro interno de contexto MCP. Nova prova
+  pareada, testes dos consumidores e closure pendentes após essa correção.
+
+A closure após uso do contrato público retornou findings=[] e oito budgets 0/0;
+restava apenas atualizar as matrizes README, feito pelo renderer oficial.
+Core: 87 passed (8,37 s), incluindo 36 casos do leitor de domínio. REST/MCP:
+6 passed (53,27 s). Frontend consumidor do envelope: 24 passed (3,15 s), parser/
+hook e painel, sem alteração da SPA. Os 14 casos host Community passaram na
+primeira rodada; nenhum produto host mudou. Não duplicar testes reexecutados.
+Revisão final ajustou omitted_count do contexto gate para não contar o ponteiro
+retido como conteúdo omitido; acrescentado um caso específico. Rebuild pareado,
+prova final e reexecução Core em andamento antes do commit.
+
+Fechamento MCP de contexto histórico:
+- Core `core-context-mcp-final.log`: **88 passed** (6,79 s), schema/admissão,
+  projeções/conservação legacy, consumidores Spec/Card, 36 casos de domínio,
+  registry e igualdade byte a byte do catálogo gerado.
+- Community: **20 casos distintos** aprovados (14 host na primeira rodada +
+  6 REST/MCP em `community-context-mcp-public-final.log`, 53,27 s). Os quatro
+  MCP foram reexecutados integralmente após corrigir o helper; não duplicados.
+- Frontend `frontend-context-mcp.log`: **24 passed** (3,15 s), parser/hook/painel
+  consumidor do mesmo envelope REST. Total selecionado distinto **132**.
+- `provenance-context-mcp-final.json`: 810/328 .py, 875/412 payloads idênticos
+  fonte/wheel/install; verificador importa site-packages, pytest usa checkouts
+  ativados pelas fixtures, previamente provados idênticos. Sem servidor novo
+  nesta etapa; nenhum processo Pulse ativo reiniciado nem dado real migrado.
+- `closure-context-mcp-final.json`: ok=true, findings=[] e
+  documentation_findings=[]; oito budgets 0/0. Matrizes regeneradas oficialmente:
+  7.548 imports Core, 1.170 Community->Core, 25 dependências.
+- Wheels finais em `wheels-context-mcp-final`, SHA256:
+  Core 7e1c21ea8e64a84ee6925b5ecc4d1e4a1f1a21904de05037b9f50c6d19354e65;
+  Community 7dd7a9bf477aa4a23059e18b1bc7d41acc6f0c7b3dc0470cdf8a6650068a5543.
+- Ruff e diff --check aprovados; testes/build/install/closure encerrados antes
+  dos commits. Community aaae057; Core acompanha este registro. Push normal
+  do par será conferido por HEAD == ls-remote, sem merge/tag/release.
+- Gate global de footprint segue vermelho: 56.024 tokens > 50.800. Acréscimo
+  medido de 165 tokens; não elevar limite nem enfraquecer schema/autoridade.
+
+Próximo incremento concreto: integrar `ContextDispositionReceipt` verificado em
+`materialize_archived_card_policies`, mantendo BEGIN IMMEDIATE. Não liberar
+`SprintContextDispositionRequired` pela mera existência de journal. Exigir a
+população exata e arquivo original antes da transformação; vincular receipt à
+prova durável dos Cards (formato/compatibilidade explícitos), inclusive na
+verificação usada pelo work retirement. Revalidar journal/fontes/destinos sob
+triggers antes do commit. Replay deve verificar a evidência vinculada, detectar
+perda de journal e preservar edições/revogações posteriores legítimas, sem
+recapturar fontes transformadas nem rebasear policy. Testar sequência real em
+fixture: arquivo/grants -> disposições -> leitura REST/MCP/destinos -> Card ->
+trabalho, falha/rollback/replay e adulteração. Helper `_verify_events` é usado
+por `sprint_work_retirement`; tratar ambos como a mesma dependência.
+
+Preflight Card continua bloqueando contexto nesta publicação. Coordenador F2D,
+remoção operacional F3, F4/F5 restantes e matriz integral de critérios/rollout/
+medição seguem pendentes conforme registros anteriores. Etapa classificada como
+progresso verificado; objetivo integral permanece ativo.

@@ -89,6 +89,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
     ("Code Traceability", "code-traceability",
      r"^okto_pulse_(?:.*code_(?:evidence|investigation|traceability)|"
      r".*implementation_(?:target|overlap)|acknowledge_implementation_overlap)"),
+    ("Historical Context", "misc", r"^okto_pulse_get_historical_context$"),
     # --- SDLC entities ------------------------------------------------------
     ("Stories & Topics", "story",
      r"(story$|stories|topic)"),

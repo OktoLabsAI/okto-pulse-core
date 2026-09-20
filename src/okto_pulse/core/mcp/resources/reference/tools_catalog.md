@@ -166,6 +166,9 @@ Semantic guideline protocol:
 - `okto_pulse_unlink_code_evidence` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 - `okto_pulse_update_implementation_target` — docs: `okto-pulse://reference/tool-docs/code-traceability`
 
+## Historical Context
+- `okto_pulse_get_historical_context` — docs: `okto-pulse://reference/tool-docs/misc`
+
 ## Stories & Topics
 - `okto_pulse_archive_story` — docs: `okto-pulse://reference/tool-docs/story`
 - `okto_pulse_archive_topic` — docs: `okto-pulse://reference/tool-docs/topic`

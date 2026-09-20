@@ -170,6 +170,7 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
         "spec.integration_requirements.read",
         "spec.observability_requirements.read",
     ),
+    "okto_pulse_get_historical_context": ("spec.entity.read", "card.entity.read"),
     "okto_pulse_get_spec_context": (
         "spec.entity.read",
         "spec.integration_requirements.read",
@@ -247,8 +248,8 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 324
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 321
+    assert len(report.live_tools) == 325
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 322
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)
