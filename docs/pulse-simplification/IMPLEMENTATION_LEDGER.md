@@ -2814,3 +2814,10 @@ documentação, oito budgets **0/0**, **7.580 / 1.246 imports, 25 dependências*
 A primeira auditoria encontrou apenas drift nas contagens dos READMEs; ambos
 foram atualizados pelo renderer oficial. Community muda somente esse README
 neste checkpoint. Nenhum payload alterado após a prova byte-a-byte final.
+
+Publicado por push normal em `feature/v0.4.0`: Core
+`33077cd75a9df2d5e7be1137e0c4cee60391e4fb`; Community
+`4f9d5de71166e42718d3581f2a3eadb87987fe38` (somente documentação).
+Referências remotas confirmadas por `ls-remote`, árvores limpas após os commits.
+Iniciativa em progresso; integração da adoção conjunta é a próxima dependência,
+não uma frente concluída por estes testes de domínio.
