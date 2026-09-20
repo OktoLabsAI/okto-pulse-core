@@ -2671,3 +2671,66 @@ com árvores limpas após os commits funcionais. Autenticação `jpbraga` válid
 não foi necessário usar a troca de conta autorizada pelo usuário. Este par
 encerra o checkpoint de batch+relatório por REST/MCP; as pendências de retomada
 acima continuam abertas.
+
+### Em implementação — composição do último lote na interface
+
+Turno anterior classificado como progresso: Core `7ccc7f74` e Community
+`011afcb` publicados e limpos. DEI §9.1–9.3/DEI-T64: o relatório da UI já sela
+seleção e reutiliza impacto, mas ainda precisava salvar o último lote em chamada
+separada. Reutilizar os formulários de progresso e associação de provas para
+preparar entradas locais no diálogo do relatório; enviar pela variante canônica
+`card-delivery-report/v1`, sem escrita antecipada, aprovação ou nova autoridade.
+Seleção e draft devem concordar nas três revisões; retry idêntico preserva a chave
+e rejeição conserva conteúdo. Validar UI, transportes reais existentes, pacote
+instalado e closure antes de publicar. Adoção conjunta e demais frentes continuam
+abertas; este registro ainda não declara a UI validada.
+
+### Validação — último lote preparado no relatório da UI
+
+- **102 testes frontend** passaram em `frontend-report-ui-final.log` (24,26 s):
+  relatório/seleção, múltiplos rascunhos removíveis, nenhuma escrita ao preparar,
+  associação de contribuição completa e runs passed/failed sem confiança enviada
+  pelo cliente, permissões, três revisões, limites de 50/200, timeout/retry idêntico,
+  edição gerando nova chave, bloqueio de duplo submit e refresh falho após commit.
+  A primeira rodada teve 92 passed/1 failed por mock residual no describe novo;
+  a fixture passou a limpar chamadas entre casos. Nenhum comportamento de gate
+  alterado para fazer os testes passarem.
+- Build/typecheck e `verify:frontend-dist` aprovados: **78 arquivos**, tree SHA256
+  `0fd51cbd990753554f13b68dcd3aa9a16ea3ec758d9976acb479cf1b1bba189c`.
+  Lint completo aprovado pelo ratchet: **402 warnings / baseline 402**, zero erros
+  (`frontend-report-ui-lint-ratchet.log`); o build mantém o aviso de chunks grandes.
+- Baseline pareado provado antes dos testes de comportamento. Após rebuild/install,
+  `provenance-report-ui-final.json` confirmou **798 / 312 .py**, **863 / 396 membros**
+  source→wheel→site-packages idênticos. Core wheel SHA256
+  `65192df44dd7efbc0967549809b330a7adacbbf9804a3fcce0100b11192e57bf`;
+  Community `f6c2406e14099c2e7e28a0623e8cdd1d0c1fff8f61b6a9ee6135cbdaa486af07`.
+- No par instalado final: **14 testes Core** de contrato/catálogo/manifest
+  (`core-report-ui-contract.log`, 3,78 s) e **12 testes Community** de atomicidade,
+  autorizações, concorrência, rollback, REST/MCP e replay
+  (`community-report-ui-transport.log`, 33,43 s). Novos processos/PYTHONPATH pareado,
+  dados descartáveis, nenhum reinício do runtime do usuário.
+
+A UI usa os formulários existentes para preparar progresso e associações a provas
+existentes; execução de origem inline continua no contrato REST/MCP. Não há novo
+diário persistente: o rascunho é local ao diálogo e o texto informa seu descarte ao
+fechar. Test Card→Validation mantém seu fluxo sem relatório. Nenhuma migração,
+mudança de policy, permissão ou crédito final. A documentação Community foi
+atualizada, inclusive para não chamar resultados admissíveis de “somente passing”.
+
+**Retomada:** concluir closure/publicação deste checkpoint; depois continuar a
+integração receipt→impacto, reconciliação gravável, observações bufferizadas,
+retomada delimitada e adoção conjunta ARQ/VER com cutover dos gates/inventário.
+F2B/Sprints/depreciação autorizada, KG, migrações/rollback, benchmark e auditoria
+integral permanecem abertos. Este incremento não prova o E2E completo DEI-T64 nem
+a conclusão da iniciativa.
+
+Closure final `closure-report-ui-final.json`: **ok=true**, findings de código e
+documentação vazios, oito budgets **0/0**, **7.574 / 1.246 imports, 25 dependências**.
+Não houve drift de README nem mudança de catálogo/manifests neste incremento.
+Diff-check aprovado; o payload não mudou após a prova final.
+
+Community publicado por push normal em `feature/v0.4.0`:
+`51b43080bb950ba46cd8fab09423afcbfc3f7bb9`, confirmado por `ls-remote`, árvore limpa.
+O Core executável permanece o de `7ccc7f74a682972579700f8acdc7062ccb85f0c7`
+(implementação `b5612385`); neste incremento o Core recebe somente este ledger.
+Sem troca de conta, release, tag, merge ou intervenção no runtime do usuário.
