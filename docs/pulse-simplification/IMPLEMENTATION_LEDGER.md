@@ -3195,3 +3195,41 @@ Publicado por push normal em `feature/v0.4.0`: Core
 `ea883c9aae0500acc59474e243ea736ccaa43b03`; Community
 `421b73fa8a20854028b5d0cb990e7840d4298499`. `ls-remote` confirmou ambos;
 árvores limpas após publicação. Este registro posterior altera somente o ledger.
+
+### 2026-09-20 — autenticação confirmada e investigação F2A retomada
+
+`gh auth status` confirmou `jpbraga` ativa e válida; não foi necessário executar
+`gh auth switch`. O usuário autorizou a troca se necessária. `ls-remote`
+confirmou Core `5e3d939b13b274193618368a9e20a2e8e95f457f` e Community
+`421b73fa8a20854028b5d0cb990e7840d4298499` iguais aos HEADs locais, sem
+commits pendentes de push e sem alterações locais na partida deste checkpoint.
+
+Investigação de mecanismos existentes, ainda sem implementação do arquivo:
+- `application/use_cases/entity_export.py::GetEntityExportBundleUseCase`
+  inicia leitura consistente antes de consultar Board/ACL/permissões. É um
+  precedente válido para isolamento da leitura, não uma prova de backup completo.
+- `community/adapters/sqlalchemy_entity_export.py` exporta Sprint com seções
+  cards, Q&A, avaliações, cenários, regras, history, policy e resources. Cards
+  usam projeção de colunas humanas; a definição Sprint não inclui
+  `sprint_activation_baselines`. Não usar esse bundle como arquivo integral de
+  migração sem reconciliar os dados que não projeta.
+- `community/adapters/sqlalchemy_models.py` confirma quatro tabelas diretamente
+  próprias: `sprints`, `sprint_history`, `sprint_qa_items` e
+  `sprint_activation_baselines`. Além de `cards.sprint_id`, há a origem de hotfix
+  em `sprints.origin_sprint_id`/`origin_bug_id`; avaliações e configurações estão
+  embutidas em Sprint. Este levantamento ainda não fecha referências polimórficas,
+  JSON histórico, filas, analytics ou KG.
+- `Attachment.card_id` é obrigatório e sua FK tem CASCADE. O mecanismo atual
+  não comporta diretamente arquivo de uma Sprint vazia independente de Card;
+  não fabricar Card nem anexar arbitrariamente a um cartão para satisfazer F2A.
+- `community/adapters/logical_graph_transfer.py` e
+  `logical_transfer_grafx.py` fazem snapshot lógico consistente de Grafx;
+  não constituem snapshot relacional ou transação conjunta entre os armazenamentos.
+
+Próximo passo: fechar o inventário de referências/consumidores e o mecanismo
+genérico de arquivo sob ACL de Board, incluindo Sprints vazias, retenção e leitura
+histórica sem dependência operacional da entidade removida. Só então integrar
+snapshot/restauração e cutover F2B/F2C. Nenhuma semântica de gate, dado real,
+schema, runtime ou payload distribuído foi alterado nesta investigação.
+Não houve nova execução de testes de comportamento; os resultados do checkpoint
+F2B anterior permanecem históricos, sem declaração de cobertura de F2A/F2C.
