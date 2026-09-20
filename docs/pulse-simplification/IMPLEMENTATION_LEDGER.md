@@ -13,8 +13,8 @@ não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
 Frente atual: F2A/F2C, com preflight relacional, eventos/jobs, censo de referências
 polimórficas e snapshot de recuperação SQLite restaurável implementados. Captura
-interna do histórico relacional próprio, referências polimórficas e work items
-relacionados em storage/audit de Board implementada;
+interna do histórico relacional próprio, referências polimórficas, referências
+embutidas em JSON/source_ref e work items relacionados em storage/audit de Board implementada;
 consulta pública, reconciliação completa, captura coordenada do KG e cutover ainda
 pendentes. Decisão de autoridade de leitura do arquivo registrada ao final. F2B autorizado:
 compatibilidade por Card, resolver,
@@ -3724,3 +3724,87 @@ substantivo antes do writer de cutover, mantendo a decisão de leitura isolada.
 
 Community publicado por push normal em `feature/v0.4.0`, commit `c5c866f`.
 Core deste checkpoint altera somente o ledger. A iniciativa continua ativa.
+
+### 2026-09-20 — F2A, referências embutidas com localização e proprietário
+
+Partida: Core `beb3dc48`, Community `c5c866f`, árvores limpas. Turno anterior
+classificado como progresso. A decisão de leitura pública continua pendente;
+nenhuma nova permissão ou concessão foi aplicada.
+
+Core `domain/sprint_retirement_embedded.py` adiciona detector puro de identidades
+explícitas: sprint_id/origin_sprint_id/source_sprint_id; pares artifact/subject/
+entity/source type+id, incluindo entity_type/subject_id; valores históricos e
+filtros de field=sprint_id; source_ref/evidence_ref e arrays correspondentes.
+Guarda caminho exato (keys e índices), ID opaco e hint de Board separado. Texto
+comum não vira referência por conter a palavra Sprint ou prefixo em título.
+Limites de 5.000 nós e profundidade 32 falham sem retornar resultado parcial.
+Detector não valida hash/autoridade/currentness, não transforma conteúdo e não
+confere crédito a evidência. Classificação antiga de eventos não foi alterada.
+
+Community `adapters/sprint_retirement_embedded.py` integra inspeção à mesma
+transação de preflight: JSON físico, campos JSON declarados no ORM mesmo quando
+legados em TEXT e colunas textuais source_ref/membership_source_ref/evidence_ref.
+Cada localização contém tabela, PK física, coluna, caminho, origem e escopo.
+Streaming de 16 linhas, budget de leitura compartilhado com os outros censos,
+1 MiB por célula e 64 MiB agregados; tamanho validado no SQL antes de materializar.
+JSON inválido, chaves duplicadas, não finitos, IDs malformados e estrutura acima
+do limite impedem uma inspeção aparentemente completa.
+
+Proprietário vem de board_id, Board.id ou relações de pai explicitamente
+catalogadas. Para referências encontradas em filhos, a FK física correspondente
+também deve existir, incluindo pares compostos. Board declarado no payload é
+hint de referência, nunca substitui proprietário. Owner ausente/desconhecido,
+hint para outro Board ou origem atual em outro Board exigem investigação.
+Registros globais não são copiados para o Board da Sprint por suposição.
+
+Arquivo passa a `historical-relational-archive/v3`, incluindo linhas localizadas
+por referências embutidas e todos os seus papéis. Linhas próprias já capturadas
+(por exemplo sprint_history) não são duplicadas. Conteúdo JSON SQL original e
+autoria permanecem intactos. Verificador mantém v1/v2 com sua cobertura anterior;
+não declara esses formatos como se já contivessem o novo censo. Captura exige
+escopos embutidos resolvidos antes de qualquer save. Sem rota, frontend ou MCP.
+
+Investigação/testes falhos, preservados como evidência: primeira rodada
+`community-f2a-embedded.log` teve **8 failed, 66 passed**, 125,28 s. As oito falhas
+ocorreram na preparação da fixture: `ck_spec_source_context` recusou manifest sem
+origem de refinamento válida. Não relaxar esse CHECK. As fixtures foram corrigidas
+para payload histórico de `kg_cognitive_sources`, e um teste negativo confirma
+que o CHECK original continua ativo. O teste de domínio adicional usa o contrato
+real `EvidenceRef` para demonstrar que source_type Sprint é representável;
+fixtures de payload físico não afirmam admissão de uma nova conclusão cognitiva.
+
+Validação final em `PULSE_REFACTOR/.validation-v040`:
+- `core-f2a-embedded-final.log`: **50 passed**, 4,29 s; detector + regressão da
+  classificação de eventos. A primeira rodada Core havia passado 49 testes.
+- `community-f2a-embedded-final.log`: **93 passed**, 162,18 s; censo embutido,
+  arquivos v1/v2/v3, inventário relacional, referências, eventos/jobs e snapshot/
+  restauração. Cobre dump imutável antes/depois do censo, raw JSON preservado,
+  replay, histórico próprio sem duplicação, KB com parent ownership, dois Boards,
+  owner global desconhecido, 25 referências além da primeira página, JSON
+  ambíguo/malformado, limite de célula/budget compartilhado, source_ref textual,
+  drift da FK do pai e CHECK original. Não somar as rodadas como casos distintos.
+- `provenance-f2a-embedded-final.json`: **804/318 .py**, **869/402 membros**,
+  source→wheel→install byte a byte, antes da rodada final, PYTHONPATH pareado e
+  processos novos. SHA256 Core wheel
+  `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `56c9f68a16882c616340181ba728eaf02b05e69e8cdfbe7173f4d4d851b6ff45`.
+- Closure inicial acusou apenas contagem antiga das matrizes README. Fragments
+  regenerados pelo renderer oficial, par reconstruído e reinstalado.
+  `closure-f2a-embedded-final.json`: **ok=true**, findings de código/docs vazios,
+  oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências. Ruff e diff-check
+  aprovados. Nenhuma implementação concreta foi adicionada ao Core.
+
+Limites: detector cobre as formas declaradas acima, não interpreta todo texto,
+URL arbitrária, JSON serializado dentro de prosa ou representação desconhecida
+como vínculo. Isso não é autorização para apagar fontes, reescrever evidência
+assinada ou declarar toda a iniciativa concluída. Ainda faltam reconciliação
+completa de pais/autoridades, arquivos externos, projeções Grafx, coordenação de
+backup/cutover, destino do conteúdo substantivo e leitor público autorizado.
+PostgreSQL e ambiente real não foram exercitados. Frontend não mudou.
+
+Próximo passo independente da decisão de leitura: revisar a captura/projeção
+Grafx e seu vínculo com snapshot relacional sob fence, além de reconciliar
+pendências substantivas sem novas aprovações. Integrar F2B/F2C/F3 e concluir os
+demais requisitos DEI/ARQ/VER/KG com auditoria integral continuam necessários.
+Community publicado em `feature/v0.4.0`, commit `9456bd5`; Core inclui o detector
+puro, testes, matriz README gerada e este ledger. A iniciativa permanece ativa.
