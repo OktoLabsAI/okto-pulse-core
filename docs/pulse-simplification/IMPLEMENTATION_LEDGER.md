@@ -7201,3 +7201,86 @@ fontes KG/global outbox, corte de schema e F3 devem validar a conclusão integra
 antes de admitir startup. F2A/F2C restantes, F3/F4/F5, matriz integral e gate
 global MCP (última medição 56.024 > 50.800, inalterado) continuam pendentes.
 Objetivo integral permanece ativo; classificação desta etapa: progresso.
+
+### 2026-09-20 — F2D: preparação selada e retomada dos dados offline
+
+Retomada conferida: Core 12624598 / Community b4ff079, feature/v0.4.0.
+Em implementação: composição interna Community com backup original v4, plano
+explícito de contexto, captura de permissões, arquivos/grants e journal de
+contexto/Card/work. Registro externo privado publicado sem overwrite; seu
+SHA retido pelo operador é verificado antes de seguir caminhos e recibos.
+Preparação não transforma Cards; retomada não recaptura backup nem autoridade.
+A mesma exclusão de schema/startup cobre preparação e cada retomada.
+
+A saída continua data_preserved, insuficiente para liberar runtime. Cleanup
+não pode remover flags Sprint ainda registradas: sua composição depende da
+retirada real no F3 e de retenção atômica de seu recibo de conclusão. Nenhuma
+exceção ao registry ou budget foi introduzida. Falha antes de publicar o handle
+exige recuperar o backup original; SQL parcial não fabrica handle perdido.
+Testes em preparação: interrupção/reabertura, replay sem recaptura, adulteração
+de arquivo/backup/checkpoints, vínculo ao runtime/build e falha de publicação.
+Somente fixtures descartáveis; nenhum dado real ou frontend alterado.
+
+Primeiro preflight aprovado: provenance-offline-run.json, 810/331 .py e
+875/415 payloads idênticos fonte/wheel/install. Primeiro teste integrado falhou
+antes de retornar a preparação: leitura Python do plano estrito recusava listas
+vindas do JSON onde o contrato usa tuplas. Correção no adapter para chamar a
+validação JSON do mesmo contrato, sem relaxar strict/extra/limites no Core.
+Closure inicial: findings=[], oito budgets 0/0; apenas matrizes README ficaram
+desatualizadas pelo novo import público. Regeneradas pelo renderer oficial.
+Processos iniciais encerrados antes dessas edições. Rebuild pareado em curso.
+
+Fechamento da preparação/retomada offline:
+- Community **d6188d78e0a92af21e9338d1f55eaf565d14773d** adiciona
+  `adapters/retirement_offline_run.py`. Preparação captura/valida o backup v4
+  original sob exclusão de schema/startup, instala arquivos/grants, valida o
+  plano contra população e destinos atuais, prepara o journal SQL e publica
+  um registro privado externo sem overwrite. Inputs limitados a 64 MiB.
+- O handle externo retém SHA256 do registro, vinculando caminhos canônicos,
+  par de builds original/de migração, backup, plano e recibos de permissões e
+  dados. Retomada exige mesmo SQL/storage/build, verifica o backup original e
+  os recibos antes de executar contexto/Card/work e revalida os recibos ao fim.
+  Não recaptura autoridade/backup depois das transformações. Ausência de prova
+  não é reparada por inferência. A captura continua restrita a exclusão dos
+  entrypoints cooperantes; não certifica exclusão de writers raw SQL/Grafx.
+- `offline-run-new-final.log`: **14 passed** (223,95 s). Cobertura integrada de
+  locks OS mantidos em preparação/retomada (outro processo tenta entrar),
+  preparação sem detach de Card, backup original preservado, create-only,
+  interrupção após cada etapa confirmada e reabertura por outro AsyncEngine,
+  replay sem recaptura preservando edição posterior da Spec, adulteração de
+  registro/backup, perda de checkpoint de permissão/journal, SQL/storage/build
+  incompatível, plano incompleto, falha de publicação com restore original e
+  recusa de backup substituto, além de trigger que apaga a prova de autoridade
+  na última etapa: retorno falha e startup continua bloqueado.
+- `offline-run-regression.log`: **53 passed** (323,74 s), suites
+  `test_retirement_data_journal.py`, `test_permission_retirement_checkpoint.py`,
+  `test_retirement_runtime_admission.py` e
+  `test_joint_recovery_lifecycle_window.py`. Total selecionado distinto: **67**.
+  A primeira tentativa vermelha de leitura estrita do plano foi corrigida e
+  toda a suite nova repetida; não foi omitida nem contada como aprovada.
+- `provenance-offline-run-final.json`: 810/331 .py e 875/415 payloads idênticos
+  fonte/wheel/install antes dos testes. Origens do verificador em site-packages;
+  pytest utiliza checkouts provados idênticos. Nenhuma edição de produto ou
+  reinstall durante as verificações ativas. Todos os handles terminaram.
+- `closure-offline-run-final.json`: ok=true, findings/documentation_findings=[],
+  oito budgets 0/0. READMEs gerados com 7.548/1.173 imports e 25 dependências.
+  Único novo vínculo com Core: contrato público ContextDispositionPlan. Nenhum
+  mecanismo concreto, exceção temporária ou reach-in privado no Core.
+- Wheels em `.validation-v040/wheels-offline-run-final`, SHA256:
+  Core a86c4e4cfbebb3287348bb91f29400c240a6aa4063c3c5708a9b896cf0beaf45;
+  Community eee4e15e7e161fe5aa009f008ac8a62b9e0a967fd6434f9b1e68bcd5df579db2.
+- Ruff e staged diff --check aprovados. Sem mudanças em frontend/REST/MCP;
+  testes de frontend não necessários nesta etapa. Nenhum runtime real foi
+  iniciado/parado, nenhum dado real migrado. Push normal do par em
+  feature/v0.4.0 será conferido contra ls-remote e working trees limpas.
+
+Continuidade: data_preserved NÃO é conclusão de F2D nem autorização de startup.
+Preparação interrompida antes de publicar handle mantém backup para rollback;
+retomada não reconstrói handle a partir do SQL candidato. Cleanup de permissões
+precisa de registro atômico de conclusão e da retirada efetiva das flags Sprint
+no F3; não abrir exceção ao guard do registry para antecipá-lo. Compor também
+remoção dirigida das fontes KG/global outbox e corte real de schema/F3 antes
+de criar certificado terminal e integrar admissão de upgrade/instalação limpa.
+F2A/F2C restantes, F3/F4/F5, matriz integral e gate global de metadata MCP
+(última medição 56.024 > 50.800, inalterado) continuam pendentes. Objetivo
+integral ativo; classificação desta etapa: progresso verificado.
