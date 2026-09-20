@@ -303,7 +303,6 @@ def test_migrated_mcp_handlers_have_no_coarse_adapter_precheck() -> None:
         "okto_pulse_delete_spec_question",
         "okto_pulse_delete_ideation_question",
         "okto_pulse_delete_refinement_question",
-        "okto_pulse_delete_sprint_question",
         "okto_pulse_add_screen_mockup",
         "okto_pulse_update_screen_mockup",
         "okto_pulse_annotate_mockup",

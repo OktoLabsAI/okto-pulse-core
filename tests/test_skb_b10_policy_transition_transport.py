@@ -41,7 +41,6 @@ MCP_MUTATION_HANDLERS = (
     "okto_pulse_move_ideation",
     "okto_pulse_move_refinement",
     "okto_pulse_move_spec",
-    "okto_pulse_move_sprint",
     "okto_pulse_move_card",
     "okto_pulse_submit_task_validation",
     "okto_pulse_submit_spec_validation",

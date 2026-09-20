@@ -1,28 +1,13 @@
-"""Card S-LANE-01 — canonical ``invalid_lane_type`` envelope across REST + MCP.
+"""Remaining REST invalid-lane envelope and transport-neutral domain guards.
 
-An invalid sprint ``lane_type`` (e.g. ``release_validation``) must surface a
-single canonical envelope on BOTH transports instead of leaking the raw Pydantic
-surface, and must be fail-closed (no sprint created / no lane mutated). Valid
-values (``normal`` / ``hotfix``) keep working and persisting. ``SprintService``
-stays transport-neutral and the enum stays bounded to ``normal``/``hotfix``.
-
-Scenarios:
-- TS-LANE-01: REST create release_validation → envelope, no sprint created.
-- TS-LANE-02: REST update release_validation on a normal sprint → envelope, stays normal.
-- TS-LANE-03: MCP create release_validation → envelope, no pydantic leak, no sprint.
-- TS-LANE-04: MCP update release_validation on a hotfix sprint → envelope, stays hotfix.
-- TS-LANE-05: REST + MCP create/update with normal and hotfix → still work + persist.
-- TS-LANE-06: SprintService imports no REST/MCP/envelope symbols; enum = {normal, hotfix}.
+Dedicated MCP removal is covered by test_sprint_mcp_retirement.py.
 """
 
 from __future__ import annotations
 
-from mcp_runtime_testing import register_mcp_test_runtime
 
-import json
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest_asyncio
 from fastapi import FastAPI
@@ -32,9 +17,7 @@ from sqlalchemy import func, select
 from okto_pulse.community.app import install_request_validation_handler
 from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
-from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import (
     Board,
@@ -275,122 +258,6 @@ async def test_rest_unmapped_validation_error_uses_default(rest_ctx):
     body = resp.json()
     assert "detail" in body
     assert body.get("code") != "invalid_lane_type"
-
-
-# ============================================================================
-# MCP surface
-# ============================================================================
-
-
-def _stub_ctx(board_id: str):
-    return type("Ctx", (), {
-        "agent_id": USER_ID,
-        "agent_name": "lane-type-agent",
-        "board_id": board_id,
-        "permissions": ["board:read", "specs:update", "sprint.entity.create"],
-    })()
-
-
-async def _call(name: str, **kwargs) -> str:
-    """Invoke an MCP tool's underlying function and return the RAW json string."""
-    register_mcp_test_runtime(get_session_factory())
-    tool = await mcp_server.mcp.get_tool(name)
-    return await tool.fn(**kwargs)
-
-
-async def test_ts_lane_03_mcp_create_invalid_lane_type(db_factory):
-    """TS-LANE-03: MCP create release_validation → envelope, no pydantic leak, no sprint."""
-    ids = await _seed(db_factory)
-    board_id, spec_id = ids["board_id"], ids["spec_normal_id"]
-    before = await _count_sprints(db_factory, board_id)
-
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
-         patch.object(mcp_server, "check_permission", return_value=None):
-        raw = await _call(
-            "okto_pulse_create_sprint",
-            board_id=board_id, spec_id=spec_id,
-            title="MCP Should Not Persist", lane_type=INVALID_LANE,
-        )
-
-    assert json.loads(raw) == EXPECTED_ENVELOPE
-    _assert_no_leak(raw)
-    assert await _count_sprints(db_factory, board_id) == before
-
-
-async def test_ts_lane_04_mcp_update_invalid_keeps_hotfix(db_factory):
-    """TS-LANE-04: MCP update release_validation on a hotfix sprint → envelope, stays hotfix."""
-    ids = await _seed(db_factory)
-    board_id, sprint_id = ids["board_id"], ids["sprint_hotfix_id"]
-    assert await _lane_of(db_factory, sprint_id) == SprintLaneType.HOTFIX
-
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
-         patch.object(mcp_server, "check_permission", return_value=None):
-        raw = await _call(
-            "okto_pulse_update_sprint",
-            board_id=board_id, sprint_id=sprint_id, lane_type=INVALID_LANE,
-        )
-
-    assert json.loads(raw) == EXPECTED_ENVELOPE
-    _assert_no_leak(raw)
-    assert await _lane_of(db_factory, sprint_id) == SprintLaneType.HOTFIX
-
-
-async def test_ts_lane_05_mcp_valid_values_persist(db_factory):
-    """TS-LANE-05 (MCP half): create normal + hotfix and update lane_type=normal persist."""
-    ids = await _seed(db_factory)
-    board_id = ids["board_id"]
-
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
-         patch.object(mcp_server, "check_permission", return_value=None):
-        normal_raw = await _call(
-            "okto_pulse_create_sprint",
-            board_id=board_id, spec_id=ids["spec_normal_id"],
-            title="MCP Normal Create", lane_type="normal",
-        )
-        hotfix_raw = await _call(
-            "okto_pulse_create_sprint",
-            board_id=board_id, spec_id=ids["spec_done_id"],
-            title="MCP Hotfix Create", lane_type="hotfix",
-            origin_bug_id=ids["origin_bug_id"],
-        )
-        hotfix_created = json.loads(hotfix_raw)
-        hotfix_to_normal_raw = await _call(
-            "okto_pulse_update_sprint",
-            board_id=board_id,
-            sprint_id=hotfix_created["sprint"]["id"],
-            lane_type="normal",
-        )
-        update_raw = await _call(
-            "okto_pulse_update_sprint",
-            board_id=board_id, sprint_id=ids["sprint_normal_id"], lane_type="normal",
-        )
-
-    normal = json.loads(normal_raw)
-    hotfix = json.loads(hotfix_raw)
-    hotfix_to_normal = json.loads(hotfix_to_normal_raw)
-    update = json.loads(update_raw)
-    assert normal.get("success") is True and normal["sprint"]["lane_type"] == "normal"
-    assert hotfix.get("success") is True and hotfix["sprint"]["lane_type"] == "hotfix"
-    assert hotfix_to_normal.get("success") is True
-    assert hotfix_to_normal["sprint"]["lane_type"] == "normal"
-    assert hotfix_to_normal["sprint"]["origin_sprint_id"] is None
-    assert hotfix_to_normal["sprint"]["origin_bug_id"] is None
-    assert update.get("success") is True and update["sprint"]["lane_type"] == "normal"
-
-    async with db_factory() as db:
-        rows = (await db.execute(
-            select(
-                Sprint.title,
-                Sprint.lane_type,
-                Sprint.origin_sprint_id,
-                Sprint.origin_bug_id,
-            ).where(
-                Sprint.title.in_(["MCP Normal Create", "MCP Hotfix Create"])
-            )
-        )).all()
-    persisted = {title: (lane, origin_sprint, origin_bug) for title, lane, origin_sprint, origin_bug in rows}
-    assert persisted["MCP Normal Create"] == (SprintLaneType.NORMAL, None, None)
-    assert persisted["MCP Hotfix Create"] == (SprintLaneType.NORMAL, None, None)
 
 
 # ============================================================================

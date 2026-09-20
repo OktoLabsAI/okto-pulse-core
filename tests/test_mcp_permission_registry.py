@@ -211,7 +211,6 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
     "okto_pulse_move_ideation": _reviewed_transition_flags("ideation"),
     "okto_pulse_move_refinement": _reviewed_transition_flags("refinement"),
     "okto_pulse_move_spec": _reviewed_transition_flags("spec"),
-    "okto_pulse_move_sprint": _reviewed_transition_flags("sprint"),
     "okto_pulse_move_story": _reviewed_transition_flags("story"),
     "okto_pulse_remove_spec_entity": (
         "spec.rules.delete",
@@ -248,8 +247,8 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 325
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 322
+    assert len(report.live_tools) == 311
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 308
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

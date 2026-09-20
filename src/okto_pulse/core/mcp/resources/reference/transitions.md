@@ -48,14 +48,6 @@ requirements. See `okto-pulse://reference/card_types`.
 
 Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validation-gate skip, scenario updates on locked specs: see `okto-pulse://reference/card_types`.
 
-## Sprint transitions
-
-| From | To | Pre-requisites |
-|------|-----|---------------|
-| `draft` | `active` | Must have assigned cards |
-| `active` | `review` | Scoped test scenarios must be `passed` |
-| `review` | `closed` | `okto_pulse_submit_sprint_evaluation` with `recommendation=approve` |
-
 ## Spec transitions
 
 | From | To | Pre-requisites |

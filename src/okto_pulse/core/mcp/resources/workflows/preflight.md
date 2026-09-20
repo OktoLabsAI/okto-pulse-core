@@ -49,7 +49,7 @@ server gate, and a green Resource Gate does not prove all protocol obligations.
 
 ### Entity context pre-flight — before moving or validating anything
 
-Call the matching `okto_pulse_get_{ideation,refinement,spec,sprint}_context`
+Call the matching `okto_pulse_get_{ideation,refinement,spec}_context`
 with `profile="full"` before any move/validation. For cards, call
 `okto_pulse_get_task_context(profile="full", context_scope="gate")`: it is the
 bounded full gate/readiness slice and includes a content manifest plus

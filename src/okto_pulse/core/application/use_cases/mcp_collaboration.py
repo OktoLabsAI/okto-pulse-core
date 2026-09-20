@@ -402,43 +402,8 @@ class McpAskQuestionUseCase:
                 }
             )
 
-        sprint = await uow.services.sprints.get_sprint(command.parent_id)
-        if (
-            not sprint
-            or actor.board_id != command.board_id
-            or sprint.board_id != actor.board_id
-        ):
-            return McpPayloadResult({"error": "Sprint not found"})
-
-        await require_authorization(
-            actor,
-            _stateful_requirement(
-                "sprint.qa.ask",
-                "qa:create",
-                entity="sprint",
-                parent=sprint,
-            ),
-            uow=uow,
-            board_id=sprint.board_id,
-        )
-        qa = await uow.services.sprint_qa.create_question(
-            command.parent_id,
-            actor.actor_id,
-            command.question,
-        )
-        if not qa:
-            return McpPayloadResult({"error": "Sprint not found"})
-        await commit(uow)
-        return McpPayloadResult(
-            {
-                "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "asked_by": qa.asked_by,
-                },
-            }
-        )
+        return McpPayloadResult({"error": "unsupported_target_type",
+            "allowed": ["card", "ideation", "refinement", "spec"]})
 
 
 @dataclass(frozen=True)

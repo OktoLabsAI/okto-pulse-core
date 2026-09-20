@@ -6,7 +6,7 @@ version: "1.0"
 
 Consolidated "ask a question on a work item's Q&A board" through one tool with a
 closed `target_type` enum. One of the two assertiveness-gate-eligible families:
-all five legacy ask tools have identical `(board_id, <parent_id>, question)`
+all four legacy ask tools have identical `(board_id, <parent_id>, question)`
 signatures, so consolidation loses no typed guidance — only the parent-id param
 *name*, which the closed enum restores.
 
@@ -14,17 +14,14 @@ signatures, so consolidation loses no typed guidance — only the parent-id para
 
 `okto_pulse_ask(board_id, target_type, parent_id, question)`
 
-- `target_type` ∈ `card` | `ideation` | `refinement` | `spec` | `sprint`
+- `target_type` ∈ `card` | `ideation` | `refinement` | `spec`
 - An unsupported `target_type` returns a structured error and performs **no
   mutation**.
 
-## Asymmetry (preserved by dedicated routing)
+## Authorization and scope
 
-Most targets route through a typed `*QACreate` schema, a `QA_CREATE` permission
-gate, and an activity-log write. **`sprint` is asymmetric**: `SprintQAService`
-takes a raw string (no `SprintQACreate` model), has **no `QA_CREATE` permission
-gate** and **no activity-log** write. Dedicated routing preserves this exactly —
-a naive uniform merge would crash on or silently change the sprint path.
+Each target keeps its own Q&A permission, Board scope, content-state guards
+and activity log. A permission on one target grants no access to another.
 
 The sibling `*_choice_question` tools (which add `options`/`question_type`) are
 **not** part of this family and remain separate.
@@ -35,11 +32,10 @@ The sibling `*_choice_question` tools (which add `options`/`question_type`) are
 - `okto_pulse_ask_ideation_question(board_id, ideation_id, question)`
 - `okto_pulse_ask_refinement_question(board_id, refinement_id, question)`
 - `okto_pulse_ask_spec_question(board_id, spec_id, question)`
-- `okto_pulse_ask_sprint_question(board_id, sprint_id, question)`
 
 Registry-only short name: `ask`. It exists for internal family resolution,
 collision checks, and bounded telemetry labels; it is **not** an MCP tool token,
-does not appear in `tools/list`, and cannot be invoked remotely. The five
+does not appear in `tools/list`, and cannot be invoked remotely. The four
 `okto_pulse_*` entries above are the live additive MCP aliases.
 
 ## Telemetry

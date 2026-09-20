@@ -23,13 +23,13 @@ For versioned guidelines prefer retirement/unlink as defined in
 | `okto_pulse_delete_screen_mockup` | The mockup HTML. |
 | `okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` | The BR / contract. Linked tasks remain but the coverage gate may now fail. |
 | `okto_pulse_remove_spec_entity` | Consolidated removal for `business_rule` / `api_contract` / `decision`. **Asymmetry:** `business_rule` and `api_contract` are HARD removals; `decision` is a soft-delete (`status="revoked"`, restorable). See `okto-pulse://reference/tool-families/spec_entity_remove`. |
-| `okto_pulse_delete_spec_evaluation` / `okto_pulse_delete_sprint_evaluation` | The evaluation entry (audit trail is lost). |
+| `okto_pulse_delete_spec_evaluation` | The evaluation entry (audit trail is lost). |
 | `okto_pulse_delete_topic` | The Topic. Only allowed when it has NO associated Stories, including archived ones (`topic_not_empty` otherwise). |
 | `okto_pulse_delete_test_scenario` | The scenario, AND its id is dropped from every card's `test_scenario_ids` in atomic CASCADE. Does not block on existing links — coverage gates may start failing. |
 | `okto_pulse_delete_architecture_design` | The Architecture Design. |
 | `okto_pulse_delete_design_system` | The Design System (admin write, `SPECS_UPDATE`). |
 | `okto_pulse_delete_ideation_knowledge` / `okto_pulse_delete_refinement_knowledge` | The knowledge base item on the ideation/refinement. (`okto_pulse_delete_card_knowledge` is deprecated — card KB resources are read-only governed snapshots.) |
-| `okto_pulse_delete_ideation_question` / `okto_pulse_delete_refinement_question` / `okto_pulse_delete_spec_question` / `okto_pulse_delete_sprint_question` | The Q&A item on that entity, including any recorded answer. |
+| `okto_pulse_delete_ideation_question` / `okto_pulse_delete_refinement_question` / `okto_pulse_delete_spec_question` | The Q&A item on that entity, including any recorded answer. |
 | `okto_pulse_remove_card_dependency` | The dependency link between two cards (the cards survive; re-add to undo). |
 
 ## Soft-Delete — Entity Stays but Becomes Unreachable Through Normal Queries

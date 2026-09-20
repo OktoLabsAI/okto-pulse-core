@@ -7670,3 +7670,81 @@ matriz integral continuam pendentes; metadata MCP mantém a última medição
 
 Commit Community: **09c6cce672c6f6fb719e689bf69c3859eef02509**. Publicação normal
 do par em feature/v0.4.0, com comparação HEAD/ls-remote e árvores limpas.
+
+### 2026-09-20 — F3: retirada da família MCP dedicada de Sprint (em validação)
+
+Retomada do par fdd195ed/09c6cce6, árvores limpas. A limpeza de permissões
+continua exigindo registry exatamente igual ao snapshot menos folhas retiradas;
+não será antecipada afrouxando esse gate enquanto REST/domínio consumirem Sprint.
+A remoção autorizada pelo plano F3 começa nesta etapa pelas 14 tools dedicadas
+de Sprint, seus aliases, policies de catálogo e classificação de reader.
+Q&A consolidado também perde o destino Sprint: o caso de uso deixa de encaminhar
+qualquer target desconhecido ao serviço Sprint. Nenhuma permissão Sprint passa
+a autorizar Spec/Card. Recursos exclusivos e instruções das tools retiradas
+saem do catálogo; a geração oficial continua obrigatória.
+
+Investiguei entrada → autorização/UoW → serviço → commit/log dos handlers e
+o fallback de McpAskQuestionUseCase. Foram preservados os testes compartilhados
+de escopo de Board e as provas de negação/estado das entidades remanescentes.
+Os testes exclusivos dos handlers removidos são substituídos por provas de
+ausência no catálogo e recusa de invocação/alias, inclusive no FastMCP Community.
+Sem mudança de frontend/REST nesta etapa. A investigação também identificou
+policies de reader órfãs na primeira geração: o guard recusou importação e as
+cinco entradas retiradas foram removidas, sem alterar o guard.
+
+Estado parcial deliberadamente não liberável: leituras genéricas, contexto,
+REST, UI, gates e contratos de domínio ainda têm Sprint. Não representa F3
+completa nem cutover de schema. Permissões, backup, journal e admissão do
+runtime permanecem com as garantias anteriores.
+
+Evidência desta etapa (scratch `.validation-v040`):
+- A primeira geração recusou readers sem policy, conforme descrito acima.
+  O primeiro build também recusou o `force-include` de sprints.md já removido;
+  o mapeamento exclusivo saiu do pyproject. Nenhum fallback de packaging.
+- `provenance-sprint-mcp.json`: **813/337 .py**, **876/421 payloads** idênticos
+  entre os dois fontes, wheels e site-packages, com origens no venv comprovadas
+  antes de executar comportamento. Pytest usa checkouts provados idênticos.
+- `sprint-mcp-core.log`: inicialmente **124 passed, 4 failed**, 21,32 s.
+  As quatro falhas estavam no teste novo invocando wrapper keyword-only com
+  argumentos posicionais. Corrigida apenas a chamada do teste, sem alteração
+  do produto; `sprint-mcp-core-new-r2.log`: **23 passed**, 2,24 s.
+  União distinta deste grupo: **128 aprovados**, sem contar os replays duas vezes.
+- `sprint-mcp-transport.log`: **26 passed**, 15,38 s: transporte novo mais
+  regressões de host/admission. FastMCP lista exatamente o catálogo atual,
+  recusa as 14 invocações antigas e o ask/Sprint não alcança UoW, mesmo com `*`.
+- `sprint-mcp-resources.log`: **222 passed, 1 failed**, 13,37 s. A única falha
+  é `test_initial_footprint_under_budget`: **54.349 > 50.800 tokens**. A medição
+  anterior era 56.024; redução de 1.675 tokens nesta superfície. Não é benchmark
+  de fluxo completo e o budget continua intacto/vermelho. Catálogo: **311 tools,
+  308 policies e 3 exemptions humanos**. Sem remover tipagem para ganhar tokens.
+- Total distinto selecionado: **376 aprovados, 1 falha conhecida de metadata**.
+  Preservadas as negativas de autorização/Board e os controles das entidades
+  remanescentes. Nenhuma suite de frontend foi necessária: não há alteração
+  de UI/REST ou dos seus contratos nesta retirada de transport MCP.
+- Closure inicial: findings=[], oito budgets 0/0, apenas matrizes dos dois
+  READMEs divergentes. Regeneradas pelo renderer oficial (7.512 imports Core /
+  1.183 Community, 25 dependências). Ruff e diff --check aprovados.
+- `provenance-sprint-mcp-final.json` confirma novamente **813/337 .py** e
+  **876/421 payloads**. Após regenerar os READMEs, o hash agregado do conteúdo
+  dos DOIS pacotes é igual ao da revisão testada; nenhuma mudança de produto
+  ou reinstalação ocorreu com testes ativos.
+- Wheels finais `wheels-sprint-mcp-final`:
+  Core SHA256 cad901474b93a103f4227be0fff9480ff270749d8c880aa0f5a02a871efe523a;
+  Community SHA256 81323392ddde28b8b193cd10e004d86eb8d1542cca67850c9d5291e92b80d323.
+
+Retomada F3: retirar destinos Sprint das leituras genéricas/contextos MCP e
+dos casos de uso exportados restantes, seguindo seus consumidores REST/UI;
+compor a remoção de `sprint_assignment_block` e da exigência de Sprint encerrada
+na conclusão de Spec com hotfix A/B, sem mexer nos demais gates. Só depois do
+registry efetivamente reduzido executar cleanup com recibo durável e corte de
+schema, mantendo o bootstrap bloqueado até prova terminal. O E2E Community
+`test_global_discovery_recovery_installed_e2e.py` ainda congela inventário antigo
+341/333 e alias Sprint; precisa revisão com a superfície final e execução real
+pareada, não pode ser citado como prova deste catálogo. F2A/F2C residuais,
+F3/F4/F5, matriz integral e rollout permanecem pendentes. Objetivo integral ativo.
+
+Fechamento da etapa: `closure-sprint-mcp-final.json` **ok=true**, findings=[] e
+documentation_findings=[], oito budgets **0/0**. Todos os handles de testes,
+build/install e closure encerrados; sem intervenção em runtime/dados reais.
+Commit Community **30ce1e0964a6d4a65a4da9a7418d959a842461cc**. O par segue para
+push normal em feature/v0.4.0, com verificação HEAD/ls-remote ao encerrar.

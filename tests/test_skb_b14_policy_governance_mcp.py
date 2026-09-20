@@ -1258,7 +1258,6 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
         resource_root / "workflows" / "ideations.md",
         resource_root / "workflows" / "refinements.md",
         resource_root / "workflows" / "specs.md",
-        resource_root / "workflows" / "sprints.md",
         resource_root / "workflows" / "cards.md",
         resource_root / "workflows" / "preflight.md",
         resource_root / "reference" / "transitions.md",

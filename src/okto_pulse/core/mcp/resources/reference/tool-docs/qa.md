@@ -12,7 +12,7 @@ Consolidated Q&A "ask a question" tool (R4). Dispatches on `target_type`.
 
 Args:
     board_id: Board ID
-    target_type: One of `card` | `ideation` | `refinement` | `spec` | `sprint`
+    target_type: One of `card` | `ideation` | `refinement` | `spec`
     parent_id: The id of that work item
     question: The question text (use `@Name` to direct it)
 
@@ -20,11 +20,10 @@ Returns:
     JSON `{success, qa:{id, question, asked_by}}`. Unsupported `target_type`
     returns `{error:"unsupported_target_type", allowed:[…]}` (no mutation).
 
-The legacy per-type tools (`okto_pulse_ask_question`, `…_ask_ideation_question`,
-`…_ask_refinement_question`, `…_ask_spec_question`, `…_ask_sprint_question`) remain
-as aliases and delegate to the same implementation. Note: `sprint` is asymmetric —
-no `QA_CREATE` permission gate and no activity-log write. Full family contract:
-`okto-pulse://reference/tool-families/qa_ask`.
+The per-type tools (`okto_pulse_ask_question`, `…_ask_ideation_question`,
+`…_ask_refinement_question`, `…_ask_spec_question`) delegate to the same
+implementation, preserving each target's authorization and scope checks.
+Full family contract: `okto-pulse://reference/tool-families/qa_ask`.
 
 ## `okto_pulse_answer_question`
 

@@ -91,24 +91,6 @@ async def test_card_create_keeps_internal_mcp_wildcard_compatibility(
 
 
 @pytest.mark.asyncio
-async def test_sprint_qa_ask_defers_permission_until_after_lookup(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def _context(_board_id: str):
-        return _ctx(PermissionSet({"sprint": {"qa": {"ask": False}}}))
-
-    monkeypatch.setattr(server, "_get_agent_ctx", _context)
-
-    raw = await server.okto_pulse_ask_sprint_question.fn(
-        board_id=BOARD_ID,
-        sprint_id="sprint-1",
-        question="Can this proceed?",
-    )
-
-    assert json.loads(raw) == {"error": "Sprint not found"}
-
-
-@pytest.mark.asyncio
 async def test_profile_update_denies_false_canonical_leaf_before_uow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -227,47 +209,6 @@ async def test_card_dependency_mutations_lookup_before_permission_denial(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("flags", "kwargs"),
-    (
-        (
-            {"sprint": {"entity": {"edit_fields": False}}},
-            {"title": "Changed"},
-        ),
-        (
-            {"sprint": {"entity": {"edit_coverage_flags": False}}},
-            {"skip_test_coverage": False},
-        ),
-        (
-            {"sprint": {"entity": {"edit_coverage_flags": False}}},
-            {"validation_threshold": 80},
-        ),
-        (
-            {"sprint": {"entity": {"label": False}}},
-            {"labels": ["blocked"]},
-        ),
-    ),
-)
-async def test_update_sprint_defers_permission_decision_until_after_lookup(
-    monkeypatch: pytest.MonkeyPatch,
-    flags: dict,
-    kwargs: dict,
-) -> None:
-    async def _context(_board_id: str):
-        return _ctx(PermissionSet(flags))
-
-    monkeypatch.setattr(server, "_get_agent_ctx", _context)
-
-    raw = await server.okto_pulse_update_sprint.fn(
-        board_id=BOARD_ID,
-        sprint_id="sprint-1",
-        **kwargs,
-    )
-
-    assert json.loads(raw) == {"error": "Sprint not found"}
-
-
-@pytest.mark.asyncio
 async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -306,81 +247,6 @@ async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permissio
             ambiguity_justification="Low ambiguity",
             recommendation="approve",
         )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("tool", "flags", "kwargs", "expected_error"),
-    (
-        (
-            server.okto_pulse_submit_sprint_evaluation,
-            {"sprint": {"evaluations": {"submit": False}}},
-            {
-                "breakdown_completeness": 80,
-                "breakdown_justification": "Complete",
-                "granularity": 80,
-                "granularity_justification": "Granular",
-                "dependency_coherence": 80,
-                "dependency_justification": "Coherent",
-                "test_coverage_quality": 80,
-                "test_coverage_justification": "Covered",
-                "overall_score": 80,
-                "overall_justification": "Ready",
-                "recommendation": "approve",
-            },
-            "Sprint not found",
-        ),
-        (
-            server.okto_pulse_delete_sprint_evaluation,
-            {"sprint": {"evaluations": {"delete": False}}},
-            {"evaluation_id": "evaluation-1"},
-            "Sprint not found",
-        ),
-        (
-            server.okto_pulse_answer_sprint_question,
-            {"sprint": {"qa": {"answer": False}}},
-            {"qa_id": "qa-1", "answer": "No"},
-            "Q&A item not found",
-        ),
-    ),
-)
-async def test_sprint_mutations_lookup_before_permission_denial(
-    monkeypatch: pytest.MonkeyPatch,
-    tool,
-    flags: dict,
-    kwargs: dict,
-    expected_error: str,
-) -> None:
-    async def _context(_board_id: str):
-        return _ctx(PermissionSet(flags))
-
-    monkeypatch.setattr(server, "_get_agent_ctx", _context)
-
-    raw = await tool.fn(
-        board_id=BOARD_ID,
-        sprint_id="sprint-1",
-        **kwargs,
-    )
-
-    assert json.loads(raw) == {"error": expected_error}
-
-
-@pytest.mark.asyncio
-async def test_assign_tasks_to_sprint_lookup_precedes_permission_denial(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def _context(_board_id: str):
-        return _ctx(PermissionSet({"sprint": {"entity": {"assign": False}}}))
-
-    monkeypatch.setattr(server, "_get_agent_ctx", _context)
-
-    raw = await server.okto_pulse_assign_tasks_to_sprint.fn(
-        board_id=BOARD_ID,
-        sprint_id="sprint-1",
-        card_ids=["card-1", "card-2"],
-    )
-
-    assert json.loads(raw) == {"error": "Sprint not found"}
 
 
 @pytest.mark.asyncio

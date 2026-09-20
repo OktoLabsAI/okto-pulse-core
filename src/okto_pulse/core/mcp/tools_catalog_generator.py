@@ -128,8 +128,6 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"copy_.*_to_card)"),
     ("Amendments", "card",
      r"amendment"),
-    ("Sprints", "sprint",
-     r"sprint"),
     ("Q&A", "qa",
      r"(^okto_pulse_ask|_question$|^okto_pulse_answer|choice|^okto_pulse_list_qa$)"),
     ("Knowledge", "knowledge",

@@ -122,24 +122,21 @@ ELIGIBLE_FAMILIES: tuple[ToolFamily, ...] = (
         family_id="qa_ask",
         eligible=True,
         consolidated_tool="okto_pulse_ask",
-        target_types=("card", "ideation", "refinement", "spec", "sprint"),
+        target_types=("card", "ideation", "refinement", "spec"),
         operations=("ask",),
         legacy_aliases=(
             "okto_pulse_ask_question",
             "okto_pulse_ask_ideation_question",
             "okto_pulse_ask_refinement_question",
             "okto_pulse_ask_spec_question",
-            "okto_pulse_ask_sprint_question",
         ),
         short_aliases=("ask",),
         mode=ConsolidationMode.DEDICATED_ROUTING,
         routing_notes=(
             "Identical (board_id, parent_id, question) signatures — only the parent-id "
             "param NAME differed; the closed target_type enum restores that steering. "
-            "DEDICATED ROUTING preserves the SPRINT asymmetry: SprintQAService takes a "
-            "raw string (no SprintQACreate model), has NO QA_CREATE permission gate and "
-            "NO activity-log write, unlike the card/ideation/refinement/spec paths. The "
-            "sibling *_choice_question tools are NOT in this family and stay separate."
+            "Each target retains its own authorization, scope checks and activity log. "
+            "The sibling *_choice_question tools stay separate."
         ),
     ),
 )
@@ -208,44 +205,41 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
     ToolFamily(
         family_id="qa_answer",
         eligible=False,
-        target_types=("card", "ideation", "refinement", "spec", "sprint"),
+        target_types=("card", "ideation", "refinement", "spec"),
         operations=("answer",),
         legacy_aliases=(
             "okto_pulse_answer_question",
             "okto_pulse_answer_ideation_question",
             "okto_pulse_answer_refinement_question",
             "okto_pulse_answer_spec_question",
-            "okto_pulse_answer_sprint_question",
         ),
         rejected_reason=(
             "Conditional requiredness that one signature cannot express: 'answer' is "
-            "REQUIRED for card+sprint but OPTIONAL for the choice-capable "
+            "REQUIRED for card but OPTIONAL for the choice-capable "
             "ideation/refinement/spec (where 'selected' substitutes), and 'selected' "
-            "exists on only 3 of 5. A flat payload would induce sending 'selected' to a "
-            "card/sprint (silently dropped), omitting 'answer' on card/sprint, or sending "
+            "exists on only 3 of 4. A flat payload would induce sending 'selected' to a "
+            "card (silently dropped), omitting 'answer' on card, or sending "
             "free-text to a choice question. (Unlike qa_ask, which IS homogeneous.)"
         ),
     ),
     ToolFamily(
         family_id="move_workitem",
         eligible=False,
-        target_types=("ideation", "refinement", "spec", "sprint", "story"),
+        target_types=("ideation", "refinement", "spec", "story"),
         operations=("move",),
         legacy_aliases=(
             "okto_pulse_move_ideation",
             "okto_pulse_move_refinement",
             "okto_pulse_move_spec",
-            "okto_pulse_move_sprint",
             "okto_pulse_move_story",
         ),
         rejected_reason=(
-            "Shape-homogeneous but vocabulary/gate-heterogeneous: five DISTINCT status "
-            "enums (ideation 6 values, story 4, refinement 5, sprint 5 with 3 explicit "
-            "gates, spec 7) plus distinct server-side transition gates. A generic "
+            "Shape-homogeneous but vocabulary/gate-heterogeneous: four DISTINCT status "
+            "enums (ideation 6 values, story 4, refinement 5, spec 7) plus distinct server-side transition gates. A generic "
             "move(target_type, status) makes the legal {target_type x status} matrix "
-            "unenforceable by any schema and cannot legibly carry five state machines in "
+            "unenforceable by any schema and cannot legibly carry four state machines in "
             "one docstring — inducing cross-type status leaks (status='active' on a spec), "
-            "story status='converted' misuse, and gate-blind sprint transitions."
+            "and story status='converted' misuse."
         ),
     ),
     ToolFamily(

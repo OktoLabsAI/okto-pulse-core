@@ -329,22 +329,6 @@ Semantic guideline protocol:
 - `okto_pulse_list_amendment_revisions` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_transition_amendment_revision` — docs: `okto-pulse://reference/tool-docs/card`
 
-## Sprints
-- `okto_pulse_answer_sprint_question` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_ask_sprint_question` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_assign_tasks_to_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_create_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_delete_sprint_evaluation` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_delete_sprint_question` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_get_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_get_sprint_context` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_get_sprint_evaluation` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_list_sprint_evaluations` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_move_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_submit_sprint_evaluation` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_suggest_sprints` — docs: `okto-pulse://reference/tool-docs/sprint`
-- `okto_pulse_update_sprint` — docs: `okto-pulse://reference/tool-docs/sprint`
-
 ## Q&A
 - `okto_pulse_add_choice_comment` — docs: `okto-pulse://reference/tool-docs/comment`
 - `okto_pulse_answer_question` — docs: `okto-pulse://reference/tool-docs/qa`

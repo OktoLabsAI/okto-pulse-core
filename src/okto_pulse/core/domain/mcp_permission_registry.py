@@ -75,9 +75,6 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_get_spec_context",
         "okto_pulse_get_spec_evaluation",
         "okto_pulse_get_spec_knowledge",
-        "okto_pulse_get_sprint",
-        "okto_pulse_get_sprint_context",
-        "okto_pulse_get_sprint_evaluation",
         "okto_pulse_get_task_conclusions",
         "okto_pulse_get_task_validation",
         "okto_pulse_get_traceability_report",
@@ -129,11 +126,9 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_list_spec_dependencies",
         "okto_pulse_list_spec_evaluations",
         "okto_pulse_list_spec_validations",
-        "okto_pulse_list_sprint_evaluations",
         "okto_pulse_list_task_validations",
         "okto_pulse_list_test_scenarios",
         "okto_pulse_resolve_bug_regression_scenarios",
-        "okto_pulse_suggest_sprints",
     }
 )
 
@@ -239,12 +234,10 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.qa.answer",
         "refinement.qa.answer",
         "spec.qa.answer",
-        "sprint.qa.answer",
         "card.qa.answer",
     ),
     _policy("okto_pulse_answer_refinement_question", "refinement.qa.answer"),
     _policy("okto_pulse_answer_spec_question", "spec.qa.answer"),
-    _policy("okto_pulse_answer_sprint_question", "sprint.qa.answer"),
     _policy(
         "okto_pulse_append_research_decision",
         "refinement.research_decisions.append",
@@ -262,7 +255,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.qa.ask",
         "refinement.qa.ask",
         "spec.qa.ask",
-        "sprint.qa.ask",
         "card.qa.ask",
     ),
     _policy("okto_pulse_ask_ideation_choice_question", "ideation.qa.ask_choice"),
@@ -272,7 +264,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.qa.ask",
         "refinement.qa.ask",
         "spec.qa.ask",
-        "sprint.qa.ask",
         "card.qa.ask",
     ),
     _policy(
@@ -282,8 +273,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_ask_refinement_question", "refinement.qa.ask"),
     _policy("okto_pulse_ask_spec_choice_question", "spec.qa.ask_choice"),
     _policy("okto_pulse_ask_spec_question", "spec.qa.ask"),
-    _policy("okto_pulse_ask_sprint_question", "sprint.qa.ask"),
-    _policy("okto_pulse_assign_tasks_to_sprint", "sprint.tasks.assign"),
     _policy(
         "okto_pulse_associate_amendment_revision_artifacts",
         "amendment.revision.associate",
@@ -336,7 +325,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_create_refinement", "refinement.entity.create"),
     _policy("okto_pulse_create_spec", "spec.entity.create"),
-    _policy("okto_pulse_create_sprint", "sprint.entity.create"),
     _policy("okto_pulse_create_story", "story.entity.create"),
     _policy("okto_pulse_create_topic", "topic.entity.create"),
     _policy(
@@ -364,7 +352,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.qa.delete",
         "refinement.qa.delete",
         "spec.qa.delete",
-        "sprint.qa.delete",
         "card.qa.delete",
     ),
     _policy("okto_pulse_delete_refinement", "refinement.entity.delete"),
@@ -382,8 +369,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_delete_spec_evaluation", "spec.evaluations.delete"),
     _policy("okto_pulse_delete_spec_knowledge", "spec.knowledge.delete"),
     _policy("okto_pulse_delete_spec_question", "spec.qa.delete"),
-    _policy("okto_pulse_delete_sprint_evaluation", "sprint.evaluations.delete"),
-    _policy("okto_pulse_delete_sprint_question", "sprint.qa.delete"),
     _policy("okto_pulse_delete_test_scenario", "spec.tests.delete"),
     _policy("okto_pulse_delete_topic", "topic.entity.delete"),
     _policy("okto_pulse_derive_spec_from_ideation", "ideation.specs_derive"),
@@ -508,9 +493,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_get_spec_evaluation", "spec.evaluations.read"),
     _policy("okto_pulse_get_spec_history", "spec.history_read"),
     _policy("okto_pulse_get_spec_knowledge", "spec.knowledge.read"),
-    _policy("okto_pulse_get_sprint", "sprint.entity.read"),
-    _policy("okto_pulse_get_sprint_context", "sprint.entity.read"),
-    _policy("okto_pulse_get_sprint_evaluation", "sprint.evaluations.read"),
     _policy("okto_pulse_get_task_conclusions", "card.conclusion.read"),
     _policy(
         "okto_pulse_get_task_context",
@@ -739,7 +721,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_list_spec_dependencies", "spec.entity.read"),
     _policy("okto_pulse_list_spec_evaluations", "spec.evaluations.read"),
     _policy("okto_pulse_list_spec_validations", "spec.validation.read"),
-    _policy("okto_pulse_list_sprint_evaluations", "sprint.evaluations.read"),
     _policy(
         "okto_pulse_list_task_validations",
         "card.entity.read",
@@ -768,7 +749,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_move_ideation", *transition_permission_flags("ideation")),
     _policy("okto_pulse_move_refinement", *transition_permission_flags("refinement")),
     _policy("okto_pulse_move_spec", *transition_permission_flags("spec")),
-    _policy("okto_pulse_move_sprint", *transition_permission_flags("sprint")),
     _policy("okto_pulse_move_story", *transition_permission_flags("story")),
     _policy("okto_pulse_preview_guideline_impact", "guidelines.impact.preview"),
     _policy(
@@ -874,13 +854,11 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_submit_spec_evaluation", "spec.evaluations.submit"),
     _policy("okto_pulse_submit_spec_validation", "spec.validation.submit"),
-    _policy("okto_pulse_submit_sprint_evaluation", "sprint.evaluations.submit"),
     _policy(
         "okto_pulse_submit_task_validation",
         "card.validation.submit",
         "card.validation.read",
     ),
-    _policy("okto_pulse_suggest_sprints", "board.read"),
     _policy(
         "okto_pulse_supersede_code_evidence",
         "code_traceability.evidence.supersede",
@@ -957,13 +935,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_update_spec_api_contract", "spec.contracts.edit"),
     _policy("okto_pulse_update_spec_entity", "spec.entity.edit_fields"),
-    _policy(
-        "okto_pulse_update_sprint",
-        "sprint.entity.edit_fields",
-        "sprint.entity.edit_coverage_flags",
-        "sprint.entity.assign",
-        "sprint.entity.label",
-    ),
     _policy(
         "okto_pulse_update_story",
         "story.entity.edit_fields",

@@ -290,11 +290,6 @@ _RESOURCE_CONTRACTS: tuple[_ResourceContract, ...] = (
             "okto-pulse://reference/policy-compliance",
         ),
     ),
-    _ResourceContract(
-        uri="okto-pulse://workflows/sprints",
-        required_headings=("# Sprints Workflow — Lifecycle & Evaluation",),
-        required_cross_links=("okto-pulse://reference/policy-compliance",),
-    ),
 )
 
 _INSTRUCTION_REQUIRED_HEADINGS = (

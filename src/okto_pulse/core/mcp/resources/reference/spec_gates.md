@@ -18,7 +18,7 @@ read-only for repair. See `okto-pulse://reference/code-traceability` and
 
 ## Spec Status Transitions
 
-Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed — see `okto-pulse://workflows/sprints`).
+Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed).
 
 ### Spec edition versus technical revision
 

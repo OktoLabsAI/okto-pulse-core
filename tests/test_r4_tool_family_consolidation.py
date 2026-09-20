@@ -45,8 +45,6 @@ from sqlalchemy_test_models import (
     Spec,
     SpecQAItem,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
 
 USER_ID = "r4-agent"
@@ -237,12 +235,12 @@ async def test_remove_spec_entity_unsupported_target_type_no_mutation():
 
 
 # ===========================================================================
-# Parity — consolidated vs legacy ask + sprint asymmetry (TC-R4.1/R4.2)
+# Parity — consolidated vs legacy ask (TC-R4.1/R4.2)
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
+async def test_ask_legacy_and_consolidated_parity():
     db_factory = get_session_factory()
     board_id, spec_id, card_id = _id("r4q-board"), _id("r4q-spec"), _id("r4q-card")
     async with db_factory() as db:
@@ -266,35 +264,23 @@ async def test_ask_legacy_and_consolidated_parity_and_sprint_asymmetry():
     assert spec_consol["success"] is True
     # unsupported target_type → structured error, no qa.
     assert bad["error"] == "unsupported_target_type"
-    assert "sprint" in bad["allowed"]
+    assert bad["allowed"] == ["card", "ideation", "refinement", "spec"]
 
 
 @pytest.mark.asyncio
-async def test_ask_uses_target_specific_permission_for_card_and_sprint():
-    # Every target has a canonical QA leaf; the sprint service keeps its transport
-    # asymmetries but no longer bypasses authorization.
+async def test_ask_uses_target_specific_permission_for_card_and_spec():
+    # A Board read permission cannot authorize Q&A writes on either target.
     db_factory = get_session_factory()
-    board_id, card_id, spec_id, sprint_id = (
+    board_id, card_id, spec_id = (
         _id("r4s-board"),
         _id("r4s-card"),
         _id("r4s-spec"),
-        _id("r4s-sprint"),
     )
     async with db_factory() as db:
         db.add(Board(id=board_id, name="R4S", owner_id=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, title="Spec", status=SpecStatus.IN_PROGRESS, created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="Card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL, created_by=USER_ID))
-        db.add(
-            Sprint(
-                id=sprint_id,
-                board_id=board_id,
-                spec_id=spec_id,
-                title="Sprint",
-                status=SprintStatus.ACTIVE,
-                created_by=USER_ID,
-            )
-        )
         await db.commit()
 
     with patch.object(
@@ -303,10 +289,10 @@ async def test_ask_uses_target_specific_permission_for_card_and_sprint():
         AsyncMock(return_value=_stub_ctx(board_id, permissions=["board:read"])),
     ):
         card_res = await _call("okto_pulse_ask", board_id=board_id, target_type="card", parent_id=card_id, question="Q")
-        sprint_res = await _call("okto_pulse_ask", board_id=board_id, target_type="sprint", parent_id=sprint_id, question="Q")
+        spec_res = await _call("okto_pulse_ask", board_id=board_id, target_type="spec", parent_id=spec_id, question="Q")
 
     assert "card.qa.ask" in card_res["error"]
-    assert "sprint.qa.ask" in sprint_res["error"]
+    assert "spec.qa.ask" in spec_res["error"]
 
 
 @pytest.mark.asyncio
@@ -467,8 +453,8 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
             "okto-pulse://reference/tool-docs/qa",
             "reference/tool-docs/qa.md",
             "reference/tool-families/qa_ask.md",
-            # the description abbreviates to `/_sprint_question`; full form is doc-only.
-            "okto_pulse_ask_sprint_question",
+            # the description abbreviates to `/_spec_question`; full form is doc-only.
+            "okto_pulse_ask_spec_question",
         ),
     ]
 
