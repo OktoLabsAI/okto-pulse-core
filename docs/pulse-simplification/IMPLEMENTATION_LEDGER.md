@@ -2355,3 +2355,10 @@ falta composição atômica do último batch com o relatório. Esta seleção n�
 DEI §9/I4. Adoção/cutover ARQ/VER e inventário completo, F2B com override por Card
 autorizado e aviso de depreciação, migrações/rollback e validação integral do pacote
 continuam pendentes. A iniciativa segue em **progresso**, sem novo bloqueio.
+
+Par publicado por push normal em `feature/v0.4.0`: Core
+`e624a7c61c6946447c58a93db86a6caaae695702`; Community
+`ae54e4425c8a8e890cfd6107d2496107033db2d5`. `ls-remote` confirmou os dois
+HEADs e as árvores limpas. A reautenticação estava válida para a conta ativa
+`jpbraga`, que realizou os pushes. Não foi necessário `gh auth switch`; a
+autorização do usuário para alternar contas, se necessário, permanece registrada.
