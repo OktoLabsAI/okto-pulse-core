@@ -6807,3 +6807,99 @@ Gate global de metadata MCP segue pendente (última medição 56.024 > 50.800;
 nenhuma tool/schema mudou nesta etapa). F3/F4/F5, matriz integral BASE/KG/DEI/
 ARQ/VER/ADV, upgrade/rollback instalados e benchmark completo continuam fora da
 alegação de conclusão. Progresso verificado; objetivo integral permanece ativo.
+
+### 2026-09-20 — F2D: checkpoints transacionais do trecho de preservação de dados
+
+Retomada: Core 0766983f / Community 87a582d, branches/working trees conferidas
+limpas. Turno anterior classificado como progresso. Investigação do lifecycle
+confirma pre_create_all -> create_all -> post_create_all -> bootstrap. O journal
+de eventos exige Board e não serve como âncora global de retomada multi-Board.
+
+Em implementação: journal interno cross-Board com quatro registros encadeados
+(prepared/context/cards/work), âncora de inputs fechados e hashes, receipts
+existentes tipados, limites e triggers de imutabilidade. Não é entidade ativa
+Sprint, API, permissão ou novo diário de Delivery. O instalador externo deverá
+reter RetirementDataRun com seu backup/plano; o journal não certifica sozinho
+um backup ou a exclusão de todos os writers.
+
+Checkpoints entram na MESMA transação de cada etapa, antes das verificações
+finais de fonte/alvo/journal. Falha de checkpoint reverte a etapa e seus blobs
+novos; perda após commit deixa receipt e efeito juntos. Replay exige checkpoint
+já existente para efeito já existente; não adota uma etapa avulsa nem reconstrói
+journal apagado. Retomada chama verificadores originais com receipts retidos,
+sem recapturar fontes transformadas. Tabela genérica pertence apenas ao Community.
+
+Este é o trecho durável contexto -> Cards -> trabalho a ser composto pelo
+coordenador de cutover integral. Não foi registrado no bootstrap; backup,
+checkpoints/cleanup de permissões, exclusão de writers/KG, corte de schema e F3
+continuam necessários. Testes preparados de interrupção/reabertura, input
+alterado, etapa fora de ordem, corrupção coerentemente rehashada, imutabilidade,
+falha por triggers e dados antigos sem a tabela nova. Build/prova e testes
+comportamentais ainda pendentes. Nenhuma migração real executada.
+
+Atualização de validação: `provenance-data-journal.json` comprovou 810/329 .py e
+875/413 payloads idênticos fonte/wheel/install antes dos testes. Suite nova:
+**13 passed** (201,30 s), `data-journal-new.log`. Regressões anteriores seguem
+no mesmo processo, sem reinstalação nem alteração de fontes durante a execução.
+Closure inicial: findings=[], oito budgets 0/0; somente os dois READMEs divergiam
+na contagem Community -> Core (1.170 -> 1.171, nova porta pública consumida).
+Matrizes atualizadas pelo renderer oficial, sem relaxar gates; rebuild final do
+par aprovado. Instalação/prova/closure finais aguardam término das regressões.
+
+Continuidade investigada: `create_joint_recovery_snapshot` já adquire
+`offline_migration_window` internamente. O instalador deverá manter a mesma
+janela durante backup e transformações; envolver a chamada atual em outra
+instância do mesmo mutex não compõe essa garantia e pode causar contenção.
+Separar a captura sob janela possuída requer contrato de lifetime e teste real
+de concorrência, não um booleano declarando exclusão. A reserva SQLite do
+backup termina após a captura; stamps Grafx detectam commits durante export,
+mas não excluem writes nativos depois. O teste existente
+`test_native_grafx_write_transaction_is_not_a_migration_fence` reproduz esse
+limite com o runtime real. Não tratar estes checkpoints como fence de Grafx,
+certificado de backup atual ou conclusão de F2D/F3.
+
+Fechamento do trecho durável de preservação:
+- Community **3b1e490b7d4e8e380f03351d351d41598b2df55c**: journal genérico
+  cross-Board, âncora de inputs e checkpoints na mesma transação dos efeitos.
+  Retomada verifica os receipts de contexto/Card/trabalho existentes; não
+  adota efeitos avulsos, não reconstrói journal perdido e não recaptura a
+  fonte original depois do Card transform. Resultado é `data_preserved`.
+- `data-journal-new.log`: **13 passed** (201,30 s). Interrupção após cada
+  commit com reabertura por outro engine, schema anterior sem tabela, replay
+  após edições legítimas, inputs/dependências incorretos, journal incompleto,
+  receipt adulterado com cadeia rehashada, triggers de imutabilidade e rollback
+  de efeitos/blobs quando o checkpoint provoca drift de fonte/alvo/prova.
+- `data-journal-regression.log`: **83 passed** (503,74 s), nas suites
+  `test_card_context_retirement.py`, `test_context_disposition_retirement.py`,
+  `test_card_validation_retirement.py`, `test_sprint_work_retirement.py` e
+  `test_sprint_retirement_preflight.py`. Total distinto deste incremento: **96**.
+  Nenhuma mudança de contrato/renderização frontend; não há novos testes de
+  frontend nesta etapa interna. Os 24 casos do consumidor histórico foram
+  executados no incremento imediatamente anterior, não recontados aqui.
+- Build final e force-install pareados concluídos somente após os testes.
+  `provenance-data-journal-final.json`: 810/329 .py e 875/413 payloads idênticos
+  fonte/wheel/install; origens verificadas em site-packages. As suites pytest
+  usam checkouts provados idênticos pelo preflight anterior, não são alegadas
+  como execução contra imports instalados. Nenhuma fonte de produto mudou
+  depois desse preflight; o rebuild final inclui as matrizes README atualizadas.
+- `closure-data-journal-final.json`: ok=true, findings/documentation_findings=[];
+  oito budgets 0/0. Matrizes: 7.548 imports Core / 1.171 Community -> Core,
+  25 dependências. Não há novo adapter, mapeamento relacional ou router no Core.
+- Wheels finais em `.validation-v040/wheels-data-journal-final`, SHA256:
+  Core dcbaff8dd1bffcee358fa236e407c26c3f64cf0d459329319fe3f1ff4ab01363;
+  Community c6db807f60eecd2231424fa47d2292229216764406cef189ff6596f2100a26c1.
+- Ruff do módulo/testes novos e staged diff --check aprovados. Todos os
+  processos de build/install/testes/closure terminaram. Nenhum runtime foi
+  iniciado/reiniciado, nenhum dado real migrado, nenhum bootstrap registrado.
+  Push normal do par em feature/v0.4.0 será conferido contra ls-remote.
+
+Próximo trabalho: integrar preparação/retomada com backup pareado, retenção
+externa da âncora, janela contínua de exclusão, checkpoint e cleanup de
+permissões; investigar/remover referências KG/global outbox de forma dirigida.
+A integração de lifecycle e corte de schema depende da retirada F3 para impedir
+recriação por create_all/seeds ou execução do código antigo sobre schema novo.
+Não confundir o journal interno com conclusão desse coordenador nem expor
+operação pública de manutenção. F2A/F2C restantes, F3/F4/F5 e matriz integral
+BASE/KG/DEI/ARQ/VER/ADV continuam pendentes. Gate global MCP segue com última
+medição 56.024 > 50.800, sem mudança de tools/schema nem aumento do limite.
+Objetivo integral permanece ativo; classificação desta etapa: progresso.
