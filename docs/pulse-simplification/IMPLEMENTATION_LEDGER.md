@@ -7566,3 +7566,107 @@ apenas dados preservados; estes helpers ainda não foram ligados a ele. Cleanup
 de permissões, schema F3, certificado terminal de admissão e demais fases da
 matriz seguem pendentes. Metadata MCP mantém o bloqueio já conhecido
 56.024 > 50.800. Objetivo integral ativo; progresso, não conclusão.
+
+### 2026-09-20 — F2D: composição offline de materialização
+
+Retomada conferida: Core af2b6b7831e6b06b212c0a99c5fa97df318d5665 /
+Community f0f5458ada48fc2dc01bbdc7c9c887aff9410c48, árvores limpas.
+Turno anterior: progresso verificado (remoção global e outbox, pushes normais).
+O fluxo v1 existente só preservava dados relacionais. A integração agora sela
+planos Board/global/outbox no manifesto privado v2, antes das transformações,
+comparando os fingerprints de origem e o snapshot SQL com o backup original.
+
+Preparação/retomada mantém os fences de schema, startup e publicação de bindings.
+Rotas, geração, caminho físico, page size e UUID devem corresponder ao backup;
+nenhuma inicialização ou troca de geração é inferida. Global ausente permanece
+ausente, inclusive quando há remoção em Board e outbox. Board ausente com
+trabalho/digests que podem depender de Sprint exige investigação, pois não há
+prova para distinguir efeitos mistos. Ausência total sem trabalho é no-op.
+
+O journal existente recebe dois estágios depois de work: graph_intent e graphs.
+O primeiro ancora o plano externo e o backup antes da primeira remoção; o último
+confirma grafos verificados e outbox na MESMA transação SQL. Crash depois do
+commit de Board ou Global e antes do ACK retoma pelo plano original; um intent
+perdido com grafo já transformado não é reconstruído a partir do candidato.
+O schema de quatro colunas do journal não muda. Nenhum checkpoint concede
+admissão do runtime: cleanup de permissões e corte de schema seguem necessários.
+
+Validação inicial da composição:
+- `provenance-materialization-coordinator.json`: 813/336 .py e 878/420 payloads
+  idênticos antes dos testes. Closure inicial sem finding, budgets 0/0; apenas
+  matrizes README a regenerar ao encerrar as alterações.
+- Primeira execução recusou corretamente fixture com digest do Board B e Sprint
+  arquivada, mas sem grafo de origem B (1 failed, 28,24 s). O caso foi mantido
+  como teste negativo; o caminho positivo passa a fornecer os DOIS Boards.
+- Segunda execução chegou à escrita de graph_intent e revelou a constraint
+  física real `ordinal <= 3` (1 failed, 41,56 s), não observada na integração
+  inicial. Não se tratou como sucesso nem se removeu a proteção do journal.
+  A correção expande o contrato fechado para 0..5, com cópia transacional de
+  células SQL cruas, igualdade byte a byte do conteúdo JSON, restauração dos
+  triggers de imutabilidade e recusa de dependentes não classificados. Sem
+  PRAGMA foreign_keys=OFF. Falha entre DROP/RENAME deve restaurar integralmente
+  a tabela anterior pelo rollback. O número de colunas permanece quatro.
+- Novos testes físicos cobrem expansão de journal antigo, replay sem alterações,
+  limites 5/6, imutabilidade, rollback após DROP e trigger desconhecido. A prova
+  de data-only continua exigindo os quatro estágios originais; estágios de grafo
+  pertencem ao coordenador e não são simulados pelo helper relacional.
+
+Resultado da integração após correção da constraint:
+- `materialization-coordinator-new-r3.log`: **12 passed**, 453,86 s. Três
+  testes do upgrade físico do journal e nove da composição offline: dois
+  Boards reais, com/sem Global Discovery, preservação do Board não afetado,
+  fences de schema/startup/binding provados por processos separados,
+  crash após commits de Board, Global e SQL, reabertura de SQL/Grafx sem
+  recaptura, replay sem nova publicação LSN, corrupção no ACK com rollback,
+  perda de intent recusada, ausência total preservada e cache sem origem recusado.
+- `materialization-coordinator-regression.log`: **65 passed**, 417,28 s,
+  suites `test_retirement_offline_run.py`, `test_retirement_data_journal.py`,
+  `test_global_outbox_retirement.py`, `test_retirement_runtime_admission.py`.
+- `materialization-coordinator-guards.log`: **3 passed**, 128,33 s. Handle de
+  Board trocado e grafo alterado após selagem são recusados antes de transformar
+  Cards; uma conclusão fabricada no SQL, apesar da cadeia de hashes coerente,
+  não certifica grafos ainda originais. A admissão do runtime continua bloqueada.
+- `provenance-materialization-coordinator-r3.json` e
+  `provenance-materialization-coordinator-final.json`: **813/337 .py**,
+  **878/421 payloads** idênticos entre fontes, wheels e site-packages.
+  Após os 80 testes, só os READMEs foram regenerados pelo renderer oficial;
+  hashes agregados dos payloads Core E Community da reconstrução final são
+  idênticos aos da revisão r3 testada. Não se apresenta pytest como consumidor
+  exclusivo do install: seus checkouts foram provados byte a byte idênticos.
+- Wheels finais `.validation-v040/wheels-materialization-coordinator-final`:
+  Core SHA256 6042d6c2f2e30a777c08ddcb7ed527e94da626bea87ae7ac6f608f3aa8771f3b;
+  Community SHA256 bc02d22f45053a0c03fc54d19af8f3e4ff0c64f2f8b3dd231c57d6915f7940d4.
+
+O manifesto v1 continua legível e sua retomada de dados permanece suportada;
+não se inventa um plano de grafo ausente nesse artefato. A nova retomada exige
+v2. O resultado `materialization_retired` só confirma esta fase e mantém o
+journal bloqueando bootstrap. Não é certificado de schema/permissões concluídos.
+SQL e Grafx continuam commits separados; os fingerprints retidos e o intent
+durável tratam a janela entre commit de grafo e ACK. A exclusão cooperativa não
+é uma garantia contra escritores raw/old binaries externos aos fences.
+
+Fechamento desta etapa:
+- `materialization-coordinator-graph-regression.log`: **15 passed**, 186,33 s,
+  suíte `test_grafx_global_retirement.py`. Total distinto da seleção: **95**
+  (12 novos de integração/schema + 3 adversariais + 65 regressões + 15 de grafo).
+  As duas tentativas inicialmente reprovadas estão registradas acima e não são
+  ocultadas ou contadas como aprovação.
+- `closure-materialization-coordinator-final.json`: **ok=true**, findings=[] e
+  documentation_findings=[]; oito budgets **0/0**. Matrizes oficiais:
+  **7.560 imports Core / 1.183 Community, 25 dependências**. Nenhuma exceção
+  temporária, adaptador no Core ou acesso Community a privado do Core.
+- Ruff e diff --check aprovados. Todos os handles de teste/closure/install
+  encerrados. Sem alterações ou reinstalações de produto com testes ativos;
+  nenhum processo real de usuário iniciado/parado ou dado real migrado.
+- Sem impacto em frontend/REST/MCP e sem alteração de gates de acesso; não
+  houve necessidade de testes de frontend nesta composição interna offline.
+
+Continuidade: integrar a limpeza real de permissões com a remoção dos contratos
+vivos de Sprint (F3), o corte de schema e o certificado terminal que admite o
+runtime. Preservar v1 como leitura/retomada de dados, sem promover implicitamente
+artefatos antigos a uma prova de materialização. F2A/F2C residuais, F3/F4/F5 e a
+matriz integral continuam pendentes; metadata MCP mantém a última medição
+56.024 > 50.800. Objetivo integral ativo; este turno trouxe progresso verificado.
+
+Commit Community: **09c6cce672c6f6fb719e689bf69c3859eef02509**. Publicação normal
+do par em feature/v0.4.0, com comparação HEAD/ls-remote e árvores limpas.
