@@ -88,7 +88,6 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_kg_digest_layer_mismatch_list",
         "okto_pulse_kg_evaluate_bug_cognitive_closure",
         "okto_pulse_kg_evaluate_cognitive_readiness",
-        "okto_pulse_kg_global_discovery_recovery_status",
         "okto_pulse_kg_global_outbox_dead_letter_list",
         "okto_pulse_kg_health",
         "okto_pulse_kg_health_readiness",
@@ -578,30 +577,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_kg_get_similar_nodes", "kg.session.get_similar"),
     _policy("okto_pulse_kg_get_supersedence_chain", "kg.query.supersedence_chain"),
     _policy(
-        "okto_pulse_kg_global_discovery_recovery_cancel",
-        "kg.operations.global_recovery.cancel",
-    ),
-    _policy(
-        "okto_pulse_kg_global_discovery_recovery_confirm",
-        "kg.operations.global_recovery.confirm",
-    ),
-    _policy(
-        "okto_pulse_kg_global_discovery_recovery_preflight",
-        "kg.operations.global_recovery.preflight",
-    ),
-    _policy(
-        "okto_pulse_kg_global_discovery_recovery_resume",
-        "kg.operations.global_recovery.resume",
-    ),
-    _policy(
-        "okto_pulse_kg_global_discovery_recovery_run",
-        "kg.operations.global_recovery.run",
-    ),
-    _policy(
-        "okto_pulse_kg_global_discovery_recovery_status",
-        "kg.operations.global_recovery.read",
-    ),
-    _policy(
         "okto_pulse_kg_global_outbox_dead_letter_list",
         "kg.operations.global_outbox.read",
     ),
@@ -634,10 +609,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_kg_orphan_report", "kg.operations.integrity.read"),
     _policy("okto_pulse_kg_propose_reconciliation", "kg.session.propose"),
     _policy("okto_pulse_kg_provenance_drift", "kg.operations.audit.read"),
-    _policy(
-        "okto_pulse_kg_quarantine_restore",
-        "kg.operations.quarantine.restore",
-    ),
     _policy("okto_pulse_kg_query_cypher", "kg.power.cypher"),
     _policy("okto_pulse_kg_query_global", "kg.query.global"),
     _policy("okto_pulse_kg_query_natural", "kg.power.natural"),

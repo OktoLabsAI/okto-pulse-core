@@ -3533,6 +3533,11 @@ Este checkpoint Core altera somente o ledger.
 
 ### Decisão F2A pendente — leitura do arquivo sem permissões Sprint ativas
 
+**Atualização 2026-09-20:** proposta autorizada pelo usuário com “sim”. A pendência
+de decisão está resolvida; permanece a implementação e sua prova. Ver “Decisão
+F2A — autorização recebida em 2026-09-20” ao fim deste ledger. A investigação e
+os limites originais abaixo continuam como base do contrato autorizado.
+
 Fato investigado em 2026-09-20: `GetEntityExportBundleUseCase` exige
 `sprint.entity.read` na raiz. `sqlalchemy_entity_export.py` distingue Q&A,
 avaliações e histórico com `sprint.qa.read`, `sprint.evaluations.read` e
@@ -4929,3 +4934,125 @@ mudança nos bytes do pacote instalado nem nos hashes/provas acima. O commit
 Community ainda não publicado foi ajustado; nenhum histórico remoto reescrito.
 
 Community commit 84136882b55647e6e297ba1dc1dfddfe291c0c83. Core registra a retirada MCP/ports/permissões, diagnóstico e provas. Pushes normais em feature/v0.4.0; sem release/merge. O gate de metadata permanece aberto, conforme reprodução acima. Iniciativa integralmente ativa.
+
+#### F4 em execução — retirada pública de Global Discovery recovery e quarantine restore
+
+Checkpoint anterior publicado e confirmado por ls-remote: Core26e75111 e
+Community8413688, ambos limpos. Progresso efetivo do ciclo anterior: push pareado
+e correção da distribuição versionada dos logos. Autenticação válida sem troca
+de conta. Nova prova provenance-before-f4-global-retirement.json confirma o par
+instalado anterior byte a byte: 799/316 .py e 864/400 payloads.
+
+Inventário desta frente: seis tools global_discovery_recovery
+(preflight/confirm/run/status/cancel/resume) e quarantine_restore no registry MCP.
+Busca das rotas REST e clientes frontend não encontrou equivalente dessas sete
+operações. A ajuda geral ainda recomenda o painel de rebuild já retirado e health
+ainda manda executar Global Discovery recovery; corrigir ambas as orientações.
+Remover sete permissões operacionais/presets e policies das tools, sem alterar
+administração de Boards/identidade/privacidade nem dados persistidos.
+
+Dependências investigadas: helpers privados do server de confirmação/dispatch/
+delivery/status são exclusivos do controle retirado; autorização global é
+compartilhada pelas três tools de DLQ ainda vivas e precisa conservar exatamente
+suas verificações. O controle/worker interno continua composto por main.py;
+contratos públicos do mesmo módulo também servem ao writer lease usado por
+outbox, CLI init e Board erasure. Não remover esse módulo em bloco por nome.
+Quarantine restore também é chamado pela compensação de rebuild_effects, cuja
+retirada interna é frente dependente já registrada. Esta mudança elimina os
+entrypoints e helpers exclusivos do MCP; poda de workers/adapters e dos demais
+controles segue obrigatória para concluir F4. Nenhum uso por teste conta como
+justificativa permanente para manter executor morto.
+
+Validação e commits deste incremento ainda pendentes. Gate de metadata anterior
+permanece aberto com teto inalterado; não confundir retirada parcial com F4 completa.
+
+#### Evidências do incremento F4 Global Discovery/quarantine
+
+Retiradas as sete tools do registry vivo, handlers, classificação reader,
+descriptions, documentação distribuída Core/Community, catálogo gerado e sete
+folhas de permissão/presets. Permanecem 334 tools, 331 policies mais três exceções
+humanas já existentes; 589 flags e 100 folhas dos manifests de introdução. Nenhuma
+nova autoridade nem edição de permissões persistidas. Os helpers exclusivos do
+server para service/control/status/dispatch/delivery e cancelamento foram
+removidos. O helper compartilhado de autorização foi renomeado para
+_global_outbox_authorize, com operação explícita e a mesma verificação de duas
+autoridades; os testes dos três consumidores restantes passaram.
+
+Health conserva recovery_needed, componente, causa e limitação de discovery,
+mas usa operator_action=none. O teste do serviço serializa a resposta com o DTO
+REST real para provar que a descrição e a ausência de comando sobrevivem ao
+transporte. Ajuda deixa de orientar rebuild/quarantine restore e distingue Board
+saudável de Discovery indisponível. Os controles de tick/DLQ ainda vivos não foram
+declarados removidos: são próximos itens obrigatórios do inventário F4.
+
+Validação em processos novos, após instalação pareada e prova byte a byte:
+- provenance-f4-global-retirement.json: 799/316 .py e 864/400 payloads idênticos
+  source→wheel→install antes dos testes; sem runtime Pulse ativo reiniciado.
+- core-f4-global-retirement.log: **463 passed, 1 failed**, 34,43 s. Inclui catálogo,
+  registry de permissões, reconciliação de presets, autorizações Core/MCP,
+  diagnóstico/DTO health, composição restante, contratos internos de recovery,
+  global outbox e writer lease. Única falha: budget de metadata, descrito abaixo.
+- community-f4-global-retirement.log: **138 passed**, 95,17 s. Ausência comprovada
+  no host FastMCP materializado, list_tools e call_tool (sem argumentos e com IDs
+  históricos/apply=true), antes de resolver contexto global/Board/UoW/providers.
+  Mantida prova REST/CLI do board rebuild anterior; não inventadas rotas públicas
+  para Global Discovery/quarantine que a investigação não encontrou. Inclui
+  composição roteada, demais ACLs REST e os 46 contratos MCP de schema fechado.
+- frontend-f4-global-retirement.log: **19 passed**, 11 arquivos, 9,61 s. Teste da
+  ajuda renderizada exige limitação por componente, ausência da cerimônia antiga
+  e preservação do conteúdo de consolidação semântica.
+- Build tsc/Vite, sync e verify:frontend-dist: **78 arquivos**, tree SHA256
+  0625513f62392485ab1cdda64044af3197c8ea00580c8351902ed45753ebaabe.
+  Sem novo E2E de browser neste incremento de texto; cobertura de controles
+  retirados da tela health foi registrada no incremento anterior.
+- Ruff dos Python alterados aprovado. Testes exclusivos dos handlers/helpers
+  retirados foram substituídos pela ausência via transporte; testes mistos de
+  locks/outbox, contratos internos e composição efetivamente usada foram mantidos.
+- closure-f4-global-retirement.json: findings vazios, oito budgets 0/0; apenas
+  dois readme_closure_matrix_mismatch. Matrizes regeneradas pelo renderer oficial.
+- Par final reconstruído/reinstalado após essa alteração documental:
+  provenance-f4-global-retirement-final.json confirma novamente 799/316 .py e
+  864/400 payloads idênticos. Wheels em wheels-f4-global-retirement-final:
+  Core SHA256 04338307f15e179b6e09cb223d79e750267d7b4873be5b11289ca04be0b995e3;
+  Community SHA256 01092efb7a8b13bbd764570c893882572b6b4aaf974ccc2d945db52932384eef.
+
+**Falha conhecida ainda aberta:** metadata passou de 57.457 para **57.028 tokens**
+(menos 429), com limite **50.800** inalterado. A medição instalada
+mcp-f4-global-retirement-delta.json prova 341→334 tools: exatamente as seis de
+Global Discovery recovery e quarantine_restore saíram, nenhuma entrou; os
+**46 schemas fechados** continuam. Instructions atuais: 2.444 tokens. Isto é
+medição de metadata, não o benchmark de fluxo completo exigido pelo pacote.
+Nenhum teto aumentado, schema truncado ou teste ignorado para produzir verde.
+
+Retomada obrigatória: retirar controles/readers de manutenção DLQ/outbox, tick,
+schema, histórico operacional e tuning nos transportes reais; concluir poda
+interna. O runtime de recovery ainda inicia preparation_poller/recovery_worker
+em build_community_recovery_runtime e é composto por main.py; não há mais caller
+produtivo de resolve_recovery_control_plane após esta mudança. A retirada desse
+runtime deve investigar jobs duráveis preexistentes, fences de writers e história
+antes de eliminar módulos/tabelas. Não considerar a mera composição justificativa
+final para preservar manutenção. O E2E instalado antigo de Global Discovery
+continua não executado e ainda exige versão0.3.3, inventário antigo e as tools
+retiradas; precisa ser substituído por provas instaladas do produto remanescente,
+ausência, histórico e upgrade, sem fingir que ajustar só contagens o valida.
+
+Closure final **ok=true**, findings e documentation_findings vazios, oito budgets
+0/0, 7.544 imports Core, 1.143 Community→Core e 25 dependências. Todos os processos
+de validação encerrados. Community commit 2e5eead11e7f37c3818ecb8bb1349126022d38b1;
+78/78 assets físicos e versionados, nenhuma diferença. Core reúne retirada das
+tools, permissões, diagnóstico, catálogo e este ledger. Push pareado normal em
+feature/v0.4.0; nenhuma migração real, release/merge ou relaxamento de gates.
+Objetivo completo permanece ativo.
+
+#### Decisão F2A — autorização recebida em 2026-09-20
+
+O usuário respondeu **“sim”** à proposta expressa de criar permissões genéricas
+de leitura de arquivo histórico por seção, limitadas ao Board e à origem
+arquivada, preservando exatamente os acessos e as negações efetivos anteriores.
+Está resolvida a “Decisão F2A pendente” registrada anteriormente: implementação
+desse contrato autorizada, sem precisar perguntar novamente. Isso não autoriza
+usar somente board.read, ampliar Q&A/avaliações/histórico, conservar permissões
+Sprint ativas, conceder acesso por default ausente ou migrar dados reais. Captura
+da autoridade anterior, projeção por seção, negações explícitas, autenticação,
+isolamento de Board/origem e testes de paridade são parte da implementação ainda
+pendente; autorização não é evidência de implementação concluída.

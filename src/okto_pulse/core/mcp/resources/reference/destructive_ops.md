@@ -44,8 +44,6 @@ For versioned guidelines prefer retirement/unlink as defined in
 
 | Operation | Effect | Safeguard |
 |---|---|---|
-| `okto_pulse_kg_global_discovery_recovery_preflight` → `okto_pulse_kg_global_discovery_recovery_confirm` → `okto_pulse_kg_global_discovery_recovery_run` | Replaces the derived global discovery cache, never authoritative board graphs. | Admitted only for healthy board graphs + concrete discovery recovery signal. Before dispatch, `run` persists integrity-bound worker inputs and a durable SQL control row, then returns `accepted`; use the status/cancel/resume tools for the owned background attempt. A fully materialized generation is validated before one hashed pointer switch; legacy bytes and all sidecars remain intact, and failed readback rolls the pointer back. One durable cross-process fence excludes recovery, outbox, schema, search-WAL and GC writers. |
-| `okto_pulse_kg_quarantine_restore` | With `apply=true`, swaps the board's live graph files for a quarantined snapshot. | `apply=false` (default) returns an auditable plan with NO mutation. `apply=true` first moves the live files to a NEW quarantine with manifest (`backup_quarantine_id` in the result), so the swap is reversible; a `partial_restore` error records exact state for rollback. |
 | KG dedup hard-delete (`kg_dedup_hard_delete`) | Physical node delete + bulk edge re-point. | **FORBIDDEN** at every surface by the curation policy — this is the mutation class behind the KGD-01 corruption. Dedup merges (`kg_dedup_entities`) and `kg_unmerge` are propose-only and REVERSIBLE via the equivalence ledger; prefer unmerge, never hard delete. |
 
 ## Session-Level

@@ -54,12 +54,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_record_cognitive_skip` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_update_cognitive_pending_item` — docs: `okto-pulse://reference/tool-docs/kg`
 
-## KG — Rebuild & recovery
-- `okto_pulse_kg_global_discovery_recovery_confirm` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_preflight` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_run` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_quarantine_restore` — docs: `okto-pulse://reference/tool-docs/kg`
-
 ## KG — Operational & health
 - `okto_pulse_kg_canonical_debt_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_canonical_partition_integrity_list` — docs: `okto-pulse://reference/tool-docs/kg`
@@ -70,9 +64,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_dead_letter_reprocess` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_digest_layer_mismatch_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_digest_layer_reconcile` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_cancel` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_resume` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_global_discovery_recovery_status` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_global_outbox_dead_letter_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_global_outbox_dead_letter_reprocess` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_global_outbox_dead_letter_verify` — docs: `okto-pulse://reference/tool-docs/kg`

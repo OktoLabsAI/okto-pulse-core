@@ -2423,64 +2423,6 @@ def test_workflow_adds_candidate_before_similarity_and_proposal():
     assert "candidate_not_found" in workflow
 
 
-@pytest.mark.parametrize(
-    ("status", "expected"),
-    [
-        ({"state": "delivery_pending"}, True),
-        ({"state": "completed"}, False),
-        ({"state": "rolled_back"}, False),
-        ({"state": "failed"}, False),
-        (None, False),
-    ],
-)
-def test_cancel_cleanup_reopens_delivery_only_after_completed_cutover(status, expected):
-    from okto_pulse.core.mcp.server import (
-        _global_recovery_should_finish_delivery_after_cancel,
-    )
-
-    assert _global_recovery_should_finish_delivery_after_cancel(status) is expected
-
-
-def test_delivery_uses_manifest_board_ids_when_current_inventory_changed():
-    from okto_pulse.core.mcp.server import (
-        _global_recovery_delivery_board_pairs,
-    )
-
-    assert _global_recovery_delivery_board_pairs(
-        {"board_ids": ["b", "a", "b"]}, [("current", "Current", "Summary")]
-    ) == [("a", "a", ""), ("b", "b", "")]
-
-
-@pytest.mark.asyncio
-async def test_async_delivery_cleanup_drains_repeated_cancellation():
-    from okto_pulse.core.mcp.server import _global_recovery_drain_async
-
-    entered = asyncio.Event()
-    release = asyncio.Event()
-    completed = False
-
-    async def operation():
-        nonlocal completed
-        entered.set()
-        await release.wait()
-        completed = True
-        return "done"
-
-    task = asyncio.create_task(
-        _global_recovery_drain_async(operation, task_name="test.delivery.drain")
-    )
-    await entered.wait()
-    task.cancel()
-    await asyncio.sleep(0)
-    task.cancel()
-    await asyncio.sleep(0)
-    assert not task.done()
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert completed is True
-
-
 @pytest.mark.asyncio
 async def test_outbox_writer_uses_same_durable_global_fence():
     from coordination_fakes import FakeWriteLockPort
@@ -2528,39 +2470,6 @@ def test_global_writer_guard_rejects_an_expired_exact_fencing_token():
     with pytest.raises(GlobalDiscoveryWriterFenceLost):
         with lease.guard():
             pass
-
-
-@pytest.mark.asyncio
-async def test_global_recovery_authorization_fails_closed(monkeypatch):
-    from okto_pulse.core.mcp import server
-
-    async def unauthenticated():
-        return None
-
-    monkeypatch.setattr(server, "_get_global_agent_ctx", unauthenticated)
-    ctx, error = await server._global_recovery_authorize()
-    assert ctx is None
-    assert "auth" in error.lower() or "unauthorized" in error.lower()
-
-    async def underprivileged():
-        return server.AgentContext("agent-1", "Agent", "", [])
-
-    monkeypatch.setattr(server, "_get_global_agent_ctx", underprivileged)
-    ctx, error = await server._global_recovery_authorize()
-    assert ctx is None
-    assert "permission" in error.lower()
-
-    async def admin():
-        return server.AgentContext(
-            "agent-1",
-            "Agent",
-            "",
-            ["kg.admin.settings_read"],
-        )
-
-    monkeypatch.setattr(server, "_get_global_agent_ctx", admin)
-    ctx, error = await server._global_recovery_authorize()
-    assert ctx is not None and error is None
 
 
 class _OutboxStore:

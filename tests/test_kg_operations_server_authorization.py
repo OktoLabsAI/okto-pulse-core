@@ -150,64 +150,6 @@ _INLINE_OPERATION_CASES = (
         "kg.admin.settings_read",
         None,
     ),
-    (
-        "okto_pulse_kg_global_discovery_recovery_preflight",
-        {},
-        "kg.operations.global_recovery.preflight",
-        "kg.admin.settings_read",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_discovery_recovery_confirm",
-        {
-            "run_id": "run-1",
-            "manifest_ref": "manifest-1",
-            "preflight_hash": "hash-1",
-        },
-        "kg.operations.global_recovery.confirm",
-        "kg.admin.settings_write",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_discovery_recovery_status",
-        {"run_id": "run-1"},
-        "kg.operations.global_recovery.read",
-        "kg.admin.settings_read",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_discovery_recovery_cancel",
-        {"run_id": "run-1", "expected_epoch": 1},
-        "kg.operations.global_recovery.cancel",
-        "kg.admin.settings_write",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_discovery_recovery_resume",
-        {"run_id": "run-1", "expected_epoch": 1},
-        "kg.operations.global_recovery.resume",
-        "kg.admin.settings_write",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_discovery_recovery_run",
-        {
-            "confirmation_id": "confirmation-1",
-            "manifest_ref": "manifest-1",
-            "preflight_hash": "hash-1",
-            "reason": "operator recovery",
-        },
-        "kg.operations.global_recovery.run",
-        "kg.admin.settings_write",
-        None,
-    ),
-    (
-        "okto_pulse_kg_quarantine_restore",
-        {"quarantine_id": "quarantine-1", "apply": True},
-        "kg.operations.quarantine.restore",
-        "kg.admin.settings_write",
-        None,
-    ),
 )
 
 

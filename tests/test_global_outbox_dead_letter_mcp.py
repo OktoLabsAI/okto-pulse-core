@@ -85,7 +85,7 @@ async def test_actual_fastmcp_tools_use_one_dedicated_uow_per_operation_and_sign
 
     factory = RecordingFactory(FakeKGOperations())
     signals: list[str] = []
-    monkeypatch.setattr(server, "_global_recovery_authorize", _authorized)
+    monkeypatch.setattr(server, "_global_outbox_authorize", _authorized)
     monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp", lambda: factory)
     monkeypatch.setattr(
         runtime_workers,
@@ -139,7 +139,7 @@ async def test_actual_fastmcp_reprocess_returns_typed_fail_closed_errors(
             )
 
     factory = RecordingFactory(RejectingKG())
-    monkeypatch.setattr(server, "_global_recovery_authorize", _authorized)
+    monkeypatch.setattr(server, "_global_outbox_authorize", _authorized)
     monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp", lambda: factory)
 
     payload = json.loads(
@@ -173,7 +173,7 @@ async def test_actual_fastmcp_maps_sqlite_busy_without_leaking_backend_details(
             )
 
     factory = RecordingFactory(BusyKG())
-    monkeypatch.setattr(server, "_global_recovery_authorize", _authorized)
+    monkeypatch.setattr(server, "_global_outbox_authorize", _authorized)
     monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp", lambda: factory)
 
     payload = json.loads(

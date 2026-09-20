@@ -766,11 +766,19 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
     assert result["metric_status"] == "unavailable"
     assert result["discovery_recovery_required"] is True
     assert result["primary_health_cause"] == "discovery_recovery_required"
-    assert result["operator_action"] == "run_explicit_global_discovery_recovery"
-    assert any(
-        issue["code"] == "discovery_recovery_required"
-        for issue in result["health_issues"]
+    assert result["operator_action"] == "none"
+    from okto_pulse.community.api.kg_health import KGHealthResponse
+
+    serialized = KGHealthResponse(**result).model_dump()
+    issue = next(
+        issue for issue in serialized["health_issues"]
+        if issue["code"] == "discovery_recovery_required"
     )
+    assert issue["component"] == "global_discovery"
+    assert issue["reason"]
+    assert issue["operator_action"] == "none"
+    assert "Global discovery operations are unavailable" in issue["description"]
+    assert serialized["operator_action"] == "none"
 
 
 # --- TS2 / AC2: 404 (BoardNotFoundError) for unknown board ---

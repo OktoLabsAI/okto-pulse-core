@@ -668,19 +668,12 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
     "kg.operations.global_outbox.read",
     "kg.operations.global_outbox.reprocess",
     "kg.operations.global_outbox.verify",
-    "kg.operations.global_recovery.preflight",
-    "kg.operations.global_recovery.confirm",
-    "kg.operations.global_recovery.read",
-    "kg.operations.global_recovery.cancel",
-    "kg.operations.global_recovery.resume",
-    "kg.operations.global_recovery.run",
     "kg.operations.historical.read",
     "kg.operations.historical.start",
     "kg.operations.historical.cancel",
     "kg.operations.node.boost",
     "kg.operations.settings.read",
     "kg.operations.settings.write",
-    "kg.operations.quarantine.restore",
     "kg.operations.board.erase",
 )
 
@@ -705,12 +698,6 @@ KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("kg.operations.global_outbox.read", "kg.admin.settings_read"),
         ("kg.operations.global_outbox.reprocess", "kg.admin.settings_write"),
         ("kg.operations.global_outbox.verify", "kg.admin.settings_read"),
-        ("kg.operations.global_recovery.preflight", "kg.admin.settings_read"),
-        ("kg.operations.global_recovery.confirm", "kg.admin.settings_write"),
-        ("kg.operations.global_recovery.read", "kg.admin.settings_read"),
-        ("kg.operations.global_recovery.cancel", "kg.admin.settings_write"),
-        ("kg.operations.global_recovery.resume", "kg.admin.settings_write"),
-        ("kg.operations.global_recovery.run", "kg.admin.settings_write"),
         (
             "kg.operations.historical.read",
             "kg.admin.historical_consolidation",
@@ -726,7 +713,6 @@ KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("kg.operations.node.boost", "kg.admin.settings_write"),
         ("kg.operations.settings.read", "kg.admin.settings_read"),
         ("kg.operations.settings.write", "kg.admin.settings_write"),
-        ("kg.operations.quarantine.restore", "kg.admin.settings_write"),
         ("kg.operations.board.erase", "kg.admin.wipe_board"),
     ),
 )
@@ -1969,14 +1955,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
                 "reprocess": True,
                 "verify": True,
             },
-            "global_recovery": {
-                "preflight": True,
-                "confirm": True,
-                "read": True,
-                "cancel": True,
-                "resume": True,
-                "run": True,
-            },
             "historical": {
                 "read": True,
                 "start": True,
@@ -1984,7 +1962,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             },
             "node": {"boost": True},
             "settings": {"read": True, "write": True},
-            "quarantine": {"restore": True},
             "board": {"erase": True},
         },
         "admin": {

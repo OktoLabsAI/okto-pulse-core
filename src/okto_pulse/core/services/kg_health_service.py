@@ -718,9 +718,10 @@ def _build_health_diagnostics(
                 "description": (
                     "The global discovery graph has a concrete recovery signal. "
                     "This can make overall KG Health recovery_needed even when the "
-                    "current board graph is queryable."
+                    "current board graph is queryable. Global discovery operations "
+                    "are unavailable for the affected component."
                 ),
-                "operator_action": "run_explicit_global_discovery_recovery",
+                "operator_action": "none",
             }
         )
 
@@ -749,7 +750,7 @@ def _build_health_diagnostics(
         operator_action = "none"
     elif discovery_recovery_required:
         primary = "discovery_recovery_required"
-        operator_action = "run_explicit_global_discovery_recovery"
+        operator_action = "none"
     elif rest_metric_status == "unavailable":
         primary = "telemetry_unavailable"
         operator_action = "inspect_telemetry"

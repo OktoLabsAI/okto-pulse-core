@@ -78,24 +78,13 @@ source.
 `candidate_id` is session-local: calling `get_similar_nodes` before
 `add_node_candidate` deterministically returns `candidate_not_found`.
 
-## Global Discovery recovery (component-scoped)
+## Global Discovery availability
 
-Never infer the remedy from generic `overall_state=recovery_needed`. If
-`graph_state` is healthy while `discovery_state=recovery_needed` and
-`discovery_recovery_required=true`, use only
-`okto_pulse_kg_global_discovery_recovery_preflight` →
-`okto_pulse_kg_global_discovery_recovery_confirm` →
-`okto_pulse_kg_global_discovery_recovery_run`. Board rebuild preflight refuses
-this discovery-only case. The global preflight requires all board graphs to be
-healthy; healthy/quarantined discovery is not admitted.
-
-`run` persists integrity-bound worker inputs, creates the durable control row,
-dispatches owned background work, and returns `accepted` without waiting for
-the native candidate/cutover. Poll
-`okto_pulse_kg_global_discovery_recovery_status` for authoritative progress and
-the terminal outcome. Retrying the exact confirmation/run binding returns the
-existing run; do not issue a new recovery while the existing run is `pending`
-or `running`.
+Health identifies the affected component and its concrete reason. A healthy
+Board graph does not imply that Global Discovery is available. When discovery
+is unavailable, affected operations fail closed; health does not authorize
+repair or expose a recovery executor. Board knowledge and semantic consolidation
+retain their own integrity checks and authorization.
 
 ### Terminal Global Discovery outbox recovery
 
