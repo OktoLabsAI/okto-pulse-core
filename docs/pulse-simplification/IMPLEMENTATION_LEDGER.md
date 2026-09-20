@@ -5645,3 +5645,88 @@ Push pareado normal em feature/v0.4.0, sem migração real, release, merge, rest
 ou alteração de permissões de contas reais. Próximas dependências de F2A/F3
 permanecem descritas acima; iniciativa ativa, sem declarar conclusão parcial como
 cumprimento do pacote inteiro.
+
+### F2A — descoberta autorizada e UI histórica (em implementação)
+
+A partir do par publicado bc2a9610 / bb99ba23, acrescentada descoberta genérica
+por Board, realm e identidade. O use case Core aplica a mesma decisão de seção
+antes de ordenar/paginar; não expõe contagens de origens negadas. Community lê
+somente grants instalados na mesma transação consistente e revalida atividade,
+review e ACL física. Limites fechados: 100.000 candidatos / 64 MiB de autoridade,
+200 itens por página. A descoberta é metadado de autoridade instalado: não lê
+blobs nem atesta disponibilidade/integridade do conteúdo. O reader verifica a
+origem imutável ao abrir cada seção. Esta separação evita repetir payload pesado
+na listagem; títulos não são copiados para uma nova fonte de verdade.
+
+REST GET /api/v1/boards/{board_id}/historical-archives retorna origem opaca,
+archive_id, seções autorizadas e next_offset. Nova navegação Archives no Board,
+com conteúdo sob demanda e referências históricas passivas. Sem CRUD antigo,
+links operacionais de Sprint, nova aprovação, flags globais ou alteração real de
+permissões. UI limpa conteúdo ao trocar Board/seção/página, cancela requisições
+anteriores, ignora respostas atrasadas e distingue negação/limite/falha de vazio.
+
+Testes adicionados para matriz de seção, paginação após negação, contratos
+malformados/escopo estrangeiro, revogação, identidade e ACL atuais, REST no router
+real, frontend, respostas tardias e HTML histórico inerte. Validação ainda
+pendente: build frontend, par wheels/install/proveniência, pytest, Vitest, lint e
+closure. Não considerar este trecho concluído antes das evidências abaixo.
+
+Validação do incremento de descoberta/UI:
+- provenance-f2a-discovery.json comprovou fonte → wheel → install antes dos
+  testes: 799/319 .py, 864/403 payloads iguais, imports em site-packages.
+- core-f2a-discovery.log: **238 passed**, 25,37 s (descoberta, reader, grants,
+  matriz de autoridade, membership e UoW).
+- community-f2a-discovery.log: **65 passed**, 133,03 s (SQLite/storage reais
+  descartáveis, ACL/identidade/revogação, REST no router real, capture e F01).
+- frontend-f2a-discovery-tests.log: **32 passed / 3 arquivos**, 30,18 s. Inclui
+  contrato de resposta por Board/origem/arquivo/seção, offsets, cancelamento,
+  respostas atrasadas, revogação, referências passivas e HTML histórico inerte.
+- frontend-f2a-discovery-e2e-final.log: **1 passed**, 6,4 s. Chromium servido do
+  frontend_dist instalado; API integralmente interceptada por fixtures (não é
+  E2E de Pulse real). Larguras 360/768/1440, ambos temas, axe sem violações
+  serious/critical; nenhum write API nem leitura de seção não oferecida.
+  A primeira execução falhou com sidebar de 256 px aberta em viewport de 360:
+  o teste foi completado com a ação real Hide sidebar, mantendo o assert de
+  overflow e exigindo área de leitura >280 px. Nenhuma alteração no produto
+  para mascarar esse comportamento existente. Captura archives-360.png revisada.
+  Servidor descartável iniciado depois da instalação e encerrado após o teste.
+- TypeScript/build passaram após corrigir replaceAll incompatível com o target
+  e opção exact inválida no teste Testing Library. frontend_dist sincronizado e
+  verificado: **78 arquivos**, árvore
+  4260d177499ba174212cebeceec52a2b68125147faddd8964e2d2c39fb05378a.
+- Lint: zero erros, 394 avisos existentes <=402. Ruff dos arquivos Python
+  alterados/novos aprovado; fixture importada explicitamente por módulo.
+- closure-f2a-discovery.json: findings vazios, oito budgets 0/0; somente drift
+  das matrizes README. Renderer oficial executado: **7.487/1.145 imports,
+  25 dependências**. Par final reconstruído em wheels-f2a-discovery-publish;
+  prova de instalação/auditoria final e publicação pendentes abaixo.
+
+A enumeração usa offsets somente de itens autorizados; revogação pode deslocar
+páginas, portanto a UI oferece reinício/refresh e reconsulta ao voltar do detalhe.
+Isso não dá autoridade ao offset. A descoberta não verifica a disponibilidade
+do blob: falha de integridade fica explícita na leitura; não vira lista vazia.
+A UI não deduz permissões de flags globais/Sprint nem permite mudar grants.
+
+Retomada: integração MCP/capabilities com grants por origem, administração pública
+sem ampliar direitos antigos, seções próprias de Card/Spec, transferência
+substantiva e cutover F2/F3. Imutabilidade DB dos grants e congelamento da policy
+antiga no migrador seguem pendentes. Gate global de metadata permanece vermelho
+55.859 > 50.800 (não alterado nem relaxado neste incremento); nenhuma alegação de
+conclusão de F2A ou da iniciativa inteira. Não executada migração de dados reais.
+
+Par final comprovado por provenance-f2a-discovery-publish.json: **799/319 .py,
+864/403 payloads**, igualdade fonte/wheel/install. SHA256:
+Core d0c87c34f28b584f0cae7c63a4f6a40f5b1a148041bd6312e4bb68b505dc50a6;
+Community 54f0ba97c504a55cfe800153295235e88f33c295bca0b65d2c23694757c30a9f.
+closure-f2a-discovery-publish.json: **ok=true**, findings/documentation_findings
+vazios, oito budgets 0/0; **7.487/1.145 imports, 25 dependências**. Somente README
+foi alterado entre o par testado e o par final; Python e frontend ficaram iguais.
+ESLint direto dos arquivos novos e verify:frontend-dist aprovados. Os 78 assets
+estão no índice Git; staged diff --check passou em ambos. Processos descartáveis
+de testes/servidor/auditoria encerrados.
+
+Community commit **ab61d21956544bffdd6195e0a6447f7a0f34fed3**. Core publica neste
+commit as portas/use case de descoberta, testes e este ledger. Publicação normal
+na feature/v0.4.0 dos dois repos, sem alteração de dados/permissões reais,
+restart do Pulse, tag, release ou merge. Continuidade conforme pendências acima;
+o gate global de metadata e o restante do pacote seguem abertos.

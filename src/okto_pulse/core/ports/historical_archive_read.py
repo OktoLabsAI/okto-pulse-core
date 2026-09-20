@@ -8,6 +8,46 @@ from okto_pulse.core.ports.historical_archive import ArchiveGrantState, ArchiveS
 
 
 @dataclass(frozen=True, slots=True)
+class ArchiveBoardScope:
+    realm_id: str
+    board_id: str
+
+    def __post_init__(self):
+        if any(type(value) is not str or not value.strip() or len(value) > 255
+               for value in (self.realm_id, self.board_id)):
+            raise ValueError("historical_archive_board_scope_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveDiscoveryRequest:
+    scope: ArchiveBoardScope
+    offset: int = 0
+    limit: int = 50
+
+    def __post_init__(self):
+        if (not isinstance(self.scope, ArchiveBoardScope)
+                or type(self.offset) is not int or not 0 <= self.offset <= 100_000
+                or type(self.limit) is not int or not 1 <= self.limit <= 200):
+            raise ValueError("historical_archive_discovery_request_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveDiscoveryItem:
+    """Installed authority metadata, not a claim that source storage is available."""
+
+    scope: ArchiveSourceScope
+    archive_id: str
+    sections: tuple[ArchiveSection, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveDiscoveryPage:
+    request: ArchiveDiscoveryRequest
+    items: tuple[ArchiveDiscoveryItem, ...]
+    next_offset: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ArchiveReadRequest:
     scope: ArchiveSourceScope
     section: ArchiveSection
@@ -80,7 +120,21 @@ class HistoricalArchiveReadPort(Protocol):
     """
 
     async def has_current_board_access(
-        self, *, scope: ArchiveSourceScope, actor_kind: Literal["human", "agent"], actor_id: str,
+        self, *, scope: ArchiveSourceScope | ArchiveBoardScope, actor_kind: Literal["human", "agent"], actor_id: str,
     ) -> bool: ...
 
     async def read_section(self, *, request: ArchiveReadRequest, grant: ArchiveGrantState) -> ArchiveSectionPage: ...
+
+
+@runtime_checkable
+class HistoricalArchiveDiscoveryPort(Protocol):
+    """Bounded authority candidates from the same snapshot, never content blobs.
+
+    The application filters with canonical section policy before paginating.
+    No source titles, hidden counts, credentials or storage paths are exposed.
+    Implementations fail closed above 100,000 candidates or 64 MiB aggregate.
+    """
+
+    async def list_grants(
+        self, *, scope: ArchiveBoardScope, actor_kind: Literal["human", "agent"], actor_id: str,
+    ) -> tuple[ArchiveGrantState, ...]: ...
