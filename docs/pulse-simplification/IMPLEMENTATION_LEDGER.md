@@ -6135,3 +6135,93 @@ em F2D. Ainda faltam as superfícies genéricas de grants/MCP, contextos
 substantivos, retirada de Sprint e matriz completa dos complementos. Não
 executada migração de banco real nem restart do Pulse. Metadata global continua
 55.859 >50.800; este incremento não encerra F2/F3 nem a iniciativa.
+
+### 2026-09-20 — F2B: materialização por Card com pré-condição histórica (em execução)
+
+Continuidade após Core adc40f70 / Community 9f75493, limpos e publicados.
+Implementando a gravação dos overrides autorizados e a remoção conjunta de
+Card.sprint_id, em transação SQLite reservada. Core fornece fachada pública de
+planejamento/paridade; Community só carrega fatos e persiste. O deprecation
+warning permanece no contrato e na operação: compatibilidade migrada, sem
+nova autoria pelo executor, sem expiração automática.
+
+Pré-condições executáveis: referências completas do arquivo v4, blobs íntegros,
+evento histórico confirmado, grants já instalados, recaptura exatamente igual
+antes de alterar vínculos. Arquivo ausente, stale ou com escopo incompleto
+bloqueia a etapa. O journal por Board retém facts, resultados antes/depois,
+origem da compatibilidade e digests das linhas completas. Somente diferenças
+por campo são materializadas. SQL bruto evita onupdate de timestamp ou eventos
+operacionais: IDs, Spec, estado, responsável e histórico permanecem intactos.
+
+Esta etapa ainda não está no bootstrap e não substitui o coordenador F2D/F3:
+transferência de contexto substantivo, jobs, referências KG e corte de schema
+continuam dependências antes de habilitar o novo runtime. Não executado banco
+real. Testes/build/proveniência desta etapa ainda pendentes.
+
+Evidência intermediária e ajuste de integração:
+- provenance-card-retirement.json: 804/323 .py e 869/407 payloads,
+  fonte/wheel/install byte a byte. Core 39 passed (4,50 s); Community 53 passed
+  (113,81 s); frontend 69 passed / 3 arquivos (34,02 s), incluindo CardModal.
+- Ensaio encadeado community-card-retirement-sequence.log: 2 passed (13,56 s).
+  Arquivo+grants → Card policy/link → permission cleanup preserva leitura por
+  agente com Full Control original. Antecipar permission cleanup bloqueia a
+  recaptura do arquivo; ambas as etapas retomam depois pelo recibo original.
+- Revisão encontrou integração inadequada no journal inicialmente inline:
+  fatos de todos os Cards no DomainEvent poderiam exceder 131.072 caracteres /
+  5.000 nós do inventário e gerar referência Sprint não classificada. Antes de
+  publicar, alterar para artefato de auditoria no StorageProvider já existente,
+  com evento leve contendo referência, SHA256, tamanho e contagens. Não alterar
+  o classificador para ignorar um novo payload desconhecido nem elevar limites.
+- Rollback deve limpar blobs criados antes de tentar commit; commit incerto
+  conserva blobs para reconciliação, igual à captura histórica existente.
+  Testes adicionados para falha no segundo blob, limite da camada de policy,
+  FK órfã/cross-Board e inventário após transformação. Novo par audit em curso;
+  os verdes intermediários não substituem a validação desse formato final.
+- Closure intermediário: findings=[], oito budgets 0/0, apenas matrizes README.
+  Evidência observada: 7.519 imports Core, 1.154 Community→Core, 25 dependências.
+
+Formato final e revisão:
+- Journal card-validation-retirement/v1 gravado como artefato privado pelo
+  StorageProvider; evento migration.card_validation_preserved guarda somente
+  referência, hash, tamanho e contagens. Sem linha de attachment público ou
+  endpoint novo. Verificada rota attachments: GetCardAttachmentUseCase exige
+  registro/autorização; main monta somente assets da SPA, não uploads.
+- Rodada do formato audit: 59 passed (131,83 s), incluindo inventário de trabalho
+  após a transformação e as duas sequências de cutover. A auditoria não cria
+  referência Sprint ativa nem exige relaxar classificadores/limites existentes.
+- Ajuste final: comparar novamente todas as linhas e camadas de policy DEPOIS
+  dos inserts do journal, antes do commit. Um trigger no próprio evento que
+  tente alterar assignee_id também deve causar rollback de SQL e blobs. Mais
+  um teste adicionado; rodada final em execução.
+- provenance-card-retirement-publish.json: par final instalado, 804/323 .py,
+  869/407 payloads, igualdade fonte/wheel/install e origem em site-packages.
+- closure-card-retirement-publish.json: ok=true, findings=[],
+  documentation_findings=[], oito budgets 0/0; 7.519/1.154 imports e 25 deps.
+  READMEs atualizados pelo renderer oficial. Ruff aprovado.
+- Wheels finais SHA256:
+  Core 0e5862a21e8fab28b70bc0140f23fcf1b1500fecd5e8938a82420c7709e015e8;
+  Community a1e7f9141d70a19211a6ce35bf0b5c0ca9138034331cca201d682fbb54d232ff.
+
+Publicação F2B materialização por Card:
+- community-card-retirement-publish.log: **60 passed**, 131,32 s, todos os
+  processos encerrados. Inclui gravação e paridade por campo; proteção de todos
+  os demais bytes das linhas; arquivo/grants obrigatórios e origem completa;
+  hotfix cross-Spec; False/zero e herança dinâmica; vazio sem override; corrupção
+  e perda de journal; rollback SQL/artefatos e triggers antes e depois dos
+  eventos; limite e writer concorrente; FK inválida; sequência F2A/F2B/cleanup.
+- Core: **39 passed**, contrato público e regras/DTOs migration-only; Python do
+  Core idêntico ao validado. Frontend: **69 passed**, CardModal, thresholds e
+  painel histórico; bundle sem alterações nesta etapa. Total selecionado 168.
+- Ruff e staged diff --check aprovados. Community commit
+  **33853f430ad05467103c37a97c0cecbfd4f5bc01**. Core publica neste commit porta
+  pública pura, testes, matriz e ledger. Push normal de ambos em feature/v0.4.0.
+
+Próxima continuidade concreta: integrar essas etapas no coordenador F2D e
+resolver transferência dos contextos substantivos / supersedência auditada de
+trabalho exclusivo antes de retirar o schema/runtime Sprint. Não chamar captura
+histórica novamente depois da transformação: retomar pelos recibos verificados.
+Os arquivos originais continuam necessários e seus grants atuais/revogações são
+preservados. Não criar novo baseline de policy sobre Cards já migrados.
+Permanecem também superfícies genéricas de grants/MCP, F3/F4/F5, complementos e
+matriz integral. Metadata global segue 55.859 >50.800. Nenhum banco real migrado,
+restart, release, tag ou merge; iniciativa continua ativa e incompleta.
