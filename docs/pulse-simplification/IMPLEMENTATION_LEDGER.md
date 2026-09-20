@@ -3375,3 +3375,7 @@ e documentação vazios, oito budgets **0/0**, **7.618/1.249 imports**, 25 depen
 A primeira rodada acusou somente drift da matriz README (contagens antigas);
 os dois fragmentos foram regenerados pelo renderer oficial e o par reconstruído.
 Nenhum payload mudou após a prova final. Nenhuma operação em banco/runtime real.
+
+Publicado em `feature/v0.4.0` por push normal: Core `5ab2a8af`, Community
+`c1b2004`; HEADs confirmados em `ls-remote`, árvores limpas após publicação.
+Este apontamento posterior é somente de ledger.
