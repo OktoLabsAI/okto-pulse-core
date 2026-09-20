@@ -4063,3 +4063,95 @@ substantivo, leitor autorizado, F2B/F2C/F3 e demais requisitos DEI/ARQ/VER/KG.
 Community commit `4988f58`; Core deste checkpoint altera somente este ledger.
 Dados reais e PostgreSQL não foram exercitados. Iniciativa ativa; progresso,
 não conclusão.
+
+### 2026-09-20 — F2A, recuperação física de uploads com autoridade de apagamento
+
+Partida: Core `594e9772`, Community `4988f58`, árvores limpas. Turno anterior
+classificado como progresso. A decisão de leitura pública do arquivo histórico
+continua pendente, sem novas permissões ou concessões.
+
+Investigação: `AttachmentService.upload_attachment` salva pelo StorageProvider
+antes de adicionar a row relacional e compensa em caso de falha. O adapter de
+arquivo histórico também salva seus blobs pelo mesmo provider. `Attachment.path`
+e `historical_archive.created.payload_json.storage_path` são referências físicas;
+copiar apenas as rows de attachments omite os blobs históricos e objetos ainda
+sem referência. A composição usa `settings.upload_dir`, que pode ser separado do
+KG root. O provider possui layout plano por Board e controles `.board_lifecycle`:
+mutex por SHA256 do ID e marcador `.erased` cuja existência bloqueia save/restore.
+
+Community `adapters/storage_recovery_snapshot.py` implementa captura, verificação
+e restauração **isoladas do storage**, formato `community-storage-recovery/v1`.
+Recebe roots explícitos e os IDs relacionais do chamador; a composição futura
+deve obtê-los sob reserva SQL. Além desses IDs, cerca namespaces físicos e hashes
+de lifecycle observados, inclusive controles opacos de Boards já ausentes. Usa
+os paths de lock do provider existente, sem novo protocolo concorrente. Novos
+namespaces antes da aquisição completa impedem uma captura com fence parcial.
+Somente sidecars de mutex podem ser criados na origem; objetos não são alterados.
+
+Captura todos os objetos do namespace plano, incluindo arquivos sem referência,
+sem inventar proprietário relacional ou visibilidade de produto. Copia flags de
+apagamento, mas não transplanta arquivos `.lock`. Namespace com marker de erasure
+e diretório residual impede a captura; não copiar nem apagar silenciosamente esse
+resíduo. Layout desconhecido/nested, entradas especiais e aliases/junctions são
+recusados. Os hashes por objeto e o manifesto são autenticados pelo digest retido
+pelo chamador. Streaming de 1 MiB, limite padrão de 100.000 objetos/16 GiB e
+manifesto 16 MiB; crescimento além do tamanho observado é recusado antes de
+escrever o chunk excedente. Deadline verificado nos chunks e entre operações,
+com tempo restante compartilhado na aquisição de locks; não é cancelamento
+preemptivo de qualquer chamada de filesystem. Releitura de namespace, stat e
+hashes detecta mutações observadas de writers que ignoram o protocolo, sem alegar
+exclusão universal desses writers.
+
+Restaura somente em novo root, com os mesmos nomes, bytes e mtime, sem substituir
+destino existente. Exige o storage ATUAL no mesmo path autoritativo registrado
+no snapshot; apontar para um root vazio alternativo não contorna a proteção.
+Qualquer erasure posterior ao snapshot recusa a restauração inteira, e a mudança
+de flags durante a cópia impede sua publicação. Os locks de lifecycle ficam
+retidos até a publicação desse componente. Flags já capturadas continuam a
+impedir save no storage restaurado. Referências SQL absolutas não são reescritas;
+este componente não produz sozinho um runtime relocado pronto para servir.
+Tudo permanece em diretório protegido do operador, sem API/CLI/reader público.
+
+Revisão Windows: nomes de controle/markers são reconhecidos segundo a semântica
+de case do sistema, preservando seus nomes físicos. IDs declarados que colidem
+por case e namespace observado com case divergente do ID conhecido são recusados;
+não inferir que dois IDs lógicos são o mesmo Board porque o filesystem os aliasa.
+Esse tratamento recebeu regressões locais específicas, incluindo apagamento
+posterior com diretório de controle em maiúsculas. Não afirmar bug em ambiente
+real: a revisão e as reproduções usam apenas fixtures descartáveis.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- Primeira rodada `community-f2a-storage.log`: **36 passed**, 59,13 s.
+- Após revisão Windows/deadline, `community-f2a-storage-final.log`: **39 passed**,
+  60,27 s, incluindo regressões de compensação e download pelo provider. Cobre
+  bytes binários/Unicode/CRLF, blobs históricos, objeto sem referência, markers,
+  mtime, não sobrescrita, save real em outro processo bloqueado durante captura e
+  liberado depois, erasure posterior, root falso, resíduo de erasure, adulteração,
+  falha na segunda cópia com cleanup/liberação, mudança de origem, marker novo
+  durante restore, limites, aliases, traversal de manifesto e case no Windows.
+  Nenhum teste falho ou pulado. Não somar rodadas como casos distintos.
+- `provenance-f2a-storage-final.json`: par reconstruído/reinstalado antes dos
+  testes, **804/322 .py**, **869/406 membros**, source→wheel→install byte a byte,
+  PYTHONPATH pareado e processos novos. Core wheel SHA256
+  `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `8e293787fbc0e6fa32ca0237417bf64f2492682c0ba5f6632401e270832be60e`.
+- `closure-f2a-storage-final.json`: **ok=true**, findings de código/docs vazios,
+  oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências. Ruff e diff-check
+  aprovados. Sem mudança de UI/MCP/README ou novo mecanismo concreto no Core.
+
+Integração ainda pendente: incorporar este componente ao conjunto SQL/Grafx sob
+a reserva SQL e o intervalo de LSNs estáveis, reconciliando attachments e blobs
+históricos com owners/paths. Na restauração conjunta, verificar erasures atuais
+ANTES de copiar SQL/objetos e manter o guard de lifecycle até publicar **todo** o
+conjunto. Não basta chamar o restore de arquivos, liberar seus locks, restaurar
+grafos e depois publicar: isso reabriria uma janela para erasure posterior. Será
+necessária composição do guard com a publicação externa, sem reacquirir locks
+não reentrantes nem manter um lockfile de staging aberto durante rename no
+Windows. Preservar paths/proveniência sem reescrever audit histórico por conveniência.
+
+Gerações KG inativas/arquivos fora desse provider, retenção dos backups, exclusão
+completa de writers, integração do instalador/rollback, conteúdo substantivo,
+leitor autorizado, F2B/F2C/F3 e demais requisitos DEI/ARQ/VER/KG continuam pendentes.
+Community commit `78b4ab8`; Core deste checkpoint altera o ledger. Dados reais,
+PostgreSQL e runtime relocado não foram exercitados. Iniciativa ativa; progresso,
+não conclusão.
