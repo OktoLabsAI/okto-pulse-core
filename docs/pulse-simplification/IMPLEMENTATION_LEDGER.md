@@ -4319,3 +4319,97 @@ de cutover; não promover a detecção atual de drift a uma garantia de exclusã
 
 Community commit `1c754d8d1c12325eb7b5cef2c452d05d077976cd`; Core deste checkpoint
 altera apenas este ledger. Pushes normais à `feature/v0.4.0`, sem release/merge.
+
+### 2026-09-20 — F2/KG, exclusão de publicação de bindings durante captura
+
+Partida: Core `2da053d8`, Community `1c754d8`, árvores limpas. Turno anterior
+classificado como progresso verificado. A iniciativa permanece integralmente
+ativa; não confundir esta exclusão parcial com cutover completo.
+
+Investigação de consumers: `graph_operation_guards` usa condições/locks de
+thread, portanto drena somente participantes do processo. `Database.coordinator`
+do Grafx instalado retorna uma view imutável; o backup físico nativo usa um
+fence interno durante sua própria captura, não fornece ao Pulse uma janela
+pública reutilizável de cutover. Nenhuma importação de internals Grafx ou Core
+foi adicionada para simular essa capacidade. A CLI atual também possui preflight
+pontual de serve-lock; isso sozinho não cerca uma operação já iniciada.
+
+Leitura de `grafx_board_privacy_storage_present` confirmou que sidecars de
+binding dentro de um Board são resíduo físico observado. Criar `<binding>.lock`
+em cada Board ausente apenas para obter exclusão mudaria a ausência de privacidade.
+A solução local é `CommunityGraphBackendBindingStore.publication_window`, com
+um mutex na raiz KG (`.graph-binding-publication.lock`), sem criar diretórios de
+Board/global, binding ou banco. Raiz ausente e alias do mutex são recusados.
+
+Inicialização e CAS agora entram nessa janela antes da seção de publicação
+existente, mantendo o lock por binding, admissão e digest esperado. O lock de
+raiz serializa apenas essas publicações curtas; não envolve queries/transações
+normais nem construção de candidatos. Raízes KG distintas continuam independentes.
+Um coordenador interno pode manter a janela e publicar pelo MESMO store/thread:
+reentrância do próprio lock, sem pular checks de CAS/admissão. Outro store não
+herda a exclusão. Falha no corpo libera o lock; contenção tem erro tipado.
+
+A captura conjunta obtém primeiro a reserva SQL e depois a janela de publicação,
+mantida até a publicação final do artefato. O censo ignora o mutex de raiz como
+controle, sem omitir storage de negócio. Ainda repete inventário e LSNs: writers
+nativos, apagamento físico e substituição arbitrária não são cercados por esse
+mutex. Um teste que antes observava CAS durante export agora exige sua recusa
+antes de publicar e verifica que o binding original permanece; não se relaxou
+o gate de drift. A prova nova corresponde à implementação atual; formatos de
+artefatos antigos não passam a atestar retroativamente essa janela.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- Primeira rodada `community-f2a-binding-publication.log`: **112 passed,
+  1 failed, 1 skipped**, 422,63 s. A falha era a expectativa do teste de que o
+  sidecar vazio continuaria no disco: FileLock no Windows pode removê-lo ao
+  liberar. Teste ajustado para aceitar ausência ou somente esse sidecar vazio.
+  O skip é o teste legado de roteamento já removido, não prova de Grafx atual.
+- Suíte inicial: janela de publicação, CAS, censo KG, recuperação conjunta,
+  resolver, startup e lifecycle roteado. Não somar rodadas como casos distintos.
+- Segunda rodada `community-f2a-binding-publication-final.log`: **77 passed,
+  1 skipped**, 195,06 s, zero falhas. Reporta explicitamente o skip de
+  `test_global_legacy_binding_stays_on_anchor_across_pointer_cutovers`, cujo
+  backend foi retirado do Community. Sem novos skips ou gates relaxados.
+- `provenance-f2a-binding-publication-checked.json`: par reconstruído/reinstalado
+  após o último ajuste do censo, **804/323 .py**, **869/407 membros**, comparação
+  source→wheel→install byte a byte, PYTHONPATH pareado e processos novos.
+  Core wheel SHA256
+  `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `773204c009d1f59e49bd46de94c1ab3b8b3d932a92c71ec4ef21bbb9b0a9defd`.
+- `community-f2a-binding-publication-checked.log`: **19 passed**, 53,72 s,
+  nenhuma falha ou skip; censo, colisões e integração de captura conjunta após
+  a última mudança.
+- `closure-f2a-binding-publication-checked.json`: **ok=true**, findings de
+  código/docs vazios, oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências.
+- Ruff/diff-check aprovados. Sem alteração de UI/MCP ou nova mecânica no Core.
+
+Revisão com `reproduce_binding_mutex_collision.py` em diretório temporário
+confirmou que o FileLock instalado pode remover um arquivo com conteúdo existente
+no path escolhido para o mutex. Não houve acesso a dados reais. A entrada agora
+recusa arquivo não vazio ou diretório nessa posição antes de obter o lock;
+regressões preservam exatamente os bytes (inclusive um único byte) e o diretório.
+Não depender de kwargs recentes do FileLock ausentes no mínimo declarado do
+pacote (`>=3.16,<4`); a solução usa a API já suportada.
+O próprio censo também recusa conteúdo/diretório no nome reservado do mutex;
+não pode omitir esses bytes tratando-os como controle. Só um sidecar vazio é
+reconhecido como tal. A mudança final recebeu três regressões específicas.
+
+Testes novos usam processos reais para lock/publicação, com stubs de identidade
+explicitamente sem abrir engine nos cenários unitários de binding. A integração
+conjunta usa Grafx real e verifica exclusão imediatamente antes/depois do rename
+final, além de liberação ao retornar. Testa ausência de Board/global e ausência
+de resíduo de privacidade, init/CAS de Board e global, raízes independentes,
+reentrância sem aceitar digest stale, falhas, raiz inexistente e aliases.
+
+Próxima investigação: combinar a participação de processos/entrypoints e os
+mutadores físicos com essa exclusão. A janela atual não protege contra binários
+anteriores que desconhecem o mutex, CLI já passada pelo preflight ou erasure
+física; não autoriza avançar cutover com essas lacunas. Também permanecem gerações
+inativas/outros arquivos, retenção/rollback/instalador, conteúdo substantivo e
+leitor histórico autorizado, F2B/F2C/F3 e demais BASE/KG/DEI/ARQ/VER. Não há
+migração de dados reais, parada do runtime ou publicação de interface de manutenção.
+
+Community commit `f3897db267eacc7aa6ebc6cf1c3b7c738cca39e1`; Core deste checkpoint
+atualiza somente este ledger. Pushes normais à `feature/v0.4.0`, sem release/merge.
+Próxima retomada: participação de entrypoints durante toda a operação e mutadores
+físicos, preservando os fences de autoridade existentes. Iniciativa não concluída.
