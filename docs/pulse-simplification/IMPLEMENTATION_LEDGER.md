@@ -4708,3 +4708,88 @@ de produto, inventário zero-relacional e evidência neste ledger. Pushes normai
 na feature/v0.4.0, sem release/merge. Próxima retomada: retirada coordenada do
 executor recovery-only e de suas recomendações, seguindo o inventário F4 por
 efeito. Iniciativa integralmente ativa.
+
+### 2026-09-20 — F4: controles de manutenção retirados de KG Health
+
+Retomada a partir de Core 3570289e / Community 692eb188, ambos limpos e publicados.
+A investigação da retirada do executor confirmou recomendações também em MCP,
+health, resources e API, além do frontend. Para fechar uma alteração verificável
+sem deixar o painel chamando uma API parcialmente removida, este incremento
+retira primeiro os controles e o cliente exclusivos de KG Health. A retirada do
+executor/REST/MCP segue pendente e continua na mesma iniciativa; o objetivo
+integral não foi reduzido e F4 não está concluída.
+
+Community frontend:
+- KGHealthView perdeu RecoveryPanel, HistoricalRecoveryControl, seus helpers,
+  formulário de razão, preflight/confirm/run, polling de histórico e cancelamento.
+  Também saíram triggerKGTick, cooldown/estado de execução, botão de tick,
+  callback/evento de abertura de Runtime Settings e permissões desses controles.
+  O painel não renderiza recommended_action operacional recebido de payload antigo.
+- kg-health-api perdeu os DTOs/funções de rebuild e postJSON exclusivo, além dos
+  reexports de histórico. Não há outro consumidor frontend desses DTOs/funções.
+  kg-api/EmptyState/KnowledgeGraphPage ainda possuem histórico: não confundir a
+  remoção deste cliente/painel com a retirada completa da feature.
+- Overview conserva estados healthy/at_risk/unknown/unavailable e indicação de
+  snapshot antigo; o link de diagnóstico funciona também em recovery_needed.
+  Não recomenda preflight nem apresenta outro caminho para o painel retirado.
+  Os sinais de scheduler, filas, métricas, footprint e dívida continuam visíveis.
+  Contagens de consolidação cognitiva permanecem no painel próprio com permissão
+  original, sem o resumo duplicado de RecoveryPanel.
+- Não houve alteração de backend, permissão efetiva, schema, autoridade ou dado
+  histórico. O inspector de partition integrity e demais superfícies de manutenção
+  ainda exigem sua própria retirada F4; este incremento não os declara passivos.
+
+Verificação em PULSE_REFACTOR/.validation-v040:
+- frontend-f4-health-controls-build.log: TypeScript detectou duas props boardId
+  removidas junto com o trecho de tick. Corrigidas antes dos testes; nenhum gate
+  foi relaxado. frontend-f4-health-controls-build-final.log: tsc/Vite/sync aprovados.
+- 78 assets, tree SHA256
+  bd904a265b896f5532a1adcf9d0b822566cd4aaf55ca2d8bb6412236fb47af5b.
+- provenance-f4-health-controls.json: par reconstruído/reinstalado, **799/318 .py**
+  e **864/402 payloads** source→wheel→install byte-idênticos antes dos testes.
+  Wheels SHA256: Core
+  489cd484ea8259fdd59763469ba4b656317629437a57370607251e8a26c0325d;
+  Community 951e88b0b2204c2ddd592fc5d502948315678868acb31c36672ac3b6e81bf435.
+- frontend-f4-health-controls-tests.log: **66 passed**, 3 arquivos, 6,48 s:
+  KGHealthView, KGHealthOverview e KGHealthCognitivePendingPanel. Inclui
+  polling/aba oculta/abort no unmount, refresh, erro/snapshot, permissão de health,
+  telemetria ausente versus zero e ausência de controles mesmo com grants antigos.
+  Os testes de execução da feature retirada foram substituídos por ausência;
+  testes do painel cognitivo independente continuam verdes.
+- frontend-f4-health-controls-e2e.log: **1 passed**, Chromium, 9,0 s. Servidor
+  estático novo em porta efêmera, iniciado depois do mtime dos assets instalados,
+  sem PYTHONPATH; serve diretamente frontend_dist do site-packages verificado.
+  APIs só por fixtures: requests não mockados são recusados, inclusive leituras,
+  sem proxy para Pulse real. Navegação 360/768/1440 px, tooltips, axe sem violações
+  critical/serious em claro/escuro, refresh e zero chamadas de manutenção.
+  Removida a antiga exceção que tolerava POST rebuild/preflight. Nenhum runtime
+  Pulse real foi iniciado/parado. O servidor de teste encerrou no finally.
+- frontend-f4-health-controls-lint.log: **0 errors**, 401 warnings históricos,
+  dentro do ratchet por regra (total baseline 402, inalterado).
+- frontend-f4-health-controls-dist.log: 78 assets sincronizados, hash acima.
+- closure-f4-health-controls.json: **ok=true**, findings/docs vazios, todos os
+  oito budgets **0/0**. Código Python não mudou; nenhuma suíte Python de domínio
+  foi repetida sem necessidade. diff-check aprovado.
+
+Próximo passo concreto: retirar console-script/kg_recovery_only.py e REST
+kg_rebuild, os três handlers MCP e suas permissões/presets/descrições. Regenerar
+catálogo por tools_catalog_generator após mudar registry. MCP ainda contém
+_run_rebuild_service_cooperatively (uso exclusivo em teste), constantes de
+remediação e os três nomes em _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION. A classe
+RebuildAdmissionGateUseCase só é consumida por esse preflight; revisar remoção
+junto a seus exports e testes de autorização, sem enfraquecer outros gates.
+Health service e readiness ainda recomendam o executor e preflight: coordenar
+remoção das instruções com o transporte, mantendo componente/motivo/limitação.
+Testes mistos adicionais localizados: r2a_rebuild_admission_gate, r10a/r10b,
+af16 generation/storage, kg_board_rebuild_adapter, kg_global_discovery_recovery,
+kg_operations_*_authorization, kg_direct_mcp_acl, kg_rebuild_preflight/sources/
+service; revisar casos exclusivos, preservando cobertura interna legítima.
+O E2E instalado Global Discovery ainda importa somente a constante Grafx do
+executor: derivar do pin e preservar sua cobertura de produto. Teste R16B mantém
+schema/replay/contracts/índices e perde apenas checks exclusivos do executor.
+
+F2A/B/C/D, cutover/rollback, remoção atômica F3, restante F4, demais BASE/KG/DEI/
+ARQ/VER e decisão pendente de leitura histórica permanecem abertos. Sem migração
+real, release, merge, novas permissões ou declaração de conclusão integral.
+
+Community commit d511302e837475d9398cf5fc7ccb05c5b293e30a. Core registra este incremento e a retomada no ledger; pushes normais em feature/v0.4.0, sem release/merge. Iniciativa integralmente ativa.
