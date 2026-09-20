@@ -65,7 +65,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         # SPEC4 (card 2e913ac3, AC ac_26acf1db): bounded suggested next action so
         # the DLQ row is actionable from the drill-down alone. Every DLQ row is a
         # terminal consolidation failure → inspect the error then reprocess.
-        "next_action": "inspect_last_error_then_reprocess_via_okto_pulse_kg_dead_letter_reprocess",
+        "next_action": "none",
         "dead_lettered_at": (
             row.dead_lettered_at.isoformat() if row.dead_lettered_at else None
         ),

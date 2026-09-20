@@ -11,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
@@ -75,38 +74,6 @@ async def s3_clean(db_factory, s3_board):
         await session.commit()
 
 
-@pytest_asyncio.fixture
-async def health_client():
-    """Minimal ASGI client wrapping just the queue_health router."""
-    from fastapi import FastAPI
-    from okto_pulse.community.api.queue_health import router
-    from okto_pulse.community.api.auth_deps import require_principal, require_user
-    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
-    from okto_pulse.core.infra.database import get_db, get_session_factory
-    from okto_pulse.core.ports.authentication import Principal
-
-    app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
-
-    async def _fake_user():
-        return "user-test"
-
-    async def _override_db():
-        factory = get_session_factory()
-        async with factory() as session:
-            yield session
-
-    app.dependency_overrides[require_user] = _fake_user
-    app.dependency_overrides[require_principal] = lambda: Principal(
-        "user-test",
-        realm_id=LOCAL_REALM_ID,
-        claims={"roles": ["admin"]},
-    )
-    app.dependency_overrides[get_db] = _override_db
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield client
 
 
 # ----------------------------------------------------------------------
@@ -114,49 +81,10 @@ async def health_client():
 # ----------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_ac9_health_endpoint_returns_all_expected_keys(
-    health_client,
-    s3_clean,
-):
-    """AC9: GET /api/v1/kg/queue/health returns the health keys with the
-    correct types (queue_depth INT, claimed_boards LIST, alert_active BOOL,
-    etc.)."""
-    resp = await health_client.get("/api/v1/kg/queue/health")
-    assert resp.status_code == 200
-    body = resp.json()
-    expected_keys = {
-        "queue_depth",
-        "oldest_pending_age_s",
-        "claimed_count",
-        "claimed_boards",
-        "dead_letter_count",
-        "global_outbox_dead_letter_count",
-        "claims_per_min_1m",
-        "claims_per_min_5m",
-        "alert_threshold",
-        "alert_active",
-        "alert_fired_total",
-        "workers_active",
-        "workers_idle",
-        "workers_draining_count",
-        "kuzu_lock_retries_5m",
-    }
-    assert set(body.keys()) == expected_keys
-    assert isinstance(body["queue_depth"], int)
-    assert isinstance(body["oldest_pending_age_s"], float)
-    assert isinstance(body["claimed_count"], int)
-    assert isinstance(body["claimed_boards"], list)
-    assert isinstance(body["dead_letter_count"], int)
-    assert isinstance(body["global_outbox_dead_letter_count"], int)
-    assert isinstance(body["alert_threshold"], int)
-    assert isinstance(body["alert_active"], bool)
-    assert isinstance(body["alert_fired_total"], int)
-    assert isinstance(body["kuzu_lock_retries_5m"], int)
 
 
 @pytest.mark.asyncio
-async def test_ac9_health_reflects_queue_state(db_factory, health_client, s3_clean):
+async def test_ac9_health_reflects_queue_state(db_factory, s3_clean):
     """AC9: depth/oldest/claimed_boards reflect actual queue state."""
     now = datetime.now(timezone.utc)
     async with db_factory() as session:
@@ -187,8 +115,9 @@ async def test_ac9_health_reflects_queue_state(db_factory, health_client, s3_cle
         )
         await session.commit()
 
-    resp = await health_client.get("/api/v1/kg/queue/health")
-    body = resp.json()
+    from okto_pulse.core.services.queue_health_service import get_queue_health
+    async with db_factory() as session:
+        body = await get_queue_health(session)
     assert body["queue_depth"] == 2
     assert body["claimed_count"] == 1
     assert BOARD_ID_S3 in body["claimed_boards"]
@@ -203,7 +132,6 @@ async def test_ac9_health_reflects_queue_state(db_factory, health_client, s3_cle
 @pytest.mark.asyncio
 async def test_alert_active_toggles_with_depth(
     db_factory,
-    health_client,
     s3_clean,
 ):
     """alert_active = (queue_depth >= alert_threshold). When 100 items
@@ -226,14 +154,16 @@ async def test_alert_active_toggles_with_depth(
             )
         await session.commit()
 
-    resp = await health_client.get("/api/v1/kg/queue/health")
-    body = resp.json()
+    from okto_pulse.core.services.queue_health_service import get_queue_health
+    async with db_factory() as session:
+        body = await get_queue_health(session)
     assert body["queue_depth"] == 100
     assert body["alert_active"] is True
 
     configure_settings(CoreSettings(kg_queue_alert_threshold=200))
-    resp2 = await health_client.get("/api/v1/kg/queue/health")
-    assert resp2.json()["alert_active"] is False
+    async with db_factory() as session:
+        after = await get_queue_health(session)
+    assert after["alert_active"] is False
 
 
 # ----------------------------------------------------------------------

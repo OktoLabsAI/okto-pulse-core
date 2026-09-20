@@ -80,10 +80,6 @@ READ_CASES = (
     ),
     ("okto_pulse_kg_list_cognitive_dlq", {}),
     ("okto_pulse_kg_orphan_report", {}),
-    ("okto_pulse_kg_dead_letter_list", {}),
-    ("okto_pulse_kg_queue_drilldown", {}),
-    ("okto_pulse_kg_connectivity_dlq_diagnose", {}),
-    ("okto_pulse_kg_connectivity_dlq_verify", {}),
 )
 
 
@@ -185,17 +181,6 @@ CANONICALIZED_EXISTING_READ_CASES = (
         "okto_pulse_kg_takedown_status",
         {"delete_event_id": "delete-event-authorized"},
         "kg.operations.audit.read",
-    ),
-    ("okto_pulse_kg_queue_drilldown", {}, "kg.operations.queue.read"),
-    (
-        "okto_pulse_kg_connectivity_dlq_diagnose",
-        {},
-        "kg.operations.queue.read",
-    ),
-    (
-        "okto_pulse_kg_connectivity_dlq_verify",
-        {},
-        "kg.operations.queue.read",
     ),
 )
 

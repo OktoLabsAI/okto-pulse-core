@@ -15,11 +15,6 @@ from okto_pulse.core.application.use_cases.discovery_crud import (
     ExecuteDiscoveryIntentCommand,
     ExecuteDiscoveryIntentUseCase,
 )
-from okto_pulse.core.application.use_cases.list_dead_letter_rows import (
-    DeadLetterBoardNotFoundError,
-    ListDeadLetterRowsCommand,
-    ListDeadLetterRowsUseCase,
-)
 from okto_pulse.core.application.use_cases.operational_rest import (
     BoardNotFoundError,
     BugNotFoundError,
@@ -51,13 +46,6 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     RecordCognitiveSkipUseCase,
     RetryCanonicalDebtUseCase,
     RunOrphanBackfillUseCase,
-)
-from okto_pulse.core.application.use_cases.queue_health import (
-    GetQueueDrilldownCommand,
-    GetQueueDrilldownUseCase,
-    GetQueueHealthCommand,
-    GetQueueHealthUseCase,
-    QueueBoardNotFoundError,
 )
 from okto_pulse.core.ports.traceability import TraceabilityReadError
 
@@ -634,136 +622,3 @@ async def test_runtime_settings_authorized_actor_reaches_writer(actor) -> None:
 
     assert result.data["actor_id"] == actor.actor_id
     assert uow.events == ["put-runtime"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("board", [None, FOREIGN_BOARD], ids=["missing", "foreign"])
-async def test_queue_drilldown_board_scope_fails_before_reader(board) -> None:
-    uow = _Uow(board=board)
-
-    with pytest.raises(QueueBoardNotFoundError):
-        await GetQueueDrilldownUseCase().execute(
-            GetQueueDrilldownCommand("board-b"),
-            actor=ACTOR,
-            uow=uow,
-        )
-
-    expected = ["board:board-b"]
-    if board is FOREIGN_BOARD:
-        expected.append("share:board-b:user-a")
-    assert uow.events == expected
-
-
-@pytest.mark.asyncio
-async def test_queue_drilldown_owner_reaches_reader() -> None:
-    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
-
-    result = await GetQueueDrilldownUseCase().execute(
-        GetQueueDrilldownCommand("board-b"),
-        actor=KG_QUEUE_READER,
-        uow=uow,
-    )
-
-    assert result.data == {
-        "board_id": "board-b",
-        "include_code_traceability": False,
-    }
-    assert uow.events == ["board:board-b", "queue-drilldown:board-b"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("use_case", "command"),
-    [
-        (GetQueueHealthUseCase(), GetQueueHealthCommand()),
-        (GetQueueDrilldownUseCase(), GetQueueDrilldownCommand()),
-    ],
-    ids=["health", "drilldown"],
-)
-async def test_global_queue_viewer_is_denied_before_reader(use_case, command) -> None:
-    uow = _Uow(board=None)
-    viewer = ActorContext("user-a", "rest", roles=("viewer",), permissions={})
-
-    with pytest.raises(PermissionDeniedError):
-        await use_case.execute(command, actor=viewer, uow=uow)
-
-    assert uow.events == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "actor",
-    [
-        ActorContext("admin-a", "rest", roles=("admin",)),
-        ActorContext("operator-a", "rest", roles=("operator",)),
-        ActorContext(
-            "capability-a",
-            "rest",
-            permissions={
-                "kg": {
-                    "operations": {"queue": {"read": True}},
-                    "admin": {"settings_read": True},
-                }
-            },
-        ),
-    ],
-    ids=["admin", "operator", "capability"],
-)
-async def test_global_queue_authorized_actor_reaches_readers(actor) -> None:
-    uow = _Uow(board=None)
-
-    health = await GetQueueHealthUseCase().execute(
-        GetQueueHealthCommand(),
-        actor=actor,
-        uow=uow,
-    )
-    drilldown = await GetQueueDrilldownUseCase().execute(
-        GetQueueDrilldownCommand(),
-        actor=actor,
-        uow=uow,
-    )
-
-    assert health.data == {"queue_depth": 0}
-    assert drilldown.data == {
-        "board_id": None,
-        "include_code_traceability": False,
-    }
-    assert uow.events == ["queue-health", "queue-drilldown:None"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("board", [None, FOREIGN_BOARD], ids=["missing", "foreign"])
-async def test_dead_letter_board_scope_fails_before_reader(board) -> None:
-    uow = _Uow(board=board)
-
-    with pytest.raises(DeadLetterBoardNotFoundError):
-        await ListDeadLetterRowsUseCase().execute(
-            ListDeadLetterRowsCommand("board-b", limit=20, offset=0),
-            actor=ACTOR,
-            uow=uow,
-        )
-
-    expected = ["board:board-b"]
-    if board is FOREIGN_BOARD:
-        expected.append("share:board-b:user-a")
-    assert uow.events == expected
-
-
-@pytest.mark.asyncio
-async def test_dead_letter_owner_reaches_reader() -> None:
-    uow = _Uow(board=SimpleNamespace(id="board-b", owner_id="user-a"))
-
-    result = await ListDeadLetterRowsUseCase().execute(
-        ListDeadLetterRowsCommand("board-b", limit=20, offset=0),
-        actor=KG_QUEUE_READER,
-        uow=uow,
-    )
-
-    assert result.data == {
-        "rows": [],
-        "total": 0,
-        "limit": 20,
-        "offset": 0,
-        "include_code_traceability": False,
-    }
-    assert uow.events == ["board:board-b", "dead-letter:board-b"]

@@ -591,8 +591,8 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
     assert "empty_after_materialized_history" in root_cause["present_categories"]
     # actionable per-domain drill-down — every operational domain names a tool.
     assert result["operational_domains"]
-    for domain in result["operational_domains"].values():
-        assert domain.get("drill_down_tool")
+    for name in ("active_queue", "dead_letter", "global_outbox_dead_letter"):
+        assert result["operational_domains"][name]["drill_down_tool"] is None
     # an actionable health issue + operator action while the root cause persists.
     assert any(
         issue["code"] == "board_graph_empty_after_materialized_history"
@@ -716,7 +716,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
     assert result["board_graph_recovery_required"] is False
     assert any(
         issue["code"] == "dead_letter_backlog"
-        and issue["operator_action"] == "inspect_dead_letters"
+        and issue["operator_action"] == "none"
         for issue in result["health_issues"]
     )
 

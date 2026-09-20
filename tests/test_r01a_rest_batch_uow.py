@@ -26,11 +26,9 @@ from fastapi.testclient import TestClient
 
 from okto_pulse.community.api import agents as agents_api
 from okto_pulse.community.api import kg_stale_canonical_parity as stale_api
-from okto_pulse.community.api import queue_health as queue_api
 from okto_pulse.community.api.agents import router as agents_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.kg_stale_canonical_parity import router as stale_router
-from okto_pulse.community.api.queue_health import router as queue_router
 from okto_pulse.community.api.auth_deps import (
     get_realm_id,
     require_principal,
@@ -52,8 +50,6 @@ USER = "r01a-imp4-user"
 
 MIGRATED_HANDLERS = {
     "list_stale_canonical_parity_endpoint": stale_api.list_stale_canonical_parity_endpoint,
-    "get_kg_queue_health": queue_api.get_kg_queue_health,
-    "get_kg_queue_drilldown": queue_api.get_kg_queue_drilldown,
     "update_agent": agents_api.update_agent,
     "update_board_overrides": agents_api.update_board_overrides,
 }
@@ -96,6 +92,11 @@ async def test_stale_canonical_parity_endpoint_payload() -> None:
         db.add(Board(id=board_id, name="R01A parity", owner_id=USER))
         await db.commit()
 
+    import asyncio
+    from kg_schema_testing import ensure_board_graph_bootstrapped
+
+    await asyncio.to_thread(ensure_board_graph_bootstrapped, board_id)
+
     client = _client((stale_router, "/api/v1"))
     resp = client.get(
         f"/api/v1/kg/{board_id}/stale-canonical-parity",
@@ -127,15 +128,6 @@ async def test_stale_canonical_parity_board_denial_is_non_enumerable(
     assert response.json() == {"detail": "Board not found"}
 
 
-def test_queue_health_endpoints_payload() -> None:
-    client = _client((queue_router, "/api/v1"))
-    health = client.get("/api/v1/kg/queue/health")
-    assert health.status_code == 200, health.text
-    body = health.json()
-    assert "queue_depth" in body and "dead_letter_count" in body
-    drill = client.get("/api/v1/kg/queue/drilldown")
-    assert drill.status_code == 200, drill.text
-    assert isinstance(drill.json(), dict)
 
 
 # --- agents.py write parity + cache preservation ---------------------------
@@ -224,7 +216,7 @@ def test_agents_cache_invalidation_points_unchanged() -> None:
 
 def test_read_only_routers_fully_strangled_in_inventory() -> None:
     inv = build_relational_consumer_inventory()
-    for f in ("core/api/kg_stale_canonical_parity.py", "core/api/queue_health.py"):
+    for f in ("core/api/kg_stale_canonical_parity.py",):
         rows = [c for c in inv.consumers if c.file == f]
         assert rows == [], (f, [c.symbol for c in rows])
 

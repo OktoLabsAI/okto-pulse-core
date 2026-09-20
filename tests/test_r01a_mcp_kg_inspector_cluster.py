@@ -31,7 +31,7 @@ from okto_pulse.core.mcp import server as mcp_server
 
 STALE_TOOL = "okto_pulse_kg_stale_canonical_parity_list"
 DRILL_TOOL = "okto_pulse_kg_queue_drilldown"
-MIGRATED_TOOLS = (STALE_TOOL, DRILL_TOOL)
+MIGRATED_TOOLS = (STALE_TOOL,)
 
 
 def _stub_ctx(permissions=("board:read", "kg.admin.settings_read")):
@@ -83,6 +83,10 @@ async def test_stale_canonical_parity_payload_matches_reader() -> None:
 
     board_id = f"imp5-stale-{uuid.uuid4().hex[:8]}"
     await _seed_board(board_id)
+    import asyncio
+    from kg_schema_testing import ensure_board_graph_bootstrapped
+
+    await asyncio.to_thread(ensure_board_graph_bootstrapped, board_id)
 
     async with get_session_factory()() as db:
         baseline = await list_stale_canonical_parity(
@@ -95,21 +99,6 @@ async def test_stale_canonical_parity_payload_matches_reader() -> None:
     assert json.loads(raw) == json.loads(json.dumps(baseline, default=str))
 
 
-@pytest.mark.asyncio
-async def test_queue_drilldown_payload_matches_reader() -> None:
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.queue_health_service import get_active_queue_drilldown
-
-    board_id = f"imp5-drill-{uuid.uuid4().hex[:8]}"
-    await _seed_board(board_id)
-
-    async with get_session_factory()() as db:
-        baseline = await get_active_queue_drilldown(db, board_id)
-
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())):
-        raw = await _call(DRILL_TOOL, board_id=board_id)
-
-    assert json.loads(raw) == json.loads(json.dumps(baseline, default=str))
 
 
 # --- auth / permission negative paths --------------------------------------
@@ -134,25 +123,6 @@ async def test_stale_parity_auth_gates_before_use_case() -> None:
     assert raw == expected
 
 
-@pytest.mark.asyncio
-async def test_queue_drilldown_permission_denied_before_use_case() -> None:
-    """A ctx without BOARD_READ → unchanged _perm_error envelope, use case skipped."""
-    from okto_pulse.core.infra.database import get_session_factory
-
-    register_mcp_test_runtime(get_session_factory())
-
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(permissions=()))
-    ), patch(
-        "okto_pulse.core.application.use_cases.queue_health."
-        "GetQueueDrilldownUseCase.execute",
-        AsyncMock(side_effect=AssertionError("use case must not run when denied")),
-    ):
-        tool = await mcp_server.mcp.get_tool(DRILL_TOOL)
-        raw = await tool.fn(board_id="any")
-
-    payload = json.loads(raw)
-    assert "error" in payload or "permission" in raw.lower()
 
 
 # --- AST strangler proofs --------------------------------------------------

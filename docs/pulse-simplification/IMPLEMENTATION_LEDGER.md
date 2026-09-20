@@ -5056,3 +5056,117 @@ Sprint ativas, conceder acesso por default ausente ou migrar dados reais. Captur
 da autoridade anterior, projeção por seção, negações explícitas, autenticação,
 isolamento de Board/origem e testes de paridade são parte da implementação ainda
 pendente; autorização não é evidência de implementação concluída.
+
+#### F4 em execução — DLQ/outbox e inspeção de fila pública
+
+Partida limpa e publicada: Core d31d2ea2 / Community 2e5eead. Prova anterior ao
+incremento: provenance-before-f4-dlq-retirement.json, 799/316 .py e 864/400 payloads
+idênticos. Ciclo anterior classificado como progresso: sete tools retiradas,
+transporte/health/frontend testados e commits publicados; F2A autorizada.
+
+Inventário fechado deste incremento: dead_letter_list/reprocess, queue_drilldown,
+connectivity_dlq_diagnose/reprocess/verify e global_outbox_dead_letter_list/
+reprocess/verify (nove tools MCP). REST: GET queue/dead-letter, POST
+queue/dead-letter/redrive, GET queue/health e queue/drilldown. Frontend: modal
+DeadLetterInspector, cliente dedicado, botão em RuntimeSettings/EventQueue e
+ação em CognitiveActionCenter; retirar polling do endpoint de queue/health.
+Preservar bloqueio técnico/readiness e processamento cognitivo legítimo; nenhuma
+falha de infraestrutura vira skip/waiver. Tuning runtime/tick ainda é outra frente
+F4 obrigatória, não declarar removido por apagar seu painel de observação de fila.
+
+Dependências: consolidation.py chama reprocess_dead_letter_rows no retry interno;
+health/readiness consomem list_dead_letter_rows e queue_health_service. Preservar
+esses serviços compartilhados, retirando use cases/wrappers exclusivos da
+superfície pública. kg.operations.queue.read/reprocess ainda têm consumidores em
+kg_routes_crud, operational_rest e deterministic_projection_repair; não retirar
+as folhas antes desses consumidores. Três folhas global_outbox são exclusivas
+dos handlers retirados e podem sair. Health deve manter contagens/causas, sem
+instruir chamadas para tools extintas.
+
+#### F4 — retirada implementada de DLQ/outbox e inspeção pública de fila
+
+Retiradas as nove tools inventariadas, quatro rotas REST, três use cases
+exclusivos e os wrappers correspondentes. Removidos modal, clientes, botões e
+polling da fila no frontend; preservados bloqueios técnicos, consolidação
+semântica e gates de evidência. Health/readiness mantêm contagens, causas e
+severidade, com limitação de disponibilidade e sem receita de reparo. O runbook
+de novos alertas de takedown também fica vazio; alertas já persistidos não são
+reescritos. Não há mudança em dados/grants reais ou no retry interno compartilhado.
+
+As três folhas exclusivas global_outbox saíram; queue.read/reprocess permanecem
+pelos consumidores identificados acima, ainda sujeitos à retirada F4. Registry
+atual: 325 tools, 322 policies e três exceções humanas já existentes; 586 flags e
+97 folhas de introdução. Catálogo regenerado exclusivamente pelo gerador oficial.
+Documentação distribuída deixou de recomendar as nove tools e a cerimônia manual
+de limpar o KG antes do trabalho. Tuning e tick ainda presentes não foram dados
+como concluídos.
+
+Evidência e correções, em PULSE_REFACTOR/.validation-v040:
+- frontend-f4-dlq-retirement-final.log: **55 passed**, 13 arquivos, 10,63 s.
+  Testa ausência do Inspector e ausência de fetch após alternar abas, avançar
+  timers e desmontar. Mantém bloqueio técnico e ausência de skip/waiver.
+  A primeira rodada falhou numa expectativa antiga de botão; corrigida. O
+  primeiro build detectou import Database sem uso; removido, sem ignorar TSC.
+- frontend-f4-dlq-retirement-build-final.log: tsc/Vite, sync e verificação,
+  **78 arquivos**, tree SHA256
+  b4071f8f03d5c17a319c2491be5ef82f017045e7b2024e8bce84725dd4870038.
+  Lint frontend: zero erros, 397 warnings dentro do baseline 402 inalterado.
+- core-f4-dlq-retirement.log: **433 passed, 19 failed**. Uma falha é o budget de
+  metadata ainda aberto; 16 eram expectativas da navegação/remediação retirada;
+  duas fixtures de paridade criavam Board relacional sem rota Grafx. Inicialização
+  real isolada do Grafx foi acrescentada nessas fixtures; sem fallback produtivo.
+- core-f4-dlq-retirement-final.log: **106 passed**, 58,40 s, nos dez arquivos
+  corrigidos; mantidas contagens, classificação, severidade, autoridade e gates.
+  core-f4-dlq-retirement-alert.log: **46 passed**, 2,92 s, após a última alteração
+  do runbook, preservando thresholds e dívida. Ruff de todos os Python alterados
+  aprovado. Nenhum teste de telemetria foi dispensado para retirar a recomendação.
+- A limpeza automatizada inicial removeu indevidamente a tupla externa de rotas
+  no teste de offsets e o trecho seguinte do teste de registro MCP. Revisão do diff
+  detectou e restaurou os testes não relacionados. As primeiras coletas Community
+  falharam por IDs de parametrização antigos; corrigidas sem remover casos vivos.
+  Esses logs não são evidência de comportamento aprovado.
+- closure-f4-dlq-retirement-alert.json: **ok=true**, findings e
+  documentation_findings vazios, oito budgets **0/0**. Matrizes README atualizadas
+  pelo renderer oficial após o primeiro relatório apontar somente drift documental.
+- Par final em wheels-f4-dlq-retirement-alert, reinstalado antes dos últimos testes:
+  provenance-f4-dlq-retirement-alert.json confirma **796/314 .py**, **861/398
+  payloads**, source→wheel→install byte a byte e origem instalada. Core SHA256
+  afe1f12320fb1182807014c812be526e8bd48164edc25dab49e6443330079c84;
+  Community SHA256
+  f8aaa8175a093252b368332c704d80aefc2a19b8751aac3040231bf03d4f44e1.
+  Processos de validação novos; nenhum runtime Pulse real reiniciado.
+
+**Gate ainda vermelho:** metadata **55.926 tokens > 50.800**, limite inalterado.
+mcp-f4-dlq-retirement-delta.json prova 334→325 tools, exatamente nove removidas,
+nenhuma adicionada, 46 schemas fechados e 2.444 tokens de instructions. Redução
+de 1.102 tokens de metadata; não equivale ao benchmark de fluxo completo.
+
+Retomada: concluir validação Community e publicar este incremento; depois retirar
+tick manual, schema/histórico operacional, tuning e demais relatórios/reparos F4.
+Poda interna deve preservar processamento automático e jobs/história existentes.
+F2A está autorizado e ainda requer implementação de grants por seção/Board/origem,
+paridade efetiva, revogação e captura das negações. F2B/F2C/F2D/F3, UI/analytics,
+provas instaladas de upgrade/rollback e matriz integral dos quatro documentos
+continuam pendentes. Este checkpoint não conclui a iniciativa.
+
+Conclusão da validação Community: community-f4-dlq-retirement-verified.log teve
+**147 passed, 2 failed**, 124,95 s. As falhas detectaram uma referência residual à
+tool global_outbox_dead_letter_list numa tabela do workflow efetivamente servido
+pelo Community; substituída pela limitação de disponibilidade. Nova instalação
+pareada e prova provenance-f4-dlq-retirement-complete.json mantêm 796/314 .py e
+861/398 payloads idênticos. community-f4-dlq-retirement-resources.log: **8 passed**,
+9,15 s, incluindo os dois cenários antes falhos e o catálogo efetivo de resources.
+Os 147 casos aprovados incluem ausência MCP/REST antes de storage/autoridade,
+schemas remanescentes, permissões e limites de paginação. Não é E2E do runtime
+Pulse real nem prova de upgrade/cutover.
+
+Par definitivo deste incremento: wheels-f4-dlq-retirement-complete. Core SHA256
+afe1f12320fb1182807014c812be526e8bd48164edc25dab49e6443330079c84 (inalterado);
+Community SHA256 520221dbc35560084b127b6f3dc61597ade39ac37d1bd1c2893b4cfc6fabd270.
+Os 78 assets físicos estão todos no índice Git, inclusive os novos nomes hash.
+closure-f4-dlq-retirement-complete.json confirma **ok=true**, findings e
+documentation_findings vazios, oito budgets 0/0, 7.482 imports Core, 1.131
+Community→Core e 25 dependências. Todos os processos deste incremento terminaram.
+Community commit dbf7706947133d32b6eb6474eb16f5b9664d0005; Core reúne o contrato,
+catálogo, permissões, testes e ledger correspondentes. Publicação por push normal
+em feature/v0.4.0; autenticação jpbraga válida, sem troca de conta necessária.

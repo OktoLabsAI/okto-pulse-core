@@ -272,7 +272,7 @@ def test_canonical_debt_next_action_mapping():
     assert f("retry_scheduled", None) == "wait_for_scheduled_retry"
     assert f("blocked", None) == "resolve_blocker_then_retry"
     assert f("failed", None) == "retry_eligible_inspect_failure_reason"
-    assert f("failed", "dlq_1") == "reprocess_via_okto_pulse_kg_dead_letter_reprocess"
+    assert f("failed", "dlq_1") == "none"
     assert f("zzz_unknown", None) == "inspect_canonical_debt"
     # every purely-terminal state maps to the terminal action.
     for st in cds.TERMINAL_STATES:
@@ -314,7 +314,7 @@ def test_dlq_row_to_dict_includes_next_action():
     d = _row_to_dict(row)
     assert d["artifact_type"] == "card" and d["artifact_id"] == "c1"
     assert d["last_error"] == "kaboom"
-    assert "reprocess" in d["next_action"]
+    assert d["next_action"] == "none"
 
 
 def test_active_queue_next_action_mapping():

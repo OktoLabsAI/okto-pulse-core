@@ -18,9 +18,6 @@ from okto_pulse.core.ports.traceability import (
     LineageGraphView,
 )
 
-from okto_pulse.core.domain.code_traceability_kg import (
-    KGDeadLetterReprocessScope,
-)
 
 if TYPE_CHECKING:
     from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
@@ -749,26 +746,6 @@ class KnowledgeGraphOperations(Protocol):
 
     def stage_boost_node_audit(self, mutation: object) -> dict[str, object]: ...
 
-    async def reprocess_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        dead_letter_ids: list[str] | None,
-        limit: int,
-        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
-    ) -> dict[str, object]: ...
-
-    async def diagnose_connectivity_guard_dlq(
-        self, board_id: str
-    ) -> dict[str, object]: ...
-
-    async def reprocess_connectivity_guard_dlq(
-        self, board_id: str, dead_letter_ids: list[str]
-    ) -> dict[str, object]: ...
-
-    async def verify_connectivity_class_cleared(
-        self, board_id: str, *, artifact_refs: list[str] | None
-    ) -> dict[str, object]: ...
 
     async def list_cognitive_dlq_rows(
         self,
@@ -779,14 +756,6 @@ class KnowledgeGraphOperations(Protocol):
         include_code_traceability: bool = False,
     ) -> object: ...
 
-    async def list_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]: ...
 
     async def list_stale_canonical_parity(
         self, board_id: str, *, limit: int, offset: int
@@ -845,15 +814,6 @@ class KnowledgeGraphOperations(Protocol):
 
     async def recover_global_discovery_delivery(
         self, *, run_id: str, board_ids: list[str], dead_letter_limit: int
-    ) -> dict[str, object]: ...
-
-    async def queue_health(self) -> dict[str, object]: ...
-
-    async def queue_drilldown(
-        self,
-        board_id: str | None,
-        *,
-        include_code_traceability: bool = True,
     ) -> dict[str, object]: ...
 
 

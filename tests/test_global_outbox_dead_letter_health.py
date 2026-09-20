@@ -140,17 +140,13 @@ async def test_global_outbox_dead_letter_is_separate_non_maskable_readiness(
     assert domains["dead_letter"]["count"] == 0
     assert domains["global_outbox_dead_letter"]["count"] == 1
     assert domains["active_queue"]["count"] == 0
-    assert domains["global_outbox_dead_letter"]["drill_down_tool"] == (
-        "okto_pulse_kg_global_outbox_dead_letter_list"
-    )
+    assert domains["global_outbox_dead_letter"]["drill_down_tool"] is None
     diagnostic = next(
         item
         for item in health["health_issues"]
         if item["code"] == "global_outbox_dead_letter_backlog"
     )
-    assert diagnostic["drill_down_tool"] == (
-        "okto_pulse_kg_global_outbox_dead_letter_list"
-    )
+    assert diagnostic["drill_down_tool"] is None
 
     signals = readiness["technical_signals"]
     assert signals["dead_letter_count"] == 0
@@ -167,6 +163,4 @@ async def test_global_outbox_dead_letter_is_separate_non_maskable_readiness(
     assert outbox_items[0]["artifact_ref"].startswith(
         "global_update_outbox:"
     )
-    assert outbox_items[0]["drill_down_tool"] == (
-        "okto_pulse_kg_global_outbox_dead_letter_list"
-    )
+    assert outbox_items[0]["drill_down_tool"] is None

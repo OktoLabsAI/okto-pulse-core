@@ -117,7 +117,9 @@ def _dl_issue_count(health: dict) -> int:
 @pytest.mark.asyncio
 async def test_ts_73b89491_queue_drilldown_active_only(db_factory):
     board = await _seed_all(db_factory)
-    dd = await _call("okto_pulse_kg_queue_drilldown", board_id=board)
+    from okto_pulse.core.services.queue_health_service import get_active_queue_drilldown
+    async with db_factory() as db:
+        dd = await get_active_queue_drilldown(db, board)
 
     assert dd["worker_mode"] in ("running", "stopped", "unknown")
     by_source = {s["source"]: s for s in dd["sources"]}
@@ -132,7 +134,7 @@ async def test_ts_73b89491_queue_drilldown_active_only(db_factory):
     # ACTIVE = CQ pending/claimed (2) + outbox pending (1) = 3. DLQ + canonical
     # debt + `done` are NOT folded into the active queue.
     assert dd["total_active_depth"] == 3
-    assert dd["drill_down_tool"] == "okto_pulse_kg_queue_drilldown"
+    assert dd["drill_down_tool"] is None
 
 
 # ===========================================================================
@@ -150,16 +152,16 @@ async def test_ts_096b61b1_dead_letter_backlog_once_in_full(db_factory):
     assert len(issues) == 1, health["health_issues"]
     issue = issues[0]
     assert issue["severity"] == "warning"
-    assert issue["operator_action"] == "inspect_dead_letters"
-    assert issue["drill_down_tool"] == "okto_pulse_kg_dead_letter_list"
+    assert issue["operator_action"] == "none"
+    assert issue["drill_down_tool"] is None
 
     # The three operational domains are SEPARATE counters (no mixing).
     dom = health["operational_domains"]
     assert dom["dead_letter"]["count"] == 1
     assert dom["active_queue"]["count"] == 3      # CQ active + outbox pending
     assert dom["canonical_debt"]["count"] >= 1
-    assert dom["dead_letter"]["drill_down_tool"] == "okto_pulse_kg_dead_letter_list"
-    assert dom["active_queue"]["drill_down_tool"] == "okto_pulse_kg_queue_drilldown"
+    assert dom["dead_letter"]["drill_down_tool"] is None
+    assert dom["active_queue"]["drill_down_tool"] is None
 
 
 @pytest.mark.asyncio
@@ -184,7 +186,7 @@ async def test_ts_096b61b1_active_queue_distinct_from_dlq_and_debt(db_factory):
     assert dom["dead_letter"]["semantics"] == "terminal_failure"
     assert dom["canonical_debt"]["semantics"] == "semantic_canonicality_pending"
     tools = {dom[d]["drill_down_tool"] for d in ("active_queue", "dead_letter", "canonical_debt")}
-    assert len(tools) == 3
+    assert tools == {None, "okto_pulse_kg_canonical_debt_list"}
     # active_queue.count (3) reflects ONLY the active queue, not the DLQ (1) or debt.
     assert health["active_queue"]["total_active_depth"] == 3
     assert health["dead_letter_count"] == 1

@@ -13,12 +13,9 @@ from __future__ import annotations
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import ast
-import json
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
-import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
 
@@ -77,55 +74,8 @@ async def _call_tool(**kwargs) -> str:
     return await tool.fn(**kwargs)
 
 
-@pytest.mark.asyncio
-async def test_mcp_tool_payload_matches_service() -> None:
-    """Success path: the REAL MCP tool returns the SAME JSON as the service
-    (parity), routed through the use case + MCP UnitOfWorkFactory."""
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.dead_letter_inspector_service import (
-        list_dead_letter_rows,
-    )
-
-    board_id = f"board-mcp-r01a-{uuid.uuid4().hex[:8]}"
-    factory = get_session_factory()
-    async with factory() as db:
-        for i in range(3):
-            await _insert_dlq_row(db, board_id, i)
-        await db.commit()
-
-    async with factory() as db:
-        baseline = await list_dead_letter_rows(db, board_id, limit=10, offset=0)
-
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())):
-        raw = await _call_tool(board_id=board_id, limit=10, offset=0)
-    payload = json.loads(raw)
-
-    # Byte-identical to the service payload (the MCP tool json.dumps(default=str)).
-    assert payload == json.loads(json.dumps(baseline, default=str))
-    assert payload["total"] == 3
-    assert len(payload["rows"]) == 3
-    assert len(payload["rows"][0]["errors"]) == 3
 
 
-@pytest.mark.asyncio
-async def test_mcp_tool_auth_gates_before_use_case() -> None:
-    """Permission baseline: when ``_get_agent_ctx`` returns None the tool returns
-    the unchanged ``_auth_error()`` envelope and NEVER reaches the use case — the
-    auth check is still on the path before the relational work."""
-    from okto_pulse.core.infra.database import get_session_factory
-
-    register_mcp_test_runtime(get_session_factory())
-    expected = mcp_server._auth_error()
-
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=None)), patch(
-        "okto_pulse.core.application.use_cases.list_dead_letter_rows."
-        "ListDeadLetterRowsUseCase.execute",
-        AsyncMock(side_effect=AssertionError("use case must not run when auth fails")),
-    ):
-        tool = await mcp_server.mcp.get_tool(TOOL)
-        raw = await tool.fn(board_id="any-board", limit=10, offset=0)
-
-    assert raw == expected
 
 
 def _tool_function_node() -> ast.AST:
@@ -137,18 +87,6 @@ def _tool_function_node() -> ast.AST:
     raise AssertionError(f"{TOOL} not found in mcp/server.py")
 
 
-def test_tool_body_has_no_direct_relational_coupling() -> None:
-    """AST: the migrated tool body no longer references get_db_for_mcp /
-    AsyncSession / get_db, but DOES still go through _get_agent_ctx and the MCP
-    UnitOfWorkFactory + the shared use case."""
-    node = _tool_function_node()
-    names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
-    assert "get_db_for_mcp" not in names
-    assert "AsyncSession" not in names
-    assert "get_db" not in names
-    assert "_get_agent_ctx" in names
-    assert "get_unit_of_work_factory_for_mcp" in names
-    assert "ListDeadLetterRowsUseCase" in names
 
 
 def test_mcp_handlers_have_no_direct_database_session_access() -> None:

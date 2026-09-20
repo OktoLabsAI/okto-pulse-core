@@ -31,7 +31,7 @@ from okto_pulse.core.services.kg_health_readiness_service import (
 )
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
-_DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
+_DLQ_TOOL = None
 
 
 async def _seed_board_with_dlq(db_factory, *, artifact_id=None):
@@ -77,7 +77,8 @@ async def test_ts1_health_summary_preserves_dlq_and_drilldown(db_factory):
         assert hr["technical_signals"]["technical_dlq_count"] >= 1
         items = [i for i in hr["non_maskable_items"] if i["signal"] == "technical_dlq"]
         assert items and items[0]["drill_down_tool"] == _DLQ_TOOL
-        assert items[0]["next_action"] and items[0]["remediation"]
+        assert items[0]["next_action"] == "none"
+        assert items[0]["limitation"]
 
 
 @pytest.mark.asyncio
@@ -112,7 +113,9 @@ async def test_ts3_skip_cannot_reduce_or_hide_technical_signal(db_factory):
     assert any(i["artifact_ref"] == ref and i["signal"] == "technical_dlq" for i in items)
     item = next(i for i in items if i["artifact_ref"] == ref)
     assert item["last_error"] and item["error_text"]
-    assert item["next_action"] and item["remediation"] and item["drill_down_tool"]
+    assert item["next_action"] == "none"
+    assert item["limitation"]
+    assert item["drill_down_tool"] is None
     # technical counter still non-zero (no masking).
     assert hr["technical_signals"]["technical_dlq_count"] >= 1
 

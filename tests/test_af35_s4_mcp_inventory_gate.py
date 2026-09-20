@@ -171,7 +171,6 @@ AF35_S4_MIGRATED_MCP_WRAPPERS = frozenset(
         "okto_pulse_archive_story",
         "okto_pulse_restore_story",
         "okto_pulse_kg_health",
-        "okto_pulse_kg_dead_letter_list",
         "okto_pulse_list_by_board",
         "okto_pulse_list_architecture_designs",
         "okto_pulse_list_architecture_propagation_legacy",

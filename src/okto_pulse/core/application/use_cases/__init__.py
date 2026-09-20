@@ -155,20 +155,6 @@ from okto_pulse.core.application.use_cases.create_board import (
     CreateBoardResult,
     CreateBoardUseCase,
 )
-from okto_pulse.core.application.use_cases.dlq_reprocess import (
-    DiagnoseConnectivityDlqCommand,
-    DiagnoseConnectivityDlqResult,
-    DiagnoseConnectivityDlqUseCase,
-    ReprocessConnectivityDlqCommand,
-    ReprocessConnectivityDlqResult,
-    ReprocessConnectivityDlqUseCase,
-    ReprocessDeadLetterRowsCommand,
-    ReprocessDeadLetterRowsResult,
-    ReprocessDeadLetterRowsUseCase,
-    VerifyConnectivityClassCommand,
-    VerifyConnectivityClassResult,
-    VerifyConnectivityClassUseCase,
-)
 from okto_pulse.core.application.use_cases.kg_health import (
     GetKgHealthCommand,
     GetKgHealthReadinessCommand,
@@ -204,23 +190,10 @@ from okto_pulse.core.application.use_cases.list_cognitive_dlq import (
     ListCognitiveDlqResult,
     ListCognitiveDlqUseCase,
 )
-from okto_pulse.core.application.use_cases.list_dead_letter_rows import (
-    ListDeadLetterRowsCommand,
-    ListDeadLetterRowsResult,
-    ListDeadLetterRowsUseCase,
-)
 from okto_pulse.core.application.use_cases.list_stale_canonical_parity import (
     ListStaleCanonicalParityCommand,
     ListStaleCanonicalParityResult,
     ListStaleCanonicalParityUseCase,
-)
-from okto_pulse.core.application.use_cases.queue_health import (
-    GetQueueDrilldownCommand,
-    GetQueueDrilldownResult,
-    GetQueueDrilldownUseCase,
-    GetQueueHealthCommand,
-    GetQueueHealthResult,
-    GetQueueHealthUseCase,
 )
 from okto_pulse.core.application.use_cases.move_ideation import (
     MoveIdeationCommand,
@@ -1380,18 +1353,6 @@ __all__ = [
     "CreateBoardResult",
     "CreateBoardUseCase",
     # dlq_reprocess (MCP-FU2)
-    "ReprocessDeadLetterRowsCommand",
-    "ReprocessDeadLetterRowsResult",
-    "ReprocessDeadLetterRowsUseCase",
-    "DiagnoseConnectivityDlqCommand",
-    "DiagnoseConnectivityDlqResult",
-    "DiagnoseConnectivityDlqUseCase",
-    "ReprocessConnectivityDlqCommand",
-    "ReprocessConnectivityDlqResult",
-    "ReprocessConnectivityDlqUseCase",
-    "VerifyConnectivityClassCommand",
-    "VerifyConnectivityClassResult",
-    "VerifyConnectivityClassUseCase",
     # kg_health
     "GetKgHealthCommand",
     "GetKgHealthResult",
@@ -1408,20 +1369,11 @@ __all__ = [
     "ListCognitiveDlqResult",
     "ListCognitiveDlqUseCase",
     # list_dead_letter_rows
-    "ListDeadLetterRowsCommand",
-    "ListDeadLetterRowsResult",
-    "ListDeadLetterRowsUseCase",
     # list_stale_canonical_parity
     "ListStaleCanonicalParityCommand",
     "ListStaleCanonicalParityResult",
     "ListStaleCanonicalParityUseCase",
     # queue_health
-    "GetQueueHealthCommand",
-    "GetQueueHealthResult",
-    "GetQueueHealthUseCase",
-    "GetQueueDrilldownCommand",
-    "GetQueueDrilldownResult",
-    "GetQueueDrilldownUseCase",
     # move_ideation
     "MoveIdeationCommand",
     "MoveIdeationResult",

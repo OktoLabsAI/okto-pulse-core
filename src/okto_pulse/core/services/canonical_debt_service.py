@@ -97,7 +97,7 @@ def _canonical_debt_next_action(
         return "resolve_blocker_then_retry"
     if state in RETRYABLE_STATES:
         return (
-            "reprocess_via_okto_pulse_kg_dead_letter_reprocess"
+            "none"
             if dlq_ref
             else "retry_eligible_inspect_failure_reason"
         )

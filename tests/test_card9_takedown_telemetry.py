@@ -484,10 +484,7 @@ def test_slo_alert_and_snapshot_publish_exact_runbook_contract() -> None:
     assert alert is not None
     assert alert["event"] == "kg.takedown.slo_breach"
     assert alert["severity"] == "critical"
-    assert alert["runbook"] == [
-        "okto_pulse_kg_global_outbox_dead_letter_reprocess",
-        "okto_pulse_kg_stale_canonical_parity_list",
-    ]
+    assert alert["runbook"] == []
     assert tuple(alert["runbook"]) == TAKEDOWN_SLO_RUNBOOK
     assert alert["thresholds"] == {
         "normal_p95_seconds": 120.0,

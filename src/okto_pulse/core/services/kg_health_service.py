@@ -737,11 +737,11 @@ def _build_health_diagnostics(
                 "reason": "dead_letter_count_gt_zero",
                 "description": (
                     f"{dead_letter_count} consolidation row(s) are dead-lettered "
-                    "and need inspection/reprocess. Distinct from cognitive pending "
+                    "and their affected graph updates are unavailable. Distinct from cognitive pending "
                     "and canonical debt."
                 ),
-                "operator_action": "inspect_dead_letters",
-                "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+                "operator_action": "none",
+                "drill_down_tool": None,
             }
         )
 
@@ -756,7 +756,7 @@ def _build_health_diagnostics(
         operator_action = "inspect_telemetry"
     elif dead_letter_count > 0:
         primary = "dead_letter_backlog"
-        operator_action = "inspect_dead_letters"
+        operator_action = "none"
     else:
         primary = "none"
         operator_action = "none"
@@ -3108,15 +3108,15 @@ async def get_kg_health(
                     "delivery event(s) need read-only diagnosis. This domain is "
                     "separate from consolidation DLQ and the active retry window."
                 ),
-                "operator_action": "inspect_global_outbox_dead_letters",
-                "drill_down_tool": ("okto_pulse_kg_global_outbox_dead_letter_list"),
+                "operator_action": "none",
+                "drill_down_tool": None,
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = (
                 "global_outbox_dead_letter_backlog"
             )
-            health_diagnostics["operator_action"] = "inspect_global_outbox_dead_letters"
+            health_diagnostics["operator_action"] = "none"
     if decay_scheduler_diagnostics["operational_debt"]:
         health_diagnostics["health_issues"].append(
             {
@@ -3616,7 +3616,7 @@ async def get_kg_health(
                     "global_update_outbox. Distinct from dead-letter and canonical debt."
                 ),
                 "operator_action": "inspect_active_queue",
-                "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+                "drill_down_tool": None,
                 "counts": {
                     s["source"]: s["queue_depth"] for s in active_queue["sources"]
                 },
@@ -3671,20 +3671,20 @@ async def get_kg_health(
             "semantics": "transient_operational",
             "count": int(active_queue["total_active_depth"]),
             "classification": active_queue["classification"],
-            "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+            "drill_down_tool": None,
         },
         "dead_letter": {
             "domain": "dead_letter",
             "semantics": "terminal_failure",
             "count": int(dead_letter_count),
-            "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+            "drill_down_tool": None,
         },
         "global_outbox_dead_letter": {
             "domain": "global_outbox_dead_letter",
             "semantics": "terminal_global_discovery_delivery_failure",
             "count": global_outbox_dead_letter_count,
             "oldest_age_seconds": global_outbox_dead_letter["oldest_age_seconds"],
-            "drill_down_tool": ("okto_pulse_kg_global_outbox_dead_letter_list"),
+            "drill_down_tool": None,
             "drill_down_signal": "global_outbox_dead_letter",
         },
         "canonical_debt": {

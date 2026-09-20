@@ -129,27 +129,6 @@ _INLINE_OPERATION_CASES = (
         "kg.admin.settings_write",
         BOARD_ID,
     ),
-    (
-        "okto_pulse_kg_global_outbox_dead_letter_list",
-        {},
-        "kg.operations.global_outbox.read",
-        "kg.admin.settings_read",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_outbox_dead_letter_reprocess",
-        {"dead_letter_ids": ["dlq-1"], "reason": "operator_retry"},
-        "kg.operations.global_outbox.reprocess",
-        "kg.admin.settings_write",
-        None,
-    ),
-    (
-        "okto_pulse_kg_global_outbox_dead_letter_verify",
-        {"dead_letter_ids": ["dlq-1"]},
-        "kg.operations.global_outbox.verify",
-        "kg.admin.settings_read",
-        None,
-    ),
 )
 
 

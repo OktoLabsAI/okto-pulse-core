@@ -11,15 +11,12 @@ import pytest
 
 from okto_pulse.core.application.use_cases import (
     cognitive_readiness,
-    dlq_reprocess,
     kg_health,
     kg_routes_crud,
     list_cognitive_dlq,
-    list_dead_letter_rows,
     list_stale_canonical_parity,
     mcp_kg_crud,
     operational_rest,
-    queue_health,
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
@@ -32,10 +29,6 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.domain.permissions import (
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     PermissionSet,
-)
-from okto_pulse.core.domain.code_traceability_kg import (
-    CODE_TRACEABILITY_KG_READ_PERMISSIONS,
-    KGDeadLetterReprocessScope,
 )
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
@@ -56,9 +49,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.audit.read", "kg.admin.settings_read"),
     ("kg.operations.schema.migrate", "kg.admin.settings_write"),
     ("kg.operations.tick.run", "kg.admin.settings_write"),
-    ("kg.operations.global_outbox.read", "kg.admin.settings_read"),
-    ("kg.operations.global_outbox.reprocess", "kg.admin.settings_write"),
-    ("kg.operations.global_outbox.verify", "kg.admin.settings_read"),
     (
         "kg.operations.historical.read",
         "kg.admin.historical_consolidation",
@@ -295,23 +285,6 @@ _WRITE_CASES: tuple[
         "kg.admin.settings_write",
         True,
     ),
-    (
-        dlq_reprocess.ReprocessDeadLetterRowsUseCase(),
-        lambda: dlq_reprocess.ReprocessDeadLetterRowsCommand(BOARD_ID),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-        False,
-    ),
-    (
-        dlq_reprocess.ReprocessConnectivityDlqUseCase(),
-        lambda: dlq_reprocess.ReprocessConnectivityDlqCommand(
-            BOARD_ID,
-            ["dead-letter-1"],
-        ),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-        False,
-    ),
 )
 
 
@@ -326,8 +299,6 @@ _WRITE_CASES: tuple[
         "pending-retry",
         "node-boost",
         "integrity-reconcile",
-        "dead-letter-reprocess",
-        "connectivity-reprocess",
     ),
 )
 async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write(
@@ -341,8 +312,6 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
     module = (
         kg_routes_crud
         if use_case.__class__.__module__.endswith("kg_routes_crud")
-        else dlq_reprocess
-        if use_case.__class__.__module__.endswith("dlq_reprocess")
         else mcp_kg_crud
     )
     captured: list[tuple[PermissionRequirement, dict[str, Any]]] = []
@@ -377,97 +346,6 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
     assert uow.rollbacks == 0
 
 
-@pytest.mark.asyncio
-async def test_code_traceability_dlq_reprocess_requires_all_read_leaves_and_commits_only_mutation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def _allow_operation(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    monkeypatch.setattr(dlq_reprocess, "require_authorization", _allow_operation)
-    command = dlq_reprocess.ReprocessDeadLetterRowsCommand(
-        BOARD_ID,
-        dead_letter_ids=["dlq-ct-1", "dlq-ct-2"],
-        limit=2,
-        scope=KGDeadLetterReprocessScope.CODE_TRACEABILITY,
-    )
-
-    denied_uow = _Uow()
-    with pytest.raises(PermissionDeniedError):
-        await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
-            command,
-            actor=ActorContext(
-                "operator",
-                "mcp",
-                board_id=BOARD_ID,
-                permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS[:-1],
-            ),
-            uow=denied_uow,
-        )
-    assert "write:queue.dead_letter_reprocess" not in denied_uow.events
-    assert denied_uow.commits == 0
-
-    captured: dict[str, Any] = {}
-
-    async def _reprocess(board_id: str, **kwargs: Any) -> dict[str, Any]:
-        captured.update({"board_id": board_id, **kwargs})
-        return {
-            "success": False,
-            "blocked": True,
-            "mutated": False,
-            "scope": "code_traceability",
-            "selected": 0,
-        }
-
-    allowed_uow = _Uow()
-    allowed_uow.services.kg = SimpleNamespace(reprocess_dead_letter_rows=_reprocess)
-    result = await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
-        command,
-        actor=ActorContext(
-            "operator",
-            "mcp",
-            board_id=BOARD_ID,
-            permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS,
-        ),
-        uow=allowed_uow,
-    )
-
-    assert result.data["blocked"] is True
-    assert captured == {
-        "board_id": BOARD_ID,
-        "dead_letter_ids": ["dlq-ct-1", "dlq-ct-2"],
-        "limit": 2,
-        "scope": KGDeadLetterReprocessScope.CODE_TRACEABILITY,
-    }
-    assert allowed_uow.commits == 0
-
-    async def _reprocess_mutating(
-        _board_id: str,
-        **_kwargs: Any,
-    ) -> dict[str, Any]:
-        return {
-            "success": True,
-            "blocked": False,
-            "mutated": True,
-            "scope": "code_traceability",
-            "selected": 2,
-        }
-
-    mutating_uow = _Uow()
-    mutating_uow.services.kg = SimpleNamespace(
-        reprocess_dead_letter_rows=_reprocess_mutating
-    )
-    await dlq_reprocess.ReprocessDeadLetterRowsUseCase().execute(
-        command,
-        actor=ActorContext(
-            "operator",
-            "mcp",
-            board_id=BOARD_ID,
-            permissions=CODE_TRACEABILITY_KG_READ_PERMISSIONS,
-        ),
-        uow=mutating_uow,
-    )
-    assert mutating_uow.commits == 1
 
 
 _REST_OPERATION_CASES: tuple[
@@ -754,22 +632,6 @@ _READ_CASES: tuple[
         False,
     ),
     (
-        dlq_reprocess,
-        dlq_reprocess.DiagnoseConnectivityDlqUseCase(),
-        lambda: dlq_reprocess.DiagnoseConnectivityDlqCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        dlq_reprocess,
-        dlq_reprocess.VerifyConnectivityClassUseCase(),
-        lambda: dlq_reprocess.VerifyConnectivityClassCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
         list_cognitive_dlq,
         list_cognitive_dlq.ListCognitiveDlqUseCase(),
         lambda: list_cognitive_dlq.ListCognitiveDlqCommand(
@@ -782,26 +644,10 @@ _READ_CASES: tuple[
         False,
     ),
     (
-        list_dead_letter_rows,
-        list_dead_letter_rows.ListDeadLetterRowsUseCase(),
-        lambda: list_dead_letter_rows.ListDeadLetterRowsCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
         list_stale_canonical_parity,
         list_stale_canonical_parity.ListStaleCanonicalParityUseCase(),
         lambda: list_stale_canonical_parity.ListStaleCanonicalParityCommand(BOARD_ID),
         "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
-        queue_health,
-        queue_health.GetQueueDrilldownUseCase(),
-        lambda: queue_health.GetQueueDrilldownCommand(BOARD_ID),
-        "kg.operations.queue.read",
         "kg.admin.settings_read",
         True,
     ),
@@ -833,12 +679,8 @@ _READ_CASES: tuple[
         "partition-integrity",
         "digest-mismatch",
         "origin-audit",
-        "connectivity-diagnose",
-        "connectivity-verify",
         "cognitive-dlq",
-        "dead-letter-list",
         "stale-parity",
-        "queue-drilldown",
     ),
 )
 async def test_each_dedicated_kg_reader_checks_the_specific_operation(
@@ -878,40 +720,4 @@ async def test_each_dedicated_kg_reader_checks_the_specific_operation(
     assert kwargs["board_id"] == BOARD_ID
     assert kwargs["uow"] is uow
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])
-    assert uow.commits == 0
-
-
-@pytest.mark.asyncio
-async def test_global_queue_reader_uses_the_same_canonical_requirement(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: list[tuple[PermissionRequirement, ...]] = []
-
-    async def _deny(
-        _actor: ActorContext,
-        *requirements: PermissionRequirement,
-        **_kwargs: Any,
-    ) -> None:
-        captured.append(requirements)
-        raise PermissionDeniedError("denied")
-
-    monkeypatch.setattr(queue_health, "require_any_authority", _deny)
-    uow = _Uow()
-
-    with pytest.raises(PermissionDeniedError, match="denied"):
-        await queue_health.GetQueueHealthUseCase().execute(
-            queue_health.GetQueueHealthCommand(),
-            actor=ActorContext("operator", "rest", permissions=()),
-            uow=uow,
-        )
-
-    assert captured == [
-        (
-            PermissionRequirement(
-                "kg.operations.queue.read",
-                legacy_operation="kg.admin.settings_read",
-            ),
-        )
-    ]
-    assert uow.events == []
     assert uow.commits == 0

@@ -21,8 +21,8 @@ from typing import Any
 from okto_pulse.core.kg.rebuild_audit import emit_cognitive_technical_signal_sample
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
-_DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
-_GLOBAL_OUTBOX_DLQ_TOOL = "okto_pulse_kg_global_outbox_dead_letter_list"
+_DLQ_TOOL = None
+_GLOBAL_OUTBOX_DLQ_TOOL = None
 _DEBT_TOOL = "okto_pulse_kg_canonical_debt_list"
 _HEALTH_TOOL = "okto_pulse_kg_health"
 _POLICY_PROJECTION_DLQ_SIGNAL = "policy_constraint_projection_dlq"
@@ -118,10 +118,8 @@ async def _non_maskable_items(
             "signal": "technical_dlq",
             "last_error": row.get("last_error"),
             "error_text": row.get("error_text"),
-            "next_action": row.get("next_action"),
-            "remediation": "diagnose then reprocess via "
-                           "okto_pulse_kg_connectivity_dlq_reprocess / "
-                           "okto_pulse_kg_dead_letter_reprocess after the root cause is fixed",
+            "next_action": "none",
+            "limitation": "Affected graph delivery is unavailable; technical gates remain enforced.",
             "drill_down_tool": _DLQ_TOOL,
         })
 
@@ -155,11 +153,8 @@ async def _non_maskable_items(
                 "error_text": row.get("last_error"),
                 "classification": row.get("classification"),
                 "retry_count": row.get("retry_count"),
-                "next_action": row.get("next_action"),
-                "remediation": (
-                    "diagnose the terminal global-discovery delivery failure; "
-                    "do not requeue until its classified root cause is fixed"
-                ),
+                "next_action": "none",
+                "limitation": "Affected global discovery delivery is unavailable; technical gates remain enforced.",
                 "drill_down_tool": _GLOBAL_OUTBOX_DLQ_TOOL,
             })
 
@@ -174,7 +169,7 @@ async def _non_maskable_items(
             "signal": "canonical_debt_open",
             "last_error": row.get("last_error") or row.get("failure_reason"),
             "error_text": row.get("last_error") or row.get("failure_reason"),
-            "next_action": row.get("next_action"),
+            "next_action": "none",
             "remediation": "reconcile/retry the canonical debt for this artifact",
             "drill_down_tool": _DEBT_TOOL,
         })

@@ -6,9 +6,6 @@ import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 
-from okto_pulse.core.domain.code_traceability_kg import (
-    KGDeadLetterReprocessScope,
-)
 
 
 logger = logging.getLogger(__name__)
@@ -595,61 +592,6 @@ class CoreKnowledgeGraphOperations:
 
         return stage_boost_node_audit(self.__relational_context, mutation)
 
-    async def reprocess_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        dead_letter_ids: list[str] | None,
-        limit: int,
-        scope: KGDeadLetterReprocessScope = KGDeadLetterReprocessScope.GENERIC,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            reprocess_dead_letter_rows,
-        )
-
-        return await reprocess_dead_letter_rows(
-            self.__relational_context,
-            board_id,
-            dead_letter_ids=dead_letter_ids,
-            limit=limit,
-            scope=scope,
-        )
-
-    async def diagnose_connectivity_guard_dlq(self, board_id: str) -> dict[str, object]:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            diagnose_connectivity_guard_dlq,
-        )
-
-        return await diagnose_connectivity_guard_dlq(
-            self.__relational_context,
-            board_id,
-        )
-
-    async def reprocess_connectivity_guard_dlq(
-        self, board_id: str, dead_letter_ids: list[str]
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            reprocess_connectivity_guard_dlq,
-        )
-
-        return await reprocess_connectivity_guard_dlq(
-            self.__relational_context,
-            board_id,
-            dead_letter_ids,
-        )
-
-    async def verify_connectivity_class_cleared(
-        self, board_id: str, *, artifact_refs: list[str] | None
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            verify_connectivity_class_cleared,
-        )
-
-        return await verify_connectivity_class_cleared(
-            self.__relational_context,
-            board_id,
-            artifact_refs=artifact_refs,
-        )
 
     async def list_cognitive_dlq_rows(
         self,
@@ -671,25 +613,6 @@ class CoreKnowledgeGraphOperations:
             include_code_traceability=include_code_traceability,
         )
 
-    async def list_dead_letter_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            list_dead_letter_rows,
-        )
-
-        return await list_dead_letter_rows(
-            self.__relational_context,
-            board_id,
-            limit=limit,
-            offset=offset,
-            include_code_traceability=include_code_traceability,
-        )
 
     async def list_stale_canonical_parity(
         self, board_id: str, *, limit: int, offset: int
@@ -904,64 +827,6 @@ class CoreKnowledgeGraphOperations:
             )
         return tuple(rows)
 
-    async def list_global_outbox_dead_letters(
-        self,
-        *,
-        limit: int,
-        cursor: str | None,
-        classification: str | None,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]:
-        from okto_pulse.core.application.global_outbox_dead_letter import (
-            GlobalOutboxDeadLetterOperations,
-        )
-        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
-
-        return await GlobalOutboxDeadLetterOperations(
-            store=get_global_outbox_store()
-        ).list(
-            context=self.__relational_context,
-            limit=limit,
-            cursor=cursor,
-            classification=classification,
-            include_code_traceability=include_code_traceability,
-        )
-
-    async def reprocess_global_outbox_dead_letters(
-        self,
-        *,
-        dead_letter_ids: list[str],
-        reason: str,
-    ) -> dict[str, object]:
-        from okto_pulse.core.application.global_outbox_dead_letter import (
-            GlobalOutboxDeadLetterOperations,
-        )
-        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
-
-        return await GlobalOutboxDeadLetterOperations(
-            store=get_global_outbox_store()
-        ).reprocess(
-            context=self.__relational_context,
-            dead_letter_ids=dead_letter_ids,
-            reason=reason,
-        )
-
-    async def verify_global_outbox_dead_letters(
-        self,
-        *,
-        dead_letter_ids: list[str],
-    ) -> dict[str, object]:
-        from okto_pulse.core.application.global_outbox_dead_letter import (
-            GlobalOutboxDeadLetterOperations,
-        )
-        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
-
-        return await GlobalOutboxDeadLetterOperations(
-            store=get_global_outbox_store()
-        ).verify(
-            context=self.__relational_context,
-            dead_letter_ids=dead_letter_ids,
-        )
 
     async def recover_global_discovery_delivery(
         self, *, run_id: str, board_ids: list[str], dead_letter_limit: int
@@ -1040,27 +905,6 @@ class CoreKnowledgeGraphOperations:
             "board_reconciliations_enqueued": enqueued,
             "selective_error_class": "global_open",
         }
-
-    async def queue_health(self) -> dict[str, object]:
-        from okto_pulse.core.services.queue_health_service import get_queue_health
-
-        return await get_queue_health(self.__relational_context)
-
-    async def queue_drilldown(
-        self,
-        board_id: str | None,
-        *,
-        include_code_traceability: bool = True,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.queue_health_service import (
-            get_active_queue_drilldown,
-        )
-
-        return await get_active_queue_drilldown(
-            self.__relational_context,
-            board_id,
-            include_code_traceability=include_code_traceability,
-        )
 
 
 __all__ = [

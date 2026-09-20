@@ -12,11 +12,6 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     required = {
         "okto_pulse_get_traceability_report",
         "okto_pulse_kg_canonical_debt_list",
-        "okto_pulse_kg_dead_letter_list",
-        "okto_pulse_kg_dead_letter_reprocess",
-        "okto_pulse_kg_connectivity_dlq_diagnose",
-        "okto_pulse_kg_connectivity_dlq_reprocess",
-        "okto_pulse_kg_connectivity_dlq_verify",
         "okto_pulse_kg_health_readiness",
         "okto_pulse_create_card",
         "okto_pulse_submit_task_validation",
@@ -91,28 +86,7 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     assert "canonical-debt" in debt_list_desc.lower()
     assert "okto_pulse_kg_canonical_debt_list" in load("reference/tool-docs/kg.md")
 
-    # dead-letter list: compact summary; the reprocess cross-reference moved to
-    # the kg tool-docs resource.
-    dlq_list_desc = tools["okto_pulse_kg_dead_letter_list"].description
-    assert "dead-letter" in dlq_list_desc.lower()
-    assert "okto_pulse_kg_dead_letter_reprocess" in load("reference/tool-docs/kg.md")
-
-    # reprocess: its identity line survives in the compact summary.
-    reprocess_desc = tools["okto_pulse_kg_dead_letter_reprocess"].description
-    assert "requeue dead-lettered KG" in reprocess_desc
-
-    # RKG-04: the connectivity-guard class tools are registered, documented and the
-    # reprocess is fail-closed (never a broad reprocess of unanalysed DLQs).
     kg_docs = load("reference/tool-docs/kg.md")
-    for tool_name in (
-        "okto_pulse_kg_connectivity_dlq_diagnose",
-        "okto_pulse_kg_connectivity_dlq_reprocess",
-        "okto_pulse_kg_connectivity_dlq_verify",
-    ):
-        assert tool_name in kg_docs, f"{tool_name} missing from kg tool-docs"
-    conn_reprocess_desc = tools["okto_pulse_kg_connectivity_dlq_reprocess"].description
-    assert "fail-closed" in conn_reprocess_desc.lower()
-    assert "selected_dlq_out_of_class" in kg_docs
 
     # RKG-05: the canonical non-maskable health/readiness tool is registered +
     # documented and keeps blocking vs would_block_done discoverable.

@@ -19,7 +19,6 @@ _OPERATIONAL_OFFSET_TOOLS = (
     "okto_pulse_kg_originates_from_contract_audit",
     "okto_pulse_kg_stale_canonical_parity_list",
     "okto_pulse_kg_list_cognitive_dlq",
-    "okto_pulse_kg_dead_letter_list",
     "okto_pulse_list_architecture_propagation_legacy",
 )
 

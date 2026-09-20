@@ -665,9 +665,6 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
     "kg.operations.audit.read",
     "kg.operations.schema.migrate",
     "kg.operations.tick.run",
-    "kg.operations.global_outbox.read",
-    "kg.operations.global_outbox.reprocess",
-    "kg.operations.global_outbox.verify",
     "kg.operations.historical.read",
     "kg.operations.historical.start",
     "kg.operations.historical.cancel",
@@ -695,9 +692,6 @@ KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("kg.operations.audit.read", "kg.admin.settings_read"),
         ("kg.operations.schema.migrate", "kg.admin.settings_write"),
         ("kg.operations.tick.run", "kg.admin.settings_write"),
-        ("kg.operations.global_outbox.read", "kg.admin.settings_read"),
-        ("kg.operations.global_outbox.reprocess", "kg.admin.settings_write"),
-        ("kg.operations.global_outbox.verify", "kg.admin.settings_read"),
         (
             "kg.operations.historical.read",
             "kg.admin.historical_consolidation",
@@ -1950,11 +1944,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "audit": {"read": True},
             "schema": {"migrate": True},
             "tick": {"run": True},
-            "global_outbox": {
-                "read": True,
-                "reprocess": True,
-                "verify": True,
-            },
             "historical": {
                 "read": True,
                 "start": True,

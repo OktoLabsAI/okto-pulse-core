@@ -132,8 +132,8 @@ async def test_mixed_each_domain_once_with_distinct_drilldowns(db_factory):
     # Distinct drill-down tools per domain.
     tools = {dom[d]["drill_down_tool"] for d in ("active_queue", "dead_letter", "canonical_debt")}
     assert tools == {
-        "okto_pulse_kg_queue_drilldown",
-        "okto_pulse_kg_dead_letter_list",
+        None,
+        None,
         "okto_pulse_kg_canonical_debt_list",
     }
     # Distinct semantics per domain.
@@ -173,5 +173,5 @@ async def test_dead_letter_backlog_is_not_duplicated(db_factory):
     # the drill-down tool (the FR7 canonical one was kept).
     dl_issues = [i for i in health["health_issues"] if i["code"] == "dead_letter_backlog"]
     assert len(dl_issues) == 1, codes
-    assert dl_issues[0]["drill_down_tool"] == "okto_pulse_kg_dead_letter_list"
+    assert dl_issues[0]["drill_down_tool"] is None
     assert health["operational_domains"]["dead_letter"]["count"] == 3

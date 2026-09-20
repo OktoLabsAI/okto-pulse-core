@@ -194,97 +194,6 @@ Returns:
     id, source/target ids, known endpoint types, classification, confidence,
     reason, path, and `mutated=false`.
 
-## `okto_pulse_kg_dead_letter_list`
-
-Prose covered by the live tool description. Delta:
-
-Args:
-    board_id: Board UUID
-    limit: Max rows to return (1-200, default 50)
-    offset: Skip first N rows (>=0, default 0)
-
-Returns:
-    JSON `{rows, total, limit, offset}` on success. `{error: "..."}`
-    on auth or permission failure.
-
-## `okto_pulse_kg_dead_letter_reprocess`
-
-Prose covered by the live tool description. Delta:
-
-Args:
-    board_id: Board UUID.
-    dead_letter_ids: Multi-value DLQ row IDs
-        (formats: okto-pulse://reference/multivalue). For `scope=generic`,
-        empty means "oldest non-Code-Traceability rows for this board up to
-        limit". For `scope=code_traceability`, exact IDs are required.
-    limit: Max DLQ rows to requeue (1-200, default 50).
-    process_now: "true" to immediately run one consolidation worker batch
-        after requeueing; "false" to only mark rows pending.
-    scope: `generic` (default) or `code_traceability`. The CT scope is
-        all-or-nothing, board-scoped, requires all four Code Traceability read
-        permissions, and only requeues persisted CT artifacts. It never reads
-        a repository, filesystem, provider, or runtime from Community.
-
-Returns:
-    JSON with scope, selected/requeued/already_queued counts and, when a row
-    mutated and process_now is true, the worker batch processed count. An
-    invalid CT selection returns `blocked=true`, `mutated=false`, and removes
-    no DLQ row.
-
-## `okto_pulse_kg_connectivity_dlq_diagnose`
-
-Diagnose the LIVE connectivity-guard `technical_dlq` class (RKG-04) before any
-reprocess. Read-only.
-
-The class is every dead-letter row whose terminal error is `KG node
-connectivity guard rejected the commit before graph mutation` (the recurring
-cognitive-closeout failure that RKG-02 fixes at the root). Returns each member's
-`dead_letter_id`, `artifact_id`, `attempts`, `errors`, `last_error`, the
-`source_artifact_ref` involved, the `probable_root_cause`, the `next_action` and
-a `remediation` hint — the input you must feed to
-`okto_pulse_kg_connectivity_dlq_reprocess`, which only accepts in-class ids.
-
-Args:
-    board_id: Board UUID.
-
-Returns:
-    JSON `{board_id, dlq_class, count, items, dead_letter_ids}`.
-
-## `okto_pulse_kg_connectivity_dlq_reprocess`
-
-Fail-closed reprocess of the connectivity-guard `technical_dlq` class (RKG-04).
-
-Unlike the generic `okto_pulse_kg_dead_letter_reprocess`, this NEVER does a broad
-reprocess: it requires EXPLICIT in-class `dead_letter_ids` (from
-`okto_pulse_kg_connectivity_dlq_diagnose`) and blocks — removing NO DLQ — when the
-selection is empty (`no_dlq_selected`), missing (`selected_dlq_missing`),
-out-of-class (`selected_dlq_out_of_class`), the RKG-02/RKG-03 root-cause fixes are
-absent (`rkg02_rkg03_not_applied`) or the KG is quarantined (`kg_quarantined`). On
-success it reuses the idempotent DLQ→ConsolidationQueue path (queue dedup).
-
-Args:
-    board_id: Board UUID.
-    dead_letter_ids: REQUIRED in-class DLQ row IDs (native list, JSON array
-        string, or pipe-separated string). Empty is blocked, never "all".
-    process_now: "true" to run one consolidation worker batch after requeueing.
-
-Returns:
-    JSON. When blocked: `{success: false, blocked: true, removed_dlq: false,
-    reasons, preconditions}`. On success: selected/requeued/already_queued counts
-    + optional worker batch info.
-
-## `okto_pulse_kg_connectivity_dlq_verify`
-
-Prose covered by the live tool description. Delta:
-
-Args:
-    board_id: Board UUID.
-    artifact_refs: Optional `type:id` refs to scope the check (formats:
-        okto-pulse://reference/multivalue). Empty checks the whole class.
-
-Returns:
-    JSON `{class_cleared, remaining_count, remaining_dlq}`.
-
 ## `okto_pulse_kg_health_readiness`
 
 Canonical NON-MASKABLE health/readiness projection (RKG-05; gemelar do REST
@@ -442,7 +351,7 @@ Returns:
 
 Administrative board-scoped WRITE for the specific case where
 `okto_pulse_kg_digest_layer_mismatch_list` still reports DecisionDigest layer
-drift while `okto_pulse_kg_queue_drilldown` reports an idle queue. It enqueues a
+drift while health reports an idle queue. It enqueues a
 durable `consolidation_committed` event with `nodes_added=0`; the event contains
 no graph-node reference rows and does not require a consolidation-session audit
 parent (its `session_id` is correlation metadata only). It reuses the normal
@@ -722,29 +631,6 @@ Args:
 Returns:
     JSON with cognitive DLQ rows, error reason codes, and counts.
 
-## `okto_pulse_kg_queue_drilldown`
-
-Drill down into the ACTIVE operational queue depth (R6-IMP2). Read-only.
-
-Use this when `okto_pulse_kg_health` reports an `active_queue` backlog (a
-health issue with `drill_down_tool='okto_pulse_kg_queue_drilldown'`) and you
-need to know WHERE the queue depth comes from. This is the ACTIVE queue only:
-dead-letter (DLQ), outbox dead_letter and canonical debt are TERMINAL and
-intentionally NOT counted here — inspect those via
-`okto_pulse_kg_dead_letter_list` / `okto_pulse_kg_canonical_debt_list`.
-
-Args:
-    board_id: Board ID.
-
-Returns:
-    JSON with `worker_mode`, `total_active_depth`, an overall `classification`
-    (transient | stuck | backpressure | idle) and per-source breakdowns:
-    `consolidation_queue` (ready/scheduled_retry/claimed/overdue_claimed,
-    work_kind, attempts, next_retry_at, last_progress_at and safe reason) and
-    `global_update_outbox` (pending retry-window depth + oldest_age_seconds).
-    Scheduled backoff is active depth but is not classified as stuck until it
-    becomes retry-eligible; claimed work is stuck only after its claim expires.
-
 ## `okto_pulse_kg_migrate_schema`
 
 Prose covered by the live tool description. Delta:
@@ -979,76 +865,6 @@ Counter ``kg_cognitive_item_update_total`` (or_174f18d5) emits
 exactly one bounded sample per call with labels
 ``(board_id, target_status, outcome, reason_code)``. Free-text
 ``reason`` is NEVER labelled; ``reason_code`` is bounded.
-
-## `okto_pulse_kg_global_outbox_dead_letter_list`
-
-List terminal Global Discovery outbox deliveries for global-admin recovery.
-This read-only operation returns only rows whose delivery remains unprocessed
-and whose retry state is the dead-letter sentinel or has exhausted the shared
-retry ceiling. Errors are bounded/redacted.
-
-Args:
-- `limit`: 1-100, default 50.
-- `cursor`: optional opaque keyset cursor. Ordering is deterministic by
-  `(created_at, dead_letter_id)`; never construct or edit the cursor.
-- `classification`: optional `global_open_failure`, `board_source_failure`, or
-  `unclassified_failure`.
-
-The classification filter is evaluated over each bounded physical page. A
-filtered page can therefore return `count=0` together with a non-null
-`next_cursor`; continue from that cursor until it is null. Returns
-`{items, count, next_cursor}`. Each item includes the immutable
-`dead_letter_id`, event/board identity, retry count, classification, redacted
-last error and creation time.
-
-## `okto_pulse_kg_global_outbox_dead_letter_reprocess`
-
-Atomically requeue an explicit terminal Global Discovery outbox selection.
-There is no broad or implicit "all" mode.
-
-This legacy recovery surface never reuses a governed delivery key. Rows whose
-event identity is `gd_parity:...:attempt:n` are owned by tick machinery.
-`kg.tick.daily` starts recovery; each durable `kg.tick.delivery_redrive`
-continuation consumes one global budget with oldest-first queues and
-round-robin board fairness, advances its persisted checkpoint by CAS, and
-inserts a new `attempt:n+1`. Remaining due debt schedules the next bounded run
-in the same transaction. A governed or mixed selection is rejected atomically
-with `governed_delivery_attempt_tick_owned` and `mutated=false`.
-The tick watchdog uses a separate persisted cursor per board; every bounded
-page advances transactionally even when attempts are still active, preventing
-an active prefix from starving a later orphaned attempt.
-The redrive receipt reports the age of the oldest remaining due debt as
-`oldest_debt_age_seconds`; the gauge is `0.0` once the due backlog is drained.
-For historical terminal rows only, the circuit probe can resolve a delivered
-ledger through the payload delivery key, unique delete event, or physical
-attempt-key prefix. Missing or conflicting non-delivered identities remain
-fail-closed; normal attempt consumption still requires the exact envelope.
-
-Args:
-- `dead_letter_ids`: required native list of 1-100 unique immutable IDs from
-  the list operation.
-- `reason`: required bounded operator audit reason.
-- `process_now`: optional boolean; after a successful commit, signal the owned
-  outbox worker. The signal is never sent before commit.
-
-The entire selection is validated before its guarded update in one dedicated
-transaction. Empty, duplicate, over-limit, unknown, non-terminal,
-superseded, or mixed selections fail closed with `mutated=false`; a row changed
-between validation and update returns `selection_changed`, and relational-store
-lock contention returns `global_outbox_busy` without backend details. Replaying a
-valid request is idempotent. Success returns `selected_ids`, `requeued_ids`,
-`already_queued_ids`, `already_applied_ids`, `rejected_ids`, and
-`worker_signaled`.
-
-## `okto_pulse_kg_global_outbox_dead_letter_verify`
-
-Read the authoritative post-reprocess state for 1-100 explicit immutable IDs.
-Returns one item per requested ID with state `absent`, `still_dead_lettered`,
-`queued`, `processing`, `applied`, or `superseded`, plus event identity,
-`authoritative_id`, ordered `supersedence_chain`, and a bounded `reason_code`.
-Broken lineage never invents authority: a missing successor yields
-`authoritative_id=null` and `supersedence_target_absent`; cycles and the bounded
-chain ceiling likewise return typed reason codes.
 
 ## `okto_pulse_kg_export_jsonld`
 
