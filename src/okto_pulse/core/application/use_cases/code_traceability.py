@@ -2090,7 +2090,7 @@ class SubmitImplementationTargetExecutionUseCase:
         self._investigation_service = investigation_service
         self._target_service = target_service
 
-    async def authorize_in_transaction(self, *, board_id, actor, uow):
+    async def authorize_in_transaction(self, *, board_id, actor, uow: PulseUnitOfWork):
         """Authorize composition/replay before any dependent mutation."""
         from okto_pulse.core.services.code_investigation import require_code_attestor
 

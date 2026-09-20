@@ -7,7 +7,7 @@ only by the canonical policy while capturing the source, not during archive read
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.permissions import ALL_FLAGS
 from okto_pulse.core.ports.permission_policy import (
@@ -136,3 +136,72 @@ def archive_section_is_readable(
         and grant.actor_id == actor_id
         and grant.sections.allows(section)
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveGrantState:
+    """Current scoped authority, bounded above by immutable captured evidence.
+
+    A migration replay must preserve this revision and its revocations. Neither
+    this state nor the historical ceiling replaces current identity/Board access.
+    """
+
+    captured: ArchiveReadGrant
+    sections: ArchiveReadSections
+    archive_id: str
+    archive_sha256: str
+    revision: int
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.captured, ArchiveReadGrant)
+                or not isinstance(self.sections, ArchiveReadSections)
+                or type(self.archive_id) is not str or not self.archive_id.strip()
+                or len(self.archive_id) > 255
+                or type(self.archive_sha256) is not str or len(self.archive_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in self.archive_sha256)
+                or type(self.revision) is not int or self.revision < 1):
+            raise ValueError("archive_grant_state_invalid")
+        if any(getattr(self.sections, section.value)
+                and not getattr(self.captured.sections, section.value) for section in ArchiveSection):
+            raise ValueError("archive_grant_exceeds_captured_authority")
+
+    def effective_grant(self) -> ArchiveReadGrant:
+        return ArchiveReadGrant(self.captured.scope, self.captured.actor_kind,
+            self.captured.actor_id, self.sections)
+
+
+class ArchiveGrantConflict(RuntimeError):
+    """The expected authority revision is no longer current; retry after a read."""
+
+
+def revoke_archive_sections(
+    state: ArchiveGrantState, sections: tuple[ArchiveSection, ...],
+) -> ArchiveReadSections:
+    """Narrow an existing grant; this operation never re-enables an authority."""
+    if (not isinstance(state, ArchiveGrantState) or type(sections) is not tuple
+            or not sections or any(not isinstance(s, ArchiveSection) for s in sections)
+            or len(set(sections)) != len(sections)):
+        raise ValueError("archive_revocation_invalid")
+    return ArchiveReadSections(*(getattr(state.sections, s.value) and s not in sections
+        for s in ArchiveSection))
+
+
+@runtime_checkable
+class HistoricalArchiveGrantPort(Protocol):
+    """Persistence seam, not an authorization endpoint.
+
+    The application owns authentication, current Board/admin permission checks
+    and the transaction. Reads share that snapshot; revocations use compare and
+    swap and append their audit record atomically. No method grants new access,
+    commits the caller's transaction, or returns archive bytes/storage paths.
+    """
+
+    async def get(
+        self, *, scope: ArchiveSourceScope, actor_kind: Literal["human", "agent"], actor_id: str,
+    ) -> ArchiveGrantState | None: ...
+
+    async def revoke(
+        self, *, scope: ArchiveSourceScope, actor_kind: Literal["human", "agent"], actor_id: str,
+        expected_revision: int, sections: tuple[ArchiveSection, ...],
+        performed_by_kind: Literal["human", "agent"], performed_by_id: str,
+    ) -> ArchiveGrantState: ...

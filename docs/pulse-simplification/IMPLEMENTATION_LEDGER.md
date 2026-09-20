@@ -5384,3 +5384,132 @@ Todos os processos deste incremento terminaram. Community commit
 9a2832e093ffd5931b1cb9c9faa283a11270bccc; Core publica a porta pura, testes e ledger
 correspondentes. Push pareado normal em feature/v0.4.0, sem migração real,
 reinício de Pulse, release ou mudança de permissões de contas reais.
+
+#### F2A — persistência genérica dos grants e revogação (em implementação)
+
+A decisão autorizada por seção passa a ter uma porta pública de persistência e
+estado tipado: teto capturado, seções atuais, referência/hash do arquivo e revisão.
+O mecanismo SQL fica exclusivamente em Community/adapters. Chave completa:
+realm, Board, tipo/ID opacos da origem e tipo/ID autenticados do sujeito. Não há FK
+para a entidade aposentada, lane, workflow ou permissão de escrever/avaliar.
+
+O instalador é interno e explícito, separado do create_all: exige o audit ref
+commitado, verifica o blob e recaptura a autoridade sob BEGIN IMMEDIATE antes da
+primeira instalação. Mudança de policy desde a captura bloqueia a instalação.
+Replay exige o marcador de instalação e a população/proveniência exatas; não
+ressuscita grant apagado nem restaura seção revogada. Outro arquivo para a mesma
+origem exige reconciliação, em vez de substituir silenciosamente o anterior.
+
+A porta de revogação só estreita seções, usa CAS de revisão e grava audit no mesmo
+savepoint/transação do chamador. No SQLite exige transação física já estabelecida
+pelo UoW antes do savepoint: RELEASE de savepoint externo em legacy transaction
+mode poderia confirmar a mudança antecipadamente. Casos de rollback externo e
+falha de audit fazem parte da validação pendente. Nenhum transporte chama a porta
+sem use case; ela é persistência, não uma nova autorização administrativa.
+
+A composição UoW foi estendida. Falta validar este incremento; não declarar gates
+verdes ainda. O reader público, projeções seguras, registry/administração atual,
+REST/MCP/UI e cutover continuam pendentes. O instalador histórico também depende
+da avaliação antiga: coordenar com F3 antes de retirar as folhas Sprint.
+
+Provas iniciais deste incremento: provenance-f2a-grants.json confirma **797/316
+.py e 862/400 payloads** byte a byte entre fonte, wheels e install antes dos
+processos novos. core-f2a-grants.log: **115 passed**, 4,52 s;
+community-f2a-grants.log: **31 passed**, 42,40 s (grants, captura de acesso e
+snapshot UoW). Regressão ampliada ainda em execução; inclui arquivo, inventário,
+embedded refs, storage refs, snapshot/restore conjunto e ownership do ORM.
+
+closure-f2a-grants.json: findings vazios, oito budgets 0/0; apenas as duas matrizes
+README precisam regeneração oficial. Contagens 7.476 imports Core, 1.130 imports
+Community→Core e 25 dependências. Não aumentar nenhum baseline para acomodar a
+porta/tabela nova.
+
+A ampliação para testes de contrato UoW encontrou **14 passed, 3 failed** em
+core-f2a-grants-uow.log: dois doubles sem a nova capacidade obrigatória e três
+helpers anteriores sem a anotação PulseUnitOfWork exigida pelo gate (code_traceability
+2093; delivery_evidence 88/129). Correções pontuais e nova prova pendentes; não
+relaxar o Protocol nem o gate. O relatório SaaS closure e esse gate verificam
+coisas diferentes, portanto closure sem findings não encobre a falha encontrada.
+
+Próximo leitor: conferir identidade/atividade e acesso atual ao Board dentro do
+snapshot, não apenas confiar no ActorContext MCP previamente resolvido. Cruzar
+as seções vigentes com a autoridade corrente e o grant capturado exato, e projetar
+somente campos autorizados. O export atual separa evaluations, test_scenario_ids
+e business_rule_ids da raiz; cenários/BR continuam sob spec.tests.read/spec.rules.read.
+Não expor storage_path, fingerprints da população, manifests de outros sujeitos
+ou tabelas brutas. Esse reader e a introdução coordenada das folhas genéricas no
+registry ainda não foram implementados neste incremento.
+
+Regressão ampliada: community-f2a-grants-regression.log terminou com **128 passed,
+1 failed**, 463,76 s. A única falha é o contrato F01 de schema: faltavam no
+inventário as duas tabelas anteriores de classificação arquitetural e a nova
+historical_archive_grants. A comparação AST com b466038 identifica exatamente
+architecture_candidate_decisions, architecture_classification_receipts e
+historical_archive_grants como adições, sem remoção de tabela.
+
+A prova schema-f2a-grants-proof.json reconstitui exatamente o hash governado
+8b43b7a2... removendo somente três colunas nullable JSON implementadas antes deste
+incremento: cards.migrated_validation_policy e specs.architecture_adoption /
+execution_contract. Mantidas as 65 tabelas herdadas e o hash pré-extração imutável;
+o hash corrente correspondente às três adições é 6ca27edf72476258f107e4411466efe6aed99769f3406a14804d680e80bb1c9d.
+Inventário/hash atualizados com essa prova, não por troca cega da expectativa.
+
+Corrigidos os doubles para falhar explicitamente quando a capacidade de grants
+não estiver configurada; três assinaturas passaram a declarar a porta já
+importada. Nenhuma nova lógica/adaptador concreto de infraestrutura no Core.
+Matrizes README regeneradas pelo renderer oficial. Build pareado e repetição
+dos gates corrigidos pendentes abaixo.
+
+#### F2A — validação final dos grants persistidos
+
+Após as correções, par final reconstruído/reinstalado em wheels-f2a-grants-final;
+provenance-f2a-grants-final.json confirma novamente **797/316 .py e 862/400
+payloads** fonte→wheel→install idênticos. SHA256 Core:
+b04be03491fca4f7ddcf8c34eec273e7a279417ed54f1d11a712cdb05c191700;
+Community: 3533fd83a36a9babfe4e2ceccfe42eb08a200cd3e91468066be40a01a98d3851.
+
+- core-f2a-grants-final.log: **132 passed**, 22,06 s. Inclui a matriz pura de
+  revogação, captura de autoridade, permission policy port e os três arquivos
+  de gates/contrato UoW. Os três failures da primeira rodada foram corrigidos.
+- community-f2a-grants-final.log: **30 passed**, 51,77 s. Inclui persistência real,
+  instalação/replay, corrupção de população/proveniência, escopo exato, negações,
+  rollback externo, falha de audit inclusive durante instalação, retomada, CAS de
+  revisão e no-op, múltiplas origens, create_all idempotente sem conceder acesso,
+  ownership e snapshot UoW. A única falha F01 da rodada de 129 casos foi corrigida.
+- A regressão ampliada anterior já aprovou os outros **128 casos** de arquivo,
+  inventário, embedded refs, storage refs e backup/restauração. Não somar as
+  rodadas como testes únicos: há sobreposição. As mudanças posteriores no Python
+  foram os doubles/anotações e o contrato governado de schema, sem mudar o reader
+  de arquivo ou o mecanismo de backup aprovado.
+- Ruff dos módulos novos/contratos e git diff --check aprovados. Sem alteração
+  frontend/MCP/REST, portanto sem novo catálogo nem build/teste de frontend neste
+  incremento. Os assets existentes permanecem no payload verificado.
+
+Limites: a instalação continua operação de migração interna explícita. A nova
+tabela não recebe grants pelo bootstrap comum; a porta de revogação é persistência
+sob autorização futura do use case, não uma API administrativa. Não executada
+contra dados reais. Reader autorizado e projeções, introdução de permissões
+correntes, administração pública/transportes/UI e F2/F3 cutover seguem pendentes.
+A evidência histórica continua no blob original. Proteção de imutabilidade contra
+escritas SQL externas e a coordenação completa de migração/rollback ainda exigem
+suas etapas próprias. Não interpretar esta validação parcial como conclusão da
+F2A ou da iniciativa; o gate de metadata global anterior permanece aberto.
+
+closure-f2a-grants-final.json: **ok=true**, findings e documentation_findings
+vazios, oito budgets 0/0; 7.476/1.130 imports e 25 dependências. No staging, o check
+incluindo arquivos novos encontrou uma linha vazia extra no EOF do adapter de
+grants; removida sem alteração semântica. Wheel Community reconstruído e par
+reinstalado novamente: provenance-f2a-grants-publish.json mantém **797/316 .py e
+862/400 payloads** idênticos. SHA final Community substitui o anterior:
+91794f9f669a3f572e958f4b120ff276a5f80467f3bffb55715fa2dae704d8ce.
+Core permanece b04be03491fca4f7ddcf8c34eec273e7a279417ed54f1d11a712cdb05c191700.
+Staged diff --check passa nos dois repos. Nova closure do par exato em andamento;
+não houve necessidade de repetir testes de comportamento por remoção de EOF.
+
+closure-f2a-grants-publish.json confirma **ok=true**, findings/documentation_findings
+vazios e os oito budgets 0/0 no par final exato. Todos os processos de validação
+terminaram. Community commit ece12b7914e7c1ee5d2ce8e6969a22bfff496656;
+Core publica a porta, os testes de contrato e este ledger. Publicação pareada por
+push normal de feature/v0.4.0. Sem migração real, restart de Pulse, release, merge
+ou alteração de permissões de contas reais. Retomar pelo reader autorizado e
+introdução coordenada das permissões genéricas, conforme dependências acima.

@@ -102,6 +102,14 @@ class _UnsupportedSemanticAssessmentPort:
         )
 
 
+class _UnsupportedHistoricalArchiveGrants:
+    async def get(self, **kwargs: object) -> None:
+        raise NotImplementedError("fake SaaS historical archive grants were not configured")
+
+    async def revoke(self, **kwargs: object) -> None:
+        raise NotImplementedError("fake SaaS historical archive grants were not configured")
+
+
 class FakeSaaSUnitOfWork:
     """Copy-on-write UnitOfWork with no native persistence handle."""
 
@@ -136,6 +144,7 @@ class FakeSaaSUnitOfWork:
         self.semantic_assessment_v2_reader = unsupported_semantic_port
         self.semantic_assessment_v2_capability = unsupported_semantic_port
         self.entity_exports = unsupported_semantic_port
+        self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0

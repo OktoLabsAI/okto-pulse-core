@@ -85,7 +85,7 @@ class RecordCardDeliveryEvidenceUseCase:
         await commit(uow)
         return result
 
-    async def authorize_in_transaction(self, command, *, actor, uow):
+    async def authorize_in_transaction(self, command, *, actor, uow: PulseUnitOfWork):
         """Authorize every constituent before any write or replay payload read."""
         operations = {
             "progress": "card.conclusion.write",
@@ -126,7 +126,7 @@ class RecordCardDeliveryEvidenceUseCase:
             options["execution_submitter"] = submit_execution
         return options
 
-    async def submit_report(self, command, *, actor, uow):
+    async def submit_report(self, command, *, actor, uow: PulseUnitOfWork):
         batch = command.batch_command()
         options = await self.authorize_in_transaction(batch, actor=actor, uow=uow)
         await require_authorization(actor, transition_permission_requirement(

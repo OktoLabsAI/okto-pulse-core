@@ -50,6 +50,14 @@ class _UnsupportedEntityExportReadPort:
         raise NotImplementedError("entity export reader is not configured")
 
 
+class _UnsupportedHistoricalArchiveGrants:
+    async def get(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive grants are not configured")
+
+    async def revoke(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical archive grants are not configured")
+
+
 class SQLAlchemyUnitOfWork:
     """PulseUnitOfWork backed by a SQLAlchemy AsyncSession."""
 
@@ -87,6 +95,7 @@ class SQLAlchemyUnitOfWork:
         # Export adapters are edition-owned. This relational test UoW only
         # exercises the public Core UoW shape, not export materialization.
         self.entity_exports = _UnsupportedEntityExportReadPort()
+        self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self
