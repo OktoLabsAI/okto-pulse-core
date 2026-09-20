@@ -6559,3 +6559,76 @@ journal continua sendo responsabilidade do verificador de disposições.
 Nenhum frontend alterado nesta etapa interna. Integração visível, autorização
 administrativa de grants, imutabilidade operacional e coordenador F2D continuam
 pendentes, assim como as demais frentes do plano. Objetivo integral ativo.
+
+### 2026-09-20 — F2A: contexto histórico nos destinos REST/frontend (em implementação)
+
+Turno anterior classificado como progresso: Core d12b01c3 / Community 95b08d3,
+HEADs/working trees conferidos limpos antes da edição. Rota somente GET, fechada
+em Spec/Card, usa o caso de uso publicado e envelope sem caminho privado,
+justificativa de operador ou permissão nova. Respostas no-store; erros públicos
+sem conteúdo parcial ou detalhe interno. Aba Historical context nos dois modais,
+sem contagem antecipada de fontes negadas, campos históricos inertes e sem ação
+de escrita/aprovação. Troca de Board/destino cancela consulta e desmonta conteúdo.
+
+Testes planejados: rota real com UoW, paginação/revogação/erro/integridade;
+parser e hook, painel (corridas, troca de destino, revogação, refresh, HTML inerte),
+integração dos modais Spec e três tipos Card; Playwright contra SPA instalada,
+fixtures REST fechadas para não escrever dados reais, light/dark e 360/768/1440.
+Frontend em build; ainda nenhum teste comportamental rodado nesta etapa. Provar
+par fonte/wheel/install e runtime novo antes dos testes. MCP e integração do
+receipt no Card continuam pendentes; o preflight não foi liberado.
+
+Primeira rodada: 22 testes Community/API passaram (173,81 s); frontend 116
+passed / 1 failed, exclusivamente a lista exata de abas da Spec (agora inclui
+Historical context). Corrigida expectativa para a nova aba. E2E Spec passou;
+Card não chegou ao modal porque a fixture de colunas omitia columns_meta.columns
+exigido pelo store real. Fixture corrigida segundo ColumnsOptInResponse; nenhum
+código de produto alterado por essas duas falhas. Screenshot mobile da Spec
+inspecionado: origem/autoria/texto inerte legíveis, sem overflow no painel.
+
+Lint global: 0 erros, 394 warnings <= baseline 402 (baseline não modificado).
+Closure inicial: findings=[] e budgets 0/0, somente matriz README desatualizada;
+renderer oficial executado. Build frontend: 78 arquivos, tree SHA256
+45a4b8fb4b8d938d389574939010505976913141eaebe29ae609307e59c496be.
+Par inicial provado: 809/328 .py e 874/412 payloads. Servidor estático instalado
+5176 iniciou 15:33:27/28 depois do mtime instalado (verificação executável); não
+é runtime Pulse nem acessa banco real. Encerrar antes da reinstalação final.
+
+Fechamento REST/frontend:
+- Community e4916cc: GET `/boards/{board_id}/historical-context/{spec|card}/{id}`,
+  cliente/painel, abas Spec/Card, testes e SPA regenerada. Nenhuma escrita nova.
+- `community-context-ui.log`: 22 passed (173,81 s), API com UoW/ACL/arquivo real
+  em fixture descartável + regressões do leitor.
+- `frontend-context-tests.log` + `frontend-context-spec-final.log`: 117 casos
+  distintos aprovados (25 Spec reexecutados integralmente, 18,31 s); não duplicar
+  os 24 casos da Spec já verdes na primeira rodada. Inclui parser/hook, painel,
+  tab routing e modais Spec/Card (normal, bug, test).
+- `frontend-context-e2e-final.log`: 2 passed (12,8 s), Spec e Card reais na SPA
+  instalada, três larguras x dois temas, verificação axe sem serious/critical,
+  leitura sem overflow, autoria/proveniência/texto inerte, negação na próxima
+  página remove conteúdo anterior. Nenhum request de escrita nem pageerror.
+  Screenshots `spec-context-360.png` e `card-context-360.png` inspecionados.
+  HTTP de API interceptado por fixtures: comprova integração da SPA instalada,
+  não é alegação de um cutover/migração real end-to-end. API real validada acima.
+- Total distinto selecionado desta etapa: **141** (22 Python + 117 Vitest + 2 E2E).
+- Build, typecheck final, verify:frontend-dist, lint global, Ruff e staged diff
+  --check aprovados. 78 arquivos da SPA versionados pelo sync oficial.
+- `provenance-context-ui-final.json`: 809/328 .py, 874/412 payloads idênticos
+  fonte/wheel/install. `frontend-context-server-final.json` prova servidor novo
+  (15:38:51) posterior ao índice instalado (15:37:57), servindo site-packages.
+  Ambos os servidores descartáveis foram encerrados por Ctrl+C após os testes;
+  todos os processos de teste/build/install/closure terminaram.
+- `closure-context-ui-final.json`: ok=true, findings/documentation_findings
+  vazios, oito budgets 0/0, matriz 7.538/1.170 imports e 25 dependências.
+- Wheels finais SHA256 (diretório `wheels-context-ui-final`):
+  Core 93dd910cb02deff15832c2939c5cc9db182781ee10c426755d55b81966e74dd2;
+  Community 59d1edcb2b880ecd2fdfa05fd8d8b5b23d23961b16c5588ff8b6e865b5db966f.
+
+Próximo trabalho: expor leitura autorizada de contexto histórico ao MCP e
+verificar consumidores de contexto existentes sem substituir origens por
+aprovação. Catálogo só pelo gerador oficial se registry mudar. Depois consumir
+disposition receipt no Card transform e testar a sequência arquivo/grants ->
+disposições -> leitura nos destinos -> Card -> trabalho, com replay/rollback e
+revogações preservadas. MCP/cutover ainda não implementados nesta publicação;
+preflight continua bloqueando contexto pendente. Objetivo integral permanece
+ativo, incluindo F2D/F3/F4/F5 e os gates ainda pendentes registrados acima.
