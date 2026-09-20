@@ -4155,3 +4155,84 @@ leitor autorizado, F2B/F2C/F3 e demais requisitos DEI/ARQ/VER/KG continuam pende
 Community commit `78b4ab8`; Core deste checkpoint altera o ledger. Dados reais,
 PostgreSQL e runtime relocado não foram exercitados. Iniciativa ativa; progresso,
 não conclusão.
+
+### 2026-09-20 — F2A, recuperação conjunta SQL/Grafx/uploads e guard de apagamento
+
+Partida: Core `0f586d04`, Community `78b4ab80`, árvores limpas. Turno anterior
+classificado como progresso. Autenticação GitHub confirmada na conta `jpbraga`;
+não foi necessário usar a troca de conta autorizada pelo usuário. A decisão de
+autoridade do leitor histórico continua pendente e isolada desta frente.
+
+O coordenador interno `joint_recovery_snapshot` aceita o root de uploads
+explicitamente, exige o censo de roteamento KG e produz
+`joint-recovery-snapshot/v3`. Captura os arquivos usando os IDs de Boards obtidos
+sob a reserva SQLite, ainda dentro do intervalo de LSNs Grafx estáveis. Verifica
+o artefato de storage e repete os checks de LSN/roteamento antes de publicar o
+conjunto. O manifesto autentica o digest do componente de storage e seu verificador
+exige a mesma população de Boards do censo. v1/v2 mantêm sua cobertura anterior;
+não recebem retroativamente a garantia de uploads.
+
+A restauração v3 exige o root ATUAL de storage. A janela de lifecycle recusa
+apagamentos posteriores antes de criar o staging ou reconstruir SQL. O guard
+permanece válido e seus locks de origem continuam retidos durante SQL, grafos,
+arquivos e a publicação FINAL do diretório conjunto. Revalida markers/namespace
+antes de publicar. Não há aquisição duplicada de locks não reentrantes nem
+lockfile aberto dentro do staging que impeça o rename no Windows. O guard expira
+ao sair do contexto e não pode ser reutilizado após liberar a exclusão.
+
+O restore isolado de storage usa a mesma janela. Revisão identificou que a
+recusa de destino dentro da origem precisava ocorrer antes de criar o mutex do
+publicador: caso contrário, a chamada inválida poderia poluir o namespace com
+um arquivo de lock. A verificação antecipada cobre tanto uploads quanto o
+próprio artefato de backup, com testes de igualdade dos arquivos antes/depois.
+O restore conjunto também rejeita essa sobreposição antes de criar seu mutex.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- Rodada anterior à correção adicional de sobreposição:
+  `community-f2a-joint-storage.log`, **108 passed**, 365,61 s. Inclui recuperação
+  conjunta/storage/censo KG/SQLite/janela offline e regressões de compensação e
+  download de attachments. Nenhuma falha ou skip.
+- Rodada final `community-f2a-joint-storage-final.log`: **46 passed**, 324,37 s,
+  joint/storage incluindo as duas novas regressões de sobreposição. Nenhuma falha
+  ou skip. Não contar as duas rodadas como populações distintas.
+- `provenance-f2a-joint-storage-final.json`: par reconstruído/reinstalado após a
+  última mudança de produção, **804/322 .py**, **869/406 membros**, comparação
+  source→wheel→install byte a byte, PYTHONPATH pareado e processos novos.
+  Core wheel SHA256
+  `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `2da9bc8e4fc0f42ad858c3fc4325accca1fb1c940a078314b47cbd14772d3ca9`.
+- `closure-f2a-joint-storage-final.json`: **ok=true**, findings de código/docs
+  vazios, oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências.
+  Ruff/diff-check aprovados. Sem mudança de UI/MCP ou mecanismo concreto no Core.
+
+Os testes conjuntos exercitam grafos reais, SQLite e bytes de uploads. Um writer
+SQL concorrente é bloqueado durante a captura de storage; commit Grafx durante
+essa captura recusa o backup inteiro. Restore verifica SQL/ambos os grafos/bytes
+e markers. No instante da publicação externa, um segundo processo tenta apagar
+o Board pelo provider real e fica bloqueado; o rename final funciona no Windows
+com locks de ORIGEM retidos. Erasure posterior recusa antes da cópia SQL. Injeção
+de marker por um writer que ignora o protocolo, após a cópia de arquivos, impede
+a publicação de todo o conjunto e remove o staging privado.
+
+Próxima lacuna: reconciliar as referências relacionais com os objetos físicos.
+Leitura confirmou `AttachmentService` em `core/services/main.py`: save precede
+staging SQL, delete físico precede delete relacional e ambos possuem compensação.
+Portanto, o fence SQL sozinho não prova ausência de arquivo faltante ou de save
+ainda sem referência. O censo deve cruzar `attachments.path/size`, dono via
+`attachments.card_id → cards.board_id`, e eventos `historical_archive.created`
+com `payload_json.storage_path/sha256/size` e Board do evento. Validar o schema/FKs
+real, limites agregados e ownership sem inferir dono para arquivos sem referência.
+O provider atual retorna paths absolutos; não resolver paths legados relativos
+contra cwd por conveniência. Esta rodada preserva objetos históricos como bytes,
+mas sua fixture conjunta ainda não reconcilia rows de attachment/archive com eles.
+
+Não há reescrita de paths SQL absolutos, runtime relocado pronto para servir,
+promoção de bindings, migração real ou API pública nova. Exclusão de todos os
+writers/binding changes, gerações inativas/outros arquivos, retenção dos backups,
+integração interna do instalador/rollback, conteúdo substantivo, leitor autorizado,
+F2B/F2C/F3 e demais requisitos BASE/KG/DEI/ARQ/VER continuam pendentes. Iniciativa
+ativa; este checkpoint é progresso, não conclusão.
+
+Community commit `d0b9336411552fb9ebd5579d72a75d7d247d3495`; Core deste checkpoint
+altera somente este ledger. Ambos serão enviados à `feature/v0.4.0`, sem release
+ou merge. A próxima retomada começa pela reconciliação SQL/objetos descrita acima.
