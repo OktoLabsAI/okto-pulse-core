@@ -6991,3 +6991,126 @@ schema e remoção F3 permanecem no mesmo fluxo; não registrar parcialmente no
 lifecycle. F2A/F2C restantes, F3/F4/F5, matriz integral e gate global MCP
 (última medição 56.024 > 50.800, sem alteração nesta etapa) continuam pendentes.
 Objetivo integral ativo; esta publicação é progresso, não conclusão de F2D.
+
+### 2026-09-20 — F2D: admissão durável antes de migrações e seeds
+
+Estado retomado e conferido limpo: Core 778ecc13 / Community f8f624c.
+Turno anterior: progresso. Investigação confirmou que Community `init_db`
+possui `_serialized_schema_lifecycle`, lock por arquivo SQLite; o lifespan
+composto chama init_db antes de iniciar workers e demais bootstrap. O journal
+de dados permanece no banco após fim/morte do processo e já identifica um
+run de instalador. Nenhum dos seus quatro estados é certificado de corte
+integral; `work`/`data_preserved` também não pode permitir startup.
+
+Em implementação: gate Community somente de leitura, antes de planejamento
+de migrações/create_all/seeds, tanto no init_db Community (sob lock existente)
+quanto na factory concreta do orquestrador (para chamadas diretas/Core seam).
+Journal ausente ou vazio com estrutura esperada admite o caminho anterior.
+Qualquer run presente bloqueia com SchemaMigrationError estruturado; view ou
+schema desconhecido também bloqueiam. Consulta limitada à estrutura/presença,
+sem desserializar JSON, confiar em flag runtime_ready ou vazar IDs privados.
+init_db Community verifica mesmo um orquestrador alternativo registrado.
+
+Testes preparados incluem prefixes até work, self-asserted complete em JSON,
+schema adulterado, recusa antes de plan/seeds, processo terminado com os._exit
+após commit, fluxo real de preservação seguido de novo processo e restauração
+do conjunto original v4 em outro destino. Build/install/prova precederão testes.
+
+Limites: este gate não exclui raw writers concorrentes, não cria certificado
+terminal e não integra ainda o coordenador ao lifecycle. A janela contínua do
+instalador e a composição de seu lock de schema continuam necessárias contra
+corridas entre o check e uma nova transformação. Não há desbloqueio por
+remoção de markers nem interpretação de receipt parcial como conclusão.
+Nenhuma autoridade/governança/frontend alterada; mecânica somente Community.
+
+Primeira validação: par provado em `provenance-retirement-admission.json`
+(810/330 .py, 875/414 payloads idênticos). Suite nova: 11 passed (68,94 s).
+Revisão identificou journal perdido com recibos de transformação remanescentes.
+Reprodução executada contra esse mesmo par, sem alterar produto:
+`retirement-admission-missing-journal-repro.log`, 1 failed / 12 deselected
+(12,49 s), DID NOT RAISE. O check retornava ao não encontrar a tabela, embora
+`migration.context_dispositions_committed` ainda estivesse em domain_events.
+Correção planejada: verificar presença dos cinco tipos internos de recibo,
+sem ler payload, mesmo com journal ausente/vazio; arquivo histórico original
+e eventos comuns não sinalizam início do corte. Regressões iniciais seguem no
+mesmo processo; nenhuma fonte alterada durante esses checks.
+
+Regressões iniciais: 31 passed / 1 failed (215,30 s). Falha da asserção que
+exigia `_migrate_agent_permissions` como última etapa, embora
+`_migrate_add_skip_delivery_evidence` já venha depois. Reproduzida antes de
+atribuir ao baseline: worktrees isolados em `.validation-v040/admission-baseline`
+com Core 778ecc13 / Community f8f624c, rebuild/force-install do par e
+`provenance-admission-baseline.json` aprovados (810/329 .py, 875/413 payloads).
+`admission-order-baseline-repro.log`: o mesmo teste falha (14,91 s) no par
+anterior. Nenhum teste contra install divergente foi usado como prova.
+
+Correção da premissa antiga: nenhuma etapa foi reordenada. Metadata
+runs_at_schema_tail passa a refletir a posição real, e a dependência
+runs_before_data_bootstrap fica explícita; teste continua exigindo migração de
+permissões antes de TODO o bootstrap. Assert de allowlist destrutiva preservado.
+Docstrings de lifecycle/migrator deixam de afirmar uma posição que não existe.
+Gate de admissão agora verifica também os cinco tipos de recibo remanescentes,
+sem carregar payloads. Casos de journal ausente/vazio, histórico comum e perda
+do journal no fluxo real acrescentados. Novo rebuild/prova/suites pendentes.
+
+Fechamento da admissão de runtime:
+- Community **6aba3d97fc61aac3edc6cb56463f81d5f78c04fe**: gate de leitura
+  ligado ao init_db Community sob o lock de schema existente e ao orquestrador
+  concreto antes de plan/migrações/seeds. Recusa qualquer prefixo de preservação,
+  journal com estrutura desconhecida e recibos de efeito sem journal. Não lê
+  payload histórico nem concede autoridade com um flag JSON. Arquivo original
+  e eventos comuns não são classificados como corte iniciado.
+- `retirement-admission-new-final.log`: **22 passed** (76,58 s). A revisão final
+  fortaleceu o caso de restore: prepara TODO o conteúdo fonte/arquivo/grants
+  antes de capturar o backup, depois inicia o run. Após transformação, startup
+  em outro processo recusa; após perda privilegiada do journal na fixture,
+  os recibos remanescentes ainda recusam. O restore v4 em destino novo reproduz
+  o dump SQL inteiro original e permite init_db. Caso atualizado aprovado em
+  `retirement-admission-restore-final.log`: **1 passed** (42,98 s), não recontado.
+- Teste com os._exit(73) após commit demonstra que morte do processo não apaga
+  a recusa. Os três caminhos de lifecycle (concreto, Core seam e Community)
+  bloqueiam antes do planejamento. O entrypoint Community também recusa um
+  orquestrador alternativo registrado. Estrutura inválida, flag complete
+  falsificado e dez variantes de recibos sem journal têm teste negativo.
+- `retirement-admission-regression-final.log`: **33 passed** (196,66 s),
+  `test_r01c_imp4_schema_lifecycle_orchestrator.py`,
+  `test_sqlalchemy_database_lifecycle_lock.py`,
+  `test_global_discovery_recovery_schema_lifecycle.py`,
+  `test_retirement_data_journal.py` e
+  `test_r16b_relational_schema_migrator.py::test_ts_7aacc71a_destructive_steps_are_explicitly_allowlisted`.
+  Total distinto final deste incremento: **55**; execuções iniciais/reproduções
+  não somadas novamente. Sem mudança de contrato/renderização frontend.
+- A falha de posição da migração de permissões foi reproduzida no par anterior
+  em worktrees isolados, após build/install/prova. Correção apenas da descrição,
+  metadata e expectativa obsoletos: ordem de passos e allowlist destrutiva
+  inalteradas, obrigação de preceder todo data-bootstrap preservada.
+- `provenance-retirement-admission-final.json`: 810/330 .py e 875/414 payloads
+  idênticos fonte/wheel/install; origens do verificador em site-packages. Pytest
+  usa checkouts provados idênticos. Par final reinstalado após a reprodução
+  isolada; nenhum teste final executado contra os wheels do baseline.
+- `closure-retirement-admission-final.json`: ok=true,
+  findings/documentation_findings=[], oito budgets 0/0. READMEs gerados com a
+  matriz 7.548/1.172 imports e 25 dependências; único novo consumo Core é o
+  erro público do port de migração. Nenhuma implementação concreta no Core.
+- Wheels finais em `.validation-v040/wheels-retirement-admission-final`, SHA256:
+  Core ab4a2d7aa51433b25cd18462df2db1d6e15546d6473ea2e649093c7f9ecddde9;
+  Community 0dc29295e435d05ac9935270c854fe4b659406dc73a67f20e88d7f7b049324d6.
+- Ruff dos arquivos alterados e staged diff --check aprovados. Todos os handles
+  de build/install/testes/closure/reprodução terminaram antes do commit. Os
+  processos encerrados abruptamente pertencem exclusivamente às fixtures.
+  Nenhum runtime real iniciado/parado nem dado real migrado. Worktrees de
+  baseline permanecem na pasta de validação para reproduzir a evidência.
+  Push normal do par será verificado contra ls-remote em feature/v0.4.0.
+
+Próximo: coordenador offline deve compor a janela de runtime com a exclusão de
+lifecycle, backup original verificado, checkpoint/cleanup de permissões,
+arquivo/grants e âncora externa do RetirementDataRun. O gate atual não exclui
+writers raw, não cobre apagamento privilegiado de TODAS as provas e não possui
+ramo terminal: nenhum estado parcial pode ser admitido como F2D completo.
+Definir/verificar conclusão integral juntamente com corte de schema/F3 antes
+de habilitar startup pós-cutover; nunca liberar removendo o journal. Composição
+direta do orquestrador não ganha uma nova garantia de exclusão concorrente
+apenas por executar este check de leitura. F2A/F2C restantes, fontes KG/global
+outbox, F3/F4/F5 e matriz integral permanecem pendentes. Metadata MCP segue com
+última medição 56.024 > 50.800, sem alteração de tools/schema/limite nesta etapa.
+Objetivo integral ativo; classificação: progresso verificado.
