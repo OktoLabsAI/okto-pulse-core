@@ -12,8 +12,10 @@ selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
 Frente atual: F2A/F2C, com preflight relacional, eventos/jobs, censo de referências
-polimórficas e snapshot de recuperação SQLite restaurável implementados. Arquivo
-histórico sob ACL de Board, captura coordenada do KG e cutover ainda pendentes. F2B autorizado:
+polimórficas e snapshot de recuperação SQLite restaurável implementados. Captura
+interna do histórico relacional próprio em storage/audit de Board implementada;
+consulta pública, reconciliação completa, captura coordenada do KG e cutover ainda
+pendentes. Decisão de autoridade de leitura do arquivo registrada ao final. F2B autorizado:
 compatibilidade por Card, resolver,
 leitura pública, armazenamento nullable e UI estão implementados e testados;
 materialização/cutover de dados continuam pendentes de F2A/F2C. A integração de
@@ -3527,3 +3529,121 @@ integral permanecem pendentes; a iniciativa continua em andamento.
 
 Community publicado por push normal em `feature/v0.4.0`, commit `bf1d88d`.
 Este checkpoint Core altera somente o ledger.
+
+### Decisão F2A pendente — leitura do arquivo sem permissões Sprint ativas
+
+Fato investigado em 2026-09-20: `GetEntityExportBundleUseCase` exige
+`sprint.entity.read` na raiz. `sqlalchemy_entity_export.py` distingue Q&A,
+avaliações e histórico com `sprint.qa.read`, `sprint.evaluations.read` e
+`sprint.history_read`. O arquivo bruto inclui todas essas seções e não pode ser
+entregue integralmente apenas por `board.read`. F3 exige retirar permissões
+operacionais Sprint; F2B.6 proíbe ampliar autoridade na migração.
+
+Reprodução `f2a-archive-authority-complete-flags.log`, com flags completas todas
+negadas e grants explícitos: Board-only não lê nenhuma seção Sprint;
+entity-only não lê Q&A/avaliações/histórico; entity+Q&A não lê avaliações/histórico.
+Primeira tentativa com documentos esparsos (`f2a-archive-authority-reproduction.log`)
+demonstrou a compatibilidade histórica absent=True de `PermissionSet.has`, não
+Board-only. Não usar aquela tentativa como evidência de negação nem alterar esse
+fallback silenciosamente; a preservação deve comparar decisões efetivas, não
+somente copiar keys presentes.
+
+Proposta para decisão: introduzir permissões genéricas de leitura de arquivo por
+seção (identidade/conteúdo, Q&A, avaliações, histórico), com grants de migração
+limitados à origem arquivada e ao Board correspondente. Materializar somente as
+decisões efetivas anteriores, incluindo negações; exigir também ACL atual de
+Board. Nenhuma permissão de executar/avaliar Sprint vira permissão de escrita,
+avaliação de Spec ou acesso a arquivos de outras origens. Novas concessões ficam
+no fluxo autorizado de administração; permissões operacionais Sprint saem em F3.
+Não manter um serviço Legacy Sprint. Os nomes finais de leaves/escopos devem ser
+fechados com testes de não ampliação, revogação e presets/overrides antes do corte.
+
+Alternativa rejeitada sem autorização: servir arquivo completo por board.read,
+que amplia acesso para os três casos reproduzidos. Restringir tudo a owner também
+não preserva acesso dos leitores atuais. Esta é uma decisão de autoridade, nos
+termos da política de investigação do pacote, não somente escolha de storage.
+A consulta pública e a migração de grants ficam isoladas; captura, integridade,
+reconciliação e demais frentes podem prosseguir. Até decisão e implementação
+verificada, o verificador do arquivo é somente interno à migração.
+
+As seções de Cards, cenários e regras no export atual também exigem, respectivamente,
+`card.entity.read`, `spec.tests.read` e `spec.rules.read`; essas autoridades
+remanescentes devem continuar aplicadas. A proposta não substitui todo o contrato
+de disclosure por quatro flags nem autoriza exposição integral de rows SQL.
+
+### 2026-09-20 — F2A, captura histórica relacional em storage/audit existente
+
+Partida: Core `92f3926a`, Community `bf1d88d`, árvores limpas; turno anterior foi
+progresso. Community `adapters/sprint_retirement_archive.py` adiciona captura
+interna SQLite no storage de Board existente, com um `DomainEventRow` genérico
+`historical_archive.created` por Board. Nenhuma entidade Legacy Sprint, novo
+handler, endpoint, CLI, grant ou startup hook. IDs originais são dados opacos no
+arquivo; a referência de auditoria tem somente FK de Board, sem FK para Sprint
+ou Card. Board erasure continua dono da retenção no storage existente.
+
+Captura todas as colunas físicas de `sprints`, `sprint_history`, `sprint_qa_items`
+e `sprint_activation_baselines`, com PK/schema e vínculos anteriores de Cards.
+Formato `historical-relational-archive/v1`, origem, Board, migração, contagens por
+tabela, tamanho e SHA256. Células SQL tipadas preservam texto JSON original,
+Unicode decomposto, CRLF, null, blobs e inteiros além da precisão de JSON/JS;
+não aplica normalização canônica de domínio à evidência. Budget agregado de
+linhas/bytes falha fechado; query de tamanho rejeita row SQL grande antes de
+transferência para Python. Dados são separados fisicamente por Board.
+
+`BEGIN IMMEDIATE` mantém reserva de escrita SQLite durante preflight, captura,
+save/verificação de blobs e commit da auditoria. Replay determinístico do mesmo
+migration_id exige mesma população de Boards e mesmo conteúdo; conteúdo alterado,
+origem desaparecida ou blob adulterado não são recapturados silenciosamente.
+Falha anterior à tentativa de commit reverte todas as referências e tenta limpar
+somente blobs desta operação. Commit de resultado incerto retém blobs para
+reconciliação, evitando apagar conteúdo que pode ter sido commitado. Blobs sem
+referência commitada não têm rota de produto; falha de cleanup pode deixá-los para
+reconciliação operacional. Não há afirmação de transação distribuída com storage.
+
+Teste prova que arquivo continua verificável depois de a origem ser removida
+em fixture, sem exigir uma Sprint operacional. Captura não muda Card, parecer,
+estado ou Q&A; não dá aprovação a Spec. Préflight de relações e escopos precisa
+passar antes de qualquer save. Work items desconhecidos ainda podem ser preservados
+sem processamento; o gate de classificação permanece obrigatório antes de cutover.
+
+Evidências em `PULSE_REFACTOR/.validation-v040`:
+- `community-f2a-archive.log`: **55 passed**, 81,09 s, com captura, inventário,
+  eventos/jobs e referências. Casos incluem Sprint vazia, dois Boards, autoria,
+  respostas null, avaliação rejeitada, replay/população, adulteração, falhas de
+  storage e INSERT de auditoria, rollback/retry, limites, órfão, escritor
+  concorrente recusado durante save e tipos físicos adicionais preservados.
+- Nova asserção de leitura independente da origem e rodada focada final em
+  `community-f2a-archive-final.log`: **12 passed**, 25,49 s (subconjunto dos 55,
+  não somar como 67 testes distintos).
+- `provenance-f2a-archive-final.json`: **803/317 .py**, **868/401 membros**,
+  source→wheel→install idênticos, PYTHONPATH pareado, processos novos. SHA256
+  Core wheel `fb25e3f62af61b2ca694d6342efd09db8b8dd89c449011b39a9e766ac5e854ce`;
+  Community `94f66e8fbaf827bbaaaad900addd17c76ec512c5c527aa4257451a384190e9c3`.
+  A reconstrução final mudou somente metadados README; payload Community mantém
+  `93cfd3b86affa9fc39e9dea4f5327fba728651f74c8d2f2959932efd40f634b2`.
+- Primeira closure: sem findings de código, budgets zero; somente matriz README
+  com contagem anterior. Ambos fragmentos regenerados pelo renderer oficial;
+  nova contagem **7.618/1.250 imports**, 25 dependências. Ruff e diff-check passam.
+  `closure-f2a-archive-final.json`: **ok=true**, findings de código/documentação
+  vazios e todos os oito budgets **0/0**, verificados no par final reconstruído.
+
+Limites: ainda não é o arquivo completo exigido por F2A. Não copia bytes de
+attachments existentes, referências polimórficas/JSON externas, projeções Grafx
+ou toda a trilha de permissões; esses dados permanecem intactos nas fontes atuais.
+Não há reader público autorizado, cutover, remoção de tabelas ou mecanismo de
+transferência de perguntas/achados substantivos. A captura usa o log append-only
+existente e verificação de hash; a integração final deve fechar proteção,
+disclosure, retenção e reconciliação antes de declarar o arquivo suficiente para
+remover fontes. PostgreSQL e perda de energia não foram exercitados. Frontend e
+MCP não mudaram. Nenhuma operação em banco/runtime real.
+
+Próximo passo: resolver a decisão de autoridade acima; continuar independentemente
+com reconciliação das referências/JSON/KG e conteúdo substantivo, preservação de
+permissões efetivas e integração transacional de F2B/F2C/F3. Iniciativa permanece
+em andamento e requer a auditoria integral de todos os documentos.
+
+Community publicado por push normal em `feature/v0.4.0`, commit `8db7093`.
+Core deste checkpoint altera ledger e matriz README gerada, sem código de domínio.
+A pergunta sobre autoridade de leitura foi enviada; nenhuma resposta/aceite foi
+inferido por passagem de tempo. Somente essa decisão e suas mutações dependentes
+ficam pendentes; não há bloqueio da iniciativa inteira.
