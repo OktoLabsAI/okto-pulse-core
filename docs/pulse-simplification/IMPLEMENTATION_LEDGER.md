@@ -3025,3 +3025,8 @@ necessidade de usá-la. Este checkpoint corrige a conclusão do Card e o consumi
 de impacto; não conclui a iniciativa. Retomada: contribuições de Cards distintos
 com prova real por critério, paginação/globalidade, rollout instalado e as frentes
 DEI/ARQ/VER/F2B/KG já listadas acima.
+
+Publicado por push normal em `feature/v0.4.0`: Core
+`5755219997eb5128f4fa6c342b2e4cb901c3959e`; Community
+`88ad207d4a05301314ac923d4cc287e2725fe344`. `ls-remote` confirmou ambos e as
+árvores ficaram limpas. Este registro posterior altera somente o ledger.
