@@ -5264,3 +5264,123 @@ Todos os processos de validação deste incremento encerrados. Community commit
 inclui catálogo, permissões, wrappers retirados, testes e este ledger. Push normal
 pareado em feature/v0.4.0. A iniciativa completa continua ativa; nenhum dado real
 migrado, processo Pulse reiniciado, release ou relaxamento de gate realizado.
+
+#### F2A em execução — autoridade por seção no arquivo histórico
+
+Ciclo anterior classificado como progresso: DLQ/fila e tick manual retirados,
+testados e publicados; oito budgets arquiteturais zero, metadata ainda acima do
+teto. Partida limpa: Core 11296e2b / Community 3a4b6cd. Prova antes dos testes:
+provenance-before-f2a-access.json, 796/313 .py e 861/397 payloads idênticos.
+
+Implementação em curso da decisão autorizada: contrato público puro de seções
+content/qa/evaluations/history e grant por realm/Board/origem/identidade, com
+negação por ausência e interseção com ACL/permissão atuais. A captura chama a
+política canônica para cada autoridade antiga, incluindo absent=True e revisão
+obrigatória, e aplica o acesso à raiz antes das seções. Não copia flags por
+presença, não cria autoridade de escrita e não converte board.read em leitura.
+
+Arquivo relacional v4 adiciona decisões fechadas e fingerprint das fontes de
+autoridade na mesma transação BEGIN IMMEDIATE que já protege conteúdo e publicação.
+Leitura privilegiada de v1/v2/v3 continua possível sem inventar grants ausentes.
+Community inventaria seu principal humano local (LocalAuthProvider) e agentes
+dos AgentBoard, usando CommunityAgentAuthenticationGateway para preset, linhagem,
+review, atividade e overrides. Proprietário/criador de agente não é identidade
+autenticada por inferência. O contrato é genérico; inventário de outros provedores
+de autenticação pertence às respectivas edições. Nenhuma credencial ou hash de
+API key deve entrar no fingerprint/arquivo. Testes de paridade e replay pendentes.
+
+Este passo ainda não publica reader REST/MCP/UI nem instala grants ativos. A
+introdução das permissões genéricas no registry, administração/revogação, reader
+de projeção por seção e corte de Sprint continuam necessários antes da conclusão
+F2A/F3; não tratar o snapshot bruto como produto autorizado de histórico.
+
+#### F2A — captura de autoridade implementada no arquivo v4
+
+Implementados ArchiveSection/ArchiveReadSections/ArchiveSourceScope/ArchiveReadGrant,
+parser fechado e política pura na porta pública historical_archive. A captura
+aceita apenas PermissionSet já resolvido e autoridades registradas; herda review
+e negações da política existente. A leitura de uma seção exige grant exato mais
+acesso atual ao Board e permissão atual à seção; grant ausente, outra identidade,
+realm, Board ou origem não autoriza. Este é contrato puro, ainda sem reader público.
+
+O adapter sprint_retirement_access invoca o mesmo gateway de agentes usado pelo
+MCP, dentro de AsyncSession vinculada à conexão/transação de captura. O principal
+humano é LocalAuthProvider, confirmado como provider concreto em main.py e CLI.
+Board com realm legado NULL continua local, como load_accessible_board; realm
+estrangeiro é rejeitado pelo adapter Community. Sem inferir usuário autenticado
+de owner_id/created_by. Agente inativo e revisão obrigatória produzem negações.
+Limites de linhas/bytes são verificados antes da carga das fontes de policy; grant
+órfão bloqueia publicação. Credenciais e seus hashes ficam fora do fingerprint.
+
+O arquivo v4 registra esse snapshot por origem original e mantém tabelas/refs
+históricas intactas. _verify_access exige formato, fingerprint, shape, escopo e
+ausência de grants duplicados. A mesma reserva SQLite permanece até salvar,
+verificar e commitar todos os audit refs. Alterar permissão invalida replay;
+rotacionar credenciais não altera o arquivo. v1/v2/v3 continuam verificáveis sem
+fabricar acesso. O reconciliador de storage/backup agora aceita v4 com os mesmos
+gates de hash, tamanho, ownership e contagem; a dependência foi corrigida antes
+dos testes de comportamento. Não há Attachment criado para expor o dump: o
+download existente exige metadata de Attachment/Card; o único StaticFiles mount
+localizado/inspecionado em main.py serve assets do frontend.
+
+**Premissa de teste corrigida com evidência:** a lista legada vazia NÃO nega todas
+as leituras. map_legacy_permissions habilita read/_read por compatibilidade, mesmo
+sem tokens de escrita. O arquivo capturou corretamente quatro leituras True para
+esse agente, mantendo board.admin.delete e card.entity.edit_fields negados no
+resolver original. Negar essas leituras teria endurecido autoridade na migração,
+contrariando a decisão autorizada. O primeiro teste as esperava False e foi
+corrigido; nenhuma semântica produtiva foi alterada para satisfazê-lo. Uma segunda
+asserção usava o nome inexistente card.entity.edit (has admite ausência no legado);
+corrigida para a folha registrada edit_fields. O novo capturador, ao contrário
+desse teste incorreto, valida as quatro autoridades contra ALL_FLAGS antes de
+avaliá-las e nunca aceita autoridade desconhecida.
+
+Evidência em PULSE_REFACTOR/.validation-v040:
+- provenance-f2a-access-scope.json antes dos testes: **797/314 .py**, **862/398
+  payloads** idênticos source→wheel→install. Todos os processos são novos.
+- core-f2a-access-verified.log: **46 passed**, 4,52 s. Matriz das 16 combinações
+  raiz/seções, absent=True/negação/review, identidade/realm/Board/origem, revogação
+  atual, boolean estrito, shape fechado, porta de policy e contrato de export.
+  A primeira invocação Core apontou arquivo de teste inexistente e não executou
+  testes (core-f2a-access.log); seleção corrigida para test_entity_export_contract.
+- community-f2a-access.log: **89 passed, 1 failed**, 385,44 s. Única falha foi a
+  expectativa de leitura negada para lista legada vazia. Cobertura restante inclui
+  arquivo lossless, embedded refs, replay, corrupção, limites, rollback, locks,
+  storage reconciliation e snapshot/restore conjunto.
+- community-f2a-access-focused.log: sete aprovados e a mesma falha; a inspeção do
+  blob da fixture comprovou empty-list=True, inactive/review=False, e os overrides
+  do preset herdado preservados. community-f2a-access-parity.log falhou apenas na
+  folha de teste inexistente, descrita acima. Correção final:
+  community-f2a-access-parity-final.log: **8 passed**, 17,04 s. Inclui rotação de
+  credencial sem drift, limites/orfandade sem publicação, replay após revogação,
+  duas origens no mesmo Board, Board estrangeiro e write reservation durante save.
+- Ruff dos Python alterados/novos e diff --check aprovados. Sem mudança frontend
+  ou novos transportes neste incremento; assets anteriores preservados no wheel.
+- closure-f2a-access.json: findings vazios, oito budgets 0/0; somente matrizes
+  README desatualizadas, regeneradas oficialmente. Contagens 7.475 imports Core,
+  1.127 Community→Core e 25 dependências.
+- Par final reinstalado após README: wheels-f2a-access-final;
+  provenance-f2a-access-final.json confirma novamente 797/314 .py e 862/398
+  payloads byte a byte. Core SHA256
+  f4e0644cc819d00ef576cfd11ad6a49e109e82c982cc07861742579fcfba1bbc;
+  Community SHA256
+  00fd9681fc4be801e66d3ef8a71ce005b54ad50be9ee35878aa1eee31b26be46.
+
+Limites/retomada: snapshots v3 existentes não são reescritos como v4. Replay do
+mesmo migration_id com formato/autoridade diferente falha; o coordenador de
+cutover deve selecionar/reconciliar a operação correta. A captura usa o resolver
+e registry anteriores, ainda ativos nesta fase: **F3 precisa preservar a avaliação
+antiga no caminho de migração antes de eliminar suas folhas vivas**, sem criar um
+serviço Legacy Sprint. Não presumir que o capturador funcionará depois de retirar
+Sprint de ALL_FLAGS sem coordenar essa dependência. Faltam instalar grants
+genéricos ativos/revogação/administração, reader por projeção segura (evaluations
+não pode vazar pela linha raiz de sprints), transportes/UI histórica, transferência
+substantiva, imutabilidade/cutover e provas de upgrade/rollback. F2A não está
+concluída. A iniciativa e o gate de metadata já aberto permanecem em andamento.
+
+closure-f2a-access-final.json confirma **ok=true**, findings/documentation_findings
+vazios, oito budgets 0/0, 7.475 imports Core, 1.127 Community→Core, 25 dependências.
+Todos os processos deste incremento terminaram. Community commit
+9a2832e093ffd5931b1cb9c9faa283a11270bccc; Core publica a porta pura, testes e ledger
+correspondentes. Push pareado normal em feature/v0.4.0, sem migração real,
+reinício de Pulse, release ou mudança de permissões de contas reais.
