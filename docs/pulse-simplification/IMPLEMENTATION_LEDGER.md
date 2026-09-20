@@ -2433,3 +2433,9 @@ submetido. `history_count` conta as declarações ativas consideradas nessa
 composição, não toda a história com revogações; a UI explicita essa distinção.
 Sem migrations físicas neste incremento. Adoção ARQ/VER, F2B/Sprints, KG,
 migrações/rollback e auditoria integral continuam no escopo. Goal em progresso.
+
+Par publicado por push normal em `feature/v0.4.0`: Core
+`c2d24b4a9f67e7fe022ceb35c7a8290786522478`; Community
+`f30452b439906f039af68a47ffdeb9ef396c5237`. `ls-remote` confirmou ambos os
+HEADs e as árvores limpas após os commits funcionais. Nenhuma troca de conta,
+tag, release, merge ou migração em dados reais foi executada.
