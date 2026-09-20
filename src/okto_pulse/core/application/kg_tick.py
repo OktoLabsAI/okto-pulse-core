@@ -1,23 +1,17 @@
-"""Transport-neutral policy and orchestration for manual KG ticks."""
+"""Internal admission and safe reset for durable KG tick events."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
 
-from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.ports.kg_operational import get_kg_operational_read_model_port
 from okto_pulse.core.ports.relational_effects import get_relational_effects_port
-from okto_pulse.core.ports.scheduler import SchedulerControl
-from okto_pulse.core.repositories import PulseUnitOfWork
 
 logger = logging.getLogger("okto_pulse.application.kg_tick")
-HealthProbe = Callable[..., Awaitable[dict[str, Any]]]
 KG_TICK_FULL_REBUILD_OPERATION = "kg_tick_full_rebuild_reset"
 _KG_TICK_FULL_REBUILD_LIFECYCLE_STEPS = (
     "checkpoint",
@@ -126,76 +120,6 @@ async def require_kg_tick_admission(
             },
         )
         raise KGTickAdmissionDeferred(reason_code="global_recovery_active")
-
-
-async def get_kg_health(
-    board_id: str,
-    uow: PulseUnitOfWork,
-    *,
-    scheduler_control: SchedulerControl | None = None,
-) -> dict[str, Any]:
-    """Default health probe through the edition-composed service catalog."""
-
-    return await uow.services.kg.health(
-        board_id,
-        scheduler_control=scheduler_control,
-    )
-
-
-async def refuse_tick_if_degraded(
-    board_id: str | None,
-    uow: PulseUnitOfWork,
-    *,
-    scheduler_control: SchedulerControl | None = None,
-    health_probe: HealthProbe | None = None,
-) -> dict[str, object] | None:
-    if board_id is None:
-        return None
-    probe = health_probe or get_kg_health
-    health = await probe(
-        board_id,
-        uow,
-        scheduler_control=scheduler_control,
-    )
-    graph_state = health.get("graph_state")
-    if graph_state in _RISK_STATE_HARD_REJECT:
-        return {
-            "error": "graph_recovery_needed",
-            "graph_state": graph_state,
-            "board_id": board_id,
-            "message": (
-                f"KG for board {board_id} is {graph_state}; a manual tick is "
-                "refused until recovery completes. Use the explicit KG Health "
-                "recovery flow."
-            ),
-        }
-    return None
-
-
-async def dispatch_manual_tick(
-    *,
-    tick_id: str,
-    board_id: str | None,
-    force_full_rebuild: bool,
-    relational_context: object,
-    scheduled_at: str | None = None,
-) -> list[str]:
-    """Persist manual tick events through the same path as the scheduled tick."""
-
-    from okto_pulse.core.events.handlers.kg_decay_tick import publish_tick_events
-
-    effective_scheduled_at = (
-        scheduled_at or datetime.now(timezone.utc).isoformat()
-    )
-    return await publish_tick_events(
-        relational_context,
-        board_id=board_id,
-        actor_id="manual-trigger",
-        actor_type="user",
-        scheduled_at=effective_scheduled_at,
-        force_full_rebuild=force_full_rebuild,
-        tick_id=tick_id,
-    )
 
 
 async def _reset_board_last_recomputed_at(
@@ -438,13 +362,9 @@ async def reset_last_recomputed_at(
 
 
 __all__ = [
-    "HealthProbe",
     "KGTickAdmissionDeferred",
     "KGTickFullRebuildResetFailed",
     "KGTickFullRebuildResetFailure",
-    "dispatch_manual_tick",
-    "get_kg_health",
-    "refuse_tick_if_degraded",
     "require_kg_tick_admission",
     "reset_last_recomputed_at",
 ]

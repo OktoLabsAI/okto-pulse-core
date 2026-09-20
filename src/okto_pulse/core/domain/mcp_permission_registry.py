@@ -594,7 +594,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "kg.operations.integrity.read",
     ),
     _policy("okto_pulse_kg_takedown_status", "kg.operations.audit.read"),
-    _policy("okto_pulse_kg_tick_run_now", "kg.operations.tick.run"),
     _policy("okto_pulse_kg_update_cognitive_pending_item", "kg.session.commit"),
     _policy("okto_pulse_kg_verify_grounding", "board.read"),
     _policy("okto_pulse_link_board_design_system", "design_system.board_link.create"),

@@ -796,39 +796,6 @@ Returns:
     outside that subset return ``unsupported_operation``; write keywords return
     ``unsafe_cypher``.
 
-## `okto_pulse_kg_tick_run_now`
-
-Prose covered by the live tool description. Delta:
-
-Authorization:
-    Requires `kg.admin.historical_consolidation`. A board tick checks the
-    destination board's effective overrides before resolving the lease
-    provider. A global tick authenticates through the global effective context;
-    raw-principal authentication alone never authorizes it.
-
-Args:
-    board_id: Optional board UUID. Empty string = global tick (all boards).
-    force_full_rebuild: When true, resets last_recomputed_at to NULL
-        for all nodes in scope inside the governed per-board writer lifecycle
-        before the tick — ignores staleness. This is persisted as the dedicated
-        fail-closed event type `kg.tick.full_rebuild`.
-
-Returns:
-    JSON with
-    `{tick_id, correlation_id, tick_ids, status: "running", scheduled_at}`
-    on success. For a concrete board, the persisted event and tick run preserve
-    `tick_id` exactly. A global request keeps that value as `correlation_id` and
-    returns one deterministic child id per sorted board in `tick_ids`; every
-    child receives the same `scheduled_at`.
-    On 409 (lock held), `{error: "tick_already_running", message: "..."}`.
-    On auth failure, `{error: "..."}`.
-
-Rolling deployment:
-    Deploy consumers that register `kg.tick.full_rebuild` before enabling its
-    producers. Before downgrading, stop producers and drain pending executions
-    of that type. An older consumer treats the unknown type as retryable pending
-    work; it must never acknowledge it as an ordinary daily tick.
-
 ## `okto_pulse_kg_update_cognitive_pending_item`
 
 KG-03.3 — Mutate exactly one cognitive consolidation item.

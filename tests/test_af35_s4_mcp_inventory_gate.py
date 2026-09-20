@@ -76,8 +76,7 @@ AF35_S4_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {
         {
             "_kg_orphan_backfill_health_refusal",
             "okto_pulse_kg_migrate_schema",
-            "okto_pulse_kg_tick_run_now",
-        }
+                }
     ),
 }
 

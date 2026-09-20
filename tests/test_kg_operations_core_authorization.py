@@ -48,7 +48,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
     ("kg.operations.audit.read", "kg.admin.settings_read"),
     ("kg.operations.schema.migrate", "kg.admin.settings_write"),
-    ("kg.operations.tick.run", "kg.admin.settings_write"),
     (
         "kg.operations.historical.read",
         "kg.admin.historical_consolidation",
@@ -344,8 +343,6 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])
     assert uow.commits == 0
     assert uow.rollbacks == 0
-
-
 
 
 _REST_OPERATION_CASES: tuple[

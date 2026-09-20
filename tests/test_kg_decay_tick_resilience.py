@@ -15,8 +15,6 @@ Maps to NC-9 test evidence for the following acceptance criteria:
              kg.relevance.tick.completed structured log extra.
     AC7  — module docstrings in kg_decay_tick.py and events/types.py no
              longer contain "cron at 03:00 UTC"; both cite scheduler adapter.
-    AC8  — _refuse_tick_if_degraded(None, db) returns None without querying
-             board health (tick global is not health-gated, FR9).
 """
 
 from __future__ import annotations
@@ -435,34 +433,6 @@ def test_ac7_events_types_docstring_no_cron_utc():
     )
     assert "scheduler adapter" in kg_daily_tick_docstring, (
         "KGDailyTick docstring in events/types.py must mention the scheduler adapter."
-    )
-
-
-# ---------------------------------------------------------------------------
-# AC8 — _refuse_tick_if_degraded(None, db) returns None (no health query)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_ac8_global_tick_not_health_gated():
-    """AC8: _refuse_tick_if_degraded(None, db) must return None immediately
-    without ever calling get_kg_health (FR9 — global tick is not health-gated).
-    """
-    from okto_pulse.community.api.kg_tick import _refuse_tick_if_degraded
-
-    mock_db = AsyncMock()
-
-    with patch(
-        "okto_pulse.community.api.kg_tick.get_kg_health",
-        new_callable=AsyncMock,
-    ) as mock_health:
-        result = await _refuse_tick_if_degraded(None, mock_db)
-
-    assert result is None, (
-        f"_refuse_tick_if_degraded(None, db) must return None; got {result!r}"
-    )
-    mock_health.assert_not_called(), (
-        "get_kg_health must NOT be called for a global tick (board_id=None)"
     )
 
 

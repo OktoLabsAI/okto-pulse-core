@@ -5170,3 +5170,97 @@ Community→Core e 25 dependências. Todos os processos deste incremento termina
 Community commit dbf7706947133d32b6eb6474eb16f5b9664d0005; Core reúne o contrato,
 catálogo, permissões, testes e ledger correspondentes. Publicação por push normal
 em feature/v0.4.0; autenticação jpbraga válida, sem troca de conta necessária.
+
+#### F4 em execução — tick manual
+
+Partida publicada limpa: Core fc0a46bd / Community dbf7706. Prova do par instalado
+permanece provenance-f4-dlq-retirement-complete.json. Inventário: tool
+okto_pulse_kg_tick_run_now, POST /kg/tick/run-now, cliente kg-tick-api e botão
+Save & run now no RuntimeSettingsPanel, incluindo polling exclusivamente usado
+para habilitá-lo. A folha kg.operations.tick.run não tem outro consumidor
+produtivo; sua introdução/presets devem sair sem conceder outra autoridade.
+
+Entrada MCP/REST autoriza, adquire lease, consulta health, publica evento pelo
+wrapper dispatch_manual_tick e commita. Esse wrapper só tem esses dois callers
+produtivos e pode sair com refuse_tick_if_degraded/get_kg_health exclusivos dele.
+O restante de application/kg_tick.py tem consumidores em eventos: admission,
+fence de publicação, reset seguro e handler de KGFullRebuildTick. Preservar
+esquemas/eventos duráveis preexistentes, processamento periódico, commit e locks;
+retirada da entrada manual não é autorização para apagar eventos pendentes.
+Testes mistos devem manter gates cognitivos F16, efeitos periódicos, barreiras
+de escrita e resiliência. Tuning de settings permanece frente F4 separada.
+
+#### F4 — tick manual retirado, processamento interno preservado
+
+Retirados tool, rota, cliente, botão, polling de habilitação, wrapper/porta e
+helpers exclusivos descritos acima; removida a folha tick.run de registry,
+introduções e presets. Catálogo regenerado oficialmente: **324 tools**, **321
+policies**, três exceções humanas, **585 flags**, **96 folhas de introdução**.
+Nenhuma nova autoridade ou comando alternativo. A ajuda e os resources efetivos
+não anunciam tick manual. O painel de tuning ainda existe e sua retirada continua
+obrigatória; não foi declarada concluída pela retirada do botão.
+
+Testes exclusivos da entrada eliminada foram substituídos por ausência nos
+transportes registrados. Mantidos os casos de fan-out por Board real (FK ligada),
+idempotência, recuperação parcial da frota, admission/fence de publicação,
+eventos KGFullRebuildTick duráveis, reset seguro e cancelamento com writer lock.
+Mantidos todos os gates cognitivos F16; a asserção do predicado compartilhado
+continua no consumidor cognitivo. O teste S02 deixou de abrir os arquivos
+kg_tick.py e kg_rebuild.py já eliminados, preservando o gate dos routers vivos.
+Não há mudança no handler/schemas de eventos, dados, leases ou runtime real.
+
+Validação em PULSE_REFACTOR/.validation-v040:
+- provenance-f4-tick-retirement.json antes dos testes: **796/313 .py**, **861/397
+  payloads** idênticos source→wheel→install. Processos novos, PYTHONPATH pareado.
+- core-f4-tick-retirement.log: **364 passed, 1 failed**, 93,23 s, 20 arquivos.
+  A única falha é o gate de metadata abaixo. Passaram autorizações, reconciliação
+  de presets, catálogo, barreiras arquiteturais, gates cognitivos, eventos,
+  fences, resiliência, clock/ownership e health do tick.
+- community-f4-tick-retirement.log: **137 passed**, 142,94 s. A tool é desconhecida
+  no host MCP efetivamente materializado antes de contexto, UoW, lease ou grafo;
+  a rota responde 404 uniforme para IDs owned/foreign/missing, inclusive payload
+  force_full_rebuild=true, e não aparece no OpenAPI. Recursos efetivos e schemas
+  fechados também verificados. Prova de ausência, não E2E de migração real.
+- frontend-f4-tick-retirement.log: **34 passed**, 12 arquivos, 49,27 s. Aba inicial
+  Decay Tick com Board conhecido e permissões presentes, troca de abas, timers
+  até 45 s, desmontagem e mais 15 s sem fetch, save ou botão manual. Ajuda
+  renderizada não contém instruções de run-now; tuning remanescente continua
+  com seus testes de permissão e drafts.
+- frontend-f4-tick-retirement-build.log: build tsc/Vite, sync e verify de
+  **78 assets**, tree SHA256
+  49eacdd4db5129f52604bf01d5eb165f39b82558b42c6c304849f5893fdae072.
+  Lint: zero erros, 394 warnings <= baseline 402. Ruff e diff --check aprovados.
+- closure-f4-tick-retirement.json: findings vazios, oito budgets **0/0**; somente
+  duas matrizes README desatualizadas, regeneradas pelo renderer oficial.
+  Contagens observadas: 7.470 imports Core, 1.123 Community→Core, 25 dependências.
+- Par final reconstruído/reinstalado após README: wheels-f4-tick-retirement-final;
+  provenance-f4-tick-retirement-final.json repete 796/313 .py e 861/397 payloads
+  byte a byte. Core SHA256
+  697e0f4e7abfd08716afec08b51cf3952e1d463f09cf7cd39229819c2db9af66;
+  Community SHA256
+  0f445fe2743463a0847227428866d2669dd89bbbd2c082e57617752ecceee754.
+
+**Gate de metadata aberto:** 55.859 > 50.800, limite inalterado. Medição instalada
+mcp-f4-tick-retirement-delta.json confirma 325→324, somente tick_run_now retirado,
+zero tools adicionadas, 46 schemas fechados e 2.444 tokens de instructions.
+Menos 67 tokens; não substitui o benchmark de fluxo completo. Nenhuma evidência
+de conclusão integral é inferida destes testes.
+
+Próximo trabalho: F2A autorizado — captura de decisões efetivas por seção/origem,
+grants limitados ao Board e leitura com ACL atual, sem expor o arquivo SQL bruto.
+Investigação adicional já localizou a materialização de decisões no use case
+GetEntityExportBundleUseCase e o adapter de export por seção; reutilizar a
+autoridade canônica por porta pública. AgentBoard tem overrides restritivos;
+PermissionPreset tem linhagem; REST usa Principal/claims e ACL de Board. Captura
+não pode resumir essas fontes a keys presentes ou somente owner. Não foi definido
+nem implementado novo contrato F2A neste incremento de tick. Retomada inclui
+demais frentes F2/F3, F4 (histórico operacional/schema/tuning/relatórios/poda),
+DEI/ARQ/VER/KG, UI/analytics, upgrade/rollback e benchmark, conforme matriz global.
+
+closure-f4-tick-retirement-final.json: **ok=true**, findings/documentation_findings
+vazios, oito budgets 0/0 e contagens 7.470/1.123/25 confirmadas sobre o par final.
+Todos os processos de validação deste incremento encerrados. Community commit
+3a4b6cd1d97f1d9331543ebcbc59be6ed3d070ea, 78/78 assets físicos/versionados. Core
+inclui catálogo, permissões, wrappers retirados, testes e este ledger. Push normal
+pareado em feature/v0.4.0. A iniciativa completa continua ativa; nenhum dado real
+migrado, processo Pulse reiniciado, release ou relaxamento de gate realizado.

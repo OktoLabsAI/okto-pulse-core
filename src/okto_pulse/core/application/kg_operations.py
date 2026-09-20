@@ -7,7 +7,6 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -180,23 +179,6 @@ class CoreKnowledgeGraphOperations:
         self.__relational_context = relational_context
         self.__clock = clock or (lambda: datetime.now(timezone.utc))
 
-    async def dispatch_manual_tick(
-        self,
-        *,
-        tick_id: str,
-        board_id: str | None,
-        force_full_rebuild: bool,
-        scheduled_at: str | None = None,
-    ) -> list[str]:
-        from okto_pulse.core.application.kg_tick import dispatch_manual_tick
-
-        return await dispatch_manual_tick(
-            tick_id=tick_id,
-            board_id=board_id,
-            force_full_rebuild=force_full_rebuild,
-            relational_context=self.__relational_context,
-            scheduled_at=scheduled_at,
-        )
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object

@@ -9,8 +9,6 @@ from repository_checkout_testing import community_source_for
 
 _REST_FILES = (
     "kg_cognitive_candidate_commands.py",
-    "kg_rebuild.py",
-    "kg_tick.py",
 )
 
 

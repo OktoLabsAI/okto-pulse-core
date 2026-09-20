@@ -67,7 +67,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_orphan_report` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_stale_canonical_parity_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_takedown_status` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_tick_run_now` — docs: `okto-pulse://reference/tool-docs/kg`
 
 ## Session & Agents
 - `okto_pulse_get_my_profile` — docs: `okto-pulse://reference/tool-docs/agent`

@@ -574,14 +574,6 @@ class BoardErasureLease(Protocol):
 
 
 class KnowledgeGraphOperations(Protocol):
-    async def dispatch_manual_tick(
-        self,
-        *,
-        tick_id: str,
-        board_id: str | None,
-        force_full_rebuild: bool,
-        scheduled_at: str | None = None,
-    ) -> list[str]: ...
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object

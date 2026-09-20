@@ -144,17 +144,9 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     through ``BoostNodeUseCase`` and its graph read/SET lives in
     ``kg.governance.boost_node``, which consumes the same port."""
     import okto_pulse.community.api.kg_routes as kg_routes
-    import okto_pulse.community.api.kg_tick as kg_tick
     import okto_pulse.core.application.kg_tick as kg_tick_application
     import okto_pulse.core.kg.canonical_learning_partition as clp
     import okto_pulse.core.kg.governance as kg_governance
-
-    # The transport is persistence-agnostic and delegates through the composed
-    # service catalog rather than opening a graph transaction itself.
-    tick_route_src = Path(inspect.getsourcefile(kg_tick)).read_text(encoding="utf-8")
-    assert "db.services.kg.dispatch_manual_tick" in tick_route_src
-    assert "graph_transaction.begin" not in tick_route_src
-    assert "open_board_connection" not in tick_route_src
 
     # The Core application policy owns the force-rebuild graph transaction.
     tick_application_src = Path(inspect.getsourcefile(kg_tick_application)).read_text(
