@@ -202,18 +202,6 @@ _INLINE_OPERATION_CASES = (
         None,
     ),
     (
-        "okto_pulse_kg_rebuild_confirm",
-        {
-            "board_id": BOARD_ID,
-            "operation": "rebuild",
-            "preflight_hash": "0" * 64,
-            "manifest_ref": "manifest-1",
-        },
-        "kg.operations.rebuild.confirm",
-        "kg.admin.settings_write",
-        BOARD_ID,
-    ),
-    (
         "okto_pulse_kg_quarantine_restore",
         {"quarantine_id": "quarantine-1", "apply": True},
         "kg.operations.quarantine.restore",

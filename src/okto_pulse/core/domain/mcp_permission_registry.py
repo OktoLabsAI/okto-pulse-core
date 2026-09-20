@@ -643,9 +643,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_kg_query_natural", "kg.power.natural"),
     _policy("okto_pulse_kg_query_reflective", "kg.power.natural"),
     _policy("okto_pulse_kg_queue_drilldown", "kg.operations.queue.read"),
-    _policy("okto_pulse_kg_rebuild_confirm", "kg.operations.rebuild.confirm"),
-    _policy("okto_pulse_kg_rebuild_preflight", "kg.operations.rebuild.preflight"),
-    _policy("okto_pulse_kg_rebuild_run", "kg.operations.rebuild.run"),
     _policy("okto_pulse_kg_schema_info", "kg.power.schema_info"),
     _policy(
         "okto_pulse_kg_stale_canonical_parity_list",

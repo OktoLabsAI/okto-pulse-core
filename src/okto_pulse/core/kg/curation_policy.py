@@ -53,7 +53,6 @@ CURATION_POLICY: Mapping[str, str] = MappingProxyType(
         "kg_connectivity_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
         # Rebuild is recovery-only/offline: the local one-shot owns preflight,
         # immutable manifest, confirmation, and an opaque execution capability.
-        "kg_rebuild_run": CURATION_LEVEL_PROPOSE_ONLY,
         # Deterministic, non-destructive score recompute.
         "kg_decay_tick": CURATION_LEVEL_AUTO,
         # Physical delete + bulk edge re-point: the corruption class of

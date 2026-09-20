@@ -856,13 +856,6 @@ class KnowledgeGraphOperations(Protocol):
         include_code_traceability: bool = True,
     ) -> dict[str, object]: ...
 
-    async def invoke_rebuild_admission(
-        self,
-        refusal_check: object,
-        board_id: str,
-        *,
-        scheduler_control: object | None,
-    ) -> object: ...
 
     async def read_latest_kg_tick_completed_at(self) -> datetime | None: ...
 

@@ -34,7 +34,6 @@ from okto_pulse.core.application.use_cases.authorization import (
     require_authorization,
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
-from okto_pulse.core.ports.scheduler import SchedulerControl
 
 
 class ListCanonicalDebtCommand:
@@ -348,91 +347,3 @@ class AuditOriginatesFromContractUseCase:
             include_ok=command.include_ok,
         )
         return AuditOriginatesFromContractResult(data)
-
-
-class RebuildAdmissionGateCommand:
-    """Input for :class:`RebuildAdmissionGateUseCase`.
-
-    ``refuse_fn`` is the admission-gate probe injected by the MCP tool
-    (``api.kg_rebuild._refuse_rebuild_if_quarantined``); it is passed as a
-    callable so this use case never imports ``okto_pulse.community.api`` (Clean
-    Core). ``include_health`` adds the FR9 health probe in the SAME session,
-    exactly as the legacy preflight tool did (no extra round-trip).
-    """
-
-    __slots__ = ("board_id", "refuse_fn", "include_health", "scheduler_control")
-
-    def __init__(
-        self,
-        board_id: str,
-        *,
-        refuse_fn: Any,
-        include_health: bool = False,
-        scheduler_control: SchedulerControl | None = None,
-    ) -> None:
-        self.board_id = board_id
-        self.refuse_fn = refuse_fn
-        self.include_health = include_health
-        self.scheduler_control = scheduler_control
-
-
-class RebuildAdmissionGateResult:
-    """Output — ``refusal`` (admission denied) XOR ``raw_health`` (probe data)."""
-
-    __slots__ = ("refusal", "raw_health")
-
-    def __init__(
-        self, *, refusal: Any | None = None, raw_health: Any | None = None
-    ) -> None:
-        self.refusal = refusal
-        self.raw_health = raw_health
-
-
-class RebuildAdmissionGateUseCase:
-    """Run the rebuild admission gate (+ optional FR9 health probe) under one
-    session, transport-free. Strangles ONLY the session block of the
-    preflight/run rebuild tools — the threadpool enumeration, RebuildPreflight/
-    KGRebuildService orchestration and manifest/file persistence stay in the tool
-    (no transactional-scope change). Read-only: no commit.
-    """
-
-    async def execute(
-        self,
-        command: RebuildAdmissionGateCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> RebuildAdmissionGateResult:
-        operation = (
-            "kg.operations.rebuild.preflight"
-            if command.include_health
-            else "kg.operations.rebuild.run"
-        )
-        historical_authority = (
-            "kg.admin.settings_read"
-            if command.include_health
-            else "kg.admin.settings_write"
-        )
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                operation,
-                legacy_operation=historical_authority,
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        refusal = await uow.services.kg.invoke_rebuild_admission(
-            command.refuse_fn,
-            command.board_id,
-            scheduler_control=command.scheduler_control,
-        )
-        if refusal is not None:
-            return RebuildAdmissionGateResult(refusal=refusal)
-        raw_health: Any | None = None
-        if command.include_health:
-            raw_health = await uow.services.kg.health(
-                command.board_id,
-                scheduler_control=command.scheduler_control,
-            )
-        return RebuildAdmissionGateResult(raw_health=raw_health)

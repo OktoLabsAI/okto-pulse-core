@@ -4,34 +4,17 @@ version: "1.0"
 
 # KG Health & Operational Signals (full reference)
 
-Spec KG-01 (a7659ba3) ships an explicit KG Health surface so agents stop relying
-on heuristics like "graph feels stale" or "let me just rebuild". Read this
-**before** you ask a user to run a tick, force a rebuild, or escalate "KG looks
-broken". The compact stop-rule lives in `agent_instructions.md`; this resource is
-the full contract.
+Health reports board-scoped observations, component states and limitations.
+It is available when diagnosing an unavailable operation; it is not a required
+repair step before ordinary product work. A reading does not grant permission
+to mutate storage or bypass a product gate.
 
 ## When to consult
 
-1. You're about to call a KG mutation path (`okto_pulse_kg_commit_consolidation`,
-   `okto_pulse_kg_tick_run_now`, anything in the rebuild/reset family). If
-   `overall_state == quarantined` you MUST stop and surface the state to the
-   user — do not write. `recovery_needed` also stops ordinary mutation. Choose
-   an exception only from the component state: board
-   `graph_state=recovery_needed` requires the governed local one-shot board
-   rebuild with Pulse and SDLC source writers offline. Online board-rebuild
-   preflight is diagnostic; confirm/run return `recovery_execution_required`
-   without issuing/consuming a token. Healthy board graph plus
-   `discovery_state=recovery_needed` and
-   `discovery_recovery_required=true` uses the separate global discovery
-   preflight → confirm → run trio. Generic `overall_state=recovery_needed` is
-   never evidence that board rebuild will fix the failed component.
-2. A KG query returned empty/stale results and you're tempted to "fix it" by
-   running a tick. Check `metric_status` first; an `unavailable` status means
-   telemetry is the problem, not the data.
-3. `contradict_penalty` looked off in a recent decision history result, or you're
-   investigating why `decay` (relevance score recomputation) seems to have skipped
-   a node. Health surfaces `last_decay_tick_at`, `nodes_recomputed_in_last_tick`
-   and the `contradict_warn_count` (alias of CONTRADICT_PENALTY warnings).
+Use health to understand a reported failure or missing observation. Quarantined
+or unavailable components continue to block affected operations. Missing metrics
+do not establish health, corruption or loss of data. Empty query results alone
+do not establish that a graph needs rebuilding.
 
 ## How to consult
 
@@ -42,46 +25,13 @@ uses your session context automatically:
 - **REST**: `GET /api/v1/kg/health?board_id=...` exists for the dashboard SPA and
   ad-hoc curl. Use it only when MCP is unavailable.
 
-## Governed board-graph recovery command
+## Recovery boundary
 
-Online board rebuild preflight is diagnostic only and returns
-`outcome=diagnostic_complete`, with the underlying classification in
-`preflight_outcome`; `manifest_ref` and `source_set_hash` are null. Online
-confirm/run return `recovery_execution_required` and never issue or consume a
-token.
-
-Stop Pulse/API/MCP and every SDLC source writer, then keep them offline through
-all three stages. First inspect the installed executor against the live home:
-
-```powershell
-okto-pulse-kg-recovery-only --data-home <ABS_LIVE_HOME> --board-id <UUID> --inspect-install
-```
-
-Review the reported SHA-256 installation fingerprint. Make a physical,
-isolated copy of the stopped live home and run the full rehearsal against that
-copy, writing a new receipt path:
-
-```powershell
-okto-pulse-kg-recovery-only --data-home <ABS_COPY_HOME> --board-id <UUID> --rehearsal-copy-of <ABS_LIVE_HOME> --rehearsal-receipt-out <NEW_ABS_RECEIPT.json> --expected-install-fingerprint <SHA256>
-```
-
-If the rehearsal succeeds, execute against the exact live home before the
-receipt expires:
-
-```powershell
-okto-pulse-kg-recovery-only --data-home <ABS_LIVE_HOME> --board-id <UUID> --execute --rehearsal-receipt <ABS_RECEIPT.json> --expected-install-fingerprint <SHA256>
-```
-
-The rehearsal receipt is valid for 2 hours (7200 seconds), single-use, and
-bound to its exact receipt path, board, installation fingerprint, live
-data-home path/storage hashes, and terminal rehearsal evidence. The isolated
-physical-copy relationship is verified during rehearsal; the copy path itself
-is not a persisted receipt binding. The live run consumes the receipt; do not
-copy, rename, reuse, or regenerate it around a failed gate. The one-shot either creates its
-own fresh preflight/manifest/confirmation or resumes and reconciles the one
-verified active receipt before a governed fresh run. It never accepts online
-`preflight_hash`, `manifest_ref`, or `confirmation_id` values. Never loop the
-online confirm/run tools.
+Public board rebuild preflight, confirmation and execution have been removed
+from MCP, REST and the installed CLI. There is no replacement maintenance tool.
+Health reports the component, reason and limitation. External support or release
+procedures may restore an authorized backup; they are not actions an agent can
+invoke through Pulse. Historical audit records remain history.
 
 ## Reading the payload
 
@@ -90,7 +40,7 @@ Contract fields you must understand (`api_3ed9037f`):
 | Field | Meaning |
 |---|---|
 | `graph_state` / `discovery_state` | Per-graph state from the 5-state machine (`healthy`, `at_risk`, `backpressure`, `recovery_needed`, `quarantined`). |
-| `overall_state` | Worst-case fold of the two above. It gates ordinary writes but does not select recovery. Inspect `graph_state` versus `discovery_state`: board rebuild handles only the board graph; the global trio handles admitted discovery-only failure. |
+| `overall_state` | Worst-case fold of the two above. It gates ordinary writes but does not authorize recovery. Inspect `graph_state` versus `discovery_state` to identify the affected component. |
 | `metric_status` | `available` or `unavailable`. **`unavailable` never means "graph is fine, sensor is just off"** — BR br_2a8cdfdc forbids degrading to healthy when telemetry can't be read. Treat the graph as `at_risk` until telemetry recovers. |
 | `classification_reason` | Single-string explanation of why the state was assigned (e.g. `graph:metric.unavailable`). |
 | `health_schema_version` | Version of the coordinated REST/MCP/model/frontend health contract. Version `1.1` adds the materialization diagnosis while the legacy `schema_version` alias remains `1.0` for backward compatibility. |
@@ -106,7 +56,7 @@ Contract fields you must understand (`api_3ed9037f`):
 | `current_kg_generation_id` | Identifies the active graph generation. Changes after a clean rebuild; same generation across health calls means storage hasn't been replaced. |
 | `recent_events` | Recent state transitions, WAL/commit failures and memory-pressure samples. Empty when the safe observability path (KG-01.5) hasn't shipped yet. |
 | `memory_pressure_status` | `unconfirmed` or `confirmed_primary_cause`. **Only** `confirmed_primary_cause` justifies recommending a memory-pressure mitigation — anything else means the deterministic criterion (>90% in ≥3 samples within 10 min before WAL/commit failure) did NOT match. |
-| Legacy fields (`contradict_warn_count`, `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, `default_score_ratio`, …) | Preserved for backward compat with the existing dashboard. |
+| Legacy fields (`contradict_warn_count`, `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, `default_score_ratio`, …) | Preserved for backward compatibility with the dashboard. `contradict_warn_count` counts CONTRADICT_PENALTY warnings; it does not request score recomputation. |
 
 ## What you MUST NOT do
 
@@ -117,15 +67,7 @@ Contract fields you must understand (`api_3ed9037f`):
   share one bounded request deadline; an exhausted/unavailable probe returns a
   typed `unknown` + `unavailable` response instead of falling through to an
   opening probe.
-- Never advise the user to "just rebuild" when `overall_state ∈ {at_risk,
-  backpressure}`. The KG-01 hardening flow is: surface state → wait for
-  backpressure to drain / sensors to recover → only then consider rebuild via
-  KG-02 paths.
-- Never claim a board rebuild repairs generic `overall_state=recovery_needed`.
-- Never loop online board rebuild confirm/run. On
-  `recovery_execution_required`, stop and surface the local recovery-only
-  executor procedure; request data cannot carry the opaque capability.
-  If only Global Discovery failed, board rebuild returns
-  `board_rebuild_wrong_recovery_scope`; use the global recovery trio.
+- Do not infer a repair operation from `overall_state` or advise restarting,
+  replacing storage or bypassing a fence. Report the component and limitation.
 - Never override `metric_status=unavailable` with your own interpretation. The
   conservative default is the BR. Surface the unknown.

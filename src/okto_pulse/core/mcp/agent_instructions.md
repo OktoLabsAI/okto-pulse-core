@@ -110,10 +110,8 @@ Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only
 `metric_status=unavailable` does not prove health. On `recovery_needed`, read
 **`okto-pulse://reference/kg-health`** and the effective `okto-pulse://workflows/kg`:
 diagnose the component, never infer a rebuild from generic `overall_state`.
-`okto_pulse_kg_rebuild_preflight` is diagnostic only; `okto_pulse_kg_rebuild_confirm`
-and `okto_pulse_kg_rebuild_run` are denied online — never retry a refusal.
-`recovery_execution_required` means the governed offline one-shot on its
-authorized, rehearsed path. Discovery recovery has a separate owned job flow.
+Board rebuild has no public command, tool or endpoint. Health reports the
+affected component and limitation; it does not authorize recovery.
 Do not stop processes, replace storage or bypass a fence without authority.
 
 ---

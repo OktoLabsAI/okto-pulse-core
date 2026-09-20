@@ -660,17 +660,10 @@ def _build_health_diagnostics(
                 "reason": "graph:empty_after_materialized_history",
                 "description": (
                     "Relational audit/ref history shows prior KG materialization "
-                    "but the graph adapter currently returns zero nodes."
+                    "but the graph adapter currently returns zero nodes. "
+                    "The affected graph operations are unavailable."
                 ),
-                "operator_action": "run_local_offline_kg_recovery_executor",
-                "execution_mode": "recovery_only_offline",
-                "recovery_executor": "okto-pulse-kg-recovery-only",
-                "remediation": (
-                    "Stop Pulse/API/MCP and SDLC writers; inspect the live "
-                    "data home, rehearse on a physical isolated copy, then "
-                    "execute against the exact live home within 2 hours using "
-                    "the path-bound single-use rehearsal receipt."
-                ),
+                "operator_action": "none",
             }
         )
     elif board_graph_queryable:
@@ -753,7 +746,7 @@ def _build_health_diagnostics(
 
     if board_graph_recovery_required:
         primary = "board_graph_recovery_required"
-        operator_action = "run_local_offline_kg_recovery_executor"
+        operator_action = "none"
     elif discovery_recovery_required:
         primary = "discovery_recovery_required"
         operator_action = "run_explicit_global_discovery_recovery"

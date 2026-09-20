@@ -2563,57 +2563,6 @@ async def test_global_recovery_authorization_fails_closed(monkeypatch):
     assert ctx is not None and error is None
 
 
-@pytest.mark.asyncio
-async def test_board_rebuild_preflight_redirects_discovery_only_recovery(
-    monkeypatch,
-):
-    import json
-    from types import SimpleNamespace
-
-    from okto_pulse.core.application.use_cases import RebuildAdmissionGateUseCase
-    from okto_pulse.core.mcp import server
-
-    async def board_ctx(_board_id):
-        return server.AgentContext(
-            "agent-1",
-            "Agent",
-            "board-1",
-            ["kg.admin.wipe_board"],
-        )
-
-    async def execute(_self, _command, **_kwargs):
-        return SimpleNamespace(
-            refusal=None,
-            raw_health={
-                "graph_state": "healthy",
-                "discovery_state": "recovery_needed",
-                "discovery_recovery_required": True,
-            },
-        )
-
-    class Uow:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-    monkeypatch.setattr(server, "_get_agent_ctx", board_ctx)
-    monkeypatch.setattr(RebuildAdmissionGateUseCase, "execute", execute)
-    monkeypatch.setattr(
-        server,
-        "get_unit_of_work_factory_for_mcp",
-        lambda: lambda **_kwargs: Uow(),
-    )
-    tool = server.mcp._tool_manager._tools["okto_pulse_kg_rebuild_preflight"].fn
-    result = json.loads(await tool(board_id="board-1"))
-    assert result["error"] == "board_rebuild_wrong_recovery_scope"
-    assert result["outcome"] == "redirected"
-    assert result["action_required"] == (
-        "call_okto_pulse_kg_global_discovery_recovery_preflight"
-    )
-
-
 class _OutboxStore:
     def __init__(self, rows):
         self.rows = rows

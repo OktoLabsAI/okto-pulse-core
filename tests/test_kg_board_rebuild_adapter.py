@@ -663,15 +663,3 @@ def test_drain_until_idle_hard_ceiling_stops_endless_progress(
 
     assert result["idle"] is False
     assert result["hard_timed_out"] is True
-
-
-
-def test_rebuild_endpoint_is_recovery_only_offline() -> None:
-    endpoint_module = pytest.importorskip("okto_pulse.community.api.kg_rebuild")
-    endpoint = Path(endpoint_module.__file__).resolve().read_text(encoding="utf-8")
-
-    assert "step_adapter=lambda b, g, s: LifecycleStepResult(ok=True)" not in endpoint
-    assert "step_adapter=resolve_graph_lifecycle().apply_step" not in endpoint
-    assert '"recovery_execution_required"' in endpoint
-    assert '"recovery_only_offline"' in endpoint
-    assert "okto-pulse-kg-recovery-only" in endpoint

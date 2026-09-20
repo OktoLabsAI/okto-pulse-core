@@ -1062,40 +1062,6 @@ class CoreKnowledgeGraphOperations:
             include_code_traceability=include_code_traceability,
         )
 
-    async def invoke_rebuild_admission(
-        self,
-        refusal_check: object,
-        board_id: str,
-        *,
-        scheduler_control: object | None,
-    ):  # noqa: ANN201
-        if not isinstance(refusal_check, Callable):
-            raise TypeError("refusal_check must be callable")
-
-        async def health_probe(
-            probe_board_id: str,
-            _context: object,
-            *,
-            scheduler_control: object | None = None,
-        ) -> dict[str, object]:
-            return await self.health(
-                probe_board_id,
-                scheduler_control=scheduler_control,
-            )
-
-        if scheduler_control is None:
-            return await refusal_check(
-                board_id,
-                self.__relational_context,
-                health_probe=health_probe,
-            )
-        return await refusal_check(
-            board_id,
-            self.__relational_context,
-            scheduler_control=scheduler_control,
-            health_probe=health_probe,
-        )
-
 
 __all__ = [
     "CoreKnowledgeGraphOperations",

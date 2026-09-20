@@ -460,7 +460,7 @@ DEFAULT_CORE_TEST_COMMUNITY_RUNTIME_DEPENDENCIES: tuple[
     _rt("tests/test_kg_r7_imp4.py"),
     _rt("tests/test_kg_r7_imp5.py"),
     _rt("tests/test_kg_rebuild_preflight.py"),
-    _rt("tests/test_kg_rebuild_service.py", adapter="okto_pulse.community.api.kg_rebuild"),
+    _rt("tests/test_kg_rebuild_service.py", adapter="okto_pulse.community.adapters.rebuild_audit_storage"),
     _rt("tests/test_kg_s_kg_02_canonical_learning.py"),
     _rt("tests/test_kg_schema_lifecycle.py"),
     _rt("tests/test_kg_schema_vector_extension.py"),

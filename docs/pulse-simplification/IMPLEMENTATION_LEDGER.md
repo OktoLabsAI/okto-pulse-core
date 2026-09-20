@@ -4793,3 +4793,139 @@ ARQ/VER e decisão pendente de leitura histórica permanecem abertos. Sem migra�
 real, release, merge, novas permissões ou declaração de conclusão integral.
 
 Community commit d511302e837475d9398cf5fc7ccb05c5b293e30a. Core registra este incremento e a retomada no ledger; pushes normais em feature/v0.4.0, sem release/merge. Iniciativa integralmente ativa.
+
+
+### 2026-09-20 — F4: retirada pública de board rebuild (validação em andamento)
+
+Base Core 28f536bf / Community d511302, limpa/publicada. Removidos executable
+kg_recovery_only.py, console-script e router kg_rebuild completo, três handlers
+MCP e helper cooperativo exclusivo, RebuildAdmissionGate DTO/use case/exports,
+invoke_rebuild_admission da porta e implementação e os helpers de application/
+kg_rebuild sem consumidor. build_source_store permanece: kg_health_service o
+consome para o censo, com recusa de snapshot incompleto preservada.
+
+Removidas as três permissões da árvore, manifesto de introdução/presets e
+registry MCP; nenhuma concessão nova. Registros persistidos não são reescritos.
+Health preserva diagnóstico recovery_needed e componente/motivo, mas deixa de
+mandar executar a CLI retirada: operator_action=none, limitation explícita.
+Removidas instruções da família em agent_instructions/resources/HelpPanel;
+catálogo regenerado oficialmente. Contagem observada anterior instalada **344**,
+posterior **341**: os testes tinham um ratchet antigo de 340. Conferir diferença
+exata de nomes no par durante validação; não aceitar contagem como prova única.
+
+Testes exclusivos de CLI/transportes retirados; testes mistos preservam schema,
+replay, enumeração, manifestos, serviço interno e outros gates. Revisão detectou
+que uma edição por delimitador tinha englobado o teste R16B de falha parcial:
+restaurado integralmente de HEAD antes de testar, limitando remoção aos 18 lines
+específicos do fingerprint/budget da CLI. Novo teste test_retired_public_rebuild
+cobre router real/OpenAPI, host MCP Community materializado, permissões/presets,
+metadata de instalação e python -m retirado sem tocar bytes/mtimes históricos.
+
+Artefatos em .validation-v040/*f4-public-rebuild*. Produção editada e par de
+wheels construído; instalação/proveniência em andamento. Ainda sem resultado
+comportamental deste incremento. Não commitar/push antes da validação e closure.
+
+
+#### Fechamento deste incremento F4 — prova, falha conhecida e retomada
+
+A superfície pública de **board rebuild** foi retirada nesta alteração. REST:
+sem router/handlers/schemas registrados, requests antigos recebem 404 padrão
+sem ler Board/UoW; o fallback SPA não intercepta /api/. MCP: três tools ausentes
+também no host FastMCP materializado e chamadas retornam Unknown tool antes de
+autoridade/providers. CLI: sem console entrypoint/launcher nem módulo no wheel;
+python -m recusa help/inspect/execute/rehearsal antes de acessar dados existentes.
+O teste preserva bytes/mtimes de SQLite, recibo, metadata Grafx e arquivo legado
+opaco. Não faz upgrade nem interpreta esses arquivos como databases válidos.
+Não há tombstone que redireciona para manutenção alternativa.
+
+A resposta de health mantém recovery_needed e causa, sem autorização de reparo.
+Revisão de transporte detectou que HealthIssue REST ignoraria o campo novo
+limitation: retirado desse issue e incorporado à description já tipada. O teste
+usa a resposta real do serviço e KGHealthResponse para provar componente,
+reason, descrição da limitação e operator_action=none após serialização. Na
+projeção de readiness em dict, next_action=none/limitation não oferece executor.
+Histórico/geração/auditoria e censo de fontes continuam; nenhum registro alterado.
+
+Validação (sem somar rodadas sobrepostas):
+- provenance-f4-public-rebuild.json: 799/316 .py, 864/400 payloads idênticos
+  source→wheel→install antes da rodada inicial.
+- core-f4-public-rebuild.log: **585 passed, 6 failed**, 187,28 s. Falhas:
+  dois testes ainda exigiam rotas retiradas, uma menção de diagnóstico retirada
+  da documentação, contagens antigas de tools/permissões e budget de metadata.
+  As rotas foram cobertas por ausência central; o serviço interno de preflight
+  conserva seus testes. A menção CONTRADICT_PENALTY continua como diagnóstico,
+  sem recomendar tick/rebuild.
+- community-f4-public-rebuild.log: **171 passed, 1 failed**, 148,71 s. Inclui
+  schema R16B/upgrade/replay/falha parcial, regras Grafx/privacidade, demais ACLs,
+  ausência REST/CLI/MCP. Única falha: inventário de schemas fechados esperava45,
+  mas o par anterior já tinha46 (confirmado abaixo); ratchet corrigido para46.
+- frontend-f4-public-rebuild-tests.log: **19 passed**, 11 arquivos, 10,00 s.
+  build tsc/Vite e verify:frontend-dist aprovados: 78 arquivos, tree
+  83c38d44540ddb1b3f61de8995f3e50855fc81ffdf6bd2c78b21672ea9288034.
+- Matrizes README regeneradas pelo renderer oficial, após closure inicialmente
+  reportar somente drift documental. Nenhum budget/exception relaxado.
+- core-f4-public-rebuild-final.log: **194 passed, 3 failed**, 42,46 s. Restavam
+  metadata e duas contagens secundárias (policies338 e ALL_FLAGS596).
+  Rodada counts.log repetiu essas duas falhas porque o script de edição usou cwd
+  incorreto; nenhum arquivo foi modificado por ele. Correção aplicada depois do
+  término: counts-final.log **2 passed**, 1,91 s. As contagens novas preservam
+  igualdade registry/permissions e o teste de ausência verifica as três folhas.
+- community-f4-public-rebuild-final.log: **30 passed**, 72,76 s. Nenhum skip;
+  inclui o host MCP real via Client em memória, não chamada direta de .fn.
+  Não confundir essa prova com E2E HTTP de um runtime Pulse completo.
+- Após ajuste de transporte da descrição, reconstruído/reinstalado o par:
+  provenance-f4-public-rebuild-transport.json **799/316 .py, 864/400 payloads**
+  byte-idênticos. Wheels finais em wheels-f4-public-rebuild-transport:
+  Core SHA256 08b9fb4b8d38045c1eec76861027fdce0286d65f2e00cd851b578602579554b0;
+  Community SHA256 25260b1aeafd0d82bbdc5e5893c279a94982bf902ab72793f95bb2f03100f3d8.
+- core-f4-public-rebuild-transport.log: **7 passed**, 6,21 s. Diagnóstico/DTO REST,
+  causa persistente e recusa de snapshot incompleto pelos consumidores restantes.
+- closure-f4-public-rebuild-transport.json: **ok=true**, findings/docs vazios,
+  oito budgets **0/0**, 7.563 imports Core/1.143 Community→Core/25 dependências.
+  Ruff e diff-check aprovados. Todos os processos de teste encerrados.
+
+**Gate ainda vermelho, explicitamente não relaxado:**
+`test_mcp_resources.py::test_initial_footprint_under_budget`: metadata medida
+**57.457 tokens**, limite **50.800**. Foi reproduzida a situação anterior em venv
+isolada, com os wheels do incremento anterior verificados por SHA e todos os .py
+instalados byte a byte contra o wheel (os mesmos artefatos com source→wheel já
+provado no checkpoint anterior). baseline-f4-public-rebuild-metadata.json:
+**344 tools, 57.705 tokens de metadata, 2.493 de instructions, 46 closed schemas**.
+O par atual tem341 tools. mcp-f4-public-rebuild-delta.json prova diferença exata:
+saíram somente rebuild_preflight/confirm/run e nenhum nome entrou. Não interpretar
+as antigas constantes340/45 como estado real do par anterior. A queda de248 tokens
+é uma medida isolada de metadata, **não benchmark do fluxo completo**. Não houve
+corte de schema tipado, aumento de limite nem remoção do teste para fazê-lo passar.
+A retirada restante de manutenção e a prova de custo do pacote continuam abertas;
+esse gate impede declarar a iniciativa/otimização concluída.
+
+O harness instalado de Global Discovery agora deriva Grafx do pin do pyproject,
+sem importar a CLI removida, e seu inventário esperado foi ajustado ao registry
+observado (341/333, hash b88574861a237b1159358930b705b3d30592bc01b5cf0c61f30a55841edd2412).
+Esse E2E completo **não foi executado** neste incremento. Ainda contém expectativas
+históricas de versão0.3.3 e fluxos de manutenção a retirar; sua revisão faz parte
+própria de F4/validação instalada, não apagar testes de produto para resolver drift.
+
+Próxima frente: família pública Global Discovery recovery (preflight/confirm/run/
+status/cancel/resume) e quarantine restore, depois demais controls/readers por efeito.
+Revisar simultaneamente código interno exclusivo: KGRebuildService não tem mais
+caller produtivo direto; board_rebuild_ingestion/rebuild_effects ainda compõem
+providers e importam legacy_rebuild_reconciliation. Separar esse executor morto
+de tipos/receipts/audit/journals e consumidores de histórico/privacidade/health
+antes de remover. Não manter feature antiga só porque testes a instanciam; não
+apagar schema ou história porque writer saiu. Continuação deve manter o gate de
+metadata visivelmente pendente até resolvê-lo sem reduzir provas/autoridade.
+
+Nenhuma migração real, restart de Pulse ativo, release/merge, alteração de conta
+ou nova permissão. F2A/B/C/D, F3, restante F4 e BASE/KG/DEI/ARQ/VER continuam em
+andamento; este incremento não é conclusão integral nem suspensão do objetivo.
+
+Na conferência anterior ao push, frontend_dist continha 78 arquivos, mas o Git
+versionava somente 76: a regra global *.png excluía os dois logos gerados já
+presentes nos wheels verificados. Acrescentada exceção restrita a
+src/okto_pulse/community/frontend_dist/assets/*.png e incluídos ambos os logos.
+Comparação árvore física versus git ls-tree: 78/78, nenhuma diferença. Não houve
+mudança nos bytes do pacote instalado nem nos hashes/provas acima. O commit
+Community ainda não publicado foi ajustado; nenhum histórico remoto reescrito.
+
+Community commit 84136882b55647e6e297ba1dc1dfddfe291c0c83. Core registra a retirada MCP/ports/permissões, diagnóstico e provas. Pushes normais em feature/v0.4.0; sem release/merge. O gate de metadata permanece aberto, conforme reprodução acima. Iniciativa integralmente ativa.

@@ -187,8 +187,8 @@ async def _non_maskable_items(
             "signal": "persistence_error",
             "last_error": perr,
             "error_text": perr,
-            "next_action": "inspect root_cause then recover the board graph",
-            "remediation": "okto_pulse_kg_rebuild_preflight / WAL recovery",
+            "next_action": "none",
+            "limitation": "The affected graph operations are unavailable.",
             "drill_down_tool": _HEALTH_TOOL,
         })
 

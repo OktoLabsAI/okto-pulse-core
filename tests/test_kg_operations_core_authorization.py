@@ -80,9 +80,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.node.boost", "kg.admin.settings_write"),
     ("kg.operations.settings.read", "kg.admin.settings_read"),
     ("kg.operations.settings.write", "kg.admin.settings_write"),
-    ("kg.operations.rebuild.preflight", "kg.admin.settings_read"),
-    ("kg.operations.rebuild.confirm", "kg.admin.settings_write"),
-    ("kg.operations.rebuild.run", "kg.admin.settings_write"),
     ("kg.operations.quarantine.restore", "kg.admin.settings_write"),
     ("kg.operations.board.erase", "kg.admin.wipe_board"),
 )
@@ -231,9 +228,6 @@ class _KgWriterSpy:
         self._write("queue.connectivity_reprocess")
         return {}
 
-    async def invoke_rebuild_admission(self, *_args: Any, **_kwargs: Any) -> None:
-        self._write("rebuild.admission")
-
 
 class _Uow:
     def __init__(self) -> None:
@@ -325,28 +319,6 @@ _WRITE_CASES: tuple[
         "kg.admin.settings_write",
         False,
     ),
-    (
-        mcp_kg_crud.RebuildAdmissionGateUseCase(),
-        lambda: mcp_kg_crud.RebuildAdmissionGateCommand(
-            BOARD_ID,
-            refuse_fn=lambda *_args, **_kwargs: None,
-            include_health=True,
-        ),
-        "kg.operations.rebuild.preflight",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
-        mcp_kg_crud.RebuildAdmissionGateUseCase(),
-        lambda: mcp_kg_crud.RebuildAdmissionGateCommand(
-            BOARD_ID,
-            refuse_fn=lambda *_args, **_kwargs: None,
-            include_health=False,
-        ),
-        "kg.operations.rebuild.run",
-        "kg.admin.settings_write",
-        False,
-    ),
 )
 
 
@@ -363,8 +335,6 @@ _WRITE_CASES: tuple[
         "integrity-reconcile",
         "dead-letter-reprocess",
         "connectivity-reprocess",
-        "rebuild-preflight",
-        "rebuild-run",
     ),
 )
 async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write(

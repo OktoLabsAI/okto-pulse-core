@@ -499,14 +499,28 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
     assert result["board_graph_queryable"] is False
     assert result["board_graph_recovery_required"] is True
     assert result["primary_health_cause"] == "board_graph_recovery_required"
-    assert result["operator_action"] == "run_local_offline_kg_recovery_executor"
+    assert result["operator_action"] == "none"
     assert any(
         issue["code"] == "board_graph_empty_after_materialized_history"
-        and issue["execution_mode"] == "recovery_only_offline"
-        and issue["recovery_executor"] == "okto-pulse-kg-recovery-only"
-        and "within 2 hours" in issue["remediation"]
+        and issue["operator_action"] == "none"
+        and issue["description"].endswith("The affected graph operations are unavailable.")
+        and "recovery_executor" not in issue
+        and "remediation" not in issue
         for issue in result["health_issues"]
     )
+
+    from okto_pulse.community.api.kg_health import KGHealthResponse
+
+    serialized = KGHealthResponse(**result).model_dump(mode="json")
+    issue = next(
+        item for item in serialized["health_issues"]
+        if item["code"] == "board_graph_empty_after_materialized_history"
+    )
+    assert issue["component"] == "board_graph"
+    assert issue["reason"] == "graph:empty_after_materialized_history"
+    assert issue["description"].endswith("The affected graph operations are unavailable.")
+    assert issue["operator_action"] == "none"
+    assert "recovery_executor" not in issue
 
 
 @pytest.mark.asyncio
@@ -584,7 +598,7 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
         issue["code"] == "board_graph_empty_after_materialized_history"
         for issue in result["health_issues"]
     )
-    assert result["operator_action"] == "run_local_offline_kg_recovery_executor"
+    assert result["operator_action"] == "none"
 
 
 @pytest.mark.asyncio

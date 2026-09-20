@@ -501,9 +501,9 @@ def test_kg_rebuild_build_source_store_uses_registry_reader() -> None:
 
     configure_test_kg_registry(board_source_reader=_Reader())
 
-    from okto_pulse.community.api.kg_rebuild import _build_source_store
+    from okto_pulse.core.application.kg_rebuild import build_source_store
 
-    assert _build_source_store()("b-reg") == [{"artifact_type": "spec", "id": "b-reg"}]
+    assert build_source_store()("b-reg") == [{"artifact_type": "spec", "id": "b-reg"}]
 
 
 def test_source_read_gate_passes_real_core_and_blocks_direct_consumer(

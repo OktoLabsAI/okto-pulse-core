@@ -59,9 +59,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_global_discovery_recovery_preflight` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_global_discovery_recovery_run` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_quarantine_restore` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_rebuild_confirm` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_rebuild_preflight` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_rebuild_run` — docs: `okto-pulse://reference/tool-docs/kg`
 
 ## KG — Operational & health
 - `okto_pulse_kg_canonical_debt_list` — docs: `okto-pulse://reference/tool-docs/kg`
