@@ -7114,3 +7114,90 @@ apenas por executar este check de leitura. F2A/F2C restantes, fontes KG/global
 outbox, F3/F4/F5 e matriz integral permanecem pendentes. Metadata MCP segue com
 última medição 56.024 > 50.800, sem alteração de tools/schema/limite nesta etapa.
 Objetivo integral ativo; classificação: progresso verificado.
+
+### 2026-09-20 — F2D: exclusão de lifecycle composta com recuperação offline
+
+Retomada conferida: Core f30f6999 / Community 6aba3d9, árvores limpas.
+Turno anterior classificado como progresso. A admissão durável precede DDL/
+seeds, mas uma chamada direta à factory concreta ainda não mantinha o lock
+de schema durante todo o lifecycle. O contexto de backup também segurava
+apenas os mutexes de startup, não o mutex SQLite de inicialização.
+
+Em implementação: reentrada de `_serialized_schema_lifecycle` limitada ao
+mesmo caminho canônico, PID, task e lock OS ainda possuído. ContextVar copiado
+para task filha não concede posse; lease expirado é invalidado antes de
+liberar o mutex. Factory concreta mantém a janela durante admissão, schema
+e seeds; `init_db` Community pode compor essa chamada sem aquisição duplicada.
+
+Novo contexto interno `joint_recovery_lifecycle_window` recebe o runtime
+Community explícito, deriva dele a fonte SQL, exige captura de routing/storage,
+adquire exclusão de schema antes do backup e mantém schema/startup durante o
+corpo offline. Não é coordenador completo nem token reutilizável de autoridade.
+Writers raw SQL/Grafx, retenção externa de receipts, retomada e certificado
+terminal continuam necessários. Nenhuma API/CLI/frontend/Core de produto muda.
+
+Testes preparados de reentrada e bloqueio por outro processo, tasks filhas com
+contexto vivo/expirado, banco diferente, cancelamento, três entrypoints reais
+de lifecycle e recuperação v4 com erro no corpo. Nenhum teste comportamental
+antes de rebuild/install/prova do par. Nenhum dado real alterado.
+
+Validação em curso: `provenance-lifecycle-window.json` aprovado (810/330 .py,
+875/414 payloads idênticos fonte/wheel/install). `closure-lifecycle-window.json`
+ok=true, findings/documentation_findings=[], oito budgets 0/0; matrizes não
+mudaram. Primeira suite nova: 8 passed / 1 failed (48,96 s). Os oito casos de
+posse/reentrada/cancelamento/entrypoints passaram; falha na preparação do loop
+do teste integrado, antes do corpo: fixture síncrona existente usa asyncio.run
+e fecha o loop que pytest-asyncio tentava reutilizar no Python 3.13. Corrigido
+somente o teste para dirigir sua coroutine com asyncio.run após a fixture.
+Produto sem alterações desde o preflight; nova suite completa e regressões
+existentes em execução, sem reinstalar enquanto os processos estão vivos.
+
+Fechamento da janela compartilhada de lifecycle:
+- Community **b4ff0790675f50900fe38e1412f6237acbb250ed**: mutex de schema
+  reentrante somente para a task/processo que mantém o lock OS no mesmo caminho.
+  Posse não é herdada por ContextVar nem preservada depois da saída. O
+  orquestrador concreto agora mantém esse mutex durante admissão, região de
+  schema e bootstrap, inclusive quando chamado diretamente pelo Core seam;
+  o entrypoint Community continua usando o mesmo lock sem aquisição duplicada.
+- `joint_recovery_lifecycle_window` deriva o SQL do runtime Community explícito
+  e mantém a exclusão de lifecycle antes/durante backup verificado v4, além
+  da exclusão de startup durante o corpo. Exige routing/storage; runtime em
+  memória não pode ser apresentado como fonte de backup de arquivo durável.
+- `lifecycle-window-new-final.log`: **11 passed** (81,98 s), nas suites
+  `test_schema_lifecycle_reentry.py` e `test_joint_recovery_lifecycle_window.py`.
+  Cobrem reentrada sem liberação antecipada, task filha com contexto vivo e
+  expirado, banco diferente, cancelamento da task proprietária, mutex mantido
+  por todos os três entrypoints até os seeds e janela integrada v4 com saída
+  normal/erro. Outro processo tenta adquirir os locks reais nos pontos críticos.
+- `lifecycle-window-regression.log`: **42 passed** (335,63 s), suites
+  `test_sqlalchemy_database_lifecycle_lock.py`,
+  `test_r01c_imp4_schema_lifecycle_orchestrator.py`,
+  `test_retirement_runtime_admission.py` e `test_joint_recovery_window.py`.
+  Total selecionado distinto: **53**; os oito casos iniciais verdes não são
+  recontados. Sem mudança de UI/REST/MCP ou necessidade de rebuild da SPA.
+- `provenance-lifecycle-window.json`: 810/330 .py e 875/414 payloads idênticos
+  fonte/wheel/install antes dos testes, origens do verificador em site-packages.
+  Pytest usa checkouts provados idênticos. Correção posterior foi somente do
+  loop de teste, sem alteração de produto ou reinstall com checks ativos.
+- `closure-lifecycle-window.json`: ok=true, findings/documentation_findings=[],
+  oito budgets 0/0. Matrizes READMEs permanecem 7.548/1.172 imports e 25 deps.
+  Core de produto inalterado; nenhum mecanismo concreto deslocado para ele.
+- Wheels em `.validation-v040/wheels-lifecycle-window`, SHA256:
+  Core ab4a2d7aa51433b25cd18462df2db1d6e15546d6473ea2e649093c7f9ecddde9;
+  Community 082d72b7168449734132efb46e87554fd1987cf5bf1c9bb6b38f93244fe854cc.
+- Ruff e staged diff --check aprovados. Todos os handles de build/install/
+  testes/closure terminaram antes do commit. Somente fixtures descartáveis;
+  nenhum runtime real ou dado de usuário alterado. Push normal do par em
+  feature/v0.4.0 será conferido com ls-remote e working trees limpas.
+
+Continuidade: o coordenador pode agora manter a mesma exclusão de schema e
+startup desde a captura original até as etapas offline. Próximo trabalho é
+compor essa janela com checkpoint/cleanup de permissões, arquivo/grants, plano
+de disposições e journal de dados, retendo backup/inputs/receipts externamente
+para retomada sem recapturar estado transformado. Não chamar a captura de um
+novo backup como substituto do original em replay. Os contexts não são um
+certificado terminal nem uma exclusão de writers raw SQL/Grafx. Remoção de
+fontes KG/global outbox, corte de schema e F3 devem validar a conclusão integral
+antes de admitir startup. F2A/F2C restantes, F3/F4/F5, matriz integral e gate
+global MCP (última medição 56.024 > 50.800, inalterado) continuam pendentes.
+Objetivo integral permanece ativo; classificação desta etapa: progresso.
