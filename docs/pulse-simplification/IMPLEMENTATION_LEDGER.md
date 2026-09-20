@@ -6903,3 +6903,91 @@ operação pública de manutenção. F2A/F2C restantes, F3/F4/F5 e matriz integr
 BASE/KG/DEI/ARQ/VER/ADV continuam pendentes. Gate global MCP segue com última
 medição 56.024 > 50.800, sem mudança de tools/schema nem aumento do limite.
 Objetivo integral permanece ativo; classificação desta etapa: progresso.
+
+### 2026-09-20 — F2D: mesma janela de startup para backup e transformações
+
+Retomada conferida: Core 8c206ef8 / Community 3b1e490, árvores limpas.
+Turno anterior: progresso verificado e publicado. O helper de backup soltava
+os mutexes de startup ao retornar; não permitia ao instalador manter a mesma
+janela durante transformações sem tentar adquirir novamente os locks.
+
+Em implementação: `joint_recovery_window`, contexto interno Community que
+adquire a janela uma vez, captura e verifica integralmente o recovery set,
+então cede o artefato mantendo os mutexes até saída do corpo (inclusive falha).
+O helper avulso existente delega a esse contexto e conserva a liberação ao
+retornar. A captura privada não cria token reutilizável ou flag de confiança.
+Reservas SQL/locks de publicação da captura são liberados antes do corpo,
+permitindo transações posteriores; a exclusão de startup continua ativa.
+
+Testes preparados: outro processo tenta adquirir ServeInstanceLock durante
+publicação, verificação e corpo; mutações SQL/Grafx/arquivo seguidas de restore
+do backup v4 em destino novo, com saída normal e falha; falha de export ou
+artefato adulterado antes de yield impede o corpo; runtime vivo impede captura.
+Ainda sem testes comportamentais antes do build/install/prova byte a byte.
+
+Limites explícitos: não exclui writers nativos Grafx/raw SQL; não faz rollback
+automático, não preserva mutex após morte do processo e não implementa admission
+durável de startup com cutover incompleto. Esses requisitos permanecem no
+coordenador F2D/F3. Nenhuma API/CLI/manutenção pública, mudança de autoridade,
+frontend ou dado real; toda a mecânica continua no Community.
+
+Validação em curso: `provenance-recovery-window.json` aprovado antes dos testes
+(810/329 .py, 875/413 payloads; fontes/wheels/install idênticos). Os cinco casos
+novos passaram em 127,66 s, `recovery-window-new.log`, incluindo restauração
+real do conjunto v4 após modificar SQL/Grafx/arquivo no corpo. Closure
+`closure-recovery-window.json`: ok=true, findings/documentation_findings=[],
+oito budgets 0/0 e matrizes README inalteradas. Regressões existentes ainda em
+execução no mesmo processo; sem alteração/reinstalação de produto em paralelo.
+
+Próxima integração identificada no código atual: `cli.cmd_serve` e `main.run`
+adquirem `acquire_serve_lock` antes dos servidores, enquanto
+`CommunityRelationalSchemaLifecycle.initialize_schema` executa a região de
+schema antes dos seeds. Nenhum desses caminhos consulta ainda uma admissão
+durável de cutover incompleto. Ela terá de preceder inicialização/mutação e
+coordenar os caminhos de instalação/retomada; uma exceção no corpo do contexto
+libera o mutex e não equivale a autorização para servir o ambiente parcial.
+
+Fechamento da composição backup/janela:
+- Community **f8f624c52e534f3542a2e923056434a556412b7a**: contexto
+  `joint_recovery_window` mantém a mesma exclusão de startup entre captura,
+  verificação integral e corpo do instalador. `create_joint_recovery_snapshot`
+  usa esse caminho e devolve um backup verificado, liberando ao retornar como
+  antes. Não duplica aquisição dos mutexes nem deixa a reserva SQL da captura
+  impedir as transações do corpo. Nenhuma alteração no Core de produto.
+- `recovery-window-new-final.log`: **5 passed** (122,54 s). Após a primeira
+  rodada verde, revisão acrescentou asserção explícita de propagação da falha
+  do corpo (não apenas liberação dos locks); nenhum código de produto mudou.
+  A primeira execução de cinco casos não entra de novo na contagem.
+- `recovery-window-regression.log`: **42 passed** (391,04 s), suites
+  `test_joint_recovery_snapshot.py` e `test_migration_runtime_fence.py`.
+  Total selecionado distinto: **47**. Sem alteração de superfície frontend.
+- Os casos novos usam processos reais tentando `ServeInstanceLock` durante
+  publicação/verificação e antes/depois das transformações. Ainda dentro do
+  corpo, novas transações SQL/Grafx e aquisição de publicação são possíveis;
+  runtime cooperante permanece bloqueado. Restore v4 em destino novo recupera
+  o SQL original, fingerprints dos dois escopos Grafx e bytes dos arquivos.
+  Falha antes de yield impede o corpo; falha no corpo propaga e preserva o
+  backup, sem fingir rollback automático. Runtime vivo impede iniciar captura.
+- `provenance-recovery-window.json`: 810/329 .py e 875/413 payloads idênticos
+  fonte/wheel/install antes de testes; imports do verificador em site-packages.
+  Pytest usa checkouts provados idênticos; subprocessos usam o mesmo Python/par.
+  Sem reinstalação ou alteração de fonte de produto durante os checks.
+- `closure-recovery-window.json`: ok=true, findings/documentation_findings=[],
+  oito budgets 0/0; matrizes README inalteradas (7.548/1.171 imports, 25 deps).
+- Wheels em `.validation-v040/wheels-recovery-window`, SHA256:
+  Core dcbaff8dd1bffcee358fa236e407c26c3f64cf0d459329319fe3f1ff4ab01363;
+  Community b8de85003b3513ecc1bad2a3cdf878777dfe727bad7e38d8e489ba7c5e09b5b1.
+- Ruff e staged diff --check aprovados. Todos os processos desta etapa
+  terminaram antes do commit. Sem runtime real iniciado/reiniciado, alteração
+  de dados reais ou registro de migração no bootstrap. Push normal do par será
+  conferido com ls-remote em feature/v0.4.0, sem merge/tag/release.
+
+Continuidade: compor este contexto com checkpoint de permissões, captura/
+grants e `RetirementDataRun`, retenção externa dos receipts/backup e admissão
+durável que impeça servir cutover interrompido. Retomada não deve criar outro
+backup da fonte parcialmente transformada como se fosse o original. Exclusão
+de writers Grafx, fontes KG/global outbox, cleanup de permissões, corte de
+schema e remoção F3 permanecem no mesmo fluxo; não registrar parcialmente no
+lifecycle. F2A/F2C restantes, F3/F4/F5, matriz integral e gate global MCP
+(última medição 56.024 > 50.800, sem alteração nesta etapa) continuam pendentes.
+Objetivo integral ativo; esta publicação é progresso, não conclusão de F2D.
