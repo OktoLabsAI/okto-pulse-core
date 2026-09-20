@@ -4236,3 +4236,86 @@ ativa; este checkpoint é progresso, não conclusão.
 Community commit `d0b9336411552fb9ebd5579d72a75d7d247d3495`; Core deste checkpoint
 altera somente este ledger. Ambos serão enviados à `feature/v0.4.0`, sem release
 ou merge. A próxima retomada começa pela reconciliação SQL/objetos descrita acima.
+
+### 2026-09-20 — F2A, referências SQL reconciliadas com uploads preservados
+
+Partida: Core `336af08c`, Community `d0b9336`, árvores limpas; turno anterior
+classificado como progresso verificado. Sem mudança da decisão pendente de
+autoridade do leitor histórico.
+
+Community `adapters/recovery_storage_references.py` cruza os dois consumidores
+confirmados: `attachments` (owner via Card/Board) e eventos
+`historical_archive.created` (owner do evento). Exige transação relacional do
+chamador, tabelas físicas, PKs e FKs esperadas. Usa LEFT JOIN para não apagar
+órfãos do resultado e recusa owner ausente, população de Boards divergente,
+paths relativos/fora do root/nested/de outro Board, objeto ausente, tamanho
+divergente e hash histórico divergente. Não repara rows ou bytes para passar.
+
+O manifesto do storage é autenticado/verificado antes do cruzamento. Paths são
+comparados lexicalmente ao root registrado; o verificador não abre a origem
+viva nem resolve paths relativos contra cwd. Attachments não possuem hash SQL:
+o certificado registra o hash observado no objeto preservado, sem inventar um
+hash histórico autoritativo. Arquivos históricos possuem hash e tamanho na row
+do evento, que precisam coincidir com o objeto. Valida os formatos históricos
+v1/v2/v3 e shape fechado do payload, rejeitando chaves duplicadas/non-finite e
+tipos inválidos. O hash do texto JSON bruto participa do certificado; não há
+reescrita/canonicalização das rows históricas armazenadas.
+
+Limites compartilhados de 100.000 rows (Boards/referências), 64 MiB de campos
+selecionados e 1 MiB por célula. Tamanhos e contagens são medidos em SQL antes
+da materialização; leitura iterada e deadline cooperativo. Não é cancelamento
+preemptivo de uma consulta SQL ou syscall. Arquivos sem referência continuam
+copiados: certificado separado de contagem/hash, sem conceder owner/ACL. Markers
+de lifecycle não são classificados como objetos de conteúdo sem referência.
+
+Captura com uploads agora produz `joint-recovery-snapshot/v4`, com certificado
+compacto `relational-storage-reconciliation/v1`. Executa o cruzamento sob a mesma
+reserva SQL e intervalo de LSNs estáveis. Verificação offline reabre somente a
+cópia SQL autenticada, em modo read-only/immutable, e recalcula o certificado
+contra o storage preservado. Compara serialização tipada, distinguindo `true`
+de `1`. v1/v2/v3 continuam legíveis com suas garantias anteriores; a futura
+composição do instalador deve exigir a evidência vigente, sem omitir uploads ou
+aceitar formato antigo como se tivesse a garantia nova.
+
+Validação em `PULSE_REFACTOR/.validation-v040`:
+- `provenance-f2a-storage-references.json`: par reconstruído/reinstalado após a
+  última mudança de produção; **804/323 .py**, **869/407 membros**, fontes/wheels/
+  install byte a byte, PYTHONPATH pareado e processos novos. Core wheel SHA256
+  `cb870d60059e5c4308e4fab09e1a84cefc69fb558e2591502337bbd1fd58eadf`;
+  Community `be17bdd5d09b25b5573c14f490625a3fb3fbf199fd726bbde69208f6abc438d7`.
+- Testes: `test_recovery_storage_references`, `test_joint_recovery_snapshot`,
+  `test_storage_recovery_snapshot`, `test_sprint_retirement_archive`.
+  `community-f2a-storage-references.log`: **94 passed**, 384,94 s, nenhuma falha
+  ou skip. Inclui origem offline, schema/writer histórico reais, igualdade SQL
+  antes/depois, owners órfãos/cross-Board, paths ilegítimos/ausentes, hash/tamanho,
+  payload fechado, limites, drift físico de FK/tabela, certificado adulterado
+  (inclusive boolean no lugar de count), leitura v3 compatível e recusa de todo
+  o conjunto v4 quando referências divergem. Guards de apagamento continuam verdes.
+- `closure-f2a-storage-references.json`: **ok=true**, findings de código/docs
+  vazios, oito budgets **0/0**, **7.619/1.251 imports**, 25 dependências.
+  Ruff/diff-check aprovados.
+
+As fixtures de reconciliação distinguem consistência física de semântica do
+conteúdo. A integração de schema completo usa o writer real do arquivo histórico
+e um attachment real; os cenários mínimos usam blobs opacos para isolar paths,
+hashes, limites e owners. O certificado não substitui a validação substantiva do
+arquivo histórico, sua imutabilidade nem autorização de leitura por seção.
+
+Continuam pendentes exclusão completa de writers/bindings, preservação de gerações
+KG inativas/outros arquivos, retenção dos backups, integração interna do instalador
+e rollback, conteúdo substantivo, leitor autorizado, F2B/F2C/F3 e demais requisitos
+BASE/KG/DEI/ARQ/VER. Sem alteração de UI/MCP ou permissão, migração de dados reais,
+promoção de bindings ou runtime relocado pronto. Iniciativa ativa; progresso,
+não conclusão.
+
+Investigação para a próxima frente: `CommunityGraphBackendBindingStore` publica
+inicialização e CAS sob `FileLock(<binding>.lock)` em `_publish_initial` e
+`_publish_compare_and_swap`; a inicialização cria o diretório pai antes do lock.
+Portanto, compor exclusão de publicação requer considerar tanto rotas existentes
+quanto ausentes e evitar criar uma rota vazia apenas para tomar um lock. Essa
+leitura não prova exclusão dos writers nativos ou substituição arbitrária de
+diretórios. Revalidar guards/lifecycle e consumidores antes de escolher a janela
+de cutover; não promover a detecção atual de drift a uma garantia de exclusão.
+
+Community commit `1c754d8d1c12325eb7b5cef2c452d05d077976cd`; Core deste checkpoint
+altera apenas este ledger. Pushes normais à `feature/v0.4.0`, sem release/merge.
