@@ -4413,3 +4413,97 @@ Community commit `f3897db267eacc7aa6ebc6cf1c3b7c738cca39e1`; Core deste checkpoi
 atualiza somente este ledger. Pushes normais à `feature/v0.4.0`, sem release/merge.
 Próxima retomada: participação de entrypoints durante toda a operação e mutadores
 físicos, preservando os fences de autoridade existentes. Iniciativa não concluída.
+
+### 2026-09-20 — F4, retirada de reset e diagnóstico CLI com inicialização
+
+Partida: Core `cdd5bb0b`, Community `f3897db2`, ambos limpos e publicados.
+Autenticação GitHub confirmada em `jpbraga`; não foi necessário `gh auth switch`.
+O mandato F4 do plano-base permite esta frente em paralelo à retirada de Sprint,
+com release condicionado à compatibilização da migração. A iniciativa permanece
+integralmente ativa; este checkpoint não encerra F4 ou a exclusão de writers.
+
+Classificação por efeito e consumidores reais:
+- `reset`: apaga SQLite/uploads/grafos e re-semeia. Removidos parser, handler e
+  `commands/reset_graphs.py`; o módulo só era consumido por esse handler e seus
+  testes. Não restou alias/flag/handler escondido de reset.
+- `verify-pipeline`: apesar de descrito como diagnóstico, chamava `init_db`,
+  registrava o lifecycle relacional e compunha o KG antes das cinco consultas.
+  Removidos parser e handler. As funções de `core.kg.health` permanecem porque
+  `services/queue_health_service.py` ainda as consome; sua pureza completa exige
+  auditoria própria, não foi inferida da classificação de reader.
+- `cmd_init(..., owned_serve_lock=...)`: o único consumidor da exceção era reset.
+  Uma hipótese inicial de uso por serve foi refutada pela busca em src/tests.
+  Removidos parâmetro e ramo exclusivo; init sempre passa pelo guard original.
+  Testes cobrem recusa com lock real e rejeição do antigo argumento. Não houve
+  ampliação de autoridade nem relaxamento do guard.
+
+Incompatibilidade da CLI: comando desconhecido, exit 2, antes de settings ou
+qualquer dispatch, inclusive opções antigas e `--help`. Testes novos exercitam
+reset simples/--yes/--help e verify-pipeline com Board/--json/--help; o launcher
+instalado roda em processo novo, sem PYTHONPATH, contra diretório ausente ou
+fixtures opacas de SQL/uploads/binding/grafo. Comparam presença, bytes e mtimes
+antes/depois. Fixtures opacas não pretendem certificar um banco real: demonstram
+que o comando recusado sequer precisa abri-lo. Help preserva setup, serve,
+status, investigação de código, métricas e credenciais.
+
+Testes antigos de execução de reset foram retirados por especificarem uma
+capacidade agora proibida; não foram transformados em skips nem contados como
+aprovações. Regressões de status/métricas/migração no arquivo misto de closeout
+foram preservadas. README/CLAUDE não oferecem os comandos retirados. O documento
+histórico de setembro 13 conserva os resultados antigos, com aviso explícito de
+que reset foi retirado. O guia corrente de health foi substituído por observação
+local com limites explícitos: status não certifica integridade/currency do KG.
+Saíram receitas de UPDATE de filas, remoção de locks e chamada direta de workers,
+além da premissa obsoleta Kùzu. Nenhuma mudança de frontend ou contratos MCP/REST;
+não há alegação de ausência de manutenção nesses outros transportes.
+
+Pré-validação em `PULSE_REFACTOR/.validation-v040`:
+- `closure-f4-cli-retirement.json`: nenhum finding de código, oito budgets 0/0;
+  somente duas matrizes README divergentes após a redução de imports.
+  Regeneradas com o renderer oficial; nenhuma exceção/budget foi alterada.
+- `provenance-f4-cli-retirement-final.json`: reconstrução/reinstalação após a
+  remoção do parâmetro exclusivo; 804/322 arquivos .py, 869/406 membros de payload,
+  source→wheel→install idênticos byte a byte, inclusive ausência do módulo apagado.
+- `community-f4-cli-retirement.log`: **130 passed**, 91,37 s, nenhuma falha
+  ou skip. Suíte: comandos retirados, admissão init, closeout misto, init/serve/
+  status/version, métricas, serve-lock, Code Traceability CLI, contributor contract
+  e credential handoff. Inclui init com Grafx real na suíte existente.
+- `closure-f4-cli-retirement-final.json`: **ok=true**, findings de código/docs
+  vazios, oito budgets **0/0**, 7.619 imports Core, 1.249 Community→Core,
+  25 dependências. A remoção não introduziu mecanismo no Core.
+- Wheels finais: Core SHA256
+  `b55cb83e8f1635a4ed503dfc94af834ee2566721dd739239cd6f756d667a687d`;
+  Community `43ea2ce595b37d30cfadec8e0394198b37c569134aed4fa0baf7e9d788c52140`.
+- Ruff e diff-check aprovados. Nenhuma alteração de fonte produtiva durante os
+  testes finais; todos os processos de validação encerraram com exit 0.
+
+Próxima frente F4, inventário já investigado mas ainda sem retirada:
+`kg migrate-schema/backfill/dedup-entities/proposals/unmerge/export/subtype declare/restore`,
+`commands/kg_migrate_schema.py`, executor `kg_recovery_only.py` e seu console-script.
+Proposals aqui é curadoria de manutenção; export é backup JSON-LD de grafo.
+O executor não tem consumidor src demonstrado além de sua entrada própria;
+`api/kg_rebuild.py` e resources operacionais ainda instruem seu uso. Retirá-lo
+exige coordenar a remoção/tombstone sem ação de preflight/confirm/run, testes de
+REST e instruções na UI; features que toquem frontend devem ter testes frontend.
+Não basta apagar apenas o console-script deixando a feature chamável.
+
+Dependências de testes do executor a revisar sem apagar cobertura independente:
+`test_community_grafx_only` tem um teste de recusa de arquivo legado do executor,
+mas também testes reais de resolver/privacidade que permanecem;
+`test_r16b_relational_schema_migrator` importa o executor dentro da certificação
+terminal e precisa conservar a prova de schema;
+`test_global_discovery_recovery_installed_e2e` usa seu EXPECTED_GRAFX_VERSION
+(a dependência declarada atual é okto-grafx[accel]==0.0.7).
+Também foi encontrado `python -m ...commands.materialize_legacy_fr_ac`: aceita
+--dry-run=false e escreve FR/AC por actor de migração, sem fence de runtime.
+Esse entrypoint distribuído deve entrar na classificação por efeito, preservando
+materialização interna legítima quando houver consumidor demonstrado.
+
+Continuam pendentes todas as demais superfícies F4, migração F2A/B/C/D e remoção
+atômica F3, leitor histórico autorizado, writers/mutadores físicos/gerações inativas,
+instalador/rollback e requisitos BASE/KG/DEI/ARQ/VER. Nenhuma migração de dados reais,
+parada/restart de runtime, promoção de binding, release ou mudança de permissão.
+
+Community commit `5b7d56a`; Core altera somente este ledger e a matriz README
+gerada. Pushes normais à feature/v0.4.0; sem release/merge. Retomar pelo inventário
+F4 acima, mantendo o objetivo integral e as pendências de migração.
