@@ -5846,3 +5846,89 @@ por origem, administração histórica sem ampliação de autoridade, imutabilid
 DB dos grants, seções próprias de Card/Spec, transformação e cutover completos.
 Não tratar esta correção como conclusão de F2/F3. Metadata ainda **55.859 >
 50.800**; o escopo completo DEI/ARQ/VER/KG permanece no objetivo ativo.
+
+### F2/F3 — checkpoint de classificação e gate de paridade (em implementação)
+
+Investigados os três resolvedores Community e a reconciliação de bootstrap.
+permission_introduction_audit já registra review, mas gateways não o consultam:
+um recibo antigo sozinho não impede reinterpretar um documento após retirar
+folhas. Não converter esse log implicitamente em override de autoridade.
+
+Adicionada porta pública permission_retirement: captura imutável das 599 decisões
+originais, owner_review_required e motivo, usando o mesmo avaliador congelado
+v0.3.4 da captura de arquivo. Hash/blob de origem explícito, parser fechado,
+booleanos estritos. Gate exige identidade de cada decisão sobrevivente e da
+classificação de review; a lista declarada de retiradas deve explicar exatamente
+a diferença do registry vivo. Não aceita comparar somente flags convenientes,
+introduzir flags novas ou substituir review por um documento all-False comum.
+O módulo congelado/hash não foi alterado; facade compartilha sua resolução.
+
+Community captura um checkpoint no journal permission_introduction_audit existente,
+fase separada permission_retirement_capture, sem nova tabela/modelo no Core.
+BEGIN IMMEDIATE engloba fonte e journal. Inclui contexto global de cada agente
+(também inativo/sem Board) e contexto de cada binding, identidade/creator/realm,
+classificação de review e fonte sem credenciais. Projeções SQL não carregam
+api_key/hash/nome. Limites de entrada, contextos e bytes de evidência; UUIDs
+determinísticos, manifesto e hashes. Retomada com recibo externo detecta journal
+parcial, alterado ou completamente removido, sem recriar evidência. Leitura
+verifica recibo mesmo após a fonte mudar; recaptura com fonte distinta falha.
+Rotação de credencial não muda provenance; falha de insert reverte tudo.
+
+Não conectado a bootstrap nem usado para executar migração de dados reais.
+Este checkpoint é evidência pré-cutover, não uma permissão ou override ativo.
+A limpeza ainda precisa consumir a classificação persistida e preservá-la em
+todos os resolvedores, incluindo agentes inativos reativados e revisão de
+preset/Board, antes de remover os dados antigos. Nenhuma decisão de autoridade
+nova, edição de policy real, redução de gate ou autorização por board.read.
+
+Testes adicionados para ambiguidade de snapshot menor, legacy vazio, review
+por shape retirado inválido, separação global/Board, perda de grants/negações,
+parser, provenance/replay, exclusão total com recibo, limites e rollback SQLite.
+Ruff aprovado. Build pareado, prova byte a byte, testes e closure pendentes.
+
+Validação deste incremento:
+- provenance-permission-checkpoint.json e, após matrizes README geradas,
+  provenance-permission-checkpoint-publish.json: **802/320 .py, 867/404
+  payloads**, fonte/wheel/install byte a byte; origens em site-packages.
+- Core inicial: 358 passed / 2 failed. Corrigidas expectativas novas que
+  passavam preset incompleto ao resolvedor efetivo e ignoravam as negações de
+  capacidades introduzidas ausentes num teto Board esparso. Nenhuma mudança
+  na policy para acomodar testes. core-permission-checkpoint-final.log:
+  **360 passed**, 12,51 s, incluindo os golden cases da captura existente.
+- Community inicial: 10 passed / 12 failed por fixture sem api_key_hash
+  obrigatório. Após corrigir fixture, 21 passed / 1 failed: assert confundia
+  nome de permissão agent.api_key.rotate com campo de credencial. Corrigido
+  para testar campos/valores reais, mantendo o nome canônico na evidência.
+  Acrescentadas provas de writer concorrente bloqueado pelo BEGIN IMMEDIATE,
+  binding órfão/realm estrangeiro sem publicação parcial. Rodada final:
+  community-permission-checkpoint-publish.log **25 passed**, 43,90 s.
+- Frontend: primeira seleção tinha caminhos incorretos (nenhum teste rodou).
+  Caminhos reais descobertos; frontend-permission-checkpoint.log: **31 passed /
+  2 arquivos**, 3,67 s, usePermissions.stateful e HistoricalArchivesPanel.
+  Nenhuma alteração de frontend/SPA neste incremento; payload preservado.
+- closure-permission-checkpoint.json: findings vazios, budgets 0/0, somente
+  drift documental. Renderer oficial atualizou ambos READMEs para **7.508
+  imports Core / 1.149 Community→Core / 25 dependências**. Closure final pendente.
+- Wheels finais em wheels-permission-checkpoint-publish, SHA256:
+  Core 10d1b36ee96cc48eaf5aab570ecac7863c4dd5aef455da5e7f66aacb134a8b7a;
+  Community 385217ce181724e31d2002d91cf817c2bedcfdfe3f03c027259b5119dc46b9ca.
+  Python permaneceu idêntico entre o par inicial testado e o par final; só
+  README mudou no payload. Testes SQLite finais executados após prova final.
+
+Retomada: integrar o checkpoint e o gate ao coordenador F2/F3, com recibo
+persistido fora da mutação candidata. A classificação ainda deve ser consumida
+pelos três resolvedores e pelo fluxo de revisão do owner, antes da limpeza de
+flags/presets/ceilings. Não liberar review por diferença de hash nem por simples
+reconciliação de bootstrap. Preservar identidade/atividade, vínculos e contexto
+global/Board separadamente; o PermissionSet isolado não prova essas propriedades.
+Grants históricos/arquivos e suas pendências de administração/MCP/imutabilidade
+continuam no mesmo plano. Metadata permanece 55.859 >50.800; objetivo ativo.
+
+closure-permission-checkpoint-publish.json final: **ok=true**, findings e
+documentation_findings vazios, oito budgets 0/0; 7.508/1.149 imports e 25
+dependências. Ruff e staged diff --check aprovados. Todos os processos de build,
+testes e auditoria encerrados. Community commit
+**7426c5e699e4489f1c911775263393c83b8a701e**; Core publica neste commit a porta,
+gate de paridade, refactor da facade congelada, testes e ledger. Push normal
+pareado na feature/v0.4.0; sem migração de dados reais, mudança de policy real,
+restart do Pulse, release, tag ou merge. Pendências de integração acima mantidas.

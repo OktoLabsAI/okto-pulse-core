@@ -1,8 +1,8 @@
 """Migration-only v0.3.4 authority, independent from the current live registry.
 
-Inputs are edition-loaded facts, without credentials. This facade returns only
-archived section decisions; it cannot authorize live operations or grant access
-to a Board. Keep activity, realm and membership checks in the capture boundary.
+Inputs are edition-loaded facts, without credentials. The outputs are archival
+decisions and migration evidence, never a live authorization context. Keep
+activity, realm and membership checks in the capture boundary.
 """
 
 from dataclasses import dataclass
@@ -36,6 +36,16 @@ def resolve_historical_archive_sections_v034(
     *, agent_flags: object, legacy_permissions: object, preset_id: str | None,
     presets: tuple[HistoricalArchivePresetFacts, ...], board_overrides: object,
 ) -> ArchiveReadSections:
+    """Capture only the four old section decisions, without live authority."""
+    return _sections(_resolve_agent_v034(agent_flags=agent_flags,
+        legacy_permissions=legacy_permissions, preset_id=preset_id,
+        presets=presets, board_overrides=board_overrides))
+
+
+def _resolve_agent_v034(
+    *, agent_flags: object, legacy_permissions: object, preset_id: str | None,
+    presets: tuple[HistoricalArchivePresetFacts, ...], board_overrides: object,
+) -> historical.PermissionSet:
     """Reproduce the v0.3.4 agent gateway's resolution and owner-review decisions.
 
     Unknown/partial direct documents remain denied. Empty legacy lists retain
@@ -65,5 +75,5 @@ def resolve_historical_archive_sections_v034(
         lineage = historical.resolve_permission_preset_lineage(preset_id, tuple(
             historical.PermissionPresetLineageNode(item.id, item.flags, item.base_preset_id) for item in presets))
         preset_flags, review, reason = lineage.flags, lineage.owner_review_required, lineage.review_reason
-    return _sections(historical.resolve_permissions(direct, preset_flags, board_overrides,
-        owner_review_required=review, review_reason=reason))
+    return historical.resolve_permissions(direct, preset_flags, board_overrides,
+        owner_review_required=review, review_reason=reason)
