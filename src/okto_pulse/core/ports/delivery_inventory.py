@@ -9,12 +9,17 @@ runtime provider, cache or registration side effect.
 from typing import Protocol
 from okto_pulse.core.domain.effective_delivery_inventory import EffectiveDeliveryInventory
 
-from okto_pulse.core.domain.delivery_evidence import DeliveryObligation
+from okto_pulse.core.domain.delivery_evidence import DeliveryObligation, DeliveryEvidenceSnapshot
+from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryCoverage, ScopedImplementationFact, ScopedTestFact
 from okto_pulse.core.domain.delivery_inventory import DefaultDeliveryInventoryPolicy
 from okto_pulse.core.domain.implementation_responsibility import ImplementationResponsibilityPlan
 
 
 class DeliveryInventoryPolicy(Protocol):
+    def effective_coverage(self, *, inventory: EffectiveDeliveryInventory, snapshot: DeliveryEvidenceSnapshot,
+                           implementations: tuple[ScopedImplementationFact, ...], tests: tuple[ScopedTestFact, ...],
+                           admitted_methods: frozenset[str] | None) -> EffectiveDeliveryCoverage: ...
+
     def effective_inventory(self, *, spec: object, cards: list[dict], qualification: dict) -> EffectiveDeliveryInventory: ...
 
     def spec_obligations(self, spec: object) -> tuple[DeliveryObligation, ...]: ...

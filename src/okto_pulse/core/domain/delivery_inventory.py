@@ -143,6 +143,11 @@ def card_delivery_inventory(spec: object, card: object) -> tuple[DeliveryObligat
 class DefaultDeliveryInventoryPolicy:
     """One domain implementation for adapters, projections and lifecycle gates."""
 
+    def effective_coverage(self, *, inventory, snapshot, implementations, tests, admitted_methods):
+        from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_delivery_coverage
+        return evaluate_effective_delivery_coverage(inventory=inventory, snapshot=snapshot,
+            implementations=implementations, tests=tests, admitted_methods=admitted_methods)
+
     def spec_obligations(self, spec: object) -> tuple[DeliveryObligation, ...]:
         return delivery_inventory(spec)
 

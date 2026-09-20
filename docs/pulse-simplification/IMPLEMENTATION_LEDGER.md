@@ -2734,3 +2734,83 @@ Community publicado por push normal em `feature/v0.4.0`:
 O Core executável permanece o de `7ccc7f74a682972579700f8acdc7062ccb85f0c7`
 (implementação `b5612385`); neste incremento o Core recebe somente este ledger.
 Sem troca de conta, release, tag, merge ou intervenção no runtime do usuário.
+
+### Em implementação — crédito por contribuição aprovada e critério
+
+Turno anterior: progresso, Core `cf3bf643` / Community `51b4308` publicados.
+Investigação ARQ/VER §4.2/§6.3/§11 e DEI §7: `architecture_adoption` seleciona
+Designs, não o contrato conjunto. O inventário efetivo já preserva escopos por
+Card, mas o avaliador legado considera uma implementação completa suficiente
+para a obrigação e não exige cada condição selecionada por contribuição.
+Não ativar adoção conjunta com esse veredito: Card de UI não pode concluir o
+trabalho de autorização, nem um passing funcional cobrir condição técnica ausente.
+
+Implementar o avaliador canônico do contrato adotado pela porta pública de
+inventário, reutilizando os predicados de prova/estado/waiver existentes e exigindo
+atestado do scope_sha256 por binding/Card e critérios do cenário autenticado.
+Ausência histórica desses fatos não gera preenchimento por leitura. O caminho
+legado permanece distinto até o cutover integrado de writers/readers/gates/adoção.
+Baseline source→wheel→install comprovado em
+`provenance-contribution-scope-baseline.json`; validar a reprodução, a composição
+por critérios, herança e limites antes de ligar qualquer writer ao novo contrato.
+
+### Validação — avaliador de entrega por escopo e condição
+
+- Reprodução executável em `test_effective_delivery_coverage.py`: um FR com
+  contribuições de UI e autorização, apenas UI entregue/testada, recebe crédito
+  do avaliador legado. O novo avaliador conserva a implementação observada e
+  aponta `authorization` em missing_card_ids; não conclui o requisito.
+- **128 testes Core** passaram (`core-contribution-scope-tests.log`, 6,61 s):
+  escopos completos/parciais, critérios funcionais/técnicos distintos, várias
+  execuções de teste sobre a mesma implementação, IDs exatos, método não admitido,
+  falha/assinatura/atualidade, reatribuição seletiva, BR herdada do resolver real,
+  waivers por fase, população divergente/duplicada e limites de expansão. Leitor
+  `card-contribution-scope/v1` exige formato exato; ausência histórica permanece
+  sem atestado e formato novo inválido nunca vira fallback legado. Catálogo e
+  manifests continuam iguais aos geradores.
+- **38 testes Community** passaram (`community-contribution-scope-regression.log`,
+  61,74 s) com SQLite real: regressão dos caminhos Delivery/REST/MCP/batch+relatório,
+  autorizações, concorrência e rollback. Estes testes confirmam compatibilidade
+  do runtime atual; não afirmam que os writers já persistem o novo atestado.
+- `provenance-contribution-scope-final.json`: **799 / 312 .py**, **864 / 396 membros**
+  source→wheel→install byte-a-byte. Core wheel SHA256
+  `84f4abee50d39ab25dc14669d3b5b802cc7b271daefe013cd6eb1aea2df86dd4`;
+  Community `f6c2406e14099c2e7e28a0623e8cdd1d0c1fff8f61b6a9ee6135cbdaa486af07`.
+  Novos processos, PYTHONPATH pareado e dados descartáveis. Nenhuma alteração de
+  frontend neste incremento; dist preservado do checkpoint anterior. Ruff e
+  diff-check aprovados; a primeira verificação estática encontrou apenas estilo
+  E701 no teste novo, corrigido pelo formatter antes do build/testes.
+
+**Integração ainda obrigatória:** a porta pública `DeliveryInventoryPolicy`
+agora oferece o avaliador, mas ele NÃO substituiu o rollup/gates ativos. Próximo
+passo é ligar o contrato conjunto à persistência: marcador de adoção por Spec e
+edição, criação nova e adoção/revisão autorizada, atestados imutáveis de escopo
+gerados no writer canônico, critérios/método da execução autenticada no adapter,
+admissão/DoD/rollup/readers e gate de início consumindo a mesma resolução.
+Não reutilizar `architecture_adoption` como esse marcador, não expor hashes de
+confiança ao cliente, não preencher scopes em registros antigos e não ligar só
+o gate inicial deixando o fechamento no avaliador legado. A falta de atestado
+não deve invalidar Specs legadas em andamento sem adoção explícita.
+
+Não há migração ou mudança de autoridade/história neste checkpoint. RF-INT-01/02
+e a adoção conjunta continuam incompletos até essa integração e sua validação
+real descartável. As demais frentes do pacote permanecem no escopo.
+
+Mapa confirmado para retomar essa integração sem reinvestigar o mesmo desenho:
+`services/main.py::SpecService.create_spec/move_spec` e
+`application/use_cases/allowed_transitions.py`; Community
+`adapters/sqlalchemy_models.py::Spec`, `relational_schema_migrator.py` e
+`relational_schema_steps.py` (a migração de architecture_adoption é apenas exemplo
+de coluna nullable, não deve ser reaproveitada como contrato conjunto).
+`sqlalchemy_delivery_evidence.py::_record_inventory/_record_card_entry`,
+`load_card_snapshot/load_rollup_snapshot` ainda usam o inventário legado.
+`services/delivery_evidence.py::require_card_delivery` e gate da Spec ainda chamam
+o avaliador legado. O reader `GetRequirementVerificationUseCase` resolve o plano
+completo, mas declara `adoption_evaluated=False`; centralizar seu snapshot para
+os writers/gates sem chamar um reader paginado como autoridade de transição.
+
+`closure-contribution-scope-final.json`: **ok=true**, zero findings de código ou
+documentação, oito budgets **0/0**, **7.580 / 1.246 imports, 25 dependências**.
+A primeira auditoria encontrou apenas drift nas contagens dos READMEs; ambos
+foram atualizados pelo renderer oficial. Community muda somente esse README
+neste checkpoint. Nenhum payload alterado após a prova byte-a-byte final.
