@@ -7284,3 +7284,107 @@ de criar certificado terminal e integrar admissão de upgrade/instalação limpa
 F2A/F2C restantes, F3/F4/F5, matriz integral e gate global de metadata MCP
 (última medição 56.024 > 50.800, inalterado) continuam pendentes. Objetivo
 integral ativo; classificação desta etapa: progresso verificado.
+
+### 2026-09-20 — F2C/F3: remoção dirigida de projeções de Sprint no grafo
+
+Retomada conferida: Core 38df839a / Community d6188d78, árvores limpas.
+Turno anterior: progresso verificado (67 testes e pushes confirmados).
+Investigação atual: deterministic_kg.process_sprint emite Entity raiz e
+Criterion de expected_outcome com source_artifact_ref exato sprint:<id>.
+Card→Sprint e Sprint→Spec são relações incidentes; a sessão que atesta uma
+raiz não transfere sua propriedade. Não usar delete-by-session como migração.
+
+Em implementação: plano puro de remoção por identidade lógica e origem
+arquivada, com fingerprint completo antes/depois, preservação de nós vizinhos
+e relações sobreviventes (inclusive paralelas). Referência parcial/descendente,
+origem não arquivada ou produtor/tipo sem classificação comprovada falha fechado.
+Adapter Grafx interno aplicará apenas o plano retido, verificando antes/depois
+na mesma transação; falha anterior ao commit deve desfazer a remoção.
+Não é rebuild nem exclusão universal de writers. Ainda não ligar ao coordenador
+sem recibo durável, backup original e tratamento conjunto de global/outbox/F3.
+
+Primeira execução: proveniência 811/332 .py e 876/416 payloads idênticos.
+Planejamento/fingerprint do grafo real passou até a aplicação, mas o primeiro
+caso falhou porque scan_rows_v1 só aceita transação READ no Grafx instalado.
+Nenhuma remoção chegou a ocorrer. Adapter corrigido para montar a visão lógica
+limitada através de Transaction.execute na mesma transação WRITE, usando o
+schema físico fechado e o codec de valores Community existente. Verificação
+antes/depois não foi transferida para snapshots independentes. Closure inicial
+teve apenas drift das matrizes README; findings=[] e oito budgets 0/0.
+Todos os processos anteriores terminaram antes de alterar fontes/reinstalar.
+
+A segunda execução passou: 10 testes reais de planejamento/removal/rollback/
+replay e reabertura do arquivo Grafx (104,86 s). Mantidos o UUID físico do banco,
+os nós Card/Spec e a multiplicidade das relações sobreviventes. Falhas injetadas
+após DELETE e alteração indevida de sobrevivente desfazem toda a transação.
+A visão WRITE usa consultas com limite agregado de registros, payload lógico
+limitado e validação exata do catálogo/schema; nenhum scan read-only é chamado
+na transação de escrita. Closure r2: findings=[], oito budgets 0/0; apenas
+matrizes de documentação requerem renderer. Reforço final dos testes cobre
+payload sobrevivente com vetores/timestamps/scores e budgets de registros/bytes.
+
+Fechamento da remoção dirigida de projeções Board:
+- Core `ports/retirement_graph.py`: plano puro GraphRetirementPlan sobre a
+  representação lógica existente. Seleciona exclusivamente Entity/Criterion
+  com origem exata sprint:<id> pertencente ao conjunto arquivado informado e
+  produtor determinístico segundo o classificador Core existente. Não usa
+  sessão, título, conteúdo textual ou prefixo curto de ID como propriedade.
+  Origem desconhecida/derivada e produtor não comprovado exigem investigação.
+- Relações incidentes admitidas são belongs_to determinísticas do produtor
+  atual (sprint_outcome, sprint_to_spec, card_to_sprint, sprint_to_board).
+  Outra semântica incidente falha fechado, inclusive contribuição cognitiva
+  que não possa ser apagada como hierarquia exclusiva. Nenhum nó vizinho é
+  removido por transitividade. Não representa todos os resíduos possíveis de
+  Sprint no KG nem uma autorização para classificar casos desconhecidos.
+- Plano guarda identidades tipadas, fingerprints integrais antes/depois e
+  multiplicidade de relações removidas. Medição valida schema, chaves únicas,
+  endpoints e census; limites de 100.000 registros / 64 MiB de payload lógico.
+  A identidade inclui tipo+chave: Entity e Criterion com mesmo ID não colidem.
+- Community **e7c06d98c31463b9b6343f446d7ec31c4c0fe96d**:
+  `grafx_sprint_retirement.py` prepara em snapshot fixo e aplica o plano retido
+  na mesma transação WRITE que verifica o estado anterior e o resultado.
+  Transação não utiliza scan_rows_v1, que o driver restringe a READ: queries
+  nativas usam somente nomes do schema fechado e valores parametrizados; codec
+  Community existente preserva tipos físicos, vetores e timestamps. Todo
+  Cypher/Okto Grafx/vida da transação permanece em Community/adapters.
+- Replay do estado esperado não emite escrita nem muda published_lsn. Estado
+  divergente ou seleção/contagem incoerente é recusado. Erro depois de DELETE
+  ou alteração indevida de sobrevivente desfaz o conjunto inteiro antes do
+  commit. Não há rebuild/troca de geração; UUID físico permanece idêntico.
+- `graph-retirement-new-final.log`: **12 passed** (134,49 s). Grafo físico real
+  cobre seleção por tipo+ID, preservação integral de Card/Spec com valores
+  ricos (incluindo vetores/timestamps/scores), relações paralelas, replay sem
+  publicação, reabertura, rollback após DELETE, drift anterior, plano errado,
+  origem não arquivada, ref descendente, writer cognitivo, regra incidente
+  desconhecida, menção textual/sessão compartilhada e limites de leitura WRITE.
+- `graph-retirement-regression.log`: **75 passed** (63,28 s), suites
+  `test_logical_transfer_grafx.py`, `test_logical_transfer_factories.py` e
+  `test_grafx_projection_active_set.py`. Total selecionado distinto: **87**.
+  Dez casos intermediários foram reforçados/repetidos, sem contagem dupla.
+- `provenance-graph-retirement-final.json`: 811/332 .py e 876/416 payloads
+  idênticos entre fontes, wheels e instalação antes dos testes. Verificador
+  resolve site-packages; pytest usa checkouts provados idênticos. Sem mudanças
+  de produto/reinstalação com checks ativos. Todos os handles encerrados.
+- `closure-graph-retirement-final.json`: ok=true, findings/documentation_findings=[],
+  oito budgets 0/0. Matrizes oficiais READMEs: 7.552/1.175 imports, 25 deps.
+  Sem mecanismo concreto novo no Core, reach-in privado ou exceção transitória.
+- Wheels finais `.validation-v040/wheels-graph-retirement-final`, SHA256:
+  Core baf97d8e1568a32629b101b259b5d1ca854025fade0e061456a02a89d4c3cad4;
+  Community dda4d46e3774035f554cd98cb21c340eb2ad6fb268ac9eeb86ac4f0061884d1a.
+- Ruff e staged diff --check aprovados. Sem efeito em frontend/REST/MCP; testes
+  de frontend não necessários nesta etapa. Apenas bancos descartáveis; nenhum
+  grafo real/dado de usuário alterado, nenhum runtime real iniciado/parado.
+  Push normal pareado em feature/v0.4.0 será conferido com ls-remote.
+
+Continuidade: o adapter é primitiva interna, ainda NÃO ligado à preparação/
+retomada offline. O chamador deverá provar Board/routing, vincular o plano ao
+backup original e retê-lo externamente; construir recibo durável/replay conjunto
+com Global Discovery e outbox antes de integrar ao coordenador. O commit nativo
+com conflito otimista é propagado; possuir WRITE não é exclusão universal de
+writers raw e este helper não é certificado terminal de cutover. Investigar
+resíduos fora da projeção determinística classificada, sem apagar nós cognitivos
+ou reinterpretar fontes compartilhadas por conveniência. Continuam necessários
+cleanup real das permissões no F3, corte de schema/instalação limpa, F2A/F2C
+restantes, F3/F4/F5 e matriz integral. Metadata MCP permanece na última medição
+56.024 > 50.800, sem mudança nesta etapa. Objetivo integral ativo; progresso
+verificado, não conclusão da iniciativa.
