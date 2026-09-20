@@ -2938,3 +2938,9 @@ instalado. Continuam abertos receipt→impacto, reconciliação gravável, obser
 bufferizadas, retomada delimitada, métodos especializados, F2B/Sprints com a
 depreciação por Card já autorizada, KG, benchmark e auditoria integral. Este
 checkpoint não conclui a iniciativa nem autoriza release/tag/merge.
+
+Publicado por push normal em `feature/v0.4.0`: Core
+`2a768e4ef1458f8b8969e09ad5ceda562a86a798`; Community
+`6c0cb9032cf88a80681c8fa2365dab054a6ae2c7`. Ambos confirmados por `ls-remote`,
+árvores limpas após os commits. Conta ativa `jpbraga`, sem necessidade de
+`gh auth switch`. Este registro posterior altera somente o ledger.
