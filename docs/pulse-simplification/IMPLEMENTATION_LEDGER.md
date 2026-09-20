@@ -11,7 +11,8 @@ O gate de conclusão direta do Card foi corrigido para exigir as implementaçõe
 selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
-Frente atual: F2B autorizado. Contrato tipado de compatibilidade por Card, resolver,
+Frente atual: F2A/F2C, com preflight relacional interno implementado; arquivo e
+cutover ainda pendentes. F2B autorizado: compatibilidade por Card, resolver,
 leitura pública, armazenamento nullable e UI estão implementados e testados;
 materialização/cutover de dados continuam pendentes de F2A/F2C. A integração de
 contribuições distintas e provas por critério foi ampliada com recibos assinados.
@@ -3233,3 +3234,64 @@ snapshot/restauração e cutover F2B/F2C. Nenhuma semântica de gate, dado real,
 schema, runtime ou payload distribuído foi alterado nesta investigação.
 Não houve nova execução de testes de comportamento; os resultados do checkpoint
 F2B anterior permanecem históricos, sem declaração de cobertura de F2A/F2C.
+
+### 2026-09-20 — F2A/F2C, preflight relacional consistente (parcial)
+
+Turno anterior classificado como progresso: investigação registrada/publicada em
+Core `25df2ac9`, com fatos que impedem reutilizar o export humano como backup
+integral. Árvores limpas na partida; nenhuma mudança de autorização necessária.
+
+Community `adapters/sprint_retirement_inventory.py` implementa preparação interna
+sem endpoint, CLI, registro no bootstrap ou writer. O engine é explicitamente
+fornecido pelo chamador; não descobre nem abre o banco/runtime do usuário.
+Lê Sprints, Cards vinculados, history, Q&A e baselines de todos os Boards numa
+única transação. SQLite usa BEGIN físico explícito; o caminho PostgreSQL usa
+REPEATABLE READ e READ ONLY. Faz rollback/fecha a conexão inclusive em falhas.
+
+As contagens são integrais; os diagnósticos trazem relação, ID da linha, ID de
+destino e motivo (orphan/cross_board/scope_mismatch). `require_valid_relations`
+recusa qualquer violação, sem remover, reatribuir ou reparar dados. Schema
+incompleto, referência física nova às tabelas aposentadas, coluna não classificada
+com nome Sprint e esgotamento do limite agregado de 100.000 linhas interrompem
+a inspeção — não devolvem sucesso vazio/truncado. O limite é explícito e pode
+ser ajustado pelo chamador interno; não é paginação de produto.
+
+Não exige igualdade entre Spec do Card e da Sprint: regressão cross-spec no mesmo
+Board continua representável e sua autorização pertence aos gates existentes.
+Membros históricos de baseline não viram FKs atuais de Cards. A inspeção não
+reavalia status, decisões ou elegibilidade passada como condição de aprovação.
+Nenhuma flag genérica `ready`: relação válida não prova completude do arquivo,
+hash de baseline, achados transferidos, ACL, referências polimórficas, filas ou KG.
+O cutover deverá repetir o preflight sob seu lock de escrita após arquivamento;
+uma leitura de preparação não é autorização nem fence para mutação futura.
+
+Validação desta versão:
+- Build dos dois wheels aprovado; `provenance-f2a-inventory.json`: **802/313 .py**,
+  **867/397 membros** de payload, source→wheel→install byte a byte, antes dos
+  testes. Core SHA256 `03c4d3cea96ff65e887baf1b2fa676a67d4aac17432efb1c3a83387a46a3e252`;
+  Community `bbae1446bfbceb2625cfed05894a12f57ffe2580e90c711766ea0918d4718b4f`.
+- `community-f2a-inventory.log`: **31 passed**, 34,62 s. Inclui novo preflight,
+  storage/equivalência F2B, diagnóstico existente de origem hotfix e adapter de
+  baseline. Bancos SQLite físicos descartáveis, PYTHONPATH pareado e processo novo.
+  Casos novos: Sprint vazia sem fabricar Card; histórico intacto; Test cross-spec;
+  origens/filhos órfãos; cross-board; baseline fora de escopo; 25 órfãos sem amostra
+  de 20; extensões físicas com/sem FK; schema ausente; limite/falha e retomada.
+  Writer concorrente confirmou uma gravação no WAL entre consultas: a primeira
+  leitura não mistura gerações e a próxima transação enxerga a linha nova.
+- `closure-f2a-inventory.json`: **ok=true**, zero findings, oito budgets **0/0**,
+  **7.616/1.248 imports**, 25 dependências. Ruff dos dois arquivos e diff-check
+  aprovados. Nenhuma mudança de frontend ou catálogo MCP neste incremento.
+- PostgreSQL não foi executado; o teste real desta transação cobre SQLite/WAL.
+  Não declarar restauração de backup nem upgrade/cutover com este teste de leitura.
+
+Investigação adicional que define o próximo passo: `DomainEventRow.payload_json`
+e `ConsolidationQueue` guardam referências sem FK. `CardCreated` inclui sprint_id,
+enquanto `SprintCreated/Moved/Closed` são eventos próprios; `artifact.archive_changed`
+é polimórfico. `ConsolidationEnqueuer` também projeta eventos de Card para Card/Spec.
+Não classificar todo payload que menciona Sprint como trabalho supersedido: isso
+descartaria fatos de Card que o plano F3 exige preservar. Fechar esse inventário,
+os demais subjects polimórficos e arquivo genérico sob ACL antes do cutover.
+F2A/F2C/F3 e a auditoria integral da iniciativa continuam em aberto.
+
+Community publicado por push normal em `feature/v0.4.0`, commit `c4ef1ce`;
+`ls-remote` confirmou o HEAD remoto. Este checkpoint Core altera somente o ledger.
