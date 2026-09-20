@@ -7466,3 +7466,103 @@ sentinela sem verificar todos os consumidores/redrives. Permissões F3, schema,
 certificado terminal/admissão, F2A/F2C restantes, F3/F4/F5 e matriz integral
 continuam pendentes. Metadata MCP permanece na última medição 56.024 > 50.800.
 Objetivo integral ativo; esta etapa é progresso verificado.
+
+### 2026-09-20 — F2C: outbox global exclusivo, sem ACK fabricado
+
+Par anterior publicado e conferido limpo: Core
+336f608b8003e91fc236eeaadf8ac67a9bc89af5 / Community
+ee3363882e832df962a591dd409f746c08498a7e (feature/v0.4.0).
+Investigação do produtor `kg.primitives`: o payload de consolidação tem seis
+campos; as referências persistidas descrevem nós adicionados, mas os contadores
+de update/supersessão não têm correspondência suficiente nessas referências.
+Por isso, sessões com esses efeitos exigem investigação. Outbox também executa
+reconciliação de Board; não basta inferir exclusividade pelo nome da sessão.
+
+Em implementação: classificação Core exige auditoria Sprint arquivada, mesma
+sessão/Board, contrato atual exato, census de referências e inclusão de todas
+as identidades tipadas no plano de remoção. Sessões mistas e histórico concluído
+permanecem intactos. Contratos desconhecidos falham fechado. Adapter Community
+retém snapshot privado integral de consolidation_audit/global_update_outbox/
+kuzu_node_refs (o nome SQL legado não significa runtime Kuzu), limitado a
+100.000 linhas/64 MiB, incluindo outros Boards para detectar referências cruzadas.
+
+Estado reservado de migração: retry_count=-2, sem alterar processed_at,
+last_error ou payload. Claim/health/DLQ existentes já excluem esse valor; reforços
+explícitos impedem save de worker antigo, requeue e falsa classificação como
+queued/applied. A aplicação exige fingerprints pós-remoção de Board e Global,
+usa BEGIN IMMEDIATE e verifica snapshot integral após UPDATE antes do commit.
+Snapshot original mantém contadores/diagnósticos anteriores como evidência
+privada; não é uma nova seção de histórico público nem uma concessão de acesso.
+Plano/backup ainda deverão ser selados pelo coordenador e receber checkpoint
+durável; nenhum cutover/admissão completa é alegado por este helper.
+
+Validação de outbox:
+- Primeira suíte: `outbox-retirement-new.log`, **14 passed**, 22,19 s.
+  Reforços posteriores acrescentam drift anterior no snapshot, proteção de
+  redrive direto, origem de sessão não Sprint e claim/marker antigos.
+- `outbox-retirement-core-final.log`: **43 passed**, 5,58 s, suites
+  `test_global_outbox_retired_work.py`, `test_global_outbox_dead_letter_operations.py`,
+  `test_global_outbox_blocking_execution.py`, `test_global_outbox_visibility_batches.py`
+  e `test_global_outbox_edge_inventory_cost.py`.
+- `outbox-retirement-community-final.log`: **31 passed**, 37,96 s, suites
+  `test_global_outbox_retirement.py`, `test_global_outbox_dead_letter_operations.py`,
+  `test_queue_health_global_outbox_adapter.py`, `test_materialization_health_adapters.py`
+  e `test_terminal_debt_readers.py`.
+- Revisão após esses checks encontrou a necessidade de proibir também a
+  atribuição direta de -2 em requeue_terminal_events. A guarda foi incluída;
+  novo teste tenta aposentar uma linha DLQ viva por esse método e exige erro
+  com todos os valores originais preservados. Rebuild/reinstall dos DOIS wheels
+  após encerramento dos checks; `outbox-retirement-community-r2.log`:
+  **20 passed**, 25,08 s (16 casos de retirement + 4 de redrive/CAS). Total
+  distinto selecionado: **75** = 43 Core + 12 demais regressões Community + 20.
+  Nenhuma contagem dupla das execuções intermediárias. Payload Core r2 tem
+  hash agregado idêntico ao Core testado nos 43 casos.
+- Prova antes das suítes: `provenance-outbox-retirement-final.json` e
+  `provenance-outbox-retirement-r2.json`: **813/334 .py**, **878/418 payloads**
+  idênticos em fontes/wheels/site-packages. Verificador importa instalação;
+  pytest usa checkouts provados idênticos. A primeira tentativa de comparação
+  inicial foi antecipada enquanto pip ainda instalava e falhou por arquivos
+  temporariamente ausentes; aguardado o MESMO processo terminar, a comparação
+  completa passou antes de qualquer teste comportamental. Nenhum teste rodou
+  durante install nem houve edição/reinstall de produto com testes ativos.
+- SQL real e Grafx real cobrem ordem Board→Global→SQL, mudança anterior recusada,
+  trigger que corrompe referência após primeiro UPDATE com rollback integral,
+  replay após fechar conexões, tentativa de recapturar estado já transformado,
+  falsificação da seleção, mesma sessão com referências fora da remoção,
+  referências de outro Board, auditoria/referências ausentes ou duplicadas,
+  contadores de update não comprovados, origem não arquivada, contrato/payload
+  desconhecido, limites de linhas/bytes, exclusão de claim/DLQ/health, seleção
+  stale do worker e rollback de todo save batch quando uma linha foi aposentada.
+- Preservar referências fora do plano não certifica que todos esses nós ainda
+  existem; simplesmente não há prova para superseder esse trabalho. A
+  classificação completa de resíduos continua necessária ao cutover. Um
+  worker que já tinha uma cópia anterior à aposentadoria pode tentar efeitos
+  de grafo antes de chegar ao save SQL; a exclusão offline de writers continua
+  obrigatória. As guardas SQL não são uma promessa de atomicidade entre stores.
+- Novo estado usa o valor reservado -2 no mecanismo legado de retry_count.
+  O número anterior fica no snapshot original retido; erro, payload, tempos,
+  auditoria e referências não mudam. O verificador interno usa o estado
+  `superseded` já existente e não inventa um evento substituto/ACK. Nenhuma
+  porta de delivery normal pode atribuir -2. Permissões e schemas públicos,
+  frontend, REST e catálogo MCP não foram alterados; sem teste de frontend
+  necessário para esta etapa. Nenhum banco ou processo real de usuário tocado.
+- Wheels finais `.validation-v040/wheels-outbox-retirement-r2`, SHA256:
+  Core d66c761ad5ca8377fbd07d591ab1415129673ca1749cd9a67c3b5b1601f802e5;
+  Community aa4d7c7802c3a9dc0e3332c3eb1eb9b661677f0572abe76835427447105ebc3c.
+- `closure-outbox-retirement-r2.json`: **ok=true**, findings=[] e
+  documentation_findings=[], oito budgets **0/0**. Matrizes oficiais dos
+  READMEs: **7.560/1.181 imports, 25 dependências**. Nenhum reach-in privado,
+  mecanismo concreto novo no Core ou exceção transitória. Ruff e diff --check
+  aprovados; todos os processos de validação encerrados antes do commit.
+- Commit Community desta etapa: **f0f5458ada48fc2dc01bbdc7c9c887aff9410c48**.
+  Publicação normal do par em feature/v0.4.0, com comparação de HEAD/ls-remote
+  e confirmação de árvores limpas após os pushes.
+
+Próxima integração: ampliar o manifesto privado offline para reter os planos
+originais de Board/global/outbox, vinculá-los ao backup original e aos Boards
+arquivados, registrar intenção/checkpoints duráveis e retomar sem recaptura
+mesmo após commits de grafo anteriores ao ACK SQL. O manifesto v1 atual cobre
+apenas dados preservados; estes helpers ainda não foram ligados a ele. Cleanup
+de permissões, schema F3, certificado terminal de admissão e demais fases da
+matriz seguem pendentes. Metadata MCP mantém o bloqueio já conhecido
+56.024 > 50.800. Objetivo integral ativo; progresso, não conclusão.

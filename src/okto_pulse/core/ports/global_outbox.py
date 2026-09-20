@@ -14,6 +14,10 @@ from okto_pulse.core.runtime_context import (
 
 
 GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL = -1
+# Only the fenced historical migration may assign this terminal state. It is
+# neither a delivery ACK nor an operator-requeueable failure. Original retries
+# and errors belong to the retained migration evidence, never a new payload.
+GLOBAL_OUTBOX_RETIRED_SENTINEL = -2
 GLOBAL_OUTBOX_MAX_RETRIES = 5
 
 
@@ -46,7 +50,7 @@ class GlobalOutboxNodeRefFact:
 
 
 class GlobalOutboxMutationConflict(RuntimeError):
-    """A terminal row changed after validation but before guarded requeue."""
+    """A delivery/requeue selection conflicts with current terminal ownership."""
 
 
 class GlobalOutboxStore(Protocol):
@@ -120,6 +124,7 @@ def reset_global_outbox_store_for_tests() -> None:
 
 __all__ = [
     "GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL",
+    "GLOBAL_OUTBOX_RETIRED_SENTINEL",
     "GLOBAL_OUTBOX_MAX_RETRIES",
     "GlobalOutboxDeadLetterCursor",
     "GlobalOutboxEventRecord",

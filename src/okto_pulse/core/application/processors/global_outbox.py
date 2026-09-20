@@ -41,6 +41,7 @@ from okto_pulse.core.ports.delivery_ledger import (
 from okto_pulse.core.ports.global_outbox import (
     GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL,
     GLOBAL_OUTBOX_MAX_RETRIES,
+    GLOBAL_OUTBOX_RETIRED_SENTINEL,
     GlobalOutboxEventRecord,
     GlobalOutboxNodeRefFact,
     get_global_outbox_store,
@@ -425,6 +426,9 @@ class GlobalOutboxProcessor:
             events = list(
                 await get_global_outbox_store().materialize_claimed(db, claimed)
             )
+            # A migration-retired event has no delivery attempt to execute,
+            # even if an edition supplies an outdated claim selection.
+            events = [event for event in events if event.retry_count != GLOBAL_OUTBOX_RETIRED_SENTINEL]
             processed_events: list[
                 tuple[GlobalOutboxEventRecord, dict[str, tuple[str, str]]]
             ] = []

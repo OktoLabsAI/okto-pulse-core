@@ -22,6 +22,7 @@ from okto_pulse.core.ports.delivery_ledger import is_governed_delivery_attempt
 from okto_pulse.core.ports.global_outbox import (
     GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL,
     GLOBAL_OUTBOX_MAX_RETRIES,
+    GLOBAL_OUTBOX_RETIRED_SENTINEL,
     GlobalOutboxDeadLetterCursor,
     GlobalOutboxEventRecord,
     GlobalOutboxMutationConflict,
@@ -429,7 +430,7 @@ class GlobalOutboxDeadLetterOperations:
             invalid: list[str] = []
             for row_id in selected_ids:
                 row = by_id.get(row_id)
-                if row is None or row.payload.get(_SUPERSEDED_BY):
+                if row is None or row.retry_count == GLOBAL_OUTBOX_RETIRED_SENTINEL or row.payload.get(_SUPERSEDED_BY):
                     invalid.append(row_id)
                     continue
                 if _is_terminal(row):
@@ -524,6 +525,13 @@ class GlobalOutboxDeadLetterOperations:
                             "reason_code": "dead_letter_id_absent",
                         }
                     )
+                    continue
+                if row.retry_count == GLOBAL_OUTBOX_RETIRED_SENTINEL:
+                    items.append({
+                        "dead_letter_id": row.id, "state": "superseded", "event_id": row.event_id,
+                        "authoritative_id": None, "supersedence_chain": [],
+                        "reason_code": "superseded_by_historical_migration",
+                    })
                     continue
                 (
                     chain,
