@@ -11,7 +11,8 @@ access. Returns current `edition`, `version`, complete obligation rows with sema
 digests, implementation/test association IDs, separate waiver IDs, `allowed`,
 `blockers`, rejected IDs, eligible receipt candidates, per-card obligations and
 audit history. Implementation receipts are selectable before card completion;
-test candidates currently require a completed Test Card. Read-only: no test
+authenticated passed/failed test candidates are selectable during execution too.
+Candidate availability is not final coverage credit. Read-only: no test
 execution, implicit waiver, graph mutation or reopen.
 
 Each `per_card` also carries its current `card_version` and a bounded `progress`
@@ -45,7 +46,8 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   final rollup credit still requires Done. A planned Target is insufficient.
   Use `bindings` to declare `partial` or `complete` separately for each obligation;
   omit `obligation_refs` with this form. A partial binding retains its accepted
-  receipt but cannot satisfy the Card DoD, implementation rollup or a test join.
+  receipt but cannot satisfy the Card DoD or final implementation/test rollup.
+  An authenticated test may record its result against that partial contribution.
   Multiple partial records do not add up to completion. Complete is still an
   executor declaration, subject to the existing proof and review requirements.
   Exact replay cannot change a declaration; a later declaration is a new record.
@@ -105,10 +107,18 @@ Inputs: `board_id`, `card_id`, `spec_id`, and closed object `evidence`:
   is treated conservatively in its declared scope; a context-only legacy note
   does not invalidate proof solely by time. The full active checkpoint population
   governs currentness even when the resume summary is capped at 20 records.
-- `test`: done TEST `card_id`, linked passed `scenario_id`, nonempty
+- `test`: executing or done TEST `card_id`, linked passed/failed `scenario_id`, nonempty
   `implementation_ids` returned from implementation associations. Uses the current
   authenticated scenario receipt; clients cannot supply `verified` or hashes. Only
-  select records this run actually tested. Multiple tests may jointly cover code.
+  select records this run actually tested. Current, accepted implementation
+  records can be named before Done, including partial contributions. Admission
+  preserves the authenticated outcome and exact bindings; final credit still
+  requires current passing proof, complete contributions and completed cards.
+  Promotion is by read: do not re-record a result just because a card reaches Done.
+  A newer failed run invalidates earlier passing coverage even before its new
+  association is saved. New records retain their original outcome when the live
+  scenario changes; legacy rows are not backfilled with invented run history.
+  Frozen states remain frozen. Multiple tests may jointly cover code.
 - `revoke`: authorized human only, `record_id`, empty `obligation_refs`,
   justification. Revokes a record of this card. Appends a tombstone; cannot erase
   or restore revoked history.

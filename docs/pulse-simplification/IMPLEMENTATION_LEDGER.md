@@ -2521,3 +2521,77 @@ Par publicado por push normal em `feature/v0.4.0`: Core
 `a58f2b152353d5dd3541577d8a140d9e41f78212`. `ls-remote` confirmou ambos os
 commits e as árvores limpas. Autenticação ativa `jpbraga` válida; não foi preciso
 alternar contas. A autorização para `gh auth switch -u <usuario>` permanece.
+
+### Em implementação — resultados autenticados de teste antes de Done
+
+Turno anterior: progresso, par publicado; Core `37e90843` / Community `a58f2b1`
+limpos reconfirmados. DEI §7.4 / DEI-T25–27 exige salvar passed/failed durante
+execução, promovendo elegibilidade por leitura. A reprodução com SQLite e recibo
+HMAC real (`incremental-tests-baseline.log`) falhou no writer: a associação usava
+`evaluate_delivery_coverage`, exigindo Done e passing para admitir qualquer run.
+Antes da reprodução, `provenance-incremental-tests-baseline.json` comprovou ambos
+os payloads instalados contra source/wheels byte-a-byte.
+
+Separar admissão de resultado autenticado do crédito final em predicado de domínio
+público. A edição mantém verificador de origem, fences e guard de estado; persiste
+o resultado observado no servidor junto ao receipt, sem flags do cliente. Partial
+e in_progress podem receber associação, mas o rollup final continua exigindo
+contribuição completa, passing atual e cards Done. Não reescrever linhas legadas:
+seu leitor compatível continua usando o cenário vivo sem inventar resultado antigo.
+Frontend mostra os resultados e sua atualidade, sem confundir registro com crédito.
+
+### Checkpoint — resultados incrementais de teste autenticados
+
+- **115 testes Core** passaram em `core-incremental-tests-fenced.log`: admissão
+  independente de crédito, partial/passed/failed, escopo e IDs exatos, população
+  completa, estados congelados, regressões de domínio/lifecycle/contratos/seleção,
+  reuso de impacto e catálogo/manifests. A primeira chamada apontou um nome de
+  arquivo de teste inexistente e não executou testes; a lista real foi localizada
+  e as execuções válidas estão nos logs subsequentes.
+- **75 casos distintos Community** validados no payload final:
+  `community-incremental-tests-final.log` teve 74 passed/1 failed; o caso novo de
+  batch omitia `contract_version` na fixture. Após a correção exclusivamente de
+  teste, `community-incremental-tests-new-final.log` passou os oito casos novos
+  (22,29 s), incluindo o batch. As demais 67 regressões já haviam passado nesse
+  mesmo payload. A primeira execução anterior teve 71 passed/3 failed: duas
+  fixtures tentavam recriar o diretório de receipts; a terceira identificou que
+  separar admissão de crédito retirava implicitamente o bloqueio de validation.
+  O predicado agora exige started/in_progress/done para o Test Card; validation
+  e rejected continuam recusados. Não foi relaxado nenhum teste ou gate final.
+- SQLite real e receipts HMAC emitidos/verificados pelo mecanismo Community:
+  associação antes de Done, promoção por leitura sem novo append, failed sem
+  crédito, sucessor preservando o resultado original, nova falha invalidando
+  passing antes da associação, assinatura/status inconsistentes, implementação
+  inexistente, freeze, rollback integral e replay. O executor externo das
+  fixtures é determinístico; esta validação não é um E2E de inspeção de repositório
+  ou do runtime de testes externo. REST/MCP/autorizações e demais joins permanecem
+  cobertos pelas regressões de integração/contratos executadas.
+- **33 testes frontend** passaram em `frontend-incremental-tests-final.log`:
+  registro de passed/failed durante execução sem campo de confiança do cliente,
+  histórico/atualidade por Card e rollup sem aprovação implícita. Build/typecheck,
+  ESLint sem warnings/erros nos arquivos alterados e frontend_dist aprovados.
+  **78 arquivos**, tree SHA256
+  `016c2d132bc1f2f3ed30133c0272fbb353fa0507bc9c4383378766ff8958a4b9`.
+- `provenance-incremental-tests-final.json`: **797 / 312 .py**, **862 / 396 membros**
+  source→wheel→site-packages idênticos byte-a-byte. Core wheel SHA256
+  `2d8e315d53ab1b8047dab257250d063bc5c9d6c73a373dc9508b35711e6418e0`;
+  Community `9f95b6041d6a665c4bfdc488d8e3c7a8291c41c4784e0a7116a26d82428bda00`.
+  Novos processos/PYTHONPATH pareado/bancos descartáveis, sem alterar o runtime
+  do usuário. Não houve mudança de payload após a prova final.
+- `closure-incremental-tests-final.json`: **ok=true**, zero findings de código
+  ou documentação, oito budgets **0/0**, **7.565 / 1.245 imports, 25 dependências**.
+  Nenhum drift de README. Catálogo/manifests regenerados oficialmente; somente
+  resource manifest alterado pelo tool-doc. Ruff e diff-check aprovados.
+
+`current_verified_run` agora pode descrever uma falha autenticada. A revisão dos
+consumidores confirmou que o crédito final ainda exige explicitamente `PASSED`,
+além de Done/atualidade/contribuição completa. O resultado dos novos registros
+é preservado pelo servidor; ausência do campo em registros legados mantém o
+leitor compatível e não autoriza backfill de história. Nenhuma migração física.
+
+**Retomada:** DEI-T25–27 avançaram com o caminho automatizado já admitido. Métodos
+especializados continuam exigindo verifiers reais; esta mudança não os simula.
+Continuar a integração receipt→impacto, reconciliação gravável, observações
+bufferizadas, batch+relatório atômico e resumo de retomada completo; manter a adoção
+conjunta ARQ/VER, F2B/Sprints/depreciação autorizada, KG, migrações/rollback,
+benchmark e auditoria integral no escopo. Goal em progresso, sem novo bloqueio.

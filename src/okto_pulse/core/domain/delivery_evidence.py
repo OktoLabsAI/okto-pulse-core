@@ -282,6 +282,43 @@ class TestDeliveryFact:
     verified_implementation_ids: tuple[str, ...] = ()
 
 
+def require_test_result_admission(snapshot: DeliveryEvidenceSnapshot, fact: TestDeliveryFact | None) -> None:
+    """Preserve authenticated outcomes before final lifecycle/coverage credit.
+
+    Failed runs and partial implementations are useful execution facts. Neither
+    is promoted to successful delivery by this admission predicate.
+    """
+    error = "delivery_current_verified_test_and_implementation_required"
+    if (snapshot.complete is not True or fact is None or fact.scope != snapshot.scope
+        or fact.card_type != CardType.TEST or fact.current_verified_run is not True
+        or fact.card_status not in {CardStatus.STARTED, CardStatus.IN_PROGRESS, CardStatus.DONE}
+        or fact.result not in {TestScenarioStatus.PASSED, TestScenarioStatus.FAILED}
+        or not _text(fact.id, fact.card_id, fact.scenario_id, fact.receipt_id, fact.actor_id)):
+        raise ValueError(error)
+    expected = {row.binding for row in snapshot.obligations}
+    selected = set(fact.bindings)
+    ids = fact.verified_implementation_ids
+    implementations = {row.id: row for row in snapshot.implementations}
+    if (not selected or len(selected) != len(fact.bindings) or not selected <= expected
+        or not ids or len(set(ids)) != len(ids)
+        or len(implementations) != len(snapshot.implementations) or not set(ids) <= implementations.keys()):
+        raise ValueError(error)
+    covered = set()
+    for identity in ids:
+        implementation = implementations[identity]
+        matches = {binding for binding in selected.intersection(implementation.bindings)
+                   if implementation_binding_proof_current(implementation, binding)}
+        if (implementation.scope != snapshot.scope
+            or implementation.card_type not in {CardType.NORMAL, CardType.BUG}
+            or implementation.card_status in {CardStatus.CANCELLED, CardStatus.REJECTED}
+            or not _text(implementation.id, implementation.card_id, implementation.actor_id, implementation.explanation)
+            or not matches):
+            raise ValueError(error)
+        covered.update(matches)
+    if covered != selected:
+        raise ValueError(error)
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryWaiverFact:
     id: str
