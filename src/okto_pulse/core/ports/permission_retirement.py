@@ -6,6 +6,7 @@ all-denied policy: deleting obsolete fields must not resolve that review.
 """
 
 from dataclasses import dataclass
+from copy import deepcopy
 
 from okto_pulse.core.domain import historical_permission_policy_v034 as historical
 from okto_pulse.core.domain.permission_migration_review import PermissionMigrationReview
@@ -131,3 +132,51 @@ def validate_permission_retirement_registry(retired_flags: tuple[str, ...]) -> f
     if set(flatten_permission_flags(registered_permission_flags())) != remaining:
         raise ValueError("permission_retirement_registry_mismatch")
     return frozenset(remaining)
+
+
+@dataclass(frozen=True, slots=True)
+class RetiredPermissionDocument:
+    document: object
+    removed_paths: tuple[str, ...]
+
+
+def retire_permission_document(document: object, *, retired_flags: tuple[str, ...]) -> RetiredPermissionDocument:
+    """Remove declared obsolete leaves without normalizing surviving policy.
+
+    Unknown extension siblings remain untouched. A malformed scalar branch may
+    disappear only when every registered descendant was retired. The caller must
+    retain the source document, install its review classification and verify
+    effective authority before persisting this candidate.
+    """
+    remaining = validate_permission_retirement_registry(retired_flags)
+    retired = set(retired_flags)
+    source_paths = set(_FLAGS)
+    working = deepcopy(document)
+    removed = []
+
+    def visit(value: object, path: str) -> bool:
+        if path in retired:
+            removed.append(path)
+            return True
+        prefix = f"{path}." if path else ""
+        descendants = {flag for flag in source_paths if flag.startswith(prefix)}
+        if not descendants.intersection(retired):
+            return False
+        if not isinstance(value, dict):
+            if path and not descendants.intersection(remaining):
+                removed.append(path)
+                return True
+            return False
+        changed = False
+        for key, child in tuple(value.items()):
+            if not isinstance(key, str):
+                raise ValueError("permission_retirement_document_invalid")
+            if "." in key:
+                continue  # A literal extension key is not a registered path.
+            if visit(child, f"{prefix}{key}"):
+                del value[key]
+                changed = True
+        return bool(path) and changed and not value
+
+    visit(working, "")
+    return RetiredPermissionDocument(working, tuple(sorted(removed)))

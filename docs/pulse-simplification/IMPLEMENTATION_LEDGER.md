@@ -6058,3 +6058,80 @@ de origem, writers via records, testes e ledger. Push normal em feature/v0.4.0
 dos dois repos. Nenhuma migração de banco real, mudança de policy real, restart,
 release, tag ou merge. Metadata global segue 55.859 >50.800; nenhuma conclusão
 de F2/F3 ou da iniciativa inteira. Retomada pelas pendências registradas acima.
+
+### 2026-09-20 — F2/F3: limpeza transacional dos flags já retirados (em execução)
+
+Continuidade após Core 3b2e9b9e / Community eb6ec25. Implementando operação
+interna, ainda sem ligação ao bootstrap ou execução em banco real, que instala
+os reviews capturados e remove somente os 14 leaves KG já ausentes do registry.
+O Core fornece a transformação pura; SQL, fence BEGIN IMMEDIATE e journal
+permanecem em Community. Preservar extensões desconhecidas, sentinelas e todos
+os valores sobreviventes. Reter antes/depois dos documentos alterados e recibo
+externo de conclusão, inclusive quando nenhuma linha mudar. Retomada concluída
+verifica evidência sem reaplicar alterações sobre decisões posteriores do owner.
+
+Gates planejados: fonte/população idênticas ao checkpoint antes da primeira
+limpeza; paridade de todas as decisões sobreviventes e razões de review antes
+e depois; releitura do estado persistido; rollback conjunto de flags, marcadores
+e journal em qualquer divergência. Testar corrupção/remoção do journal, replay
+após edição autorizada, fontes alteradas, limites e falha durante a transação.
+Não declarar removido Sprint nem concluídos F2/F3. A integração do coordenador,
+a remoção do registry Sprint e as demais dependências continuam pendentes.
+Build/proveniência, testes e auditoria deste incremento ainda não executados.
+
+Validação do incremento de limpeza:
+- provenance-permission-cleanup.json: 803/322 .py e 868/406 payloads,
+  fonte/wheel/install byte a byte; imports em site-packages e processos novos.
+- Core: 392 passed (15,27 s), incluindo goldens v0.3.4, review, transformação
+  pura, paridade e contrato da porta. Fonte e extensões desconhecidas preservadas.
+- Community primeira rodada: 36 passed e 1 falha na asserção do teste, que
+  confundia o leaf legítimo agent.api_key.rotate com material de credencial.
+  Corrigida para verificar os valores SECRET e o campo api_key_hash; nenhuma
+  remoção de permissões legítimas. Rodada corrigida: 39 passed (47,53 s), com
+  rollback após gravações/antes do commit, corrupção e remoção do journal,
+  fonte/review alterados, replay após decisões posteriores e identidade nova,
+  competição de writer bloqueada e preservação de ramo de extensão malformado.
+- Frontend: 63 passed / 6 arquivos (12,71 s), inclusive deny durante review,
+  edição de preset apenas após interação e leitura do arquivo histórico.
+  Nenhuma alteração no bundle nesta etapa; SPA continua a versão já verificada.
+- Closure inicial: findings=[], oito budgets 0/0; somente matrizes README
+  divergentes pelo novo módulo. Renderer oficial aplicado para 7.514 imports
+  Core / 1.152 Community→Core / 25 dependências. Preparar par final e repetir
+  auditoria sobre o payload publicado, sem relaxar baseline ou budget.
+
+Dependência de cutover que deve permanecer explícita: capturar/verificar os
+arquivos e instalar seus grants históricos ANTES de transformar documentos de
+permissão. O avaliador histórico v0.3.4 reconhece o Full Control original com
+599 leaves; não recapturar autoridade histórica a partir da árvore já reduzida.
+O coordenador ainda deve impor essa ordem, reter os recibos de checkpoint e
+cleanup (também no caso zero alterações) e só então integrar a transformação
+Card/Sprint e o corte de schema. Esta operação continua interna, sem chamada no
+bootstrap; seu teste isolado não prova a ordenação do cutover completo.
+
+Mecânica final: transaction helper compartilhado para instalação dos reviews;
+releitura compara o documento persistido integralmente e verifica todas as
+permissões sobreviventes; um trigger que altere policy/identidade durante a
+limpeza causa rollback. Journal único, delimitado a 64 MiB, com árvores antes/
+depois e caminhos removidos, hash e contagens. Replay valida o journal e o
+recibo de instalação sem reclassificar agentes nem reaplicar reviews liberados.
+
+Publicação da limpeza:
+- Par final wheels-permission-cleanup-publish instalado e comprovado em
+  provenance-permission-cleanup-publish.json: 803/322 .py e 868/406 payloads.
+  O Python é idêntico ao validado; apenas as matrizes README mudaram no par.
+- closure-permission-cleanup-publish.json: ok=true, findings=[] e
+  documentation_findings=[], todos os oito budgets 0/0. Ruff e staged
+  diff --check aprovados; nenhum servidor/teste/build/auditoria em execução.
+- Wheels SHA256:
+  Core 45906054ca024d938319e694ccf74016d275b2cb230506dfafcad4b8de672b1e;
+  Community ab1cf0c3fbed0f7d86f1866fb3cfe420e8bc699c2aa90329c1e7000d672e9835.
+- Community commit 9f75493d3cbc3151fc483d63de5417d72300c94a. Core publica neste
+  commit a transformação pura, testes, matriz gerada e ledger. Push normal dos
+  dois repositórios em feature/v0.4.0 após verificação, sem release/tag/merge.
+
+Próxima continuidade: coordenar a materialização dos overrides Card e a
+preservação histórica antes da limpeza/corte, impondo dependências executáveis
+em F2D. Ainda faltam as superfícies genéricas de grants/MCP, contextos
+substantivos, retirada de Sprint e matriz completa dos complementos. Não
+executada migração de banco real nem restart do Pulse. Metadata global continua
+55.859 >50.800; este incremento não encerra F2/F3 nem a iniciativa.

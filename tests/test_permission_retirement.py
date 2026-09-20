@@ -9,7 +9,7 @@ from okto_pulse.core.ports.permission_policy import (
 )
 from okto_pulse.core.ports.permission_retirement import (
     PermissionRetirementParityError, capture_permission_retirement_authority,
-    parse_permission_retirement_authority, require_permission_retirement_parity,
+    parse_permission_retirement_authority, require_permission_retirement_parity, retire_permission_document,
 )
 from test_historical_archive_authority_v034 import GOLDEN, RETIRED
 
@@ -17,6 +17,33 @@ from test_historical_archive_authority_v034 import GOLDEN, RETIRED
 def capture(flags=None, *, legacy=None, preset=None, presets=(), overrides=None):
     return capture_permission_retirement_authority(agent_flags=flags, legacy_permissions=legacy,
         preset_id=preset, presets=presets, board_overrides=overrides)
+
+
+def test_retirement_preserves_surviving_values_extensions_and_source_tree():
+    original = deepcopy(GOLDEN["layers"]["full"])
+    original["kg"]["operations"]["tick"]["extension"] = {"run": False}
+    original["kg.operations.tick.run"] = "literal extension"
+    before = deepcopy(original)
+    result = retire_permission_document(original, retired_flags=tuple(sorted(RETIRED)))
+    assert original == before
+    assert set(result.removed_paths) == RETIRED
+    assert result.document["kg"]["operations"]["tick"] == {"extension": {"run": False}}
+    assert result.document["kg.operations.tick.run"] == "literal extension"
+    assert result.document["board"] == original["board"]
+    assert retire_permission_document(result.document, retired_flags=tuple(sorted(RETIRED))).removed_paths == ()
+
+
+@pytest.mark.parametrize("document", [None, {}, [], False, "invalid"])
+def test_retirement_does_not_reinterpret_empty_or_malformed_root(document):
+    result = retire_permission_document(document, retired_flags=tuple(sorted(RETIRED)))
+    assert result.document == document and result.removed_paths == ()
+
+
+def test_only_entirely_retired_malformed_branch_can_disappear():
+    result = retire_permission_document({"kg": {"operations": {"tick": 1}}}, retired_flags=tuple(sorted(RETIRED)))
+    assert result.document == {} and result.removed_paths == ("kg.operations.tick",)
+    result = retire_permission_document({"kg": False}, retired_flags=tuple(sorted(RETIRED)))
+    assert result.document == {"kg": False} and result.removed_paths == ()
 
 
 def check(source, candidate, retired=tuple(sorted(RETIRED))):
