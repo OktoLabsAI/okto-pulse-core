@@ -11,14 +11,17 @@ O gate de conclusão direta do Card foi corrigido para exigir as implementaçõe
 selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
-Checkpoint funcional atual: Core `57552199` (ledger `683a8a79`) / Community
-`88ad207d`. Frente atual: integração de contribuições distintas e provas por
-critério, seguida da retomada F2B autorizada. Continuam pendentes a matriz completa
+Frente atual: F2B autorizado. Contrato tipado de compatibilidade por Card, resolver,
+leitura pública, armazenamento nullable e UI estão implementados e testados;
+materialização/cutover de dados continuam pendentes de F2A/F2C. A integração de
+contribuições distintas e provas por critério foi ampliada com recibos assinados.
+Os SHAs e as evidências de cada checkpoint estão nas seções finais.
+Continuam pendentes a matriz completa
 de permissões/paginação/concorrência, receipt→impacto, reconciliação gravável,
 observações bufferizadas, métodos especializados, retomada integral, remoção de
 Sprints e sua migração, frentes KG, rollout/rollback instalado, benchmarks e
-auditoria requisito a requisito. F2B por Card está **autorizado**, com comentário
-de depreciação; isso ainda não prova campos/migração implementados.
+auditoria requisito a requisito. A compatibilidade F2B tem comentários de
+depreciação e não concede escrita ao executor; ainda não há cutover de Sprint.
 Nenhuma migração real autorizada. Os últimos resultados e próximos passos ficam
 na seção final deste ledger; se divergirem de um checkpoint histórico, prevalece
 a evidência mais recente, sem apagar o histórico.
@@ -3100,3 +3103,90 @@ todos os critérios citados nem a iniciativa.
 
 Community publicado por push normal: `d91529ae178347ddebc8b5fe611b0b18be5e63a5`
 em `feature/v0.4.0`. O commit companheiro do Core contém somente este ledger.
+
+### Em implementação — F2B, contrato de preservação por Card
+
+2026-09-20, partida Core `b00385c5` / Community `d91529ae`, árvores limpas;
+turno anterior classificado como progresso. Decisão autorizada relida junto a
+BASE F2A/F2B/F2C. O resolver foi extraído para domínio puro, preservando defaults,
+null-coalescing independente e a distinção histórica entre `required` ausente
+(True no Board) e explicitamente null (fallback False).
+
+Em implementação: contrato fechado e frozen `card-validation-compatibility/v1`,
+com IDs históricos opacos e ID de migração, por Card/Board. Guarda somente valores
+efetivos que diferem do resultado sem Sprint; campos restantes continuam herdados.
+Comentários de depreciação no contrato/resolver/migração, sem warning por leitura.
+O planner não grava nem remove vínculos. Compatibilidade malformada, estrangeira
+ou coexistente com vínculo ativo de Sprint falha fechado. CardCreate/CardUpdate
+rejeitam o campo reservado até quando null; CardResponse o projeta para leitura.
+
+Community adiciona somente coluna JSON nullable, sem backfill; step idempotente
+antes de create_all, recusando schema drift. A migração de dados e retirada de
+Sprint ainda dependem de arquivo histórico/ACL e cutover coordenado. Não confundir
+o teste descartável de representação com esse cutover: nenhum writer público ou
+automação de upgrade está autorizado a inventar proveniência ou desprender Cards.
+
+Frontend em integração: thresholds preservados distinguem a origem Card dos
+campos Spec/Board; sem controle de edição de policy. Testes novos de domínio,
+armazenamento idempotente/drift, duas policies na mesma Spec, DTOs reservados e
+CardModal. Primeiro build apontou campo obrigatório ausente na fixture TypeScript;
+corrigida a fixture. Preparação do par de wheels/prova antes dos testes Python
+ainda em andamento. Nenhum teste de comportamento deste payload foi declarado
+aprovado até esta etapa.
+
+Validação do contrato/armazenamento concluída neste checkpoint (F2B parcial):
+- Core `domain/task_validation_policy.py`: resolver único extraído sem alterar
+  o comportamento legado; planner puramente funcional para diferenças efetivas.
+  `schemas.py` expõe a representação somente em CardResponse e rejeita o campo
+  em CardCreate/CardUpdate, inclusive null. A leitura pública também recusa
+  proveniência estrangeira ou coexistente com Sprint ativo.
+- Community `sqlalchemy_models.py`, `relational_schema_steps.py` e ledger de
+  migração: coluna nullable idempotente, sem backfill nem desvinculação automática.
+  O teste de representação em banco descarta a cópia ao terminar e preserva
+  status/validations. O ensaio da migração completa existente também passou
+  sobre a fixture física de v0.3.0, com replay e comparação de schema.
+- A revisão encontrou caso adicional no planner: scores inválidos iguais antes/
+  depois escapavam pelo retorno sem diferenças. `core-f2b-malformed-reproduction.log`
+  reproduziu **4 failed** (True, -1, 101, string "70"). O planner agora valida
+  o resultado efetivo antigo e preserva diferenças de tipo, sem normalizar dados
+  corrompidos. Uma camada inferior inválida mascarada por override válido pode
+  continuar mascarada pela preservação fiel; a leitura legada não foi alterada.
+- `core-f2b-validated.log`: **110 passed**, 13,53 s; contrato, equivalência,
+  defaults/null/False/zero, corrupção, DTOs reservados, ciclo de vida e gates
+  byte-a-byte de catálogo/manifest MCP (nenhum artefato MCP manualmente editado).
+- `community-f2b-final.log`: **44 passed**, 68,18 s; storage, migração/golden
+  upgrade/replay, projeção Card e relações de policy. Após a correção final do
+  planner, os quatro testes de storage/equivalência afetados foram repetidos em
+  `community-f2b-validated.log`: **4 passed**, 10,61 s.
+  A primeira rodada teve 3 failed/31 passed: dois erros de fixture (bind JSON e
+  relações async não carregadas) e expectativas de contagem/skips do ledger
+  que ainda não incluíam o contrato conjunto anterior e a coluna nova. Corrigidas
+  as expectativas exatas: **77 steps** de migração, sem remover checks de schema.
+- `frontend-f2b-final.log`: **62 passed**, 38,26 s, após a prova do par instalado;
+  thresholds 60/90 na mesma Spec, zero preservado, herança dos demais campos,
+  label de origem e ausência de escrita/leitura de Sprint vivo no cenário migrado.
+  Build/typecheck aprovado; `frontend-f2b-dist.log`: **78 arquivos**, tree SHA256
+  `fa9d601e590c3cfbaeb7981e00dbf072fb1221e3c4f04268db79379373ac7647`.
+  `frontend-f2b-lint.log`: zero erros, **402 warnings/baseline 402**.
+- `provenance-f2b-validated.json`: **802/312 .py**, **867/396 membros**,
+  source→wheel→install idênticos; processos novos, PYTHONPATH pareado. Wheels:
+  Core `03c4d3cea96ff65e887baf1b2fa676a67d4aac17432efb1c3a83387a46a3e252`;
+  Community `1bad185cde6e80472aefe145b7e5946bf7d08beaf3d05c1bc2f55117b93cbd16`.
+- `closure-f2b-validated.json`: **ok=true**, zero findings de código/documentação,
+  oito budgets **0/0**, **7.616/1.248 imports**, 25 dependências. READMEs pelo
+  renderer oficial; nenhum payload alterado após a prova final.
+
+Limite de rollout: somente upgrade aditivo foi validado. **Não existe ainda
+materialização automática nem retirada de Sprint.** Rollback de binário antigo
+após preencher a compatibilidade não é seguro por suposição: ignoraria o novo
+campo e poderia mudar a policy. Preparar matriz pareada/cópia antes do cutover.
+Não houve alteração em banco real, runtime do usuário, contas, permissões, tags
+ou release. A representação depreciada só pode ser retirada quando os overrides
+deixarem de ser necessários ou houver substituição humana explicitamente autorizada.
+
+Retomada: F2A/F2C — snapshot consistente e arquivo histórico existente sob ACL,
+inventário completo de filhos/referências/achados substantivos e fronteiras de
+policy; em seguida writer de cutover com lock, equivalência por campo/tipo de
+Card, idempotência e rollback, antes das remoções F3. A extração do resolver não
+autoriza reclassificar avaliações de Sprint como aprovação de Spec. Preservar as
+demais dependências DEI/ARQ/VER/KG e a auditoria integral ainda em aberto.

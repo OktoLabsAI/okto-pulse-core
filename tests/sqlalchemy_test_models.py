@@ -1595,6 +1595,7 @@ class Card(Base):
         nullable=True,
         index=True,
     )
+    migrated_validation_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)  # Rich text/HTML

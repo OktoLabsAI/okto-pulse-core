@@ -4410,101 +4410,14 @@ class CardService:
         sprint: "ApplicationRecord | None",
         board_settings: dict,
     ) -> dict:
-        """Resolve validation gate config from hierarchy: sprint → spec → board.
+        """Resolve per-field policy, preserving deprecated migrated Card overrides.
 
-        Returns the effective values plus both the legacy ``resolved_from``
-        value (the source of ``required``) and per-field ``resolved_sources``.
-        Threshold overrides are independent, so a single provenance label
-        cannot accurately describe a mixed sprint/spec/board configuration.
-
-        Migration note (BASE F2B, authorized 2026-09-19): preserving Sprint
-        overrides on each affected Card is a deprecated compatibility measure,
-        not a new executor-editable policy hierarchy. Remove that compatibility
-        only after no active override needs it or an authorized policy revision
-        replaces it; never silently fall back to Board/Spec thresholds. Track
-        the cutover in docs/pulse-simplification/IMPLEMENTATION_LEDGER.md.
+        BASE F2B compatibility is migration-only. Do not expose executor writes
+        or remove preserved values until an authorized revision replaces them.
         """
-        # Defaults from board settings
-        board_required = board_settings.get("require_task_validation", True)
-        board_min_conf = board_settings.get("min_confidence", 70)
-        board_min_comp = board_settings.get("min_completeness", 80)
-        board_max_drift = board_settings.get("max_drift", 50)
+        from okto_pulse.core.domain.task_validation_policy import resolve_task_validation_config
 
-        # Spec overrides
-        spec_required = getattr(spec, "require_task_validation", None) if spec else None
-        spec_min_conf = (
-            getattr(spec, "validation_min_confidence", None) if spec else None
-        )
-        spec_min_comp = (
-            getattr(spec, "validation_min_completeness", None) if spec else None
-        )
-        spec_max_drift = getattr(spec, "validation_max_drift", None) if spec else None
-
-        # Sprint overrides
-        spr_required = (
-            getattr(sprint, "require_task_validation", None) if sprint else None
-        )
-        spr_min_conf = (
-            getattr(sprint, "validation_min_confidence", None) if sprint else None
-        )
-        spr_min_comp = (
-            getattr(sprint, "validation_min_completeness", None) if sprint else None
-        )
-        spr_max_drift = (
-            getattr(sprint, "validation_max_drift", None) if sprint else None
-        )
-
-        # Resolve with null-coalescing: sprint ?? spec ?? board, retaining the
-        # source for every independently overridable value.
-        def _resolve_with_source(sprint_value, spec_value, board_value, *, default):
-            if sprint_value is not None:
-                return sprint_value, "sprint"
-            if spec_value is not None:
-                return spec_value, "spec"
-            if board_value is not None:
-                return board_value, "board"
-            return default, "default"
-
-        required, required_source = _resolve_with_source(
-            spr_required,
-            spec_required,
-            board_required,
-            default=False,
-        )
-        min_confidence, min_confidence_source = _resolve_with_source(
-            spr_min_conf,
-            spec_min_conf,
-            board_min_conf,
-            default=70,
-        )
-        min_completeness, min_completeness_source = _resolve_with_source(
-            spr_min_comp,
-            spec_min_comp,
-            board_min_comp,
-            default=80,
-        )
-        max_drift, max_drift_source = _resolve_with_source(
-            spr_max_drift,
-            spec_max_drift,
-            board_max_drift,
-            default=50,
-        )
-
-        return {
-            "required": bool(required),
-            "min_confidence": min_confidence,
-            "min_completeness": min_completeness,
-            "max_drift": max_drift,
-            # Backwards-compatible aggregate: historically this represented
-            # the layer that supplied require_task_validation.
-            "resolved_from": required_source,
-            "resolved_sources": {
-                "required": required_source,
-                "min_confidence": min_confidence_source,
-                "min_completeness": min_completeness_source,
-                "max_drift": max_drift_source,
-            },
-        }
+        return resolve_task_validation_config(card, spec, sprint, board_settings)
 
     @staticmethod
     def _card_subject_version(card: ApplicationRecord) -> int:

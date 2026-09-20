@@ -25,6 +25,7 @@ from okto_pulse.core.discovery_params_schema import (
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
+from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, reject_migrated_validation_policy_write, read_migrated_validation_policy
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
@@ -2953,6 +2954,8 @@ CardInitialStatus: TypeAlias = Literal[
 class CardCreate(BaseModel):
     """Schema for creating a card."""
 
+    _migration_only_policy = model_validator(mode="before")(reject_migrated_validation_policy_write)
+
     title: str = Field(
         ...,
         min_length=1,
@@ -3046,6 +3049,8 @@ class CardCreate(BaseModel):
 
 class CardUpdate(BaseModel):
     """Schema for updating a card."""
+
+    _migration_only_policy = model_validator(mode="before")(reject_migrated_validation_policy_write)
 
     title: str | None = Field(
         None,
@@ -3614,10 +3619,18 @@ class CardRejectionCauseResponse(BaseModel):
 class CardResponse(BaseSchema):
     """Schema for card response."""
 
+    @model_validator(mode="after")
+    def validate_migration_policy_scope(self):
+        read_migrated_validation_policy(self)
+        return self
+
     id: str
     board_id: str
     spec_id: str | None = None
     sprint_id: str | None = None
+    migrated_validation_policy: MigratedTaskValidationPolicy | None = Field(
+        default=None, description="Deprecated migration-only policy preservation; read-only historical provenance.",
+    )
     title: str
     description: str | None
     details: str | None
