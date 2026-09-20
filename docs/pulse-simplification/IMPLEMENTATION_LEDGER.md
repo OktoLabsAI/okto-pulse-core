@@ -3190,3 +3190,8 @@ policy; em seguida writer de cutover com lock, equivalência por campo/tipo de
 Card, idempotência e rollback, antes das remoções F3. A extração do resolver não
 autoriza reclassificar avaliações de Sprint como aprovação de Spec. Preservar as
 demais dependências DEI/ARQ/VER/KG e a auditoria integral ainda em aberto.
+
+Publicado por push normal em `feature/v0.4.0`: Core
+`ea883c9aae0500acc59474e243ea736ccaa43b03`; Community
+`421b73fa8a20854028b5d0cb990e7840d4298499`. `ls-remote` confirmou ambos;
+árvores limpas após publicação. Este registro posterior altera somente o ledger.
