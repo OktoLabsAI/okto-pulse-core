@@ -377,11 +377,11 @@ async def test_list_by_board_refinement_requires_ideation_id(_seed):
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_sprint_requires_spec_id(_seed):
+async def test_list_by_board_sprint_is_retired(_seed):
     payload = await _call(
         "okto_pulse_list_by_board", board_id=BOARD_ID, entity_type="sprint"
     )
-    assert "spec_id" in json.dumps(payload), payload
+    assert payload["error_code"] == "unsupported_entity", payload
 
 
 @pytest.mark.asyncio

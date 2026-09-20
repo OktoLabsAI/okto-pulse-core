@@ -52,10 +52,6 @@ _MCP_CARD_ORDER: tuple[tuple[str, bool], ...] = (
     ("position", False),
     ("id", True),
 )
-_MCP_SPRINT_ORDER: tuple[tuple[str, bool], ...] = (
-    ("created_at", False),
-    ("id", True),
-)
 _MCP_TOPIC_ORDER: tuple[tuple[str, bool], ...] = (
     ("name", False),
     ("id", True),
@@ -491,28 +487,6 @@ SURFACES: dict[str, SurfaceSpec] = {
             "labels",
             "created_at",
             "updated_at",
-            "archived",
-            "pre_archive_status",
-        ),
-    ),
-    "mcp_sprint_list": SurfaceSpec(
-        entity="sprint",
-        order_by=_MCP_SPRINT_ORDER,
-        scope_fields=frozenset({"board_id", "spec_id", "archived"}),
-        anchor_fields=frozenset({"board_id"}),
-        required_scope_fields=frozenset({"board_id", "spec_id"}),
-        filter_fields=frozenset({"status"}),
-        select_fields=(
-            "id",
-            "title",
-            "status",
-            "lane_type",
-            "origin_sprint_id",
-            "origin_bug_id",
-            "spec_version",
-            "test_scenario_ids",
-            "business_rule_ids",
-            "labels",
             "archived",
             "pre_archive_status",
         ),

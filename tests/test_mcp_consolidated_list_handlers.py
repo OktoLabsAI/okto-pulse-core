@@ -30,9 +30,6 @@ from sqlalchemy_test_models import (
     Agent,
     AgentBoard,
     Board,
-    Card,
-    CardStatus,
-    CardType,
     Ideation,
     IdeationComplexity,
     IdeationStatus,
@@ -40,9 +37,6 @@ from sqlalchemy_test_models import (
     RefinementStatus,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
 )
 
 
@@ -331,7 +325,7 @@ def test_supported_entity_types():
     assert "spec" in types_by_board
     assert "ideation" in types_by_board
     assert "refinement" in types_by_board
-    assert "sprint" in types_by_board
+    assert "sprint" not in types_by_board
     assert "story" in types_by_board
     assert "topic" in types_by_board
 
@@ -1085,79 +1079,16 @@ async def test_list_by_board_valid_status_filter(seeded_board):
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_sprint_requires_spec_id():
+async def test_list_by_board_sprint_is_retired():
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="sprint",
     )
     data = _parse(result)
-    assert data.get("error_code") == "missing_required_filter"
+    assert data.get("error_code") == "unsupported_entity"
 
 
-@pytest.mark.asyncio
-async def test_list_by_board_sprint_includes_lane_metadata(seeded_board, db_factory):
-    spec_id = seeded_board["spec_id"]
-    origin_sprint_id = f"mcp-origin-sprint-{uuid.uuid4().hex[:8]}"
-    origin_bug_id = f"mcp-origin-bug-{uuid.uuid4().hex[:8]}"
-    hotfix_sprint_id = f"mcp-hotfix-sprint-{uuid.uuid4().hex[:8]}"
-
-    async with db_factory() as db:
-        db.add(
-            Sprint(
-                id=origin_sprint_id,
-                board_id=BOARD_ID,
-                spec_id=spec_id,
-                title="MCP origin sprint",
-                status=SprintStatus.CLOSED,
-                lane_type=SprintLaneType.NORMAL,
-                created_by=AGENT_ID,
-            )
-        )
-        db.add(
-            Card(
-                id=origin_bug_id,
-                board_id=BOARD_ID,
-                spec_id=spec_id,
-                title="MCP hotfix origin bug",
-                status=CardStatus.NOT_STARTED,
-                card_type=CardType.BUG,
-                created_by=AGENT_ID,
-            )
-        )
-        await db.flush()
-        db.add(
-            Sprint(
-                id=hotfix_sprint_id,
-                board_id=BOARD_ID,
-                spec_id=spec_id,
-                title="MCP visible hotfix lane",
-                status=SprintStatus.DRAFT,
-                lane_type=SprintLaneType.HOTFIX,
-                origin_sprint_id=origin_sprint_id,
-                origin_bug_id=origin_bug_id,
-                created_by=AGENT_ID,
-            )
-        )
-        await db.commit()
-
-    result = await _call_tool(
-        "okto_pulse_list_by_board",
-        board_id=BOARD_ID,
-        entity_type="sprint",
-        filters={"spec_id": spec_id},
-    )
-    data = _parse(result)
-    by_id = {item["id"]: item for item in data["items"]}
-
-    assert by_id[origin_sprint_id]["lane_type"] == "normal"
-    assert by_id[origin_sprint_id]["origin_sprint_id"] is None
-    assert by_id[origin_sprint_id]["origin_bug_id"] is None
-    assert by_id[origin_sprint_id]["normal_sprint_created"] is True
-    assert by_id[hotfix_sprint_id]["lane_type"] == "hotfix"
-    assert by_id[hotfix_sprint_id]["origin_sprint_id"] == origin_sprint_id
-    assert by_id[hotfix_sprint_id]["origin_bug_id"] == origin_bug_id
-    assert by_id[hotfix_sprint_id]["normal_sprint_created"] is False
 
 
 # ---------------------------------------------------------------------------

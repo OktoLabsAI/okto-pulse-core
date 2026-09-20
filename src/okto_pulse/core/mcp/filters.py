@@ -32,7 +32,7 @@ from typing import Any, Literal, Optional, TypeAlias
 from typing_extensions import TypedDict
 
 BoardEntityType: TypeAlias = Literal[
-    "spec", "ideation", "refinement", "sprint", "story", "topic"
+    "spec", "ideation", "refinement", "story", "topic"
 ]
 QaEntityType: TypeAlias = Literal["spec", "ideation", "refinement"]
 KnowledgeEntityType: TypeAlias = Literal["spec", "ideation", "refinement", "card"]
@@ -57,12 +57,6 @@ class RefinementBoardFilters(IdeationBoardFilters, total=False):
     ideation_id: str
 
 
-class SprintBoardFilters(TypedDict, total=False):
-    status: str
-    spec_id: str
-    include_archived: bool
-
-
 class StoryBoardFilters(TypedDict, total=False):
     status: str
     topic_id: str
@@ -79,7 +73,6 @@ BoardListFilters: TypeAlias = (
     SpecBoardFilters
     | IdeationBoardFilters
     | RefinementBoardFilters
-    | SprintBoardFilters
     | StoryBoardFilters
     | TopicBoardFilters
 )
@@ -90,11 +83,7 @@ class QaFilters(TypedDict, total=False):
     asked_by: str
 
 
-class SprintQaFilters(TypedDict, total=False):
-    status: str
-
-
-QaListFilters: TypeAlias = QaFilters | SprintQaFilters
+QaListFilters: TypeAlias = QaFilters
 
 
 class KnowledgeFilters(TypedDict, total=False):
@@ -115,7 +104,6 @@ ALLOWED_FILTERS_BY_BOARD: dict[str, list[str]] = {
         "derivation_pending",
         "include_archived",
     ],
-    "sprint": ["status", "spec_id", "include_archived"],
     "story": ["status", "topic_id", "linked", "converted", "include_archived"],
     "topic": ["include_archived"],
 }
@@ -125,7 +113,6 @@ ALLOWED_FILTERS_QA: dict[str, list[str]] = {
     "spec": ["status", "asked_by"],
     "ideation": ["status", "asked_by"],
     "refinement": ["status", "asked_by"],
-    "sprint": ["status"],
 }
 
 # okto_pulse_list_knowledge

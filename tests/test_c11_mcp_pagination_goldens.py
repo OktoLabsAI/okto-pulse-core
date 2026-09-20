@@ -690,26 +690,6 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
             },
         ),
         (
-            "sprint",
-            {"spec_id": "__SPEC__", "status": "draft"},
-            1,
-            lambda ids: {
-                "id": ids["sprint"],
-                "title": "Draft sprint",
-                "status": "draft",
-                "lane_type": "normal",
-                "origin_sprint_id": None,
-                "origin_bug_id": None,
-                "normal_sprint_created": True,
-                "spec_version": 4,
-                "test_scenario_ids": ["ts-c11"],
-                    "business_rule_ids": ["br-c11"],
-                    "labels": ["golden"],
-                    "archived": False,
-                    "pre_archive_status": None,
-                },
-        ),
-        (
             "story",
             {"status": "draft"},
             1,
@@ -752,7 +732,7 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
             },
         ),
     ],
-    ids=("spec", "ideation", "refinement", "sprint", "story", "topic"),
+    ids=("spec", "ideation", "refinement", "story", "topic"),
 )
 async def test_list_by_board_per_entity_exact_golden_with_additive_total_overall(
     c11_graph,
@@ -793,8 +773,6 @@ async def test_list_by_board_per_entity_exact_golden_with_additive_total_overall
     }
     if entity_type == "refinement":
         expected["ideation_id"] = c11_graph["ideation"]
-    if entity_type == "sprint":
-        expected["spec_id"] = c11_graph["spec"]
     assert payload == expected
 
 
@@ -1011,17 +989,10 @@ async def test_list_by_board_archived_contract_for_all_sdlc_families_is_paged(
             },
             c11_graph["refinement"],
         ),
-        (
-            "sprint",
-            {"spec_id": c11_graph["spec"], "status": "draft"},
-            c11_graph["sprint"],
-        ),
     ]
 
-    for (entity_type, base_filters, active_id), false_literal in zip(
-        cases,
-        (False, "false", "0", "no"),
-        strict=True,
+    for (entity_type, base_filters, active_id), false_literal in (
+        (case, literal) for case in cases for literal in (False, "false", "0", "no")
     ):
         active_only = await mcp_call(
             "okto_pulse_list_by_board",
@@ -1118,7 +1089,6 @@ async def test_list_by_board_labels_are_exact_json_members(
             "refinement",
             {"ideation_id": "unused", "include_archived": 2},
         ),
-        ("sprint", {"spec_id": "unused", "include_archived": {}}),
     ],
 )
 async def test_list_by_board_rejects_invalid_filter_values(
@@ -1234,7 +1204,6 @@ async def test_both_mcp_tools_execute_through_entity_page_service_without_full_f
                 "refinement",
                 {"ideation_id": c11_graph["ideation"], "status": "draft"},
             ),
-            ("sprint", {"spec_id": c11_graph["spec"], "status": "draft"}),
             ("story", {"status": "draft"}),
             ("topic", {}),
         ):
@@ -1248,7 +1217,7 @@ async def test_both_mcp_tools_execute_through_entity_page_service_without_full_f
             )
 
     assert cards["filtered_count"] == 3
-    assert len(requests) == 7
+    assert len(requests) == 6
     assert requests[0].surface == "mcp_card_status_list"
     assert requests[0].offset == 1
     assert requests[0].limit == 2

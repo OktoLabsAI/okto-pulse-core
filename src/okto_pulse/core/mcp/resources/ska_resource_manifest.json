@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "7e131dc888b64292344bc001cc56ac6b6286dce2cf3cc7502822d50115a90914",
+  "manifest_sha256": "ffc81d122b4b943c7ff87241f914cbf6b9c37fc4e92e5073cdeba1eb54d08d52",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -91,7 +91,7 @@
       "uri": "okto-pulse://reference/destructive_ops"
     },
     {
-      "content_sha256": "96c83505da6c3104891695bbfb3f13b009c3252b7d180cbc12ac4ca4f8f4cb43",
+      "content_sha256": "73a1d3c9ee8013469b1429d17c4f59b005dfd35df0bc0582dd8d5c46435163c1",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/kg-health",
@@ -113,7 +113,7 @@
       "uri": "okto-pulse://reference/errors"
     },
     {
-      "content_sha256": "c72e284626817466700f728836ceb63298aad4accbd11311ee69f0510084d194",
+      "content_sha256": "5f2ae6d45d637d5e450b2466e89e15161e1899abc53c70b373a443d8046b76fd",
       "cross_links": [
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments"
@@ -481,7 +481,7 @@
       "uri": "okto-pulse://workflows/preflight"
     },
     {
-      "content_sha256": "a5699335030631872a7513ef47fc757c8311f138c991debe5022850dec5648ac",
+      "content_sha256": "d2a16e61f0d371db5d6f6cc1208e106dda3ecef9829fbe3b5fad5316134d5a0b",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/knowledge-governance",

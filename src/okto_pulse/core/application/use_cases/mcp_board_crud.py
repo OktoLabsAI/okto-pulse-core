@@ -28,6 +28,7 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
+    CommandValidationError,
     EntityNotFoundError,
     commit,
 )
@@ -977,6 +978,8 @@ class McpListByBoardUseCase:
     ) -> _DataResult:
 
         et = command.entity_type
+        if et not in ("spec", "ideation", "refinement", "story", "topic"):
+            raise CommandValidationError("unsupported_entity")
         f = command.filters
 
         # The transport authenticates the requested board, but this use case is
@@ -1049,22 +1052,6 @@ class McpListByBoardUseCase:
                     )
                 )
             any_groups = _label_groups(f.get("labels"))
-        elif et == "sprint":
-            spec_id = f.get("spec_id", "")
-            parent = await uow.specs.get(spec_id)
-            if parent is None or parent.board_id != command.board_id:
-                return _DataResult(_empty_page(command.offset, command.limit))
-            surface = "mcp_sprint_list"
-            scope = _page_scope(
-                command.board_id,
-                include_archived=_strict_filter_bool(
-                    f.get("include_archived"),
-                    field="include_archived",
-                ),
-                spec_id=spec_id,
-            )
-            if f.get("status"):
-                filters.append(ApplicationFilter("status", "eq", f["status"]))
         elif et == "story":
             surface = "mcp_story_list"
             args = command.story_args
@@ -1206,11 +1193,6 @@ async def _attach_mcp_page_derivatives(
         counts = {row.values[0]: row.count for row in rows}
         for item in items:
             item.attach("active_spec_count", counts.get(item.id, 0))
-    elif entity_type == "sprint":
-        for item in items:
-            item.attach(
-                "normal_sprint_created", _enum_value(item.lane_type) == "normal"
-            )
     elif entity_type == "topic":
         rows = await uow.services.entity_pages.group_count(
             GroupCountRequest(

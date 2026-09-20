@@ -2808,13 +2808,18 @@ async def okto_pulse_get_allowed_transitions(
 ) -> str:
     """
     Return allowed lifecycle transitions for story, ideation, refinement, spec,
-    card, sprint, or test_scenario from the same Core SDLC registry used by
+    card, or test_scenario from the same Core SDLC registry used by
     mutations. Each edge includes gates, preconditions, capabilities, effects,
     reason codes, and additive Policy Compliance metadata. Pass entity_id for
     an entity-scoped Policy Compliance decision. A current_status-only request
     keeps lifecycle discovery safe by returning state=policy_subject_required
     on gated edges instead of advertising an unscoped pass.
     """
+    if entity_type == "sprint":
+        return _structured_error("unsupported_entity",
+            ["story", "ideation", "refinement", "spec", "card", "test_scenario"],
+            None, "entity_type='sprint' is not supported by lifecycle discovery")
+
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -21624,7 +21629,6 @@ async def okto_pulse_list_by_board(
     Filters by entity_type — spec: status, labels, assignee_id, include_archived;
     ideation: status, labels, derivation_pending, include_archived; refinement:
     ideation_id (required), status, labels, derivation_pending, include_archived;
-    sprint: spec_id (required), status, include_archived;
     story: status, topic_id, linked, converted, include_archived; topic:
     include_archived. derivation_pending finds DONE parents without a derived
     child; example: {"derivation_pending": true}. Unknown keys return
@@ -21641,7 +21645,7 @@ async def okto_pulse_list_by_board(
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 
-    SUPPORTED = ["spec", "ideation", "refinement", "sprint", "story", "topic"]
+    SUPPORTED = ["spec", "ideation", "refinement", "story", "topic"]
     if entity_type not in SUPPORTED:
         return _structured_error(
             "unsupported_entity",
@@ -21685,19 +21689,10 @@ async def okto_pulse_list_by_board(
             None,
             "entity_type='refinement' requires filters.ideation_id",
         )
-    if entity_type == "sprint" and not filters.get("spec_id"):
-        return _structured_error(
-            "missing_required_filter",
-            ["spec_id"],
-            None,
-            "entity_type='sprint' requires filters.spec_id to identify the parent spec",
-        )
-
     from okto_pulse.core.domain.enums import (
         IdeationStatus,
         RefinementStatus,
         SpecStatus,
-        SprintStatus,
         StoryStatus,
     )
 
@@ -21705,7 +21700,6 @@ async def okto_pulse_list_by_board(
         "spec": SpecStatus,
         "ideation": IdeationStatus,
         "refinement": RefinementStatus,
-        "sprint": SprintStatus,
         "story": StoryStatus,
     }
     status_value = filters.get("status")
@@ -21921,45 +21915,6 @@ async def okto_pulse_list_by_board(
                             "updated_at": r.updated_at.isoformat(),
                         }
                         for r in paginated
-                    ],
-                },
-                default=str,
-            )
-
-        elif entity_type == "sprint":
-            spec_id = filters.get("spec_id", "")
-            paginated = items
-            return json.dumps(
-                {
-                    "board_id": board_id,
-                    "entity_type": entity_type,
-                    "spec_id": spec_id,
-                    "total": total,
-                    "total_overall": total_overall,
-                    "offset": offset,
-                    "limit": limit,
-                    "include_archived": bool(filters.get("include_archived", False)),
-                    "items": [
-                        {
-                            "id": s.id,
-                            "title": s.title,
-                            "status": s.status.value,
-                            "lane_type": s.lane_type.value if s.lane_type else "normal",
-                            "origin_sprint_id": s.origin_sprint_id,
-                            "origin_bug_id": s.origin_bug_id,
-                            "normal_sprint_created": s.normal_sprint_created,
-                            "spec_version": s.spec_version,
-                            "test_scenario_ids": s.test_scenario_ids,
-                            "business_rule_ids": s.business_rule_ids,
-                            "labels": s.labels,
-                            "archived": bool(getattr(s, "archived", False)),
-                            "pre_archive_status": getattr(
-                                getattr(s, "pre_archive_status", None),
-                                "value",
-                                getattr(s, "pre_archive_status", None),
-                            ),
-                        }
-                        for s in paginated
                     ],
                 },
                 default=str,

@@ -7748,3 +7748,73 @@ documentation_findings=[], oito budgets **0/0**. Todos os handles de testes,
 build/install e closure encerrados; sem intervenção em runtime/dados reais.
 Commit Community **30ce1e0964a6d4a65a4da9a7418d959a842461cc**. O par segue para
 push normal em feature/v0.4.0, com verificação HEAD/ls-remote ao encerrar.
+
+### 2026-09-20 — Decisão F3 pendente: tarefa normal em Spec Done
+
+Retomada do par publicado f84def2e/30ce1e0, árvores inicialmente limpas. Turno
+anterior classificado como progresso verificado. Investigação dos consumidores
+de `sprint_assignment_block` encontrou divergência material com a premissa F3:
+`CardService.create_card` aceita explicitamente SpecStatus.DONE também para
+normal; update_card não bloqueia por estado da Spec; spec_maturity_block usa
+apenas limite mínimo. A exceção de bug, portanto, não é o único acesso atual.
+
+`tests/test_f3_done_spec_characterization.py` reproduz com SQL descartável e
+serviços reais: em Spec Done, criar e editar tarefa normal são aceitos; sem
+Sprint ela avança para Started, enquanto uma Sprint fechada produz
+`sprint_required`. A Spec permanece Done nos dois casos. **2 passed** em
+`done-spec-characterization.log`, após `provenance-done-spec-characterization.json`
+provar 813/337 .py e 876/421 payloads idênticos ao par instalado/testado anterior.
+Não é premissa inferida de comentário nem autorização para perpetuar o resultado.
+
+F3 determina não liberar escrita arbitrária normal em Spec concluída e testar
+cada tipo; simplesmente apagar o bloqueio Sprint ampliaria o conjunto efetivo
+de execuções. Pela política 10.2/10.4 do plano, isso requer decisão explícita
+antes de introduzir/restringir um gate que a base não possui. Proposta: recusar
+criação/alteração de conteúdo e início/reabertura de execução de tarefas normais
+em Spec Done; revisão autorizada da Spec volta a permitir o fluxo. Preservar
+leitura/histórico/colaboração e os fluxos legítimos de bug e teste de regressão
+com seus controles próprios; não reabrir Spec automaticamente nem afrouxar
+evidência/amendment. A retirada dos gates Sprint que afeta esse caminho fica
+isolada aguardando a decisão; leituras genéricas MCP continuam independentes.
+
+### 2026-09-20 — F3: retirada de Sprint das leituras genéricas MCP
+
+Retirado Sprint de BoardEntityType, filtros Board/Q&A, listagem MCP por Board,
+paginação mcp_sprint_list e descoberta MCP de transições. A chamada interna de
+listagem também rejeita destinos desconhecidos antes de acessar persistência,
+impedindo o antigo fallback para Topics. Demais entidades mantêm paginação,
+contagem, escopo Board e filtros de arquivamento. REST e gates de execução não
+foram alterados nesta etapa; a decisão F3 acima continua pendente.
+
+Atualizados os recursos de listagem/erros e o override Community; manifest de
+resources e catálogo regenerados pelos geradores oficiais. Catálogo permanece
+com 311 tools. Teste no host Community real verifica o enum publicado e a
+rejeição de Sprint antes de autenticação/UoW, sem retornar itens históricos.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- Ambos os wheels reconstruídos e instalados, processos encerrados antes dos
+  testes. provenance-sprint-mcp-reads.json: 813/337 .py e 876/421 payloads
+  source/wheel/install byte-a-byte idênticos; origens no venv instalado.
+- sprint-mcp-reads-core.log: 146 passed e um erro no novo teste (PageRequest
+  sem offset/limit). Corrigido somente o teste; sprint-mcp-reads-core-r2.log:
+  9 passed. União dessa seleção: 147 testes distintos aprovados.
+- sprint-mcp-reads-contracts.log: 187 passed e a falha preexistente de footprint:
+  54.330 > 50.800 tokens (antes 54.349). Teto preservado; não é gate verde.
+- sprint-mcp-reads-transport.log: 16 passed. Total: 350 testes distintos
+  aprovados, uma falha conhecida. Ruff e git diff --check aprovados.
+- closure-sprint-mcp-reads.json: ok=true, findings=[], documentation_findings=[],
+  oito budgets 0/0; 7.512 imports Core / 1.183 Community / 25 dependências.
+- Wheels wheels-sprint-mcp-reads: Core SHA256
+  cee3786bc33628404910d7f9ae2639ff38e84415ac53e1da569b77e6524b87da;
+  Community 34377cb08c27122b33b9b957c100f8ee38839d716af60cd320db1fcd2344a60f.
+  Não houve alteração de produto após a prova de identidade. Todos os handles
+  de testes/closure/build/install terminaram; sem runtime ou dados reais tocados.
+
+Retomada: investigar/remover agregação Sprint em get_spec_context e projeções
+relacionadas, preservando controles e conteúdo das outras entidades; ainda há
+consultas Sprint no resolver de validação de Card e rastreabilidade. Não tratar
+esta etapa como eliminação integral de Sprint MCP. A retirada dos gates depende
+apenas da decisão F3 registrada; demais frentes independentes continuam. Sem
+alteração de frontend nesta etapa. Objetivo integral ativo e incompleto.
+
+Commit Community e3ab8d12e338b45ed7b9ae526fcfccc282a30c00; par preparado para push normal em feature/v0.4.0 e verificação de igualdade remota.

@@ -17,7 +17,7 @@ contract in `okto-pulse://reference/policy-compliance`.
 
 | New tool | Replaces |
 |---|---|
-| `okto_pulse_list_by_board` | `list_specs`, `list_ideations`, `list_refinements`, `list_sprints`, `list_stories`, `list_topics` |
+| `okto_pulse_list_by_board` | `list_specs`, `list_ideations`, `list_refinements`, `list_stories`, `list_topics` |
 | `okto_pulse_list_qa` | `list_spec_qa`, `list_ideation_qa`, `list_refinement_qa` |
 | `okto_pulse_list_knowledge` | `list_spec_knowledge`, `list_ideation_knowledge`, `list_refinement_knowledge`, `list_card_knowledge` |
 | `okto_pulse_list_snapshots` | `list_ideation_snapshots`, `list_refinement_snapshots` |
@@ -25,7 +25,6 @@ contract in `okto-pulse://reference/policy-compliance`.
 ## Required filters
 
 - `entity_type='refinement'` requires `filters={'ideation_id': '...'}` in `list_by_board`.
-- `entity_type='sprint'` requires `filters={'spec_id': '...'}` in `list_by_board`.
 - Parent filters are resolved inside `board_id`. A missing parent or a parent from
   another board yields an empty list and never projects that board's children.
 
@@ -40,7 +39,6 @@ lists the allowed keys and whose `invalid_keys` field echoes the rejected ones.
 | `spec` | `status`, `labels`, `assignee_id`, `include_archived` | — |
 | `ideation` | `status`, `labels`, `derivation_pending`, `include_archived` | — |
 | `refinement` | `ideation_id`, `status`, `labels`, `derivation_pending`, `include_archived` | `ideation_id` |
-| `sprint` | `spec_id`, `status`, `include_archived` | `spec_id` |
 | `story` | `status`, `topic_id`, `linked`, `converted`, `include_archived` | — |
 | `topic` | `include_archived` | — |
 
@@ -50,7 +48,6 @@ Examples:
 okto_pulse_list_by_board(board_id, entity_type="spec", filters={"status": "draft"})
 okto_pulse_list_by_board(board_id, entity_type="ideation", filters={"derivation_pending": true})
 okto_pulse_list_by_board(board_id, entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})
-okto_pulse_list_by_board(board_id, entity_type="sprint", filters={"spec_id": "..."})
 ```
 
 Send `filters` as a native object. The JSON string form
