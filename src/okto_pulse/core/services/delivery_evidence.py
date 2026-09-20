@@ -1,5 +1,7 @@
 """Provider-neutral inventory and the single delivery readiness gate."""
 
+from collections.abc import Mapping
+
 # Compatibility names retain the established service API; policy lives only
 # in the domain and is consumed by edition adapters through its public port.
 from okto_pulse.core.domain.delivery_inventory import (
@@ -104,6 +106,7 @@ async def require_card_delivery(
     spec: object,
     *,
     board: object | None = None,
+    prospective_report: Mapping | None = None,
 ) -> None:
     """Card→done delivery gate (FR-3).
 
@@ -134,12 +137,24 @@ async def require_card_delivery(
     scope = CardDeliveryScope(
         card.board_id, card.id, spec_id, int(spec.edition)
     )
-    snapshot = await store.load_card_snapshot(scope)
+    snapshot = await store.load_card_snapshot(scope, **(
+        {"prospective_report": prospective_report} if prospective_report is not None else {}
+    ))
     if snapshot.complete is not True or not snapshot.obligations:
         raise ValueError(
             "delivery_evidence_incomplete: delivery_projection_incomplete"
         )
     evaluation = evaluate_delivery_coverage(snapshot)
+    # Only phase incompleteness has a Card-specific interpretation below.
+    # Structural unknowns may intentionally return no rows; they must never
+    # become vacuous success when the gate collects missing implementations.
+    structural_blockers = set(evaluation.blockers) - {
+        "delivery_implementation_missing", "delivery_test_result_missing",
+    }
+    if structural_blockers:
+        raise ValueError(
+            "delivery_evidence_incomplete: " + ", ".join(sorted(structural_blockers))
+        )
     # The card DoD covers the implementation phase only — the evaluator's
     # test-phase blockers (delivery_test_result_missing) are rollup concerns
     # (BR-5). Evaluator-valid proof always satisfies; beyond that, chain-valid

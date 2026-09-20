@@ -85,6 +85,16 @@ async def _mark_all_resources_na(db, entity_type: str, entity_id: str) -> None:
 # ============================================================================
 
 
+@pytest.fixture
+def accepted_card_delivery(monkeypatch):
+    # These cases verify lifecycle/report behavior with delivery already ready.
+    # Missing/partial/selected proof is exercised through the real Community
+    # adapter in test_adopted_delivery_report, with blocking policy unchanged.
+    from delivery_evidence_testing import install_complete_card_delivery_port
+
+    return install_complete_card_delivery_port(monkeypatch)
+
+
 async def _seed_board(db_factory) -> None:
     """Create minimal fixture: 1 board, 1 agent, 2 cards, 1 spec.
 
@@ -412,6 +422,7 @@ class TestCardStatusTransitionMatrix:
                     CardMove(status=CardStatus.VALIDATION),
                 )
 
+    @pytest.mark.usefixtures("accepted_card_delivery")
     async def test_successful_task_validation_does_not_duplicate_executor_report(self, db_factory):
         """Reviewer approval keeps the executor report as the single conclusion entry."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.IN_PROGRESS)
@@ -515,6 +526,7 @@ class TestCardStatusTransitionMatrix:
             },
         }
 
+    @pytest.mark.usefixtures("accepted_card_delivery")
     async def test_transition_validation_to_done_with_required_fields(self, db_factory):
         """validation → done remains available when task validation is disabled."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.VALIDATION)
@@ -675,6 +687,7 @@ class TestCardStatusTransitionMatrix:
                     ),
                 )
 
+    @pytest.mark.usefixtures("accepted_card_delivery")
     async def test_multiple_conclusions_accumulate(self, db_factory):
         """Multiple moves to done should accumulate conclusion entries."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.VALIDATION)
@@ -775,6 +788,7 @@ class TestCardValidationReportGate:
             assert moved.conclusions[0]["source"] == "move_to_validation"
             assert moved.conclusions[0]["text"] == "Executor claim for validation"
 
+    @pytest.mark.usefixtures("accepted_card_delivery")
     async def test_successful_validation_does_not_duplicate_executor_report(self, db_factory):
         card = await self._create_in_progress_card(db_factory)
         async with db_factory() as db:
@@ -1217,6 +1231,7 @@ class TestCardDependencies:
             assert caught.value.code == "dependencies_incomplete"
             assert caught.value.facts["blocking_dependencies"] == [card_a.title]
 
+    @pytest.mark.usefixtures("accepted_card_delivery")
     async def test_forward_move_unblocked_after_dependency_done(self, db_factory):
         """Forward move should succeed after dependency card is moved to done."""
         card_a, card_b = await self._setup_dependency_test(db_factory)
@@ -1994,6 +2009,7 @@ class TestActivityLog:
             await db.commit()
             return card, actual_spec_id
 
+    @pytest.mark.usefixtures("accepted_card_delivery")
     async def test_successful_task_validation_emits_card_moved_event(self, db_factory):
         """Validation auto-route to done must re-enqueue KG consolidation."""
         card, spec_id = await self._create_card_for_move(db_factory, CardStatus.IN_PROGRESS)

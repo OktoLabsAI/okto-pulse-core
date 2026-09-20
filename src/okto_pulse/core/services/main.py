@@ -6407,6 +6407,21 @@ class CardService:
         if not card:
             return None
 
+        if data.status == CardStatus.DONE and card.spec_id and str(
+            getattr(card.card_type, "value", card.card_type or "normal")
+        ) in {"normal", "bug"}:
+            # Serialize completion with delivery/source mutations before reading
+            # policy or proof. A report batch may already hold this same fence.
+            from okto_pulse.core.ports.relational_application import (
+                require_relational_application_adapter,
+            )
+            from okto_pulse.core.services.spec_dependency import SpecDependencyService
+
+            await SpecDependencyService(
+                require_relational_application_adapter().spec_dependencies(self.db), self.db,
+            ).acquire_lifecycle_write_fence(board_id=card.board_id)
+            card = await _application_refresh(self.db, card)
+
         archived_block = archived_card_block(
             CardTransitionFacts(
                 card_id=card.id,
@@ -7389,6 +7404,16 @@ class CardService:
                 )
 
         if data.status == CardStatus.DONE:
+            # FR-3 also applies when human task validation is disabled. Evaluate
+            # the proposed selection before appending a report or lifecycle event.
+            if card.spec_id:
+                from okto_pulse.core.services.delivery_evidence import require_card_delivery
+
+                delivery_spec = await _application_get(self.db, "spec", card.spec_id)
+                if delivery_spec is None:
+                    raise ValueError("delivery_evidence_incomplete: delivery_spec_not_found")
+                await require_card_delivery(self.db, card, delivery_spec, board=board,
+                    prospective_report=pending_conclusion_entry)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 card.board_id,
                 "card",

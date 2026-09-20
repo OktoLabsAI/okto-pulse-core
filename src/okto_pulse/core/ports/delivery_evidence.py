@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from collections.abc import Mapping
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput
 from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand
 from okto_pulse.core.models.code_traceability import ImplementationTargetExecutionSubmission
@@ -123,7 +124,8 @@ class CardDeliveryEvidenceStore(Protocol):
         """
         ...
 
-    async def load_card_snapshot(self, scope: CardDeliveryScope) -> DeliveryEvidenceSnapshot:
+    async def load_card_snapshot(self, scope: CardDeliveryScope, *,
+                                 prospective_report: Mapping | None = None) -> DeliveryEvidenceSnapshot:
         """Load the per-card projection under the caller's authorized unit of work.
 
         Obligations derive deterministically from the card's links in the
@@ -132,6 +134,9 @@ class CardDeliveryEvidenceStore(Protocol):
         Facts project only current, authenticated target executions and test
         runs through the existing Code Traceability and Test Evidence
         contracts. Unavailable/truncated reads must not report complete.
+        Completion can provide its server-built prospective report, whose sealed
+        selection is validated before filtering proof. This never appends a
+        conclusion or changes Card status; current invalidators remain global.
         """
         ...
 

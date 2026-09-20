@@ -36,6 +36,22 @@ def test_manifest_pins_exact_records_and_rework_preserves_historical_report():
     assert selected(dict(source="move_to_validation")) is None
 
 
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_prospective_report_checks_selection_without_changing_history(corrupt):
+    card = SimpleNamespace(status="in_progress", conclusions=[{"text": "Prior report"}])
+    original = deepcopy(card.__dict__)
+    value = report()
+    if corrupt:
+        value["delivery_manifest"]["sha256"] = "0" * 64
+        with pytest.raises(ValueError, match="manifest_invalid"):
+            current_delivery_selection(card, SCOPE, obligations=SNAPSHOT.obligations,
+                record_hashes={"record": "a" * 64}, prospective_report=value)
+    else:
+        assert current_delivery_selection(card, SCOPE, obligations=SNAPSHOT.obligations,
+            record_hashes={"record": "a" * 64}, prospective_report=value) == {"record"}
+    assert card.__dict__ == original
+
+
 @pytest.mark.parametrize("field,value", [
     ("spec_edition", 2), ("card_id", "foreign"), ("scope_sha256", "b" * 64),
     ("sha256", "b" * 64), ("contract_version", "future"),

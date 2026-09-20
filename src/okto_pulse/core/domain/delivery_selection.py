@@ -68,15 +68,20 @@ def submitted_report_receipt(card: object, scope: CardDeliveryScope, record_ids:
 
 
 def current_delivery_selection(card: object, scope: CardDeliveryScope, *, obligations,
-                               record_hashes: dict[str, str]) -> set[str] | None:
+                               record_hashes: dict[str, str],
+                               prospective_report: Mapping | None = None) -> set[str] | None:
     """Only a frozen executor report controls delivery selection.
 
     Rework reads the accumulated ledger again. Revocation, source/Target heads,
     material progress and latest test results must still be read independently
     of the returned ID set. Card version is recorded for provenance, not compared
     to a later version created by an authorized lifecycle transition.
+
+    Completion may supply the server-built report before it is appended. Its
+    manifest receives exactly the same integrity checks, without temporarily
+    mutating status or historical conclusions to evaluate the proposed report.
     """
-    report = current_delivery_report(card)
+    report = prospective_report if prospective_report is not None else current_delivery_report(card)
     if report is None or "delivery_manifest" not in report:
         return None
     try:

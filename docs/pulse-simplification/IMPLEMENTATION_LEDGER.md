@@ -2944,3 +2944,84 @@ Publicado por push normal em `feature/v0.4.0`: Core
 `6c0cb9032cf88a80681c8fa2365dab054a6ae2c7`. Ambos confirmados por `ls-remote`,
 árvores limpas após os commits. Conta ativa `jpbraga`, sem necessidade de
 `gh auth switch`. Este registro posterior altera somente o ledger.
+
+### Em implementação — relatório adotado e falha fechada no gate do Card
+
+2026-09-20, retomada de Core `b1bcc0c7` / Community `6c0cb90`, árvores limpas.
+Turno anterior classificado como progresso. `provenance-adopted-report-baseline.json`
+confirma novamente o par instalado antes da reprodução (**801/312 .py**,
+**866/396 membros**, bytes idênticos).
+
+Reprodução `core-adopted-report-reproduction.log`: **4 failed/5 passed**. Em
+`require_card_delivery`, o filtro de implementações faltantes iterava apenas
+as linhas devolvidas pelo avaliador; resultados estruturalmente desconhecidos
+podiam devolver zero linhas e passar o gate, ou permitir crédito quando o
+registro de métodos estava indisponível. Casos: limite de resolução, identidade
+ambígua, contexto efetivo ausente/inválido e métodos desconhecidos.
+
+Correção em andamento: só os blockers das fases de implementação/teste são
+interpretados pelo gate específico do Card; qualquer blocker estrutural continua
+falha fechada. Prova de implementação atual antes de Done segue admissível;
+o Card não passa a exigir teste passing. A policy advisory existente é preservada.
+Próximo: composição real de seleção/relatório atômico sob contrato adotado,
+contribuições de Cards distintos e rollback/replay sem crédito emprestado.
+
+Investigação adicional e implementação deste checkpoint:
+- `community-adopted-report-composed2.log`: **2 failed/1 passed**. Composição
+  Community real (SQLite descartável, sessão semântica, KG com diretórios
+  temporários), recibo aceito e contrato adotado. Sem validação humana, o caminho
+  direto `CardService.move_card` chegava a Done com prova ausente ou partial,
+  embora `delivery_evidence_gate=blocking`; o caso complete passava. FR-3 e o
+  encerramento por obrigações atuais do pacote determinam a correção, sem nova
+  policy nem alteração de autoridade. N/A de Architecture/Mockup e skip cognitivo
+  são somente dados explícitos desta fixture; os respectivos gates reais rodam.
+- O caminho direto agora adquire o fence existente do Board, relê o Card e
+  verifica a entrega antes de acrescentar conclusão/evento/status. A porta
+  pública aceita o relatório prospectivo construído pelo servidor. A mesma
+  validação de manifesto limita o crédito aos registros selecionados, sem
+  simular Done nem modificar histórico para avaliar a proposta. Testes passing
+  continuam sendo responsabilidade do rollup da Spec; `advisory` não vira crédito.
+- O teste integrado de seleção comprova que prova complete não selecionada não
+  pode liberar um relatório partial; selecioná-la explicitamente permite a
+  conclusão. Rejeição reverte lote e outbox mesmo se o chamador tentar commit.
+- A ampliação da regressão encontrou uma chamada sem `await` de
+  `_snapshot_obligations` em `report_impact_status`, depois da integração do plano
+  compartilhado. Corrigida a chamada; não foi relaxada a integridade do manifesto.
+  `community-adopted-report-final.log` documenta **2 failed/28 passed**, ambos os
+  failures desse consumidor, a repetir no payload corrigido.
+- Seis casos de ciclo de vida do Core dependiam do adapter de teste que só
+  expunha snapshot de Spec, sem porta de Card. Receberam fixture explícita de
+  prova pronta para testar histórico/dependências/eventos, mantendo a policy
+  blocking. O gate real (ausência/partial/advisory/seleção) é coberto no Community.
+  A rodada anterior está em `core-adopted-report-final.log` (**6 failed/131 passed**).
+- `provenance-adopted-report-final.json`: **801/312 .py**, **866/396 membros**,
+  source→wheel→install idênticos. Novos processos com PYTHONPATH pareado.
+- `core-adopted-report-verified.log`: **137 passed**, 20,83 s, três avisos
+  preexistentes de marca asyncio em testes síncronos de impacto.
+- `frontend-adopted-report.log`: **54 passed**, 34,04 s, incluindo rejeição de Done
+  que mantém relatório, seleção e lote não enviado. Produção do frontend não
+  mudou; `frontend-adopted-report-dist.log` verifica os 78 arquivos publicados,
+  tree SHA256 `6ca565b8ddcb2f189fba5b5e9c00b06db4105e5c35733ff163fb88ebbd301911`.
+
+Validação final encerrada:
+- `community-adopted-report-verified.log`: **53 passed**, 113,54 s. Contrato
+  legado/adotado, ausência/partial/complete, seleção sem crédito emprestado,
+  rollback mesmo com commit após erro, replay, concorrência (um lote/relatório
+  para duas submissões idênticas), reuso de impacto e atestados incrementais.
+  Os dois failures e os avisos de coroutine não aguardada anteriores desapareceram.
+- `closure-adopted-report-final.json`: **ok=true**, zero findings de código e
+  documentação, oito budgets **0/0**, **7.611/1.248 imports**, 25 dependências.
+  READMEs atualizados somente pelo renderer oficial.
+- Wheels do payload testado: Core
+  `ef874bbc619051ca7beda515a7fbd0fa889fe36aeb432d923b993854f1a94c55`;
+  Community `dde9f3b70453430c1179373aa060482478860d9604065874c4d67471baf3dc9e`.
+  Nenhuma alteração de payload após a prova final; diff check aprovado.
+
+Sem migração neste incremento. A instalação de rollback para binários anteriores
+reintroduziria a omissão do gate direto e não está validada como rollout. Nenhuma
+mudança em dados reais, runtime do usuário, permissão, release/tag/merge.
+`gh auth status` confirma `jpbraga` ativo; autorização de switch registrada, sem
+necessidade de usá-la. Este checkpoint corrige a conclusão do Card e o consumidor
+de impacto; não conclui a iniciativa. Retomada: contribuições de Cards distintos
+com prova real por critério, paginação/globalidade, rollout instalado e as frentes
+DEI/ARQ/VER/F2B/KG já listadas acima.
