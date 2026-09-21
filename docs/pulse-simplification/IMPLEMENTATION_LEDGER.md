@@ -9804,3 +9804,80 @@ seguem pendentes. Objetivo integral ativo. Sem migração real, deploy, release,
 tag, merge nem restart de runtime do usuário.
 
 Community commit730a303; commit Core/pushes pareados a seguir com verificação dos HEADs remotos e árvores limpas.
+
+### F3 — catálogo de persistência operacional e backfill sem Sprint
+
+Em execução sobre Core68d6ae49 / Community730a303, par limpo/publicado.
+Rastreamento confirmou que captura/migração histórica usa adapters próprios e
+não o catálogo ApplicationPersistence. Mapas vivos ainda aceitavam Sprint,
+SprintHistory e SprintQAItem; relações de Board/Spec expunham sprints e startup
+backfill atualizava answered_at de Q&A histórica.
+Removidos mapas/parent scopes/projeção open_qa Sprint e backfill Sprint; domínio
+Board/Spec não declara mais sprints. ORM/schema e ownership histórico permanecem
+até o corte físico coordenado, sem criar exceção arquitetural. Campo Card.sprint_id
+continua internamente disponível para recusa de policy não migrada, como antes.
+Um atributo de relação só é aceito quando o alvo pertence ao catálogo operacional:
+includes aninhados, filtros, projeções, ordenação/agregação não podem consultar
+uma entidade retirada por um caminho alternativo. Refresh valida tipo antes do
+flush para evitar efeitos colaterais ao receber registro retirado. Adapter de
+teste Core segue a mesma fronteira. Nenhuma flag de autorização foi relaxada.
+Testes novos cobrem nove operações×três tipos, sete formas de query relacional,
+backfill idempotente com/sem tabelas Sprint e imutabilidade da QA histórica.
+Ruff/diff --check aprovados; build/proveniência/suites/closure pendentes.
+
+Primeira rodada: Core87 passed, Community151 passed (203s) e frontend73 passed,
+em f3-persistence-{core,community,ui}.log. Community emitiu dois avisos da fixture
+por consultar metadata.sorted_tables; fixture passou a usar tables.values sem
+alterar schema/expectativas. Revisão encontrou que list_with_count validava
+includes/projeções só depois da primeira consulta (e não em página vazia).
+Com todos os handles da rodada encerrados, validação antecipada antes do count/
+window query e seis casos adicionais de recusa pré-SQL. Expressões/options são
+reutilizadas na materialização; limite de statements e resultados continuam sob
+os gates de paginação existentes. Novo par wheels-f3-persistence-final instalado;
+provenance-f3-persistence-final.json byte-idêntico nos dois pacotes. Core payload
+inalterado em relação à primeira rodada. Closure final exit0,ok=true, findings/docs
+vazios e oito budgets0. Reteste Community focado ainda em execução (handle88610),
+sem falhas nos72 primeiros casos; aguardar terminal antes de editar produto.
+
+Validação final do incremento (2026-09-21):
+- Reteste f3-persistence-community-final.log:128 passed (135s), incluindo42 casos
+  do novo módulo e rotas/escaping de paginação. Não houve falha nas rodadas.
+  Total Community distinto157 (151 originais+6 casos adicionais), Core87 e UI73:
+  317 casos distintos; repetições não somadas. Não é matriz integral/E2E final.
+- Suites Core cobrem badges/backfill, PageItems, CRUD Card/Spec, paginação,
+  serviço Sprint retirado, policy migrada no contexto MCP e catálogo gerado.
+  Community inclui isolamento de realm, projections/includes/rollback, listas/
+  colunas/escaping, sequência archive→grants→policy→permission cleanup e nove
+  operações×três tipos retirados. Recusa de tipos/relations ocorre sem SQL/flush;
+  backfill funciona sem tabelas Sprint e não toca QA histórica quando existem.
+- Dois preflights antes das respectivas suites: fonte/wheel/site-packages iguais
+  byte a byte,804/335 Python e867/419 payloads. Wheels finais em
+  wheels-f3-persistence-final, prova em provenance-f3-persistence-final.json.
+  Core agregado53710532d2e2f3eb0075cf61745c90d98e9017e2d21008c871672ecf488da31f;
+  Community4ce156166c79a9d664bcb62e3b595b92fd2173c3f97bfe13aef461a4029c4e0f.
+  Wheel Core0248f67d3c8186c022f4fef5758cdc90416d627ccd2999d59e8742ff14fb78d4;
+  Community5e5700893d72b179cd8074fb2cafb75384f21fe4a1d2c0ce12e782e1ce9f84f7.
+- closure-f3-persistence-final.json: exit0,ok=true,findings=[],documentation_findings=[],
+  oito budgets0/0. Nenhum drift de README/import; nenhuma tool alterada.
+  Ruff/diff --check e catálogo MCP byte a byte aprovados. Todos os handles
+  encerrados; nenhuma edição produtiva ou reinstalação com suites ativas.
+- Frontend produtivo inalterado. Painéis paginados/CardModal73 testes aprovados;
+  verify:frontend-dist confirmou78 arquivos/hash
+  0f84989255db06e8990dd00a48bd3aad148089debd4eb1656399514ba10cdfdf.
+
+Retomada: persistência de aplicação não admite tipos/relações Sprint; backfill
+ativo não escreve suas tabelas. ORM/schema e ownership tenant continuam até o
+corte físico offline, preservando arquivo/migração. Próxima investigação concreta:
+loaders sqlalchemy_parent_artifact, sqlalchemy_guideline_policy e
+sqlalchemy_semantic_guideline_assessment ainda importam Sprint; listeners de
+sqlalchemy_policy_subject_versioning também. Distinguir produtores vivos de
+leitura de recibos versionados. Manifests guideline_semantic_snapshot v1 e
+quality_canonicalization têm campos Sprint e não podem ser apagados sem prova
+de preservação dos hashes/recibos históricos. Inspecionar também ACKs exatos de
+rebuild antes do terminal offline runtime_ready. Nenhum desses achados novos
+foi revisado integralmente neste turno.
+Matriz integral DEI/ARQ/VER/ADV, E2E pareado/rollback, footprint MCP, benchmark e
+rollout continuam pendentes. Objetivo integral ativo. Sem migração real, deploy,
+release, tag, merge ou restart do usuário.
+
+Community commitf584a3c; commit Core/pushes pareados a seguir com verificação dos HEADs remotos e árvores limpas.

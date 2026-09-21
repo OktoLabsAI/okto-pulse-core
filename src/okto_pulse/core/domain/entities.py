@@ -35,7 +35,6 @@ class Board:
     topics: list[Any] = field(default_factory=list, repr=False)
     stories: list[Any] = field(default_factory=list, repr=False)
     specs: list[Any] = field(default_factory=list, repr=False)
-    sprints: list[Any] = field(default_factory=list, repr=False)
     agent_grants: list[Any] = field(default_factory=list, repr=False)
     shares: list[Any] = field(default_factory=list, repr=False)
 
@@ -149,7 +148,6 @@ class Spec:
     updated_at: datetime | None = None
     labels: list[str] | None = None
     cards: list[Any] = field(default_factory=list, repr=False)
-    sprints: list[Any] = field(default_factory=list, repr=False)
     knowledge_bases: list[Any] = field(default_factory=list, repr=False)
     qa_items: list[Any] = field(default_factory=list, repr=False)
     history: list[Any] = field(default_factory=list, repr=False)

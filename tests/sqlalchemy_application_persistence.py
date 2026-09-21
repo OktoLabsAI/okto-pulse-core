@@ -52,9 +52,6 @@ _ENTITY_CLASSES = {
     "spec_history": models.SpecHistory,
     "spec_knowledge_base": models.SpecKnowledgeBase,
     "spec_qa_item": models.SpecQAItem,
-    "sprint": models.Sprint,
-    "sprint_history": models.SprintHistory,
-    "sprint_qa_item": models.SprintQAItem,
     "story": models.Story,
     "story_ideation_link": models.StoryIdeationLink,
     "topic": models.Topic,
@@ -214,7 +211,7 @@ def _predicate(model: Any, item: ApplicationFilter):
         ):
             return ~is_converted
         raise ValueError(f"unsupported_application_operator:{item.operator}")
-    column = getattr(model, item.field)
+    column = _application_attribute(model, item.field)
     if item.operator == "eq":
         return column == item.value
     if item.operator == "ne":
@@ -255,13 +252,26 @@ def _predicate(model: Any, item: ApplicationFilter):
     raise ValueError(f"unsupported_application_operator:{item.operator}")
 
 
+def _application_attribute(model: Any, name: str, *default):
+    """Retired ORM relations cannot bypass the operational entity catalog.
+
+    Legacy tables remain owned by offline capture until the atomic schema cut.
+    Reject includes, filters, projections and ordering before any SQL executes.
+    """
+    attribute = getattr(model, name, *default)
+    relationship = model.__mapper__.relationships.get(name)
+    if relationship is not None and relationship.mapper.class_ not in _CLASS_ENTITIES:
+        raise ValueError(f"unsupported_application_relationship:{name}")
+    return attribute
+
+
 def _load_option(model: Any, path: str):
     parts = path.split(".")
-    relationship = getattr(model, parts[0])
+    relationship = _application_attribute(model, parts[0])
     option = selectinload(relationship)
     related_model = relationship.property.mapper.class_
     for part in parts[1:]:
-        relationship = getattr(related_model, part)
+        relationship = _application_attribute(related_model, part)
         option = option.selectinload(relationship)
         related_model = relationship.property.mapper.class_
     return option
@@ -293,7 +303,7 @@ def _projection_expression(model: Any, field_name: str) -> Any:
             func.coalesce(models.Card.validations, "[]"),
             f"$[#-{raw_index}]",
         ).label(field_name)
-    column = getattr(model, field_name, None)
+    column = _application_attribute(model, field_name, None)
     if column is None:
         raise ValueError(f"unsupported_application_projection:{field_name}")
     return column.label(field_name)
@@ -396,7 +406,7 @@ class TestSqlAlchemyApplicationPersistence:
                 *(_load_option(model, path) for path in query.includes)
             )
         for field_name, descending in query.order_by:
-            column = getattr(model, field_name)
+            column = _application_attribute(model, field_name)
             statement = statement.order_by(
                 column.desc() if descending else column.asc()
             )
@@ -451,7 +461,7 @@ class TestSqlAlchemyApplicationPersistence:
         model = _model(query.entity)
         if not query.group_by:
             raise ValueError("application_group_count_fields_required")
-        group_columns = tuple(getattr(model, field) for field in query.group_by)
+        group_columns = tuple(_application_attribute(model, field) for field in query.group_by)
         statement = select(
             *group_columns,
             func.count().label("count"),
@@ -511,9 +521,9 @@ class TestSqlAlchemyApplicationPersistence:
         for field_name, expected in expected_values.items():
             if field_name not in model.__table__.columns:
                 raise ValueError(f"unsupported_application_fence_field:{field_name}")
-            predicates.append(getattr(model, field_name) == expected)
+            predicates.append(_application_attribute(model, field_name) == expected)
         fence_values = {
-            column.key: getattr(model, column.key)
+            column.key: _application_attribute(model, column.key)
             for column in model.__table__.columns
             if column.primary_key or column.onupdate is not None
         }
@@ -607,6 +617,7 @@ class TestSqlAlchemyApplicationPersistence:
     async def refresh(
         self, context: Any, record: ApplicationRecord
     ) -> ApplicationRecord:
+        _model(record.entity)
         await self.flush(context)
         row = await context.get(_model(record.entity), record.id)
         if row is None:
@@ -636,7 +647,6 @@ class TestSqlAlchemyApplicationPersistence:
             ("ideation_qa_items", True),
             ("refinement_qa_items", True),
             ("spec_qa_items", True),
-            ("sprint_qa_items", True),
             ("qa_items", False),
         )
         fixed: dict[str, int] = {}
