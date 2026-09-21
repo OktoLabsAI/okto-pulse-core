@@ -20,18 +20,6 @@ _CARD_BUG_FIELDS = {
     "steps_to_reproduce",
     "action_plan",
 }
-_SPRINT_COVERAGE_FIELDS = {
-    "skip_test_coverage",
-    "skip_rules_coverage",
-    "skip_qualitative_validation",
-    "validation_threshold",
-    "require_task_validation",
-    "validation_min_confidence",
-    "validation_min_completeness",
-    "validation_max_drift",
-}
-_SPRINT_LABEL_FIELDS = {"labels"}
-_SPRINT_NON_MUTATION_FIELDS = {"expected_version"}
 
 
 def payload_fields_set(data: Any) -> set[str]:
@@ -105,18 +93,6 @@ def card_requirement(
     )
 
 
-def sprint_requirement(
-    operation: str,
-    *,
-    state: str | None = None,
-    legacy_operation: str = "specs:update",
-) -> PermissionRequirement:
-    return _requirement(
-        operation,
-        legacy_operation,
-        entity="sprint" if state is not None else None,
-        state=state,
-    )
 
 
 def transition_permission_requirement(
@@ -182,24 +158,6 @@ def card_update_permission_requirements(
     return tuple(card_requirement(operation, state=state) for operation in sorted(operations))
 
 
-def sprint_update_permission_requirements(
-    data: Any,
-    *,
-    state: str | None = None,
-) -> tuple[PermissionRequirement, ...]:
-    supplied_fields = payload_fields_set(data)
-    fields = supplied_fields - _SPRINT_NON_MUTATION_FIELDS
-    if supplied_fields and not fields:
-        return ()
-    operations: set[str] = set()
-    if fields & _SPRINT_COVERAGE_FIELDS:
-        operations.add("sprint.entity.edit_coverage_flags")
-    if fields & _SPRINT_LABEL_FIELDS:
-        operations.add("sprint.entity.label")
-    categorized = _SPRINT_COVERAGE_FIELDS | _SPRINT_LABEL_FIELDS
-    if not fields or fields - categorized:
-        operations.add("sprint.entity.edit_fields")
-    return tuple(sprint_requirement(operation, state=state) for operation in sorted(operations))
 
 
 __all__ = [
@@ -208,7 +166,5 @@ __all__ = [
     "card_update_permission_requirements",
     "entity_state",
     "payload_fields_set",
-    "sprint_requirement",
-    "sprint_update_permission_requirements",
     "transition_permission_requirement",
 ]

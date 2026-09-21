@@ -1,4 +1,4 @@
-"""Direct use-case regressions for Card/Sprint central authorization."""
+"""Direct use-case regressions for Card and Spec central authorization."""
 
 from __future__ import annotations
 
@@ -25,13 +25,6 @@ from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
 from okto_pulse.core.application.use_cases.mutation_permissions import (
     card_create_permission_requirement,
     card_update_permission_requirements,
-    sprint_update_permission_requirements,
-)
-from okto_pulse.core.application.use_cases.sprints_crud import (
-    AssignSprintTasksCommand,
-    AssignSprintTasksUseCase,
-    SubmitSprintEvaluationCommand,
-    SubmitSprintEvaluationUseCase,
 )
 from okto_pulse.core.application.use_cases.submit_spec_validation import (
     SubmitSpecValidationCommand,
@@ -81,38 +74,8 @@ def test_card_update_fields_map_to_canonical_permissions(payload, expected):
     assert {requirement.operation for requirement in requirements} == expected
 
 
-@pytest.mark.parametrize(
-    "field",
-    [
-        "skip_test_coverage",
-        "skip_rules_coverage",
-        "skip_qualitative_validation",
-        "validation_threshold",
-        "require_task_validation",
-        "validation_min_confidence",
-        "validation_min_completeness",
-        "validation_max_drift",
-    ],
-)
-def test_sprint_validation_configuration_uses_coverage_permission(field: str):
-    requirements = sprint_update_permission_requirements(
-        {field: 1, "expected_version": 4},
-        state="active",
-    )
-
-    assert [requirement.operation for requirement in requirements] == [
-        "sprint.entity.edit_coverage_flags"
-    ]
 
 
-def test_sprint_optimistic_lock_metadata_does_not_add_a_permission():
-    assert (
-        sprint_update_permission_requirements(
-            {"expected_version": 4},
-            state="active",
-        )
-        == ()
-    )
 
 
 class _Boards:
@@ -161,26 +124,6 @@ class _Cards:
         return self.card
 
 
-class _Sprints:
-    def __init__(self):
-        self.sprint = SimpleNamespace(
-            id="sprint-1",
-            board_id=BOARD_ID,
-            status="active",
-        )
-        self.assign_calls = 0
-        self.evaluation_calls = 0
-
-    async def get_sprint(self, _sprint_id: str):
-        return self.sprint
-
-    async def assign_tasks(self, *_args):
-        self.assign_calls += 1
-        return 1
-
-    async def submit_evaluation(self, *_args):
-        self.evaluation_calls += 1
-        return self.sprint
 
 
 def _permission_set(entity: str, operation: tuple[str, ...], *, allowed: bool):
@@ -271,36 +214,6 @@ async def test_mcp_card_update_legacy_list_still_authorizes():
     assert uow.commits == 1
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["assign", "evaluation"])
-async def test_sprint_writes_deny_before_writer(operation: str):
-    sprints = _Sprints()
-    permission = (
-        ("sprint", "entity", "assign")
-        if operation == "assign"
-        else ("sprint", "evaluations", "submit")
-    )
-    permissions = _permission_set("sprint", permission, allowed=False)
-    uow = _Uow(_Services(permissions, sprints=sprints))
-    actor = ActorContext("actor-1", "mcp", board_id=BOARD_ID, permissions=permissions)
-
-    with pytest.raises(PermissionDeniedError):
-        if operation == "assign":
-            await AssignSprintTasksUseCase().execute(
-                AssignSprintTasksCommand("sprint-1", ["card-1"]),
-                actor=actor,
-                uow=uow,
-            )
-        else:
-            await SubmitSprintEvaluationUseCase().execute(
-                SubmitSprintEvaluationCommand("sprint-1", {"score": 10}),
-                actor=actor,
-                uow=uow,
-            )
-
-    assert sprints.assign_calls == 0
-    assert sprints.evaluation_calls == 0
-    assert uow.commits == 0
 
 
 @pytest.mark.asyncio

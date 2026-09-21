@@ -8146,3 +8146,64 @@ findings=[] e documentation_findings=[], oito budgets 0/0. Builds, instalação,
 provas, testes e closure encerrados. Commit Community
 a39f7c261416f6186536889801a195ed7d1f211b. Par preparado para push normal em
 feature/v0.4.0 e conferência final de HEAD/ls-remote/árvores limpas.
+
+### 2026-09-20 — Decisão F3 autorizada: tarefas normais em Spec Done
+
+O usuário respondeu explicitamente à proposta pendente: "Autorizar o bloqueio
+proposto (recomendado)". Está autorizado bloquear criação/alteração de conteúdo
+e início/reabertura de tarefas normais em Spec Done, preservando leitura,
+histórico, colaboração e bugs/testes de regressão pelos controles próprios.
+Esta decisão resolve a divergência reproduzida na seção "Decisão F3 pendente";
+não é inferida da autorização F2A nem de tempo decorrido. As referências anteriores
+a F3 pendente são histórico dos checkpoints; o bloqueio de decisão está resolvido.
+
+Implementação seguinte: aplicar o gate no Core por todos os writers e previews
+pertinentes, com reprodução negativa/positiva, preservando autoridade e demais
+gates substantivos ao retirar a dependência operacional de Sprint. Nenhuma
+permissão de executor adicional, reabertura automática de histórico, migração
+real ou relaxamento de budget foi autorizada por esta decisão.
+
+### 2026-09-20 — Retirada interna das use cases dedicadas de Sprint
+
+Partida: Core 8f12660eb1bc7892c3fef49574cb4fa74bd6d1a1 e Community
+a39f7c261416f6186536889801a195ed7d1f211b, ambos publicados em feature/v0.4.0.
+Removidos sprints_crud.py (12 use cases), seus 36 contratos/exportações e os
+dois helpers exclusivos de autorização de Sprint. Permissões, grants e gates
+de Card/Spec não foram relaxados. Inventário AST em src/tests/scripts confirma
+zero imports remanescentes dos contratos retirados. Os contratos negativos
+novos verificam ausência do módulo, exports e helpers. As suites compartilhadas
+mantêm os casos Card/Spec; retirados somente os casos da operação eliminada.
+
+A coleta integral encontrou três imports por alias da antiga rota REST Sprint
+que o inventário anterior não identificara. Corrigidos os consumidores em
+test_permission_denied_rest_routes, test_card_rejected_rest_contract e
+test_sprint_origin_integrity_health, preservando seus testes das operações vivas.
+Não houve alteração de frontend nesta etapa; nenhuma nova execução frontend é
+alegada. O catálogo MCP gerado permanece idêntico e seu gate passou.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- sprint-usecases-core.log: 102 passed; sprint-usecases-community.log: 49 passed.
+  Total de 151 testes comportamentais distintos aprovados.
+- sprint-usecases-collect-core.log: 13.213 coletados; collect-community: 5.792.
+  São 19.005 testes apenas coletados, sem erros de import, não testes executados.
+- provenance-sprint-usecases.json e provenance-sprint-usecases-final.json:
+  811/336 arquivos .py e 874/420 payloads source/wheel/install idênticos, inclusive
+  ausência física do módulo removido. Agregados iniciais/finais iguais:
+  Core a0780658e11ed80e21e3dab42c987c3c19949574d20151ecf4356c7449f465c9;
+  Community 6fb0d304a0521ade0957d7625757bcbdf4698cfd52b94ff2b9613dae83abe0ee.
+- A closure inicial apontou somente drift das matrizes README. Renderer oficial
+  aplicado: imports Core 7.502 -> 7.492; Community 1.175, dependências 25.
+  Reconstruídos/reinstalados ambos os wheels após término de todos os testes.
+- Wheels finais: Core e04baca3fab1cff9b48bac84d2971bbbdbdb57c9ba555589567c925f2d2f0e50;
+  Community 59dc5906f64e5bcfcf5008c2d1387a3b9762cc49dd6e595ec6c8d2d124b1a7ba.
+- closure-sprint-usecases-final.json: ok=true, findings=[] e
+  documentation_findings=[], todos os oito budgets 0/0. Ruff e diff --check
+  passaram. Todos os processos de validação encerrados antes do commit.
+
+Commit Community bca12e1ea0b9ca53442b6faec094c2d86488b15a. Próxima etapa é o
+gate F3 agora autorizado: impedir conteúdo normal na Spec Done, inclusive troca
+de vínculo de/para essa Spec, e execução inicial/retomada/reabertura. Investigar
+todos os writers/previews, preservando colaboração e os controles bug/test.
+Permanecem o restante do corte operacional Sprint e a integração offline/schema,
+F4/F5, matriz integral, rollout e footprint MCP. Objetivo integral ativo;
+nenhuma migração de dados reais ou conclusão da iniciativa é alegada.

@@ -17,7 +17,6 @@ from okto_pulse.core.application.use_cases import (
     move_ideation,
     refinements_crud,
     spec_crud,
-    sprints_crud,
     stories_crud,
 )
 from okto_pulse.core.application.use_cases.base import (
@@ -29,7 +28,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintStatus,
     StoryStatus,
 )
 
@@ -53,9 +51,6 @@ class _TransitionServices:
         self.card = SimpleNamespace(
             id="card-1", board_id=BOARD_ID, status=CardStatus.NOT_STARTED
         )
-        self.sprint = SimpleNamespace(
-            id="sprint-1", board_id=BOARD_ID, status=SprintStatus.DRAFT
-        )
         self.story = SimpleNamespace(
             id="story-1",
             board_id=BOARD_ID,
@@ -77,7 +72,6 @@ class _TransitionServices:
             test_scenarios=[{"id": "scenario-1", "status": "draft"}],
         )
         self.cards = self
-        self.sprints = self
         self.stories = self
         self.ideations = self
         self.refinements = self
@@ -87,8 +81,6 @@ class _TransitionServices:
     async def get_card(self, _entity_id: str) -> Any:
         return self.card
 
-    async def get_sprint(self, _entity_id: str) -> Any:
-        return self.sprint
 
     async def get_story(self, _entity_id: str) -> Any:
         return self.story
@@ -106,9 +98,6 @@ class _TransitionServices:
         self.calls["move_card"] += 1
         return self.card
 
-    async def move_sprint(self, *_args: Any, **_kwargs: Any) -> Any:
-        self.calls["move_sprint"] += 1
-        return self.sprint
 
     async def move_story(self, *_args: Any, **_kwargs: Any) -> Any:
         self.calls["move_story"] += 1
@@ -185,17 +174,6 @@ def _transition_case(name: str) -> tuple[Any, Any, Any, str, str, str, str]:
             "card.move.not_started_to_started",
             "cards:move",
             "card",
-        )
-    if name == "sprint":
-        data = SimpleNamespace(status=SprintStatus.ACTIVE)
-        return (
-            sprints_crud,
-            sprints_crud.MoveSprintUseCase(),
-            sprints_crud.MoveSprintCommand("sprint-1", data),
-            "move_sprint",
-            "sprint.move.draft_to_active",
-            "specs:move",
-            "sprint",
         )
     if name == "rest_story":
         data = SimpleNamespace(status=StoryStatus.TRIAGE)
@@ -299,7 +277,6 @@ def _transition_case(name: str) -> tuple[Any, Any, Any, str, str, str, str]:
     [
         "rest_card",
         "mcp_card",
-        "sprint",
         "rest_story",
         "mcp_story",
         "ideation",

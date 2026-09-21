@@ -325,7 +325,6 @@ def test_board_seed_inventory_uses_query_scope_helpers() -> None:
             "application/use_cases/ideations_crud.py",
             "application/use_cases/refinements_crud.py",
             "application/use_cases/spec_crud.py",
-            "application/use_cases/sprints_crud.py",
             "application/use_cases/stories_crud.py",
         )
     }
