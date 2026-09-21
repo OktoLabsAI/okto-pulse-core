@@ -146,6 +146,36 @@ class CoreDeterministicProjectionPlanner:
         if expected != document:
             raise ValueError('deterministic_projection_retained_plan_mismatch')
 
+    async def prepare_execution(self, context, document, *, board_id, source_rows, cognitive_rows):
+        from okto_pulse.core.kg.board_rebuild_adapter import (
+            DETERMINISTIC_SOURCE_ARTIFACT_TYPES, queue_artifact_type,
+        )
+        await self.revalidate_board(context, document, board_id=board_id,
+            source_rows=source_rows, cognitive_rows=cognitive_rows)
+        retained = json.loads(document)
+        census = retained['census']
+        rows = census['sources'] + census['working_sources'] + census['skipped_by_maturity'] + retained['dependency_closure']
+        terminals = set(_terminal_refinements(board_id, retained['source_rows']))
+        rows += [row for row in retained['source_rows'] if row['artifact_type'] == 'refinement'
+            and DeterministicProjectionSource(board_id, 'refinement', row['id']) in terminals]
+        expected = {(plan['source']['artifact_type'], plan['source']['artifact_id']) for plan in retained['plans']}
+        selected = {}
+        for row in rows:
+            if row['artifact_type'] == 'decision':
+                continue
+            if row['artifact_type'] not in DETERMINISTIC_SOURCE_ARTIFACT_TYPES:
+                raise ValueError('deterministic_projection_source_type_unsupported')
+            key = queue_artifact_type(row['artifact_type']), row['id']
+            if (key not in expected or key in selected or type(row.get('source_version')) is not str
+                    or not row['source_version'].strip() or type(row.get('content_hash')) is not str
+                    or len(row['content_hash']) != 64 or any(c not in '0123456789abcdef' for c in row['content_hash'])
+                    or row.get('source_ref') != row['artifact_type'] + ':' + row['id']):
+                raise ValueError('deterministic_projection_execution_membership_invalid')
+            selected[key] = {**row, '_rebuild_manifest_created_at': retained['captured_at']}
+        if set(selected) != expected:
+            raise ValueError('deterministic_projection_execution_membership_invalid')
+        return tuple(selected[key] for key in sorted(selected))
+
     def _dependency_sources(self, census, board_id, captured_at):
         cut = captured_at.isoformat()
         base = tuple({**row.to_dict(), '_rebuild_manifest_created_at': cut}

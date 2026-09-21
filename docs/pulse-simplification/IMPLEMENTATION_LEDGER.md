@@ -12195,3 +12195,62 @@ schema/hashdelta autorizado, cutover/admissão e backlog completo continuam aber
 
 Commit Community: f423cc0d09cd4bc48d61b01be548d38198b4d0d4. Core publica a porta,
 política de reserva, testes, matriz e ledger; provar os bytes após commit e publicar.
+
+### 2026-09-21 — execução privada do candidato: integração em validação
+
+Base publicada Core 5da1490413b06fef78ed45a96288fc6bfc657412 / Community
+f423cc0d09cd4bc48d61b01be548d38198b4d0d4. Integração pendente de validação:
+rederivar membership exata no Core, compor providers novos sem herdar o runtime
+original, reservar execução offline pela porta pública e proteger enqueue antes
+e depois do commit. Recibos vinculam seed, plano, builds, geração e ACKs reais.
+O estado resultante é projected_not_reconciled; não libera cutover/admissão.
+Replay de candidato já projetado permanece recusado até verificação de checkpoint.
+Teste de falha após ACK e retry desde seed, preservação de histórico nativo e
+fences de enqueue acrescentados. Na retomada, corrigida inserção do teste de
+isolamento que havia deslocado o corpo do teste de escopos aninhados. Ruff F/E9
+passou nos arquivos inspecionados; build pareado em andamento. Nenhum resultado
+comportamental novo é reivindicado neste registro. Reconciliação, retomada após
+publicação e demais itens do pacote continuam pendentes.
+
+Validação inicial deste incremento: provenance-kg-candidate-execution.json
+comprovou Core808/871 e Community345/429 arquivos Python/payload byte-identical.
+Core84004:61 passed em10.66s. Community87273:51 passed/1 failed em732.43s.
+A falha foi expectativa de fixture: ACK membership conserva task:card-a/b;
+card:card-a/b identifica raízes no grafo. Mantida a semântica e corrigida somente
+a expectativa de ACK. A falha ocorreu após interrupção real depois de ACK,
+descarte privado e retry bem-sucedido, antes das últimas verificações do teste.
+O cenário separado com histórico nativo e execução real passou, incluindo UUID
+original e as_of preservados. Passaram também replay protegido, dois Boards/global,
+revalidação e todos os casos F06 selecionados. Não reivindicar a suíte toda verde.
+Closure79163:findings vazios,8budgets0; somente matrizes README divergentes.
+Regeneradas pelo renderer oficial. Wheels finais em reconstrução/reinstalação;
+repetir a prova de bytes, o teste corrigido e closure antes de commit/push.
+
+Validação final: install95527 exit0; provenance-kg-candidate-execution-final.json
+confirmou novamente igualdade byte-a-byte Core808/871 e Community345/429.
+Nenhum código produtivo mudou depois da rodada inicial; só expectativa do teste
+(task no ACK, card no grafo) e matrizes documentais. Community46238:4 passed em
+85.85s, incluindo todas as verificações finais de isolamento, refs materializadas,
+admissão recusada e replay projetado recusado sem sobrescrever recibo. Em conjunto,
+61 testes Core e52 testes Community distintos aprovados; não foi uma única rodada
+verde de113 testes. A rodada inicial com1 falha permanece registrada acima.
+Closure42765 exit0:oktrue, findings/documentation_findings vazios,8budgets0.
+Ruff F/E9 e git diff --check passaram para todos os arquivos alterados.
+Wheels-kg-candidate-execution-final aggregates:
+Core d3ade7b969a9a2787a68c5cdbd84bd3ccd01d43fd908037c347e35f96d254746;
+Community 4ad1814387ecd78b50dd4358678823ec131a0294b415a8994fa72d76682c5fb9.
+Commit Community40a342e443611d3b43f2487a829e1f18af6cf8ae. Provar novamente após
+commit Core e publicar ambos em feature/v0.4.0. Sem frontend/API/MCP alterados;
+nenhum runtime/dado real, deploy, release, tag ou merge modificado.
+
+Ponto de retomada: o coordenador restaura e executa as projeções dentro do stage
+privado, mantendo as fontes originais reservadas. Revalida fontes antes/depois,
+registra ACKs exatos e snapshot SQL completo; isso ainda NÃO é certificado de
+reconciliação. Falha antes da publicação descarta stage e permite retry desde
+seed. Saída publicada é projected_not_reconciled e não é adotada em replay.
+Próxima frente: verificar checkpoint/recibos pós-escrita e reconciliar efeitos
+operacionais por ACK, sem ignorar tabelas inteiras. Depois validar schema final,
+identidades/arestas/endpoints/temporalidade/órfãos, cutover retomável e contrato
+terminal de admissão. Migração de schema físico incompatível que preserve história,
+Boards vazios, demais gates do pacote e rollout continuam abertos. Manter o
+backlog consolidado já registrado; este incremento não conclui a iniciativa.

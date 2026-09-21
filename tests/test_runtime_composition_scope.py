@@ -73,6 +73,29 @@ def test_nested_scope_restores_the_previous_composition() -> None:
     assert current_runtime_composition() is None
 
 
+@pytest.mark.parametrize('fail', [False, True])
+def test_fresh_provider_scope_inherits_neither_values_nor_request_composition(fail):
+    composition = _composition('original')
+    with runtime_composition_scope(composition):
+        original = object()
+        register_runtime_value('tests.original.engine', original)
+        def enter():
+            with isolated_runtime_provider_scope(inherit=False):
+                assert current_runtime_composition() is None
+                assert resolve_runtime_value('tests.original.engine') is None
+                register_runtime_value('tests.candidate.engine', object())
+                if fail:
+                    raise RuntimeError('private candidate failed')
+        if fail:
+            with pytest.raises(RuntimeError, match='private candidate failed'):
+                enter()
+        else:
+            enter()
+        assert current_runtime_composition() is composition
+        assert resolve_runtime_value('tests.original.engine') is original
+        assert resolve_runtime_value('tests.candidate.engine') is None
+
+
 def test_process_default_runtime_lock_is_shared_across_raw_threads() -> None:
     """Raw worker threads must not manufacture independent process locks."""
 

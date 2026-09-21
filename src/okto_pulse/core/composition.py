@@ -188,7 +188,7 @@ def runtime_composition_scope(composition: RuntimeComposition):
 
 
 @contextmanager
-def isolated_runtime_provider_scope() -> Iterator[None]:
+def isolated_runtime_provider_scope(*, inherit: bool = True) -> Iterator[None]:
     """Fork runtime providers for one task and restore them on scope exit.
 
     Edition composition roots occasionally need to replace providers for one
@@ -201,8 +201,17 @@ def isolated_runtime_provider_scope() -> Iterator[None]:
     only this lifecycle-safe composition seam.
     """
 
-    with runtime_value_scope(snapshot_runtime_values()):
-        yield
+    # A private recovery candidate must not inherit live engines, graph routes
+    # or request composition from the original, even if it replaces most slots.
+    if type(inherit) is not bool:
+        raise TypeError('runtime_provider_scope_inherit_must_be_bool')
+    token = _active_runtime_composition.set(None) if not inherit else None
+    try:
+        with runtime_value_scope(snapshot_runtime_values() if inherit else RuntimeValueRegistry()):
+            yield
+    finally:
+        if token is not None:
+            _active_runtime_composition.reset(token)
 
 
 def record_runtime_bridge_usage(bridge: str) -> None:

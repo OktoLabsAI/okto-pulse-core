@@ -65,6 +65,15 @@ class DeterministicProjectionPlanner(Protocol):
         """
         ...
 
+    async def prepare_execution(self, context: object, document: bytes, *, board_id: str,
+            source_rows: tuple[dict, ...], cognitive_rows: tuple[dict, ...]) -> tuple[dict, ...]:
+        """Revalidate and select exact queue membership, including terminal cleanup.
+
+        Membership is preparation only; live recovery and writer authority are
+        still required. Derived decisions remain owned by their Spec projection.
+        """
+        ...
+
 
 class DeterministicProjectionDependencies(Protocol):
     def resolve(self, *, board_id: str, sources: tuple[dict, ...]) -> tuple[dict, ...]:

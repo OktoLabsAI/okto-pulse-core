@@ -115,10 +115,11 @@ async def test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash
     # plans. A canonical document and SHA alone are not semantic correspondence.
     require_board_projection_cleanup(encoded)
     if damage == 'none':
-        await planner.revalidate_board(None, encoded, board_id=board_id, source_rows=rows, cognitive_rows=())
+        membership = await planner.prepare_execution(None, encoded, board_id=board_id, source_rows=rows, cognitive_rows=())
+        assert len(membership) == 1 and membership[0]['source_ref'] == 'spec:spec-one'
     else:
         with pytest.raises(ValueError, match='retained_plan_mismatch|source_scope_mismatch'):
-            await planner.revalidate_board(None, encoded, board_id=board_id, source_rows=rows, cognitive_rows=())
+            await planner.prepare_execution(None, encoded, board_id=board_id, source_rows=rows, cognitive_rows=())
     assert json.loads(encoded) == retained  # Never reseal or repair a retained plan.
 
 
@@ -151,6 +152,9 @@ async def test_terminal_refinement_cleanup_matches_live_without_reviving_root_or
         'active_refs': [], 'active_edges': [],
     }
     require_board_projection_cleanup(encoded)
+    membership = await make_deterministic_projection_planner(port).prepare_execution(None, encoded, board_id='board',
+        source_rows=(terminal_row(status),), cognitive_rows=())
+    assert len(membership) == 1 and membership[0]['source_ref'] == 'refinement:refinement-one'
     port.load_projection_inputs.assert_not_awaited()
     class Captured(Exception):
         pass
